@@ -24,6 +24,11 @@ import unittest
 from pathlib import Path
 
 
+ROOT = Path(__file__).parents[2]
+UPDATER = Path(__file__).with_name("update-homebrew-formula.py")
+TEMPLATE = ROOT / "Tools" / "release" / "container-compose.rb.in"
+
+
 class HomebrewFormulaUpdateTests(unittest.TestCase):
     """Formula updates written by release package workflows."""
 
@@ -59,7 +64,7 @@ end
             subprocess.run(
                 [
                     sys.executable,
-                    str(Path(__file__).with_name("update-homebrew-formula.py")),
+                    str(UPDATER),
                     "--formula",
                     str(formula),
                     "--template",
@@ -105,6 +110,42 @@ class ContainerComposeReleaseV010 < Formula
 end
                 """.strip(),
             )
+
+    def test_release_template_renders_a_syntax_valid_live_formula(self) -> None:
+        """The source template must not carry versioned release state."""
+        with tempfile.TemporaryDirectory() as directory:
+            formula = Path(directory) / "container-compose.rb"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(UPDATER),
+                    "--formula",
+                    str(formula),
+                    "--template",
+                    str(TEMPLATE),
+                    "--formula-class",
+                    "ContainerCompose",
+                    "--url",
+                    "https://github.com/stephenlclarke/container-compose/releases/download/0.6.68/container-compose-plugin-release-arm64.tar.gz",
+                    "--version",
+                    "0.6.68",
+                    "--plugin-version",
+                    "0.6.68",
+                    "--asset",
+                    "container-compose-plugin-release-arm64.tar.gz",
+                    "--label",
+                    "stable release",
+                    "--sha256",
+                    "a" * 64,
+                ],
+                check=True,
+            )
+            subprocess.run(["ruby", "-c", str(formula)], check=True)
+
+            rendered = formula.read_text(encoding="utf-8")
+            self.assertIn('version "0.6.68"', rendered)
+            self.assertIn('assert_match "0.6.68"', rendered)
+            self.assertNotIn('version "0.0.0"', rendered)
 
 
 if __name__ == "__main__":

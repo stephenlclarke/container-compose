@@ -81,6 +81,8 @@ SWIFT_RUNTIME_TEST_FILTER ?= ComposeRuntimeTests
 COMPOSE_TEST_BINARY ?= $(abspath .build/debug/compose)
 CONTAINER_STACK_REPO ?= $(abspath ../container)
 CONTAINERIZATION_STACK_REPO ?= $(abspath ../containerization)
+CONTAINER_BUILDER_SHIM_STACK_REPO ?= $(abspath ../container-builder-shim)
+HOMEBREW_TAP_REPO ?= $(abspath ../homebrew-tap)
 LOCAL_CONTAINER_BINARY ?= $(abspath $(CONTAINER_STACK_REPO)/bin/container)
 LOCAL_CONTAINER_PACKAGE_BINARY ?= $(abspath $(CONTAINER_STACK_REPO)/usr/local/bin/container)
 CONTAINER_COMPOSE_CONTAINER ?= $(or $(firstword $(wildcard $(LOCAL_CONTAINER_BINARY) $(LOCAL_CONTAINER_PACKAGE_BINARY))),container)
@@ -136,7 +138,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci ci-fast release-gate ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built stack-consistency coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci ci-fast release-gate ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -146,7 +148,7 @@ ci: check coverage-check go-build cli-smoke-built
 
 ci-fast: check test go-build cli-smoke-built
 
-release-gate: ci docker-compose-parity
+release-gate: container-stack-release-validation ci docker-compose-parity
 
 ci-release: release-gate package-release
 
@@ -159,13 +161,6 @@ release:
 
 release-plan:
 	./scripts/CONTAINER_STACK_RELEASE.sh plan
-
-repackage-release:
-	@test -n "$(VERSION)" || { \
-		printf 'VERSION is required, for example: make repackage-release VERSION=0.6.4\n' >&2; \
-		exit 2; \
-	}
-	./scripts/CONTAINER_STACK_RELEASE.sh package "$(VERSION)" --execute
 
 resolve:
 	$(SWIFT) package resolve
@@ -1152,6 +1147,29 @@ container-stack-build:
 			"$(CONTAINER_STACK_REPO)" "$(CONTAINER_COMPOSE_CONTAINER)" >&2; \
 	fi
 
+.PHONY: container-stack-release-validation
+container-stack-release-validation:
+	@test -f "$(CONTAINER_BUILDER_SHIM_STACK_REPO)/Makefile" || { \
+		printf 'container-builder-shim checkout is required at %s\n' "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" >&2; \
+		exit 2; \
+	}
+	@test -f "$(CONTAINERIZATION_STACK_REPO)/Makefile" || { \
+		printf 'containerization checkout is required at %s\n' "$(CONTAINERIZATION_STACK_REPO)" >&2; \
+		exit 2; \
+	}
+	@test -f "$(CONTAINER_STACK_REPO)/Makefile" || { \
+		printf 'container checkout is required at %s\n' "$(CONTAINER_STACK_REPO)" >&2; \
+		exit 2; \
+	}
+	@test -f "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" || { \
+		printf 'Homebrew tap formula is required at %s\n' "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" >&2; \
+		exit 2; \
+	}
+	$(MAKE) -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" check-licenses vet lint coverage build
+	$(MAKE) -C "$(CONTAINERIZATION_STACK_REPO)" check containerization examples docs coverage integration
+	$(MAKE) -C "$(CONTAINER_STACK_REPO)" check container dsym docs coverage
+	ruby -c "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb"
+
 docker-compose-e2e-fixtures:
 	./Tools/parity/sync-docker-compose-e2e-fixtures.sh --strict
 
@@ -1167,7 +1185,10 @@ docker-compose-parity: container-stack-build
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
-		$(MAKE) --no-print-directory -j1 CONTAINER_COMPOSE_CONTAINER="$$container_binary" $(DOCKER_COMPOSE_PARITY_TARGETS)
+		$(MAKE) --no-print-directory -j1 \
+			CONTAINER_COMPOSE_CONTAINER="$$container_binary" \
+			CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1 \
+			$(DOCKER_COMPOSE_PARITY_TARGETS)
 
 docker-compose-cli-surface-parity: build
 	$(PARITY_ENV) ./Tools/parity/check-compose-cli-surface.sh --strict
@@ -1349,6 +1370,7 @@ coverage-tools-test:
 	$(PYTHON) -m unittest discover Tools/coverage
 	$(PYTHON) -m unittest discover Tools/release
 	$(PYTHON) -m unittest discover Tools/ci
+	Tools/release/test_publish_github_release.sh
 
 upstream-divergence-report:
 	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
@@ -1364,7 +1386,7 @@ check: lint stack-consistency check-licenses
 lint: coverage-tools-test
 	@while IFS= read -r -d '' script; do \
 		bash -n "$$script"; \
-	done < <(find scripts Tools/parity -type f \( -name '*.sh' -o -name 'pre-commit.fmt' \) -print0)
+	done < <(find scripts Tools/parity Tools/release -type f \( -name '*.sh' -o -name 'pre-commit.fmt' \) -print0)
 	@if command -v "$(MARKDOWNLINT)" >/dev/null 2>&1; then \
 		"$(MARKDOWNLINT)" $(MARKDOWN_FILES); \
 	elif command -v markdownlint-cli2 >/dev/null 2>&1; then \

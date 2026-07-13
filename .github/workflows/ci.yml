@@ -421,6 +421,6 @@ jobs:
           if (( ${#markdown_files[@]} > 0 )); then
             markdownlint "${markdown_files[@]}"
           fi
-          if [[ -f Formula/container-compose.rb ]]; then
-            ruby -c Formula/container-compose.rb
+          if [[ -f Tools/release/container-compose.rb.in ]]; then
+            ruby -c Tools/release/container-compose.rb.in
           fi

@@ -668,7 +668,7 @@ def render_release_notes(
             "## Validation",
             "",
             "- Stable release promotion runs `make release-gate`, promotes `container-compose` through the pull-request path, and verifies the promoted main tree before dispatching the package workflow.",
-            "- `make release-gate` runs `make ci` plus the full Docker Compose parity suite.",
+            "- `make release-gate` runs builder, containerization, and container coverage and runtime integration checks, Compose CI, and the full Docker Compose parity suite.",
             "- The package workflow repeats `make ci` before publishing package assets or updating the tap.",
             f"- `make package-release PLUGIN_ARCHIVE={asset}` passed.",
             "- `make go-release-check` passed as part of package validation.",

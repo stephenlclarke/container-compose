@@ -51,12 +51,28 @@ Run it from the `container-compose` checkout through Makefile targets:
 ```sh
 make release-plan
 make release VERSION_SELECTOR=--+
-make repackage-release VERSION=MAJOR.MINOR.PATCH
 ```
 
-`make release-plan` is a dry run over the four local source checkouts and the Homebrew tap workflow boundary. `make release` validates the source worktrees and `stephenlclarke` push targets, syncs exact `containerization` SwiftPM revision pins when the local runtime stack moved, bumps `container-compose` version files on `main` when needed, commits those release-boundary changes, runs the full local release gate against the candidate tree, promotes the Apple-backed sibling source `main` branches to their stephenlclarke-owned remotes, promotes `container-compose` through an automated pull request, verifies that the promoted `container-compose` tree still matches the locally gated candidate, ensures the `container` Prebuilt Binaries workflow runs when the exact head lacks an immutable `homebrew-main-RUN-SHA` package tag, waits for that tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, waits for that workflow to update the fifth repository (`homebrew-tap`), verifies the release assets and live tap URL/version/SHA, then syncs the checked-in source formula template through the same pull-request promotion path to the verified release asset.
+`make release-plan` is a dry run over the four local source checkouts and the
+Homebrew tap workflow boundary. `make release` validates the source worktrees
+and `stephenlclarke` push targets, synchronizes exact `containerization` SwiftPM
+revision pins when the local runtime stack moved, prepares the version and stack
+manifest, and runs the full local release gate. That gate validates builder-shim
+coverage, containerization coverage plus integration, container coverage plus
+integration, Compose source checks, the Compose parity suite including live
+`build --check`, and the live tap formula syntax. The helper then promotes the
+source branches,
+waits for the matching immutable `container` package, creates one new semantic
+`container-compose` tag, and dispatches the stable package workflow. The
+workflow requires the tap token before it publishes, creates the release with
+the archive and checksum assets in one operation, updates the tap, and the
+helper verifies the live release and tap URL, version, and SHA.
 
-`make repackage-release VERSION=MAJOR.MINOR.PATCH` repairs an existing stable tag without moving it. It dispatches the stable package workflow again, verifies the release archive, checksum asset, Homebrew formula URL, version, and SHA, then syncs the checked-in source formula template to the verified release asset.
+Stable tags and published stable releases are immutable. The helper rejects an
+existing local or remote semantic tag before it changes release files, and the
+package workflow rejects an existing stable release instead of editing notes or
+overwriting assets. Correct a failed release through an explicitly reviewed
+incident change; do not replay a semantic version.
 
 Release notes are rendered by [Tools/release/release-notes.py](Tools/release/release-notes.py). The notes compare against the newest published stable GitHub release when release metadata is available, with local semantic tags as the offline fallback, so unpublished source tags cannot hide user-facing changes. They include a raw commit audit list, and they promote user-facing `Release-Note:` or `Release-Highlight:` commit trailers into a `Highlights` section before that list. Use single-line trailers that describe the Docker Compose feature, CLI option, or workflow users now get; internal release, CI, and documentation chores should normally omit the trailer or use `Release-Note: none`. For upstream-driven work, also record the original `owner/repository#number` under `Upstream-Ref:`, `Bug-Ref:`, `Refs:`, or `Follow-up-To:`. The renderer preserves references already written into the highlight and appends any missing references, including highlights collected from stack component commits.
 
@@ -104,9 +120,11 @@ The aggregate tap is `stephenlclarke/homebrew-tap`.
 
 The install formulae consume validated GitHub release assets. `container-compose` follows the latest stable semantic release and is what users install. Both formulae record the published `stephenlclarke/container` runtime commit in package metadata, so runtime/plugin mismatches fail fast and `brew upgrade` can keep the installed stack aligned. The tap does not install from `sources/*` submodules.
 
-`Formula/container-compose.rb` in this repository is the source formula template used by the package workflow when updating `stephenlclarke/homebrew-tap`. Release helpers sync that template only after the stable package asset, checksum asset, and live tap formula have been verified, so the checked-in template reflects the last verified stable release rather than an unverified local build.
-
-Because the source formula sync is post-release bookkeeping, `make release-plan` does not count a `container-compose` diff that only touches `Formula/container-compose.rb` as unreleased application work.
+`stephenlclarke/homebrew-tap/Formula/container-compose.rb` is the only live
+formula. `Tools/release/container-compose.rb.in` is a non-release source
+template used by the package workflow to render that tap formula. It never
+claims a published release version or checksum, so a source tag cannot carry a
+stale Homebrew release reference.
 
 The tap `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim` submodules are maintenance inputs that track project `main` branches.
 

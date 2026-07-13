@@ -27,7 +27,6 @@ usage() {
 Usage:
   ${SCRIPT_USAGE} plan
   ${SCRIPT_USAGE} release VERSION_SELECTOR [--execute]
-  ${SCRIPT_USAGE} package VERSION [--execute]
 
 Purpose:
   Coordinate releases for the four local stephenlclarke source repositories
@@ -50,20 +49,13 @@ Modes:
       waits for that workflow to publish the release assets and Homebrew tap
       update. container-compose main promotions use an automated short-lived PR
       by default so pull-request checks and review state remain visible before
-      tagging. After the tap is verified, the helper syncs the checked-in source formula
-      template to the verified release URL, version, and SHA.
+      tagging. The Homebrew tap is the only owner of the live formula.
 
       Version selectors:
         9.0.2  use the explicit 9.0.2 stable release version
         --+    increment patch from the latest semantic release tag
         -+-    increment minor and reset patch to 0
         +--    increment major and reset minor and patch to 0
-
-  package VERSION
-      Re-run the stable package workflow for an existing semantic source tag,
-      then verify the release archive, checksum asset, and Homebrew formula
-      URL/SHA without moving any tags. After verification, sync the checked-in
-      source formula template to the verified release URL, version, and SHA.
 
   Source tags are bare MAJOR.MINOR.PATCH for Apple compatibility.
 
@@ -85,8 +77,7 @@ Rules enforced:
   - The full Docker Compose parity release gate runs locally before push/tag.
   - Stable package and Homebrew tap updates are explicitly dispatched and waited for.
   - Stable package assets and the Homebrew tap SHA are verified before success.
-  - The source Homebrew formula template is synced only after package verification.
-  - Existing tags are never moved.
+  - Stable releases are created once; existing stable tags and releases fail.
   - container-compose main updates use pull-request promotion by default.
   - Long-lived release branches are not used.
 
@@ -119,14 +110,10 @@ EXECUTE=0
 case "${MODE}" in
   plan)
     ;;
-  release|package)
+  release)
     VERSION_SELECTOR="${1:-}"
     if [[ -z "${VERSION_SELECTOR}" ]]; then
-      if [[ "${MODE}" == "package" ]]; then
-        printf '%s requires VERSION, for example 9.0.2\n' "${MODE}" >&2
-      else
-        printf '%s requires VERSION_SELECTOR, for example --+, -+-, +--, or 9.0.2\n' "${MODE}" >&2
-      fi
+      printf '%s requires VERSION_SELECTOR, for example --+, -+-, +--, or 9.0.2\n' "${MODE}" >&2
       exit 2
     fi
     shift || true
@@ -163,7 +150,6 @@ PROMOTION_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS:-3600}"
 PROMOTION_POLL_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS:-30}"
 COMPOSE_MAIN_PROMOTION_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE:-pr}"
 COMPOSE_MAIN_MERGE_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE:-checked-admin}"
-COMPOSE_STABLE_PACKAGE_SHA=""
 REPOS=(
   "container-builder-shim"
   "containerization"
@@ -243,7 +229,7 @@ fetch_release_remote() {
   url="$(git -C "${path}" remote get-url "${remote}")"
 
   if [[ "${EXECUTE}" != "1" ]]; then
-    printf 'would run: git -C %s fetch --prune --no-tags %s\n' "${path}" "${remote}"
+    printf 'would run: git -C %s fetch --prune --tags %s\n' "${path}" "${remote}"
     return 0
   fi
 
@@ -253,16 +239,16 @@ fetch_release_remote() {
     url="${fallback_url}"
   fi
 
-  printf '+ git -C %s fetch --prune --no-tags %s\n' "${path}" "${remote}"
-  if git -C "${path}" fetch --prune --no-tags "${remote}"; then
+  printf '+ git -C %s fetch --prune --tags %s\n' "${path}" "${remote}"
+  if git -C "${path}" fetch --prune --tags "${remote}"; then
     return 0
   fi
 
   if fallback_url="$(stephen_https_url "${url}")"; then
     printf 'fetch from %s failed for %s; switching %s to %s and retrying\n' "${url}" "${repo}" "${remote}" "${fallback_url}" >&2
     git -C "${path}" remote set-url "${remote}" "${fallback_url}"
-    printf '+ git -C %s fetch --prune --no-tags %s\n' "${path}" "${remote}"
-    git -C "${path}" fetch --prune --no-tags "${remote}"
+    printf '+ git -C %s fetch --prune --tags %s\n' "${path}" "${remote}"
+    git -C "${path}" fetch --prune --tags "${remote}"
     return 0
   fi
 
@@ -446,15 +432,6 @@ resolve_release_version() {
   resolve_version_selector "$1" "${latest}"
 }
 
-# Require an exact semantic version.
-ensure_semver_version() {
-  local version="$1"
-  if [[ ! "${version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
-    printf 'version must be MAJOR.MINOR.PATCH: %s\n' "${version}" >&2
-    exit 2
-  fi
-}
-
 ensure_release_version_is_valid() {
   local latest="$1" current="$2" version="$3"
   python3 - "$latest" "$current" "$version" <<'PY'
@@ -488,7 +465,7 @@ print(versions[-1] if versions else "")
 
 # Decide whether a repository changed since its latest local semver tag.
 repo_changed_since_latest_tag() {
-  local repo="$1" latest main_commit tag_commit path changed_paths non_formula_changes
+  local repo="$1" latest main_commit tag_commit path
   latest="$(latest_local_semver_tag "${repo}")"
   if [[ -z "${latest}" ]]; then
     return 0
@@ -500,49 +477,32 @@ repo_changed_since_latest_tag() {
     return 1
   fi
 
-  if [[ "${repo}" == "${COMPOSE_REPO}" ]]; then
-    changed_paths="$(git -C "${path}" diff --name-only "${latest}..main")"
-    non_formula_changes="$(grep -Fxv 'Formula/container-compose.rb' <<<"${changed_paths}" || true)"
-    if [[ -z "${non_formula_changes}" ]]; then
-      return 1
-    fi
-  fi
-
   return 0
 }
 
-# Create a stable tag for a repo when needed, never moving existing tags.
-tag_repo_main_if_needed() {
-  local repo="$1" version="$2" path remote main_commit latest latest_commit
-  path="$(repo_path "${repo}")"
-  remote="$(push_remote "${repo}")"
-  main_commit="$(git -C "${path}" rev-parse main)"
+# Refuse to reuse a stable tag before any release-boundary mutation occurs.
+ensure_new_stable_release() {
+  local version="$1" path remote
+  path="$(repo_path "${COMPOSE_REPO}")"
+  remote="$(push_remote "${COMPOSE_REPO}")"
 
   if git -C "${path}" rev-parse -q --verify "refs/tags/${version}" >/dev/null; then
-    latest_commit="$(git -C "${path}" rev-list -n 1 "${version}")"
-    if [[ "${latest_commit}" != "${main_commit}" ]]; then
-      printf 'tag %s already exists for %s at %s; refusing to move it to %s\n' "${version}" "${repo}" "${latest_commit}" "${main_commit}" >&2
-      exit 1
-    fi
-    printf '%s already has tag %s at current main\n' "${repo}" "${version}"
-    return 0
-  fi
-
-  if git -C "${path}" ls-remote --exit-code --tags "${remote}" "refs/tags/${version}" >/dev/null 2>&1; then
-    printf 'tag %s already exists remotely for %s; fetch and verify before proceeding\n' "${version}" "${repo}" >&2
+    printf 'stable tag already exists locally: %s\n' "${version}" >&2
     exit 1
   fi
-
-  latest="$(latest_local_semver_tag "${repo}")"
-  if [[ -n "${latest}" ]]; then
-    latest_commit="$(git -C "${path}" rev-list -n 1 "${latest}")"
-    if [[ "${latest_commit}" == "${main_commit}" ]]; then
-      printf '%s unchanged since tag %s; release manifest should reuse that artifact\n' "${repo}" "${latest}"
-      return 0
-    fi
+  if git -C "${path}" ls-remote --exit-code --tags "${remote}" "refs/tags/${version}" >/dev/null 2>&1; then
+    printf 'stable tag already exists remotely: %s\n' "${version}" >&2
+    exit 1
   fi
+}
 
-  run git -C "${path}" tag -a "${version}" main -m "$(github_repo "${repo}") ${version}"
+# Create a new stable tag at the validated current container-compose main commit.
+tag_new_stable_version() {
+  local version="$1" path remote
+  path="$(repo_path "${COMPOSE_REPO}")"
+  remote="$(push_remote "${COMPOSE_REPO}")"
+  ensure_new_stable_release "${version}"
+  run git -C "${path}" tag -a "${version}" main -m "$(github_repo "${COMPOSE_REPO}") ${version}"
   run git -C "${path}" push "${remote}" "refs/tags/${version}"
 }
 
@@ -702,21 +662,6 @@ Validation:
 
 Candidate:
 - container-compose: ${head}
-EOF
-}
-
-compose_formula_promotion_body() {
-  local version="$1" asset_sha="$2" url="$3"
-  cat <<EOF
-Syncs the checked-in source formula template after the ${version} stable package was verified.
-
-Validation:
-- The stable package workflow published the ${version} release assets.
-- The release archive SHA-256 is ${asset_sha}.
-- The live stephenlclarke/tap formula matched the verified URL, version, and SHA before this source sync.
-
-Release asset:
-- ${url}
 EOF
 }
 
@@ -1191,52 +1136,7 @@ verify_compose_stable_package() {
     exit 1
   fi
 
-  COMPOSE_STABLE_PACKAGE_SHA="${asset_sha}"
   printf 'container-compose %s package verified: %s\n' "${version}" "${asset_sha}"
-}
-
-sync_source_homebrew_formula() {
-  local version="$1" asset_sha="$2" path asset url status body
-  path="$(repo_path "${COMPOSE_REPO}")"
-  asset="container-compose-plugin-release-arm64.tar.gz"
-  url="https://github.com/$(github_repo "${COMPOSE_REPO}")/releases/download/${version}/${asset}"
-
-  print_header "sync source Homebrew formula template"
-  if [[ "${EXECUTE}" != "1" ]]; then
-    printf 'would update: %s\n' "${path}/Formula/container-compose.rb"
-    printf 'would commit and push source formula sync for %s\n' "${version}"
-    return 0
-  fi
-
-  if [[ -z "${asset_sha}" ]]; then
-    printf 'cannot sync source formula: verified package SHA is empty\n' >&2
-    exit 1
-  fi
-
-  python3 "${path}/Tools/release/update-homebrew-formula.py" \
-    --formula "${path}/Formula/container-compose.rb" \
-    --url "${url}" \
-    --version "${version}" \
-    --plugin-version "${version}" \
-    --asset "${asset}" \
-    --label "stable release" \
-    --sha256 "${asset_sha}"
-  ruby -c "${path}/Formula/container-compose.rb"
-
-  status="$(git -C "${path}" status --short -- Formula/container-compose.rb)"
-  if [[ -z "${status}" ]]; then
-    printf 'source Homebrew formula template already points at %s\n' "${version}"
-    return 0
-  fi
-
-  run git -C "${path}" add Formula/container-compose.rb
-  run git -C "${path}" commit -m "chore(release): sync source formula ${version}"
-  body="$(compose_formula_promotion_body "${version}" "${asset_sha}" "${url}")"
-  promote_compose_main \
-    "${version}" \
-    "formula" \
-    "chore(release): sync source formula ${version}" \
-    "${body}"
 }
 
 # Dispatch and wait for the stable compose package workflow for a semantic tag.
@@ -1284,7 +1184,7 @@ dispatch_compose_stable_package() {
 tag_stable_version() {
   local version="$1"
   print_header "tag container-compose main as ${version} latest"
-  tag_repo_main_if_needed "${COMPOSE_REPO}" "${version}"
+  tag_new_stable_version "${version}"
   dispatch_compose_stable_package "${version}"
   print_component_refs
   cat <<EOF
@@ -1293,24 +1193,8 @@ Stable release point:
   version: ${version}
   label: latest
   release generation: container-compose stable package workflow dispatch
-  tap update: stable container-compose formula after package artifacts are ready
+  tap update: stable container-compose formula published with the release package
 EOF
-}
-
-# Rebuild and verify an existing stable package without moving its source tag.
-package_existing_stable() {
-  local version="$1" remote
-  ensure_semver_version "${version}"
-  remote="$(push_remote "${COMPOSE_REPO}")"
-
-  print_header "package existing container-compose ${version} tag"
-  if ! git -C "$(repo_path "${COMPOSE_REPO}")" ls-remote --exit-code --tags "${remote}" "refs/tags/${version}" >/dev/null 2>&1; then
-    printf 'stable tag not found on %s: %s\n' "${remote}" "${version}" >&2
-    exit 1
-  fi
-
-  dispatch_compose_stable_package "${version}"
-  sync_source_homebrew_formula "${version}" "${COMPOSE_STABLE_PACKAGE_SHA}"
 }
 
 release_current_stack() {
@@ -1322,6 +1206,7 @@ release_current_stack() {
   current="$(current_compose_version)"
   version="$(resolve_release_version "${VERSION_SELECTOR}")"
   ensure_release_version_is_valid "${latest}" "${current}" "${version}"
+  ensure_new_stable_release "${version}"
   path="$(repo_path "${COMPOSE_REPO}")"
 
   print_header "prepare stable release ${version}"
@@ -1359,7 +1244,6 @@ release_current_stack() {
   push_all_main "${version}"
   wait_for_container_homebrew_package
   tag_stable_version "${version}"
-  sync_source_homebrew_formula "${version}" "${COMPOSE_STABLE_PACKAGE_SHA}"
 }
 
 # Update compose version declarations and local smoke expectations.
@@ -1427,11 +1311,8 @@ Process:
   3. The release mode resolves VERSION_SELECTOR from the latest semantic tag,
      bumps container-compose on main when needed, promotes stephenlclarke-owned
      source main branches, promotes container-compose through an automated PR by
-     default, tags container-compose, dispatches the stable package workflow,
-     verifies the release assets plus Homebrew tap update, and syncs the source
-     Homebrew formula template to the verified package.
-  4. Use package VERSION to rebuild and verify an existing stable tag without
-     moving tags, then sync the source Homebrew formula template.
+     default, creates a new container-compose tag, dispatches the stable package
+     workflow, and verifies the immutable release assets plus Homebrew tap update.
 EOF
 }
 
@@ -1442,9 +1323,5 @@ case "${MODE}" in
   release)
     prepare_all_main
     release_current_stack
-    ;;
-  package)
-    prepare_all_main
-    package_existing_stable "${VERSION_SELECTOR}"
     ;;
 esac

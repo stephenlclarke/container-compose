@@ -21,7 +21,9 @@ on:
     branches:
       - main
     paths:
-      - "Formula/**"
+      - "Tools/release/container-compose.rb.in"
+      - "Tools/release/update-homebrew-formula.py"
+      - "Tools/release/test_update_homebrew_formula.py"
       - ".github/workflows/homebrew.yml"
   pull_request:
     branches:
@@ -31,7 +33,9 @@ on:
       - synchronize
       - reopened
     paths:
-      - "Formula/**"
+      - "Tools/release/container-compose.rb.in"
+      - "Tools/release/update-homebrew-formula.py"
+      - "Tools/release/test_update_homebrew_formula.py"
       - ".github/workflows/homebrew.yml"
   workflow_dispatch:
 
@@ -44,17 +48,17 @@ concurrency:
 
 jobs:
   formula:
-    name: Formula Syntax
+    name: Formula Template
     runs-on: macos-26
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: Validate Ruby syntax
+      - name: Validate formula template syntax
         shell: bash
         run: |
           set -euo pipefail
-          ruby -c Formula/container-compose.rb
+          ruby -c Tools/release/container-compose.rb.in
 
       - name: Validate formula update helper
         shell: bash

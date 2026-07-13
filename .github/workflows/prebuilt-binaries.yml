@@ -245,6 +245,18 @@ jobs:
             printf 'package_lane=%s\n' "${package_lane}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Require Homebrew tap token for stable releases
+        if: steps.lane.outputs.update_tap == 'true'
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${HOMEBREW_TAP_TOKEN}" ]]; then
+            printf 'HOMEBREW_TAP_TOKEN is required for a stable release.\n' >&2
+            exit 1
+          fi
+
       - name: Resolve stack refs
         id: stack-refs
         shell: bash
@@ -435,48 +447,22 @@ jobs:
               "$RELEASE_TAG" "$tag_target" "$PUBLISH_SHA" >&2
             exit 1
           fi
-
-          if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            create_args=(
-              gh release create "${RELEASE_TAG}"
-              --title "${RELEASE_TITLE}"
-              --notes-file "${notes}"
-            )
-            if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
-              create_args+=(--verify-tag)
-            else
-              create_args+=(--target "${PUBLISH_SHA}")
-            fi
-            if [[ "${RELEASE_PRERELEASE}" == "true" ]]; then
-              create_args+=(--prerelease)
-            fi
-            if [[ "${RELEASE_LATEST}" == "true" ]]; then
-              create_args+=(--latest)
-            else
-              create_args+=(--latest=false)
-            fi
-            "${create_args[@]}"
-          else
-            edit_args=(
-              gh release edit "${RELEASE_TAG}"
-              --title "${RELEASE_TITLE}"
-              --notes-file "${notes}"
-            )
-            if [[ "${RELEASE_PRERELEASE}" == "true" ]]; then
-              edit_args+=(--prerelease)
-            fi
-            if [[ "${RELEASE_LATEST}" == "true" ]]; then
-              edit_args+=(--latest)
-            else
-              edit_args+=(--latest=false)
-            fi
-            "${edit_args[@]}"
+          if [[ "${PUBLISH_REF_TYPE}" == "tag" && -z "${tag_target}" ]]; then
+            printf 'stable release tag is missing: %s\n' "${RELEASE_TAG}" >&2
+            exit 1
           fi
 
-          gh release upload "${RELEASE_TAG}" \
-            "${RUNNER_TEMP}/${ASSET}" \
-            "${RUNNER_TEMP}/${ASSET}.sha256" \
-            --clobber
+          RELEASE_REPOSITORY="${GITHUB_REPOSITORY}" \
+            RELEASE_TAG="${RELEASE_TAG}" \
+            RELEASE_TITLE="${RELEASE_TITLE}" \
+            RELEASE_NOTES_FILE="${notes}" \
+            RELEASE_LATEST="${RELEASE_LATEST}" \
+            RELEASE_PRERELEASE="${RELEASE_PRERELEASE}" \
+            PUBLISH_REF_TYPE="${PUBLISH_REF_TYPE}" \
+            PUBLISH_SHA="${PUBLISH_SHA}" \
+            RELEASE_ASSET_PATH="${RUNNER_TEMP}/${ASSET}" \
+            RELEASE_CHECKSUM_PATH="${RUNNER_TEMP}/${ASSET}.sha256" \
+            Tools/release/publish-github-release.sh
 
       - name: Prune older release assets
         if: steps.lane.outputs.package_lane != 'main'
@@ -492,23 +478,8 @@ jobs:
             --current-tag "${RELEASE_TAG}" \
             --execute
 
-      - name: Check Homebrew tap token
-        if: steps.lane.outputs.update_tap == 'true'
-        id: tap-token
-        env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z "${HOMEBREW_TAP_TOKEN}" ]]; then
-            printf 'available=false\n' >> "$GITHUB_OUTPUT"
-            printf 'HOMEBREW_TAP_TOKEN is not set; skipping stephenlclarke/homebrew-tap update.\n'
-            exit 0
-          fi
-          printf 'available=true\n' >> "$GITHUB_OUTPUT"
-
       - name: Checkout Homebrew tap
-        if: steps.lane.outputs.update_tap == 'true' && steps.tap-token.outputs.available == 'true'
+        if: steps.lane.outputs.update_tap == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: stephenlclarke/homebrew-tap
@@ -516,7 +487,7 @@ jobs:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Update Homebrew tap formula
-        if: steps.lane.outputs.update_tap == 'true' && steps.tap-token.outputs.available == 'true'
+        if: steps.lane.outputs.update_tap == 'true'
         env:
           ASSET: ${{ steps.lane.outputs.asset }}
           FORMULA: ${{ steps.lane.outputs.formula }}
@@ -557,7 +528,7 @@ jobs:
           sha256="$(shasum -a 256 "${tmp}/${ASSET}" | awk '{print $1}')"
           python3 container-compose/Tools/release/update-homebrew-formula.py \
             --formula "homebrew-tap/Formula/${FORMULA}" \
-            --template "container-compose/Formula/container-compose.rb" \
+            --template "container-compose/Tools/release/container-compose.rb.in" \
             --formula-class "${FORMULA_CLASS}" \
             --url "$url" \
             --version "$FORMULA_VERSION" \
@@ -569,7 +540,7 @@ jobs:
           git -C homebrew-tap diff -- "Formula/${FORMULA}"
 
       - name: Commit Homebrew tap update
-        if: steps.lane.outputs.update_tap == 'true' && steps.tap-token.outputs.available == 'true'
+        if: steps.lane.outputs.update_tap == 'true'
         shell: bash
         working-directory: homebrew-tap
         run: |

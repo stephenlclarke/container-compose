@@ -130,6 +130,10 @@ class ReleaseNotesTests(unittest.TestCase):
                 "The package workflow repeats `make ci` before publishing package assets or updating the tap.",
                 notes,
             )
+            self.assertIn(
+                "`make release-gate` runs builder, containerization, and container coverage and runtime integration checks, Compose CI, and the full Docker Compose parity suite.",
+                notes,
+            )
             self.assertIn("fix(cli): report help topic", notes)
             self.assertIn("feat(examples): add monitoring stack", notes)
             self.assertIn("Report help topic.", notes)

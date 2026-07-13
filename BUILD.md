@@ -97,7 +97,7 @@ Useful focused targets are:
 | --- | --- |
 | `make test` | Swift and Go unit/integration-style tests that do not require a live runtime. |
 | `make ci-fast` | Source checks, tests, helper build, and CLI smoke without coverage export. |
-| `make release-gate` | Full CI plus the complete Docker Compose parity suite required before stable package dispatch. |
+| `make release-gate` | Full builder, containerization, container, and Compose validation, including runtime integration coverage and the complete Docker Compose parity suite, required before stable package dispatch. |
 | `make ci-release` | Full release gate plus the release package build. |
 | `make check` | Lint, documentation, formatting, and license checks. |
 | `make coverage-check` | Enforce at least 90% Swift line and 85% Go statement coverage. |
@@ -126,7 +126,10 @@ formatting, CodeQL, SonarCloud, package publication, and Homebrew formula syntax
 into focused workflows. `CI / Validate` is the aggregate required result;
 documentation/formula-only changes use the lightweight validation path. The
 stable release helper runs `make release-gate` locally against the candidate
-tree before source promotion, promotes `container-compose` through an automated
+tree before source promotion. That gate runs builder-shim coverage, containerization
+coverage plus integration, container coverage plus integration, Compose CI, tap
+formula syntax, and the complete Compose parity suite, including live `build --check`
+against the matched container backend. The helper promotes `container-compose` through an automated
 pull request by default, and verifies the promoted main tree still matches the
 locally gated candidate before it tags. The package workflow then repeats
 `make ci` before publishing package assets or updating the tap. The package
