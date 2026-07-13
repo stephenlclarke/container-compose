@@ -20,7 +20,7 @@ This is the current disposition of Apple work that affects the five-repository c
 
 The exact current heads of these proposals, plus
 [apple/container-builder-shim#87](https://github.com/apple/container-builder-shim/pull/87),
-are retained as immutable Stephen-owned branches in
+are retained as immutable stephenlclarke-owned branches in
 [PR-ARCHIVE.json](PR-ARCHIVE.json). The daily archive verification workflow
 fails if any snapshot is deleted or retargeted.
 
