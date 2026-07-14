@@ -11403,7 +11403,9 @@ struct ComposeOrchestratorTests {
         )
 
         #expect(FileManager.default.fileExists(atPath: packageManifest.path))
-        #expect(runner.commands.last?.arguments.contains("\(FileManager.default.currentDirectoryPath):/out") == true)
+        let mountedOutput = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+            .standardizedFileURL.path
+        #expect(runner.commands.last?.arguments.contains("\(mountedOutput):/out") == true)
     }
 
     @Test("bridge convert rejects destructive output paths")
