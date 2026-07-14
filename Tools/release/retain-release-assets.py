@@ -77,6 +77,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="delete obsolete mutable current release objects while preserving their tags",
     )
+    parser.add_argument(
+        "--current-asset",
+        action="append",
+        default=[],
+        help=(
+            "asset name that belongs to the finalized current build; may be repeated. "
+            "All other current-release assets are retired after promotion."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -226,6 +235,21 @@ def delete_assets(repo: str, release: dict) -> None:
         run_gh("api", "--method", "DELETE", f"repos/{repo}/releases/assets/{asset['id']}")
 
 
+def stale_current_assets(release: dict, retained_names: set[str]) -> list[dict]:
+    """Return superseded assets from the sole mutable current release."""
+
+    return [
+        asset
+        for asset in release.get("assets", [])
+        if asset.get("name") not in retained_names
+    ]
+
+
+def delete_named_assets(repo: str, assets: Iterable[dict]) -> None:
+    for asset in assets:
+        run_gh("api", "--method", "DELETE", f"repos/{repo}/releases/assets/{asset['id']}")
+
+
 def update_release_notes(repo: str, release: dict, body: str) -> None:
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as notes_file:
         notes_file.write(body)
@@ -282,6 +306,21 @@ def main() -> None:
         print(f"documenting Homebrew installation for {release['tag_name']}")
         if args.apply:
             update_release_notes(args.repo, release, body)
+
+    retained_current_assets = set(args.current_asset)
+    if retained_current_assets:
+        for release in published_releases(releases):
+            if release["id"] not in retained or release.get("tag_name") != "current":
+                continue
+            stale_assets = stale_current_assets(release, retained_current_assets)
+            if not stale_assets:
+                continue
+            print(
+                "retiring superseded current assets: "
+                + ", ".join(str(asset.get("name")) for asset in stale_assets)
+            )
+            if args.apply:
+                delete_named_assets(args.repo, stale_assets)
 
     for release in stale:
         if args.delete_superseded_current_releases and obsolete_current_release(release):

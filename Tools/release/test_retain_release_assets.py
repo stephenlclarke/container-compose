@@ -146,6 +146,25 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
         self.assertIn("Useful user-facing change", cleaned)
         self.assertNotIn("Release automation pins", cleaned)
 
+    def test_only_finalized_current_assets_are_retained(self) -> None:
+        module = load_module()
+        release = {
+            "assets": [
+                {"id": 1, "name": "container-compose-plugin-current-old.tar.gz"},
+                {"id": 2, "name": "container-current-old.tar.gz"},
+                {"id": 3, "name": "container-compose-plugin-current-new.tar.gz"},
+                {"id": 4, "name": "container-current-new.tar.gz"},
+            ]
+        }
+        stale = module.stale_current_assets(
+            release,
+            {
+                "container-compose-plugin-current-new.tar.gz",
+                "container-current-new.tar.gz",
+            },
+        )
+        self.assertEqual([asset["id"] for asset in stale], [1, 2])
+
 
 if __name__ == "__main__":
     unittest.main()

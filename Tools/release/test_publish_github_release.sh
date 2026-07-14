@@ -65,6 +65,7 @@ touch "${asset}" "${checksum}" "${notes}"
 # Run the publisher with a temporary, recorded GitHub CLI implementation.
 run_publisher() {
   local ref_type="$1" release_tag release_title release_latest release_prerelease release_mutable
+  local release_phase="${5:-publish}"
   if [[ "${ref_type}" == "branch" ]]; then
     release_tag="current"
     release_title="Current build"
@@ -88,6 +89,7 @@ run_publisher() {
     RELEASE_LATEST="${release_latest}" \
     RELEASE_PRERELEASE="${release_prerelease}" \
     RELEASE_MUTABLE="${release_mutable}" \
+    RELEASE_PHASE="${release_phase}" \
     PUBLISH_REF_TYPE="${ref_type}" \
     PUBLISH_SHA="0123456789012345678901234567890123456789" \
     RELEASE_ASSET_PATH="${asset}" \
@@ -127,22 +129,45 @@ if [[ -e "${stable_unavailable_calls}" ]]; then
   exit 1
 fi
 
-main_existing_calls="${temporary_directory}/main-existing.calls"
-run_publisher branch exists "${main_existing_calls}"
-grep -Fqx "tag --no-sign --force current 0123456789012345678901234567890123456789" "${main_existing_calls}.git"
-grep -Fqx "push --force origin refs/tags/current" "${main_existing_calls}.git"
-grep -Fqx "release upload current ${asset} ${checksum} --repo stephenlclarke/container-compose --clobber" "${main_existing_calls}"
-grep -Fqx "release edit current --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --target 0123456789012345678901234567890123456789 --prerelease" "${main_existing_calls}"
-if grep -Eq 'release (create|delete)' "${main_existing_calls}"; then
-  printf 'current publication replaced its live release instead of updating it in place\n' >&2
+main_implicit_calls="${temporary_directory}/main-implicit.calls"
+if run_publisher branch exists "${main_implicit_calls}"; then
+  printf 'current publication unexpectedly accepted an implicit phase\n' >&2
+  exit 1
+fi
+
+main_stage_calls="${temporary_directory}/main-stage.calls"
+run_publisher branch exists "${main_stage_calls}" "" stage
+grep -Fqx "release upload current ${asset} ${checksum} --repo stephenlclarke/container-compose --clobber" "${main_stage_calls}"
+if [[ -e "${main_stage_calls}.git" ]] || grep -Eq 'release (create|edit|delete)' "${main_stage_calls}"; then
+  printf 'current staging changed a release identity instead of only uploading assets\n' >&2
+  exit 1
+fi
+
+main_finalize_calls="${temporary_directory}/main-finalize.calls"
+run_publisher branch exists "${main_finalize_calls}" "" finalize
+grep -Fqx "tag --no-sign --force current 0123456789012345678901234567890123456789" "${main_finalize_calls}.git"
+grep -Fqx "push --force origin refs/tags/current" "${main_finalize_calls}.git"
+grep -Fqx "release edit current --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --target 0123456789012345678901234567890123456789 --prerelease" "${main_finalize_calls}"
+if grep -Eq 'release (create|upload|delete)' "${main_finalize_calls}"; then
+  printf 'current finalization unexpectedly changed release assets\n' >&2
   exit 1
 fi
 
 main_create_calls="${temporary_directory}/main-create.calls"
-run_publisher branch missing "${main_create_calls}"
+run_publisher branch missing "${main_create_calls}" "" stage
 grep -Fqx "release create current ${asset} ${checksum} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --verify-tag --prerelease --latest=false" "${main_create_calls}"
 grep -Fqx "tag --no-sign --force current 0123456789012345678901234567890123456789" "${main_create_calls}.git"
 grep -Fqx "push --force origin refs/tags/current" "${main_create_calls}.git"
+
+main_missing_finalize_calls="${temporary_directory}/main-missing-finalize.calls"
+if run_publisher branch missing "${main_missing_finalize_calls}" "" finalize; then
+  printf 'current finalization unexpectedly created a missing release\n' >&2
+  exit 1
+fi
+if [[ -e "${main_missing_finalize_calls}" || -e "${main_missing_finalize_calls}.git" ]]; then
+  printf 'current finalization mutated a missing release\n' >&2
+  exit 1
+fi
 
 runtime_asset="${temporary_directory}/container-release-arm64.tar.gz"
 runtime_checksum="${runtime_asset}.sha256"
@@ -154,6 +179,5 @@ run_publisher tag missing "${stable_extra_calls}" "${extra_assets}"
 grep -Fqx "release create 1.2.3 ${asset} ${checksum} ${runtime_asset} ${runtime_checksum} --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --verify-tag --latest" "${stable_extra_calls}"
 
 current_extra_calls="${temporary_directory}/current-extra.calls"
-run_publisher branch exists "${current_extra_calls}" "${extra_assets}"
+run_publisher branch exists "${current_extra_calls}" "${extra_assets}" stage
 grep -Fqx "release upload current ${asset} ${checksum} ${runtime_asset} ${runtime_checksum} --repo stephenlclarke/container-compose --clobber" "${current_extra_calls}"
-grep -Fqx "release edit current --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --target 0123456789012345678901234567890123456789 --prerelease" "${current_extra_calls}"

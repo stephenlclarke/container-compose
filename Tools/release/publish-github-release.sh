@@ -20,6 +20,7 @@ set -Eeuo pipefail
 GH="${GH:-gh}"
 GIT="${GIT:-git}"
 RELEASE_MUTABLE="${RELEASE_MUTABLE:-false}"
+RELEASE_PHASE="${RELEASE_PHASE:-publish}"
 
 required_variables=(
   RELEASE_REPOSITORY
@@ -119,6 +120,38 @@ case "${PUBLISH_REF_TYPE}:${RELEASE_MUTABLE}" in
     ;;
 esac
 
+# A stable release is created once. The mutable current lane is deliberately
+# split into two resumable phases:
+#
+#   stage    upload immutable, commit-addressed assets while the existing tap
+#            formulae and current tag remain usable;
+#   finalize update the release notes and then advance the current tag, after
+#            the matching Homebrew formula pair has been committed.
+#
+# GitHub releases and the Homebrew tap are separate repositories, so this is
+# not a distributed transaction. It does guarantee that an interrupted current
+# publication leaves the previously installed package valid and can be resumed
+# without rebuilding or replacing its candidate assets.
+case "${PUBLISH_REF_TYPE}:${RELEASE_PHASE}" in
+  tag:publish)
+    ;;
+  tag:stage|tag:finalize)
+    printf 'stable releases support only the publish phase, got: %s\n' "${RELEASE_PHASE}" >&2
+    exit 2
+    ;;
+  branch:stage|branch:finalize)
+    ;;
+  branch:publish)
+    printf 'mutable current releases require an explicit stage or finalize phase\n' >&2
+    exit 2
+    ;;
+  *)
+    printf 'unsupported release publish phase: %s for %s\n' \
+      "${RELEASE_PHASE}" "${PUBLISH_REF_TYPE}" >&2
+    exit 2
+    ;;
+esac
+
 release_assets=(
   "${RELEASE_ASSET_PATH}"
   "${RELEASE_CHECKSUM_PATH}"
@@ -144,11 +177,12 @@ if [[ "${published_release_state}" == "exists" ]]; then
     exit 1
   fi
 
-  # Keep the current release continuously available. Upload and edit it in
-  # place, then advance the mutable tag only after the new assets and notes are
-  # visible. Stable release tags never use this path.
-  "${GH}" release upload "${RELEASE_TAG}" "${release_assets[@]}" \
-    --repo "${RELEASE_REPOSITORY}" --clobber
+  if [[ "${RELEASE_PHASE}" == "stage" ]]; then
+    "${GH}" release upload "${RELEASE_TAG}" "${release_assets[@]}" \
+      --repo "${RELEASE_REPOSITORY}" --clobber
+    exit 0
+  fi
+
   "${GH}" release edit "${RELEASE_TAG}" \
     --repo "${RELEASE_REPOSITORY}" \
     --title "${RELEASE_TITLE}" \
@@ -161,6 +195,11 @@ if [[ "${published_release_state}" == "exists" ]]; then
   "${GIT}" tag --no-sign --force "${RELEASE_TAG}" "${PUBLISH_SHA}"
   "${GIT}" push --force origin "refs/tags/${RELEASE_TAG}"
   exit 0
+fi
+
+if [[ "${PUBLISH_REF_TYPE}" == "branch" && "${RELEASE_PHASE}" == "finalize" ]]; then
+  printf 'cannot finalize current: release %s does not exist\n' "${RELEASE_TAG}" >&2
+  exit 1
 fi
 
 if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then

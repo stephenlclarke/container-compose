@@ -180,13 +180,33 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_current_formulae_use_the_matched_runtime_in_the_single_prerelease(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn('runtime_asset="container-current-arm64.tar.gz"', workflow)
+        self.assertIn('runtime_asset="container-current-${PUBLISH_SHA:0:12}-arm64.tar.gz"', workflow)
         self.assertIn('runtime_repository="${GITHUB_REPOSITORY}"', workflow)
         self.assertIn('release_tag="current"', workflow)
         self.assertIn('release_title="Current build"', workflow)
+        self.assertIn('asset="container-compose-plugin-current-${short_sha}-arm64.tar.gz"', workflow)
+        self.assertIn('highlights_asset="release-highlights-current-${short_sha}.json"', workflow)
+        self.assertIn('RELEASE_PHASE="${release_phase}"', workflow)
+        self.assertIn("Finalize current release pointer", workflow)
+        self.assertLess(
+            workflow.index("Commit atomic Homebrew stack update"),
+            workflow.index("Finalize current release pointer"),
+        )
         self.assertIn('RELEASE_MUTABLE="${release_mutable}"', workflow)
         self.assertIn("--delete-superseded-current-releases", workflow)
         self.assertIn("release_notes_args=(", workflow)
+
+    def test_package_gate_aggregates_paginated_validate_jobs(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        start = workflow.index("CI intentionally has an active Validate job")
+        end = workflow.index("elif [[ \"${WORKFLOW_RUN_HEAD_BRANCH}\" == \"main\" ]];", start)
+        gate = workflow[start:end]
+
+        self.assertIn("gh api --paginate --slurp", gate)
+        self.assertIn('[.[] | .jobs[] | select(.name == "Validate") | .conclusion]', gate)
+        self.assertIn('any(.[]; . == "success")', gate)
+        self.assertIn('all(.[]; . == "success" or . == "skipped")', gate)
+        self.assertIn('if length == 0 then "missing" else join(",") end', gate)
         self.assertIn('quality_release_kind="current"', workflow)
         self.assertIn('quality_release_kind="stable"', workflow)
         self.assertIn('--release-kind "${quality_release_kind}"', workflow)
@@ -475,6 +495,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         promotion = self.script[self.script.index("push_all_main() {") : self.script.index("# Require an executable command")]
 
         self.assertIn("CONTAINER_STACK_RELEASE_INTENT is required", self.script)
+        self.assertIn("CONTAINER_STACK_MAINTENANCE_REASON is required", self.script)
+        self.assertIn("maintenance releases must use the --+ patch selector", self.script)
         self.assertIn("CONTAINER_STACK_SECURITY_REASON is required", self.script)
         self.assertIn("STABLE_CURRENT_SOAK_SECONDS=604800", self.script)
         self.assertIn("upstream-divergence-release-check", self.script)
@@ -489,7 +511,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         ]
         self.assertIn('releases/tags/current', readiness)
         self.assertIn(".prerelease", readiness)
-        self.assertIn("container-compose-plugin-current-arm64.tar.gz", readiness)
+        self.assertIn("container-compose-plugin-current-[0-9a-f]{12}-arm64", readiness)
         self.assertIn(".updated_at", readiness)
         self.assertNotIn("publishedAt", readiness)
 
@@ -499,7 +521,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('cron: "17 9 * * 1"', workflow)
         self.assertIn('default: "-+-"', workflow)
         self.assertIn('  - "+--"', workflow)
-        self.assertIn("container-compose-plugin-current-arm64.tar.gz", workflow)
+        self.assertIn("container-compose-plugin-current-[0-9a-f]{12}-arm64", workflow)
         self.assertIn(".updated_at", workflow)
         self.assertIn("current_is_prerelease", workflow)
         self.assertNotIn("--current-published-at", workflow)
