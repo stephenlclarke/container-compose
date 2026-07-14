@@ -194,11 +194,7 @@ rebuilds and publishes the immutable stable assets and atomically updates both
 stable Homebrew formulae. Do not create a semantic tag, copy a prerelease
 asset, or edit either stable formula by hand.
 
-If a hosted gate fails before the semantic GitHub release is created, correct
-the release automation on `main` and rerun the same explicit version, for
-example `make release VERSION_SELECTOR=0.6.70`. The helper reuses only the
-latest existing GitHub-verified signed source tag, reruns the gates and package
-workflow, and refuses to change a tag or overwrite an existing semantic release.
+If a hosted gate fails before the semantic GitHub release is created, correct the release automation on `main` and rerun the same explicit version, for example `make release VERSION_SELECTOR=0.6.70`. The helper reuses only the latest existing GitHub-verified signed source tag, reruns the gates and package workflow, and refuses to change a tag or overwrite an existing semantic release. If the semantic GitHub release is published but its stable Homebrew formula pair is absent or incomplete, the same command dispatches formula-only recovery. It validates the existing immutable Compose and runtime assets and updates only the paired stable formulae; it never rebuilds a package, changes a signed tag, or replaces release assets.
 
 After the tag is published, the one mutable `current` prerelease continues to
 follow later green `main` commits. Homebrew users without `-current` always use

@@ -80,17 +80,7 @@ Docker Compose parity run in the required local pre-tag gate. The package
 workflow verifies the hosted evidence and runtime asset before it creates the
 release and atomically updates the tap.
 
-Semantic source tags and stable GitHub releases are immutable. The `current`
-tag and its single **Current build** prerelease are deliberately mutable: after
-green `main` CI, automation replaces their assets and notes with the exact
-latest stack. Automation removes superseded generated current-release objects
-without deleting their tags, so upstream PR snapshots and source references
-remain available. The release helper force-refreshes only that mutable local
-`current` tag; semantic source tags are never force-updated. Correct a failed
-stable release through an explicitly reviewed incident change. If the signed
-source tag remains unpublished, the corrected automation can resume the latest
-tag's gates and package publication against that exact identity; it never
-changes the tag or overwrites a stable release.
+Semantic source tags and stable GitHub releases are immutable. The `current` tag and its single **Current build** prerelease are deliberately mutable: after green `main` CI, automation replaces their assets and notes with the exact latest stack. Automation removes superseded generated current-release objects without deleting their tags, so upstream PR snapshots and source references remain available. The release helper force-refreshes only that mutable local `current` tag; semantic source tags are never force-updated. The current recovery procedure lives in [BUILD.md](BUILD.md): an unpublished latest signed tag resumes package publication, while a published latest release may repair only its matching formula pair from verified immutable assets.
 
 Release notes are rendered by [Tools/release/release-notes.py](Tools/release/release-notes.py). The notes compare against the newest published stable GitHub release when release metadata is available, with local semantic tags as the offline fallback, so unpublished source tags cannot hide user-facing changes. They include a raw commit audit list, and they promote user-facing `Release-Note:` or `Release-Highlight:` commit trailers into a `Highlights` section before that list. Write one complete sentence that names the Docker Compose feature, CLI option, or workflow users now get; internal release, CI, and documentation chores should normally omit the trailer or use `Release-Note: none`, which suppresses an automatic highlight. When a user-facing conventional commit has no trailer, the renderer uses the first prose paragraph from its body before falling back to the subject. The active package also contains a machine-readable `release-highlights.json` copy; stable notes preserve those highlights after retired assets are removed. Each stable release also records static, non-clickable SonarQube and CodeQL badges for the exact promoted commit; this block never contains release-version or visitor badges. For upstream-driven work, also record the original `owner/repository#number` under `Upstream-Ref:`, `Bug-Ref:`, `Refs:`, or `Follow-up-To:`. The renderer preserves references already written into the highlight and appends any missing references, including highlights collected from stack component commits.
 

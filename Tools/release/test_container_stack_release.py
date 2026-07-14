@@ -33,6 +33,7 @@ HOMEBREW_WORKFLOW = ROOT / ".github" / "workflows" / "homebrew.yml"
 PACKAGE_WORKFLOW = ROOT / ".github" / "workflows" / "prebuilt-binaries.yml"
 STABLE_GATE_WORKFLOW = ROOT / ".github" / "workflows" / "stable-release-gate.yml"
 STACK_RELEASE_VALIDATION = ROOT / "Tools" / "ci" / "run-stack-release-validation.sh"
+FORMULA_RENDERER = ROOT / "Tools" / "release" / "render-homebrew-stack-formulae.sh"
 
 
 class ContainerStackReleasePolicyTests(unittest.TestCase):
@@ -42,7 +43,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.script = SCRIPT.read_text(encoding="utf-8")
 
-    def test_existing_stable_tags_resume_only_before_release_publication(self) -> None:
+    def test_existing_stable_tags_resume_without_changing_identity(self) -> None:
         release = self.script[self.script.index("release_current_stack() {") :]
         self.assertIn('if stable_tag_exists "${version}"', release)
         self.assertIn('resume_stable_release "${version}"', release)
@@ -53,7 +54,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             release.index("ensure_new_stable_release \"${version}\""),
         )
         self.assertIn("ensure_stable_release_is_unpublished() {", self.script)
+        self.assertIn("stable_release_is_published() {", self.script)
         self.assertIn("stable release %s already exists and is immutable", self.script)
+        self.assertIn('if stable_release_is_published "${version}"; then', self.script)
+        self.assertIn('dispatch_compose_stable_tap_repair "${version}"', self.script)
         self.assertIn("tag_new_stable_version() {", self.script)
         self.assertIn("stable tag already exists locally", self.script)
         self.assertIn("stable tag already exists remotely", self.script)
@@ -80,6 +84,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertNotIn("package VERSION", self.script)
         self.assertNotIn("package_existing_stable", self.script)
         self.assertNotIn("sync_source_homebrew_formula", self.script)
+        self.assertIn("formula-only recovery from immutable release assets", self.script)
+        self.assertIn('repair_tap=true', self.script)
 
     def test_release_formula_is_tap_owned_and_template_backed(self) -> None:
         self.assertFalse((ROOT / "Formula" / "container-compose.rb").exists())
@@ -93,14 +99,55 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('runtime_asset="container-release-arm64.tar.gz"', workflow)
         self.assertIn('runtime_repository="${GITHUB_REPOSITORY}"', workflow)
         self.assertIn("RELEASE_EXTRA_ASSETS_FILE=\"${extra_assets}\"", workflow)
-        self.assertIn("RUNTIME_RELEASE_REPOSITORY", workflow)
+        self.assertTrue(FORMULA_RENDERER.is_file())
+        self.assertIn("RUNTIME_ASSET", FORMULA_RENDERER.read_text(encoding="utf-8"))
 
     def test_runtime_archive_is_verified_before_formula_promotion(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        renderer = FORMULA_RENDERER.read_text(encoding="utf-8")
         self.assertIn('tar -tzf "${runtime_local_asset}" >/dev/null', workflow)
         self.assertIn("grep -Fx './bin/container'", workflow)
-        self.assertIn('tar -tzf "${tmp}/${RUNTIME_ASSET}" >/dev/null', workflow)
-        self.assertIn("published runtime package archive is corrupt", workflow)
+        self.assertIn('verify_archive_entry "${RUNTIME_ASSET}" "./bin/container" "runtime"', renderer)
+        self.assertIn("published ${label} package archive is corrupt", renderer)
+
+    def test_formula_renderer_uses_an_authenticated_published_release(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        renderer_step = workflow[
+            workflow.index("- name: Render matched Homebrew stack formulae") : workflow.index(
+                "- name: Commit atomic Homebrew stack update"
+            )
+        ]
+        renderer = FORMULA_RENDERER.read_text(encoding="utf-8")
+        self.assertIn("GH_TOKEN: ${{ github.token }}", renderer_step)
+        self.assertIn("release-tools/Tools/release/render-homebrew-stack-formulae.sh", renderer_step)
+        self.assertNotIn("gh release download", renderer_step)
+        self.assertIn("gh release view", renderer)
+        self.assertIn("gh release download", renderer)
+        self.assertIn("verify_release_checksum", renderer)
+        self.assertIn("update-homebrew-container-formula.py", renderer)
+        self.assertNotIn("${CONTAINER_SOURCE_DIR}/scripts/update-homebrew-formula.py", renderer)
+        self.assertIn("compose/bin/compose", renderer)
+
+    def test_published_stable_tap_repair_does_not_repackage_or_replace_assets(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        repair = workflow[workflow.index("repair-stable-tap:") :]
+        self.assertIn("repair_tap:", workflow)
+        self.assertIn("Repair Stable Homebrew Formulae", repair)
+        self.assertIn("needs.resolve-publish-context.outputs.repair_tap == 'true'", repair)
+        self.assertIn("Checkout tagged container-compose source", repair)
+        self.assertIn("Checkout immutable release control tools", repair)
+        self.assertIn("Resolve pinned container dependency", repair)
+        self.assertIn("Require the hosted release authority", repair)
+        self.assertIn("candidate-bound Stable Release Authority", repair)
+        self.assertIn("render-homebrew-stack-formulae.sh", repair)
+        self.assertNotIn("Build matched runtime package", repair)
+        self.assertNotIn("Publish GitHub release", repair)
+        self.assertNotIn("Attest release package", repair)
+
+    def test_release_helper_tracks_the_stable_package_dispatch_by_tag(self) -> None:
+        self.assertIn('title="Prebuilt Binaries · ${version}"', self.script)
+        self.assertIn("--json databaseId,displayTitle", self.script)
+        self.assertIn('latest_compose_package_dispatch_run "${version}"', self.script)
 
     def test_current_formulae_use_the_matched_runtime_in_the_single_prerelease(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
@@ -621,6 +668,107 @@ exit 1
             )
             self.assertNotEqual(published.returncode, 0)
             self.assertIn("stable release 0.6.70 already exists and is immutable", published.stderr)
+
+    def test_stable_release_state_requires_a_published_nonprerelease(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_directory = root / "bin"
+            bin_directory.mkdir()
+            fake_gh = bin_directory / "gh"
+            fake_gh.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$1" != "release" || "$2" != "view" ]]; then
+  exit 1
+fi
+
+case "${GH_RELEASE_STATE}" in
+  published)
+    printf '%s\\t%s\\n' false false
+    ;;
+  prerelease)
+    printf '%s\\t%s\\n' false true
+    ;;
+  missing)
+    printf '%s\\n' 'release not found' >&2
+    exit 1
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake_gh.chmod(0o755)
+            shell_setup = "\n".join(
+                [
+                    f"export PATH={shlex.quote(str(bin_directory))}:$PATH",
+                    "export GH_RELEASE_STATE=published",
+                ]
+            )
+
+            published = self.run_release_function(
+                root,
+                "stable_release_is_published 0.6.70",
+                shell_setup=shell_setup,
+            )
+            self.assertEqual(published.returncode, 0, published.stderr)
+
+            missing = self.run_release_function(
+                root,
+                "stable_release_is_published 0.6.70",
+                shell_setup=shell_setup.replace("published", "missing"),
+            )
+            self.assertNotEqual(missing.returncode, 0)
+
+            prerelease = self.run_release_function(
+                root,
+                "stable_release_is_published 0.6.70",
+                shell_setup=shell_setup.replace("published", "prerelease"),
+            )
+            self.assertNotEqual(prerelease.returncode, 0)
+            self.assertIn("not published and immutable", prerelease.stderr)
+
+    def test_resume_routes_published_tags_to_formula_only_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            published = self.run_release_function(
+                root,
+                "resume_stable_release 0.6.70",
+                shell_setup="\n".join(
+                    [
+                        "ensure_latest_stable_retry() { :; }",
+                        "verify_github_stable_tag_signature() { :; }",
+                        "stable_release_is_published() { return 0; }",
+                        "ensure_stable_release_is_unpublished() { exit 71; }",
+                        "dispatch_compose_stable_tap_repair() { printf 'repair %s\\n' \"$1\"; }",
+                        "publish_stable_release() { exit 72; }",
+                        "print_stable_release_point() { printf 'point %s %s\\n' \"$1\" \"$2\"; }",
+                    ]
+                ),
+            )
+            self.assertEqual(published.returncode, 0, published.stderr)
+            self.assertIn("repair 0.6.70", published.stdout)
+            self.assertIn("formula-only recovery from immutable release assets", published.stdout)
+
+            unpublished = self.run_release_function(
+                root,
+                "resume_stable_release 0.6.70",
+                shell_setup="\n".join(
+                    [
+                        "ensure_latest_stable_retry() { :; }",
+                        "verify_github_stable_tag_signature() { :; }",
+                        "stable_release_is_published() { return 1; }",
+                        "ensure_stable_release_is_unpublished() { :; }",
+                        "dispatch_compose_stable_tap_repair() { exit 73; }",
+                        "publish_stable_release() { printf 'publish %s\\n' \"$1\"; }",
+                    ]
+                ),
+            )
+            self.assertEqual(unpublished.returncode, 0, unpublished.stderr)
+            self.assertIn("publish 0.6.70", unpublished.stdout)
 
     def test_retry_rejects_a_stale_semantic_tag(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
