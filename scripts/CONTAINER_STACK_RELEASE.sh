@@ -927,8 +927,8 @@ if count != 1:
     raise SystemExit(f"{package} is missing the stephenlclarke containerization dependency")
 package.write_text(updated, encoding="utf-8")
 PY
-  unedit_release_dependency "${path}" containerization
   if [[ "${resolve}" == "1" ]]; then
+    unedit_release_dependency "${path}" containerization
     run swift package --package-path "${path}" resolve
   fi
 }
@@ -984,8 +984,8 @@ if count != 1:
     raise SystemExit(f"{package} is missing the stephenlclarke container dependency")
 package.write_text(updated, encoding="utf-8")
 PY
-  unedit_release_dependency "${path}" container
   if [[ "${resolve}" == "1" ]]; then
+    unedit_release_dependency "${path}" container
     run swift package --package-path "${path}" resolve
   fi
 }
@@ -1034,6 +1034,8 @@ sync_container_package_pin() {
   print_header "sync exact compose runtime stack pins"
   update_containerization_package_pin "${COMPOSE_REPO}" "${containerization_ref}" 0
   update_container_package_pin "${container_ref}" 0
+  unedit_release_dependency "${path}" containerization
+  unedit_release_dependency "${path}" container
   run swift package --package-path "${path}" resolve
   commit_compose_stack_package_pins "${container_ref}" "${containerization_ref}"
 }
