@@ -39,7 +39,7 @@ public struct ComposeProgressReporter: Sendable {
         emitData: @escaping @Sendable (Data) -> Void = { _ in
             // Silent until the CLI wires progress output to stderr.
         },
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.style = style
         self.colorEnabled = colorEnabled
