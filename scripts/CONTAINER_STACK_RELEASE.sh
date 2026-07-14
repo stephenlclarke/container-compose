@@ -48,7 +48,9 @@ Modes:
       dispatches the hosted Stable Release Gate, then dispatches the stable
       package workflow only after the gate succeeds. That workflow publishes
       immutable release assets and atomically updates the matching Homebrew
-      formula pair. container-compose main promotions use an automated
+      formula pair. If publication succeeds but tap promotion does not, rerun
+      the same explicit semantic version to validate the existing immutable
+      assets and repair only the formula pair. container-compose main promotions use an automated
       short-lived PR by default so pull-request checks and review state remain
       visible before tagging. The Homebrew tap is the only owner of live
       formulae.
@@ -80,7 +82,7 @@ Rules enforced:
   - The hosted Stable Release Gate runs after the signed tag and before stable package publication.
   - Stable package and Homebrew tap updates are explicitly dispatched and waited for.
   - Stable package assets and the Homebrew tap SHA are verified before success.
-  - Published stable releases are immutable; only the latest GitHub-verified signed tag may resume before publication.
+  - Published stable releases are immutable; the latest GitHub-verified signed tag may repair only its matching formula pair from immutable assets.
   - container-compose main updates use pull-request promotion by default.
   - An equivalent tree already squash-merged on main is reconciled before tagging.
   - Long-lived release branches are not used.
@@ -639,6 +641,40 @@ ensure_stable_release_is_unpublished() {
   fi
 
   printf 'could not determine whether stable release %s exists (gh exit %s):\n%s\n' \
+    "${version}" "${status}" "${output}" >&2
+  exit 1
+}
+
+# Return success only when the semantic release is published and immutable.
+stable_release_is_published() {
+  local version="$1" output status is_draft is_prerelease
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would determine whether stable release %s is published\n' "${version}"
+    return 1
+  fi
+
+  need_command gh
+  if output="$(github_cli release view "${version}" \
+    --repo "$(github_repo "${COMPOSE_REPO}")" \
+    --json isDraft,isPrerelease \
+    --jq '[.isDraft, .isPrerelease] | @tsv' 2>&1)"; then
+    IFS=$'\t' read -r is_draft is_prerelease <<<"${output}"
+    if [[ "${is_draft}" == "false" && "${is_prerelease}" == "false" ]]; then
+      return 0
+    fi
+    printf 'stable release %s exists but is not published and immutable (draft=%s, prerelease=%s)\n' \
+      "${version}" "${is_draft:-missing}" "${is_prerelease:-missing}" >&2
+    exit 1
+  else
+    status="$?"
+  fi
+
+  if grep -Eqi 'release not found|HTTP 404' <<<"${output}"; then
+    return 1
+  fi
+
+  printf 'could not determine whether stable release %s is published (gh exit %s):\n%s\n' \
     "${version}" "${status}" "${output}" >&2
   exit 1
 }
@@ -1221,15 +1257,17 @@ github_cli() {
   gh "$@"
 }
 
-# Return the newest workflow_dispatch run id for the compose package workflow.
+# Return the newest workflow-dispatch package run for one stable semantic tag.
 latest_compose_package_dispatch_run() {
+  local version="$1" title
+  title="Prebuilt Binaries · ${version}"
   github_cli run list \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --workflow "Prebuilt Binaries" \
     --event workflow_dispatch \
-    --limit 1 \
-    --json databaseId \
-    --jq '.[0].databaseId // ""'
+    --limit 100 \
+    --json databaseId,displayTitle \
+    --jq "map(select(.displayTitle == \"${title}\")) | .[0].databaseId // \"\""
 }
 
 latest_stable_release_gate_dispatch_run() {
@@ -1392,45 +1430,76 @@ verify_compose_stable_package() {
   printf 'stable stack %s package pair verified: %s + %s\n' "${version}" "${asset_sha}" "${runtime_asset_sha}"
 }
 
-# Dispatch and wait for the stable compose package workflow for a semantic tag.
-dispatch_compose_stable_package() {
-  local version="$1" previous_run run_id deadline now
-  print_header "dispatch container-compose ${version} package"
+# Dispatch and verify one stable package workflow mode for a semantic tag.
+dispatch_compose_stable_workflow() {
+  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label
+  print_header "dispatch container-compose ${version} ${mode}"
+
+  if [[ "${repair_tap}" == "true" ]]; then
+    label="container-compose stable tap repair workflow"
+  else
+    label="container-compose stable package workflow"
+  fi
 
   if [[ "${EXECUTE}" != "1" ]]; then
-    printf 'would run: gh workflow run prebuilt-binaries.yml --repo %s --ref main -f ref=%s\n' \
+    printf 'would run: gh workflow run prebuilt-binaries.yml --repo %s --ref main -f ref=%s' \
       "$(github_repo "${COMPOSE_REPO}")" "${version}"
-    printf 'would wait for the container-compose stable package workflow to publish assets and update Homebrew\n'
+    if [[ "${repair_tap}" == "true" ]]; then
+      printf ' -f repair_tap=true'
+    fi
+    printf '\n'
+    printf 'would wait for the %s to verify the immutable assets and matching Homebrew formula pair\n' \
+      "${label}"
     return 0
   fi
 
   need_command gh
-  previous_run="$(latest_compose_package_dispatch_run || true)"
-  run github_cli workflow run prebuilt-binaries.yml \
-    --repo "$(github_repo "${COMPOSE_REPO}")" \
-    --ref main \
-    -f "ref=${version}"
+  previous_run="$(latest_compose_package_dispatch_run "${version}" || true)"
+  if [[ "${repair_tap}" == "true" ]]; then
+    run github_cli workflow run prebuilt-binaries.yml \
+      --repo "$(github_repo "${COMPOSE_REPO}")" \
+      --ref main \
+      -f "ref=${version}" \
+      -f "repair_tap=true"
+  else
+    run github_cli workflow run prebuilt-binaries.yml \
+      --repo "$(github_repo "${COMPOSE_REPO}")" \
+      --ref main \
+      -f "ref=${version}"
+  fi
 
   deadline=$((SECONDS + COMPOSE_PACKAGE_WAIT_SECONDS))
   while true; do
-    run_id="$(latest_compose_package_dispatch_run || true)"
+    run_id="$(latest_compose_package_dispatch_run "${version}" || true)"
     if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
-      printf 'container-compose package workflow started: %s\n' "${run_id}"
-      wait_for_github_run_success "${run_id}" "container-compose stable package workflow"
+      printf '%s started: %s\n' "${label}" "${run_id}"
+      wait_for_github_run_success "${run_id}" "${label}"
       verify_compose_stable_package "${version}"
       return 0
     fi
 
     now="${SECONDS}"
     if (( now >= deadline )); then
-      printf 'timed out waiting for container-compose package workflow dispatch for %s\n' "${version}" >&2
+      printf 'timed out waiting for %s dispatch for %s\n' "${label}" "${version}" >&2
       exit 1
     fi
 
-    printf 'waiting for container-compose package workflow dispatch for %s; next check in %ss\n' \
-      "${version}" "${COMPOSE_PACKAGE_POLL_SECONDS}"
+    printf 'waiting for %s dispatch for %s; next check in %ss\n' \
+      "${label}" "${version}" "${COMPOSE_PACKAGE_POLL_SECONDS}"
     sleep "${COMPOSE_PACKAGE_POLL_SECONDS}"
   done
+}
+
+# Dispatch and wait for a new stable package publication.
+dispatch_compose_stable_package() {
+  local version="$1"
+  dispatch_compose_stable_workflow "${version}" "package" "false"
+}
+
+# Repair a published stable formula pair without rebuilding or replacing release assets.
+dispatch_compose_stable_tap_repair() {
+  local version="$1"
+  dispatch_compose_stable_workflow "${version}" "Homebrew tap repair" "true"
 }
 
 dispatch_stable_release_gate() {
@@ -1474,20 +1543,26 @@ dispatch_stable_release_gate() {
   done
 }
 
-# Publish the immutable assets and tap formulae for a signed stable source tag.
-publish_stable_release() {
-  local version="$1"
-  dispatch_stable_release_gate "${version}"
-  dispatch_compose_stable_package "${version}"
+# Print the verified boundary for a stable release or its formula-only recovery.
+print_stable_release_point() {
+  local version="$1" generation="$2"
   print_component_refs
   cat <<EOF
 
 Stable release point:
   version: ${version}
   label: latest
-  release generation: container-compose stable package workflow dispatch
-  tap update: stable container-compose formula published with the release package
+  release generation: ${generation}
+  tap update: stable container and container-compose formula pair verified
 EOF
+}
+
+# Publish the immutable assets and tap formulae for a signed stable source tag.
+publish_stable_release() {
+  local version="$1"
+  dispatch_stable_release_gate "${version}"
+  dispatch_compose_stable_package "${version}"
+  print_stable_release_point "${version}" "container-compose stable package workflow dispatch"
 }
 
 # Tag a compose state as the stable/latest release point.
@@ -1498,13 +1573,18 @@ tag_stable_version() {
   publish_stable_release "${version}"
 }
 
-# Resume an unreleased signed tag after a failed gate without mutating source identity.
+# Resume the latest signed tag without mutating its stable source identity.
 resume_stable_release() {
   local version="$1"
   print_header "resume stable release ${version}"
   ensure_latest_stable_retry "${version}"
-  ensure_stable_release_is_unpublished "${version}"
   verify_github_stable_tag_signature "${version}"
+  if stable_release_is_published "${version}"; then
+    dispatch_compose_stable_tap_repair "${version}"
+    print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
+    return 0
+  fi
+  ensure_stable_release_is_unpublished "${version}"
   publish_stable_release "${version}"
 }
 
@@ -1517,7 +1597,7 @@ release_current_stack() {
   current="$(current_compose_version)"
   version="$(resolve_release_version "${VERSION_SELECTOR}")"
   if stable_tag_exists "${version}"; then
-    printf 'resuming unpublished stable tag: %s\n' "${version}"
+    printf 'resuming stable tag: %s\n' "${version}"
     resume_stable_release "${version}"
     return 0
   fi

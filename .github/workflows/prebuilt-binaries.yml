@@ -29,6 +29,11 @@ on:
         description: "main for the installable current stack, or a MAJOR.MINOR.PATCH tag for stable"
         required: true
         type: string
+      repair_tap:
+        description: "Repair a published stable release's Homebrew formula pair from immutable release assets"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -57,12 +62,14 @@ jobs:
       ref_name: ${{ steps.publish.outputs.ref_name }}
       checkout_ref: ${{ steps.publish.outputs.checkout_ref }}
       sha: ${{ steps.publish.outputs.sha }}
+      repair_tap: ${{ steps.publish.outputs.repair_tap }}
     steps:
       - name: Resolve publish context
         id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           DISPATCH_REF: ${{ inputs.ref }}
+          REPAIR_TAP: ${{ inputs.repair_tap }}
           WORKFLOW_RUN_EVENT: ${{ github.event.workflow_run.event }}
           WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -76,6 +83,7 @@ jobs:
           ref_name=""
           checkout_ref=""
           sha=""
+          repair_tap="false"
 
           remote="https://github.com/${GITHUB_REPOSITORY}.git"
 
@@ -198,6 +206,21 @@ jobs:
               exit 1
             fi
             resolve_remote_ref "${DISPATCH_REF}"
+            case "${REPAIR_TAP:-false}" in
+              false|"")
+                ;;
+              true)
+                if [[ "${ref_type}" != "tag" ]]; then
+                  printf 'Homebrew tap repair requires a stable semantic tag, got: %s\n' "${DISPATCH_REF}" >&2
+                  exit 1
+                fi
+                repair_tap="true"
+                ;;
+              *)
+                printf 'repair_tap must be true or false, got: %s\n' "${REPAIR_TAP}" >&2
+                exit 1
+                ;;
+            esac
           else
             printf 'Unsupported package event: %s\n' "${GITHUB_EVENT_NAME}" >&2
             exit 1
@@ -209,12 +232,15 @@ jobs:
             printf 'ref_name=%s\n' "${ref_name}"
             printf 'checkout_ref=%s\n' "${checkout_ref}"
             printf 'sha=%s\n' "${sha}"
+            printf 'repair_tap=%s\n' "${repair_tap}"
           } >> "$GITHUB_OUTPUT"
 
   package:
     name: Package
     needs: resolve-publish-context
-    if: needs.resolve-publish-context.outputs.publish == 'true'
+    if: >
+      needs.resolve-publish-context.outputs.publish == 'true' &&
+      needs.resolve-publish-context.outputs.repair_tap != 'true'
     runs-on: macos-26
     steps:
       - name: Checkout container-compose
@@ -664,6 +690,29 @@ jobs:
             RELEASE_CHECKSUM_PATH="${RUNNER_TEMP}/${ASSET}.sha256" \
             Tools/release/publish-github-release.sh
 
+      - name: Checkout immutable release control tools
+        if: steps.lane.outputs.update_tap == 'true'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          path: release-tools
+          fetch-depth: 1
+          ref: ${{ github.sha }}
+          token: ${{ github.token }}
+
+      - name: Verify immutable release control tools
+        if: steps.lane.outputs.update_tap == 'true'
+        env:
+          RELEASE_CONTROL_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git -C release-tools rev-parse HEAD)"
+          if [[ "${actual}" != "${RELEASE_CONTROL_SHA}" ]]; then
+            printf 'release control checkout mismatch: expected %s, got %s\n' \
+              "${RELEASE_CONTROL_SHA}" "${actual}" >&2
+            exit 1
+          fi
+
       - name: Checkout Homebrew tap
         if: steps.lane.outputs.update_tap == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -675,94 +724,27 @@ jobs:
       - name: Render matched Homebrew stack formulae
         if: steps.lane.outputs.update_tap == 'true'
         env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.lane.outputs.release_tag }}
+          RELEASE_PRERELEASE: ${{ steps.lane.outputs.release_prerelease }}
+          RELEASE_LABEL: ${{ steps.lane.outputs.release_label }}
           ASSET: ${{ steps.lane.outputs.asset }}
           FORMULA: ${{ steps.lane.outputs.formula }}
           FORMULA_CLASS: ${{ steps.lane.outputs.formula_class }}
           FORMULA_VERSION: ${{ steps.lane.outputs.formula_version }}
+          PLUGIN_VERSION: ${{ steps.lane.outputs.compose_version }}
           RUNTIME_FORMULA: ${{ steps.lane.outputs.runtime_formula }}
           CONTAINER_FORMULA: ${{ steps.lane.outputs.container_formula }}
           CONTAINER_FORMULA_CLASS: ${{ steps.lane.outputs.container_formula_class }}
           CONTAINER_COMPOSE_FORMULA: ${{ steps.lane.outputs.container_compose_formula }}
-          RUNTIME_RELEASE_TAG: ${{ steps.runtime-package.outputs.tag }}
-          RUNTIME_RELEASE_REPOSITORY: ${{ steps.runtime-package.outputs.repository }}
           RUNTIME_ASSET: ${{ steps.runtime-package.outputs.asset }}
-          RUNTIME_SHA256: ${{ steps.runtime-package.outputs.sha256 }}
           RUNTIME_VERSION: ${{ steps.runtime-package.outputs.version }}
-          RELEASE_TAG: ${{ steps.lane.outputs.release_tag }}
-          VERSION: ${{ steps.lane.outputs.compose_version }}
+          COMPOSE_SOURCE_DIR: container-compose
+          CONTAINER_SOURCE_DIR: container
+          TAP_DIR: homebrew-tap
         shell: bash
-        run: |
-          set -euo pipefail
-          url="https://github.com/stephenlclarke/container-compose/releases/download/${RELEASE_TAG}/${ASSET}"
-          tmp="$(mktemp -d)"
-          trap 'rm -rf "${tmp}"' EXIT
-
-          download_release_asset() {
-            local attempt max_attempts status
-            max_attempts=6
-            for attempt in $(seq 1 "${max_attempts}"); do
-              printf 'Downloading %s (attempt %s/%s)\n' "${url}" "${attempt}" "${max_attempts}"
-              if curl -fsSL --connect-timeout 20 --max-time 180 "${url}" -o "${tmp}/${ASSET}"; then
-                if [[ -s "${tmp}/${ASSET}" ]]; then
-                  return 0
-                fi
-                status=1
-                printf 'Downloaded asset is empty: %s\n' "${tmp}/${ASSET}" >&2
-              else
-                status="$?"
-              fi
-
-              if (( attempt == max_attempts )); then
-                return "${status}"
-              fi
-              sleep "$((attempt * 10))"
-            done
-          }
-
-          download_release_asset
-          sha256="$(shasum -a 256 "${tmp}/${ASSET}" | awk '{print $1}')"
-          python3 container-compose/Tools/release/update-homebrew-formula.py \
-            --formula "homebrew-tap/Formula/${FORMULA}" \
-            --template "container-compose/Tools/release/container-compose.rb.in" \
-            --formula-class "${FORMULA_CLASS}" \
-            --runtime-formula "${RUNTIME_FORMULA}" \
-            --url "$url" \
-            --version "$FORMULA_VERSION" \
-            --plugin-version "$VERSION" \
-            --asset "$ASSET" \
-            --label "${{ steps.lane.outputs.release_label }}" \
-            --sha256 "$sha256"
-
-          runtime_url="https://github.com/${RUNTIME_RELEASE_REPOSITORY}/releases/download/${RUNTIME_RELEASE_TAG}/${RUNTIME_ASSET}"
-          gh release download "${RUNTIME_RELEASE_TAG}" --repo "${RUNTIME_RELEASE_REPOSITORY}" \
-            --pattern "${RUNTIME_ASSET}" --dir "${tmp}"
-          actual_runtime_sha="$(shasum -a 256 "${tmp}/${RUNTIME_ASSET}" | awk '{print $1}')"
-          if [[ "${actual_runtime_sha}" != "${RUNTIME_SHA256}" ]]; then
-            printf 'runtime package checksum mismatch: expected %s, got %s\n' \
-              "${RUNTIME_SHA256}" "${actual_runtime_sha}" >&2
-            exit 1
-          fi
-          if ! tar -tzf "${tmp}/${RUNTIME_ASSET}" >/dev/null; then
-            printf 'published runtime package archive is corrupt: %s\n' "${RUNTIME_ASSET}" >&2
-            exit 1
-          fi
-          if ! tar -tzf "${tmp}/${RUNTIME_ASSET}" | grep -Fx './bin/container' >/dev/null; then
-            printf 'published runtime package is missing bin/container: %s\n' "${RUNTIME_ASSET}" >&2
-            exit 1
-          fi
-          python3 container/scripts/update-homebrew-formula.py \
-            --formula "homebrew-tap/Formula/${CONTAINER_FORMULA}" \
-            --template "container/Formula/container.rb" \
-            --formula-class "${CONTAINER_FORMULA_CLASS}" \
-            --compose-formula "${CONTAINER_COMPOSE_FORMULA}" \
-            --url "${runtime_url}" \
-            --sha256 "${RUNTIME_SHA256}" \
-            --version "${RUNTIME_VERSION}" \
-            --label "${{ steps.lane.outputs.release_label }}" \
-            --asset "${RUNTIME_ASSET}"
-          ruby -c "homebrew-tap/Formula/${FORMULA}"
-          ruby -c "homebrew-tap/Formula/${CONTAINER_FORMULA}"
-          git -C homebrew-tap diff -- "Formula/${FORMULA}" "Formula/${CONTAINER_FORMULA}"
+        run: release-tools/Tools/release/render-homebrew-stack-formulae.sh
 
       - name: Commit atomic Homebrew stack update
         if: steps.lane.outputs.update_tap == 'true'
@@ -801,3 +783,188 @@ jobs:
             --install-command "sudo rm -rf /usr/local/libexec/container-plugins/compose && sudo install -d /usr/local/libexec/container-plugins && sudo tar -xzf container-compose-plugin-release-arm64.tar.gz -C /usr/local/libexec/container-plugins" \
             --delete-superseded-current-releases \
             --apply
+
+  repair-stable-tap:
+    name: Repair Stable Homebrew Formulae
+    needs: resolve-publish-context
+    if: >
+      needs.resolve-publish-context.outputs.publish == 'true' &&
+      needs.resolve-publish-context.outputs.ref_type == 'tag' &&
+      needs.resolve-publish-context.outputs.repair_tap == 'true'
+    runs-on: macos-26
+    steps:
+      - name: Checkout tagged container-compose source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          path: container-compose
+          fetch-depth: 1
+          ref: ${{ needs.resolve-publish-context.outputs.checkout_ref }}
+          token: ${{ github.token }}
+
+      - name: Checkout immutable release control tools
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          path: release-tools
+          fetch-depth: 1
+          ref: ${{ github.sha }}
+          token: ${{ github.token }}
+
+      - name: Verify immutable release control tools
+        env:
+          RELEASE_CONTROL_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git -C release-tools rev-parse HEAD)"
+          if [[ "${actual}" != "${RELEASE_CONTROL_SHA}" ]]; then
+            printf 'release control checkout mismatch: expected %s, got %s\n' \
+              "${RELEASE_CONTROL_SHA}" "${actual}" >&2
+            exit 1
+          fi
+
+      - name: Validate published stable source
+        env:
+          PUBLISH_REF_NAME: ${{ needs.resolve-publish-context.outputs.ref_name }}
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          if [[ ! "${PUBLISH_REF_NAME}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            printf 'tap repair requires a stable semantic tag: %s\n' "${PUBLISH_REF_NAME}" >&2
+            exit 1
+          fi
+          compose_version="$(sed -n 's/^COMPOSE_VERSION ?= //p' Makefile | head -n 1)"
+          if [[ "${compose_version}" != "${PUBLISH_REF_NAME}" ]]; then
+            printf 'COMPOSE_VERSION %s does not match stable tag %s\n' \
+              "${compose_version}" "${PUBLISH_REF_NAME}" >&2
+            exit 1
+          fi
+
+      - name: Require the hosted release authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_REF_NAME: ${{ needs.resolve-publish-context.outputs.ref_name }}
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          authority_name="Stable Release Authority (${PUBLISH_REF_NAME})"
+          authority_filter=".check_runs[] | select(.name == \"${authority_name}\""
+          authority_filter+=' and .status == "completed"'
+          authority_filter+=' and .conclusion == "success"'
+          authority_filter+=' and .app.slug == "github-actions")'
+          authority_filter+=' | .external_id'
+          authority_run_id="$(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${PUBLISH_SHA}/check-runs?per_page=100" \
+              --jq "${authority_filter}" \
+              | tail -n 1
+          )"
+          if [[ ! "${authority_run_id}" =~ ^[0-9]+$ ]]; then
+            printf 'refusing to repair %s without candidate-bound Stable Release Authority %s\n' \
+              "${PUBLISH_SHA}" "${authority_name}" >&2
+            exit 1
+          fi
+          authority_conclusion="$(
+            gh run view "${authority_run_id}" --repo "${GITHUB_REPOSITORY}" \
+              --json workflowName,event,status,conclusion \
+              --jq 'select(.workflowName == "Stable Release Gate" and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success") | .conclusion'
+          )"
+          if [[ "${authority_conclusion}" != "success" ]]; then
+            printf 'refusing to repair %s without a successful Stable Release Gate authority\n' \
+              "${PUBLISH_SHA}" >&2
+            exit 1
+          fi
+
+      - name: Require Homebrew tap token for formula promotion
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${HOMEBREW_TAP_TOKEN}" ]]; then
+            printf 'HOMEBREW_TAP_TOKEN is required for a stack formula promotion.\n' >&2
+            exit 1
+          fi
+
+      - name: Resolve pinned container dependency
+        id: container-ref
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          ref="$(python3 Tools/release/resolve-container-ref.py --repo ../container)"
+          if [[ ! "${ref}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'container stack ref is not immutable: %s\n' "${ref}" >&2
+            exit 1
+          fi
+          printf 'ref=%s\n' "${ref}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout pinned container dependency
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/container
+          path: container
+          fetch-depth: 1
+          ref: ${{ steps.container-ref.outputs.ref }}
+
+      - name: Verify pinned container dependency
+        env:
+          EXPECTED_CONTAINER_REF: ${{ steps.container-ref.outputs.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git -C container rev-parse HEAD)"
+          if [[ "${actual}" != "${EXPECTED_CONTAINER_REF}" ]]; then
+            printf 'container checkout mismatch: expected %s, got %s\n' \
+              "${EXPECTED_CONTAINER_REF}" "${actual}" >&2
+            exit 1
+          fi
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/homebrew-tap
+          path: homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Render verified stable Homebrew stack formulae
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.resolve-publish-context.outputs.ref_name }}
+          RELEASE_PRERELEASE: "false"
+          RELEASE_LABEL: stable release
+          ASSET: container-compose-plugin-release-arm64.tar.gz
+          FORMULA: container-compose.rb
+          FORMULA_CLASS: ContainerCompose
+          FORMULA_VERSION: ${{ needs.resolve-publish-context.outputs.ref_name }}
+          PLUGIN_VERSION: ${{ needs.resolve-publish-context.outputs.ref_name }}
+          RUNTIME_ASSET: container-release-arm64.tar.gz
+          RUNTIME_VERSION: ${{ needs.resolve-publish-context.outputs.ref_name }}
+          RUNTIME_FORMULA: container
+          CONTAINER_FORMULA: container.rb
+          CONTAINER_FORMULA_CLASS: Container
+          CONTAINER_COMPOSE_FORMULA: container-compose
+          COMPOSE_SOURCE_DIR: container-compose
+          CONTAINER_SOURCE_DIR: container
+          TAP_DIR: homebrew-tap
+        shell: bash
+        run: release-tools/Tools/release/render-homebrew-stack-formulae.sh
+
+      - name: Commit repaired stable Homebrew stack
+        shell: bash
+        working-directory: homebrew-tap
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-publish-context.outputs.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$(git status --porcelain -- Formula/container-compose.rb Formula/container.rb)" ]]; then
+            printf 'Homebrew tap formulae already point at the matched stable stack.\n'
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/container-compose.rb Formula/container.rb
+          git commit -m "chore(homebrew): repair stable stack ${RELEASE_VERSION}"
+          git push
