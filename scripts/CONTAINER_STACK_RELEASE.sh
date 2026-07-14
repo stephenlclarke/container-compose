@@ -329,6 +329,50 @@ PY
   fi
 }
 
+# Reconstruct a helper-created candidate after a local release gate fails before promotion.
+recover_unpublished_release_candidate() {
+  local version="$1" path remote local_head remote_head subject subjects
+  path="$(repo_path "${COMPOSE_REPO}")"
+  remote="$(push_remote "${COMPOSE_REPO}")"
+  local_head="$(git -C "${path}" rev-parse main)"
+  remote_head="$(remote_main_commit "${COMPOSE_REPO}")"
+
+  if [[ "${local_head}" == "${remote_head}" ]]; then
+    return 0
+  fi
+  if [[ -z "${remote_head}" ]]; then
+    printf 'cannot recover an unpublished release candidate without %s/main\n' "${remote}" >&2
+    exit 1
+  fi
+  if ! git -C "${path}" merge-base --is-ancestor "${remote_head}" "${local_head}"; then
+    printf 'container-compose main is not based on %s/main; refusing to recover a release candidate\n' "${remote}" >&2
+    exit 1
+  fi
+  if [[ -n "$(git -C "${path}" status --short)" ]]; then
+    printf 'dirty worktree blocks recovery of an unpublished release candidate for container-compose\n' >&2
+    exit 1
+  fi
+
+  subjects="$(git -C "${path}" log --format='%s' "${remote_head}..${local_head}")"
+  if [[ -z "${subjects}" ]]; then
+    printf 'container-compose main differs from %s/main without an unpublished release candidate\n' "${remote}" >&2
+    exit 1
+  fi
+  while IFS= read -r subject; do
+    case "${subject}" in
+      "chore(release): prepare ${version}"|"chore(deps): pin containerization "[0-9a-f]*|"chore(deps): pin container "[0-9a-f]*)
+        ;;
+      *)
+        printf 'container-compose main contains an unpublished non-release commit; refusing recovery: %s\n' "${subject}" >&2
+        exit 1
+        ;;
+    esac
+  done <<<"${subjects}"
+
+  printf 'reconstructing unpublished release candidate from %s/main after an earlier local gate failure\n' "${remote}"
+  run git -C "${path}" reset --soft "${remote_head}"
+}
+
 # Print and optionally execute a command.
 run() {
   if [[ "${EXECUTE}" == "1" ]]; then
@@ -1804,6 +1848,7 @@ release_current_stack() {
   ensure_release_version_is_valid "${latest}" "${current}" "${version}"
   ensure_new_stable_release "${version}"
   ensure_release_intent
+  recover_unpublished_release_candidate "${version}"
   ensure_current_build_release_readiness
   require_release_upstream_alignment
   path="$(repo_path "${COMPOSE_REPO}")"

@@ -78,6 +78,24 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('ROOT="${CONTAINER_STACK_RELEASE_ROOT:-${HOME}/github}"', self.script)
         self.assertIn("CONTAINER_STACK_RELEASE_ROOT", self.script)
 
+    def test_release_helper_recovers_only_its_unpublished_candidate_before_readiness(self) -> None:
+        recovery = self.script[
+            self.script.index("recover_unpublished_release_candidate() {") : self.script.index(
+                "# Print and optionally execute a command."
+            )
+        ]
+        release = self.script[self.script.index("release_current_stack() {") :]
+        self.assertIn('git -C "${path}" reset --soft "${remote_head}"', recovery)
+        self.assertNotIn("reset --hard", recovery)
+        self.assertIn('"chore(release): prepare ${version}"', recovery)
+        self.assertIn('"chore(deps): pin containerization "[0-9a-f]*', recovery)
+        self.assertIn('"chore(deps): pin container "[0-9a-f]*', recovery)
+        self.assertIn("dirty worktree blocks recovery", recovery)
+        self.assertLess(
+            release.index('recover_unpublished_release_candidate "${version}"'),
+            release.index("ensure_current_build_release_readiness"),
+        )
+
     def test_release_plan_describes_the_maintenance_promotion_lane(self) -> None:
         plan = self.script[self.script.index("\nplan() {") : self.script.index("\nmain() {")]
         self.assertIn("RELEASE_INTENT=maintenance with --+", plan)
@@ -630,6 +648,44 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "git", "ls-remote", "--tags", "--refs", str(remote), "refs/tags/current"
             ).stdout.split()[0]
             self.assertEqual(local_current, remote_current)
+
+    def test_release_helper_reconstructs_an_unpublished_prepared_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _remote, local = self.create_compose_checkout(root)
+            remote_head = self.git(local, "rev-parse", "origin/main")
+            self.commit_file(
+                local,
+                "VERSION",
+                "0.6.71\n",
+                "chore(release): prepare 0.6.71",
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("reconstructing unpublished release candidate", result.stdout)
+            self.assertEqual(self.git(local, "rev-parse", "main"), remote_head)
+            self.assertEqual(self.git(local, "diff", "--cached", "--name-only"), "VERSION")
+
+    def test_release_helper_refuses_to_reconstruct_an_unrelated_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _remote, local = self.create_compose_checkout(root)
+            self.commit_file(local, "candidate.yml", "candidate\n", "feat: unrelated candidate")
+            candidate_head = self.git(local, "rev-parse", "main")
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unpublished non-release commit", result.stderr)
+            self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
 
     def test_release_helper_uses_the_active_github_cli_credential(self) -> None:
         self.assertIn("github_cli() {", self.script)
