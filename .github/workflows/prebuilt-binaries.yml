@@ -642,7 +642,31 @@ jobs:
             ${{ steps.runtime-package.outputs.local_asset }}
             ${{ steps.runtime-package.outputs.local_asset }}.sha256
 
+      - name: Verify current source is still latest
+        id: current-freshness
+        env:
+          PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish=true
+          if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
+            current_main="$(
+              git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main \
+                | awk '{ print $1 }' \
+                | tail -n 1
+            )"
+            if [[ "${current_main}" != "${PUBLISH_SHA}" ]]; then
+              printf 'Skipping superseded current package at %s; main is now %s.\n' \
+                "${PUBLISH_SHA}" "${current_main:-missing}"
+              publish=false
+            fi
+          fi
+          printf 'publish=%s\n' "${publish}" >> "$GITHUB_OUTPUT"
+
       - name: Stage release assets and notes
+        if: steps.current-freshness.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           ASSET: ${{ steps.lane.outputs.asset }}
@@ -743,7 +767,7 @@ jobs:
             Tools/release/publish-github-release.sh
 
       - name: Checkout immutable release control tools
-        if: steps.lane.outputs.update_tap == 'true'
+        if: steps.current-freshness.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           path: release-tools
@@ -752,7 +776,7 @@ jobs:
           token: ${{ github.token }}
 
       - name: Verify immutable release control tools
-        if: steps.lane.outputs.update_tap == 'true'
+        if: steps.current-freshness.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true'
         env:
           RELEASE_CONTROL_SHA: ${{ github.sha }}
         shell: bash
@@ -766,7 +790,7 @@ jobs:
           fi
 
       - name: Checkout Homebrew tap
-        if: steps.lane.outputs.update_tap == 'true'
+        if: steps.current-freshness.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: stephenlclarke/homebrew-tap
@@ -774,7 +798,7 @@ jobs:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Render matched Homebrew stack formulae
-        if: steps.lane.outputs.update_tap == 'true'
+        if: steps.current-freshness.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_REPOSITORY: ${{ github.repository }}
@@ -799,7 +823,7 @@ jobs:
         run: release-tools/Tools/release/render-homebrew-stack-formulae.sh
 
       - name: Commit atomic Homebrew stack update
-        if: steps.lane.outputs.update_tap == 'true'
+        if: steps.current-freshness.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true'
         shell: bash
         working-directory: homebrew-tap
         run: |
@@ -819,7 +843,7 @@ jobs:
           git push
 
       - name: Finalize current release pointer
-        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
+        if: steps.current-freshness.outputs.publish == 'true' && needs.resolve-publish-context.outputs.ref_type == 'branch'
         env:
           GH_TOKEN: ${{ github.token }}
           ASSET: ${{ steps.lane.outputs.asset }}
@@ -867,6 +891,7 @@ jobs:
             Tools/release/publish-github-release.sh
 
       - name: Retain only current release assets
+        if: steps.current-freshness.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}

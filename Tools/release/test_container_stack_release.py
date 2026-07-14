@@ -219,6 +219,21 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("refs/tags/current^{}", workflow)
         self.assertIn('current_tag_sha="$(', workflow)
 
+    def test_current_package_rechecks_main_before_release_mutations(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        freshness = workflow[
+            workflow.index("- name: Verify current source is still latest") : workflow.index(
+                "- name: Stage release assets and notes"
+            )
+        ]
+        self.assertIn('current_main="$(', freshness)
+        self.assertIn("Skipping superseded current package", freshness)
+        self.assertIn('printf \'publish=%s\\n\' "${publish}" >> "$GITHUB_OUTPUT"', freshness)
+        self.assertEqual(
+            workflow.count("if: steps.current-freshness.outputs.publish == 'true'"),
+            8,
+        )
+
     def test_current_package_workflow_only_follows_successful_main_ci(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("workflow_run:", workflow)
