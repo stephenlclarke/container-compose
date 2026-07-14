@@ -22,14 +22,18 @@ Type "container compose up --help | sed -n '1,18p'"
 Enter
 Sleep 2s
 
-Type "container compose -f examples/compose.yml run --rm --no-tty shell echo 'compose demo is healthy'"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --volumes --remove-orphans"
 Enter
-Sleep 4s
+Sleep 3s
 
-Type "container compose -f examples/compose.yml run --detach --no-tty --name compose-readme-demo shell sleep 30"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml up -d --wait"
 Enter
-Sleep 4s
+Sleep 6s
 
-Type "container compose -f examples/compose.yml ps"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml ps"
+Enter
+Sleep 3s
+
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --volumes --remove-orphans"
 Enter
 Sleep 3s

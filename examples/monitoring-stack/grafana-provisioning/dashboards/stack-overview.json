@@ -1,0 +1,11 @@
+{
+  "editable": true,
+  "panels": [
+    {"datasource":{"type":"prometheus","uid":"prometheus"},"fieldConfig":{"defaults":{"unit":"short"},"overrides":[]},"gridPos":{"h":8,"w":12,"x":0,"y":0},"id":1,"options":{"colorMode":"value","graphMode":"none","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false}},"targets":[{"expr":"sum(up)","refId":"A"}],"title":"Scrape targets up","type":"stat"},
+    {"datasource":{"type":"prometheus","uid":"prometheus"},"fieldConfig":{"defaults":{"unit":"s"},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":0},"id":2,"targets":[{"expr":"scrape_duration_seconds","legendFormat":"{{job}}","refId":"A"}],"title":"Scrape duration","type":"timeseries"}
+  ],
+  "schemaVersion": 42,
+  "title": "Container Compose monitoring",
+  "uid": "container-compose-monitoring",
+  "version": 1
+}
