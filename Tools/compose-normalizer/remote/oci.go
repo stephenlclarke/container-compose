@@ -41,6 +41,7 @@ import (
 const (
 	OCIRemoteEnabled = "COMPOSE_EXPERIMENTAL_OCI_REMOTE"
 	OCIPrefix        = "oci://"
+	composeFileName  = "compose.yaml"
 )
 
 func ociRemoteLoaderEnabled() (bool, error) {
@@ -86,7 +87,7 @@ func (loader *ociRemoteLoader) Load(ctx context.Context, path string) (string, e
 	}
 
 	if local, ok := loader.knownPath(path); ok {
-		return filepath.Join(local, "compose.yaml"), nil
+		return filepath.Join(local, composeFileName), nil
 	}
 
 	ref, err := reference.ParseDockerRef(path[len(OCIPrefix):])
@@ -112,7 +113,7 @@ func (loader *ociRemoteLoader) Load(ctx context.Context, path string) (string, e
 		}
 	}
 	loader.remember(path, local)
-	return filepath.Join(local, "compose.yaml"), nil
+	return filepath.Join(local, composeFileName), nil
 }
 
 func (loader *ociRemoteLoader) Dir(path string) string {
@@ -245,7 +246,7 @@ func validateOCIPathInBase(base, unsafePath string) error {
 }
 
 func writeOCIComposeFile(layer spec.Descriptor, index int, local string, content []byte) error {
-	file := "compose.yaml"
+	file := composeFileName
 	if _, ok := layer.Annotations["com.docker.compose.extends"]; ok {
 		file = layer.Annotations["com.docker.compose.file"]
 		if file == "" {

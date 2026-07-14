@@ -209,12 +209,13 @@ extension ContainerPackageCompatibility {
         "container: \(container.source ?? "unknown")@\(container.commit ?? "unknown") (expected \(expectedContainerRef))"
       )
     }
-    if let expectedContainerRef {
-      if let apiserver, !refsMatch(apiserver.commit, expectedContainerRef) {
-        detected.append(
-          "container-apiserver: \(apiserver.commit ?? "unknown") (expected \(expectedContainerRef))"
-        )
-      }
+    if let expectedContainerRef,
+      let apiserver,
+      !refsMatch(apiserver.commit, expectedContainerRef)
+    {
+      detected.append(
+        "container-apiserver: \(apiserver.commit ?? "unknown") (expected \(expectedContainerRef))"
+      )
     }
     if let expectedContainerizationRef,
       !refsMatch(container.containerizationRef, expectedContainerizationRef)

@@ -2042,17 +2042,21 @@ struct Publish: AsyncParsableCommand, ComposeProjectCommand {
                     try await normalizer.publish(options: composeOptions, publish: publishOptions)
                 },
                 pushImages: {
-                    let loadedProject = try await global.loadProject(options: composeOptions)
-                    try await orchestrator().push(
-                        project: loadedProject,
-                        options: ComposePushOptions {
-                            $0.ignorePushFailures = true
-                        }
-                    )
+                    try await pushImagesForPublish(options: composeOptions)
                 }
             )
         }
         renderPublishResult(result)
+    }
+
+    func pushImagesForPublish(options: ComposeOptions) async throws {
+        let loadedProject = try await global.loadProject(options: options)
+        try await orchestrator().push(
+            project: loadedProject,
+            options: ComposePushOptions {
+                $0.ignorePushFailures = true
+            }
+        )
     }
 
     /// Publish activates every Compose profile before pushing service images,

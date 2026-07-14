@@ -63,10 +63,9 @@ public struct ComposeProgressReporter: Sendable {
 
     /// Runs an activity whose operation can emit visible child-process output.
     public func activityWithExternalOutput<T>(_ message: String, operation: () async throws -> T) async throws -> T {
-        switch style {
-        case .tty:
+        if style == .tty {
             try await plainActivity(message, operation: operation)
-        default:
+        } else {
             try await activity(message, operation: operation)
         }
     }

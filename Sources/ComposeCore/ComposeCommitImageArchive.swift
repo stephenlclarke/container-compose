@@ -18,6 +18,8 @@ import ContainerizationArchive
 import ContainerizationOCI
 import Foundation
 
+private let composeCommitShellPath = "/bin/sh"
+
 /// Builds a single-layer OCI image archive for `compose commit`.
 package enum ComposeCommitImageArchive {
     /// Writes an OCI layout tar archive whose layer is the exported container root filesystem.
@@ -349,7 +351,7 @@ private func shellOrExecForm(_ remainder: String, instruction: String) throws ->
         let data = Data(value.utf8)
         return try JSONDecoder().decode([String].self, from: data)
     }
-    return ["/bin/sh", "-c", value]
+    return [composeCommitShellPath, "-c", value]
 }
 
 private func requiredRemainder(_ remainder: String, instruction: String) throws -> String {

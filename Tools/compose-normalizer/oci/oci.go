@@ -59,7 +59,10 @@ const (
 	ComposeEnvFileMediaType = "application/vnd.docker.compose.envfile"
 )
 
-const composeVersionAnnotation = "container-compose"
+const (
+	composeVersionAnnotationKey = "com.docker.compose.version"
+	composeVersionAnnotation    = "container-compose"
+)
 
 // OCIVersion controls the manifest shape used for Compose project artifacts.
 type OCIVersion string
@@ -179,8 +182,8 @@ func DescriptorForComposeFile(path string, content []byte) spec.Descriptor {
 		Digest:    digest.FromBytes(content),
 		Size:      int64(len(content)),
 		Annotations: map[string]string{
-			"com.docker.compose.version": composeVersionAnnotation,
-			"com.docker.compose.file":    filepath.Base(path),
+			composeVersionAnnotationKey: composeVersionAnnotation,
+			"com.docker.compose.file":   filepath.Base(path),
 		},
 		Data: content,
 	}
@@ -193,7 +196,7 @@ func DescriptorForEnvFile(path string, content []byte) spec.Descriptor {
 		Digest:    digest.FromBytes(content),
 		Size:      int64(len(content)),
 		Annotations: map[string]string{
-			"com.docker.compose.version": composeVersionAnnotation,
+			composeVersionAnnotationKey:  composeVersionAnnotation,
 			"com.docker.compose.envfile": filepath.Base(path),
 		},
 		Data: content,
@@ -210,7 +213,7 @@ func DescriptorForApplicationIndex(subject spec.Descriptor, manifests []spec.Des
 		Manifests: manifests,
 		Subject:   &subject,
 		Annotations: map[string]string{
-			"com.docker.compose.version": composeVersionAnnotation,
+			composeVersionAnnotationKey: composeVersionAnnotation,
 		},
 	})
 	if err != nil {
@@ -222,7 +225,7 @@ func DescriptorForApplicationIndex(subject spec.Descriptor, manifests []spec.Des
 		Digest:       digest.FromBytes(index),
 		Size:         int64(len(index)),
 		Annotations: map[string]string{
-			"com.docker.compose.version": composeVersionAnnotation,
+			composeVersionAnnotationKey: composeVersionAnnotation,
 		},
 		Data: index,
 	}, nil
@@ -344,7 +347,7 @@ func generateManifest(layers []spec.Descriptor, ociVersion OCIVersion) (spec.Des
 		Digest:    digest.FromBytes(manifest),
 		Size:      int64(len(manifest)),
 		Annotations: map[string]string{
-			"com.docker.compose.version": composeVersionAnnotation,
+			composeVersionAnnotationKey: composeVersionAnnotation,
 		},
 		ArtifactType: artifactType,
 		Data:         manifest,
