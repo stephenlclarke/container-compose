@@ -39,8 +39,9 @@ Modes:
       This mode never mutates repositories.
 
   release VERSION_SELECTOR
-      Deterministically promote the four source repositories and Homebrew tap
-      to the next stable release. The version selector is resolved from the
+      Deterministically promote the prepared stack and Homebrew tap to the next
+      stable release. A stable release requires an explicit milestone or
+      security intent. The version selector is resolved from the
       latest local semantic container-compose tag, not from mutable
       working-tree state. The helper bumps container-compose on main when
       needed, commits that bump, promotes the stephenlclarke source main
@@ -86,6 +87,8 @@ Rules enforced:
   - container-compose main updates use pull-request promotion by default.
   - An equivalent tree already squash-merged on main is reconciled before tagging.
   - Long-lived release branches are not used.
+  - Companion source repositories must already be merged to their fork mains
+    through their own reviewable pull requests; this helper never pushes them.
 
 Environment:
   CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE=pr|direct
@@ -97,6 +100,15 @@ Environment:
       Use "checked-admin" by default. The helper waits for PR checks, tries a
       normal merge, then uses an admin merge only when GitHub blocks the merge
       on the solo-maintainer review requirement. Use "strict" to fail instead.
+
+  CONTAINER_STACK_RELEASE_INTENT=milestone|security
+      Required for a new stable release. milestone requires the current build
+      to have soaked for at least seven days. security bypasses only that soak
+      after CONTAINER_STACK_SECURITY_REASON records the advisory or incident.
+
+  CONTAINER_STACK_SECURITY_REASON
+      Required when CONTAINER_STACK_RELEASE_INTENT=security. Record a CVE,
+      upstream security advisory, or incident reference.
 
   CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS
   CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS
@@ -175,6 +187,9 @@ PROMOTION_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS:-3600}"
 PROMOTION_POLL_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS:-30}"
 COMPOSE_MAIN_PROMOTION_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE:-pr}"
 COMPOSE_MAIN_MERGE_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE:-checked-admin}"
+RELEASE_INTENT="${CONTAINER_STACK_RELEASE_INTENT:-}"
+SECURITY_REASON="${CONTAINER_STACK_SECURITY_REASON:-}"
+readonly STABLE_CURRENT_SOAK_SECONDS=604800
 HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"
 REPOS=(
   "container-builder-shim"
@@ -223,6 +238,73 @@ ensure_compose_promotion_mode() {
 
   if [[ "${EXECUTE}" == "1" && "${COMPOSE_MAIN_PROMOTION_MODE}" == "pr" ]]; then
     need_command gh
+  fi
+}
+
+# Require an intentional stable-release classification. Current builds are the
+# normal delivery lane; stable releases are milestone or security boundaries.
+ensure_release_intent() {
+  case "${RELEASE_INTENT}" in
+    milestone)
+      ;;
+    security)
+      if [[ -z "${SECURITY_REASON}" ]]; then
+        printf 'CONTAINER_STACK_SECURITY_REASON is required for a security release\n' >&2
+        exit 2
+      fi
+      ;;
+    *)
+      printf 'CONTAINER_STACK_RELEASE_INTENT is required for a new stable release\n' >&2
+      printf 'expected milestone or security\n' >&2
+      exit 2
+      ;;
+  esac
+}
+
+# Require the mutable Current build to identify the same source as local main.
+# Milestone releases additionally require a seven-day soak; security releases
+# retain the source-identity check but may bypass that waiting period.
+ensure_current_build_release_readiness() {
+  local path main_commit current_commit published_at
+  path="$(repo_path "${COMPOSE_REPO}")"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would verify current tag targets container-compose main and has the required soak\n'
+    return 0
+  fi
+
+  need_command gh
+  main_commit="$(git -C "${path}" rev-parse main)"
+  current_commit="$(git -C "${path}" rev-parse 'refs/tags/current^{}')"
+  if [[ "${current_commit}" != "${main_commit}" ]]; then
+    printf 'current tag targets %s, not the validated container-compose main %s\n' \
+      "${current_commit}" "${main_commit}" >&2
+    exit 1
+  fi
+
+  published_at="$(github_cli release view current \
+    --repo "$(github_repo "${COMPOSE_REPO}")" \
+    --json publishedAt --jq '.publishedAt')"
+  if [[ -z "${published_at}" || "${published_at}" == "null" ]]; then
+    printf 'current GitHub prerelease is missing; wait for green main package publication\n' >&2
+    exit 1
+  fi
+
+  if [[ "${RELEASE_INTENT}" == "milestone" ]]; then
+    python3 - "${published_at}" "${STABLE_CURRENT_SOAK_SECONDS}" <<'PY'
+from datetime import datetime, timezone
+import sys
+
+published_at = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+minimum = int(sys.argv[2])
+age = int((datetime.now(timezone.utc) - published_at).total_seconds())
+if age < minimum:
+    remaining = minimum - age
+    raise SystemExit(
+        f"current build has soaked for {age}s; milestone releases require {minimum}s "
+        f"({remaining}s remaining). Use a documented security release only for an advisory or incident."
+    )
+PY
   fi
 }
 
@@ -1226,22 +1308,27 @@ promote_compose_main() {
 }
 
 push_all_main() {
-  local version="$1" repo path remote body
-  print_header "promote stephenlclarke-owned source main branches"
+  local version="$1" repo path local_head remote_head body
+  print_header "verify reviewed sibling mains and promote container-compose"
   for repo in "${REPOS[@]}"; do
-    path="$(repo_path "${repo}")"
-    remote="$(push_remote "${repo}")"
     if [[ "${repo}" == "${COMPOSE_REPO}" ]]; then
-      body="$(compose_source_promotion_body "${version}")"
-      promote_compose_main \
-        "${version}" \
-        "source" \
-        "chore(release): promote ${version} source" \
-        "${body}"
-    else
-      run git -C "${path}" push "${remote}" "refs/heads/main"
+      continue
+    fi
+    path="$(repo_path "${repo}")"
+    local_head="$(git -C "${path}" rev-parse main)"
+    remote_head="$(remote_main_commit "${repo}")"
+    if [[ -z "${remote_head}" || "${local_head}" != "${remote_head}" ]]; then
+      printf '%s main is not the reviewed fork head; land it through its own PR before releasing\n' "${repo}" >&2
+      exit 1
     fi
   done
+
+  body="$(compose_source_promotion_body "${version}")"
+  promote_compose_main \
+    "${version}" \
+    "source" \
+    "chore(release): promote ${version} source" \
+    "${body}"
 }
 
 # Require an executable command when an executed workflow depends on it.
@@ -1590,6 +1677,14 @@ resume_stable_release() {
   publish_stable_release "${version}"
 }
 
+# Stable releases must not knowingly leave an Apple-backed sibling behind its
+# upstream main. The report remains useful for ordinary development; this
+# stricter mode is intentionally a release boundary.
+require_release_upstream_alignment() {
+  print_header "verify Apple upstream alignment"
+  run make -C "$(repo_path "${COMPOSE_REPO}")" upstream-divergence-release-check
+}
+
 release_current_stack() {
   local latest current version path
   latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
@@ -1605,6 +1700,9 @@ release_current_stack() {
   fi
   ensure_release_version_is_valid "${latest}" "${current}" "${version}"
   ensure_new_stable_release "${version}"
+  ensure_release_intent
+  ensure_current_build_release_readiness
+  require_release_upstream_alignment
   path="$(repo_path "${COMPOSE_REPO}")"
 
   print_header "prepare stable release ${version}"
@@ -1691,6 +1789,7 @@ plan() {
   printf 'next patch release:      %s\n' "${next_patch}"
   printf 'next minor release:      %s\n' "${next_minor}"
   printf 'next major release:      %s\n\n' "${next_major}"
+  printf 'stable release intent:   %s\n\n' "${RELEASE_INTENT:-required for release}"
   printf '%-26s %-40s %-18s\n' "component" "main-sha" "changed-since-tag"
   for repo in "${REPOS[@]}"; do
     changed="yes"
@@ -1704,12 +1803,15 @@ plan() {
 
 Process:
   1. Keep main as the releasable integration branch.
-  2. For a stable release, run release VERSION_SELECTOR after validation.
-  3. The release mode resolves VERSION_SELECTOR from the latest semantic tag,
-     bumps container-compose on main when needed, promotes stephenlclarke-owned
-     source main branches, promotes container-compose through an automated PR by
-     default, creates a new container-compose tag, dispatches the stable package
-     workflow, and verifies the immutable release assets plus Homebrew tap update.
+  2. Current builds publish from every green main commit.
+  3. For a stable release, use RELEASE_INTENT=milestone after a seven-day current
+     soak, or RELEASE_INTENT=security with an advisory or incident reference.
+  4. The release mode resolves VERSION_SELECTOR from the latest semantic tag,
+     requires reviewed sibling mains and Apple-upstream alignment, bumps
+     container-compose on main when needed, promotes container-compose through
+     an automated PR by default, creates a new container-compose tag, dispatches
+     the stable package workflow, and verifies immutable assets plus the paired
+     Homebrew update.
 EOF
 }
 

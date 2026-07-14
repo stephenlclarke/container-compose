@@ -106,6 +106,7 @@ Useful focused targets are:
 | `make swift-runtime-test` | Build and run the isolated matched runtime smoke suite. |
 | `make upstream-divergence-report` | Fetch Apple upstream and stephenlclarke refs for the Apple-backed sibling repos, then write `.build/reports/upstream-divergence.md` and `.build/reports/upstream-divergence.json`. |
 | `make upstream-divergence-check` | Run the same report as a strict check that fails on dirty worktrees, unpushed local commits, missing refs, or Apple upstream merge conflicts. |
+| `make upstream-divergence-release-check` | Stable-release check: also fails when a fork `main` is behind Apple upstream. |
 
 Override local coverage floors only for deliberate stricter validation:
 
@@ -120,7 +121,7 @@ Coverage outputs are `coverage.lcov`, `coverage.xml`,
 marker-protected `.build/container-runtime` directory, retains only the kernel
 cache between runs, and always stops the test runtime when it exits.
 
-Run `make upstream-divergence-report` before upstream handoff, runtime-stack promotion, or release review work. The report compares `container`, `containerization`, and `container-builder-shim` against their Apple upstream `main` refs, lists fork-only and upstream-only commit subjects, and checks whether Apple upstream can merge cleanly into the local checkout. Use `make upstream-divergence-check` when the review needs a hard failure instead of an informational report.
+Run `make upstream-divergence-report` before upstream handoff, runtime-stack promotion, or release review work. The report compares `container`, `containerization`, and `container-builder-shim` against their Apple upstream `main` refs, lists fork-only and upstream-only commit subjects, and checks whether Apple upstream can merge cleanly into the local checkout. Use `make upstream-divergence-check` when the review needs a hard failure, and `make upstream-divergence-release-check` before a stable release so an upstream-behind fork cannot be promoted.
 
 GitHub Actions separates source checks, macOS runtime validation, sanitizers,
 formatting, CodeQL, SonarCloud, package publication, and Homebrew formula syntax
@@ -137,7 +138,9 @@ checkout against immutable source, runtime, and tap checkouts instead. It
 validates the non-virtualized stack and Compose CI; the local full gate remains
 mandatory for runtime integration and Docker Compose parity. The helper promotes
 `container-compose` through an automated pull request by default, verifies the
-promoted main tree still matches the locally gated candidate before it tags. A
+promoted main tree still matches the locally gated candidate before it tags, and
+refuses to push sibling source mains: those must already be merged through their
+own reviewable pull requests. A
 successful hosted gate records a candidate-bound GitHub Actions release-authority
 check on that tag commit; the package workflow requires that check, then repeats
 `make ci` before it publishes assets or updates the tap.
@@ -148,6 +151,10 @@ There are two package lanes, with no manual asset copying:
 
 - Every green `main` commit refreshes the one mutable GitHub prerelease named **Current build** (tag `current`) and the opt-in `container-current` / `container-compose-current` Homebrew pair.
 - A semantic release is an immutable `x.y.z` tag and becomes Homebrew's default `container` / `container-compose` pair.
+
+Current is the normal delivery lane. Create a stable release only for a
+milestone after the current build has soaked for seven days, or for a documented
+security incident. The release helper enforces both rules.
 
 From clean `~/github/container-compose`, `~/github/container-builder-shim`,
 `~/github/containerization`, `~/github/container`, and
@@ -167,17 +174,22 @@ formulae, and release notes deterministic.
 
 After `make release-plan` confirms the intended next version, promote the
 validated `main` source with one selector. The selector is resolved from the
-latest semantic tag—not from the working-tree version:
+latest semantic tag—not from the working-tree version. The explicit intent
+makes a stable release a conscious boundary rather than an automatic response to
+every green slice:
 
 ```sh
-make release VERSION_SELECTOR=--+   # patch: X.Y.Z -> X.Y.(Z+1)
-make release VERSION_SELECTOR=-+-   # minor: X.Y.Z -> X.(Y+1).0
-make release VERSION_SELECTOR=+--   # major: X.Y.Z -> (X+1).0.0
-make release VERSION_SELECTOR=0.7.0 # exact next semantic version
+CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=--+   # patch: X.Y.Z -> X.Y.(Z+1)
+CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=-+-   # minor: X.Y.Z -> X.(Y+1).0
+CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=+--   # major: X.Y.Z -> (X+1).0.0
+CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=0.7.0 # exact next semantic version
+CONTAINER_STACK_RELEASE_INTENT=security CONTAINER_STACK_SECURITY_REASON='CVE-2026-12345' make release VERSION_SELECTOR=--+
 ```
 
-Before source promotion, the helper requires `kern.hv_support=1`, bootstraps the
-matched stack tools, fetches the required `containerization` integration kernel
+Before source promotion, the helper requires the mutable `current` tag to point
+at the validated `main` head. Milestones also require that Current build's
+seven-day soak. It then blocks if a sibling fork is behind Apple upstream,
+requires `kern.hv_support=1`, bootstraps the matched stack tools, fetches the required `containerization` integration kernel
 when it is absent, and runs the full local `make release-gate`. The hosted gate
 then runs the `make release-gate-hosted` equivalent from its immutable
 release-control checkout against the immutable source, runtime, and tap
