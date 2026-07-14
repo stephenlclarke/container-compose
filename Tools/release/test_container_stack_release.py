@@ -844,6 +844,8 @@ esac
     def configure_repo(self, repo: Path) -> None:
         self.run_command("git", "-C", str(repo), "config", "user.name", "Test")
         self.run_command("git", "-C", str(repo), "config", "user.email", "test@example.com")
+        self.run_command("git", "-C", str(repo), "config", "commit.gpgSign", "false")
+        self.run_command("git", "-C", str(repo), "config", "tag.gpgSign", "false")
 
     def commit_file(self, repo: Path, name: str, contents: str, subject: str) -> None:
         (repo / name).write_text(contents, encoding="utf-8")
