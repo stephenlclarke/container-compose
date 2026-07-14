@@ -9651,6 +9651,26 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("stats stops a streaming session on interrupt")
+    func statsStopsStreamingSessionOnInterrupt() async throws {
+        let signalProxy = RecordingComposeSignalProxy(forwardedSignals: ["SIGINT"])
+        let statsManager = InterruptibleStatsManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+
+        try await ComposeOrchestrator(
+            dependencies: orchestratorDependencies {
+                $0.signalProxy = signalProxy
+                $0.statsManager = statsManager
+            }
+        ).stats(project: project, options: ComposeStatsOptions())
+
+        #expect(await signalProxy.requests == [["SIGINT", "SIGTERM"]])
+        #expect(await statsManager.cancelled)
+    }
+
     @Test("stats dry run emits compose runtime operation")
     func statsDryRunEmitsComposeRuntimeOperation() async throws {
         let emitted = MessageRecorder()
@@ -26445,6 +26465,26 @@ private actor RecordingContainerStatsManager: ContainerStatsManaging {
         storage.append(ContainerStatsRequest(ids: ids, format: format, noStream: noStream, noTrunc: noTrunc, includeStopped: includeStopped))
         for output in outputs {
             emit(output)
+        }
+    }
+}
+
+private actor InterruptibleStatsManager: ContainerStatsManaging {
+    private(set) var cancelled = false
+
+    func stats(
+        ids _: [String],
+        format _: String,
+        noStream _: Bool,
+        noTrunc _: Bool,
+        includeStopped _: Bool,
+        emit _: @escaping @Sendable (String) -> Void
+    ) async throws {
+        do {
+            try await Task.sleep(for: .seconds(60))
+        } catch is CancellationError {
+            cancelled = true
+            throw CancellationError()
         }
     }
 }

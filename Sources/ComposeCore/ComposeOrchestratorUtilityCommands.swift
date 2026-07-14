@@ -147,13 +147,48 @@ public extension ComposeOrchestrator {
             emitComposeRuntimeOperation(args)
             return
         }
-        try await statsManager.stats(
-            ids: ids,
-            format: stats.format,
-            noStream: stats.noStream,
-            noTrunc: stats.noTrunc,
-            includeStopped: stats.all,
-            emit: options.emit,
+        let format = stats.format
+        let noStream = stats.noStream
+        let noTrunc = stats.noTrunc
+        let includeStopped = stats.all
+        let collectStats: @Sendable () async throws -> Void = {
+            try await self.statsManager.stats(
+                ids: ids,
+                format: format,
+                noStream: noStream,
+                noTrunc: noTrunc,
+                includeStopped: includeStopped,
+                emit: self.options.emit,
+            )
+        }
+        guard !noStream else {
+            try await collectStats()
+            return
+        }
+
+        try await runInterruptibleStats(collectStats)
+    }
+
+    /// Runs a local stats stream and converts terminal interrupts into task cancellation.
+    private func runInterruptibleStats(
+        _ collectStats: @escaping @Sendable () async throws -> Void,
+    ) async throws {
+        let streamingTask = Task {
+            try await collectStats()
+        }
+        try await signalProxy.withSignalProxy(
+            signals: ["SIGINT", "SIGTERM"],
+            handler: { _ in
+                streamingTask.cancel()
+            },
+            operation: {
+                do {
+                    try await streamingTask.value
+                } catch is CancellationError {
+                    // Ctrl-C/termination ends a local stats stream. The stats
+                    // manager's defer restores the terminal before returning.
+                }
+            },
         )
     }
 
