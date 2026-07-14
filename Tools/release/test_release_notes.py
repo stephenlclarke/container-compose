@@ -195,26 +195,27 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("![Quality Gate Status]", notes)
             self.assertIn("![CodeQL Results]", notes)
             self.assertNotIn("[![", notes)
+            self.assertLess(notes.index("## Quality Snapshot"), notes.index("## Summary"))
 
-    def test_current_release_rejects_a_quality_snapshot(self) -> None:
+    def test_current_release_renders_a_quality_snapshot_before_the_summary(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             self.init_repo(repo)
 
-            with self.assertRaisesRegex(
-                ValueError, "quality snapshots are supported only for stable releases"
-            ):
-                module.render_release_notes(
-                    repo=repo,
-                    release_tag="current",
-                    release_label="current build",
-                    compose_version="0.6.1",
-                    asset="container-compose-plugin-current-arm64.tar.gz",
-                    asset_sha="abc123",
-                    quality_snapshot="## Quality Snapshot\n",
-                    head_ref="HEAD",
-                )
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="current",
+                release_label="current build",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-current-arm64.tar.gz",
+                asset_sha="abc123",
+                quality_snapshot="## Quality Snapshot\n\nCurrent evidence.",
+                head_ref="HEAD",
+            )
+
+            self.assertIn("Current evidence.", notes)
+            self.assertLess(notes.index("## Quality Snapshot"), notes.index("## Summary"))
 
     def test_release_note_trailers_render_user_facing_highlights(self) -> None:
         module = load_module()

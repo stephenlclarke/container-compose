@@ -201,13 +201,7 @@ follow later green `main` commits. Homebrew users without `-current` always use
 the newly promoted stable formula pair; opted-in users continue to use the
 current pair.
 
-Each stable release note also stores an immutable quality snapshot for the promoted
-commit: the eleven SonarQube quality badges shown in the README plus CodeQL
-analysis, result, and rule counts. They are static, non-clickable shields.io
-images—not live dashboard links—and intentionally exclude the release-version
-and visitor badges. Publication waits for the exact SonarQube and CodeQL
-analyses; if either result cannot be tied to the promoted commit, it fails
-rather than publishing incomplete historical evidence.
+Each package note begins with a quality snapshot for its exact commit: the eleven SonarQube quality badges shown in the README plus CodeQL analysis, result, and rule counts. Current-build snapshots refresh whenever the mutable `current` pointer moves; stable snapshots are immutable historical evidence. The badges are static, non-clickable shields.io images that intentionally exclude release-version and visitor badges. Publication waits for the exact SonarQube and CodeQL analyses; if either result cannot be tied to the packaged commit, it fails rather than publishing incomplete evidence.
 
 ## Docker Compose Parity
 

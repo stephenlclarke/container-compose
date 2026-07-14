@@ -15,7 +15,7 @@
 ## limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-"""Capture immutable SonarQube and CodeQL metrics for a stable release."""
+"""Capture SonarQube and CodeQL metrics for a release-note quality snapshot."""
 
 from __future__ import annotations
 
@@ -59,6 +59,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--repo", required=True, help="GitHub owner/repository")
     parser.add_argument("--commit", required=True, help="Promoted commit SHA")
+    parser.add_argument(
+        "--release-kind",
+        choices=("current", "stable"),
+        default="stable",
+        help="Whether this snapshot belongs to the mutable current build or an immutable stable release",
+    )
     parser.add_argument("--sonarqube-url", default=SONARQUBE_URL)
     parser.add_argument("--sonarqube-project", default=SONARQUBE_PROJECT)
     parser.add_argument("--sonarqube-branch", default=SONARQUBE_BRANCH)
@@ -319,13 +325,18 @@ def render_snapshot(
     sonar_analysis: dict[str, Any],
     sonar_measures: dict[str, str],
     codeql_analysis: dict[str, Any],
+    release_kind: str = "stable",
 ) -> str:
     analysis_date = sonar_analysis["date"]
+    if release_kind == "current":
+        retention = "These static, non-clickable badges describe this mutable Current build and are replaced when `current` moves."
+    else:
+        retention = "These static, non-clickable badges are retained as historical evidence; they do not update."
     return "\n".join(
         [
             "## Quality Snapshot",
             "",
-            "These static, non-clickable badges are retained as historical evidence; they do not update.",
+            retention,
             f"- SonarQube `main` analysis `{analysis_date}` and CodeQL analysis both cover `{commit}`.",
             "- This block intentionally excludes release-version and visitor badges.",
             "",
@@ -363,6 +374,7 @@ def main() -> None:
                 sonar_analysis=sonar_analysis,
                 sonar_measures=sonar_measures,
                 codeql_analysis=codeql_analysis,
+                release_kind=args.release_kind,
             ),
             end="",
         )

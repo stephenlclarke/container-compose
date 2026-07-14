@@ -718,7 +718,9 @@ tag_new_stable_version() {
   path="$(repo_path "${COMPOSE_REPO}")"
   remote="$(push_remote "${COMPOSE_REPO}")"
   ensure_new_stable_release "${version}"
-  run git -C "${path}" tag -s "${version}" main -m "$(github_repo "${COMPOSE_REPO}") ${version}"
+  # The signed release identity has a deterministic annotation. Suppress any
+  # local editor fallback so automated release runs never open TAG_EDITMSG.
+  run env GIT_EDITOR=: git -C "${path}" tag -s "${version}" main -m "$(github_repo "${COMPOSE_REPO}") ${version}"
   run git -C "${path}" push "${remote}" "refs/tags/${version}"
   verify_github_stable_tag_signature "${version}"
 }

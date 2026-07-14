@@ -129,10 +129,10 @@ fi
 
 main_existing_calls="${temporary_directory}/main-existing.calls"
 run_publisher branch exists "${main_existing_calls}"
-grep -Fqx "tag --force current 0123456789012345678901234567890123456789" "${main_existing_calls}.git"
+grep -Fqx "tag --no-sign --force current 0123456789012345678901234567890123456789" "${main_existing_calls}.git"
 grep -Fqx "push --force origin refs/tags/current" "${main_existing_calls}.git"
-grep -Fqx "release upload current ${asset} ${checksum} --repo stephenlclarke/container-compose --clobber" "${main_existing_calls}"
-grep -Fqx "release edit current --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --prerelease" "${main_existing_calls}"
+grep -Fqx "release delete current --repo stephenlclarke/container-compose --yes" "${main_existing_calls}"
+grep -Fqx "release create current ${asset} ${checksum} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --verify-tag --prerelease --latest=false" "${main_existing_calls}"
 
 main_create_calls="${temporary_directory}/main-create.calls"
 run_publisher branch missing "${main_create_calls}"
@@ -153,4 +153,4 @@ grep -Fqx "release create 1.2.3 ${asset} ${checksum} ${runtime_asset} ${runtime_
 
 current_extra_calls="${temporary_directory}/current-extra.calls"
 run_publisher branch exists "${current_extra_calls}" "${extra_assets}"
-grep -Fqx "release upload current ${asset} ${checksum} ${runtime_asset} ${runtime_checksum} --repo stephenlclarke/container-compose --clobber" "${current_extra_calls}"
+grep -Fqx "release create current ${asset} ${checksum} ${runtime_asset} ${runtime_checksum} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --verify-tag --prerelease --latest=false" "${current_extra_calls}"
