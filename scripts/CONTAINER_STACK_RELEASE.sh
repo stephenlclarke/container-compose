@@ -360,7 +360,7 @@ recover_unpublished_release_candidate() {
   fi
   while IFS= read -r subject; do
     case "${subject}" in
-      "chore(release): prepare ${version}"|"chore(deps): pin containerization "[0-9a-f]*|"chore(deps): pin container "[0-9a-f]*)
+      "chore(release): prepare ${version}"|"chore(deps): pin containerization "[0-9a-f]*|"chore(deps): pin container "[0-9a-f]*|"chore(deps): pin container stack "[0-9a-f]*" "[0-9a-f]*)
         ;;
       *)
         printf 'container-compose main contains an unpublished non-release commit; refusing recovery: %s\n' "${subject}" >&2
@@ -900,7 +900,7 @@ unedit_release_dependency() {
 
 # Update one SwiftPM manifest to the current containerization stack revision.
 update_containerization_package_pin() {
-  local repo="$1" ref="$2" path
+  local repo="$1" ref="$2" resolve="${3:-1}" path
   path="$(repo_path "${repo}")"
 
   if [[ "${EXECUTE}" != "1" ]]; then
@@ -928,7 +928,9 @@ if count != 1:
 package.write_text(updated, encoding="utf-8")
 PY
   unedit_release_dependency "${path}" containerization
-  run swift package --package-path "${path}" resolve
+  if [[ "${resolve}" == "1" ]]; then
+    run swift package --package-path "${path}" resolve
+  fi
 }
 
 # Commit a SwiftPM containerization pin update when the manifest or lockfile changed.
@@ -955,7 +957,7 @@ commit_containerization_package_pin() {
 
 # Update Compose's remote runtime dependency to the current container stack revision.
 update_container_package_pin() {
-  local ref="$1" path
+  local ref="$1" resolve="${2:-1}" path
   path="$(repo_path "${COMPOSE_REPO}")"
 
   if [[ "${EXECUTE}" != "1" ]]; then
@@ -983,28 +985,34 @@ if count != 1:
 package.write_text(updated, encoding="utf-8")
 PY
   unedit_release_dependency "${path}" container
-  run swift package --package-path "${path}" resolve
+  if [[ "${resolve}" == "1" ]]; then
+    run swift package --package-path "${path}" resolve
+  fi
 }
 
-# Commit the Compose runtime package pin when the manifest or lockfile changed.
-commit_container_package_pin() {
-  local ref="$1" path short_ref
+# Compose consumes container and containerization together. Commit their
+# matching revisions atomically, so SwiftPM is never asked to resolve a
+# transient manifest with two incompatible revision requirements.
+commit_compose_stack_package_pins() {
+  local container_ref="$1" containerization_ref="$2" path container_short_ref containerization_short_ref
   path="$(repo_path "${COMPOSE_REPO}")"
-  short_ref="${ref:0:12}"
+  container_short_ref="${container_ref:0:12}"
+  containerization_short_ref="${containerization_ref:0:12}"
 
   if [[ "${EXECUTE}" != "1" ]]; then
-    printf 'would commit %s container pin update if needed\n' "${COMPOSE_REPO}"
+    printf 'would commit %s matching container and containerization pin update if needed\n' "${COMPOSE_REPO}"
     return 0
   fi
 
   run git -C "${path}" add Package.swift Package.resolved
   if git -C "${path}" diff --cached --quiet -- Package.swift Package.resolved; then
-    printf '%s container package pin already points at %s\n' "${COMPOSE_REPO}" "${ref}"
+    printf '%s stack package pins already point at container %s and containerization %s\n' \
+      "${COMPOSE_REPO}" "${container_ref}" "${containerization_ref}"
     return 0
   fi
 
   run git -C "${path}" commit \
-    -m "chore(deps): pin container ${short_ref}" \
+    -m "chore(deps): pin container stack ${container_short_ref} ${containerization_short_ref}" \
     -m "Release-Note: none"
 }
 
@@ -1015,17 +1023,19 @@ sync_containerization_package_pins() {
   print_header "sync exact containerization SwiftPM pins"
   update_containerization_package_pin "${CONTAINER_REPO}" "${ref}"
   commit_containerization_package_pin "${CONTAINER_REPO}" "${ref}"
-  update_containerization_package_pin "${COMPOSE_REPO}" "${ref}"
-  commit_containerization_package_pin "${COMPOSE_REPO}" "${ref}"
 }
 
-# Keep Compose's standalone package dependency aligned with the runtime stack.
+# Keep Compose's direct runtime dependencies aligned as one resolvable stack.
 sync_container_package_pin() {
-  local ref
-  ref="$(git -C "$(repo_path "container")" rev-parse main)"
-  print_header "sync exact container SwiftPM pin"
-  update_container_package_pin "${ref}"
-  commit_container_package_pin "${ref}"
+  local container_ref containerization_ref path
+  container_ref="$(git -C "$(repo_path "container")" rev-parse main)"
+  containerization_ref="$(git -C "$(repo_path "containerization")" rev-parse main)"
+  path="$(repo_path "${COMPOSE_REPO}")"
+  print_header "sync exact compose runtime stack pins"
+  update_containerization_package_pin "${COMPOSE_REPO}" "${containerization_ref}" 0
+  update_container_package_pin "${container_ref}" 0
+  run swift package --package-path "${path}" resolve
+  commit_compose_stack_package_pins "${container_ref}" "${containerization_ref}"
 }
 
 write_release_stack_manifest() {
