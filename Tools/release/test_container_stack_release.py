@@ -158,6 +158,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('RELEASE_MUTABLE="${release_mutable}"', workflow)
         self.assertIn("--delete-superseded-current-releases", workflow)
         self.assertIn("release_notes_args=(", workflow)
+        self.assertIn('quality_release_kind="current"', workflow)
+        self.assertIn('quality_release_kind="stable"', workflow)
+        self.assertIn('--release-kind "${quality_release_kind}"', workflow)
         self.assertIn('python3 Tools/release/release-notes.py "${release_notes_args[@]}"', workflow)
         self.assertNotIn("quality_snapshot_args", workflow)
 
@@ -451,7 +454,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             remote, local = self.create_compose_checkout(root)
-            self.run_command("git", "-C", str(local), "tag", "current")
+            self.run_command("git", "-C", str(local), "tag", "--no-sign", "current")
             self.run_command("git", "-C", str(local), "push", "origin", "refs/tags/current")
 
             updater = root / "updater"
@@ -459,7 +462,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.configure_repo(updater)
             self.commit_file(updater, "CURRENT.md", "current\n", "chore: advance current")
             self.run_command("git", "-C", str(updater), "push", "origin", "main")
-            self.run_command("git", "-C", str(updater), "tag", "-f", "current")
+            # The developer's global tag.gpgSign setting makes an otherwise
+            # lightweight force-update prompt for an annotation. Current is a
+            # mutable pointer, never a signed release identity, so make the
+            # test's intent explicit and keep it non-interactive.
+            self.run_command("git", "-C", str(updater), "tag", "--no-sign", "-f", "current")
             self.run_command("git", "-C", str(updater), "push", "origin", "+refs/tags/current")
 
             result = self.run_release_function(root / "github", "fetch_release_remote container-compose")

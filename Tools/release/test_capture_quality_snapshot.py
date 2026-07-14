@@ -116,6 +116,39 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
                 analysis={"date": "2026-07-13T16:28:33+0000"},
             )
 
+    def test_current_snapshot_is_replaced_when_the_mutable_pointer_moves(self) -> None:
+        module = load_module()
+        measures = {
+            "alert_status": "OK",
+            "bugs": "0",
+            "code_smells": "0",
+            "coverage": "100",
+            "duplicated_lines_density": "0",
+            "ncloc": "1",
+            "reliability_rating": "1.0",
+            "security_rating": "1.0",
+            "sqale_index": "0",
+            "sqale_rating": "1.0",
+            "vulnerabilities": "0",
+        }
+
+        snapshot = module.render_snapshot(
+            commit="0123456789abcdef",
+            sonar_analysis={"date": "2026-07-14T00:00:00+0000"},
+            sonar_measures=measures,
+            codeql_analysis={
+                "results_count": 0,
+                "rules_count": 34,
+                "error": "",
+                "warning": "",
+            },
+            release_kind="current",
+        )
+
+        self.assertIn("mutable Current build", snapshot)
+        self.assertIn("replaced when `current` moves", snapshot)
+        self.assertNotIn("retained as historical evidence", snapshot)
+
     def test_codeql_warning_is_rejected(self) -> None:
         module = load_module()
 

@@ -145,15 +145,12 @@ if [[ "${published_release_state}" == "exists" ]]; then
   fi
 
   # Move only the intentionally mutable `current` pointer before replacing its assets.
-  "${GIT}" tag --force "${RELEASE_TAG}" "${PUBLISH_SHA}"
+  # `current` is a lightweight, mutable pointer. Explicitly disable signing so
+  # a developer-level tag.gpgSign setting cannot open an annotation editor.
+  "${GIT}" tag --no-sign --force "${RELEASE_TAG}" "${PUBLISH_SHA}"
   "${GIT}" push --force origin "refs/tags/${RELEASE_TAG}"
-  "${GH}" release upload "${RELEASE_TAG}" "${release_assets[@]}" \
-    --repo "${RELEASE_REPOSITORY}" --clobber
-  exec "${GH}" release edit "${RELEASE_TAG}" \
-    --repo "${RELEASE_REPOSITORY}" \
-    --title "${RELEASE_TITLE}" \
-    --notes-file "${RELEASE_NOTES_FILE}" \
-    --prerelease
+  "${GH}" release delete "${RELEASE_TAG}" \
+    --repo "${RELEASE_REPOSITORY}" --yes
 fi
 
 create_args=(
@@ -162,7 +159,7 @@ create_args=(
   --title "${RELEASE_TITLE}"
   --notes-file "${RELEASE_NOTES_FILE}"
 )
-if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
+if [[ "${PUBLISH_REF_TYPE}" == "tag" || "${published_release_state}" == "exists" ]]; then
   create_args+=(--verify-tag)
 else
   create_args+=(--target "${PUBLISH_SHA}")

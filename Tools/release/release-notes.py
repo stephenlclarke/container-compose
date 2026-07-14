@@ -89,7 +89,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--quality-snapshot",
         type=Path,
-        help="Static SonarQube and CodeQL badge block captured for a stable release.",
+        help="Static SonarQube and CodeQL badge block captured for this release.",
     )
     parser.add_argument(
         "--highlights-json",
@@ -721,13 +721,17 @@ def render_release_notes(
     if (runtime_asset is None) != (runtime_asset_sha is None):
         raise ValueError("runtime asset name and checksum must be provided together")
 
-    lines = [
+    lines: list[str] = []
+    if quality_snapshot is not None:
+        lines.extend([quality_snapshot.rstrip(), ""])
+
+    lines.extend([
         "## Summary",
         "",
         f"- {release_label} package for the `{compose_version}` container-compose slice.",
         "- Keeps the fork-backed container, containerization, and builder-shim compatibility metadata intact.",
         "- Publishes the release-quality Swift plugin and non-debug Go normalizer package.",
-    ]
+    ])
     if not stable_release:
         lines.append(
             f"- Mutable `current` pointer targets main commit `{selected_range.head_commit}`."
@@ -846,10 +850,6 @@ def render_release_notes(
                 f"  `{runtime_asset_sha}`.",
             ]
         )
-    if quality_snapshot is not None:
-        if not stable_release:
-            raise ValueError("quality snapshots are supported only for stable releases")
-        lines.extend(["", quality_snapshot.rstrip()])
     return "\n".join(lines) + "\n"
 
 

@@ -634,16 +634,16 @@ jobs:
             --component-repo container=../container
             --highlights-json "${highlights}"
           )
-          if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
-            quality_snapshot="${RUNNER_TEMP}/quality-snapshot.md"
-            # A stable release records the exact SonarQube and CodeQL analyses
-            # for the promoted commit. Current is intentionally mutable and
-            # therefore does not carry a historical snapshot.
-            python3 Tools/release/capture-quality-snapshot.py \
-              --repo "${GITHUB_REPOSITORY}" \
-              --commit "${PUBLISH_SHA}" > "${quality_snapshot}"
-            release_notes_args+=(--quality-snapshot "${quality_snapshot}")
+          quality_release_kind="stable"
+          if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
+            quality_release_kind="current"
           fi
+          quality_snapshot="${RUNNER_TEMP}/quality-snapshot.md"
+          python3 Tools/release/capture-quality-snapshot.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --commit "${PUBLISH_SHA}" \
+            --release-kind "${quality_release_kind}" > "${quality_snapshot}"
+          release_notes_args+=(--quality-snapshot "${quality_snapshot}")
           python3 Tools/release/release-notes.py "${release_notes_args[@]}" > "${notes}"
 
           if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
