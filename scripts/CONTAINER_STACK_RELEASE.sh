@@ -1909,7 +1909,8 @@ Process:
   1. Keep main as the releasable integration branch.
   2. Current builds publish from every green main commit.
   3. For a stable release, use RELEASE_INTENT=milestone after a seven-day current
-     soak, or RELEASE_INTENT=security with an advisory or incident reference.
+     soak, RELEASE_INTENT=maintenance with --+ and a documented operational
+     reason, or RELEASE_INTENT=security with an advisory or incident reference.
   4. The release mode resolves VERSION_SELECTOR from the latest semantic tag,
      requires reviewed sibling mains and Apple-upstream alignment, bumps
      container-compose on main when needed, promotes container-compose through
