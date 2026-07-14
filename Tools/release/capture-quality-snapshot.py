@@ -36,7 +36,10 @@ SONARQUBE_PROJECT = "stephenlclarke_container-compose2"
 SONARQUBE_BRANCH = "main"
 CODEQL_REF = "refs/heads/main"
 POLL_INTERVAL_SECONDS = 10
-POLL_TIMEOUT_SECONDS = 600
+# A main CodeQL analysis is allowed to use its full workflow timeout. Package
+# publication starts after CI/Sonar finishes, so a 30-minute window prevents a
+# valid slower CodeQL run from producing a release without its quality snapshot.
+POLL_TIMEOUT_SECONDS = 1800
 
 SONARQUBE_METRICS = (
     "alert_status",
@@ -328,6 +331,9 @@ def render_snapshot(
     release_kind: str = "stable",
 ) -> str:
     analysis_date = sonar_analysis["date"]
+    badges = " ".join(
+        snapshot_badges(sonar_measures=sonar_measures, codeql_analysis=codeql_analysis)
+    )
     if release_kind == "current":
         retention = "These static, non-clickable badges describe this mutable Current build and are replaced when `current` moves."
     else:
@@ -338,11 +344,8 @@ def render_snapshot(
             "",
             retention,
             f"- SonarQube `main` analysis `{analysis_date}` and CodeQL analysis both cover `{commit}`.",
-            "- This block intentionally excludes release-version and visitor badges.",
             "",
-            *snapshot_badges(
-                sonar_measures=sonar_measures, codeql_analysis=codeql_analysis
-            ),
+            badges,
             "",
         ]
     )

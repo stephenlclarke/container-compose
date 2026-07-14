@@ -1,9 +1,14 @@
 # Building container-compose
 
-This guide covers source builds, validation, parity checks, and package
-creation. Target-machine installation lives in [INSTALL.md](INSTALL.md), release
-policy lives in [BRANCHES.md](BRANCHES.md), and runtime ownership lives in
-[DESIGN.md](DESIGN.md).
+This guide covers source builds, validation, parity checks, package creation,
+and the deterministic release procedure. Target-machine installation lives in
+[INSTALL.md](INSTALL.md), and runtime ownership lives in [DESIGN.md](DESIGN.md).
+
+## Stack Roles And Branches
+
+`container-compose` coordinates releases for the matched `stephenlclarke` stack. `container` supplies the runtime and CLI, `containerization` supplies its Swift runtime package, `container-builder-shim` supplies the pinned builder image, and `homebrew-tap` publishes the paired formulae.
+
+`main` is the releasable integration branch in each repository. Use short-lived review branches for all changes and land the sibling repositories through their own pull requests before promoting Compose. The release helper only promotes `container-compose`; it never pushes sibling source branches. Do not create long-lived integration or packaging branches.
 
 ## Requirements
 
@@ -13,8 +18,9 @@ policy lives in [BRANCHES.md](BRANCHES.md), and runtime ownership lives in
 - The Go toolchain declared by `Tools/compose-normalizer/go.mod`.
 - Python 3 for coverage and release tooling.
 - Node.js plus `markdownlint-cli` for Markdown validation.
-- A sibling [`stephenlclarke/container`](https://github.com/stephenlclarke/container)
-  checkout for the matched runtime build.
+- Internet access for SwiftPM to fetch the exact checked-in `container` and
+  `containerization` revisions. A sibling runtime checkout is required only for
+  full stack, runtime, or release-gate validation.
 - Docker Compose v2 and a Docker daemon for the full parity suite.
 - Optional `sonar-scanner` and a SonarCloud token for local analysis.
 
@@ -33,8 +39,9 @@ export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 
 ## Checkout Layout
 
-Keep the runtime and plugin as sibling directories because SwiftPM resolves the
-matched runtime through `../container`:
+An ordinary source checkout is self-contained: SwiftPM resolves the matched
+runtime by the exact revision in `Package.swift` and `Package.resolved`.
+Keep a sibling runtime checkout only when running the full stack gates:
 
 ```text
 ~/github/container
@@ -47,6 +54,17 @@ git clone https://github.com/stephenlclarke/container.git ~/github/container
 git clone https://github.com/stephenlclarke/container-compose.git ~/github/container-compose
 cd ~/github/container-compose
 ```
+
+To validate an in-progress matching `container` checkout instead of the pinned
+release revision, opt into it explicitly:
+
+```sh
+Tools/ci/use-stack-container.sh ../container
+swift package resolve
+```
+
+Return to the exact published dependency with `swift package unedit container
+--force`.
 
 Use an Apple upstream checkout only when deliberately testing stock-upstream
 compatibility.
@@ -97,7 +115,7 @@ Useful focused targets are:
 | --- | --- |
 | `make test` | Swift and Go unit/integration-style tests that do not require a live runtime. |
 | `make ci-fast` | Source checks, tests, helper build, and CLI smoke without coverage export. |
-| `make release-gate` | Full builder, containerization, container, and Compose validation, including runtime integration coverage and the complete Docker Compose parity suite, required before stable package dispatch. |
+| `make release-gate` | Full builder, containerization, container, Compose CI, isolated runtime smoke suite, and pinned Docker Compose comparison suite; required before stable package dispatch. |
 | `make release-gate-hosted` | GitHub-hosted static stack validation: source checks, builds, unit coverage, Compose CI, and Homebrew formula syntax without Virtualization.framework or Docker-engine runtime tests. |
 | `make ci-release` | Full release gate plus the release package build. |
 | `make check` | Lint, documentation, formatting, and license checks. |
@@ -125,13 +143,13 @@ Run `make upstream-divergence-report` before upstream handoff, runtime-stack pro
 
 GitHub Actions separates source checks, macOS runtime validation, sanitizers,
 formatting, CodeQL, SonarCloud, package publication, and Homebrew formula syntax
-into focused workflows. `CI / Validate` is the aggregate required result;
-documentation/formula-only changes use the lightweight validation path. The
+into focused workflows. Both the full and documentation/formula-only paths
+publish the required `CI / Validate` result. The
 stable release helper runs `make release-gate` locally against the candidate
 tree before source promotion. That gate runs builder-shim coverage, containerization
 coverage plus integration, container coverage plus integration, Compose CI, tap
-formula syntax, and the complete Compose parity suite, including live `build --check`
-against the matched container backend. GitHub-hosted macOS runners cannot launch
+formula syntax, the isolated Swift runtime suite, and the pinned Compose comparison
+suite, including live `build --check` against the matched container backend. GitHub-hosted macOS runners cannot launch
 nested Virtualization.framework guests, so the post-tag Stable Release Gate runs
 the `make release-gate-hosted` equivalent from its immutable release-control
 checkout against immutable source, runtime, and tap checkouts instead. It
@@ -149,12 +167,33 @@ check on that tag commit; the package workflow requires that check, then repeats
 
 There are two package lanes, with no manual asset copying:
 
-- Every green `main` commit refreshes the one mutable GitHub prerelease named **Current build** (tag `current`) and the opt-in `container-current` / `container-compose-current` Homebrew pair.
+- Every green `main` commit refreshes the explicit `current` tag and one mutable GitHub prerelease named **Current build**, plus the opt-in `container-current` / `container-compose-current` Homebrew pair.
 - A semantic release is an immutable `x.y.z` tag and becomes Homebrew's default `container` / `container-compose` pair.
+
+`current` is deliberately an unsigned, movable pointer; signing it would make
+its verification describe a prior commit as soon as it advances. Stable semantic
+tags are SSH-signed and GitHub-verified before their release gate starts.
 
 Current is the normal delivery lane. Create a stable release only for a
 milestone after the current build has soaked for seven days, or for a documented
-security incident. The release helper enforces both rules.
+security incident. The soak starts when the mutable
+`container-compose-plugin-current-arm64.tar.gz` asset is refreshed, not when
+the long-lived Current prerelease was first created. The release helper enforces
+both rules.
+
+### Scheduled Stable Releases
+
+**Scheduled Stable Release** runs every Monday at 09:17 UTC and promotes the next minor version with `-+-` when the Current build has soaked for seven days and `main` contains source newer than the latest semantic tag. It ends successfully without allocating the release runner when either condition is not met, so an unready week is not a failed release. A manual dispatch of the same workflow permits either `-+-` (minor) or `+--` (major); patch, exact-version, and documented security releases remain explicit local helper invocations.
+
+The workflow runs only from `main` on the dedicated `container-compose-release` Apple-silicon self-hosted runner. It creates clean, disposable stack checkouts, reconstructs the read-only Apple remotes and Stephen-owned push remotes, and invokes the existing helper unchanged. That preserves the required local runtime and Docker Compose parity gate, signed semantic tag, source-promotion pull request, hosted stable gate, immutable package assets, and paired Homebrew update.
+
+Bootstrap that runner once on the release Mac after its normal build prerequisites and GitHub CLI login are in place:
+
+```sh
+./scripts/install-scheduled-release-runner.sh
+```
+
+The installer verifies hardware virtualization, the Git author identity and SSH tag- and commit-signing configuration, that the signing key can operate without an interactive passphrase, the local `gh` account, and the release toolchain before it registers a repository-only runner and starts its standard `launchd` service. It uses the logged-in account through the macOS keychain at run time; it does not copy a GitHub token or signing key into an Actions secret.
 
 From clean `~/github/container-compose`, `~/github/container-builder-shim`,
 `~/github/containerization`, `~/github/container`, and
@@ -170,7 +209,8 @@ Do not copy, rename, or edit the mutable GitHub **Current build** prerelease.
 It is an installable view of green `main`, not a stable release candidate asset.
 Promotion always rebuilds the exact tagged source into immutable stable assets,
 which is what keeps the semantic version, runtime pin, checksums, Homebrew
-formulae, and release notes deterministic.
+formulae, and release notes deterministic. The current prerelease is updated
+in place before its tag moves, so it is never deleted and recreated.
 
 After `make release-plan` confirms the intended next version, promote the
 validated `main` source with one selector. The selector is resolved from the
@@ -206,14 +246,14 @@ rebuilds and publishes the immutable stable assets and atomically updates both
 stable Homebrew formulae. Do not create a semantic tag, copy a prerelease
 asset, or edit either stable formula by hand.
 
-If a hosted gate fails before the semantic GitHub release is created, correct the release automation on `main` and rerun the same explicit version, for example `make release VERSION_SELECTOR=0.6.70`. The helper reuses only the latest existing GitHub-verified signed source tag, reruns the gates and package workflow, and refuses to change a tag or overwrite an existing semantic release. If the semantic GitHub release is published but its stable Homebrew formula pair is absent or incomplete, the same command dispatches formula-only recovery. It validates the existing immutable Compose and runtime assets and updates only the paired stable formulae; it never rebuilds a package, changes a signed tag, or replaces release assets.
+If a hosted gate fails before the semantic GitHub release is created, correct the release automation on `main` and rerun the same explicit version, for example `make release VERSION_SELECTOR=X.Y.Z`. The helper reuses only the latest existing GitHub-verified signed source tag, reruns the gates and package workflow, and refuses to change a tag or overwrite an existing semantic release. If the semantic GitHub release is published but its stable Homebrew formula pair is absent or incomplete, the same command dispatches formula-only recovery. It validates the existing immutable Compose and runtime assets and updates only the paired stable formulae; it never rebuilds a package, changes a signed tag, or replaces release assets.
 
 After the tag is published, the one mutable `current` prerelease continues to
 follow later green `main` commits. Homebrew users without `-current` always use
 the newly promoted stable formula pair; opted-in users continue to use the
 current pair.
 
-Each package note begins with a quality snapshot for its exact commit: the eleven SonarQube quality badges shown in the README plus CodeQL analysis, result, and rule counts. Current-build snapshots refresh whenever the mutable `current` pointer moves; stable snapshots are immutable historical evidence. The badges are static, non-clickable shields.io images that intentionally exclude release-version and visitor badges. Publication waits for the exact SonarQube and CodeQL analyses; if either result cannot be tied to the packaged commit, it fails rather than publishing incomplete evidence.
+Each package note begins with a quality snapshot for its exact commit: the eleven SonarQube quality badges shown in the README plus CodeQL analysis, result, and rule counts. Current-build snapshots refresh whenever the mutable `current` pointer moves; stable snapshots are immutable historical evidence. The badges are static, non-clickable shields.io images. Publication waits for the exact SonarQube and CodeQL analyses; if either result cannot be tied to the packaged commit, it fails rather than publishing incomplete evidence.
 
 ## Docker Compose Parity
 
@@ -223,11 +263,7 @@ Run every maintained Docker Compose v2 comparison in deterministic sequence:
 make docker-compose-parity
 ```
 
-The aggregate target builds the sibling runtime when available, starts it with
-isolated state, builds `compose`, runs each target in
-`DOCKER_COMPOSE_PARITY_TARGETS`, and stops the runtime on exit. The scripts own
-their fixtures and exact assertions; [STATUS.md](STATUS.md) owns the support
-ledger.
+The aggregate target requires Docker Compose `5.3.1`, pins Docker's e2e fixtures to commit `f32009d4a2c687dd405398cc7975d12dccaf8dff`, builds the sibling runtime when available, starts it with isolated state, builds `compose`, runs each target in `DOCKER_COMPOSE_PARITY_TARGETS`, and stops the runtime on exit. The reference scripts establish Docker behavior; the isolated runtime suite and the Compose side of each comparison establish local behavior. [STATUS.md](STATUS.md) owns the support ledger.
 
 Run a focused target directly while iterating:
 
@@ -273,6 +309,8 @@ otherwise uses `container` from `PATH`. Override the matched stack explicitly:
 CONTAINER_STACK_REPO=/path/to/container make docker-compose-parity
 CONTAINER_COMPOSE_CONTAINER=/path/to/container make docker-compose-parity
 ```
+
+To deliberately update either pinned Docker reference, change both the Makefile default and the documented expected behavior in the same reviewed pull request. Ad-hoc overrides are for investigation only; they are not release evidence.
 
 ## Package Archive
 

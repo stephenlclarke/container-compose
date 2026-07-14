@@ -16,7 +16,7 @@ build instructions live at the repository root.
 - When Docker behavior is the target, check Docker's own documentation and the Docker Compose implementation before settling the slice boundary. Record the relevant docs/source links in the issue and PR drafts when they affect shape, output, filtering, or test fixtures.
 - Keep the draft files in this repository even when the code lives in sibling forks. That makes `container-compose` the single project handoff for runtime gaps, upstream links, and commit IDs.
 - Treat this `container-compose` tree as the only home for handoff documentation. Do not keep `ISSUE-*.md` or `PR-*.md` draft files in the sibling `container`, `containerization`, or `container-builder-shim` fork worktrees; if one is created there while shaping code, move it into the matching `docs/upstream/` folder here and remove the fork copy.
-- Keep drafts current. Remove obsolete branch names, completed migration notes, dated snapshots, and superseded implementation procedures instead of preserving project history here. Current branch and release rules live in [BRANCHES.md](../../BRANCHES.md).
+- Keep drafts current. Remove obsolete branch names, completed migration notes, dated snapshots, and superseded implementation procedures instead of preserving project history here. Current branch and release rules live in [BUILD.md](../../BUILD.md).
 - Every open Apple pull request with code we may need to recover must also have
   an immutable, stephenlclarke-owned `upstream-pr-NUMBER-SHORTSHA` branch recorded in
   [PR-ARCHIVE.json](PR-ARCHIVE.json). Never force-push, delete, or retarget an

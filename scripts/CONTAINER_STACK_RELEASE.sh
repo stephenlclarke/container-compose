@@ -265,7 +265,7 @@ ensure_release_intent() {
 # Milestone releases additionally require a seven-day soak; security releases
 # retain the source-identity check but may bypass that waiting period.
 ensure_current_build_release_readiness() {
-  local path main_commit current_commit published_at
+  local path main_commit current_commit current_is_prerelease current_built_at
   path="$(repo_path "${COMPOSE_REPO}")"
 
   if [[ "${EXECUTE}" != "1" ]]; then
@@ -282,22 +282,25 @@ ensure_current_build_release_readiness() {
     exit 1
   fi
 
-  published_at="$(github_cli release view current \
-    --repo "$(github_repo "${COMPOSE_REPO}")" \
-    --json publishedAt --jq '.publishedAt')"
-  if [[ -z "${published_at}" || "${published_at}" == "null" ]]; then
-    printf 'current GitHub prerelease is missing; wait for green main package publication\n' >&2
+  current_is_prerelease="$(github_cli api \
+    "repos/$(github_repo "${COMPOSE_REPO}")/releases/tags/current" \
+    --jq '.prerelease')"
+  current_built_at="$(github_cli api \
+    "repos/$(github_repo "${COMPOSE_REPO}")/releases/tags/current" \
+    --jq '[.assets[] | select(.name == "container-compose-plugin-current-arm64.tar.gz") | .updated_at] | max // empty')"
+  if [[ "${current_is_prerelease}" != "true" || -z "${current_built_at}" ]]; then
+    printf 'current GitHub prerelease or package asset is missing; wait for green main package publication\n' >&2
     exit 1
   fi
 
   if [[ "${RELEASE_INTENT}" == "milestone" ]]; then
-    python3 - "${published_at}" "${STABLE_CURRENT_SOAK_SECONDS}" <<'PY'
+    python3 - "${current_built_at}" "${STABLE_CURRENT_SOAK_SECONDS}" <<'PY'
 from datetime import datetime, timezone
 import sys
 
-published_at = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+current_built_at = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
 minimum = int(sys.argv[2])
-age = int((datetime.now(timezone.utc) - published_at).total_seconds())
+age = int((datetime.now(timezone.utc) - current_built_at).total_seconds())
 if age < minimum:
     remaining = minimum - age
     raise SystemExit(
@@ -816,6 +819,23 @@ print_component_refs() {
   done
 }
 
+# Remove a development edit so SwiftPM resolves the immutable release dependency.
+unedit_release_dependency() {
+  local path="$1" identity="$2" output
+
+  if output="$(swift package --package-path "${path}" unedit --force "${identity}" 2>&1)"; then
+    printf 'removed editable SwiftPM dependency %s from %s\n' "${identity}" "${path}"
+    return 0
+  fi
+
+  if [[ "${output}" == *"not in edit mode"* ]]; then
+    return 0
+  fi
+
+  printf '%s\n' "${output}" >&2
+  return 1
+}
+
 # Update one SwiftPM manifest to the current containerization stack revision.
 update_containerization_package_pin() {
   local repo="$1" ref="$2" path
@@ -845,6 +865,7 @@ if count != 1:
     raise SystemExit(f"{package} is missing the stephenlclarke containerization dependency")
 package.write_text(updated, encoding="utf-8")
 PY
+  unedit_release_dependency "${path}" containerization
   run swift package --package-path "${path}" resolve
 }
 
@@ -870,6 +891,61 @@ commit_containerization_package_pin() {
     -m "Release-Note: none"
 }
 
+# Update Compose's remote runtime dependency to the current container stack revision.
+update_container_package_pin() {
+  local ref="$1" path
+  path="$(repo_path "${COMPOSE_REPO}")"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would pin %s Package.swift container dependency to %s\n' "${COMPOSE_REPO}" "${ref}"
+    return 0
+  fi
+
+  python3 - "${path}/Package.swift" "${ref}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+package = Path(sys.argv[1])
+ref = sys.argv[2]
+text = package.read_text(encoding="utf-8")
+pattern = re.compile(
+    r'(\.package\(\s*url:\s*"https://github.com/stephenlclarke/container\.git"\s*,\s*)'
+    r'(?:branch|revision):\s*"[^"]*"'
+    r"(\s*,?\s*\))",
+    re.MULTILINE,
+)
+updated, count = pattern.subn(rf'\1revision: "{ref}"\2', text, count=1)
+if count != 1:
+    raise SystemExit(f"{package} is missing the stephenlclarke container dependency")
+package.write_text(updated, encoding="utf-8")
+PY
+  unedit_release_dependency "${path}" container
+  run swift package --package-path "${path}" resolve
+}
+
+# Commit the Compose runtime package pin when the manifest or lockfile changed.
+commit_container_package_pin() {
+  local ref="$1" path short_ref
+  path="$(repo_path "${COMPOSE_REPO}")"
+  short_ref="${ref:0:12}"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would commit %s container pin update if needed\n' "${COMPOSE_REPO}"
+    return 0
+  fi
+
+  run git -C "${path}" add Package.swift Package.resolved
+  if git -C "${path}" diff --cached --quiet -- Package.swift Package.resolved; then
+    printf '%s container package pin already points at %s\n' "${COMPOSE_REPO}" "${ref}"
+    return 0
+  fi
+
+  run git -C "${path}" commit \
+    -m "chore(deps): pin container ${short_ref}" \
+    -m "Release-Note: none"
+}
+
 # Keep the container and compose manifests aligned with the stack containerization checkout.
 sync_containerization_package_pins() {
   local ref
@@ -879,6 +955,15 @@ sync_containerization_package_pins() {
   commit_containerization_package_pin "${CONTAINER_REPO}" "${ref}"
   update_containerization_package_pin "${COMPOSE_REPO}" "${ref}"
   commit_containerization_package_pin "${COMPOSE_REPO}" "${ref}"
+}
+
+# Keep Compose's standalone package dependency aligned with the runtime stack.
+sync_container_package_pin() {
+  local ref
+  ref="$(git -C "$(repo_path "container")" rev-parse main)"
+  print_header "sync exact container SwiftPM pin"
+  update_container_package_pin "${ref}"
+  commit_container_package_pin "${ref}"
 }
 
 write_release_stack_manifest() {
@@ -1721,6 +1806,7 @@ release_current_stack() {
     printf 'container-compose version files already declare %s\n' "${version}"
   fi
   sync_containerization_package_pins
+  sync_container_package_pin
   write_release_stack_manifest
 
   if [[ "${EXECUTE}" == "1" ]]; then

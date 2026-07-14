@@ -45,8 +45,8 @@ Use `container system version` to see the running `container` runtime source, br
 
 Use [INSTALL.md](INSTALL.md) for install, upgrade, verification, and uninstall
 commands. The supported Homebrew install uses the matched `stephenlclarke`
-runtime stack; [BRANCHES.md](BRANCHES.md) is the canonical source for repository
-roles, branch policy, release promotion, and Homebrew formula ownership.
+runtime stack; [BUILD.md](BUILD.md) covers repository roles, branch policy, and
+deterministic release promotion.
 
 ## Plugin Recognition
 
@@ -57,8 +57,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 ## Documentation
 
 - [INSTALL.md](INSTALL.md): install, upgrade, verify, uninstall, recover bad installs, and diagnose runtime issues.
-- [BRANCHES.md](BRANCHES.md): understand repository roles, review branches, semantic tags, `scripts/CONTAINER_STACK_RELEASE.sh`, release assets, and Homebrew formula policy.
-- [BUILD.md](BUILD.md): build, test, package, and run contributor validation from source.
+- [BUILD.md](BUILD.md): build, test, package, validate parity, and promote the current build to a stable release, including the weekly minor-release scheduler and manual major-release dispatch.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](STATUS.md): get the current parity surfaces, blockers, active gaps, and validation handoff.
 - [CONTRIBUTING.md](CONTRIBUTING.md): prepare reviewable changes.

@@ -13888,6 +13888,13 @@ struct ComposeOrchestratorTests {
         let cases: [(service: ComposeService, options: ComposeUpOptions, error: ComposeError)] = [
             (
                 composeService(name: "api", image: "example/api") {
+                    $0.preStart = [ComposeServiceHook(command: ["true"])]
+                },
+                ComposeUpOptions { $0.detach = true },
+                .unsupported("service 'api' uses pre_start; Docker Compose init containers need an apple/container ephemeral-container lifecycle primitive")
+            ),
+            (
+                composeService(name: "api", image: "example/api") {
                     $0.postStart = [ComposeServiceHook()]
                 },
                 ComposeUpOptions { $0.detach = true },

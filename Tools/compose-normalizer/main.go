@@ -220,6 +220,7 @@ type normalizedService struct {
 	Sysctls                 map[string]string                   `json:"sysctls,omitempty"`
 	StopSignal              string                              `json:"stopSignal,omitempty"`
 	StopGracePeriodSeconds  *int64                              `json:"stopGracePeriodSeconds,omitempty"`
+	PreStart                []normalizedServiceHook             `json:"preStart,omitempty"`
 	PostStart               []normalizedServiceHook             `json:"postStart,omitempty"`
 	PreStop                 []normalizedServiceHook             `json:"preStop,omitempty"`
 	UserNSMode              string                              `json:"usernsMode,omitempty"`
@@ -342,10 +343,12 @@ type normalizedWatchExecHook struct {
 // normalizedServiceHook records lifecycle hook metadata for Swift execution.
 type normalizedServiceHook struct {
 	Command     []string           `json:"command,omitempty"`
+	Image       string             `json:"image,omitempty"`
 	User        string             `json:"user,omitempty"`
 	Privileged  bool               `json:"privileged,omitempty"`
 	WorkingDir  string             `json:"workingDir,omitempty"`
 	Environment map[string]*string `json:"environment,omitempty"`
+	PerReplica  bool               `json:"perReplica,omitempty"`
 }
 
 // normalizedMount keeps mount data in a compact runtime-oriented shape.
@@ -885,6 +888,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		Sysctls:                 mapMapping(service.Sysctls),
 		StopSignal:              service.StopSignal,
 		StopGracePeriodSeconds:  durationSeconds(service.StopGracePeriod),
+		PreStart:                serviceHookValues(service.PreStart),
 		PostStart:               serviceHookValues(service.PostStart),
 		PreStop:                 serviceHookValues(service.PreStop),
 		UserNSMode:              service.UserNSMode,
@@ -1006,10 +1010,12 @@ func serviceHookValues(hooks []types.ServiceHook) []normalizedServiceHook {
 	for _, hook := range hooks {
 		result = append(result, normalizedServiceHook{
 			Command:     append([]string(nil), hook.Command...),
+			Image:       hook.Image,
 			User:        hook.User,
 			Privileged:  hook.Privileged,
 			WorkingDir:  hook.WorkingDir,
 			Environment: mappingWithEqualsValues(hook.Environment),
+			PerReplica:  hook.PerReplica,
 		})
 	}
 	return result

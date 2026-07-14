@@ -1131,6 +1131,15 @@ struct ComposeNormalizerTests {
         services:
           api:
             image: alpine
+            pre_start:
+              - command: ["sh", "-c", "touch /tmp/migrated"]
+                image: busybox
+                user: app
+                privileged: true
+                working_dir: /srv
+                environment:
+                  MIGRATION: "1"
+                per_replica: true
             post_start:
               - command: ["sh", "-c", "touch /tmp/ready"]
                 user: app
@@ -1146,6 +1155,17 @@ struct ComposeNormalizerTests {
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
         let api = try #require(project.services["api"])
 
+        #expect(api.preStart == [
+            ComposeServiceHook(
+                command: ["sh", "-c", "touch /tmp/migrated"],
+                image: "busybox",
+                user: "app",
+                privileged: true,
+                workingDir: "/srv",
+                environment: ["MIGRATION": "1"],
+                perReplica: true
+            ),
+        ])
         #expect(api.postStart == [
             ComposeServiceHook(
                 command: ["sh", "-c", "touch /tmp/ready"],

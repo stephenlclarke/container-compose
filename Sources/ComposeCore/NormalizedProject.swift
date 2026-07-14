@@ -26,10 +26,10 @@ public struct ComposeProject: Codable, Equatable {
     public var services: [String: ComposeService]
     public var networks: [String: ComposeNetwork] = [:]
     public var volumes: [String: ComposeVolume] = [:]
-    public var configs: [String: ComposeValue]? = nil
-    public var secrets: [String: ComposeValue]? = nil
-    public var models: [String: ComposeValue]? = nil
-    public var extensions: [String: ComposeValue]? = nil
+    public var configs: [String: ComposeValue]?
+    public var secrets: [String: ComposeValue]?
+    public var models: [String: ComposeValue]?
+    public var extensions: [String: ComposeValue]?
 
     public init(name: String, services: [String: ComposeService]) {
         self.name = name
@@ -191,15 +191,15 @@ public enum ComposeValue: Codable, Equatable, Sendable {
         switch self {
         case .null:
             try container.encodeNil()
-        case .bool(let value):
+        case let .bool(value):
             try container.encode(value)
-        case .number(let value):
+        case let .number(value):
             try container.encode(value)
-        case .string(let value):
+        case let .string(value):
             try container.encode(value)
-        case .array(let value):
+        case let .array(value):
             try container.encode(value)
-        case .object(let value):
+        case let .object(value):
             try container.encode(value)
         }
     }
@@ -208,12 +208,12 @@ public enum ComposeValue: Codable, Equatable, Sendable {
 /// Compose block I/O controls normalized for the apple/container `--blkio`
 /// runtime flag proposed in apple/container#1595.
 public struct ComposeBlkioConfig: Codable, Equatable {
-    public var weight: Int? = nil
-    public var weightDevice: [ComposeBlkioWeightDevice]? = nil
-    public var deviceReadBps: [ComposeBlkioThrottleDevice]? = nil
-    public var deviceReadIOps: [ComposeBlkioThrottleDevice]? = nil
-    public var deviceWriteBps: [ComposeBlkioThrottleDevice]? = nil
-    public var deviceWriteIOps: [ComposeBlkioThrottleDevice]? = nil
+    public var weight: Int?
+    public var weightDevice: [ComposeBlkioWeightDevice]?
+    public var deviceReadBps: [ComposeBlkioThrottleDevice]?
+    public var deviceReadIOps: [ComposeBlkioThrottleDevice]?
+    public var deviceWriteBps: [ComposeBlkioThrottleDevice]?
+    public var deviceWriteIOps: [ComposeBlkioThrottleDevice]?
 
     public init(
         weight: Int? = nil,
@@ -221,7 +221,7 @@ public struct ComposeBlkioConfig: Codable, Equatable {
         deviceReadBps: [ComposeBlkioThrottleDevice]? = nil,
         deviceReadIOps: [ComposeBlkioThrottleDevice]? = nil,
         deviceWriteBps: [ComposeBlkioThrottleDevice]? = nil,
-        deviceWriteIOps: [ComposeBlkioThrottleDevice]? = nil
+        deviceWriteIOps: [ComposeBlkioThrottleDevice]? = nil,
     ) {
         self.weight = weight
         self.weightDevice = weightDevice
@@ -255,107 +255,108 @@ public struct ComposeBlkioThrottleDevice: Codable, Equatable {
 /// Canonical service definition used by the Swift orchestrator.
 public struct ComposeService: Codable, Equatable {
     public var name: String
-    public var image: String? = nil
-    public var profiles: [String]? = nil
-    public var pullPolicy: String? = nil
-    public var platform: String? = nil
-    public var annotations: [String: String]? = nil
-    public var attach: Bool? = nil
-    public var blkioConfig: ComposeBlkioConfig? = nil
-    public var macAddress: String? = nil
-    public var runtime: String? = nil
-    public var cgroup: String? = nil
-    public var cgroupParent: String? = nil
-    public var cpuCount: Int? = nil
-    public var cpuPercent: Double? = nil
-    public var cpuPeriod: Int? = nil
-    public var cpuQuota: Int? = nil
-    public var cpuRealtimePeriod: Int? = nil
-    public var cpuRealtimeRuntime: Int? = nil
-    public var cpuset: String? = nil
-    public var cpuShares: Int? = nil
-    public var develop: ComposeDevelop? = nil
-    public var deploy: ComposeValue? = nil
-    public var deployGPURequests: [ComposeValue]? = nil
-    public var unsupportedDeployFields: [String]? = nil
-    public var deployMode: String? = nil
-    public var deployLabels: [String: String]? = nil
-    public var deployRestartPolicy: ComposeDeployRestartPolicy? = nil
-    public var build: ComposeBuild? = nil
-    public var command: [String]? = nil
-    public var entrypoint: [String]? = nil
-    public var provider: ComposeProvider? = nil
-    public var credentialSpec: ComposeValue? = nil
-    public var deviceCgroupRules: [String]? = nil
-    public var devices: [ComposeValue]? = nil
-    public var environment: [String: String?]? = nil
-    public var envFiles: [ComposeEnvFile]? = nil
-    public var expose: [String]? = nil
-    public var gpus: [ComposeValue]? = nil
-    public var ports: [String]? = nil
-    public var volumes: [ComposeMount]? = nil
-    public var volumeDriver: String? = nil
-    public var volumesFrom: [String]? = nil
-    public var networks: [String]? = nil
-    public var networkAliases: [String: [String]]? = nil
-    public var networkOptions: [String: ComposeNetworkOptions]? = nil
-    public var networkMode: String? = nil
-    public var dependsOn: [String: ComposeDependency]? = nil
-    public var links: [String]? = nil
-    public var externalLinks: [String]? = nil
-    public var labels: [String: String]? = nil
-    public var labelFiles: [String]? = nil
-    public var containerName: String? = nil
-    public var hostname: String? = nil
-    public var domainName: String? = nil
-    public var workingDir: String? = nil
-    public var user: String? = nil
-    public var groupAdd: [String]? = nil
-    public var tty: Bool? = nil
-    public var stdinOpen: Bool? = nil
-    public var readOnly: Bool? = nil
-    public var privileged: Bool? = nil
-    public var restart: String? = nil
-    public var initEnabled: Bool? = nil
-    public var scale: Int? = nil
-    public var logging: ComposeValue? = nil
-    public var logDriver: String? = nil
-    public var logOptions: [String: String]? = nil
-    public var storageOptions: [String: String]? = nil
-    public var useAPISocket: Bool? = nil
-    public var ipc: String? = nil
-    public var isolation: String? = nil
-    public var tmpfs: [String]? = nil
-    public var dns: [String]? = nil
-    public var dnsSearch: [String]? = nil
-    public var dnsOptions: [String]? = nil
-    public var extraHosts: [String]? = nil
-    public var capAdd: [String]? = nil
-    public var capDrop: [String]? = nil
-    public var securityOpt: [String]? = nil
-    public var memLimit: String? = nil
-    public var memReservation: String? = nil
-    public var memSwapLimit: String? = nil
-    public var memSwappiness: String? = nil
-    public var models: [String: ComposeServiceModelBinding]? = nil
-    public var oomKillDisable: Bool? = nil
-    public var oomScoreAdj: Int? = nil
-    public var pidsLimit: Int? = nil
-    public var cpus: String? = nil
-    public var shmSize: String? = nil
-    public var ulimits: [String]? = nil
-    public var pid: String? = nil
-    public var sysctls: [String: String]? = nil
-    public var stopSignal: String? = nil
-    public var stopGracePeriodSeconds: Int? = nil
-    public var postStart: [ComposeServiceHook]? = nil
-    public var preStop: [ComposeServiceHook]? = nil
-    public var usernsMode: String? = nil
-    public var uts: String? = nil
-    public var healthcheck: ComposeValue? = nil
-    public var configs: [ComposeValue]? = nil
-    public var secrets: [ComposeValue]? = nil
-    public var extensions: [String: ComposeValue]? = nil
+    public var image: String?
+    public var profiles: [String]?
+    public var pullPolicy: String?
+    public var platform: String?
+    public var annotations: [String: String]?
+    public var attach: Bool?
+    public var blkioConfig: ComposeBlkioConfig?
+    public var macAddress: String?
+    public var runtime: String?
+    public var cgroup: String?
+    public var cgroupParent: String?
+    public var cpuCount: Int?
+    public var cpuPercent: Double?
+    public var cpuPeriod: Int?
+    public var cpuQuota: Int?
+    public var cpuRealtimePeriod: Int?
+    public var cpuRealtimeRuntime: Int?
+    public var cpuset: String?
+    public var cpuShares: Int?
+    public var develop: ComposeDevelop?
+    public var deploy: ComposeValue?
+    public var deployGPURequests: [ComposeValue]?
+    public var unsupportedDeployFields: [String]?
+    public var deployMode: String?
+    public var deployLabels: [String: String]?
+    public var deployRestartPolicy: ComposeDeployRestartPolicy?
+    public var build: ComposeBuild?
+    public var command: [String]?
+    public var entrypoint: [String]?
+    public var provider: ComposeProvider?
+    public var credentialSpec: ComposeValue?
+    public var deviceCgroupRules: [String]?
+    public var devices: [ComposeValue]?
+    public var environment: [String: String?]?
+    public var envFiles: [ComposeEnvFile]?
+    public var expose: [String]?
+    public var gpus: [ComposeValue]?
+    public var ports: [String]?
+    public var volumes: [ComposeMount]?
+    public var volumeDriver: String?
+    public var volumesFrom: [String]?
+    public var networks: [String]?
+    public var networkAliases: [String: [String]]?
+    public var networkOptions: [String: ComposeNetworkOptions]?
+    public var networkMode: String?
+    public var dependsOn: [String: ComposeDependency]?
+    public var links: [String]?
+    public var externalLinks: [String]?
+    public var labels: [String: String]?
+    public var labelFiles: [String]?
+    public var containerName: String?
+    public var hostname: String?
+    public var domainName: String?
+    public var workingDir: String?
+    public var user: String?
+    public var groupAdd: [String]?
+    public var tty: Bool?
+    public var stdinOpen: Bool?
+    public var readOnly: Bool?
+    public var privileged: Bool?
+    public var restart: String?
+    public var initEnabled: Bool?
+    public var scale: Int?
+    public var logging: ComposeValue?
+    public var logDriver: String?
+    public var logOptions: [String: String]?
+    public var storageOptions: [String: String]?
+    public var useAPISocket: Bool?
+    public var ipc: String?
+    public var isolation: String?
+    public var tmpfs: [String]?
+    public var dns: [String]?
+    public var dnsSearch: [String]?
+    public var dnsOptions: [String]?
+    public var extraHosts: [String]?
+    public var capAdd: [String]?
+    public var capDrop: [String]?
+    public var securityOpt: [String]?
+    public var memLimit: String?
+    public var memReservation: String?
+    public var memSwapLimit: String?
+    public var memSwappiness: String?
+    public var models: [String: ComposeServiceModelBinding]?
+    public var oomKillDisable: Bool?
+    public var oomScoreAdj: Int?
+    public var pidsLimit: Int?
+    public var cpus: String?
+    public var shmSize: String?
+    public var ulimits: [String]?
+    public var pid: String?
+    public var sysctls: [String: String]?
+    public var stopSignal: String?
+    public var stopGracePeriodSeconds: Int?
+    public var preStart: [ComposeServiceHook]?
+    public var postStart: [ComposeServiceHook]?
+    public var preStop: [ComposeServiceHook]?
+    public var usernsMode: String?
+    public var uts: String?
+    public var healthcheck: ComposeValue?
+    public var configs: [ComposeValue]?
+    public var secrets: [ComposeValue]?
+    public var extensions: [String: ComposeValue]?
 
     public init(name: String, image: String? = nil) {
         self.name = name
@@ -457,6 +458,7 @@ public struct ComposeService: Codable, Equatable {
         case sysctls
         case stopSignal
         case stopGracePeriodSeconds
+        case preStart
         case postStart
         case preStop
         case usernsMode
@@ -471,16 +473,16 @@ public struct ComposeService: Codable, Equatable {
 /// Compose Deploy Specification restart policy values used by local service
 /// orchestration when apple/container exposes matching restart primitives.
 public struct ComposeDeployRestartPolicy: Codable, Equatable {
-    public var condition: String? = nil
-    public var delayNanoseconds: Int64? = nil
-    public var maxAttempts: UInt64? = nil
-    public var windowNanoseconds: Int64? = nil
+    public var condition: String?
+    public var delayNanoseconds: Int64?
+    public var maxAttempts: UInt64?
+    public var windowNanoseconds: Int64?
 
     public init(
         condition: String? = nil,
         delayNanoseconds: Int64? = nil,
         maxAttempts: UInt64? = nil,
-        windowNanoseconds: Int64? = nil
+        windowNanoseconds: Int64? = nil,
     ) {
         self.condition = condition
         self.delayNanoseconds = delayNanoseconds
@@ -515,7 +517,7 @@ public struct ComposeDevelopWatch: Codable, Equatable {
         ignore: [String]? = nil,
         include: [String]? = nil,
         initialSync: Bool? = nil,
-        exec: ComposeDevelopWatchExec? = nil
+        exec: ComposeDevelopWatchExec? = nil,
     ) {
         self.path = path
         self.action = action
@@ -540,7 +542,7 @@ public struct ComposeDevelopWatchExec: Codable, Equatable {
         user: String? = nil,
         privileged: Bool? = nil,
         workingDir: String? = nil,
-        environment: [String: String?]? = nil
+        environment: [String: String?]? = nil,
     ) {
         self.command = command
         self.user = user
@@ -573,25 +575,31 @@ public struct ComposeServiceModelBinding: Codable, Equatable, Sendable {
 }
 
 /// One Compose service lifecycle hook.
-public struct ComposeServiceHook: Codable, Equatable {
+public struct ComposeServiceHook: Codable, Equatable, Sendable {
     public var command: [String]?
+    public var image: String?
     public var user: String?
     public var privileged: Bool?
     public var workingDir: String?
     public var environment: [String: String?]?
+    public var perReplica: Bool?
 
     public init(
         command: [String]? = nil,
+        image: String? = nil,
         user: String? = nil,
         privileged: Bool? = nil,
         workingDir: String? = nil,
-        environment: [String: String?]? = nil
+        environment: [String: String?]? = nil,
+        perReplica: Bool? = nil,
     ) {
         self.command = command
+        self.image = image
         self.user = user
         self.privileged = privileged
         self.workingDir = workingDir
         self.environment = environment
+        self.perReplica = perReplica
     }
 }
 
@@ -653,7 +661,7 @@ public struct ComposeNetworkOptions: Codable, Equatable {
             ipv4Address: String? = nil,
             ipv6Address: String? = nil,
             linkLocalIPs: [String]? = nil,
-            macAddress: String? = nil
+            macAddress: String? = nil,
         ) {
             self.ipv4Address = ipv4Address
             self.ipv6Address = ipv6Address
@@ -676,259 +684,16 @@ public struct ComposeNetworkOptions: Codable, Equatable {
         gatewayPriority: Int? = nil,
         interfaceName: String? = nil,
         addressing: Addressing = Addressing(),
-        priority: Int? = nil
+        priority: Int? = nil,
     ) {
         self.driverOpts = driverOpts
         self.gatewayPriority = gatewayPriority
         self.interfaceName = interfaceName
-        self.ipv4Address = addressing.ipv4Address
-        self.ipv6Address = addressing.ipv6Address
-        self.linkLocalIPs = addressing.linkLocalIPs
-        self.macAddress = addressing.macAddress
+        ipv4Address = addressing.ipv4Address
+        ipv6Address = addressing.ipv6Address
+        linkLocalIPs = addressing.linkLocalIPs
+        macAddress = addressing.macAddress
         self.priority = priority
-    }
-}
-
-/// Build configuration for a Compose service.
-public struct ComposeBuild: Codable, Equatable {
-    /// Build cache sources and destinations.
-    public struct Cache: Equatable {
-        public var from: [String]?
-        public var to: [String]?
-
-        public init(from: [String]? = nil, to: [String]? = nil) {
-            self.from = from
-            self.to = to
-        }
-    }
-
-    /// Build labels and secrets that become build-time metadata.
-    public struct Metadata: Equatable {
-        public var labels: [String: String]?
-        public var secrets: [ComposeBuildSecret]?
-        public var ssh: [String]?
-
-        public init(labels: [String: String]? = nil, secrets: [ComposeBuildSecret]? = nil, ssh: [String]? = nil) {
-            self.labels = labels
-            self.secrets = secrets
-            self.ssh = ssh
-        }
-    }
-
-    /// Optional build behavior that is not required for every service.
-    public struct Options: Equatable {
-        public struct Image: Equatable {
-            public var target: String?
-            public var noCache: Bool?
-            public var pull: Bool?
-            public var platforms: [String]?
-            public var tags: [String]?
-
-            public init(
-                target: String? = nil,
-                noCache: Bool? = nil,
-                pull: Bool? = nil,
-                platforms: [String]? = nil,
-                tags: [String]? = nil
-            ) {
-                self.target = target
-                self.noCache = noCache
-                self.pull = pull
-                self.platforms = platforms
-                self.tags = tags
-            }
-        }
-
-        public struct Frontend: Equatable {
-            public var entitlements: [String]?
-            public var extraHosts: [String]?
-            public var isolation: String?
-            public var network: String?
-            public var privileged: Bool?
-            public var shmSize: String?
-            public var ulimits: [String]?
-
-            public init(
-                entitlements: [String]? = nil,
-                extraHosts: [String]? = nil,
-                isolation: String? = nil,
-                network: String? = nil,
-                privileged: Bool? = nil,
-                shmSize: String? = nil,
-                ulimits: [String]? = nil
-            ) {
-                self.entitlements = entitlements
-                self.extraHosts = extraHosts
-                self.isolation = isolation
-                self.network = network
-                self.privileged = privileged
-                self.shmSize = shmSize
-                self.ulimits = ulimits
-            }
-        }
-
-        public struct Attestations: Equatable {
-            public var provenance: String?
-            public var sbom: String?
-
-            public init(provenance: String? = nil, sbom: String? = nil) {
-                self.provenance = provenance
-                self.sbom = sbom
-            }
-        }
-
-        public var target: String?
-        public var noCache: Bool?
-        public var pull: Bool?
-        public var platforms: [String]?
-        public var tags: [String]?
-        public var entitlements: [String]?
-        public var extraHosts: [String]?
-        public var isolation: String?
-        public var network: String?
-        public var privileged: Bool?
-        public var shmSize: String?
-        public var ulimits: [String]?
-        public var provenance: String?
-        public var sbom: String?
-        public var unsupportedFields: [String]?
-
-        public init(
-            image: Image = Image(),
-            frontend: Frontend = Frontend(),
-            attestations: Attestations = Attestations(),
-            unsupportedFields: [String]? = nil
-        ) {
-            self.target = image.target
-            self.noCache = image.noCache
-            self.pull = image.pull
-            self.platforms = image.platforms
-            self.tags = image.tags
-            self.entitlements = frontend.entitlements
-            self.extraHosts = frontend.extraHosts
-            self.isolation = frontend.isolation
-            self.network = frontend.network
-            self.privileged = frontend.privileged
-            self.shmSize = frontend.shmSize
-            self.ulimits = frontend.ulimits
-            self.provenance = attestations.provenance
-            self.sbom = attestations.sbom
-            self.unsupportedFields = unsupportedFields
-        }
-    }
-
-    /// Build context inputs used to locate Dockerfile and named BuildKit contexts.
-    public struct Contexts: Equatable {
-        public var context: String?
-        public var dockerfile: String?
-        public var dockerfileInline: String?
-        public var additionalContexts: [String: String]?
-
-        public init(
-            context: String? = nil,
-            dockerfile: String? = nil,
-            dockerfileInline: String? = nil,
-            additionalContexts: [String: String]? = nil
-        ) {
-            self.context = context
-            self.dockerfile = dockerfile
-            self.dockerfileInline = dockerfileInline
-            self.additionalContexts = additionalContexts
-        }
-    }
-
-    public var context: String?
-    public var dockerfile: String?
-    public var dockerfileInline: String?
-    public var additionalContexts: [String: String]?
-    public var args: [String: String]?
-    public var cacheFrom: [String]?
-    public var cacheTo: [String]?
-    public var entitlements: [String]?
-    public var extraHosts: [String]?
-    public var isolation: String?
-    public var labels: [String: String]?
-    public var network: String?
-    public var privileged: Bool?
-    public var secrets: [ComposeBuildSecret]?
-    public var shmSize: String?
-    public var ssh: [String]?
-    public var target: String?
-    public var noCache: Bool?
-    public var pull: Bool?
-    public var platforms: [String]?
-    public var tags: [String]?
-    public var ulimits: [String]?
-    public var provenance: String?
-    public var sbom: String?
-    public var unsupportedFields: [String]?
-
-    public init(
-        context: String? = nil,
-        dockerfile: String? = nil,
-        dockerfileInline: String? = nil,
-        args: [String: String]? = nil,
-        cache: Cache = Cache(),
-        metadata: Metadata = Metadata(),
-        options: Options = Options()
-    ) {
-        self.init(
-            contexts: Contexts(
-                context: context,
-                dockerfile: dockerfile,
-                dockerfileInline: dockerfileInline),
-            args: args,
-            cache: cache,
-            metadata: metadata,
-            options: options
-        )
-    }
-
-    public init(
-        contexts: Contexts,
-        args: [String: String]? = nil,
-        cache: Cache = Cache(),
-        metadata: Metadata = Metadata(),
-        options: Options = Options()
-    ) {
-        self.context = contexts.context
-        self.dockerfile = contexts.dockerfile
-        self.dockerfileInline = contexts.dockerfileInline
-        self.additionalContexts = contexts.additionalContexts
-        self.args = args
-        self.cacheFrom = cache.from
-        self.cacheTo = cache.to
-        self.entitlements = options.entitlements
-        self.extraHosts = options.extraHosts
-        self.isolation = options.isolation
-        self.labels = metadata.labels
-        self.network = options.network
-        self.privileged = options.privileged
-        self.secrets = metadata.secrets
-        self.shmSize = options.shmSize
-        self.ssh = metadata.ssh
-        self.target = options.target
-        self.noCache = options.noCache
-        self.pull = options.pull
-        self.platforms = options.platforms
-        self.tags = options.tags
-        self.ulimits = options.ulimits
-        self.provenance = options.provenance
-        self.sbom = options.sbom
-        self.unsupportedFields = options.unsupportedFields
-    }
-}
-
-/// Build-time secret supported by apple/container `container build --secret`.
-public struct ComposeBuildSecret: Codable, Equatable {
-    public var id: String
-    public var file: String?
-    public var environment: String?
-
-    public init(id: String, file: String? = nil, environment: String? = nil) {
-        self.id = id
-        self.file = file
-        self.environment = environment
     }
 }
 
@@ -958,7 +723,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
             bindCreateHostPath: Bool? = nil,
             bindPropagation: String? = nil,
             volumeLabels: [String: String]? = nil,
-            tmpfs: TmpfsOptions = TmpfsOptions()
+            tmpfs: TmpfsOptions = TmpfsOptions(),
         ) {
             self.readOnly = readOnly
             self.bindCreateHostPath = bindCreateHostPath
@@ -986,17 +751,17 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         target: String? = nil,
         options: MountOptions = MountOptions(),
         raw: String? = nil,
-        unsupportedFields: [String]? = nil
+        unsupportedFields: [String]? = nil,
     ) {
         self.type = type
         self.source = source
         self.target = target
-        self.readOnly = options.readOnly
-        self.bindCreateHostPath = options.bindCreateHostPath
-        self.bindPropagation = options.bindPropagation
-        self.volumeLabels = options.volumeLabels
-        self.tmpfsSize = options.tmpfs.size
-        self.tmpfsMode = options.tmpfs.mode
+        readOnly = options.readOnly
+        bindCreateHostPath = options.bindCreateHostPath
+        bindPropagation = options.bindPropagation
+        volumeLabels = options.volumeLabels
+        tmpfsSize = options.tmpfs.size
+        tmpfsMode = options.tmpfs.mode
         self.raw = raw
         self.unsupportedFields = unsupportedFields
     }
@@ -1008,14 +773,18 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         readOnly: Bool? = nil,
         bindCreateHostPath: Bool? = nil,
         bindPropagation: String? = nil,
-        raw: String? = nil
+        raw: String? = nil,
     ) {
         self.init(
             type: type,
             source: source,
             target: target,
-            options: MountOptions(readOnly: readOnly, bindCreateHostPath: bindCreateHostPath, bindPropagation: bindPropagation),
-            raw: raw
+            options: MountOptions(
+                readOnly: readOnly,
+                bindCreateHostPath: bindCreateHostPath,
+                bindPropagation: bindPropagation,
+            ),
+            raw: raw,
         )
     }
 }
@@ -1050,7 +819,7 @@ public struct ComposeNetwork: Codable, Equatable {
             isInternal: Bool? = nil,
             labels: [String: String]? = nil,
             subnets: Subnets = Subnets(),
-            unsupportedFields: [String]? = nil
+            unsupportedFields: [String]? = nil,
         ) {
             self.external = external
             self.driver = driver
@@ -1074,17 +843,17 @@ public struct ComposeNetwork: Codable, Equatable {
 
     public init(
         name: String,
-        options: Options = Options()
+        options: Options = Options(),
     ) {
         self.name = name
-        self.external = options.external
-        self.driver = options.driver
-        self.driverOpts = options.driverOpts
-        self.isInternal = options.isInternal
-        self.labels = options.labels
-        self.ipv4Subnet = options.subnets.ipv4Subnet
-        self.ipv6Subnet = options.subnets.ipv6Subnet
-        self.unsupportedFields = options.unsupportedFields
+        external = options.external
+        driver = options.driver
+        driverOpts = options.driverOpts
+        isInternal = options.isInternal
+        labels = options.labels
+        ipv4Subnet = options.subnets.ipv4Subnet
+        ipv6Subnet = options.subnets.ipv6Subnet
+        unsupportedFields = options.unsupportedFields
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1113,7 +882,7 @@ public struct ComposeVolume: Codable, Equatable {
         external: Bool? = nil,
         driver: String? = nil,
         driverOpts: [String: String]? = nil,
-        labels: [String: String]? = nil
+        labels: [String: String]? = nil,
     ) {
         self.name = name
         self.external = external

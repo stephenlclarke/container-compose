@@ -89,10 +89,19 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn("message=34", snapshot)
         self.assertEqual(snapshot.count("![]"), 0)
         self.assertEqual(snapshot.count("!["), 14)
+        badge_lines = [line for line in snapshot.splitlines() if line.startswith("![")]
+        self.assertEqual(len(badge_lines), 1)
+        self.assertIn(
+            ") ![Bugs](https://img.shields.io/static/v1?label=Bugs", badge_lines[0]
+        )
         self.assertNotIn("[![", snapshot)
         self.assertNotIn("sonarcloud.io", snapshot)
         self.assertNotIn("Release", snapshot)
         self.assertNotIn("Visitor", snapshot)
+
+    def test_default_wait_covers_the_full_codeql_workflow_window(self) -> None:
+        module = load_module()
+        self.assertEqual(module.POLL_TIMEOUT_SECONDS, 1800)
 
     def test_missing_sonarqube_metric_is_rejected(self) -> None:
         module = load_module()

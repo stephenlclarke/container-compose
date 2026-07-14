@@ -131,16 +131,18 @@ main_existing_calls="${temporary_directory}/main-existing.calls"
 run_publisher branch exists "${main_existing_calls}"
 grep -Fqx "tag --no-sign --force current 0123456789012345678901234567890123456789" "${main_existing_calls}.git"
 grep -Fqx "push --force origin refs/tags/current" "${main_existing_calls}.git"
-grep -Fqx "release delete current --repo stephenlclarke/container-compose --yes" "${main_existing_calls}"
-grep -Fqx "release create current ${asset} ${checksum} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --verify-tag --prerelease --latest=false" "${main_existing_calls}"
+grep -Fqx "release upload current ${asset} ${checksum} --repo stephenlclarke/container-compose --clobber" "${main_existing_calls}"
+grep -Fqx "release edit current --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --target 0123456789012345678901234567890123456789 --prerelease" "${main_existing_calls}"
+if grep -Eq 'release (create|delete)' "${main_existing_calls}"; then
+  printf 'current publication replaced its live release instead of updating it in place\n' >&2
+  exit 1
+fi
 
 main_create_calls="${temporary_directory}/main-create.calls"
 run_publisher branch missing "${main_create_calls}"
-grep -Fqx "release create current ${asset} ${checksum} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --target 0123456789012345678901234567890123456789 --prerelease --latest=false" "${main_create_calls}"
-if [[ -e "${main_create_calls}.git" ]]; then
-  printf 'initial current publication unexpectedly moved an existing tag\n' >&2
-  exit 1
-fi
+grep -Fqx "release create current ${asset} ${checksum} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --verify-tag --prerelease --latest=false" "${main_create_calls}"
+grep -Fqx "tag --no-sign --force current 0123456789012345678901234567890123456789" "${main_create_calls}.git"
+grep -Fqx "push --force origin refs/tags/current" "${main_create_calls}.git"
 
 runtime_asset="${temporary_directory}/container-release-arm64.tar.gz"
 runtime_checksum="${runtime_asset}.sha256"
@@ -153,4 +155,5 @@ grep -Fqx "release create 1.2.3 ${asset} ${checksum} ${runtime_asset} ${runtime_
 
 current_extra_calls="${temporary_directory}/current-extra.calls"
 run_publisher branch exists "${current_extra_calls}" "${extra_assets}"
-grep -Fqx "release create current ${asset} ${checksum} ${runtime_asset} ${runtime_checksum} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --verify-tag --prerelease --latest=false" "${current_extra_calls}"
+grep -Fqx "release upload current ${asset} ${checksum} ${runtime_asset} ${runtime_checksum} --repo stephenlclarke/container-compose --clobber" "${current_extra_calls}"
+grep -Fqx "release edit current --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --target 0123456789012345678901234567890123456789 --prerelease" "${current_extra_calls}"

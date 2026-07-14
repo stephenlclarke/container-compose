@@ -144,13 +144,31 @@ if [[ "${published_release_state}" == "exists" ]]; then
     exit 1
   fi
 
-  # Move only the intentionally mutable `current` pointer before replacing its assets.
+  # Keep the current release continuously available. Upload and edit it in
+  # place, then advance the mutable tag only after the new assets and notes are
+  # visible. Stable release tags never use this path.
+  "${GH}" release upload "${RELEASE_TAG}" "${release_assets[@]}" \
+    --repo "${RELEASE_REPOSITORY}" --clobber
+  "${GH}" release edit "${RELEASE_TAG}" \
+    --repo "${RELEASE_REPOSITORY}" \
+    --title "${RELEASE_TITLE}" \
+    --notes-file "${RELEASE_NOTES_FILE}" \
+    --target "${PUBLISH_SHA}" \
+    --prerelease
+
   # `current` is a lightweight, mutable pointer. Explicitly disable signing so
   # a developer-level tag.gpgSign setting cannot open an annotation editor.
   "${GIT}" tag --no-sign --force "${RELEASE_TAG}" "${PUBLISH_SHA}"
   "${GIT}" push --force origin "refs/tags/${RELEASE_TAG}"
-  "${GH}" release delete "${RELEASE_TAG}" \
-    --repo "${RELEASE_REPOSITORY}" --yes
+  exit 0
+fi
+
+if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
+  # Create the explicit current tag before the first prerelease. This avoids a
+  # GitHub release with only an implicit target and makes the mutable lane
+  # visible and verifiable in the tag list from its first publication.
+  "${GIT}" tag --no-sign --force "${RELEASE_TAG}" "${PUBLISH_SHA}"
+  "${GIT}" push --force origin "refs/tags/${RELEASE_TAG}"
 fi
 
 create_args=(
@@ -159,7 +177,7 @@ create_args=(
   --title "${RELEASE_TITLE}"
   --notes-file "${RELEASE_NOTES_FILE}"
 )
-if [[ "${PUBLISH_REF_TYPE}" == "tag" || "${published_release_state}" == "exists" ]]; then
+if [[ "${PUBLISH_REF_TYPE}" == "tag" || "${PUBLISH_REF_TYPE}" == "branch" ]]; then
   create_args+=(--verify-tag)
 else
   create_args+=(--target "${PUBLISH_SHA}")

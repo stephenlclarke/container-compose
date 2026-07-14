@@ -134,6 +134,5 @@ when packaged provenance is absent.
 - Use upstream Apple APIs when they overlap local code and remain sufficient.
 - Keep every Apple-backed local change in an Apple-shaped commit with focused
   tests and a complete handoff draft.
-- Keep support claims in [STATUS.md](STATUS.md), validation commands in
-  [BUILD.md](BUILD.md), release policy in [BRANCHES.md](BRANCHES.md), and
-  installation steps in [INSTALL.md](INSTALL.md).
+- Keep support claims in [STATUS.md](STATUS.md), validation and release policy
+  in [BUILD.md](BUILD.md), and installation steps in [INSTALL.md](INSTALL.md).
