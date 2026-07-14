@@ -34,7 +34,7 @@ Nginx exposes the friendly entry points at <http://localhost:8080>:
 | Pushgateway | <http://localhost:8080/pushgateway/> |
 | cAdvisor | <http://localhost:8080/cadvisor/> |
 
-The direct endpoints are also useful for scripts: Grafana <http://localhost:3000/grafana/> (redirects to Nginx), Prometheus <http://localhost:9090/prometheus/>, Alertmanager <http://localhost:9093/alertmanager/>, Pushgateway <http://localhost:9091>, cAdvisor <http://localhost:9105>, Loki <http://localhost:3100>, Tempo <http://localhost:3200>, and OTLP `4317` (gRPC) / `4318` (HTTP).
+The direct endpoints are also useful for scripts: Grafana <http://localhost:3000/grafana/>, Prometheus <http://localhost:9090/prometheus/>, Alertmanager <http://localhost:9093/alertmanager/>, Pushgateway <http://localhost:9091>, cAdvisor <http://localhost:9105>, Loki <http://localhost:3100>, Tempo <http://localhost:3200>, and OTLP `4317` (gRPC) / `4318` (HTTP).
 
 The default Grafana login is `admin` / `admin` unless the environment variables above are set. The supplied dashboard shows scrape target availability and scrape duration.
 
