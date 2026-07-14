@@ -32,7 +32,18 @@ assert SPEC is not None and SPEC.loader is not None
 checker = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(checker)
 
+
+def load_module():
+    spec = importlib.util.spec_from_file_location("check_stack_consistency", MODULE_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load module: {MODULE_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 CONTAINERIZATION_REF = "41252f26870bc875ea0b3e97e1bb656456f02288"
+CONTAINER_REF = "a" * 40
 BUILDER_DIGEST = "sha256:e4a1294b27c9602c3b7b26b1af753cbe5b688d91f1880e5990ed45ce5c711cc9"
 
 
@@ -42,6 +53,10 @@ def write_stack_refs(path: Path, containerization_ref: str = CONTAINERIZATION_RE
             {
                 "schemaVersion": 1,
                 "components": {
+                    "container": {
+                        "repository": "stephenlclarke/container",
+                        "ref": CONTAINER_REF,
+                    },
                     "container-builder-shim": {
                         "repository": "stephenlclarke/container-builder-shim",
                         "ref": "builder-ref",
@@ -62,7 +77,17 @@ def write_stack_refs(path: Path, containerization_ref: str = CONTAINERIZATION_RE
     )
 
 
-def write_package(path: Path, requirement: str, value: str) -> None:
+def write_package(path: Path, requirement: str, value: str, include_container: bool = False) -> None:
+    container_dependency = ""
+    if include_container:
+        container_dependency = textwrap.dedent(
+            f"""
+                    .package(
+                        url: "https://github.com/stephenlclarke/container.git",
+                        revision: "{CONTAINER_REF}"
+                    ),
+            """
+        )
     path.write_text(
         textwrap.dedent(
             f"""
@@ -75,6 +100,7 @@ def write_package(path: Path, requirement: str, value: str) -> None:
             let package = Package(
                 name: "fixture",
                 dependencies: [
+            {container_dependency}
                     .package(
                         url: "https://github.com/stephenlclarke/containerization.git",
                         {requirement}: "{value}"
@@ -88,21 +114,37 @@ def write_package(path: Path, requirement: str, value: str) -> None:
     )
 
 
-def write_resolved(path: Path, revision: str = CONTAINERIZATION_REF, branch: str | None = None) -> None:
+def write_resolved(
+    path: Path,
+    revision: str = CONTAINERIZATION_REF,
+    branch: str | None = None,
+    include_container: bool = False,
+) -> None:
     state = {"revision": revision}
     if branch is not None:
         state["branch"] = branch
+    pins: list[dict[str, object]] = [
+        {
+            "identity": "containerization",
+            "kind": "remoteSourceControl",
+            "location": "https://github.com/stephenlclarke/containerization.git",
+            "state": state,
+        }
+    ]
+    if include_container:
+        pins.insert(
+            0,
+            {
+                "identity": "container",
+                "kind": "remoteSourceControl",
+                "location": "https://github.com/stephenlclarke/container.git",
+                "state": {"revision": CONTAINER_REF},
+            },
+        )
     path.write_text(
         json.dumps(
             {
-                "pins": [
-                    {
-                        "identity": "containerization",
-                        "kind": "remoteSourceControl",
-                        "location": "https://github.com/stephenlclarke/containerization.git",
-                        "state": state,
-                    }
-                ]
+                "pins": pins
             }
         ),
         encoding="utf-8",
@@ -114,6 +156,10 @@ class StackConsistencyTests(unittest.TestCase):
         with mock.patch.object(checker, "STACK_REFS", root / "stack-refs.json"), mock.patch.object(
             checker, "CONTAINER_PACKAGE", root / "container" / "Package.swift"
         ), mock.patch.object(
+            checker, "COMPOSE_PACKAGE", root / "compose" / "Package.swift"
+        ), mock.patch.object(
+            checker, "COMPOSE_RESOLVED", root / "compose" / "Package.resolved"
+        ), mock.patch.object(
             checker,
             "PACKAGE_SWIFT_FILES",
             [root / "compose" / "Package.swift", root / "container" / "Package.swift"],
@@ -124,15 +170,28 @@ class StackConsistencyTests(unittest.TestCase):
         ):
             return checker.main()
 
+    def test_uses_the_explicit_container_stack_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            container_repo = root / "exact-container"
+            container_repo.mkdir()
+            with mock.patch.dict(
+                "os.environ", {"CONTAINER_STACK_REPO": str(container_repo)}, clear=False
+            ):
+                module = load_module()
+
+            self.assertEqual(module.CONTAINER_REPO, container_repo)
+            self.assertEqual(module.CONTAINER_PACKAGE, container_repo / "Package.swift")
+
     def test_accepts_revision_manifest_and_lockfile_pins(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "compose").mkdir()
             (root / "container").mkdir()
             write_stack_refs(root / "stack-refs.json")
-            write_package(root / "compose" / "Package.swift", "revision", CONTAINERIZATION_REF)
+            write_package(root / "compose" / "Package.swift", "revision", CONTAINERIZATION_REF, include_container=True)
             write_package(root / "container" / "Package.swift", "revision", CONTAINERIZATION_REF)
-            write_resolved(root / "compose" / "Package.resolved")
+            write_resolved(root / "compose" / "Package.resolved", include_container=True)
             write_resolved(root / "container" / "Package.resolved")
 
             self.assertEqual(self.run_checker(root), 0)
@@ -143,9 +202,9 @@ class StackConsistencyTests(unittest.TestCase):
             (root / "compose").mkdir()
             (root / "container").mkdir()
             write_stack_refs(root / "stack-refs.json")
-            write_package(root / "compose" / "Package.swift", "branch", "main")
+            write_package(root / "compose" / "Package.swift", "branch", "main", include_container=True)
             write_package(root / "container" / "Package.swift", "revision", CONTAINERIZATION_REF)
-            write_resolved(root / "compose" / "Package.resolved")
+            write_resolved(root / "compose" / "Package.resolved", include_container=True)
             write_resolved(root / "container" / "Package.resolved")
 
             with self.assertRaisesRegex(SystemExit, "must use revision"):
@@ -157,9 +216,9 @@ class StackConsistencyTests(unittest.TestCase):
             (root / "compose").mkdir()
             (root / "container").mkdir()
             write_stack_refs(root / "stack-refs.json")
-            write_package(root / "compose" / "Package.swift", "revision", CONTAINERIZATION_REF)
+            write_package(root / "compose" / "Package.swift", "revision", CONTAINERIZATION_REF, include_container=True)
             write_package(root / "container" / "Package.swift", "revision", CONTAINERIZATION_REF)
-            write_resolved(root / "compose" / "Package.resolved", "wrong-ref")
+            write_resolved(root / "compose" / "Package.resolved", "wrong-ref", include_container=True)
             write_resolved(root / "container" / "Package.resolved")
 
             with self.assertRaisesRegex(SystemExit, "revision mismatch"):
@@ -171,9 +230,9 @@ class StackConsistencyTests(unittest.TestCase):
             (root / "compose").mkdir()
             (root / "container").mkdir()
             write_stack_refs(root / "stack-refs.json")
-            write_package(root / "compose" / "Package.swift", "revision", CONTAINERIZATION_REF)
+            write_package(root / "compose" / "Package.swift", "revision", CONTAINERIZATION_REF, include_container=True)
             write_package(root / "container" / "Package.swift", "revision", CONTAINERIZATION_REF)
-            write_resolved(root / "compose" / "Package.resolved", branch="main")
+            write_resolved(root / "compose" / "Package.resolved", branch="main", include_container=True)
             write_resolved(root / "container" / "Package.resolved")
 
             with self.assertRaisesRegex(SystemExit, "must not include a branch"):

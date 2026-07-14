@@ -132,8 +132,8 @@ jobs:
           while true; do
             run="$(
               gh run list --repo "${GITHUB_REPOSITORY}" --workflow ci.yml --commit "${tag_sha}" \
-                --event push --limit 20 --json databaseId,status,conclusion \
-                --jq 'map(select(.status == "completed" or .status == "in_progress" or .status == "queued")) | .[0] // empty'
+                --event push --limit 20 --json databaseId,status,conclusion,headBranch \
+                --jq 'map(select(.headBranch == "main") | select(.status == "completed" or .status == "in_progress" or .status == "queued")) | .[0] // empty'
             )"
             status="$(jq -r '.status // empty' <<<"${run}")"
             conclusion="$(jq -r '.conclusion // empty' <<<"${run}")"
@@ -242,6 +242,10 @@ jobs:
           [[ "$(git -C container rev-parse HEAD)" == "${CONTAINER_REF}" ]]
           [[ "$(git -C homebrew-tap rev-parse HEAD)" == "${HOMEBREW_TAP_REF}" ]]
           [[ "$(git -C release-tools rev-parse HEAD)" == "${CONTROL_SHA}" ]]
+
+      - name: Use pinned container dependency
+        run: Tools/ci/use-stack-container.sh ../container
+        working-directory: container-compose
 
       - name: Use pinned containerization dependency
         run: Tools/ci/use-stack-containerization.sh ../containerization

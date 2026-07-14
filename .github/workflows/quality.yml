@@ -230,6 +230,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-asan-v1-
 
+      - name: Use checked-out container dependency
+        run: Tools/ci/use-stack-container.sh ../container
+        working-directory: container-compose
+
       - name: Use checked-out containerization dependency
         if: steps.stack-refs.outputs.containerization_ref != ''
         run: Tools/ci/use-stack-containerization.sh ../containerization
@@ -362,6 +366,10 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-tsan-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-tsan-v1-
+
+      - name: Use checked-out container dependency
+        run: Tools/ci/use-stack-container.sh ../container
+        working-directory: container-compose
 
       - name: Use checked-out containerization dependency
         if: steps.stack-refs.outputs.containerization_ref != ''

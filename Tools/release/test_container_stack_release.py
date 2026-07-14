@@ -18,6 +18,7 @@
 """Regression tests for stable release policy in the stack helper."""
 
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -32,6 +33,11 @@ TEMPLATE = ROOT / "Tools" / "release" / "container-compose.rb.in"
 HOMEBREW_WORKFLOW = ROOT / ".github" / "workflows" / "homebrew.yml"
 PACKAGE_WORKFLOW = ROOT / ".github" / "workflows" / "prebuilt-binaries.yml"
 STABLE_GATE_WORKFLOW = ROOT / ".github" / "workflows" / "stable-release-gate.yml"
+SCHEDULED_STABLE_RELEASE_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "scheduled-stable-release.yml"
+)
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 STACK_RELEASE_VALIDATION = ROOT / "Tools" / "ci" / "run-stack-release-validation.sh"
 FORMULA_RENDERER = ROOT / "Tools" / "release" / "render-homebrew-stack-formulae.sh"
 
@@ -79,6 +85,28 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         ]
         self.assertIn("Release-Note: none", pin_commit)
         self.assertNotIn("Release-Highlight:", pin_commit)
+
+    def test_release_helper_pins_compose_to_the_exact_runtime_revision(self) -> None:
+        runtime_pin = self.script[
+            self.script.index("update_container_package_pin() {") : self.script.index(
+                "# Keep the container and compose manifests aligned"
+            )
+        ]
+        self.assertIn("https://github.com/stephenlclarke/container", runtime_pin)
+        self.assertIn('unedit_release_dependency "${path}" container', runtime_pin)
+        self.assertIn("swift package --package-path", runtime_pin)
+        self.assertIn("Release-Note: none", runtime_pin)
+        self.assertIn("sync_container_package_pin", self.script)
+
+    def test_release_helper_resolves_immutable_dependencies(self) -> None:
+        helper = self.script[
+            self.script.index("unedit_release_dependency() {") : self.script.index(
+                "# Update one SwiftPM manifest to the current containerization stack revision."
+            )
+        ]
+        self.assertIn("swift package --package-path", helper)
+        self.assertIn("unedit --force", helper)
+        self.assertIn("not in edit mode", helper)
 
     def test_release_helper_has_no_existing_stable_package_mode(self) -> None:
         self.assertNotIn("package VERSION", self.script)
@@ -170,6 +198,41 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("refs/tags/current^{}", workflow)
         self.assertIn('current_tag_sha="$(', workflow)
 
+    def test_current_package_workflow_only_follows_successful_main_ci(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("workflow_run:", workflow)
+        self.assertIn("branches:\n      - main", workflow)
+        self.assertIn("timeout-minutes: 120", workflow)
+        self.assertIn("name: Cache SwiftPM build artifacts", workflow)
+        self.assertIn("container-compose/.build", workflow)
+        self.assertIn("container/.build", workflow)
+        self.assertIn('select(.headBranch == "main" and .status == "completed"', workflow)
+
+    def test_stable_and_current_release_authority_select_main_ci(self) -> None:
+        stable_gate = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
+        package = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("--json databaseId,status,conclusion,headBranch", stable_gate)
+        self.assertIn('select(.headBranch == "main")', stable_gate)
+        self.assertIn("--json status,conclusion,headBranch", package)
+        self.assertIn('select(.headBranch == "main" and .status == "completed"', package)
+
+    def test_main_codeql_analysis_is_not_skipped_and_validate_context_is_stable(self) -> None:
+        codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
+        ci = CI_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            "if: github.event_name != 'pull_request' || needs.changes.outputs.go == 'true'",
+            codeql,
+        )
+        self.assertIn(
+            "if: github.event_name == 'pull_request' && needs.changes.outputs.go != 'true'",
+            codeql,
+        )
+        self.assertNotIn("name: Validate Lightweight", ci)
+        self.assertEqual(len(re.findall(r"^    name: Validate$", ci, re.MULTILINE)), 2)
+        self.assertIn("name: CodeQL", codeql)
+        self.assertIn("needs.analyze.result", codeql)
+        self.assertIn("needs.analyze-skipped.result", codeql)
+
     def test_stable_package_requires_candidate_bound_release_authority(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         authority = workflow[
@@ -235,6 +298,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn("CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1", makefile)
         self.assertIn("docker-compose-devices-parity", makefile)
+        self.assertIn(
+            "release-gate: container-stack-release-validation ci swift-runtime-test docker-compose-parity",
+            makefile,
+        )
+        self.assertIn("DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.3.1", makefile)
+        self.assertIn("DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff", makefile)
         self.assertNotIn("repackage-release", makefile)
 
     def test_hosted_stack_validation_excludes_virtualization_commands(self) -> None:
@@ -410,6 +479,30 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("upstream-divergence-release-check", self.script)
         self.assertIn("land it through its own PR before releasing", promotion)
         self.assertNotIn('push "${remote}" "refs/heads/main"', promotion)
+
+    def test_stable_release_soak_starts_when_the_current_package_is_refreshed(self) -> None:
+        readiness = self.script[
+            self.script.index("ensure_current_build_release_readiness() {") : self.script.index(
+                "# Print and optionally execute a command."
+            )
+        ]
+        self.assertIn('releases/tags/current', readiness)
+        self.assertIn(".prerelease", readiness)
+        self.assertIn("container-compose-plugin-current-arm64.tar.gz", readiness)
+        self.assertIn(".updated_at", readiness)
+        self.assertNotIn("publishedAt", readiness)
+
+    def test_weekly_stable_scheduler_uses_the_same_fresh_current_package_policy(self) -> None:
+        workflow = SCHEDULED_STABLE_RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn('cron: "17 9 * * 1"', workflow)
+        self.assertIn('default: "-+-"', workflow)
+        self.assertIn('  - "+--"', workflow)
+        self.assertIn("container-compose-plugin-current-arm64.tar.gz", workflow)
+        self.assertIn(".updated_at", workflow)
+        self.assertIn("current_is_prerelease", workflow)
+        self.assertNotIn("--current-published-at", workflow)
+        self.assertIn("runs-on: [self-hosted, macOS, ARM64, container-compose-release]", workflow)
 
     def test_local_release_gate_requires_hardware_virtualization(self) -> None:
         local_gate = self.script[

@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -28,15 +29,16 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 STACK_REFS = ROOT / "Tools" / "release" / "stack-refs.json"
-CONTAINER_PACKAGE = ROOT.parent / "container" / "Package.swift"
+CONTAINER_REPO = Path(os.environ.get("CONTAINER_STACK_REPO", ROOT.parent / "container"))
+CONTAINER_PACKAGE = CONTAINER_REPO / "Package.swift"
+COMPOSE_PACKAGE = ROOT / "Package.swift"
+COMPOSE_RESOLVED = ROOT / "Package.resolved"
 PACKAGE_SWIFT_FILES = [
-    ROOT / "Package.swift",
-    CONTAINER_PACKAGE,
+    COMPOSE_PACKAGE,
 ]
-PACKAGE_RESOLVED_FILES = [
-    ROOT / "Package.resolved",
-    ROOT.parent / "container" / "Package.resolved",
-]
+if CONTAINER_PACKAGE.is_file():
+    PACKAGE_SWIFT_FILES.append(CONTAINER_PACKAGE)
+PACKAGE_RESOLVED_FILES = [ROOT / "Package.resolved", CONTAINER_REPO / "Package.resolved"]
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -85,6 +87,34 @@ def containerization_dependencies() -> list[tuple[Path, str, str, str]]:
     return dependencies
 
 
+def container_dependency() -> tuple[str, str, str]:
+    """Return the Compose runtime dependency source, requirement, and revision."""
+    package = COMPOSE_PACKAGE
+    try:
+        text = package.read_text(encoding="utf-8")
+    except FileNotFoundError as error:
+        raise SystemExit(f"missing required file: {package}") from error
+
+    match = re.search(
+        r'\.package\(\s*url:\s*"([^"]*container\.git)"\s*,\s*'
+        r'(branch|revision|exact|from):\s*"([^"]*)"',
+        text,
+        re.MULTILINE,
+    )
+    if not match:
+        raise SystemExit(f"{package} is missing a remote container package dependency")
+    return match.group(1), match.group(2), match.group(3)
+
+
+def container_pin() -> dict[str, Any]:
+    package_resolved = COMPOSE_RESOLVED
+    data = load_json(package_resolved)
+    for pin in data.get("pins", []):
+        if pin.get("identity") == "container":
+            return pin
+    raise SystemExit(f"{package_resolved} is missing a container pin")
+
+
 def require_match(label: str, actual: str, expected: str) -> None:
     if actual != expected:
         raise SystemExit(f"{label} mismatch: expected {expected}, got {actual}")
@@ -102,6 +132,12 @@ def read_swift_default(path: Path, name: str) -> str:
 
 
 def validate_builder_image(stack_refs: dict[str, Any]) -> None:
+    # A standalone Compose checkout does not need a sibling container source
+    # tree. The container repository validates its own builder image pin during
+    # the full stack gate; validate it here when that checkout is available.
+    if not CONTAINER_PACKAGE.is_file():
+        return
+
     components = stack_refs.get("components", {})
     builder = components.get("container-builder-shim")
     if not isinstance(builder, dict):
@@ -137,6 +173,37 @@ def main() -> int:
     stack_refs = load_json(STACK_REFS)
     validate_builder_image(stack_refs)
     components = stack_refs.get("components", {})
+    container = components.get("container")
+    if not isinstance(container, dict):
+        raise SystemExit("stack-refs.json is missing components.container")
+
+    expected_container_source = str(container.get("repository", ""))
+    expected_container_ref = str(container.get("ref", ""))
+    if not expected_container_source or not expected_container_ref:
+        raise SystemExit("stack-refs.json container entry needs repository and ref")
+
+    container_location, container_requirement, container_revision = container_dependency()
+    require_match(
+        "Package.swift container source",
+        normalize_repository(container_location),
+        expected_container_source,
+    )
+    if container_requirement != "revision":
+        raise SystemExit(
+            "Package.swift container dependency must use revision, "
+            f"not {container_requirement}"
+        )
+    require_match("Package.swift container revision", container_revision, expected_container_ref)
+
+    pin = container_pin()
+    pin_source = normalize_repository(str(pin.get("location", "")))
+    pin_state = pin.get("state", {})
+    pin_revision = str(pin_state.get("revision", ""))
+    if "branch" in pin_state:
+        raise SystemExit("Package.resolved container pin must not include a branch")
+    require_match("Package.resolved container source", pin_source, expected_container_source)
+    require_match("Package.resolved container revision", pin_revision, expected_container_ref)
+
     containerization = components.get("containerization")
     if not isinstance(containerization, dict):
         raise SystemExit("stack-refs.json is missing components.containerization")

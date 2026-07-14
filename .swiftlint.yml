@@ -29,3 +29,17 @@ line_length:
   error: 200
   ignores_function_declarations: true
   ignores_interpolated_strings: true
+
+# `cache_to` is part of the Compose build vocabulary, so its in-memory API
+# deliberately exposes the concise `to` member next to `from`.
+identifier_name:
+  excluded:
+    - id
+    - to
+
+# The normalized Compose schema is intentionally broad. It is split by concern
+# where that improves ownership, while 1,000 lines remains the actionable size
+# limit for a single schema source file.
+file_length:
+  warning: 1000
+  error: 1200

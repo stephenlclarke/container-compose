@@ -1,0 +1,265 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Scheduled Stable Release
+run-name: Scheduled Stable Release · ${{ inputs.version_selector || '-+-' }}
+
+on:
+  schedule:
+    # Monday 09:17 UTC deliberately avoids the busiest minute of the hour.
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      version_selector:
+        description: "Stable release bump, resolved from the latest semantic tag"
+        required: true
+        default: "-+-"
+        type: choice
+        options:
+          - "-+-"
+          - "+--"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-stable-release
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Decide Stable Promotion
+    if: github.repository == 'stephenlclarke/container-compose' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.decision.outputs.should_release }}
+      selector: ${{ steps.selector.outputs.selector }}
+      reason: ${{ steps.decision.outputs.reason }}
+    steps:
+      - name: Checkout release controls
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 1
+
+      - name: Select release increment
+        id: selector
+        env:
+          SELECTOR: ${{ inputs.version_selector || '-+-' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${SELECTOR}" in
+            -+-|+--)
+              printf 'selector=%s\n' "${SELECTOR}" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              printf 'scheduled stable releases only support -+- (minor) or +-- (major): %s\n' \
+                "${SELECTOR}" >&2
+              exit 2
+              ;;
+          esac
+
+      - name: Require a soaked, changed Current build
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="https://github.com/${GITHUB_REPOSITORY}.git"
+
+          resolve_tag_sha() {
+            local tag="$1" sha
+            sha="$(
+              git ls-remote --tags "${remote}" "refs/tags/${tag}" "refs/tags/${tag}^{}" \
+                | awk '$2 ~ /\^\{\}$/ { print $1; found = 1 } END { if (!found) print "" }' \
+                | tail -n 1
+            )"
+            if [[ -z "${sha}" ]]; then
+              sha="$(
+                git ls-remote --tags --refs "${remote}" "refs/tags/${tag}" \
+                  | awk '{ print $1 }' \
+                  | tail -n 1
+              )"
+            fi
+            printf '%s' "${sha}"
+          }
+
+          main_sha="$(git ls-remote --heads "${remote}" refs/heads/main | awk '{ print $1 }' | tail -n 1)"
+          current_sha="$(resolve_tag_sha current)"
+          current_release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/current")"
+          current_is_prerelease="$(jq -r '.prerelease' <<<"${current_release}")"
+          current_built_at="$(
+            jq -r '[.assets[] | select(.name == "container-compose-plugin-current-arm64.tar.gz") | .updated_at] | max // empty' \
+              <<<"${current_release}"
+          )"
+          latest_stable_tag="$(
+            git ls-remote --tags --refs "${remote}" \
+              | awk '{ sub("^refs/tags/", "", $2); print $2 }' \
+              | awk '/^[0-9]+[.][0-9]+[.][0-9]+$/' \
+              | sort -V \
+              | tail -n 1
+          )"
+          latest_stable_sha=""
+          if [[ -n "${latest_stable_tag}" ]]; then
+            latest_stable_sha="$(resolve_tag_sha "${latest_stable_tag}")"
+          fi
+          if [[ ! "${main_sha}" =~ ^[0-9a-f]{40}$ || ! "${current_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'could not resolve main or current tag SHA\n' >&2
+            exit 1
+          fi
+          if [[ "${current_is_prerelease}" != "true" || -z "${current_built_at}" ]]; then
+            printf 'current must be a prerelease with a published current package asset\n' >&2
+            exit 1
+          fi
+
+          decision_file="${RUNNER_TEMP}/stable-release-decision.json"
+          python3 Tools/release/stable-release-preflight.py \
+            --main-sha "${main_sha}" \
+            --current-sha "${current_sha}" \
+            --current-built-at "${current_built_at}" \
+            --latest-stable-sha "${latest_stable_sha}" > "${decision_file}"
+          should_release="$(jq -r '.should_release' "${decision_file}")"
+          reason="$(jq -r '.reason' "${decision_file}")"
+          printf 'should_release=%s\n' "${should_release}" >> "$GITHUB_OUTPUT"
+          printf 'reason=%s\n' "${reason}" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "${reason}" >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: Promote Soaked Stable Release
+    needs: preflight
+    if: needs.preflight.outputs.should_release == 'true'
+    runs-on: [self-hosted, macOS, ARM64, container-compose-release]
+    timeout-minutes: 360
+    steps:
+      - name: Checkout container-compose release controls
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          path: release-stack/container-compose
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout builder-shim source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/container-builder-shim
+          ref: main
+          path: release-stack/container-builder-shim
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout containerization source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/containerization
+          ref: main
+          path: release-stack/containerization
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout container runtime source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/container
+          ref: main
+          path: release-stack/container
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/homebrew-tap
+          ref: main
+          path: release-stack/homebrew-tap
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure isolated release stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_root="${GITHUB_WORKSPACE}/release-stack"
+          automation_token="$(
+            unset GH_TOKEN GITHUB_TOKEN
+            gh auth token
+          )"
+          if [[ -z "${automation_token}" ]]; then
+            printf 'the local release runner has no GitHub CLI token\n' >&2
+            exit 1
+          fi
+          export GH_TOKEN="${automation_token}"
+          if [[ "$(gh api user --jq '.login')" != "stephenlclarke" ]]; then
+            printf 'the local release runner must authenticate as stephenlclarke\n' >&2
+            exit 1
+          fi
+
+          own_url() {
+            local repository="$1"
+            printf 'https://x-access-token:%s@github.com/%s.git' "${automation_token}" "${repository}"
+          }
+          configure_apple_fork() {
+            local path="$1" fork_repository="$2" upstream_repository="$3"
+            git -C "${path}" remote rename origin fork
+            git -C "${path}" remote set-url fork "$(own_url "${fork_repository}")"
+            git -C "${path}" remote add origin "https://github.com/${upstream_repository}.git"
+            git -C "${path}" remote set-url --push origin no_push
+          }
+
+          configure_apple_fork "${release_root}/container-builder-shim" \
+            stephenlclarke/container-builder-shim apple/container-builder-shim
+          configure_apple_fork "${release_root}/container" \
+            stephenlclarke/container apple/container
+          git -C "${release_root}/containerization" remote set-url origin "$(own_url stephenlclarke/containerization)"
+          git -C "${release_root}/containerization" remote add upstream https://github.com/apple/containerization.git
+          git -C "${release_root}/containerization" remote set-url --push upstream no_push
+          git -C "${release_root}/container-compose" remote set-url origin "$(own_url stephenlclarke/container-compose)"
+          git -C "${release_root}/homebrew-tap" remote set-url origin "$(own_url stephenlclarke/homebrew-tap)"
+
+          for command_name in docker gh git go make node npm python3 swift; do
+            command -v "${command_name}" >/dev/null 2>&1 || {
+              printf 'release runner is missing %s\n' "${command_name}" >&2
+              exit 1
+            }
+          done
+          docker compose version >/dev/null
+          [[ -n "$(git config --global --get user.name)" ]]
+          [[ -n "$(git config --global --get user.email)" ]]
+          [[ "$(git config --global --get gpg.format)" == "ssh" ]]
+          [[ "$(git config --global --get commit.gpgsign)" == "true" ]]
+          signing_key="$(git config --global --get user.signingkey)"
+          [[ -n "${signing_key}" && -r "${signing_key}" ]]
+          signing_private_key="${signing_key%.pub}"
+          ssh-keygen -y -P '' -f "${signing_private_key}" >/dev/null
+          git -C "${release_root}/container-compose" config gpg.format ssh
+          git -C "${release_root}/container-compose" config commit.gpgsign true
+          git -C "${release_root}/container-compose" config user.signingkey "${signing_key}"
+
+      - name: Promote the selected stable release
+        shell: bash
+        working-directory: release-stack/container-compose
+        env:
+          CONTAINER_STACK_RELEASE_ROOT: ${{ github.workspace }}/release-stack
+          CONTAINER_STACK_RELEASE_INTENT: milestone
+          VERSION_SELECTOR: ${{ needs.preflight.outputs.selector }}
+        run: |
+          set -euo pipefail
+          release_token="$(
+            unset GH_TOKEN GITHUB_TOKEN
+            gh auth token
+          )"
+          export GH_TOKEN="${release_token}"
+          make release VERSION_SELECTOR="${VERSION_SELECTOR}"

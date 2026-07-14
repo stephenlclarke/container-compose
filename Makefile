@@ -90,7 +90,10 @@ CONTAINER_RUNTIME_STOP_HELPER ?= $(abspath $(CONTAINER_STACK_REPO)/scripts/ensur
 CONTAINER_RUNTIME_APP_ROOT ?= $(abspath .build/container-runtime)
 CONTAINER_RUNTIME_INIT_BLOCK_REPO ?= $(if $(wildcard $(CONTAINER_STACK_REPO)/Makefile),$(CONTAINER_STACK_REPO),)
 CONTAINERIZATION_INIT_SOURCE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_REPO)/Package.swift),$(CONTAINERIZATION_STACK_REPO),)
-PARITY_ENV = CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)"
+DOCKER_COMPOSE_REFERENCE ?= docker compose
+DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.3.1
+DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff
+PARITY_ENV = CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" DOCKER_COMPOSE="$(DOCKER_COMPOSE_REFERENCE)" DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)"
 MARKDOWN_FILES := $(shell git ls-files '*.md')
 DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-cli-surface-parity \
@@ -138,7 +141,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci ci-fast release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci ci-fast release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -148,7 +151,7 @@ ci: check coverage-check go-build cli-smoke-built
 
 ci-fast: check test go-build cli-smoke-built
 
-release-gate: container-stack-release-validation ci docker-compose-parity
+release-gate: container-stack-release-validation ci swift-runtime-test docker-compose-parity
 
 release-gate-hosted: container-stack-hosted-release-validation ci
 
@@ -1160,10 +1163,14 @@ container-stack-hosted-release-validation:
 		"$(CONTAINER_BUILDER_SHIM_STACK_REPO)" "$(CONTAINERIZATION_STACK_REPO)" \
 		"$(CONTAINER_STACK_REPO)" "$(HOMEBREW_TAP_REPO)"
 
-docker-compose-e2e-fixtures:
-	./Tools/parity/sync-docker-compose-e2e-fixtures.sh --strict
+docker-compose-reference:
+	DOCKER_COMPOSE="$(DOCKER_COMPOSE_REFERENCE)" DOCKER_COMPOSE_REFERENCE_VERSION="$(DOCKER_COMPOSE_REFERENCE_VERSION)" \
+		./Tools/parity/check-docker-compose-reference.sh --strict
 
-docker-compose-parity: container-stack-build
+docker-compose-e2e-fixtures:
+	DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)" ./Tools/parity/sync-docker-compose-e2e-fixtures.sh --strict
+
+docker-compose-parity: container-stack-build docker-compose-reference
 	container_binary="$(CONTAINER_COMPOSE_CONTAINER)"; \
 	if [[ "$$container_binary" == "container" ]]; then \
 		for candidate in "$(LOCAL_CONTAINER_BINARY)" "$(LOCAL_CONTAINER_PACKAGE_BINARY)"; do \
@@ -1177,100 +1184,103 @@ docker-compose-parity: container-stack-build
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		$(MAKE) --no-print-directory -j1 \
 			CONTAINER_COMPOSE_CONTAINER="$$container_binary" \
+			DOCKER_COMPOSE_REFERENCE="$(DOCKER_COMPOSE_REFERENCE)" \
+			DOCKER_COMPOSE_REFERENCE_VERSION="$(DOCKER_COMPOSE_REFERENCE_VERSION)" \
+			DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)" \
 			CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1 \
 			$(DOCKER_COMPOSE_PARITY_TARGETS)
 
-docker-compose-cli-surface-parity: build
+docker-compose-cli-surface-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-cli-surface.sh --strict
 
-docker-compose-bridge-parity: build docker-compose-e2e-fixtures
+docker-compose-bridge-parity: build docker-compose-reference docker-compose-e2e-fixtures
 	$(PARITY_ENV) ./Tools/parity/check-compose-bridge.sh --strict
 
-docker-compose-compatibility-names-parity: build
+docker-compose-compatibility-names-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-compatibility-names.sh --strict
 
-docker-compose-config-all-resources-parity: build
+docker-compose-config-all-resources-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-config-all-resources.sh --strict
 
-docker-compose-env-file-parity: build
+docker-compose-env-file-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-env-file.sh --strict
 
-docker-compose-git-remote-parity: build
+docker-compose-git-remote-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-git-remote.sh --strict
 
-docker-compose-commit-parity: build
+docker-compose-commit-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-commit.sh --strict
 
-docker-compose-cp-stdio-archive-streams-parity: build
+docker-compose-cp-stdio-archive-streams-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-cp-stdio-archive-streams.sh --strict
 
-docker-compose-build-builder-parity: build
+docker-compose-build-builder-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-build-builder.sh --strict
 
-docker-compose-build-check-parity: build
+docker-compose-build-check-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-build-check.sh --strict
 
-docker-compose-build-isolation-parity: build
+docker-compose-build-isolation-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-build-isolation.sh --strict
 
-docker-compose-build-secret-metadata-parity: build
+docker-compose-build-secret-metadata-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-build-secret-metadata.sh --strict
 
-docker-compose-bind-create-host-path-parity: build
+docker-compose-bind-create-host-path-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-bind-create-host-path.sh --strict
 
-docker-compose-bind-propagation-parity: build
+docker-compose-bind-propagation-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-bind-propagation.sh --strict
 
-docker-compose-volume-labels-parity: build
+docker-compose-volume-labels-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-volume-labels.sh --strict
 
-docker-compose-deploy-endpoint-mode-parity: build
+docker-compose-deploy-endpoint-mode-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-deploy-endpoint-mode.sh --strict
 
-docker-compose-deploy-resource-reservations-parity: build
+docker-compose-deploy-resource-reservations-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-deploy-resource-reservations.sh --strict
 
-docker-compose-deploy-scheduler-metadata-parity: build
+docker-compose-deploy-scheduler-metadata-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-deploy-scheduler-metadata.sh --strict
 
-docker-compose-pids-limit-parity: build
+docker-compose-pids-limit-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-pids-limit.sh --strict
 
-docker-compose-device-cgroup-rules-parity: build
+docker-compose-device-cgroup-rules-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-device-cgroup-rules.sh --strict
 
-docker-compose-devices-parity: build
+docker-compose-devices-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-devices.sh --strict
 
-docker-compose-gpus-parity: build
+docker-compose-gpus-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-gpus.sh --strict
 
-docker-compose-network-driver-opts-parity: build
+docker-compose-network-driver-opts-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-network-driver-opts.sh --strict
 
-docker-compose-network-ipam-options-parity: build
+docker-compose-network-ipam-options-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-network-ipam-options.sh --strict
 
-docker-compose-up-menu-parity: build
+docker-compose-up-menu-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-up-menu.sh --strict
 
-docker-compose-host-namespaces-parity: build
+docker-compose-host-namespaces-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-host-namespaces.sh --strict
 
-docker-compose-health-wait-parity: build
+docker-compose-health-wait-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-health-wait.sh --strict
 
-docker-compose-create-options-parity: build
+docker-compose-create-options-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-create-options.sh --strict
 
-docker-compose-events-parity: build
+docker-compose-events-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-events.sh --strict
 
-docker-compose-rm-parity: build
+docker-compose-rm-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-rm.sh --strict
 
-docker-compose-restart-policy-parity: build
+docker-compose-restart-policy-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-restart-policy.sh --strict
 
 coverage: swift-coverage go-test
@@ -1372,7 +1382,7 @@ upstream-divergence-release-check:
 	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --strict --require-upstream-current --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
 
 stack-consistency:
-	$(PYTHON) Tools/ci/check-stack-consistency.py
+	CONTAINER_STACK_REPO="$(CONTAINER_STACK_REPO)" $(PYTHON) Tools/ci/check-stack-consistency.py
 
 check: lint stack-consistency check-licenses
 

@@ -1767,6 +1767,15 @@ services:
         environment:
           READY: "1"
           FROM_HOST:
+    pre_start:
+      - command: ["sh", "-c", "echo migrate"]
+        image: busybox
+        user: app
+        privileged: true
+        working_dir: /srv
+        environment:
+          MIGRATION: "1"
+        per_replica: true
     pre_stop:
       - command: ["sh", "-c", "echo stopping"]
         privileged: true
@@ -1811,6 +1820,21 @@ services:
 	}
 	if got, want := api.PostStart[0].Environment, map[string]*string{"READY": stringPointer("1"), "FROM_HOST": nil}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.PostStart[0].Environment = %#v, want %#v", got, want)
+	}
+	if got, want := len(api.PreStart), 1; got != want {
+		t.Fatalf("len(api.PreStart) = %d, want %d", got, want)
+	}
+	if got, want := api.PreStart[0].Command, []string{"sh", "-c", "echo migrate"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.PreStart[0].Command = %#v, want %#v", got, want)
+	}
+	if api.PreStart[0].Image != "busybox" {
+		t.Fatalf("api.PreStart[0].Image = %q, want busybox", api.PreStart[0].Image)
+	}
+	if !api.PreStart[0].Privileged || !api.PreStart[0].PerReplica {
+		t.Fatalf("api.PreStart[0] flags = %#v, want privileged and per-replica", api.PreStart[0])
+	}
+	if got, want := api.PreStart[0].Environment, map[string]*string{"MIGRATION": stringPointer("1")}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.PreStart[0].Environment = %#v, want %#v", got, want)
 	}
 	if got, want := len(api.PreStop), 1; got != want {
 		t.Fatalf("len(api.PreStop) = %d, want %d", got, want)

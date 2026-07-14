@@ -1,6 +1,6 @@
 # Installing container-compose
 
-This guide explains how to install, upgrade, verify, and uninstall the `container-compose` plugin with the matched `stephenlclarke/container` runtime. Source build and package steps live in [BUILD.md](BUILD.md); branch, tag, and release policy live in [BRANCHES.md](BRANCHES.md).
+This guide explains how to install, upgrade, verify, and uninstall the `container-compose` plugin with the matched `stephenlclarke/container` runtime. Source build, package, branch, tag, and release policy live in [BUILD.md](BUILD.md).
 
 ## Homebrew Formulae
 
@@ -14,7 +14,7 @@ time: both runtime formulae provide the `container` executable.
 | `container-compose-current` | one mutable `current` prerelease | Opt in when you want the latest green-`main` app. It depends on `container-current`. |
 | `container-current` | current runtime build | Installed automatically with the current plugin formula. |
 
-The formulae install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BRANCHES.md](BRANCHES.md).
+The formulae install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BUILD.md](BUILD.md).
 
 Homebrew without a `-current` formula always uses the latest immutable semantic
 release. The opt-in lane follows the single mutable GitHub prerelease named

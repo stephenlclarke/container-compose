@@ -25,10 +25,13 @@ let package = Package(
         .library(name: "ComposeCore", targets: ["ComposeCore"]),
     ],
     dependencies: [
-        .package(name: "container", path: "../container"),
+        .package(
+            url: "https://github.com/stephenlclarke/container.git",
+            revision: "b1cbbeb88d660e1debf711bf7666cb0629a62a29",
+        ),
         .package(
             url: "https://github.com/stephenlclarke/containerization.git",
-            revision: "101a0868022e7d080b288ccbe7d8a914a56f63bb",
+            revision: "47889b2769765dc9063e1afdc1fe004cc288279c",
         ),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),

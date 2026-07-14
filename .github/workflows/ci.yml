@@ -260,6 +260,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v2-
 
+      - name: Use checked-out container dependency
+        run: Tools/ci/use-stack-container.sh ../container
+        working-directory: container-compose
+
       - name: Use checked-out containerization dependency
         if: steps.stack-refs.outputs.containerization_ref != ''
         run: Tools/ci/use-stack-containerization.sh ../containerization
@@ -402,7 +406,9 @@ jobs:
           printf 'Source Checks and Validate Runtime passed.\n'
 
   validate-lightweight:
-    name: Validate Lightweight
+    # Branch protection requires one stable aggregate context for both the
+    # full and documentation/formula-only validation paths.
+    name: Validate
     needs: changes
     if: needs.changes.outputs.heavy != 'true'
     runs-on: ubuntu-latest

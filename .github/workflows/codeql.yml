@@ -98,7 +98,10 @@ jobs:
   analyze:
     name: Analyze Go
     needs: changes
-    if: needs.changes.outputs.go == 'true'
+    # Every main commit needs a real CodeQL analysis so release quality
+    # snapshots can be tied to the exact package commit. Keep the cheaper
+    # no-op path only for pull requests that cannot affect Go analysis.
+    if: github.event_name != 'pull_request' || needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -136,8 +139,30 @@ jobs:
   analyze-skipped:
     name: Analyze Go (No Go changes)
     needs: changes
-    if: needs.changes.outputs.go != 'true'
+    if: github.event_name == 'pull_request' && needs.changes.outputs.go != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Report skipped analysis
         run: printf 'CodeQL Go analysis skipped because this change did not touch Go normalizer or CodeQL configuration paths.\n'
+
+  verify:
+    name: CodeQL
+    needs:
+      - analyze
+      - analyze-skipped
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require a successful analysis path
+        env:
+          ANALYSIS_RESULT: ${{ needs.analyze.result }}
+          SKIPPED_RESULT: ${{ needs.analyze-skipped.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${ANALYSIS_RESULT}" == "success" || "${SKIPPED_RESULT}" == "success" ]]; then
+            exit 0
+          fi
+          printf 'CodeQL analysis did not complete successfully (analysis=%s, skipped=%s).\n' \
+            "${ANALYSIS_RESULT}" "${SKIPPED_RESULT}" >&2
+          exit 1

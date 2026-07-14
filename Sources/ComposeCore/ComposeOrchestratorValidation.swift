@@ -285,6 +285,9 @@ extension ComposeOrchestrator {
 
     /// Validates lifecycle hook metadata before runtime side effects.
     func validateLifecycleHookSupport(service: ComposeService) throws {
+        if let preStart = service.preStart, !preStart.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses pre_start; Docker Compose init containers need an apple/container ephemeral-container lifecycle primitive")
+        }
         let hookSets: [(composeName: String, hooks: [ComposeServiceHook]?)] = [
             ("post_start", service.postStart),
             ("pre_stop", service.preStop),

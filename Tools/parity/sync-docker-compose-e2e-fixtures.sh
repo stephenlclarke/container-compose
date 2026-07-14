@@ -22,14 +22,13 @@
 # OPTIONS:
 #   --dest PATH       Destination checkout. Defaults to .build/parity/docker-compose-e2e.
 #   --repo URL        Source repository. Defaults to https://github.com/docker/compose.git.
-#   --ref REF         Source branch. Defaults to main.
+#   --ref SHA         Source commit. Defaults to the pinned Docker Compose e2e revision.
 #   --strict          Fail when git or network access is unavailable.
 #   -h, --help        Show this help.
 #
 # This helper refreshes a sparse checkout of Docker Compose's e2e fixture corpus
-# only when the checkout is missing or Docker Compose's source branch moved. The
-# checkout lives under .build so upstream fixture churn does not modify
-# maintained source.
+# at the exact pinned commit. The checkout lives under .build so upstream fixture
+# churn does not modify maintained source.
 
 set -euo pipefail
 
@@ -41,7 +40,7 @@ readonly REPO_ROOT
 
 DEST="$REPO_ROOT/.build/parity/docker-compose-e2e"
 SOURCE_REPO="https://github.com/docker/compose.git"
-SOURCE_REF="main"
+SOURCE_REF="${DOCKER_COMPOSE_E2E_REF:-f32009d4a2c687dd405398cc7975d12dccaf8dff}"
 STRICT=0
 
 # Print a warning message to stderr.
@@ -125,11 +124,6 @@ print_local_head() {
     git -C "$DEST" rev-parse HEAD 2>/dev/null
 }
 
-# Return the current remote commit for the configured source branch.
-remote_head() {
-    git ls-remote "$SOURCE_REPO" "refs/heads/$SOURCE_REF" | awk '{print $1}'
-}
-
 # Clone the Docker Compose repository with only e2e fixtures checked out.
 clone_fixtures() {
     local parent
@@ -137,11 +131,13 @@ clone_fixtures() {
     parent="$(dirname "$DEST")"
     mkdir -p "$parent"
     rm -rf "$DEST"
-    git clone --depth 1 --branch "$SOURCE_REF" --filter=blob:none --sparse "$SOURCE_REPO" "$DEST" >/dev/null 2>&1
+    git clone --depth 1 --filter=blob:none --sparse "$SOURCE_REPO" "$DEST" >/dev/null 2>&1
+    git -C "$DEST" fetch --depth 1 origin "$SOURCE_REF" >/dev/null 2>&1
+    git -C "$DEST" checkout --detach FETCH_HEAD >/dev/null 2>&1
     git -C "$DEST" sparse-checkout set pkg/e2e/fixtures >/dev/null 2>&1
 }
 
-# Refresh an existing fixture checkout.
+# Refresh an existing fixture checkout to the pinned commit.
 update_fixtures() {
     git -C "$DEST" remote set-url origin "$SOURCE_REPO" >/dev/null 2>&1
     git -C "$DEST" fetch --depth 1 origin "$SOURCE_REF" >/dev/null 2>&1
@@ -153,24 +149,19 @@ update_fixtures() {
 main() {
     parse_args "$@"
     local local_head
-    local remote
 
     if ! command -v git >/dev/null 2>&1; then
         skip_or_fail 'git is not available'
     fi
 
-    remote="$(remote_head)"
-    if [[ -z "$remote" ]]; then
-        if ((STRICT == 0)) && [[ -d "$DEST/.git" ]] && print_local_head; then
-            warning "could not resolve $SOURCE_REPO refs/heads/$SOURCE_REF; using existing Docker Compose e2e fixtures"
-            exit 0
-        fi
-        skip_or_fail "could not resolve $SOURCE_REPO refs/heads/$SOURCE_REF"
+    if [[ ! "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+        error "Docker Compose e2e ref must be a full immutable commit SHA: $SOURCE_REF"
+        return 2
     fi
 
     if [[ -d "$DEST/.git" ]]; then
         local_head="$(git -C "$DEST" rev-parse HEAD 2>/dev/null || true)"
-        if [[ "$local_head" != "$remote" ]]; then
+        if [[ "$local_head" != "$SOURCE_REF" ]]; then
             if ! update_fixtures; then
                 skip_or_fail "failed to update Docker Compose e2e fixtures from $SOURCE_REPO"
             fi
@@ -181,7 +172,12 @@ main() {
         fi
     fi
 
-    printf '%s\n' "$(git -C "$DEST" rev-parse HEAD)"
+    local_head="$(git -C "$DEST" rev-parse HEAD)"
+    if [[ "$local_head" != "$SOURCE_REF" ]]; then
+        error "Docker Compose e2e checkout is $local_head; expected $SOURCE_REF"
+        return 1
+    fi
+    printf '%s\n' "$local_head"
 }
 
 main "$@"

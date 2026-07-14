@@ -51,7 +51,7 @@ upstream provenance stay attached to a stable diff before the result lands on
 `main`.
 
 Most contributions do not run release automation. Maintainers use the single
-current procedure in [BRANCHES.md](BRANCHES.md) after a validated slice lands on
+current procedure in [BUILD.md](BUILD.md) after a validated slice lands on
 `main`.
 
 apple/container uses squash-and-merge for upstream pull requests, so make the

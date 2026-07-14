@@ -61,7 +61,7 @@ This change makes `container-compose` more permissive for an option combination 
 
 ## container-compose Checks
 
-- [x] I updated `STATUS.md`, `BRANCHES.md`, or `docs/upstream/` for support, branch, or runtime primitive changes, or no update is needed.
+- [x] I updated `STATUS.md`, `BUILD.md`, or `docs/upstream/` for support, branch, or runtime primitive changes, or no update is needed.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I used Conventional Commits in commit messages and the pull request title.
 - [ ] I signed my commits with a GitHub-supported signature method.
