@@ -1,0 +1,7 @@
+route:
+  receiver: blackhole
+receivers:
+  - name: blackhole
+    webhook_configs:
+      - url: http://127.0.0.1:65535/
+        send_resolved: true
