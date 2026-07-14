@@ -390,11 +390,26 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_new_stable_release_runs_the_local_gate_before_promotion(self) -> None:
         release = self.script[self.script.index("release_current_stack() {") :]
+        self.assertIn("ensure_release_intent", release)
+        self.assertIn("ensure_current_build_release_readiness", release)
+        self.assertIn("require_release_upstream_alignment", release)
         self.assertIn("run_local_release_gate", release)
+        self.assertLess(release.index("ensure_release_intent"), release.index("run_local_release_gate"))
+        self.assertLess(release.index("require_release_upstream_alignment"), release.index("run_local_release_gate"))
         self.assertLess(release.index("run_local_release_gate"), release.index("push_all_main"))
         self.assertIn('HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"', self.script)
         self.assertIn('"$(repo_path "container-builder-shim")"', self.script)
         self.assertIn('make -C "$(repo_path "containerization")" fetch-default-kernel', self.script)
+
+    def test_stable_release_requires_intent_and_reviewed_sibling_mains(self) -> None:
+        promotion = self.script[self.script.index("push_all_main() {") : self.script.index("# Require an executable command")]
+
+        self.assertIn("CONTAINER_STACK_RELEASE_INTENT is required", self.script)
+        self.assertIn("CONTAINER_STACK_SECURITY_REASON is required", self.script)
+        self.assertIn("STABLE_CURRENT_SOAK_SECONDS=604800", self.script)
+        self.assertIn("upstream-divergence-release-check", self.script)
+        self.assertIn("land it through its own PR before releasing", promotion)
+        self.assertNotIn('push "${remote}" "refs/heads/main"', promotion)
 
     def test_local_release_gate_requires_hardware_virtualization(self) -> None:
         local_gate = self.script[

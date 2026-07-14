@@ -26,16 +26,18 @@ Keep this guide in `container-compose` only. Do not copy it into Apple upstream 
 
 Use short-lived topic or review branches for runtime, release, security, upstream-import, and cross-repository stack changes. Keep each branch focused on one coherent slice, attach CI and review notes through a pull request or equivalent review record, then land the validated result on `main` before release. Delete the branch locally and remotely unless it is still needed for an open review.
 
-The stable release helper promotes `container-compose` `main` through an automated short-lived pull request by default, so pull-request checks and review state remain visible before the semantic release tag is created. The Apple-backed sibling forks are still pushed directly to their stephenlclarke-owned remotes during stack promotion, after the helper verifies that Apple remotes are read-only.
+The stable release helper promotes `container-compose` `main` through an automated short-lived pull request by default, so pull-request checks and review state remain visible before the semantic release tag is created. Every Apple-backed sibling fork must already be merged to its stephenlclarke-owned `main` through its own reviewable pull request; the release helper never pushes sibling source branches.
 
 Do not create additional long-lived integration or packaging lanes. Non-main branches are topic or review references only.
 
 ## Version And Release Rhythm
 
-Normal work lands on `main`. After each completed and validated slice, create the next stable release with:
+Normal work lands on `main` and every green commit refreshes the mutable Current
+build. Stable releases are deliberate: create at most one milestone release
+after Current has soaked for seven days, or a documented security release.
 
 ```sh
-make release VERSION_SELECTOR=--+
+CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=--+
 ```
 
 The release helper resolves symbolic selectors from the latest local semantic `container-compose` tag, not from mutable working-tree state. Bare `MAJOR.MINOR.PATCH` source tags match Apple repository conventions; do not add a `v` prefix. Existing tags are never moved.
@@ -62,16 +64,22 @@ Run it from the `container-compose` checkout through Makefile targets:
 
 ```sh
 make release-plan
-make release VERSION_SELECTOR=--+
+CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=--+
 ```
 
 `make release-plan` is a dry run over the four local source checkouts and the
-Homebrew tap workflow boundary. `make release` validates the source worktrees
-and `stephenlclarke` push targets, synchronizes exact `containerization` SwiftPM
-revision pins when the local runtime stack moved, and creates a reviewable
-release-preparation commit. This is the helper's only version mutation. It then
-promotes the source branches, creates one new semantic `container-compose` tag,
-dispatches the hosted Stable Release Gate, and then dispatches the stable package workflow.
+Homebrew tap workflow boundary. `make release` requires
+`CONTAINER_STACK_RELEASE_INTENT=milestone` or `security`; security also requires
+`CONTAINER_STACK_SECURITY_REASON` with an advisory or incident reference. It
+validates the source worktrees and `stephenlclarke` push targets, requires the
+`current` tag to identify the validated Compose `main` head, applies the
+seven-day milestone soak, blocks when any sibling fork is behind Apple upstream,
+synchronizes exact `containerization` SwiftPM revision pins when the local
+runtime stack moved, and creates a reviewable release-preparation commit. This
+is the helper's only version mutation. It verifies that sibling source mains
+were already merged through their own PRs, then promotes only `container-compose`
+through its release PR, creates one new semantic tag, dispatches the hosted
+Stable Release Gate, and then dispatches the stable package workflow.
 The hosted gate first requires green `main` CI—the only place SonarQube analyses
 the project—then validates the non-virtualized stack against the exact tagged
 commit and an immutable Homebrew tap snapshot. GitHub-hosted macOS runners cannot
@@ -90,6 +98,16 @@ Release notes are rendered by [Tools/release/release-notes.py](Tools/release/rel
 - `-+-`: minor bump from the latest semantic tag and reset patch to `0`.
 - `+--`: major bump from the latest semantic tag and reset minor and patch to `0`.
 - `MAJOR.MINOR.PATCH`: explicit stable release version.
+
+Use the same selector with `CONTAINER_STACK_RELEASE_INTENT=milestone` for a
+normal release. Only an advisory- or incident-backed command may use
+`CONTAINER_STACK_RELEASE_INTENT=security`, for example:
+
+```sh
+CONTAINER_STACK_RELEASE_INTENT=security \
+CONTAINER_STACK_SECURITY_REASON='CVE-2026-12345' \
+make release VERSION_SELECTOR=--+
+```
 
 The Compose package and pull-request promotion waits default to one hour with 30-second polls. Override them only for emergency maintenance with `CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS`, `CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS`, `CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS`, or `CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS`.
 
@@ -119,7 +137,7 @@ Before upstream handoff, runtime-stack promotion, or release review work, run:
 make upstream-divergence-report
 ```
 
-The report fetches the stephenlclarke and Apple `main` refs for `container`, `containerization`, and `container-builder-shim`, writes Markdown and JSON under `.build/reports/`, lists fork-only and upstream-only commit subjects, and records whether Apple upstream can merge cleanly into each local checkout. Use `make upstream-divergence-check` when dirty worktrees, unpushed local commits, missing refs, or Apple upstream merge conflicts should fail the review.
+The report fetches the stephenlclarke and Apple `main` refs for `container`, `containerization`, and `container-builder-shim`, writes Markdown and JSON under `.build/reports/`, lists fork-only and upstream-only commit subjects, and records whether Apple upstream can merge cleanly into each local checkout. Use `make upstream-divergence-check` when dirty worktrees, unpushed local commits, missing refs, or Apple upstream merge conflicts should fail the review. Stable release automation uses `make upstream-divergence-release-check`, which also blocks a fork that is behind Apple upstream.
 
 ## Homebrew Formulae
 

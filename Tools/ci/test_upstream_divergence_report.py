@@ -130,6 +130,17 @@ class UpstreamDivergenceReportTests(unittest.TestCase):
             self.assertIn("fixture: local commits are not pushed to the fork remote", failures)
             self.assertIn("fixture: Apple upstream merge conflicts", failures)
 
+    def test_release_strict_mode_blocks_forks_behind_upstream(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            upstream, _, _ = create_fixture(root)
+            commit_file(upstream, "upstream-only.txt", "upstream\n", "add upstream fix")
+
+            stack_report = reporter.build_report(root, fetch=True, max_commits=5, specs=(self.spec(),))
+            failures = reporter.strict_failures(stack_report, require_upstream_current=True)
+
+            self.assertIn("fixture: fork main is 1 commit(s) behind Apple upstream", failures)
+
     def test_renders_markdown_and_json_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

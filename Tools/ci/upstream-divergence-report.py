@@ -450,7 +450,7 @@ def write_output(path: Path | None, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def strict_failures(report: StackReport) -> list[str]:
+def strict_failures(report: StackReport, *, require_upstream_current: bool = False) -> list[str]:
     failures: list[str] = []
     for repo in report.repositories:
         if repo.errors:
@@ -465,6 +465,10 @@ def strict_failures(report: StackReport) -> list[str]:
             failures.append(f"{repo.name}: Apple upstream merge conflicts")
         if repo.merge_upstream_into_local.status == "unknown":
             failures.append(f"{repo.name}: Apple upstream merge status is unknown")
+        if require_upstream_current and repo.fork_to_upstream.behind > 0:
+            failures.append(
+                f"{repo.name}: fork main is {repo.fork_to_upstream.behind} commit(s) behind Apple upstream"
+            )
     return failures
 
 
@@ -500,6 +504,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="return non-zero when repos are dirty, unpushed, missing refs, or conflict with Apple upstream",
     )
+    parser.add_argument(
+        "--require-upstream-current",
+        action="store_true",
+        help="with --strict, also fail when a fork main is behind Apple upstream",
+    )
     return parser.parse_args(argv)
 
 
@@ -513,7 +522,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_output(args.json_output, report_to_json(report))
 
     if args.strict:
-        failures = strict_failures(report)
+        failures = strict_failures(report, require_upstream_current=args.require_upstream_current)
         if failures:
             for failure in failures:
                 print(failure, file=sys.stderr)
