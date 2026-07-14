@@ -78,6 +78,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('ROOT="${CONTAINER_STACK_RELEASE_ROOT:-${HOME}/github}"', self.script)
         self.assertIn("CONTAINER_STACK_RELEASE_ROOT", self.script)
 
+    def test_release_plan_describes_the_maintenance_promotion_lane(self) -> None:
+        plan = self.script[self.script.index("\nplan() {") : self.script.index("\nmain() {")]
+        self.assertIn("RELEASE_INTENT=maintenance with --+", plan)
+        self.assertIn("documented operational", plan)
+
     def test_internal_dependency_pins_do_not_become_release_highlights(self) -> None:
         pin_commit = self.script[
             self.script.index("commit_containerization_package_pin() {") : self.script.index(
