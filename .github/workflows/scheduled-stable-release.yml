@@ -103,7 +103,7 @@ jobs:
           current_release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/current")"
           current_is_prerelease="$(jq -r '.prerelease' <<<"${current_release}")"
           current_built_at="$(
-            jq -r '[.assets[] | select(.name == "container-compose-plugin-current-arm64.tar.gz") | .updated_at] | max // empty' \
+            jq -r '[.assets[] | select(.name | test("^container-compose-plugin-current-[0-9a-f]{12}-arm64[.]tar[.]gz$")) | .updated_at] | max // empty' \
               <<<"${current_release}"
           )"
           latest_stable_tag="$(

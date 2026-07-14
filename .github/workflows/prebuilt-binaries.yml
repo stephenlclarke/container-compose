@@ -137,13 +137,20 @@ jobs:
             if [[ "${WORKFLOW_RUN_EVENT}" != "push" ]]; then
               printf 'Skipping non-push CI event: %s\n' "${WORKFLOW_RUN_EVENT}"
             else
-              validate_conclusion="$(
-                gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${WORKFLOW_RUN_ID}/jobs" \
-                  --jq ".jobs[] | select(.name == \"Validate\") | .conclusion" \
-                  | tail -n 1
+              # CI intentionally has an active Validate job and a skipped
+              # companion for the opposite change set. The package authority
+              # is satisfied when at least one Validate succeeds and every
+              # matching job is either successful or intentionally skipped.
+              validate_conclusions="$(
+                gh api --paginate --slurp \
+                  "repos/${GITHUB_REPOSITORY}/actions/runs/${WORKFLOW_RUN_ID}/jobs?per_page=100" \
+                  | jq -c '[.[] | .jobs[] | select(.name == "Validate") | .conclusion]'
               )"
-              if [[ "${validate_conclusion}" != "success" ]]; then
-                printf 'Skipping package publish because CI Validate concluded %s.\n' "${validate_conclusion:-missing}"
+              if ! jq -e \
+                'length > 0 and any(.[]; . == "success") and all(.[]; . == "success" or . == "skipped")' \
+                <<<"${validate_conclusions}" >/dev/null; then
+                printf 'Skipping package publish because CI Validate results were %s.\n' \
+                  "$(jq -r 'if length == 0 then "missing" else join(",") end' <<<"${validate_conclusions}")"
               elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == "main" ]]; then
                 current_main="$(git ls-remote --heads "${remote}" refs/heads/main | awk "{ print \$1 }" | tail -n 1)"
                 if [[ "${current_main}" != "${WORKFLOW_RUN_HEAD_SHA}" ]]; then
@@ -276,14 +283,18 @@ jobs:
               release_latest="false"
               release_prerelease="true"
               update_tap="true"
-              asset="container-compose-plugin-current-arm64.tar.gz"
+              # A commit-identified asset keeps the old formula pair valid
+              # while the candidate is staged. The current tag moves only
+              # after both matching formulae point at this immutable asset.
+              asset="container-compose-plugin-current-${short_sha}-arm64.tar.gz"
+              highlights_asset="release-highlights-current-${short_sha}.json"
               formula="container-compose-current.rb"
               formula_class="ContainerComposeCurrent"
               runtime_formula="container-current"
               container_formula="container-current.rb"
               container_formula_class="ContainerCurrent"
               container_compose_formula="container-compose-current"
-              formula_version="current-release.${GITHUB_RUN_NUMBER}.${short_sha}"
+              formula_version="current.${short_sha}"
               package_lane="current"
               ;;
             tag:*)
@@ -302,6 +313,7 @@ jobs:
               release_prerelease="false"
               update_tap="true"
               asset="container-compose-plugin-release-arm64.tar.gz"
+              highlights_asset="release-highlights.json"
               formula="container-compose.rb"
               formula_class="ContainerCompose"
               runtime_formula="container"
@@ -326,6 +338,7 @@ jobs:
             printf 'release_prerelease=%s\n' "${release_prerelease}"
             printf 'update_tap=%s\n' "${update_tap}"
             printf 'asset=%s\n' "${asset}"
+            printf 'highlights_asset=%s\n' "${highlights_asset}"
             printf 'formula=%s\n' "${formula}"
             printf 'formula_class=%s\n' "${formula_class}"
             printf 'runtime_formula=%s\n' "${runtime_formula}"
@@ -536,11 +549,11 @@ jobs:
           case "${PUBLISH_REF_TYPE}" in
             branch)
               runtime_tag="${RELEASE_TAG}"
-              runtime_asset="container-current-arm64.tar.gz"
+              runtime_asset="container-current-${PUBLISH_SHA:0:12}-arm64.tar.gz"
               runtime_local_asset="${RUNNER_TEMP}/${runtime_asset}"
               make -C container package BUILD_CONFIGURATION=release HOMEBREW_ARCHIVE="${runtime_local_asset}"
               runtime_sha="$(awk '{print $1}' "${runtime_local_asset}.sha256")"
-              runtime_version="current-release.${GITHUB_RUN_NUMBER}.${PUBLISH_SHA:0:12}"
+              runtime_version="current.${PUBLISH_SHA:0:12}"
               runtime_repository="${GITHUB_REPOSITORY}"
               ;;
             tag)
@@ -629,7 +642,7 @@ jobs:
             ${{ steps.runtime-package.outputs.local_asset }}
             ${{ steps.runtime-package.outputs.local_asset }}.sha256
 
-      - name: Publish GitHub release
+      - name: Stage release assets and notes
         env:
           GH_TOKEN: ${{ github.token }}
           ASSET: ${{ steps.lane.outputs.asset }}
@@ -639,6 +652,7 @@ jobs:
           RELEASE_LABEL: ${{ steps.lane.outputs.release_label }}
           RELEASE_LATEST: ${{ steps.lane.outputs.release_latest }}
           RELEASE_PRERELEASE: ${{ steps.lane.outputs.release_prerelease }}
+          HIGHLIGHTS_ASSET: ${{ steps.lane.outputs.highlights_asset }}
           PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
           PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
         shell: bash
@@ -651,8 +665,8 @@ jobs:
             "${{ steps.runtime-package.outputs.local_asset }}" \
             "${{ steps.runtime-package.outputs.local_asset }}.sha256" > "${extra_assets}"
 
-          notes="$(mktemp)"
-          highlights="${RUNNER_TEMP}/release-highlights.json"
+          notes="${RUNNER_TEMP}/release-notes.md"
+          highlights="${RUNNER_TEMP}/${HIGHLIGHTS_ASSET}"
           git fetch --force --tags origin
           release_notes_args=(
             --release-tag "${RELEASE_TAG}"
@@ -706,8 +720,10 @@ jobs:
           fi
 
           release_mutable="false"
+          release_phase="publish"
           if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
             release_mutable="true"
+            release_phase="stage"
           fi
 
           RELEASE_REPOSITORY="${GITHUB_REPOSITORY}" \
@@ -719,6 +735,7 @@ jobs:
             RELEASE_LATEST="${RELEASE_LATEST}" \
             RELEASE_PRERELEASE="${RELEASE_PRERELEASE}" \
             RELEASE_MUTABLE="${release_mutable}" \
+            RELEASE_PHASE="${release_phase}" \
             PUBLISH_REF_TYPE="${PUBLISH_REF_TYPE}" \
             PUBLISH_SHA="${PUBLISH_SHA}" \
             RELEASE_ASSET_PATH="${RUNNER_TEMP}/${ASSET}" \
@@ -801,14 +818,66 @@ jobs:
           git commit -m "chore(homebrew): update ${{ steps.lane.outputs.package_lane }} stack ${{ steps.lane.outputs.compose_version }}"
           git push
 
-      - name: Retain only current release assets
+      - name: Finalize current release pointer
+        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
         env:
           GH_TOKEN: ${{ github.token }}
+          ASSET: ${{ steps.lane.outputs.asset }}
+          RELEASE_TAG: ${{ steps.lane.outputs.release_tag }}
+          RELEASE_TITLE: ${{ steps.lane.outputs.release_title }}
+          RELEASE_LATEST: ${{ steps.lane.outputs.release_latest }}
+          RELEASE_PRERELEASE: ${{ steps.lane.outputs.release_prerelease }}
+          PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+          HIGHLIGHTS_ASSET: ${{ steps.lane.outputs.highlights_asset }}
         shell: bash
         working-directory: container-compose
         run: |
           set -euo pipefail
-          python3 Tools/release/retain-release-assets.py \
+          notes="${RUNNER_TEMP}/release-notes.md"
+          highlights="${RUNNER_TEMP}/${HIGHLIGHTS_ASSET}"
+          extra_assets="${RUNNER_TEMP}/release-extra-assets"
+          for required_file in \
+            "${notes}" \
+            "${highlights}" \
+            "${extra_assets}" \
+            "${RUNNER_TEMP}/${ASSET}" \
+            "${RUNNER_TEMP}/${ASSET}.sha256"; do
+            if [[ ! -f "${required_file}" ]]; then
+              printf 'cannot finalize current release; required staged file is missing: %s\n' \
+                "${required_file}" >&2
+              exit 1
+            fi
+          done
+
+          RELEASE_REPOSITORY="${GITHUB_REPOSITORY}" \
+            RELEASE_TAG="${RELEASE_TAG}" \
+            RELEASE_TITLE="${RELEASE_TITLE}" \
+            RELEASE_NOTES_FILE="${notes}" \
+            RELEASE_HIGHLIGHTS_PATH="${highlights}" \
+            RELEASE_EXTRA_ASSETS_FILE="${extra_assets}" \
+            RELEASE_LATEST="${RELEASE_LATEST}" \
+            RELEASE_PRERELEASE="${RELEASE_PRERELEASE}" \
+            RELEASE_MUTABLE="true" \
+            RELEASE_PHASE="finalize" \
+            PUBLISH_REF_TYPE="${PUBLISH_REF_TYPE}" \
+            PUBLISH_SHA="${PUBLISH_SHA}" \
+            RELEASE_ASSET_PATH="${RUNNER_TEMP}/${ASSET}" \
+            RELEASE_CHECKSUM_PATH="${RUNNER_TEMP}/${ASSET}.sha256" \
+            Tools/release/publish-github-release.sh
+
+      - name: Retain only current release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
+          ASSET: ${{ steps.lane.outputs.asset }}
+          RUNTIME_ASSET: ${{ steps.runtime-package.outputs.asset }}
+          HIGHLIGHTS_ASSET: ${{ steps.lane.outputs.highlights_asset }}
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          retention_arguments=(
             --repo "${GITHUB_REPOSITORY}" \
             --bootstrap-command "brew install go node python" \
             --build-command "make package" \
@@ -818,6 +887,17 @@ jobs:
             --install-command "sudo rm -rf /usr/local/libexec/container-plugins/compose && sudo install -d /usr/local/libexec/container-plugins && sudo tar -xzf container-compose-plugin-release-arm64.tar.gz -C /usr/local/libexec/container-plugins" \
             --delete-superseded-current-releases \
             --apply
+          )
+          if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
+            retention_arguments+=(
+              --current-asset "${ASSET}" \
+              --current-asset "${ASSET}.sha256" \
+              --current-asset "${RUNTIME_ASSET}" \
+              --current-asset "${RUNTIME_ASSET}.sha256" \
+              --current-asset "${HIGHLIGHTS_ASSET}"
+            )
+          fi
+          python3 Tools/release/retain-release-assets.py "${retention_arguments[@]}"
 
   repair-stable-tap:
     name: Repair Stable Homebrew Formulae

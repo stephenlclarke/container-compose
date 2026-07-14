@@ -174,12 +174,21 @@ There are two package lanes, with no manual asset copying:
 its verification describe a prior commit as soon as it advances. Stable semantic
 tags are SSH-signed and GitHub-verified before their release gate starts.
 
-Current is the normal delivery lane. Create a stable release only for a
-milestone after the current build has soaked for seven days, or for a documented
-security incident. The soak starts when the mutable
-`container-compose-plugin-current-arm64.tar.gz` asset is refreshed, not when
-the long-lived Current prerelease was first created. The release helper enforces
-both rules.
+Current is the normal delivery lane. Create a stable release after the current
+build has soaked for seven days for a milestone, as a documented `--+`
+maintenance promotion, or for a documented security incident. A maintenance
+promotion is manual, must record its operational reason, and is limited to a
+patch bump; it is suitable for an explicit baseline promotion or a release
+mechanism fix. The soak starts when the commit-identified current plugin asset
+(`container-compose-plugin-current-<12-character-sha>-arm64.tar.gz`) is
+published, not when the long-lived Current prerelease was first created. The
+release helper enforces these rules.
+
+Current publication is recoverable across GitHub and Homebrew: it stages
+immutable commit-identified archives on the existing Current prerelease, updates
+the matching Homebrew formula pair, and only then advances the mutable `current`
+tag and release notes. If a later phase fails, the preceding formula pair stays
+installable and rerunning the same publication resumes it.
 
 ### Scheduled Stable Releases
 

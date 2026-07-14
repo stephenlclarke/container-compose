@@ -40,8 +40,8 @@ Modes:
 
   release VERSION_SELECTOR
       Deterministically promote the prepared stack and Homebrew tap to the next
-      stable release. A stable release requires an explicit milestone or
-      security intent. The version selector is resolved from the
+      stable release. A stable release requires an explicit milestone,
+      maintenance, or security intent. The version selector is resolved from the
       latest local semantic container-compose tag, not from mutable
       working-tree state. The helper bumps container-compose on main when
       needed, commits that bump, promotes the stephenlclarke source main
@@ -101,10 +101,16 @@ Environment:
       normal merge, then uses an admin merge only when GitHub blocks the merge
       on the solo-maintainer review requirement. Use "strict" to fail instead.
 
-  CONTAINER_STACK_RELEASE_INTENT=milestone|security
+  CONTAINER_STACK_RELEASE_INTENT=milestone|maintenance|security
       Required for a new stable release. milestone requires the current build
-      to have soaked for at least seven days. security bypasses only that soak
-      after CONTAINER_STACK_SECURITY_REASON records the advisory or incident.
+      to have soaked for at least seven days. maintenance is a manual --+
+      patch promotion for a documented operational fix. security bypasses only
+      that soak after CONTAINER_STACK_SECURITY_REASON records the advisory or
+      incident.
+
+  CONTAINER_STACK_MAINTENANCE_REASON
+      Required when CONTAINER_STACK_RELEASE_INTENT=maintenance. Record the
+      operational fix or explicit baseline-promotion rationale.
 
   CONTAINER_STACK_SECURITY_REASON
       Required when CONTAINER_STACK_RELEASE_INTENT=security. Record a CVE,
@@ -189,6 +195,7 @@ COMPOSE_MAIN_PROMOTION_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MO
 COMPOSE_MAIN_MERGE_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE:-checked-admin}"
 RELEASE_INTENT="${CONTAINER_STACK_RELEASE_INTENT:-}"
 SECURITY_REASON="${CONTAINER_STACK_SECURITY_REASON:-}"
+MAINTENANCE_REASON="${CONTAINER_STACK_MAINTENANCE_REASON:-}"
 readonly STABLE_CURRENT_SOAK_SECONDS=604800
 HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"
 REPOS=(
@@ -242,10 +249,20 @@ ensure_compose_promotion_mode() {
 }
 
 # Require an intentional stable-release classification. Current builds are the
-# normal delivery lane; stable releases are milestone or security boundaries.
+# normal delivery lane; stable releases are milestone, maintenance, or security boundaries.
 ensure_release_intent() {
   case "${RELEASE_INTENT}" in
     milestone)
+      ;;
+    maintenance)
+      if [[ "${VERSION_SELECTOR}" != "--+" ]]; then
+        printf 'maintenance releases must use the --+ patch selector\n' >&2
+        exit 2
+      fi
+      if [[ -z "${MAINTENANCE_REASON}" ]]; then
+        printf 'CONTAINER_STACK_MAINTENANCE_REASON is required for a maintenance release\n' >&2
+        exit 2
+      fi
       ;;
     security)
       if [[ -z "${SECURITY_REASON}" ]]; then
@@ -255,15 +272,16 @@ ensure_release_intent() {
       ;;
     *)
       printf 'CONTAINER_STACK_RELEASE_INTENT is required for a new stable release\n' >&2
-      printf 'expected milestone or security\n' >&2
+      printf 'expected milestone, maintenance, or security\n' >&2
       exit 2
       ;;
   esac
 }
 
 # Require the mutable Current build to identify the same source as local main.
-# Milestone releases additionally require a seven-day soak; security releases
-# retain the source-identity check but may bypass that waiting period.
+# Milestone releases additionally require a seven-day soak; explicit
+# maintenance and security releases retain the source-identity check but may
+# bypass that waiting period.
 ensure_current_build_release_readiness() {
   local path main_commit current_commit current_is_prerelease current_built_at
   path="$(repo_path "${COMPOSE_REPO}")"
@@ -287,7 +305,7 @@ ensure_current_build_release_readiness() {
     --jq '.prerelease')"
   current_built_at="$(github_cli api \
     "repos/$(github_repo "${COMPOSE_REPO}")/releases/tags/current" \
-    --jq '[.assets[] | select(.name == "container-compose-plugin-current-arm64.tar.gz") | .updated_at] | max // empty')"
+    --jq '[.assets[] | select(.name | test("^container-compose-plugin-current-[0-9a-f]{12}-arm64[.]tar[.]gz$")) | .updated_at] | max // empty')"
   if [[ "${current_is_prerelease}" != "true" || -z "${current_built_at}" ]]; then
     printf 'current GitHub prerelease or package asset is missing; wait for green main package publication\n' >&2
     exit 1
