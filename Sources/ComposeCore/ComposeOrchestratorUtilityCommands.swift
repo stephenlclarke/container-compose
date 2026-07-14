@@ -171,7 +171,7 @@ public extension ComposeOrchestrator {
 
     /// Runs a local stats stream and converts terminal interrupts into task cancellation.
     private func runInterruptibleStats(
-        _ collectStats: @escaping @Sendable () async throws -> Void
+        _ collectStats: @escaping @Sendable () async throws -> Void,
     ) async throws {
         let streamingTask = Task {
             try await collectStats()
