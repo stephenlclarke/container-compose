@@ -90,6 +90,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('"chore(release): prepare ${version}"', recovery)
         self.assertIn('"chore(deps): pin containerization "[0-9a-f]*', recovery)
         self.assertIn('"chore(deps): pin container "[0-9a-f]*', recovery)
+        self.assertIn('"chore(deps): pin container stack "[0-9a-f]*" "[0-9a-f]*', recovery)
         self.assertIn("dirty worktree blocks recovery", recovery)
         self.assertLess(
             release.index('recover_unpublished_release_candidate "${version}"'),
@@ -113,12 +114,28 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def test_release_helper_pins_compose_to_the_exact_runtime_revision(self) -> None:
         runtime_pin = self.script[
             self.script.index("update_container_package_pin() {") : self.script.index(
-                "# Keep the container and compose manifests aligned"
+                "sync_containerization_package_pins() {"
             )
         ]
         self.assertIn("https://github.com/stephenlclarke/container", runtime_pin)
         self.assertIn('unedit_release_dependency "${path}" container', runtime_pin)
-        self.assertIn("swift package --package-path", runtime_pin)
+        sync = self.script[
+            self.script.index("sync_container_package_pin() {") : self.script.index(
+                "write_release_stack_manifest() {"
+            )
+        ]
+        self.assertIn('update_containerization_package_pin "${COMPOSE_REPO}" "${containerization_ref}" 0', sync)
+        self.assertIn('update_container_package_pin "${container_ref}" 0', sync)
+        self.assertLess(
+            sync.index('update_containerization_package_pin "${COMPOSE_REPO}" "${containerization_ref}" 0'),
+            sync.index('update_container_package_pin "${container_ref}" 0'),
+        )
+        self.assertLess(
+            sync.index('update_container_package_pin "${container_ref}" 0'),
+            sync.index('swift package --package-path "${path}" resolve'),
+        )
+        self.assertIn("commit_compose_stack_package_pins", sync)
+        self.assertIn("chore(deps): pin container stack", self.script)
         self.assertIn("Release-Note: none", runtime_pin)
         self.assertIn("sync_container_package_pin", self.script)
 
@@ -670,6 +687,27 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn("reconstructing unpublished release candidate", result.stdout)
             self.assertEqual(self.git(local, "rev-parse", "main"), remote_head)
             self.assertEqual(self.git(local, "diff", "--cached", "--name-only"), "VERSION")
+
+    def test_release_helper_reconstructs_an_atomic_stack_pin_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _remote, local = self.create_compose_checkout(root)
+            remote_head = self.git(local, "rev-parse", "origin/main")
+            self.commit_file(
+                local,
+                "Package.swift",
+                "pinned stack\n",
+                "chore(deps): pin container stack 123456789abc abcdef123456",
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.git(local, "rev-parse", "main"), remote_head)
+            self.assertEqual(self.git(local, "diff", "--cached", "--name-only"), "Package.swift")
 
     def test_release_helper_refuses_to_reconstruct_an_unrelated_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
