@@ -44,6 +44,15 @@ surface with ✅ yes, ⚠️ partial, or ❌ no, and explains every partial surf
 
 Use `container system version` to see the running `container` runtime source, branch lane, commit, compiled `containerization` ref, and builder image metadata. Use `container compose version` to see the installed plugin lane, embedded `compose-go` version, and package/runtime compatibility metadata.
 
+## See It Work
+
+![Terminal recording: inspecting the current stack, using Compose help, running examples/compose.yml, and listing its running service](docs/images/container-compose-demo.gif)
+
+The recording inspects the installed stack, exercises support-aware `up` help,
+runs [`examples/compose.yml`](examples/compose.yml), and lists the live service
+with `container compose ps`. Its reproducible [VHS tape](docs/container-compose-demo.tape)
+is kept alongside the generated recording.
+
 ## Install And Project Map
 
 Use [INSTALL.md](INSTALL.md) for install, upgrade, verification, and uninstall
