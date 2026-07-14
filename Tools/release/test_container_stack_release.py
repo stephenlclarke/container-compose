@@ -40,6 +40,7 @@ CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 STACK_RELEASE_VALIDATION = ROOT / "Tools" / "ci" / "run-stack-release-validation.sh"
 FORMULA_RENDERER = ROOT / "Tools" / "release" / "render-homebrew-stack-formulae.sh"
+RUNNER_INSTALLER = ROOT / "scripts" / "install-scheduled-release-runner.sh"
 
 
 class ContainerStackReleasePolicyTests(unittest.TestCase):
@@ -503,6 +504,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("current_is_prerelease", workflow)
         self.assertNotIn("--current-published-at", workflow)
         self.assertIn("runs-on: [self-hosted, macOS, ARM64, container-compose-release]", workflow)
+        self.assertTrue(os.access(RUNNER_INSTALLER, os.X_OK))
 
     def test_local_release_gate_requires_hardware_virtualization(self) -> None:
         local_gate = self.script[
