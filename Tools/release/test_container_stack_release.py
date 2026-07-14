@@ -132,6 +132,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertLess(
             sync.index('update_container_package_pin "${container_ref}" 0'),
+            sync.index('unedit_release_dependency "${path}" containerization'),
+        )
+        self.assertLess(
+            sync.index('unedit_release_dependency "${path}" containerization\n'),
+            sync.index('unedit_release_dependency "${path}" container\n'),
+        )
+        self.assertLess(
+            sync.index('unedit_release_dependency "${path}" container\n'),
             sync.index('swift package --package-path "${path}" resolve'),
         )
         self.assertIn("commit_compose_stack_package_pins", sync)
