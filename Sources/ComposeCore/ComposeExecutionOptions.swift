@@ -44,7 +44,9 @@ public struct ComposeExecutionOptions {
         public var copyInputArchive: @Sendable () -> FileHandle = { .standardInput }
         public var copyOutputArchive: @Sendable () -> FileHandle = { .standardOutput }
 
-        public init() {}
+        public init() {
+            // Property declarations intentionally provide the production defaults.
+        }
 
         public init(_ configure: (inout RuntimeHooks) -> Void) {
             self.init()
@@ -213,13 +215,13 @@ public struct ComposeExecutionOptions {
     }
 
     public init(dryRun: Bool = false, emit: @escaping @Sendable (String) -> Void) {
-        self.init {
-            $0.dryRun = dryRun
-            $0.apply(runtimeHooks: RuntimeHooks {
-                $0.emit = emit
-                $0.emitData = { emit(String(decoding: $0, as: UTF8.self)) }
-            })
-        }
+        self.init(
+            dryRun: dryRun,
+            runtimeHooks: RuntimeHooks(
+                emit: emit,
+                emitData: { emit(String(decoding: $0, as: UTF8.self)) },
+            ),
+        )
     }
 
     public init(hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16) {

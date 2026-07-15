@@ -20730,6 +20730,27 @@ struct ComposeOrchestratorTests {
         #expect(config.config.workingDir == "/srv/app")
     }
 
+    @Test("commit image archive uses the default shell for shell-form changes")
+    func commitImageArchiveUsesDefaultShellPath() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let rootfs = directory.appendingPathComponent("rootfs.tar")
+        try rootfsArchiveData().write(to: rootfs)
+        let imageArchive = directory.appendingPathComponent("image.tar")
+
+        try ComposeCommitImageArchive.write(
+            rootfsArchive: rootfs,
+            output: imageArchive,
+            service: composeService(name: "api", image: "example/api"),
+            options: ComposeCommitOptions {
+                $0.changes = ["CMD echo hello"]
+            },
+        )
+
+        let config = try commitArchiveConfig(from: imageArchive)
+        #expect(config.config.cmd == ["/bin/sh", "-c", "echo hello"])
+    }
+
     @Test("commit image archive uses the configured shell for shell-form changes")
     func commitImageArchiveUsesConfiguredShellPath() throws {
         let directory = try temporaryDirectory()

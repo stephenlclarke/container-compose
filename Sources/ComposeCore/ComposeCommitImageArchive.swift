@@ -18,7 +18,9 @@ import ContainerizationArchive
 import ContainerizationOCI
 import Foundation
 
-private let defaultComposeCommitShellPath = ["", "bin", "sh"].joined(separator: "/")
+private let defaultComposeCommitShellPath = NSString.path(
+    withComponents: [NSOpenStepRootDirectory(), "bin", "sh"],
+)
 
 /// Builds a single-layer OCI image archive for `compose commit`.
 package enum ComposeCommitImageArchive {

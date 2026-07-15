@@ -425,7 +425,6 @@ func TestPushPublishProjectUpdatesComposeAndApplicationDescriptors(t *testing.T)
 			result := &publishResult{}
 			pusher := &publishRecordingPusher{}
 			request := publishPushRequest{
-				ctx:        t.Context(),
 				project:    &types.Project{},
 				named:      target,
 				ociVersion: composeOCI.OCIVersion1_1,
@@ -444,7 +443,7 @@ func TestPushPublishProjectUpdatesComposeAndApplicationDescriptors(t *testing.T)
 				}
 			}
 
-			if err := pushPublishProject(request); err != nil {
+			if err := pushPublishProject(t.Context(), request); err != nil {
 				t.Fatalf("pushPublishProject returned error: %v", err)
 			}
 			if result.Descriptor == nil || result.Descriptor.Digest == "" {
@@ -859,6 +858,53 @@ services:
 	}
 	if len(prompt.messages) != 0 {
 		t.Fatalf("messages = %#v, want no sensitive-data prompt", prompt.messages)
+	}
+}
+
+func TestPublishEnvFileExists(t *testing.T) {
+	existing := writePublishFixture(t, t.TempDir(), ".env", "TOKEN=value\n")
+
+	for _, test := range []struct {
+		name    string
+		envFile types.EnvFile
+		want    bool
+		wantErr string
+	}{
+		{
+			name:    "existing",
+			envFile: types.EnvFile{Path: existing, Required: true},
+			want:    true,
+		},
+		{
+			name:    "optional missing",
+			envFile: types.EnvFile{Path: filepath.Join(t.TempDir(), "missing.env")},
+		},
+		{
+			name:    "required missing",
+			envFile: types.EnvFile{Path: filepath.Join(t.TempDir(), "missing.env"), Required: true},
+			wantErr: "not found",
+		},
+		{
+			name:    "inaccessible",
+			envFile: types.EnvFile{Path: "\x00"},
+			wantErr: "failed to access env file",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := publishEnvFileExists(test.envFile)
+			if test.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("error = %v, want error containing %q", err, test.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("publishEnvFileExists returned error: %v", err)
+			}
+			if got != test.want {
+				t.Fatalf("publishEnvFileExists = %t, want %t", got, test.want)
+			}
+		})
 	}
 }
 

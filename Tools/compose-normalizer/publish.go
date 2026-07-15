@@ -93,7 +93,6 @@ type publishLayerSnapshot struct {
 }
 
 type publishPushRequest struct {
-	ctx        context.Context
 	project    *types.Project
 	named      reference.Named
 	ociVersion composeOCI.OCIVersion
@@ -126,8 +125,7 @@ func publishComposeProject(request publishRequest, options publishOptions, stder
 	if options.dryRun {
 		return result, nil
 	}
-	if err := pushPublishProject(publishPushRequest{
-		ctx:        ctx,
+	if err := pushPublishProject(ctx, publishPushRequest{
 		project:    project,
 		named:      named,
 		ociVersion: ociVersion,
@@ -200,12 +198,12 @@ func publishResultForLayers(named reference.Named, ociVersion composeOCI.OCIVers
 	}
 }
 
-func pushPublishProject(request publishPushRequest) error {
+func pushPublishProject(ctx context.Context, request publishPushRequest) error {
 	resolver := request.resolver
 	if resolver == nil {
 		resolver = composeOCI.NewResolver(config.LoadDefaultConfigFile(request.stderr), nil)
 	}
-	descriptor, err := composeOCI.PushManifest(request.ctx, resolver, request.named, request.layers, request.ociVersion)
+	descriptor, err := composeOCI.PushManifest(ctx, resolver, request.named, request.layers, request.ociVersion)
 	if err != nil {
 		return err
 	}
@@ -213,7 +211,7 @@ func pushPublishProject(request publishPushRequest) error {
 	if !request.options.app {
 		return nil
 	}
-	application, err := publishApplicationIndex(request.ctx, resolver, request.project, request.named, descriptor, request.options.imageCopier)
+	application, err := publishApplicationIndex(ctx, resolver, request.project, request.named, descriptor, request.options.imageCopier)
 	if err != nil {
 		return err
 	}
@@ -416,13 +414,11 @@ func collectPublishEnvFileFindings(project *types.Project) ([]secrets.DetectedSe
 	var findings []secrets.DetectedSecret
 	for _, service := range project.Services {
 		for _, envFile := range service.EnvFiles {
-			if _, statErr := os.Stat(envFile.Path); statErr != nil {
-				if !os.IsNotExist(statErr) {
-					return nil, fmt.Errorf("failed to access env file %s: %w", envFile.Path, statErr)
-				}
-				if envFile.Required {
-					return nil, fmt.Errorf("env file %s not found", envFile.Path)
-				}
+			exists, err := publishEnvFileExists(envFile)
+			if err != nil {
+				return nil, err
+			}
+			if !exists {
 				continue
 			}
 			fileFindings, err := scan.ScanFile(envFile.Path)
@@ -433,6 +429,20 @@ func collectPublishEnvFileFindings(project *types.Project) ([]secrets.DetectedSe
 		}
 	}
 	return findings, nil
+}
+
+func publishEnvFileExists(envFile types.EnvFile) (bool, error) {
+	_, err := os.Stat(envFile.Path)
+	switch {
+	case err == nil:
+		return true, nil
+	case !os.IsNotExist(err):
+		return false, fmt.Errorf("failed to access env file %s: %w", envFile.Path, err)
+	case bool(envFile.Required):
+		return false, fmt.Errorf("env file %s not found", envFile.Path)
+	default:
+		return false, nil
+	}
 }
 
 func collectPublishConfigFindings(project *types.Project) ([]secrets.DetectedSecret, error) {
