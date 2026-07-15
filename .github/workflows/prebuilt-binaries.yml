@@ -657,13 +657,6 @@ jobs:
           export CONTAINER_INSTALL_ROOT="${demo_root}"
           export PATH="${demo_root}/bin:${PATH}"
 
-          cleanup() {
-            container compose -f examples/monitoring-stack/docker-compose.yaml down --volumes --remove-orphans >/dev/null 2>&1 || true
-            "${container_binary}" system stop >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
-
-          "${container_binary}" system start --timeout 90 --enable-kernel-install
           sed "1s#^Output .*#Output ${demo_output}#" docs/container-compose-demo.tape > "${tape}"
           vhs "${tape}"
           test -s "${demo_output}"

@@ -22,18 +22,18 @@ Type "container compose up --help | sed -n '1,18p'"
 Enter
 Sleep 2s
 
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --volumes --remove-orphans"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --dry-run --volumes --remove-orphans"
+Enter
+Sleep 2s
+
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml up --dry-run --wait"
 Enter
 Sleep 3s
 
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml up -d --wait"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml ps --dry-run"
 Enter
-Sleep 6s
+Sleep 2s
 
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml ps"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --dry-run --volumes --remove-orphans"
 Enter
-Sleep 3s
-
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --volumes --remove-orphans"
-Enter
-Sleep 3s
+Sleep 2s

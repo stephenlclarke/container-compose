@@ -259,8 +259,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('export CONTAINER_INSTALL_ROOT="${demo_root}"', workflow)
         self.assertIn("docs/container-compose-demo.tape", workflow)
         self.assertIn('vhs "${tape}"', workflow)
+        self.assertNotIn('"${container_binary}" system start', workflow)
         self.assertIn("Current build VHS recording is missing", workflow)
         self.assertIn('--current-asset "${{ steps.lane.outputs.demo_asset }}"', workflow)
+        tape = (ROOT / "docs" / "container-compose-demo.tape").read_text(encoding="utf-8")
+        self.assertIn("up --dry-run --wait", tape)
+        self.assertIn("ps --dry-run", tape)
+        self.assertIn("down --dry-run --volumes --remove-orphans", tape)
         self.assertIn(
             "releases/download/current/container-compose-demo-current.gif",
             readme,
