@@ -645,6 +645,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("+refs/tags/current:refs/tags/current", self.script)
         self.assertNotIn("fetch --prune --tags --force", self.script)
 
+    def test_git_fixtures_never_launch_an_editor(self) -> None:
+        self.assertEqual(self.non_interactive_environment()["GIT_EDITOR"], ":")
+
     def test_release_fetch_refreshes_only_mutable_current_tag(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1176,12 +1179,13 @@ gh() {
             lines.append(shell_setup)
         lines.append(function_call)
         command = "\n".join(lines)
+        environment = self.non_interactive_environment()
         return subprocess.run(
             ["bash", "-c", command],
             capture_output=True,
             text=True,
             check=False,
-            env=os.environ.copy(),
+            env=environment,
         )
 
     def git(self, repo: Path, *arguments: str) -> str:
@@ -1193,7 +1197,14 @@ gh() {
             capture_output=True,
             text=True,
             check=True,
+            env=self.non_interactive_environment(),
         )
+
+    def non_interactive_environment(self) -> dict[str, str]:
+        """Prevent Git fixtures from launching an editor during automated tests."""
+        environment = os.environ.copy()
+        environment["GIT_EDITOR"] = ":"
+        return environment
 
 
 if __name__ == "__main__":
