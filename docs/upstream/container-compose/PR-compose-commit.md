@@ -6,18 +6,18 @@ This change fills the Compose-owned part of Docker Compose v2 `commit` parity:
 
 - Replaces the unsupported `commit` placeholder with a real project command.
 - Parses `--author`, repeated `--change`, `--index`, `--message`, and `--pause` plus Docker short forms handled by the argument rewriter.
-- Exports stopped service container filesystems through the existing runtime export adapter.
+- Exports stopped service container filesystems through the existing runtime export adapter and requests a filesystem-consistent live snapshot for running containers with default `--pause=true`.
 - Builds a single-layer OCI image archive with Docker-compatible image config metadata.
 - Seeds committed image config from base image metadata before applying Compose service overrides and `--change`.
 - Matches Docker Compose's `--index` default by treating omitted `--index` and `--index=0` as unset service-container selection.
 - Loads the generated image archive through the direct image adapter.
-- Keeps running-container commit, including `--pause=false`, partial and blocked on Apple live export/commit support.
+- Keeps `--pause=false` partial because the runtime cannot safely export a writable filesystem without the brief freeze used by the default live snapshot.
 
 ## Rationale
 
-Docker Compose implements `commit` by resolving a service container and calling Docker Engine `ContainerCommit`. Apple has merged the lower-runtime freeze/thaw filesystem operation API in [apple/containerization#685](https://github.com/apple/containerization/pull/685), while the `apple/container` live export and commit surfaces remain in review.
+Docker Compose implements `commit` by resolving a service container and calling Docker Engine `ContainerCommit`. Apple has merged the lower-runtime freeze/thaw filesystem operation API in [apple/containerization#685](https://github.com/apple/containerization/pull/685). The companion fork handoff adds a generic `container export --live` snapshot primitive based on [apple/container#1630](https://github.com/apple/container/pull/1630).
 
-The stopped-container path does not need new Apple APIs: `container-compose` can reuse export and image load primitives, build a standards-shaped OCI archive, and keep all Docker Compose option parsing in the Compose layer. Running-container commit remains explicitly gated on [apple/container#1400](https://github.com/apple/container/issues/1400), [apple/container#1630](https://github.com/apple/container/pull/1630), and [apple/container#1762](https://github.com/apple/container/pull/1762), including Docker Compose's explicit `--pause=false` mode, because the current Apple export primitive rejects running containers.
+The stopped-container path reuses export and image-load primitives, builds a standards-shaped OCI archive, and keeps all Docker Compose option parsing in the Compose layer. The running default path requests the generic live snapshot. Explicit `--pause=false` remains gated on a future safe no-freeze writable-filesystem snapshot; the Docker-shaped upstream `container commit` draft in [apple/container#1762](https://github.com/apple/container/pull/1762) is intentionally not used.
 
 ## Upstream References
 
@@ -35,17 +35,17 @@ The stopped-container path does not need new Apple APIs: `container-compose` can
 - Added `ComposeCommitImageArchive` to write an OCI layout tar from an exported rootfs archive.
 - Added image archive load support to `ContainerImageAPIClienting`, `ContainerImageManaging`, and the live image adapter.
 - Extended compact image metadata with config fields needed to preserve Docker commit image config parity.
-- Implemented stopped-container runtime validation through `ContainerDiscoveryManaging.getContainer(id:)`.
+- Implemented stopped-container export and running-container live-snapshot selection through `ContainerDiscoveryManaging.getContainer(id:)`.
 - Resolves omitted `--index` and `--index=0` through Docker Compose-compatible default service-container selection.
-- Rejects running-container commit before export with Apple live export/commit blockers.
+- Uses the live-export primitive for running containers with default `--pause=true`, and rejects `--pause=false` before export with the exact platform limitation.
 - Added dry-run output for the export, archive creation, and image load steps.
 - Added `commit` argument rewriting for Docker short forms and optional boolean `--pause=false`.
-- Marked the command partial in help/status while keeping all documented options green.
+- Marked the command and `--pause` option partial in colour-coded help/status, with the precise supported default and residual `--pause=false` limitation.
 
 ## Repository Scope
 
 - The Compose service selection, Docker Compose CLI parsing, image config shaping, and OCI archive creation stay in `stephenlclarke/container-compose`.
-- No `apple/container` or `apple/containerization` code change is required for the current supported service commit behavior.
+- The generic `apple/container`-shaped primitive is documented in [PR-live-export-snapshot.md](../apple-container/PR-live-export-snapshot.md) and implemented in the Stephen fork. No Docker-shaped `container commit` endpoint is needed.
 
 ## Testing
 
@@ -68,14 +68,14 @@ git diff --check
 ## Compatibility Notes
 
 - Stopped service containers can be committed and loaded as images.
-- `--pause=false` parses for Docker Compose CLI compatibility, but running service containers still wait for Apple live export/commit support.
-- Running service containers with default `--pause=true` fail before export/load because a consistent paused live snapshot requires Apple upstream `container` support.
+- `--pause=false` parses for Docker Compose CLI compatibility, but remains unavailable for running service containers because the backend cannot safely snapshot a writable filesystem without a freeze.
+- Running service containers with default `--pause=true` export through a brief filesystem-consistent live snapshot before archive creation and load. This is not a full Docker process pause.
 - Docker-specific image config changes stay in `container-compose`.
 
 ## Remaining Risks
 
 - The OCI archive writer intentionally supports the Docker `--change` instruction set accepted by Docker Engine commit; future Docker Compose changes may add flags that need a Compose-layer update.
-- Running-container commit should be revisited after Apple resolves the live export/commit work in [apple/container#1400](https://github.com/apple/container/issues/1400), [apple/container#1630](https://github.com/apple/container/pull/1630), and [apple/container#1762](https://github.com/apple/container/pull/1762).
+- `--pause=false` should be revisited only after Apple offers a safe no-freeze snapshot; the generic live-export handoff is tracked in [PR-live-export-snapshot.md](../apple-container/PR-live-export-snapshot.md).
 
 ## Checklist
 

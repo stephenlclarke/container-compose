@@ -2,7 +2,7 @@
 
 ## Summary
 
-`container compose commit [OPTIONS] SERVICE [REPOSITORY[:TAG]]` should create an image from a selected Compose service container. The Compose-owned path supports stopped service containers with the current Apple-backed runtime, and it should fail clearly for running containers until Apple exposes live export/commit support above the merged lower-runtime freeze/thaw primitive.
+`container compose commit [OPTIONS] SERVICE [REPOSITORY[:TAG]]` should create an image from a selected Compose service container. The Compose-owned path supports stopped containers and running containers with the default `--pause=true` through the generic live-export snapshot primitive. `--pause=false` remains partial because the backend has no safe no-freeze snapshot of a writable root filesystem.
 
 Docker Compose behavior:
 
@@ -27,14 +27,16 @@ Current Apple upstream context:
 - `commit --author`, repeated `--change`, `--index`, `--message`, and `--pause` parse in Docker Compose-compatible forms, including omitted `--index`, `--index=0`, `-a`, `-c`, `-m`, and `-p=false` through the Compose argument rewriter.
 - A stopped service container is exported with the existing runtime export adapter, wrapped as a single-layer OCI image archive, and loaded through the image adapter.
 - The generated OCI config carries Compose service image metadata plus Docker-compatible `--change` instructions for `CMD`, `ENTRYPOINT`, `ENV`, `EXPOSE`, `LABEL`, `ONBUILD`, `USER`, `VOLUME`, and `WORKDIR`.
-- Running containers, including `--pause=false`, fail before export or image load with an error that references the Apple live export/commit blockers.
+- A running service container with the default `--pause=true` exports a filesystem-consistent snapshot before image creation and load.
+- A running service container with `--pause=false` fails before export or image load, explaining that a safe no-freeze writable-filesystem snapshot is unavailable.
 - The Compose layer owns service selection, Docker Compose option parsing, dry-run text, and Docker-shaped image config changes.
-- No Apple-backed repository change is required for the current Compose-owned service commit behavior.
+- The forked `container` runtime provides the generic live-export primitive; Docker-shaped service selection and OCI image config stay in Compose.
 
 ## Non-Goals
 
 - Do not add a Docker-shaped commit endpoint to `apple/container`.
-- Do not attempt paused live/running container commit until Apple accepts live export/commit support in `apple/container`.
+- Do not claim full Docker process-pause equivalence: the current running path briefly freezes the root filesystem, not every process.
+- Do not implement `--pause=false` until an Apple runtime can create a safe writable-filesystem snapshot without that freeze.
 - Do not move Compose service selection or Docker Compose parser behavior into Apple-backed repositories.
 
 ## Validation

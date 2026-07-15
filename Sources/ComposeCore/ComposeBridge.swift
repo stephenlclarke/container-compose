@@ -197,6 +197,7 @@ extension ComposeOrchestrator {
             try await exporter.exportContainer(
                 id: exportID,
                 output: archive.path,
+                live: false,
             )
             try extractBridgeTemplates(archive: archive, destination: destination)
             try writeBridgeTransformerDockerfile(destination: destination)

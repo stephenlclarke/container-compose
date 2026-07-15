@@ -37,7 +37,8 @@ public extension ComposeOrchestrator {
             emitComposeRuntimeOperation(args)
             return
         }
-        try await exporter.exportContainer(id: containerID, output: export.output)
+        let live = (try await discoveryManager.getContainer(id: containerID))?.status.lowercased() == "running"
+        try await exporter.exportContainer(id: containerID, output: export.output, live: live)
     }
 
     /// Creates an image from a stopped service container's filesystem.
@@ -70,7 +71,7 @@ public extension ComposeOrchestrator {
         guard let container = try await discoveryManager.getContainer(id: containerID) else {
             throw ComposeError.invalidProject("service '\(service.name)' container '\(containerID)' does not exist")
         }
-        try validateCommitContainerStatus(container, service: service, pause: commit.pause)
+        let live = try commitUsesLiveExport(container, service: service, pause: commit.pause)
         let baseImageMetadata = await commitBaseImageMetadata(project: project, service: service)
 
         let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -84,7 +85,7 @@ public extension ComposeOrchestrator {
 
         let rootfs = tempDirectory.appendingPathComponent("rootfs.tar")
         let archive = tempDirectory.appendingPathComponent("image.tar")
-        try await exporter.exportContainer(id: containerID, output: rootfs.path)
+        try await exporter.exportContainer(id: containerID, output: rootfs.path, live: live)
         try ComposeCommitImageArchive.write(
             rootfsArchive: rootfs,
             output: archive,
@@ -160,23 +161,25 @@ public extension ComposeOrchestrator {
         return args
     }
 
-    /// Rejects running commit until apple/container exposes a consistent export or snapshot primitive.
-    func validateCommitContainerStatus(
+    /// Chooses a stopped-rootfs export or a consistent snapshot for a running service.
+    func commitUsesLiveExport(
         _ container: ComposeContainerSummary,
         service: ComposeService,
         pause: Bool,
-    ) throws {
+    ) throws -> Bool {
         switch container.status.lowercased() {
         case "created", "dead", "exited", "stopped":
-            return
+            return false
         case "running":
-            let mode = pause ? "default paused running-container commit" : "running-container commit with --pause=false"
-            throw ComposeError.unsupported(
-                "commit: service '\(service.name)' container '\(container.id)' is running; \(mode) requires Apple live export/commit support (apple/container#1400, apple/container#1630, apple/container#1762). Stop the service container before committing with the current runtime.",
-            )
+            guard pause else {
+                throw ComposeError.unsupported(
+                    "commit: service '\(service.name)' container '\(container.id)' is running; --pause=false is unavailable because the runtime cannot safely export a writable filesystem without a brief filesystem freeze. Omit --pause=false (the default takes a filesystem-consistent live snapshot) or stop the service container before committing.",
+                )
+            }
+            return true
         default:
             throw ComposeError.unsupported(
-                "commit: service '\(service.name)' container '\(container.id)' is \(container.status); only stopped containers can be committed with the current runtime",
+                "commit: service '\(service.name)' container '\(container.id)' is \(container.status); only stopped or running containers can be committed with the current runtime",
             )
         }
     }
