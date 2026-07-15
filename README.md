@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable MD033 -->
 <p>
-  <img align="left" src="docs/images/container-compose-icon.png" width="220" alt="container-compose icon: connected services in a compose loop" />
+  <img align="left" src="docs/images/container-compose-icon.png" width="147" alt="container-compose icon: connected services in a compose loop" />
   <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2"><img alt="Quality Gate Status" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=alert_status" /></a>
   <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2"><img alt="Bugs" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=bugs" /></a>
   <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2"><img alt="Code Smells" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=code_smells" /></a>
