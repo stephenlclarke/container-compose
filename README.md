@@ -49,11 +49,11 @@ Use `container system version` to see the running `container` runtime source, br
 
 ## See It Work
 
-![Terminal recording: inspecting the current stack, using Compose help, starting the monitoring stack, and listing its services](https://github.com/stephenlclarke/container-compose/releases/download/current/container-compose-demo-current.gif)
+![Terminal recording: inspecting the current stack, using Compose help, and planning the monitoring stack](https://github.com/stephenlclarke/container-compose/releases/download/current/container-compose-demo-current.gif)
 
 The recording inspects the installed stack, exercises support-aware `up` help,
-starts [`examples/monitoring-stack/docker-compose.yaml`](examples/monitoring-stack/docker-compose.yaml),
-and lists the live services with `container compose ps`. Its reproducible
+and renders the real [`examples/monitoring-stack/docker-compose.yaml`](examples/monitoring-stack/docker-compose.yaml)
+creation, readiness, status, and teardown plans with `--dry-run`. Its reproducible
 [VHS tape](docs/container-compose-demo.tape) is kept alongside the generated
 recording. Every successful Current build regenerates the recording with the
 matching packaged runtime and Compose plugin, then publishes it with the
