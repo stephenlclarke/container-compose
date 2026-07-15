@@ -14055,9 +14055,91 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("run rejects foreground post start hooks before creating one off containers")
-    func runRejectsForegroundPostStartHooksBeforeCreatingOneOffContainers() async throws {
+    @Test("run foreground executes post start hooks before following raw output")
+    func runForegroundExecutesPostStartHooksBeforeFollowingRawOutput() async throws {
         let runner = RecordingRunner()
+        let execManager = RecordingContainerExecManager()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let logManager = RecordingContainerLogManager(outputs: ["ready\n"])
+        let emitted = MessageRecorder()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.postStart = [ComposeServiceHook(command: ["sh", "-c", "touch /tmp/ready"])]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions {
+                $0.oneOffIdentifier = { "abc123" }
+                $0.emitData = { emitted.append(String(decoding: $0, as: UTF8.self)) }
+            },
+            dependencies: orchestratorDependencies {
+                $0.execManager = execManager
+                $0.lifecycleManager = lifecycleManager
+                $0.logManager = logManager
+            }
+        ).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.contains("--detach"))
+        #expect(!command.contains("--rm"))
+        #expect(runner.commands.first?.io == .captured(input: nil))
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-job-run-abc123",
+                command: ["sh", "-c", "touch /tmp/ready"],
+                terminal: .init(interactive: false, tty: false)
+            ),
+        ])
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-job-run-abc123", tail: nil, follow: true),
+        ])
+        #expect(await lifecycleManager.requests == [
+            .wait(id: "demo-job-run-abc123"),
+            .delete(id: "demo-job-run-abc123", force: false),
+        ])
+        #expect(emitted.messages == ["ready\n"])
+    }
+
+    @Test("run foreground drains logs after the container exits")
+    func runForegroundDrainsLogsAfterContainerExit() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["final output\n"], delay: .milliseconds(10))
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.postStart = [ComposeServiceHook(command: ["true"])]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions {
+                $0.oneOffIdentifier = { "abc123" }
+                $0.emitData = { emitted.append(String(decoding: $0, as: UTF8.self)) }
+            },
+            dependencies: orchestratorDependencies {
+                $0.lifecycleManager = lifecycleManager
+                $0.logManager = logManager
+            }
+        ).run(project: project, serviceName: "job", command: ["true"], remove: false)
+
+        #expect(await lifecycleManager.requests == [
+            .wait(id: "demo-job-run-abc123"),
+        ])
+        #expect(emitted.messages == ["final output\n"])
+    }
+
+    @Test("run foreground preserves a lifecycle-managed container exit status")
+    func runForegroundPreservesLifecycleManagedContainerExitStatus() async throws {
+        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-job-run-abc123": 7])
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -14068,25 +14150,115 @@ struct ComposeOrchestratorTests {
         )
 
         do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected foreground post_start hook error")
+            try await ComposeOrchestrator(
+                runner: RecordingRunner(),
+                options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
+                dependencies: orchestratorDependencies {
+                    $0.lifecycleManager = lifecycleManager
+                    $0.logManager = RecordingContainerLogManager()
+                }
+            ).run(project: project, serviceName: "job", command: ["false"], remove: false)
+            Issue.record("Expected lifecycle-managed run exit status")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses post_start; foreground compose run cannot execute post_start before attach because apple/container does not expose reattaching to the init process after a hookable detached start, use --detach"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
+            guard case let .commandFailed(_, status, _) = error else {
+                Issue.record("Unexpected error: \(error)")
+                return
+            }
+            #expect(status == 7)
         }
-
-        #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects foreground pre stop hooks before creating one off containers")
-    func runRejectsForegroundPreStopHooksBeforeCreatingOneOffContainers() async throws {
+    @Test("run foreground removes lifecycle-managed one-off containers after hook failure")
+    func runForegroundRemovesLifecycleManagedContainerAfterHookFailure() async throws {
+        let runner = RecordingRunner()
+        let execManager = RecordingContainerExecManager(attachedStatus: 1)
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.postStart = [ComposeServiceHook(command: ["false"])]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
+                dependencies: orchestratorDependencies {
+                    $0.execManager = execManager
+                    $0.lifecycleManager = lifecycleManager
+                }
+            ).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected lifecycle hook failure")
+        } catch is ComposeError {}
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.contains("--detach"))
+        #expect(!command.contains("--rm"))
+        #expect(await lifecycleManager.requests == [
+            .delete(id: "demo-job-run-abc123", force: false),
+        ])
+    }
+
+    @Test("run foreground invokes pre stop hooks on interruption")
+    func runForegroundInvokesPreStopHooksOnInterruption() async throws {
+        let runner = RecordingRunner()
+        let execManager = RecordingContainerExecManager()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let logManager = RecordingContainerLogManager()
+        let signalProxy = RecordingComposeSignalProxy(forwardedSignals: ["SIGINT"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.preStop = [ComposeServiceHook(command: ["sh", "-c", "echo stopping"])]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
+            dependencies: orchestratorDependencies {
+                $0.execManager = execManager
+                $0.lifecycleManager = lifecycleManager
+                $0.logManager = logManager
+                $0.signalProxy = signalProxy
+            }
+        ).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["sleep", "60"])
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.contains("--detach"))
+        #expect(await signalProxy.requests == [["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"]])
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-job-run-abc123",
+                command: ["sh", "-c", "echo stopping"],
+                terminal: .init(interactive: false, tty: false)
+            ),
+        ])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-job-run-abc123", signal: nil, timeoutInSeconds: nil),
+            .wait(id: "demo-job-run-abc123"),
+        ])
+    }
+
+    @Test("run rejects interactive lifecycle hooks before creating one off containers")
+    func runRejectsInteractiveLifecycleHooksBeforeCreatingOneOffContainers() async throws {
         let runner = RecordingRunner()
         let project = ComposeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.preStop = [ComposeServiceHook(command: ["true"])]
+                    $0.tty = true
+                    $0.stdinOpen = true
+                    $0.postStart = [ComposeServiceHook(command: ["true"])]
                 },
             ]
         )
@@ -14095,11 +14267,11 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(
                 project: project,
                 serviceName: "job",
-                options: composeRunOptions(command: ["sleep", "60"])
+                options: composeRunOptions(command: ["sh"]),
             )
-            Issue.record("Expected foreground pre_stop hook error")
+            Issue.record("Expected interactive lifecycle hook error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses pre_stop; foreground compose run cannot execute pre_stop before the one-off init process exits because apple/container does not expose an interceptable foreground stop boundary"))
+            #expect(error == .unsupported("service 'job' uses lifecycle hooks; interactive foreground compose run requires Apple runtime stdio reattach support"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -26101,10 +26273,12 @@ private actor RecordingContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienti
 
 private actor RecordingContainerLogManager: ContainerLogManaging {
     private let outputs: [String]
+    private let delay: Duration?
     private var storage: [ContainerLogRequest] = []
 
-    init(outputs: [String] = []) {
+    init(outputs: [String] = [], delay: Duration? = nil) {
         self.outputs = outputs
+        self.delay = delay
     }
 
     var requests: [ContainerLogRequest] {
@@ -26130,6 +26304,9 @@ private actor RecordingContainerLogManager: ContainerLogManaging {
                 timestamps: timestamps
             )
         )
+        if let delay {
+            try await Task.sleep(for: delay)
+        }
         for output in outputs {
             emit(Data(output.utf8))
         }
