@@ -341,6 +341,7 @@ container-compose-plugin-release-arm64.tar.gz.sha256
 dist/compose/bin/compose
 dist/compose/config.toml
 dist/compose/resources/build-info.json
+dist/compose/resources/container-compose-icon.png
 dist/compose/resources/compose-normalizer
 ```
 

@@ -114,6 +114,7 @@ The resulting plugin layout is:
 ```text
 /usr/local/libexec/container-plugins/compose/bin/compose
 /usr/local/libexec/container-plugins/compose/config.toml
+/usr/local/libexec/container-plugins/compose/resources/container-compose-icon.png
 /usr/local/libexec/container-plugins/compose/resources/compose-normalizer
 ```
 
