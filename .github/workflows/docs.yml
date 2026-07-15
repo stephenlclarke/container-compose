@@ -1,0 +1,117 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/docs.yml
+      - Makefile
+      - Package.resolved
+      - Package.swift
+      - README.md
+      - Sources/**
+      - scripts/make-docs.sh
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/docs.yml
+      - Makefile
+      - Package.resolved
+      - Package.swift
+      - README.md
+      - Sources/**
+      - scripts/make-docs.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: documentation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build DocC Site
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Checkout container-compose
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Build static API documentation
+        run: make docs
+
+      # upload-pages-artifact requires GNU tar, which is unavailable on the
+      # macOS runner used to build this Swift package. Transfer the DocC
+      # output to an Ubuntu job for the Pages-specific artifact upload.
+      - name: Archive DocC site
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
+        run: tar -czf api-docs.tgz -C _site .
+
+      - name: Save DocC site
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: api-docs
+          path: api-docs.tgz
+          retention-days: 1
+
+  upload-pages-artifact:
+    name: Upload GitHub Pages Artifact
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+
+      - name: Download DocC site
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: api-docs
+
+      - name: Extract DocC site
+        run: |
+          set -euo pipefail
+          mkdir _site
+          tar -xzf api-docs.tgz -C _site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy GitHub Pages
+    needs: upload-pages-artifact
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      pages: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
