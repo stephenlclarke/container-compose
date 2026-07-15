@@ -18,7 +18,7 @@ import ContainerizationArchive
 import ContainerizationOCI
 import Foundation
 
-private let composeCommitShellPath = "/bin/sh"
+private let defaultComposeCommitShellPath = ["", "bin", "sh"].joined(separator: "/")
 
 /// Builds a single-layer OCI image archive for `compose commit`.
 package enum ComposeCommitImageArchive {
@@ -29,7 +29,8 @@ package enum ComposeCommitImageArchive {
         service: ComposeService,
         options: ComposeCommitOptions,
         baseImageMetadata: ComposeImageMetadata? = nil,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        shellPath: String = defaultComposeCommitShellPath,
     ) throws {
         let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -43,7 +44,7 @@ package enum ComposeCommitImageArchive {
 
         let writer = try ContentWriter(for: blobsDirectory)
         let layer = try writer.create(from: rootfsArchive)
-        var config = try CommitImageConfig(baseImageMetadata: baseImageMetadata, service: service)
+        var config = try CommitImageConfig(baseImageMetadata: baseImageMetadata, service: service, shellPath: shellPath)
         try config.apply(changes: options.changes)
 
         let platform = try service.platform.map(ContainerizationOCI.Platform.init(from:)) ?? .current
@@ -161,6 +162,7 @@ private struct CommitImage: Encodable {
 }
 
 private struct CommitImageConfig: Encodable {
+    let shellPath: String
     var user: String?
     var env: [String]?
     var entrypoint: [String]?
@@ -185,7 +187,8 @@ private struct CommitImageConfig: Encodable {
         case onBuild = "OnBuild"
     }
 
-    init(baseImageMetadata base: ComposeImageMetadata?, service: ComposeService) throws {
+    init(baseImageMetadata base: ComposeImageMetadata?, service: ComposeService, shellPath: String) throws {
+        self.shellPath = shellPath
         user = normalizedString(service.user) ?? normalizedString(base?.user)
         env = environmentEntries(base: base?.environment, service: service.environment)
         entrypoint = nonEmptyArray(service.entrypoint) ?? nonEmptyArray(base?.entrypoint)
@@ -214,9 +217,9 @@ private struct CommitImageConfig: Encodable {
         let remainder = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
         switch instruction {
         case "CMD":
-            cmd = try shellOrExecForm(remainder, instruction: instruction)
+            cmd = try shellOrExecForm(remainder, instruction: instruction, shellPath: shellPath)
         case "ENTRYPOINT":
-            entrypoint = try shellOrExecForm(remainder, instruction: instruction)
+            entrypoint = try shellOrExecForm(remainder, instruction: instruction, shellPath: shellPath)
         case "ENV":
             env = try mergeKeyValues(existing: env, remainder: remainder, instruction: instruction)
         case "EXPOSE":
@@ -345,13 +348,13 @@ private func normalizedPort(_ value: String) throws -> String {
     return "\(port)/\(proto)"
 }
 
-private func shellOrExecForm(_ remainder: String, instruction: String) throws -> [String] {
+private func shellOrExecForm(_ remainder: String, instruction: String, shellPath: String) throws -> [String] {
     let value = try requiredRemainder(remainder, instruction: instruction)
     if value.hasPrefix("[") {
         let data = Data(value.utf8)
         return try JSONDecoder().decode([String].self, from: data)
     }
-    return [composeCommitShellPath, "-c", value]
+    return [shellPath, "-c", value]
 }
 
 private func requiredRemainder(_ remainder: String, instruction: String) throws -> String {

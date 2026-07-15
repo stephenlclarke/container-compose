@@ -15,10 +15,23 @@
 //===----------------------------------------------------------------------===//
 
 import ComposeCore
+import Foundation
 import Testing
 
 @Suite("Compose execution options")
 struct ComposeExecutionOptionsTests {
+    @Test
+    func `options builder preserves configured runtime hooks`() {
+        let expectedDate = Date(timeIntervalSince1970: 1234.0)
+        let options = ComposeExecutionOptions {
+            $0.dryRun = true
+            $0.currentDate = { expectedDate }
+        }
+
+        #expect(options.dryRun)
+        #expect(options.currentDate() == expectedDate)
+    }
+
     @Test
     func `dynamic host port allocation supports wildcard UDP and bracketed IPv6`() throws {
         let wildcardUDPPort = try ComposeExecutionOptions.defaultHostPortAllocator(

@@ -486,7 +486,14 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	} else if bridgeModel {
 		result, err = loadBridgeProject(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
 	} else if publish {
-		result, err = publishComposeProject(files, profiles, envFiles, projectName, projectDirectory, loadOptions, publishOptions{
+		result, err = publishComposeProject(publishRequest{
+			files:            files,
+			profiles:         profiles,
+			envFiles:         envFiles,
+			projectName:      projectName,
+			projectDirectory: projectDirectory,
+			loadOptions:      loadOptions,
+		}, publishOptions{
 			repository:          publishRepository,
 			app:                 publishApp,
 			ociVersion:          publishOCIVersion,

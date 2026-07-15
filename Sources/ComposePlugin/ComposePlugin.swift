@@ -492,12 +492,12 @@ struct GlobalOptions: ParsableArguments {
 
     /// Creates an orchestrator configured from global runtime flags.
     func orchestrator() -> ComposeOrchestrator {
-        ComposeOrchestrator(options: ComposeExecutionOptions(
-            dryRun: dryRun,
-            maxParallelism: parallel,
-            serviceContainerNameSeparator: compatibility ? "_" : "-",
-            progress: progressReporter()
-        ))
+        ComposeOrchestrator(options: ComposeExecutionOptions {
+            $0.dryRun = dryRun
+            $0.maxParallelism = parallel
+            $0.serviceContainerNameSeparator = compatibility ? "_" : "-"
+            $0.progress = progressReporter()
+        })
     }
 
     /// Returns whether log prefix color should be enabled for this invocation.

@@ -2385,12 +2385,11 @@ struct ComposeOrchestratorTests {
         ])
         let discoveryManager = RecordingContainerDiscoveryManager()
         let imageManager = RecordingContainerImageManager(imageMetadata: [
-            "example/api": ComposeImageMetadata(
-                reference: "example/api",
-                environment: ["PATH=/usr/bin", "LOG_LEVEL=info"],
-                command: ["base"],
-                exposedPorts: ["9090/tcp"]
-            ),
+            "example/api": ComposeImageMetadata(reference: "example/api") {
+                $0.environment = ["PATH=/usr/bin", "LOG_LEVEL=info"]
+                $0.command = ["base"]
+                $0.exposedPorts = ["9090/tcp"]
+            },
         ])
         let project = ComposeProject(
             name: "demo",
@@ -10922,11 +10921,10 @@ struct ComposeOrchestratorTests {
         try FileManager.default.createDirectory(at: templates, withIntermediateDirectories: true)
         let runner = BridgeInputInspectingRunner()
         let imageManager = RecordingContainerImageManager(imageMetadata: [
-            "example/api:1": ComposeImageMetadata(
-                reference: "example/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                displayReference: "example/api:1",
-                exposedPorts: ["0443/tcp", "8080/tcp", "8443/udp"]
-            ),
+            "example/api:1": ComposeImageMetadata(reference: "example/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") {
+                $0.displayReference = "example/api:1"
+                $0.exposedPorts = ["0443/tcp", "8080/tcp", "8443/udp"]
+            },
         ])
         let project = composeProject(
             name: "demo",
@@ -11020,10 +11018,9 @@ struct ComposeOrchestratorTests {
     func bridgeConvertRejectsInvalidImageExposedPorts() async throws {
         let runner = RecordingRunner()
         let imageManager = RecordingContainerImageManager(imageMetadata: [
-            "example/api:1": ComposeImageMetadata(
-                reference: "example/api:1",
-                exposedPorts: ["not-a-port"]
-            ),
+            "example/api:1": ComposeImageMetadata(reference: "example/api:1") {
+                $0.exposedPorts = ["not-a-port"]
+            },
         ])
         let project = ComposeProject(
             name: "demo",
@@ -11116,10 +11113,9 @@ struct ComposeOrchestratorTests {
         let output = directory.appendingPathComponent("out", isDirectory: true)
         let runner = BridgeInputInspectingRunner()
         let imageManager = RecordingContainerImageManager(imageMetadata: [
-            "example/api:1": ComposeImageMetadata(
-                reference: "example/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                exposedPorts: ["8080/tcp"]
-            ),
+            "example/api:1": ComposeImageMetadata(reference: "example/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") {
+                $0.exposedPorts = ["8080/tcp"]
+            },
         ])
         let project = ComposeProject(
             name: "demo",
@@ -11177,7 +11173,9 @@ struct ComposeOrchestratorTests {
             "services": .object(["api": .object(["build": .object(["context": .string(directory.path)])])]),
         ])
         let imageManager = RecordingContainerImageManager(imageMetadata: [
-            "demo_api:latest": ComposeImageMetadata(reference: "demo_api:latest", exposedPorts: ["8080/tcp"]),
+            "demo_api:latest": ComposeImageMetadata(reference: "demo_api:latest") {
+                $0.exposedPorts = ["8080/tcp"]
+            },
         ])
 
         try await ComposeOrchestrator(runner: runner, imageManager: imageManager).bridgeConvert(
@@ -20689,20 +20687,19 @@ struct ComposeOrchestratorTests {
                 ]
                 $0.message = "snapshot"
             },
-            baseImageMetadata: ComposeImageMetadata(
-                reference: "example/base:latest",
-                user: "base-user",
-                environment: ["BASE_ONLY=1", "EMPTY=base", "LOG_LEVEL=info"],
-                entrypoint: ["/base-entrypoint"],
-                command: ["base-command"],
-                workingDir: "/base",
-                labels: [
+            baseImageMetadata: ComposeImageMetadata(reference: "example/base:latest") {
+                $0.user = "base-user"
+                $0.environment = ["BASE_ONLY=1", "EMPTY=base", "LOG_LEVEL=info"]
+                $0.entrypoint = ["/base-entrypoint"]
+                $0.command = ["base-command"]
+                $0.workingDir = "/base"
+                $0.labels = [
                     "com.example.base": "image",
                     "com.example.image": "true",
-                ],
-                exposedPorts: ["9090/tcp"],
-                stopSignal: "SIGINT"
-            ),
+                ]
+                $0.exposedPorts = ["9090/tcp"]
+                $0.stopSignal = "SIGINT"
+            },
             createdAt: date("2026-07-12T09:00:00Z")
         )
 
@@ -20731,6 +20728,28 @@ struct ComposeOrchestratorTests {
             "/data": [:],
         ])
         #expect(config.config.workingDir == "/srv/app")
+    }
+
+    @Test("commit image archive uses the configured shell for shell-form changes")
+    func commitImageArchiveUsesConfiguredShellPath() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let rootfs = directory.appendingPathComponent("rootfs.tar")
+        try rootfsArchiveData().write(to: rootfs)
+        let imageArchive = directory.appendingPathComponent("image.tar")
+
+        try ComposeCommitImageArchive.write(
+            rootfsArchive: rootfs,
+            output: imageArchive,
+            service: composeService(name: "api", image: "example/api"),
+            options: ComposeCommitOptions {
+                $0.changes = ["CMD echo hello"]
+            },
+            shellPath: "/custom/bin/sh",
+        )
+
+        let config = try commitArchiveConfig(from: imageArchive)
+        #expect(config.config.cmd == ["/custom/bin/sh", "-c", "echo hello"])
     }
 
     @Test("port prints runtime published bindings")

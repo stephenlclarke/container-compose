@@ -68,18 +68,17 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         let resource = try await image.toImageResource(containerSystemConfig: config)
         let variant = try Self.variant(in: resource, matching: Self.requestedPlatform(nil), allowFallback: true)
         let imageConfig = variant?.config.config
-        return ComposeImageMetadata(
-            reference: image.reference,
-            displayReference: resource.displayReference,
-            user: imageConfig?.user,
-            environment: imageConfig?.env ?? [],
-            entrypoint: imageConfig?.entrypoint,
-            command: imageConfig?.cmd,
-            workingDir: imageConfig?.workingDir,
-            labels: imageConfig?.labels ?? [:],
-            exposedPorts: variant?.exposedPorts ?? [],
-            stopSignal: imageConfig?.stopSignal,
-        )
+        return ComposeImageMetadata(reference: image.reference) {
+            $0.displayReference = resource.displayReference
+            $0.user = imageConfig?.user
+            $0.environment = imageConfig?.env ?? []
+            $0.entrypoint = imageConfig?.entrypoint
+            $0.command = imageConfig?.cmd
+            $0.workingDir = imageConfig?.workingDir
+            $0.labels = imageConfig?.labels ?? [:]
+            $0.exposedPorts = variant?.exposedPorts ?? []
+            $0.stopSignal = imageConfig?.stopSignal
+        }
     }
 
     /// Lists local images labelled as Compose Bridge transformers.

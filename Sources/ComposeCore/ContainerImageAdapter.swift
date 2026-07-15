@@ -69,28 +69,22 @@ public struct ComposeImageMetadata: Sendable, Equatable {
     /// Docker image config stop signal.
     public var stopSignal: String?
 
-    public init(
-        reference: String,
-        displayReference: String? = nil,
-        user: String? = nil,
-        environment: [String] = [],
-        entrypoint: [String]? = nil,
-        command: [String]? = nil,
-        workingDir: String? = nil,
-        labels: [String: String] = [:],
-        exposedPorts: [String] = [],
-        stopSignal: String? = nil
-    ) {
+    public init(reference: String) {
         self.reference = reference
-        self.displayReference = displayReference ?? reference
-        self.user = user
-        self.environment = environment
-        self.entrypoint = entrypoint
-        self.command = command
-        self.workingDir = workingDir
-        self.labels = labels
-        self.exposedPorts = exposedPorts
-        self.stopSignal = stopSignal
+        displayReference = reference
+        user = nil
+        environment = []
+        entrypoint = nil
+        command = nil
+        workingDir = nil
+        labels = [:]
+        exposedPorts = []
+        stopSignal = nil
+    }
+
+    public init(reference: String, _ configure: (inout ComposeImageMetadata) -> Void) {
+        self.init(reference: reference)
+        configure(&self)
     }
 }
 
