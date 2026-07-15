@@ -25,6 +25,8 @@ fi
 output_path="$1"
 hosting_base_path="$2"
 scratch_path="${DOCS_SCRATCH_PATH:-.build/docc}"
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+source_reference="${DOCS_SOURCE_REFERENCE:-${GITHUB_SHA:-main}}"
 
 arguments=(
     --disable-automatic-resolution
@@ -37,6 +39,9 @@ arguments=(
     --transform-for-static-hosting
     --enable-experimental-combined-documentation
     --hosting-base-path "$hosting_base_path"
+    --source-service github
+    --source-service-base-url "https://github.com/stephenlclarke/container-compose/blob/$source_reference"
+    --checkout-path "$repository_root"
 )
 
 swift package "${arguments[@]}"
