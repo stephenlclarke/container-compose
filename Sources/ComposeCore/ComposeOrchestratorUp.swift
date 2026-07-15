@@ -25,23 +25,6 @@ import ContainerizationOCI
 import ContainerResource
 import Foundation
 
-private enum ComposeUpMenuOperationResult {
-    case logsFinished
-    case exitCode(Int32)
-}
-
-private actor ComposeUpMenuExitCode {
-    private var storage: Int32?
-
-    var value: Int32? {
-        storage
-    }
-
-    func set(_ value: Int32) {
-        storage = value
-    }
-}
-
 extension ComposeOrchestrator {
     /// Returns whether a service declares `post_start` hooks.
     func hasPostStartHooks(_ service: ComposeService) -> Bool {
@@ -195,16 +178,7 @@ extension ComposeOrchestrator {
         let externalVolumeMounts = try await resolveExternalVolumeMounts(project: workingProject, services: services)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
-        let attachedOutputService = try foregroundServiceTarget(
-            project: workingProject,
-            services: services,
-            scaleOverrides: scaleOverrides,
-            detach: up.detach || up.wait || attachLogMode || exitControlMode || up.menu,
-        )
-        let attachedForegroundService = up.timestamps ? nil : attachedOutputService
-        if !up.timestamps {
-            try validateAttachedPostStartSupport(target: attachedForegroundService)
-        }
+        let detachStartedContainers = up.detach || up.wait || attachLogMode || exitControlMode || up.menu
         let imageHealthCheckCache = ComposeImageHealthCheckCache()
 
         let buildBeforePull = up.build && !up.noBuild && isMissingPullPolicy(up.pullPolicy)
@@ -267,7 +241,7 @@ extension ComposeOrchestrator {
                         request: ServiceContainerReconcileRequest(
                             name: name,
                             runOptions: RunArgumentOptions {
-                                $0.detach = up.detach || up.wait || isDeployJobService(service) || attachedForegroundService?.name != name
+                                $0.detach = detachStartedContainers || isDeployJobService(service)
                                 $0.containerIndex = replicaIndex
                                 $0.replicaCount = replicaCount
                             },
@@ -335,7 +309,7 @@ extension ComposeOrchestrator {
                 let exitControlServices = UncheckedSendable(value: services)
                 let exitControlOptions = UncheckedSendable(value: up)
                 exitControlOperation = { [self] in
-                    try await self.waitForUpExitControl(
+                    try await waitForUpExitControl(
                         project: exitControlProject.value,
                         services: exitControlServices.value,
                         options: exitControlOptions.value,
@@ -344,7 +318,7 @@ extension ComposeOrchestrator {
             } else {
                 exitControlOperation = nil
             }
-            let menuExitCode = try await followMenuUpLogs(
+            return try await followMenuUpLogs(
                 project: workingProject,
                 services: services,
                 targets: targets,
@@ -352,25 +326,47 @@ extension ComposeOrchestrator {
                 options: up,
                 exitControlOperation: exitControlOperation,
             )
-            return menuExitCode
-        }
-        if exitControlMode {
-            return try await waitForUpExitControl(project: workingProject, services: services, options: up)
         }
         if attachLogMode {
             let targets = try await serviceContainerTargets(project: workingProject, services: attachedLogServices)
-            try await followAttachedUpLogs(targets: targets, options: up)
-            return nil
-        }
-        if up.timestamps, let attachedOutputService, !up.detach, !up.wait {
-            try await followTimestampedUpLogs(target: attachedOutputService, options: up)
+            if exitControlMode {
+                let startedTargets = try await serviceContainerTargets(project: workingProject, services: services)
+                let exitControlProject = UncheckedSendable(value: workingProject)
+                let exitControlServices = UncheckedSendable(value: services)
+                let exitControlOptions = UncheckedSendable(value: up)
+                return try await followAttachedUpLogsUntilExitControl(
+                    session: ComposeUpLogSession(
+                        project: workingProject,
+                        targets: targets,
+                        startedTargets: startedTargets,
+                        stopServices: services.map(\.name),
+                        options: up,
+                    ),
+                    exitControlOperation: { [self] in
+                        try await waitForUpExitControl(
+                            project: exitControlProject.value,
+                            services: exitControlServices.value,
+                            options: exitControlOptions.value,
+                        )
+                    },
+                )
+            }
+            try await followAttachedUpLogs(
+                session: ComposeUpLogSession(
+                    project: workingProject,
+                    targets: targets,
+                    startedTargets: [],
+                    stopServices: services.map(\.name),
+                    options: up,
+                ),
+            )
         }
         return nil
     }
 
-    /// Returns whether `up` should use Compose-owned followed log attachment.
+    /// Returns whether foreground `up` should aggregate service output through followed logs.
     func upUsesAttachLogFollow(_ up: ComposeUpOptions) -> Bool {
-        !up.detach && !up.wait && !up.noStart && (!up.attach.isEmpty || up.attachDependencies)
+        !up.detach && !up.wait && !up.noStart && !up.menu
     }
 
     /// Returns whether `up` should stop the project after service exits.
@@ -532,7 +528,7 @@ extension ComposeOrchestrator {
         }
 
         let watchToggle = ComposeUpMenuWatchToggle()
-        let menuExitCode = ComposeUpMenuExitCode()
+        let menuExitCode = ComposeUpExitCode()
         let runtimeOptions = RuntimeLogOptions(
             tail: nil,
             since: nil,
@@ -547,6 +543,13 @@ extension ComposeOrchestrator {
         let sendableStartedTargets = UncheckedSendable(value: startedTargets)
         let sendableRuntimeOptions = UncheckedSendable(value: runtimeOptions)
         let serviceNames = services.map(\.name)
+        let menuLogSession = UncheckedSendable(value: ComposeUpLogSession(
+            project: project,
+            targets: targets,
+            startedTargets: startedTargets,
+            stopServices: serviceNames,
+            options: up,
+        ))
         let timeout = up.timeout
         let quietBuild = up.quietBuild
         let emitStatus = options.emit
@@ -554,7 +557,7 @@ extension ComposeOrchestrator {
             !(service.develop?.watch ?? []).isEmpty
         }
         let startMenuWatch: @Sendable () async throws -> Void = { [self, sendableProject, serviceNames, quietBuild] in
-            try await self.watch(
+            try await watch(
                 project: sendableProject.value,
                 options: ComposeWatchOptions(
                     services: serviceNames,
@@ -566,7 +569,7 @@ extension ComposeOrchestrator {
         }
         let setMenuWatchEnabled: @Sendable (
             Bool,
-            @escaping @Sendable (Bool) async -> Void
+            @escaping @Sendable (Bool) async -> Void,
         ) async throws -> Bool = { [self, sendableProject, serviceNames, emitStatus, startMenuWatch] desiredEnabled, stateChanged in
             if desiredEnabled {
                 try validateUpMenuWatchToggle(project: sendableProject.value, serviceNames: serviceNames)
@@ -601,20 +604,18 @@ extension ComposeOrchestrator {
 
         do {
             try await upMenuController.runMenuSession(
-                configuration: configuration
-            ) { [self, sendableTargets, sendableStartedTargets, sendableRuntimeOptions, exitControlOperation, menuExitCode] in
+                configuration: configuration,
+            ) { [self, sendableTargets, sendableStartedTargets, sendableRuntimeOptions, menuLogSession, exitControlOperation, menuExitCode] in
                 if let exitControlOperation {
-                    let code = try await self.runMenuLogOperationUntilExitControl(
-                        targets: sendableTargets.value,
-                        startedTargets: sendableStartedTargets.value,
-                        runtimeOptions: sendableRuntimeOptions.value,
+                    let code = try await runUpLogOperationUntilExitControl(
+                        session: menuLogSession.value,
                         exitControlOperation: exitControlOperation,
                     )
                     await menuExitCode.set(code)
                     return
                 }
                 if sendableTargets.value.isEmpty {
-                    try await waitForMenuServiceTargets(sendableStartedTargets.value)
+                    try await waitForUpServiceTargets(sendableStartedTargets.value)
                     return
                 }
                 try await followLogTargets(sendableTargets.value, options: sendableRuntimeOptions.value)
@@ -625,46 +626,6 @@ extension ComposeOrchestrator {
         }
         await watchToggle.stop()
         return await menuExitCode.value
-    }
-
-    /// Follows menu logs until exit-control decides the attached `up` result.
-    func runMenuLogOperationUntilExitControl(
-        targets: [ServiceContainerTarget],
-        startedTargets: [ServiceContainerTarget],
-        runtimeOptions: RuntimeLogOptions,
-        exitControlOperation: @Sendable @escaping () async throws -> Int32,
-    ) async throws -> Int32 {
-        let sendableTargets = UncheckedSendable(value: targets)
-        let sendableStartedTargets = UncheckedSendable(value: startedTargets)
-        let sendableRuntimeOptions = UncheckedSendable(value: runtimeOptions)
-        return try await withThrowingTaskGroup(of: ComposeUpMenuOperationResult.self) { group in
-            if targets.isEmpty, !startedTargets.isEmpty {
-                group.addTask { [self, sendableStartedTargets] in
-                    try await waitForMenuServiceTargets(sendableStartedTargets.value)
-                    return .logsFinished
-                }
-            } else if !targets.isEmpty {
-                group.addTask { [self, sendableTargets, sendableRuntimeOptions] in
-                    try await followLogTargets(sendableTargets.value, options: sendableRuntimeOptions.value)
-                    return .logsFinished
-                }
-            }
-            group.addTask {
-                .exitCode(try await exitControlOperation())
-            }
-
-            while let result = try await group.next() {
-                switch result {
-                case .logsFinished:
-                    continue
-                case .exitCode(let code):
-                    group.cancelAll()
-                    return code
-                }
-            }
-
-            throw ComposeError.invalidProject("up exit-control requires at least one service container")
-        }
     }
 
     /// Validates a menu watch toggle before the UI reports watch as enabled.
@@ -682,23 +643,6 @@ extension ComposeOrchestrator {
         }
         try validateWatchTriggers(services: watchServices)
         _ = try watchPlans(project: project, services: watchServices)
-    }
-
-    /// Keeps a menu session alive when selected services intentionally have no attached logs.
-    func waitForMenuServiceTargets(_ targets: [ServiceContainerTarget]) async throws {
-        guard !targets.isEmpty else {
-            return
-        }
-        let lifecycleManager = lifecycleManager
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            for target in targets {
-                let name = target.name
-                group.addTask {
-                    _ = try await lifecycleManager.waitContainer(id: name)
-                }
-            }
-            try await group.waitForAll()
-        }
     }
 
     /// Waits for `up` exit-control conditions, tears the project down, and returns the CLI exit code.
@@ -823,28 +767,6 @@ extension ComposeOrchestrator {
         }
     }
 
-    /// Follows the service that would normally own foreground output for `up --timestamps`.
-    func followTimestampedUpLogs(target: ServiceContainerTarget, options up: ComposeUpOptions) async throws {
-        let args = ["logs", "--follow", "--timestamps", target.name]
-        if options.dryRun {
-            emitComposeRuntimeOperation(args)
-            return
-        }
-        try await logManager.logs(
-            id: target.name,
-            tail: nil,
-            follow: true,
-            since: nil,
-            until: nil,
-            timestamps: true,
-            emit: logEmitter(
-                for: target,
-                noLogPrefix: up.noLogPrefix,
-                colorPrefixes: up.colorPrefixes,
-            ),
-        )
-    }
-
     /// Marks services excluded from attached `up` output before target selection.
     func projectByApplyingNoAttach(project: ComposeProject, services: [String]) throws -> ComposeProject {
         guard !services.isEmpty else {
@@ -908,7 +830,7 @@ extension ComposeOrchestrator {
                 containerIndex: request.runOptions.containerIndex,
                 replicaCount: request.runOptions.replicaCount,
             ),
-            externalVolumeMounts: request.externalVolumeMounts
+            externalVolumeMounts: request.externalVolumeMounts,
         )
 
         let arguments = try await runArguments(
@@ -949,10 +871,6 @@ extension ComposeOrchestrator {
             },
         )
     }
-}
-
-private struct UncheckedSendable<Value>: @unchecked Sendable {
-    var value: Value
 }
 
 private actor ComposeUpMenuWatchToggle {
