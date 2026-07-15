@@ -103,6 +103,7 @@ Installed packages use this plugin layout:
 /usr/local/libexec/container-plugins/compose/bin/compose
 /usr/local/libexec/container-plugins/compose/config.toml
 /usr/local/libexec/container-plugins/compose/resources/build-info.json
+/usr/local/libexec/container-plugins/compose/resources/container-compose-icon.png
 /usr/local/libexec/container-plugins/compose/resources/compose-normalizer
 ```
 

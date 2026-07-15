@@ -36,6 +36,7 @@ SWIFT_COVERAGE_MIN ?= 90
 GO_COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin-release-arm64.tar.gz
+PLUGIN_ICON ?= docs/images/container-compose-icon.png
 DOCS_OUTPUT_DIR ?= _site
 DOCS_SERVER_DIR ?= _serve
 DOCS_HOSTING_BASE_PATH ?= container-compose
@@ -334,6 +335,8 @@ cli-smoke-built:
 	trap 'rm -rf "$$package_tmp"' EXIT; \
 	mkdir -p "$$package_tmp/compose/bin" "$$package_tmp/compose/resources" "$$package_tmp/bin"; \
 	cp .build/debug/compose "$$package_tmp/compose/bin/compose"; \
+	cp "$(PLUGIN_ICON)" "$$package_tmp/compose/resources/container-compose-icon.png"; \
+	test -f "$$package_tmp/compose/resources/container-compose-icon.png"; \
 	printf '%s\n' '{"version":"0.6.70","source":"stephenlclarke/container-compose","branch":"symlink-smoke","lane":"stable","commit":"packaged-smoke","buildType":"release","containerSource":"stephenlclarke/container","containerRef":"container-smoke","containerizationSource":"stephenlclarke/containerization","containerizationRef":"containerization-smoke","composeGoVersion":"$(COMPOSE_GO_VERSION)"}' > "$$package_tmp/compose/resources/build-info.json"; \
 	ln -s ../compose/bin/compose "$$package_tmp/bin/container-compose"; \
 	packaged_version_output="$$(cd /tmp && "$$package_tmp/bin/container-compose" version --format json)"; \
@@ -1353,6 +1356,7 @@ package-built:
 	cp ".build/$(PACKAGE_BUILD_CONFIGURATION)/compose" "$(DIST_DIR)/compose/bin/compose"
 	cp config.toml "$(DIST_DIR)/compose/config.toml"
 	cp Tools/compose-normalizer/compose-normalizer "$(DIST_DIR)/compose/resources/compose-normalizer"
+	cp "$(PLUGIN_ICON)" "$(DIST_DIR)/compose/resources/container-compose-icon.png"
 	$(PYTHON) Tools/release/write-build-info.py \
 		--output "$(DIST_DIR)/compose/resources/build-info.json" \
 		--version "$(COMPOSE_VERSION)" \
@@ -1367,6 +1371,7 @@ package-built:
 		--containerization-ref "$(CONTAINERIZATION_REF)" \
 		--compose-go-version "$(COMPOSE_GO_VERSION)"
 	tar -czf "$(PLUGIN_ARCHIVE)" -C "$(DIST_DIR)" compose
+	tar -tzf "$(PLUGIN_ARCHIVE)" | grep -Fx 'compose/resources/container-compose-icon.png' >/dev/null
 	shasum -a 256 "$(PLUGIN_ARCHIVE)" > "$(PLUGIN_ARCHIVE).sha256"
 
 coverage-tools-test:
