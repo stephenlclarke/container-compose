@@ -37,7 +37,7 @@ public extension ComposeOrchestrator {
             emitComposeRuntimeOperation(args)
             return
         }
-        let live = (try await discoveryManager.getContainer(id: containerID))?.status.lowercased() == "running"
+        let live = try await (discoveryManager.getContainer(id: containerID))?.status.lowercased() == "running"
         try await exporter.exportContainer(id: containerID, output: export.output, live: live)
     }
 
