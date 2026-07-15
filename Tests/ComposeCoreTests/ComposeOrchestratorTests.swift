@@ -5419,6 +5419,40 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
     }
 
+    @Test("TTY up progress terminates the pending row before runtime output")
+    func ttyUpProgressTerminatesPendingRowBeforeRuntimeOutput() async throws {
+        let progress = LockedStringRecorder()
+        let runner = ProgressAssertingRunner { arguments in
+            #expect(arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+            #expect(progress.snapshot == ["⠓ Starting api\n"])
+        }
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let imageManager = RecordingContainerImageManager(existingReferences: ["example/api"])
+        let reporter = ComposeProgressReporter(
+            style: .tty,
+            emitData: { progress.append(String(decoding: $0, as: UTF8.self)) },
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(progress: reporter),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.imageManager = imageManager
+            }
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions())
+
+        #expect(progress.snapshot == [
+            "⠓ Starting api\n",
+            "✓ Starting api\n",
+        ])
+    }
+
     @Test("up direct image pull emits first progress row before pull starts")
     func upDirectImagePullEmitsFirstProgressRowBeforePullStarts() async throws {
         let runner = RecordingRunner(responses: [

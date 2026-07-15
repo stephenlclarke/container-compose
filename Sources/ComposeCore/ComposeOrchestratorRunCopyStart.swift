@@ -27,9 +27,17 @@ import Foundation
 
 extension ComposeOrchestrator {
     /// Runs a Compose-owned progress activity unless output was explicitly quieted.
-    func progressActivity<T>(_ message: String, quiet: Bool, operation: () async throws -> T) async throws -> T {
+    func progressActivity<T>(
+        _ message: String,
+        quiet: Bool,
+        emitsExternalOutput: Bool = false,
+        operation: () async throws -> T,
+    ) async throws -> T {
         if quiet || options.dryRun {
             return try await operation()
+        }
+        if emitsExternalOutput {
+            return try await options.progress.activityWithExternalOutput(message, operation: operation)
         }
         return try await options.progress.activity(message, operation: operation)
     }

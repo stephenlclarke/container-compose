@@ -593,7 +593,7 @@ extension ComposeOrchestrator {
                 replaceProcess: replaceProcess,
             )
         }
-        return try await progressActivity(message, quiet: quiet) {
+        return try await progressActivity(message, quiet: quiet, emitsExternalOutput: emitOutput) {
             try await runContainer(
                 arguments,
                 check: check,
