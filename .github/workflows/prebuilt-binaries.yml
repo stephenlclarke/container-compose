@@ -288,6 +288,9 @@ jobs:
               # after both matching formulae point at this immutable asset.
               asset="container-compose-plugin-current-${short_sha}-arm64.tar.gz"
               highlights_asset="release-highlights-current-${short_sha}.json"
+              # The README points to this mutable asset so it always renders
+              # the recording made with the matching Current build artifacts.
+              demo_asset="container-compose-demo-current.gif"
               formula="container-compose-current.rb"
               formula_class="ContainerComposeCurrent"
               runtime_formula="container-current"
@@ -314,6 +317,7 @@ jobs:
               update_tap="true"
               asset="container-compose-plugin-release-arm64.tar.gz"
               highlights_asset="release-highlights.json"
+              demo_asset=""
               formula="container-compose.rb"
               formula_class="ContainerCompose"
               runtime_formula="container"
@@ -339,6 +343,7 @@ jobs:
             printf 'update_tap=%s\n' "${update_tap}"
             printf 'asset=%s\n' "${asset}"
             printf 'highlights_asset=%s\n' "${highlights_asset}"
+            printf 'demo_asset=%s\n' "${demo_asset}"
             printf 'formula=%s\n' "${formula}"
             printf 'formula_class=%s\n' "${formula_class}"
             printf 'runtime_formula=%s\n' "${runtime_formula}"
@@ -616,6 +621,54 @@ jobs:
           CONTAINER_COMPOSE_COMMIT: ${{ needs.resolve-publish-context.outputs.sha }}
           CONTAINER_COMPOSE_LANE: ${{ steps.lane.outputs.package_lane }}
 
+      - name: Install VHS
+        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v vhs >/dev/null; then
+            brew install vhs
+          fi
+          vhs --version
+
+      - name: Generate Current build VHS recording
+        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
+        env:
+          DEMO_ASSET: ${{ steps.lane.outputs.demo_asset }}
+          PLUGIN_ARCHIVE: ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
+          RUNTIME_ARCHIVE: ${{ steps.runtime-package.outputs.local_asset }}
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          demo_root="${RUNNER_TEMP}/current-build-demo"
+          demo_output=".build/current-demo/${DEMO_ASSET}"
+          tape="${RUNNER_TEMP}/container-compose-current-demo.tape"
+
+          mkdir -p "${demo_root}/libexec/container-plugins"
+          mkdir -p "$(dirname "${demo_output}")"
+          tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"
+          tar -xzf "${PLUGIN_ARCHIVE}" -C "${demo_root}/libexec/container-plugins"
+
+          container_binary="${demo_root}/bin/container"
+          test -x "${container_binary}"
+          test -x "${demo_root}/libexec/container-plugins/compose/bin/compose"
+
+          export CONTAINER_INSTALL_ROOT="${demo_root}"
+          export PATH="${demo_root}/bin:${PATH}"
+
+          cleanup() {
+            container compose -f examples/monitoring-stack/docker-compose.yaml down --volumes --remove-orphans >/dev/null 2>&1 || true
+            "${container_binary}" system stop >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          "${container_binary}" system start --timeout 90 --enable-kernel-install
+          sed "1s#^Output .*#Output ${demo_output}#" docs/container-compose-demo.tape > "${tape}"
+          vhs "${tape}"
+          test -s "${demo_output}"
+          cp "${demo_output}" "${RUNNER_TEMP}/${DEMO_ASSET}"
+
       - name: Attest release package
         uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
         with:
@@ -688,6 +741,14 @@ jobs:
           printf '%s\n%s\n' \
             "${{ steps.runtime-package.outputs.local_asset }}" \
             "${{ steps.runtime-package.outputs.local_asset }}.sha256" > "${extra_assets}"
+          if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
+            demo_path="${RUNNER_TEMP}/${{ steps.lane.outputs.demo_asset }}"
+            if [[ ! -s "${demo_path}" ]]; then
+              printf 'Current build VHS recording is missing: %s\n' "${demo_path}" >&2
+              exit 1
+            fi
+            printf '%s\n' "${demo_path}" >> "${extra_assets}"
+          fi
 
           notes="${RUNNER_TEMP}/release-notes.md"
           highlights="${RUNNER_TEMP}/${HIGHLIGHTS_ASSET}"
@@ -919,7 +980,8 @@ jobs:
               --current-asset "${ASSET}.sha256" \
               --current-asset "${RUNTIME_ASSET}" \
               --current-asset "${RUNTIME_ASSET}.sha256" \
-              --current-asset "${HIGHLIGHTS_ASSET}"
+              --current-asset "${HIGHLIGHTS_ASSET}" \
+              --current-asset "${{ steps.lane.outputs.demo_asset }}"
             )
           fi
           python3 Tools/release/retain-release-assets.py "${retention_arguments[@]}"

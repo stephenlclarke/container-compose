@@ -244,6 +244,28 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("--delete-superseded-current-releases", workflow)
         self.assertIn("release_notes_args=(", workflow)
 
+    def test_current_build_records_and_publishes_the_matched_vhs_demo(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn('demo_asset="container-compose-demo-current.gif"', workflow)
+        self.assertIn("Install VHS", workflow)
+        self.assertIn("Generate Current build VHS recording", workflow)
+        self.assertIn('tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"', workflow)
+        self.assertIn(
+            'tar -xzf "${PLUGIN_ARCHIVE}" -C "${demo_root}/libexec/container-plugins"',
+            workflow,
+        )
+        self.assertIn('export CONTAINER_INSTALL_ROOT="${demo_root}"', workflow)
+        self.assertIn("docs/container-compose-demo.tape", workflow)
+        self.assertIn('vhs "${tape}"', workflow)
+        self.assertIn("Current build VHS recording is missing", workflow)
+        self.assertIn('--current-asset "${{ steps.lane.outputs.demo_asset }}"', workflow)
+        self.assertIn(
+            "releases/download/current/container-compose-demo-current.gif",
+            readme,
+        )
+
     def test_package_gate_aggregates_paginated_validate_jobs(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         start = workflow.index("CI intentionally has an active Validate job")

@@ -62,6 +62,12 @@ type publishOptions struct {
 	prompt              publishPrompter
 }
 
+type publishRequest struct {
+	files, profiles, envFiles     []string
+	projectName, projectDirectory string
+	loadOptions                   projectLoadOptions
+}
+
 type publishResult struct {
 	Repository  string                 `json:"repository"`
 	OCIVersion  string                 `json:"ociVersion"`
@@ -86,79 +92,133 @@ type publishLayerSnapshot struct {
 	Size      int64  `json:"size"`
 }
 
-func publishComposeProject(
-	files, profiles, envFiles []string,
-	projectName, projectDirectory string,
-	loadOptions projectLoadOptions,
-	options publishOptions,
-	stderr io.Writer,
-) (*publishResult, error) {
+type publishPushRequest struct {
+	ctx        context.Context
+	project    *types.Project
+	named      reference.Named
+	ociVersion composeOCI.OCIVersion
+	layers     []spec.Descriptor
+	options    publishOptions
+	stderr     io.Writer
+	result     *publishResult
+	resolver   remotes.Resolver
+}
+
+func publishComposeProject(request publishRequest, options publishOptions, stderr io.Writer) (*publishResult, error) {
 	ctx := context.Background()
+	named, ociVersion, err := resolvePublishTarget(options)
+	if err != nil {
+		return nil, err
+	}
+	project, err := loadPublishProject(request)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePublishProject(ctx, project, options, stderr); err != nil {
+		return nil, err
+	}
+	options = configurePublishOptions(ctx, options, stderr)
+	layers, err := createPublishLayers(ctx, project, options)
+	if err != nil {
+		return nil, err
+	}
+	result := publishResultForLayers(named, ociVersion, options, layers)
+	if options.dryRun {
+		return result, nil
+	}
+	if err := pushPublishProject(publishPushRequest{
+		ctx:        ctx,
+		project:    project,
+		named:      named,
+		ociVersion: ociVersion,
+		layers:     layers,
+		options:    options,
+		stderr:     stderr,
+		result:     result,
+	}); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func resolvePublishTarget(options publishOptions) (reference.Named, composeOCI.OCIVersion, error) {
 	if strings.TrimSpace(options.repository) == "" {
-		return nil, errors.New("publish repository is required")
+		return nil, "", errors.New("publish repository is required")
 	}
 	named, err := reference.ParseDockerRef(options.repository)
 	if err != nil {
-		return nil, fmt.Errorf("invalid publish repository %q: %w", options.repository, err)
+		return nil, "", fmt.Errorf("invalid publish repository %q: %w", options.repository, err)
 	}
 	ociVersion, err := parsePublishOCIVersion(options.ociVersion)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
+	return named, ociVersion, nil
+}
 
-	project, _, err := loadComposeProject(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
+func loadPublishProject(request publishRequest) (*types.Project, error) {
+	project, _, err := loadComposeProject(
+		request.files,
+		request.profiles,
+		request.envFiles,
+		request.projectName,
+		request.projectDirectory,
+		request.loadOptions,
+	)
 	if err != nil {
 		return nil, err
 	}
-	project, err = project.WithProfiles([]string{"*"})
-	if err != nil {
-		return nil, err
-	}
+	return project.WithProfiles([]string{"*"})
+}
+
+func validatePublishProject(ctx context.Context, project *types.Project, options publishOptions, stderr io.Writer) error {
 	if err := checkPublishBuildOnlyServices(project); err != nil {
-		return nil, err
+		return err
 	}
 	if err := checkPublishLocalIncludes(project.ComposeFiles); err != nil {
-		return nil, err
+		return err
 	}
-	if err := checkPublishPreflight(ctx, project, options, stderr); err != nil {
-		return nil, err
-	}
+	return checkPublishPreflight(ctx, project, options, stderr)
+}
 
+func configurePublishOptions(ctx context.Context, options publishOptions, stderr io.Writer) publishOptions {
 	if options.app {
 		options.resolveImageDigests = true
 	}
 	if options.resolveImageDigests && options.imageDigestResolver == nil {
 		options.imageDigestResolver = publishImageDigestResolver(ctx, stderr)
 	}
-	layers, err := createPublishLayers(ctx, project, options)
-	if err != nil {
-		return nil, err
-	}
+	return options
+}
 
-	result := &publishResult{
+func publishResultForLayers(named reference.Named, ociVersion composeOCI.OCIVersion, options publishOptions, layers []spec.Descriptor) *publishResult {
+	return &publishResult{
 		Repository: named.String(),
 		OCIVersion: displayPublishOCIVersion(ociVersion),
 		DryRun:     options.dryRun,
 		Layers:     publishLayerSnapshots(layers),
 	}
-	if options.dryRun {
-		return result, nil
-	}
+}
 
-	resolver := composeOCI.NewResolver(config.LoadDefaultConfigFile(stderr), nil)
-	descriptor, err := composeOCI.PushManifest(ctx, resolver, named, layers, ociVersion)
+func pushPublishProject(request publishPushRequest) error {
+	resolver := request.resolver
+	if resolver == nil {
+		resolver = composeOCI.NewResolver(config.LoadDefaultConfigFile(request.stderr), nil)
+	}
+	descriptor, err := composeOCI.PushManifest(request.ctx, resolver, request.named, request.layers, request.ociVersion)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	result.Descriptor = publishDescriptorFromOCI(descriptor)
-	if options.app {
-		application, err := publishApplicationIndex(ctx, resolver, project, named, descriptor, options.imageCopier)
-		if err != nil {
-			return nil, err
-		}
-		result.Application = publishDescriptorFromOCI(application)
+	request.result.Descriptor = publishDescriptorFromOCI(descriptor)
+	if !request.options.app {
+		return nil
 	}
-	return result, nil
+	application, err := publishApplicationIndex(request.ctx, resolver, request.project, request.named, descriptor, request.options.imageCopier)
+	if err != nil {
+		return err
+	}
+	request.result.Application = publishDescriptorFromOCI(application)
+	return nil
 }
 
 func parsePublishOCIVersion(version string) (composeOCI.OCIVersion, error) {
@@ -313,9 +373,31 @@ func formatPublishSecretFinding(finding secrets.DetectedSecret) string {
 }
 
 func collectPublishSensitiveData(project *types.Project) ([]secrets.DetectedSecret, error) {
+	composeFindings, err := collectPublishComposeFileFindings(project.ComposeFiles)
+	if err != nil {
+		return nil, err
+	}
+	envFindings, err := collectPublishEnvFileFindings(project)
+	if err != nil {
+		return nil, err
+	}
+	configFindings, err := collectPublishConfigFindings(project)
+	if err != nil {
+		return nil, err
+	}
+	secretFindings, err := collectPublishSecretFindings(project)
+	if err != nil {
+		return nil, err
+	}
+	findings := append(composeFindings, envFindings...)
+	findings = append(findings, configFindings...)
+	return append(findings, secretFindings...), nil
+}
+
+func collectPublishComposeFileFindings(files []string) ([]secrets.DetectedSecret, error) {
 	scan := scanner.NewDefaultScanner()
 	var findings []secrets.DetectedSecret
-	for _, file := range project.ComposeFiles {
+	for _, file := range files {
 		reader, err := publishComposeFileAsReader(file)
 		if err != nil {
 			return nil, err
@@ -326,6 +408,12 @@ func collectPublishSensitiveData(project *types.Project) ([]secrets.DetectedSecr
 		}
 		findings = append(findings, fileFindings...)
 	}
+	return findings, nil
+}
+
+func collectPublishEnvFileFindings(project *types.Project) ([]secrets.DetectedSecret, error) {
+	scan := scanner.NewDefaultScanner()
+	var findings []secrets.DetectedSecret
 	for _, service := range project.Services {
 		for _, envFile := range service.EnvFiles {
 			if _, statErr := os.Stat(envFile.Path); statErr != nil {
@@ -344,6 +432,12 @@ func collectPublishSensitiveData(project *types.Project) ([]secrets.DetectedSecr
 			findings = append(findings, fileFindings...)
 		}
 	}
+	return findings, nil
+}
+
+func collectPublishConfigFindings(project *types.Project) ([]secrets.DetectedSecret, error) {
+	scan := scanner.NewDefaultScanner()
+	var findings []secrets.DetectedSecret
 	for _, config := range project.Configs {
 		if config.File == "" {
 			continue
@@ -354,6 +448,12 @@ func collectPublishSensitiveData(project *types.Project) ([]secrets.DetectedSecr
 		}
 		findings = append(findings, fileFindings...)
 	}
+	return findings, nil
+}
+
+func collectPublishSecretFindings(project *types.Project) ([]secrets.DetectedSecret, error) {
+	scan := scanner.NewDefaultScanner()
+	var findings []secrets.DetectedSecret
 	for _, secret := range project.Secrets {
 		if secret.File == "" {
 			continue
@@ -375,6 +475,13 @@ type envCheckFindings struct {
 type serviceEnvFindings struct {
 	hasEnvFile     bool
 	suspiciousKeys map[string]struct{}
+}
+
+type envCheckCollector struct {
+	findings       *envCheckFindings
+	literalConfigs map[string]struct{}
+	detector       secrets.Detector
+	seen           map[string]struct{}
 }
 
 func (findings *serviceEnvFindings) sortedSuspiciousKeys() []string {
@@ -412,55 +519,82 @@ func checkPublishEnvironmentVariables(project *types.Project, options publishOpt
 }
 
 func collectEnvCheckFindings(project *types.Project) (*envCheckFindings, error) {
-	findings := &envCheckFindings{services: map[string]*serviceEnvFindings{}}
-	literalConfigs := map[string]struct{}{}
-	detector := keyword.NewDetector("0")
+	collector := envCheckCollector{
+		findings:       &envCheckFindings{services: map[string]*serviceEnvFindings{}},
+		literalConfigs: map[string]struct{}{},
+		detector:       keyword.NewDetector("0"),
+		seen:           map[string]struct{}{},
+	}
+	if err := collector.collectFiles(project.ComposeFiles); err != nil {
+		return nil, err
+	}
+	if len(collector.literalConfigs) > 0 {
+		collector.findings.configsLiteralContent = sortedMapKeys(collector.literalConfigs)
+	}
+	return collector.findings, nil
+}
 
-	seen := map[string]struct{}{}
-	queue := append([]string(nil), project.ComposeFiles...)
+func (collector *envCheckCollector) collectFiles(files []string) error {
+	queue := append([]string(nil), files...)
 	for len(queue) > 0 {
 		file := queue[0]
 		queue = queue[1:]
-		if _, ok := seen[file]; ok {
+		if _, ok := collector.seen[file]; ok {
 			continue
 		}
-		seen[file] = struct{}{}
-
-		data, err := os.ReadFile(file)
+		collector.seen[file] = struct{}{}
+		parents, err := collector.collectFile(file)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open compose file %s: %w", file, err)
+			return err
 		}
-		var doc yaml.Node
-		if err := yaml.Unmarshal(data, &doc); err != nil {
-			return nil, fmt.Errorf("failed to load compose file %s: %w", file, err)
-		}
-		root := documentRoot(&doc)
-		if root == nil {
-			continue
-		}
+		queue = append(queue, parents...)
+	}
+	return nil
+}
 
-		services := mappingValue(root, "services")
-		for _, serviceName := range sortedMappingKeys(services) {
-			service := mappingEntry(services, serviceName)
-			recordServiceEnvFindings(findings.services, detector, serviceName, service)
-			if parent := localExtendsParent(file, service); parent != "" {
-				queue = append(queue, parent)
-			}
-		}
-		configs := mappingValue(root, "configs")
-		for _, name := range sortedMappingKeys(configs) {
-			config := mappingEntry(configs, name)
-			content := mappingScalar(config, "content")
-			if content != "" && configContentLooksLiteral(content, detector) {
-				literalConfigs[name] = struct{}{}
-			}
+func (collector *envCheckCollector) collectFile(file string) ([]string, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open compose file %s: %w", file, err)
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("failed to load compose file %s: %w", file, err)
+	}
+	root := documentRoot(&doc)
+	if root == nil {
+		return nil, nil
+	}
+	return collector.collectRoot(file, root), nil
+}
+
+func (collector *envCheckCollector) collectRoot(file string, root *yaml.Node) []string {
+	services := mappingValue(root, "services")
+	parents := collector.collectServices(file, services)
+	collector.collectConfigs(mappingValue(root, "configs"))
+	return parents
+}
+
+func (collector *envCheckCollector) collectServices(file string, services *yaml.Node) []string {
+	var parents []string
+	for _, serviceName := range sortedMappingKeys(services) {
+		service := mappingEntry(services, serviceName)
+		recordServiceEnvFindings(collector.findings.services, collector.detector, serviceName, service)
+		if parent := localExtendsParent(file, service); parent != "" {
+			parents = append(parents, parent)
 		}
 	}
+	return parents
+}
 
-	if len(literalConfigs) > 0 {
-		findings.configsLiteralContent = sortedMapKeys(literalConfigs)
+func (collector *envCheckCollector) collectConfigs(configs *yaml.Node) {
+	for _, name := range sortedMappingKeys(configs) {
+		config := mappingEntry(configs, name)
+		content := mappingScalar(config, "content")
+		if content != "" && configContentLooksLiteral(content, collector.detector) {
+			collector.literalConfigs[name] = struct{}{}
+		}
 	}
-	return findings, nil
 }
 
 func recordServiceEnvFindings(
@@ -506,27 +640,35 @@ func serviceEnvironmentValues(service *yaml.Node) map[string]string {
 	}
 	switch environment.Kind {
 	case yaml.MappingNode:
-		for index := 0; index < len(environment.Content); index += 2 {
-			key := environment.Content[index]
-			value := environment.Content[index+1]
-			if key.Kind != yaml.ScalarNode || value.Kind != yaml.ScalarNode {
-				continue
-			}
-			values[key.Value] = replaceDollarEscape(value.Value)
-		}
+		recordMappingEnvironmentValues(values, environment)
 	case yaml.SequenceNode:
-		for _, item := range environment.Content {
-			if item.Kind != yaml.ScalarNode {
-				continue
-			}
-			key, value, ok := strings.Cut(item.Value, "=")
-			if !ok || key == "" {
-				continue
-			}
-			values[key] = replaceDollarEscape(value)
-		}
+		recordSequenceEnvironmentValues(values, environment)
 	}
 	return values
+}
+
+func recordMappingEnvironmentValues(values map[string]string, environment *yaml.Node) {
+	for index := 0; index < len(environment.Content); index += 2 {
+		key := environment.Content[index]
+		value := environment.Content[index+1]
+		if key.Kind != yaml.ScalarNode || value.Kind != yaml.ScalarNode {
+			continue
+		}
+		values[key.Value] = replaceDollarEscape(value.Value)
+	}
+}
+
+func recordSequenceEnvironmentValues(values map[string]string, environment *yaml.Node) {
+	for _, item := range environment.Content {
+		if item.Kind != yaml.ScalarNode {
+			continue
+		}
+		key, value, ok := strings.Cut(item.Value, "=")
+		if !ok || key == "" {
+			continue
+		}
+		values[key] = replaceDollarEscape(value)
+	}
 }
 
 func serviceEnvFileDeclared(service *yaml.Node) bool {
@@ -807,11 +949,18 @@ func processPublishFile(ctx context.Context, file string, project *types.Project
 	if err != nil {
 		return nil, err
 	}
+	base, err := loadPublishSourceProject(ctx, file, content, project)
+	if err != nil {
+		return nil, err
+	}
+	return replacePublishServiceFileReferences(content, base.Services, extendsFiles, envFiles)
+}
+
+func loadPublishSourceProject(ctx context.Context, file string, content []byte, project *types.Project) (*types.Project, error) {
 	if _, err := loadPublishFileModel(ctx, file, content, project); err != nil {
 		return nil, err
 	}
-
-	base, err := loader.LoadWithContext(ctx, types.ConfigDetails{
+	return loader.LoadWithContext(ctx, types.ConfigDetails{
 		WorkingDir:  project.WorkingDir,
 		Environment: project.Environment,
 		ConfigFiles: []types.ConfigFile{{
@@ -819,42 +968,61 @@ func processPublishFile(ctx context.Context, file string, project *types.Project
 			Content:  content,
 		}},
 	}, publishSourceLoadOptions(project))
-	if err != nil {
-		return nil, err
-	}
+}
 
-	for name, service := range base.Services {
-		for index, envFile := range service.EnvFiles {
-			hash := fmt.Sprintf("%x.env", sha256.Sum256([]byte(envFile.Path)))
-			if _, statErr := os.Stat(envFile.Path); statErr == nil {
-				envFiles[envFile.Path] = hash
-			} else if !os.IsNotExist(statErr) {
-				return nil, fmt.Errorf("failed to access env file %s: %w", envFile.Path, statErr)
-			}
-			content, err = composeTransform.ReplaceEnvFile(content, name, index, hash)
-			if err != nil {
-				return nil, err
-			}
+func replacePublishServiceFileReferences(content []byte, services types.Services, extendsFiles map[string]string, envFiles map[string]string) ([]byte, error) {
+	var err error
+	for name, service := range services {
+		content, err = replacePublishEnvFiles(content, name, service, envFiles)
+		if err != nil {
+			return nil, err
 		}
-
-		if service.Extends == nil || service.Extends.File == "" {
-			continue
-		}
-		extendsFile := service.Extends.File
-		if _, statErr := os.Stat(extendsFile); os.IsNotExist(statErr) {
-			continue
-		} else if statErr != nil {
-			return nil, fmt.Errorf("failed to access extends file %s: %w", extendsFile, statErr)
-		}
-
-		hash := fmt.Sprintf("%x.yaml", sha256.Sum256([]byte(extendsFile)))
-		extendsFiles[extendsFile] = hash
-		content, err = composeTransform.ReplaceExtendsFile(content, name, hash)
+		content, err = replacePublishExtendsFile(content, name, service, extendsFiles)
 		if err != nil {
 			return nil, err
 		}
 	}
 	return content, nil
+}
+
+func replacePublishEnvFiles(content []byte, serviceName string, service types.ServiceConfig, envFiles map[string]string) ([]byte, error) {
+	for index, envFile := range service.EnvFiles {
+		hash := fmt.Sprintf("%x.env", sha256.Sum256([]byte(envFile.Path)))
+		if err := recordPublishEnvFile(envFile.Path, hash, envFiles); err != nil {
+			return nil, err
+		}
+		var err error
+		content, err = composeTransform.ReplaceEnvFile(content, serviceName, index, hash)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return content, nil
+}
+
+func recordPublishEnvFile(path, hash string, envFiles map[string]string) error {
+	if _, err := os.Stat(path); err == nil {
+		envFiles[path] = hash
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to access env file %s: %w", path, err)
+	}
+	return nil
+}
+
+func replacePublishExtendsFile(content []byte, serviceName string, service types.ServiceConfig, extendsFiles map[string]string) ([]byte, error) {
+	if service.Extends == nil || service.Extends.File == "" {
+		return content, nil
+	}
+	extendsFile := service.Extends.File
+	if _, err := os.Stat(extendsFile); os.IsNotExist(err) {
+		return content, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to access extends file %s: %w", extendsFile, err)
+	}
+	hash := fmt.Sprintf("%x.yaml", sha256.Sum256([]byte(extendsFile)))
+	extendsFiles[extendsFile] = hash
+	return composeTransform.ReplaceExtendsFile(content, serviceName, hash)
 }
 
 func publishSourceLoadOptions(project *types.Project) func(*loader.Options) {

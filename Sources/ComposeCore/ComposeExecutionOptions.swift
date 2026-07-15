@@ -27,39 +27,100 @@ public struct ComposeExecutionOptions {
 
     /// Runtime hooks that make orchestration deterministic and testable.
     public struct RuntimeHooks {
-        public var oneOffIdentifier: @Sendable () -> String
-        public var currentDate: @Sendable () -> Date
-        public var hostPortAllocator: @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16
-        public var sleep: @Sendable (Duration) async throws -> Void
+        public var oneOffIdentifier: @Sendable () -> String = ComposeExecutionOptions.defaultOneOffIdentifier
+        public var currentDate: @Sendable () -> Date = Date.init
+        public var hostPortAllocator: @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16 = ComposeExecutionOptions.defaultHostPortAllocator
+        public var sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) } {
+            didSet {
+                usesDefaultSleep = false
+            }
+        }
+
         /// Distinguishes the production clock from deterministic test hooks.
-        var usesDefaultSleep: Bool
-        public var confirm: @Sendable (_ prompt: String) async throws -> Bool
-        public var emit: @Sendable (String) -> Void
+        var usesDefaultSleep = true
+        public var confirm: @Sendable (_ prompt: String) async throws -> Bool = ComposeExecutionOptions.defaultConfirmation
+        public var emit: @Sendable (String) -> Void = { print($0) }
         public var emitData: (@Sendable (Data) -> Void)?
-        public var copyInputArchive: @Sendable () -> FileHandle
-        public var copyOutputArchive: @Sendable () -> FileHandle
+        public var copyInputArchive: @Sendable () -> FileHandle = { .standardInput }
+        public var copyOutputArchive: @Sendable () -> FileHandle = { .standardOutput }
+
+        public init() {}
+
+        public init(_ configure: (inout RuntimeHooks) -> Void) {
+            self.init()
+            configure(&self)
+        }
+
+        public init(oneOffIdentifier: @escaping @Sendable () -> String, emit: @escaping @Sendable (String) -> Void) {
+            self.init {
+                $0.oneOffIdentifier = oneOffIdentifier
+                $0.emit = emit
+            }
+        }
+
+        public init(oneOffIdentifier: @escaping @Sendable () -> String) {
+            self.init { $0.oneOffIdentifier = oneOffIdentifier }
+        }
+
+        public init(currentDate: @escaping @Sendable () -> Date, emit: @escaping @Sendable (String) -> Void) {
+            self.init {
+                $0.currentDate = currentDate
+                $0.emit = emit
+            }
+        }
+
+        public init(currentDate: @escaping @Sendable () -> Date, sleep: @escaping @Sendable (Duration) async throws -> Void) {
+            self.init {
+                $0.currentDate = currentDate
+                $0.sleep = sleep
+            }
+        }
 
         public init(
-            oneOffIdentifier: @escaping @Sendable () -> String = ComposeExecutionOptions.defaultOneOffIdentifier,
-            currentDate: @escaping @Sendable () -> Date = Date.init,
-            hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16 = ComposeExecutionOptions.defaultHostPortAllocator,
-            sleep: (@Sendable (Duration) async throws -> Void)? = nil,
-            confirm: @escaping @Sendable (_ prompt: String) async throws -> Bool = ComposeExecutionOptions.defaultConfirmation,
-            emit: @escaping @Sendable (String) -> Void = { print($0) },
-            emitData: (@Sendable (Data) -> Void)? = nil,
-            copyInputArchive: @escaping @Sendable () -> FileHandle = { .standardInput },
-            copyOutputArchive: @escaping @Sendable () -> FileHandle = { .standardOutput },
+            currentDate: @escaping @Sendable () -> Date,
+            emit: @escaping @Sendable (String) -> Void,
+            emitData: @escaping @Sendable (Data) -> Void,
         ) {
-            self.oneOffIdentifier = oneOffIdentifier
-            self.currentDate = currentDate
-            self.hostPortAllocator = hostPortAllocator
-            self.sleep = sleep ?? { try await Task.sleep(for: $0) }
-            usesDefaultSleep = sleep == nil
-            self.confirm = confirm
-            self.emit = emit
-            self.emitData = emitData
-            self.copyInputArchive = copyInputArchive
-            self.copyOutputArchive = copyOutputArchive
+            self.init {
+                $0.currentDate = currentDate
+                $0.emit = emit
+                $0.emitData = emitData
+            }
+        }
+
+        public init(confirm: @escaping @Sendable (_ prompt: String) async throws -> Bool) {
+            self.init { $0.confirm = confirm }
+        }
+
+        public init(emit: @escaping @Sendable (String) -> Void) {
+            self.init { $0.emit = emit }
+        }
+
+        public init(emitData: @escaping @Sendable (Data) -> Void) {
+            self.init { $0.emitData = emitData }
+        }
+
+        public init(emit: @escaping @Sendable (String) -> Void, emitData: @escaping @Sendable (Data) -> Void) {
+            self.init {
+                $0.emit = emit
+                $0.emitData = emitData
+            }
+        }
+
+        public init(hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16) {
+            self.init { $0.hostPortAllocator = hostPortAllocator }
+        }
+
+        public init(sleep: @escaping @Sendable (Duration) async throws -> Void) {
+            self.init { $0.sleep = sleep }
+        }
+
+        public init(copyInputArchive: @escaping @Sendable () -> FileHandle) {
+            self.init { $0.copyInputArchive = copyInputArchive }
+        }
+
+        public init(copyOutputArchive: @escaping @Sendable () -> FileHandle) {
+            self.init { $0.copyOutputArchive = copyOutputArchive }
         }
     }
 
@@ -74,7 +135,12 @@ public struct ComposeExecutionOptions {
     public var hostPortAllocator: @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16
     public var watchPollInterval: Duration
     public var materializedConfigSecretDirectory: URL
-    public var sleep: @Sendable (Duration) async throws -> Void
+    public var sleep: @Sendable (Duration) async throws -> Void {
+        didSet {
+            usesDefaultSleep = false
+        }
+    }
+
     /// Distinguishes the production clock from deterministic test hooks.
     var usesDefaultSleep: Bool
     public var confirm: @Sendable (_ prompt: String) async throws -> Bool
@@ -84,47 +150,84 @@ public struct ComposeExecutionOptions {
     public var copyOutputArchive: @Sendable () -> FileHandle
     public var progress: ComposeProgressReporter
 
-    public init(
-        dryRun: Bool = false,
-        maxParallelism: Int? = nil,
-        serviceContainerNameSeparator: String = "-",
-        containerBinary: String = ComposeExecutionOptions.defaultContainerBinary(),
-        initImage: String? = ComposeExecutionOptions.defaultInitImage(),
-        watchPollInterval: Duration = .seconds(1),
-        progress: ComposeProgressReporter = .disabled,
-        runtimeHooks: RuntimeHooks = RuntimeHooks(),
-    ) {
-        self.dryRun = dryRun
-        self.maxParallelism = maxParallelism
-        self.serviceContainerNameSeparator = serviceContainerNameSeparator
-        self.containerBinary = containerBinary
-        self.initImage = initImage
+    public init() {
+        dryRun = false
+        maxParallelism = nil
+        serviceContainerNameSeparator = "-"
+        containerBinary = ComposeExecutionOptions.defaultContainerBinary()
+        initImage = ComposeExecutionOptions.defaultInitImage()
         environmentLauncher = ComposeExecutionOptions.defaultEnvironmentLauncher
-        oneOffIdentifier = runtimeHooks.oneOffIdentifier
-        currentDate = runtimeHooks.currentDate
-        hostPortAllocator = runtimeHooks.hostPortAllocator
-        self.watchPollInterval = watchPollInterval
+        oneOffIdentifier = ComposeExecutionOptions.defaultOneOffIdentifier
+        currentDate = Date.init
+        hostPortAllocator = ComposeExecutionOptions.defaultHostPortAllocator
+        watchPollInterval = .seconds(1)
         materializedConfigSecretDirectory = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
-        sleep = runtimeHooks.sleep
-        usesDefaultSleep = runtimeHooks.usesDefaultSleep
-        confirm = runtimeHooks.confirm
-        emit = runtimeHooks.emit
-        emitData = runtimeHooks.emitData ?? ComposeExecutionOptions.defaultLogDataEmitter
-        copyInputArchive = runtimeHooks.copyInputArchive
-        copyOutputArchive = runtimeHooks.copyOutputArchive
+        sleep = { try await Task.sleep(for: $0) }
+        usesDefaultSleep = true
+        confirm = ComposeExecutionOptions.defaultConfirmation
+        emit = { print($0) }
+        emitData = ComposeExecutionOptions.defaultLogDataEmitter
+        copyInputArchive = { .standardInput }
+        copyOutputArchive = { .standardOutput }
+        progress = .disabled
+    }
+
+    public init(_ configure: (inout ComposeExecutionOptions) -> Void) {
+        self.init()
+        configure(&self)
+    }
+
+    public init(runtimeHooks: RuntimeHooks) {
+        self.init()
+        apply(runtimeHooks: runtimeHooks)
+    }
+
+    public init(dryRun: Bool) {
+        self.init()
+        self.dryRun = dryRun
+    }
+
+    public init(progress: ComposeProgressReporter) {
+        self.init()
         self.progress = progress
     }
 
+    public init(dryRun: Bool, runtimeHooks: RuntimeHooks) {
+        self.init(runtimeHooks: runtimeHooks)
+        self.dryRun = dryRun
+    }
+
+    public init(dryRun: Bool, serviceContainerNameSeparator: String, runtimeHooks: RuntimeHooks) {
+        self.init(dryRun: dryRun, runtimeHooks: runtimeHooks)
+        self.serviceContainerNameSeparator = serviceContainerNameSeparator
+    }
+
+    public init(maxParallelism: Int?, runtimeHooks: RuntimeHooks) {
+        self.init(runtimeHooks: runtimeHooks)
+        self.maxParallelism = maxParallelism
+    }
+
+    public init(maxParallelism: Int?) {
+        self.init()
+        self.maxParallelism = maxParallelism
+    }
+
     public init(dryRun: Bool = false, emit: @escaping @Sendable (String) -> Void) {
-        self.init(dryRun: dryRun, runtimeHooks: RuntimeHooks(emit: emit, emitData: { emit(String(decoding: $0, as: UTF8.self)) }))
+        self.init {
+            $0.dryRun = dryRun
+            $0.apply(runtimeHooks: RuntimeHooks {
+                $0.emit = emit
+                $0.emitData = { emit(String(decoding: $0, as: UTF8.self)) }
+            })
+        }
     }
 
     public init(hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16) {
-        self.init(runtimeHooks: RuntimeHooks(hostPortAllocator: hostPortAllocator))
+        self.init(runtimeHooks: RuntimeHooks { $0.hostPortAllocator = hostPortAllocator })
     }
 
     public init(currentDate: @escaping @Sendable () -> Date) {
-        self.init(runtimeHooks: RuntimeHooks(currentDate: currentDate))
+        self.init(runtimeHooks: RuntimeHooks { $0.currentDate = currentDate })
     }
 
     public init(environmentLauncher: String) {
@@ -142,16 +245,17 @@ public struct ComposeExecutionOptions {
         environmentLauncher: String,
         runtimeHooks: RuntimeHooks = RuntimeHooks(),
     ) {
-        self.init(containerBinary: containerBinary, runtimeHooks: runtimeHooks)
+        self.init(runtimeHooks: runtimeHooks)
+        self.containerBinary = containerBinary
         self.environmentLauncher = environmentLauncher
     }
 
     public init(oneOffIdentifier: @escaping @Sendable () -> String) {
-        self.init(runtimeHooks: RuntimeHooks(oneOffIdentifier: oneOffIdentifier))
+        self.init(runtimeHooks: RuntimeHooks { $0.oneOffIdentifier = oneOffIdentifier })
     }
 
     public init(sleep: @escaping @Sendable (Duration) async throws -> Void) {
-        self.init(runtimeHooks: RuntimeHooks(sleep: sleep))
+        self.init(runtimeHooks: RuntimeHooks { $0.sleep = sleep })
     }
 
     public init(
@@ -159,9 +263,9 @@ public struct ComposeExecutionOptions {
         sleep: @escaping @Sendable (Duration) async throws -> Void,
     ) {
         self.init(
-            watchPollInterval: watchPollInterval,
-            runtimeHooks: RuntimeHooks(sleep: sleep),
+            runtimeHooks: RuntimeHooks { $0.sleep = sleep },
         )
+        self.watchPollInterval = watchPollInterval
     }
 
     public init(
@@ -171,9 +275,9 @@ public struct ComposeExecutionOptions {
     ) {
         self.init(
             dryRun: dryRun,
-            containerBinary: containerBinary,
-            runtimeHooks: RuntimeHooks(emit: emit, emitData: { emit(String(decoding: $0, as: UTF8.self)) }),
+            emit: emit,
         )
+        self.containerBinary = containerBinary
     }
 
     public init(
@@ -189,7 +293,8 @@ public struct ComposeExecutionOptions {
         materializedConfigSecretDirectory: URL,
         runtimeHooks: RuntimeHooks = RuntimeHooks(),
     ) {
-        self.init(dryRun: dryRun, runtimeHooks: runtimeHooks)
+        self.init(runtimeHooks: runtimeHooks)
+        self.dryRun = dryRun
         self.materializedConfigSecretDirectory = materializedConfigSecretDirectory
     }
 
@@ -200,8 +305,22 @@ public struct ComposeExecutionOptions {
     ) {
         self.init(
             dryRun: dryRun,
-            runtimeHooks: RuntimeHooks(hostPortAllocator: hostPortAllocator, emit: emit, emitData: { emit(String(decoding: $0, as: UTF8.self)) }),
+            emit: emit,
         )
+        self.hostPortAllocator = hostPortAllocator
+    }
+
+    private mutating func apply(runtimeHooks: RuntimeHooks) {
+        oneOffIdentifier = runtimeHooks.oneOffIdentifier
+        currentDate = runtimeHooks.currentDate
+        hostPortAllocator = runtimeHooks.hostPortAllocator
+        sleep = runtimeHooks.sleep
+        usesDefaultSleep = runtimeHooks.usesDefaultSleep
+        confirm = runtimeHooks.confirm
+        emit = runtimeHooks.emit
+        emitData = runtimeHooks.emitData ?? ComposeExecutionOptions.defaultLogDataEmitter
+        copyInputArchive = runtimeHooks.copyInputArchive
+        copyOutputArchive = runtimeHooks.copyOutputArchive
     }
 
     public static func defaultOneOffIdentifier() -> String {

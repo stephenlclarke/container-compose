@@ -48,12 +48,7 @@ services:
 `)
 
 	result, err := publishComposeProject(
-		[]string{composeFile},
-		nil,
-		nil,
-		"publish-short-ports",
-		dir,
-		projectLoadOptions{},
+		publishRequestForTest([]string{composeFile}, nil, "publish-short-ports", dir),
 		publishOptions{
 			repository: "registry.example.com/team/app:latest",
 			dryRun:     true,
@@ -87,12 +82,7 @@ services:
 `)
 
 	result, err := publishComposeProject(
-		[]string{composeFile},
-		nil,
-		[]string{envFile},
-		"publish-env",
-		dir,
-		projectLoadOptions{},
+		publishRequestForTest([]string{composeFile}, []string{envFile}, "publish-env", dir),
 		publishOptions{
 			repository: "registry.example.com/team/app:latest",
 			withEnv:    true,
@@ -127,12 +117,7 @@ services:
 `)
 
 	result, err := publishComposeProject(
-		[]string{composeFile},
-		nil,
-		nil,
-		"publish-extends",
-		dir,
-		projectLoadOptions{},
+		publishRequestForTest([]string{composeFile}, nil, "publish-extends", dir),
 		publishOptions{
 			repository: "registry.example.com/team/app:latest",
 			dryRun:     true,
@@ -174,12 +159,7 @@ services:
 	}
 
 	result, err := publishComposeProject(
-		[]string{composeFile},
-		nil,
-		nil,
-		"publish-digests",
-		dir,
-		projectLoadOptions{},
+		publishRequestForTest([]string{composeFile}, nil, "publish-digests", dir),
 		publishOptions{
 			repository:          "registry.example.com/team/app:latest",
 			resolveImageDigests: true,
@@ -239,12 +219,7 @@ services:
 	var requests []string
 
 	result, err := publishComposeProject(
-		[]string{composeFile},
-		nil,
-		nil,
-		"publish-app",
-		dir,
-		projectLoadOptions{},
+		publishRequestForTest([]string{composeFile}, nil, "publish-app", dir),
 		publishOptions{
 			repository: "registry.example.com/team/app:latest",
 			app:        true,
@@ -426,6 +401,65 @@ func TestPublishApplicationIndexPushesApplicationDescriptor(t *testing.T) {
 	}
 }
 
+func TestPushPublishProjectUpdatesComposeAndApplicationDescriptors(t *testing.T) {
+	target, err := reference.ParseDockerRef("registry.example.com/team/app:latest")
+	if err != nil {
+		t.Fatalf("ParseDockerRef returned error: %v", err)
+	}
+	layerData := []byte("services: {}\n")
+	layer := spec.Descriptor{
+		MediaType: composeOCI.ComposeYAMLMediaType,
+		Digest:    digest.FromBytes(layerData),
+		Size:      int64(len(layerData)),
+		Data:      layerData,
+	}
+
+	for _, test := range []struct {
+		name string
+		app  bool
+	}{
+		{name: "compose project"},
+		{name: "application", app: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result := &publishResult{}
+			pusher := &publishRecordingPusher{}
+			request := publishPushRequest{
+				ctx:        t.Context(),
+				project:    &types.Project{},
+				named:      target,
+				ociVersion: composeOCI.OCIVersion1_1,
+				layers:     []spec.Descriptor{layer},
+				options:    publishOptions{app: test.app},
+				stderr:     io.Discard,
+				result:     result,
+				resolver:   publishFakeResolver{pusher: pusher},
+			}
+			if test.app {
+				request.project.Services = types.Services{
+					"api": {Name: "api", Image: "registry.example.com/team/api:latest"},
+				}
+				request.options.imageCopier = func(_ context.Context, _ remotes.Resolver, _ reference.Named, _ reference.Named) (spec.Descriptor, error) {
+					return spec.Descriptor{MediaType: spec.MediaTypeImageManifest, Digest: digest.FromBytes([]byte("api")), Size: 3}, nil
+				}
+			}
+
+			if err := pushPublishProject(request); err != nil {
+				t.Fatalf("pushPublishProject returned error: %v", err)
+			}
+			if result.Descriptor == nil || result.Descriptor.Digest == "" {
+				t.Fatalf("compose descriptor = %#v, want published descriptor", result.Descriptor)
+			}
+			if test.app && (result.Application == nil || result.Application.Digest == "") {
+				t.Fatalf("application descriptor = %#v, want published descriptor", result.Application)
+			}
+			if !test.app && result.Application != nil {
+				t.Fatalf("application descriptor = %#v, want nil", result.Application)
+			}
+		})
+	}
+}
+
 func TestPublishApplicationIndexReturnsPushErrors(t *testing.T) {
 	project := &types.Project{
 		Services: types.Services{
@@ -537,12 +571,7 @@ services:
 `)
 
 	_, err := publishComposeProject(
-		[]string{composeFile},
-		nil,
-		nil,
-		"publish-build-only",
-		dir,
-		projectLoadOptions{},
+		publishRequestForTest([]string{composeFile}, nil, "publish-build-only", dir),
 		publishOptions{
 			repository: "registry.example.com/team/app:latest",
 			dryRun:     true,
@@ -565,12 +594,7 @@ services:
 `)
 
 	_, err := publishComposeProject(
-		[]string{composeFile},
-		nil,
-		nil,
-		"publish-bind",
-		dir,
-		projectLoadOptions{},
+		publishRequestForTest([]string{composeFile}, nil, "publish-bind", dir),
 		publishOptions{
 			repository: "registry.example.com/team/app:latest",
 			dryRun:     true,
@@ -594,12 +618,7 @@ services:
 `)
 
 	_, err := publishComposeProject(
-		[]string{composeFile},
-		nil,
-		nil,
-		"publish-bind",
-		dir,
-		projectLoadOptions{},
+		publishRequestForTest([]string{composeFile}, nil, "publish-bind", dir),
 		publishOptions{
 			repository: "registry.example.com/team/app:latest",
 			assumeYes:  true,
@@ -855,12 +874,7 @@ services:
 `)
 
 	_, err := publishComposeProject(
-		[]string{composeFile},
-		nil,
-		nil,
-		"publish-include",
-		dir,
-		projectLoadOptions{},
+		publishRequestForTest([]string{composeFile}, nil, "publish-include", dir),
 		publishOptions{
 			repository: "registry.example.com/team/app:latest",
 			dryRun:     true,
@@ -910,12 +924,7 @@ func TestPublishLayerSnapshotsUnknownDescriptor(t *testing.T) {
 
 func TestPublishRejectsMissingRepository(t *testing.T) {
 	_, err := publishComposeProject(
-		nil,
-		nil,
-		nil,
-		"publish-missing-repo",
-		"",
-		projectLoadOptions{},
+		publishRequestForTest(nil, nil, "publish-missing-repo", ""),
 		publishOptions{dryRun: true},
 		io.Discard,
 	)
@@ -926,12 +935,7 @@ func TestPublishRejectsMissingRepository(t *testing.T) {
 
 func TestPublishRejectsInvalidRepository(t *testing.T) {
 	_, err := publishComposeProject(
-		nil,
-		nil,
-		nil,
-		"publish-invalid-repo",
-		"",
-		projectLoadOptions{},
+		publishRequestForTest(nil, nil, "publish-invalid-repo", ""),
 		publishOptions{
 			repository: "bad reference with spaces",
 			dryRun:     true,
@@ -997,12 +1001,7 @@ func TestPublishDescriptorFromOCI(t *testing.T) {
 
 func TestPublishRejectsUnsupportedOCIVersionBeforeLoadingProject(t *testing.T) {
 	_, err := publishComposeProject(
-		nil,
-		nil,
-		nil,
-		"publish-unsupported-oci",
-		"",
-		projectLoadOptions{},
+		publishRequestForTest(nil, nil, "publish-unsupported-oci", ""),
 		publishOptions{
 			repository: "registry.example.com/team/app:latest",
 			ociVersion: "9.9",
@@ -1025,6 +1024,16 @@ func writePublishFixture(t *testing.T, dir, name, content string) string {
 		t.Fatalf("write fixture: %v", err)
 	}
 	return path
+}
+
+func publishRequestForTest(files, envFiles []string, projectName, projectDirectory string) publishRequest {
+	return publishRequest{
+		files:            files,
+		envFiles:         envFiles,
+		projectName:      projectName,
+		projectDirectory: projectDirectory,
+		loadOptions:      projectLoadOptions{},
+	}
 }
 
 func mustPublishProject(t *testing.T, files []string, projectDirectory string) *types.Project {
