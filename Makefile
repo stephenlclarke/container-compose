@@ -17,7 +17,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := all
-.PHONY: upstream-divergence-report upstream-divergence-check upstream-divergence-release-check
+.PHONY: upstream-divergence-report upstream-divergence-check upstream-divergence-release-check docs serve-docs
 
 SWIFT ?= swift
 SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
@@ -36,6 +36,10 @@ SWIFT_COVERAGE_MIN ?= 90
 GO_COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin-release-arm64.tar.gz
+DOCS_OUTPUT_DIR ?= _site
+DOCS_SERVER_DIR ?= _serve
+DOCS_HOSTING_BASE_PATH ?= container-compose
+DOCS_SCRATCH_PATH ?= .build/docc
 COMPOSE_VERSION ?= 0.6.70
 CONTAINER_COMPOSE_SOURCE ?= $(shell $(PYTHON) -c 'import subprocess; result = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True); url = result.stdout.strip() if result.returncode == 0 else ""; url = url[len("git@github.com:"):] if url.startswith("git@github.com:") else url; url = url[len("https://github.com/"):] if url.startswith("https://github.com/") else url; url = url[:-4] if url.endswith(".git") else url; print(url)')
 CONTAINER_COMPOSE_BRANCH ?= $(shell git branch --show-current 2>/dev/null || git rev-parse --short HEAD)
@@ -1381,6 +1385,18 @@ upstream-divergence-check:
 upstream-divergence-release-check:
 	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --strict --require-upstream-current --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
 
+docs:
+	@printf 'Building DocC API documentation...\n'
+	@rm -rf "$(DOCS_OUTPUT_DIR)"
+	@DOCS_SCRATCH_PATH="$(DOCS_SCRATCH_PATH)" ./scripts/make-docs.sh "$(DOCS_OUTPUT_DIR)" "$(DOCS_HOSTING_BASE_PATH)"
+
+serve-docs:
+	@printf 'To browse: open http://127.0.0.1:8000/$(DOCS_HOSTING_BASE_PATH)/documentation/\n'
+	@rm -rf "$(DOCS_SERVER_DIR)"
+	@mkdir -p "$(DOCS_SERVER_DIR)"
+	@cp -a "$(DOCS_OUTPUT_DIR)" "$(DOCS_SERVER_DIR)/$(DOCS_HOSTING_BASE_PATH)"
+	@$(PYTHON) -m http.server --bind 127.0.0.1 --directory "$(DOCS_SERVER_DIR)"
+
 stack-consistency:
 	CONTAINER_STACK_REPO="$(CONTAINER_STACK_REPO)" $(PYTHON) Tools/ci/check-stack-consistency.py
 
@@ -1429,6 +1445,6 @@ pre-commit:
 
 clean:
 	$(SWIFT) package clean
-	rm -rf "$(DIST_DIR)" "$(PLUGIN_ARCHIVE)" .scannerwork coverage.lcov coverage.out coverage.report coverage.xml
+	rm -rf "$(DIST_DIR)" "$(PLUGIN_ARCHIVE)" "$(DOCS_OUTPUT_DIR)" "$(DOCS_SERVER_DIR)" "$(DOCS_SCRATCH_PATH)" .scannerwork coverage.lcov coverage.out coverage.report coverage.xml
 	rm -f *.profraw Tools/compose-normalizer/coverage.out Tools/compose-normalizer/compose-normalizer
 	find Tools -type d -name __pycache__ -prune -exec rm -rf {} +

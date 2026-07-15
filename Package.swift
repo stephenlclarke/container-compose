@@ -34,6 +34,7 @@ let package = Package(
             revision: "be89a7e7237ad14e24621647e27816bc0ccf5283",
         ),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.4.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
     ],
     targets: [
