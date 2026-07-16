@@ -8856,6 +8856,38 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("up rejects interface names that could inject runtime attachment options")
+    func upRejectsDelimitedInterfaceNamesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(interfaceName: "eth0,alias=unexpected"),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid interface_name error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' interface_name 'eth0,alias=unexpected' cannot contain ','"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("up rejects MAC address without a network before creating resources")
     func upRejectsMACAddressWithoutNetworkBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -23183,9 +23215,10 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
-    @Test("run rejects unsupported network options before creating resources")
-    func runRejectsUnsupportedNetworkOptionsBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
+    @Test("run maps interface names to runtime network attachments")
+    func runMapsInterfaceNamesToRuntimeNetworkAttachments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -23202,16 +23235,12 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported network option error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses network attachment options interface_name on network 'backend'; network attachment options need an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "demo_backend,interface=eth0"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
     }
 
     @Test("run maps network mode host to runtime host networking")
