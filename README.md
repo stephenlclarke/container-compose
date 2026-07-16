@@ -39,7 +39,9 @@ Use `--ansi never` for plain output. Unsupported runtime behavior fails before
 side effects with an explicit `unsupported compose feature` message.
 
 Network attachments support Compose `interface_name`, which assigns a stable
-interface name inside the Linux guest.
+interface name inside the Linux guest, and operator-managed `link_local_ips`.
+Each `link_local_ips` value becomes an additional guest address with Docker's
+`/16` IPv4 or `/64` IPv6 default address mask.
 
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
