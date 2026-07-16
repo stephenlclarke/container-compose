@@ -302,14 +302,16 @@ extension ComposeOrchestrator {
     }
 
     /// Validates lifecycle hooks for one-off containers.
-    func validateOneOffRunLifecycleHooks(service: ComposeService, options run: ComposeRunOptions) throws {
-        if hasPreStopHooks(service), !run.detach {
-            throw ComposeError.unsupported("service '\(service.name)' uses pre_stop; foreground compose run cannot execute pre_stop before the one-off init process exits because apple/container does not expose an interceptable foreground stop boundary")
-        }
-        guard hasPostStartHooks(service), !run.detach else {
+    func validateOneOffRunLifecycleHooks(
+        service: ComposeService,
+        options run: ComposeRunOptions,
+        foregroundInteractiveRun: Bool,
+    ) throws {
+        try validateLifecycleHookSupport(service: service)
+        guard !run.detach, hasLifecycleHooks(service), foregroundInteractiveRun else {
             return
         }
-        throw ComposeError.unsupported("service '\(service.name)' uses post_start; foreground compose run cannot execute post_start before attach because apple/container does not expose reattaching to the init process after a hookable detached start, use --detach")
+        throw ComposeError.unsupported("service '\(service.name)' uses lifecycle hooks; interactive foreground compose run requires Apple runtime stdio reattach support")
     }
 
     /// Validates normalized develop.watch trigger metadata for command-level

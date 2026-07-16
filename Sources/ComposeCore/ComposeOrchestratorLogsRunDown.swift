@@ -55,6 +55,13 @@ private struct ComposeRunServicePreparation {
     let imageHealthCheckCache: ComposeImageHealthCheckCache
 }
 
+private struct ComposeOneOffRunInvocation {
+    let labelOverrides: [ComposeLabelOverride]
+    let publishedPorts: [String]
+    let containerName: String
+    let managedLifecycleRun: Bool
+}
+
 public extension ComposeOrchestrator {
     /// Renders direct runtime arguments for log dry-run output.
     internal func logRuntimeArguments(_ request: RuntimeLogArgumentRequest) -> [String] {
@@ -468,7 +475,7 @@ public extension ComposeOrchestrator {
             }
             return activeService
         }
-        try validateOneOffRunLifecycleHooks(service: service, options: run)
+        try validateRunLifecycleHooks(service: service, options: run)
         try validatePublishedPorts(services: dependencyServices)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try validatePublishedPorts(publishedPorts, serviceName: service.name)
@@ -497,26 +504,23 @@ public extension ComposeOrchestrator {
             service: preparation.service,
             options: run,
         )
+        let managedLifecycleRun = !run.detach && hasLifecycleHooks(preparation.service)
         try await removeRunOrphans(
             project: preparation.project,
             requested: run.removeOrphans,
             foregroundInteractive: foregroundInteractiveRun,
         )
         try await ensureRunAnonymousVolumes(preparation: preparation)
-        let arguments = try await runArguments(
-            project: preparation.project,
-            service: preparation.service,
-            options: RunArgumentOptions {
-                $0.detach = run.detach
-                $0.remove = run.remove
-                $0.oneOff = true
-                $0.publishedPorts = publishedPorts
-                $0.containerNameOverride = containerName
-                $0.labelOverrides = labelOverrides
-                $0.envFiles = run.envFiles
-            },
-            externalVolumeMounts: preparation.externalVolumeMounts,
-            imageHealthCheckCache: preparation.imageHealthCheckCache,
+        let invocation = ComposeOneOffRunInvocation(
+            labelOverrides: labelOverrides,
+            publishedPorts: publishedPorts,
+            containerName: containerName,
+            managedLifecycleRun: managedLifecycleRun,
+        )
+        let arguments = try await oneOffRunArguments(
+            preparation: preparation,
+            invocation: invocation,
+            options: run,
         )
         try await runContainerWithProgress(
             arguments,
@@ -525,21 +529,107 @@ public extension ComposeOrchestrator {
             inheritedIO: foregroundInteractiveRun,
             replaceProcess: foregroundInteractiveRun,
         )
-        try await runPostStartHooksIfDetached(
+        if run.detach {
+            try await runPostStartHooks(service: preparation.service, containerID: containerName)
+        }
+        try await finishManagedLifecycleRun(
             service: preparation.service,
-            containerID: containerName,
-            detached: run.detach,
+            containerName: containerName,
+            arguments: arguments,
+            managed: managedLifecycleRun,
+            remove: run.remove,
         )
-        try await removeRunOrphans(
-            project: preparation.project,
-            requested: run.removeOrphans,
-            foregroundInteractive: !foregroundInteractiveRun,
+        try await removeRunOrphansAfterOneOffRun(
+            preparation: preparation,
+            options: run,
+            foregroundInteractive: foregroundInteractiveRun,
         )
     }
 
     /// Determines whether the runtime should inherit terminal input and output for a run.
     private func isForegroundInteractiveRun(service: ComposeService, options run: ComposeRunOptions) -> Bool {
         !run.quiet && !run.detach && (service.tty == true || service.stdinOpen == true)
+    }
+
+    /// Validates hook execution before the run has allocated runtime resources.
+    private func validateRunLifecycleHooks(service: ComposeService, options run: ComposeRunOptions) throws {
+        try validateOneOffRunLifecycleHooks(
+            service: service,
+            options: run,
+            foregroundInteractiveRun: isForegroundInteractiveRun(service: service, options: run),
+        )
+    }
+
+    /// Removes requested project orphans after a non-interactive one-off run finishes.
+    private func removeRunOrphansAfterOneOffRun(
+        preparation: ComposeRunServicePreparation,
+        options run: ComposeRunOptions,
+        foregroundInteractive: Bool,
+    ) async throws {
+        try await removeRunOrphans(
+            project: preparation.project,
+            requested: run.removeOrphans,
+            foregroundInteractive: !foregroundInteractive,
+        )
+    }
+
+    /// Renders the direct runtime invocation for a one-off container.
+    private func oneOffRunArguments(
+        preparation: ComposeRunServicePreparation,
+        invocation: ComposeOneOffRunInvocation,
+        options run: ComposeRunOptions,
+    ) async throws -> [String] {
+        try await runArguments(
+            project: preparation.project,
+            service: preparation.service,
+            options: RunArgumentOptions {
+                $0.detach = run.detach || invocation.managedLifecycleRun
+                // A lifecycle-managed foreground run starts detached so it can
+                // run hooks before following output. Keep `--rm` out of that
+                // invocation: runtimes can reject `--detach --rm`, and removal
+                // could otherwise race log collection. Cleanup runs after the
+                // one-off process and its log stream both finish.
+                $0.remove = run.remove && !invocation.managedLifecycleRun
+                $0.oneOff = true
+                $0.publishedPorts = invocation.publishedPorts
+                $0.containerNameOverride = invocation.containerName
+                $0.labelOverrides = invocation.labelOverrides
+                $0.envFiles = run.envFiles
+            },
+            externalVolumeMounts: preparation.externalVolumeMounts,
+            imageHealthCheckCache: preparation.imageHealthCheckCache,
+        )
+    }
+
+    /// Runs hooks and collects the exit status for a lifecycle-managed one-off run.
+    private func finishManagedLifecycleRun(
+        service: ComposeService,
+        containerName: String,
+        arguments: [String],
+        managed: Bool,
+        remove: Bool,
+    ) async throws {
+        guard managed else { return }
+        let status: Int32
+        do {
+            try await runPostStartHooks(service: service, containerID: containerName)
+            status = try await followForegroundOneOffRun(service: service, containerName: containerName)
+        } catch {
+            if remove {
+                try? await lifecycleManager.deleteContainer(id: containerName, force: false)
+            }
+            throw error
+        }
+        if remove {
+            try await lifecycleManager.deleteContainer(id: containerName, force: false)
+        }
+        guard status == 0 else {
+            throw ComposeError.commandFailed(
+                command: shellQuoted([options.containerBinary] + arguments),
+                status: status,
+                stderr: "",
+            )
+        }
     }
 
     /// Creates labeled anonymous volumes that the one-off service requires.
@@ -555,16 +645,6 @@ public extension ComposeOrchestrator {
             ),
             externalVolumeMounts: preparation.externalVolumeMounts,
         )
-    }
-
-    /// Executes post-start hooks when a one-off container was started in the background.
-    private func runPostStartHooksIfDetached(
-        service: ComposeService,
-        containerID: String,
-        detached: Bool,
-    ) async throws {
-        guard detached else { return }
-        try await runPostStartHooks(service: service, containerID: containerID)
     }
 
     /// Applies one-off CLI overrides before validating the project graph.
