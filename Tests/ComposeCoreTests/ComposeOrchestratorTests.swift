@@ -17232,6 +17232,20 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("resource manager ignores existing volume create errors")
+    func resourceManagerIgnoresExistingVolumeCreateErrors() async throws {
+        let client = RecordingContainerResourceAPIClient(
+            volumeCreateError: VolumeError.volumeAlreadyExists("demo_cache")
+        )
+        let manager = ContainerClientResourceManager(client: client)
+
+        try await manager.createVolume(ComposeVolumeCreateRequest(name: "demo_cache"))
+
+        #expect(await client.requests == [
+            .createVolume(ComposeVolumeCreateRequest(name: "demo_cache")),
+        ])
+    }
+
     @Test("resource manager rejects invalid network subnet before API create")
     func resourceManagerRejectsInvalidNetworkSubnetBeforeAPICreate() async throws {
         let client = RecordingContainerResourceAPIClient()
@@ -27119,6 +27133,7 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
     private let volumes: [ComposeVolumeSummary]
     private let networkCreateError: (any Error)?
     private let networkDeleteError: (any Error)?
+    private let volumeCreateError: (any Error)?
     private let volumeDeleteError: (any Error)?
     private var storage: [ContainerResourceAPIRequest] = []
 
@@ -27127,12 +27142,14 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
         volumes: [ComposeVolumeSummary] = [],
         networkCreateError: (any Error)? = nil,
         networkDeleteError: (any Error)? = nil,
+        volumeCreateError: (any Error)? = nil,
         volumeDeleteError: (any Error)? = nil
     ) {
         self.existingNetworks = existingNetworks
         self.volumes = volumes
         self.networkCreateError = networkCreateError
         self.networkDeleteError = networkDeleteError
+        self.volumeCreateError = volumeCreateError
         self.volumeDeleteError = volumeDeleteError
     }
 
@@ -27169,6 +27186,9 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
 
     func createVolume(_ request: ComposeVolumeCreateRequest) async throws {
         storage.append(.createVolume(request))
+        if let volumeCreateError {
+            throw volumeCreateError
+        }
     }
 
     func listVolumes() async throws -> [ComposeVolumeSummary] {

@@ -15,9 +15,9 @@
 //===----------------------------------------------------------------------===//
 
 import ContainerAPIClient
-import ContainerResource
 import ContainerizationError
 import ContainerizationExtras
+import ContainerResource
 
 /// Runtime volume metadata needed by Compose project commands.
 public struct ComposeVolumeSummary: Codable, Equatable, Sendable {
@@ -32,7 +32,7 @@ public struct ComposeVolumeSummary: Codable, Equatable, Sendable {
         driver: String = "local",
         source: String = "",
         labels: [String: String] = [:],
-        sizeInBytes: UInt64? = nil
+        sizeInBytes: UInt64? = nil,
     ) {
         self.name = name
         self.driver = driver
@@ -48,7 +48,7 @@ public struct ComposeVolumeSummary: Codable, Equatable, Sendable {
             driver: configuration.driver,
             source: configuration.source,
             labels: configuration.labels,
-            sizeInBytes: configuration.sizeInBytes
+            sizeInBytes: configuration.sizeInBytes,
         )
     }
 }
@@ -68,7 +68,7 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
         ipv4Subnet: String? = nil,
         ipv6Subnet: String? = nil,
         driverOpts: [String: String] = [:],
-        labels: [String: String] = [:]
+        labels: [String: String] = [:],
     ) {
         self.name = name
         self.isInternal = isInternal
@@ -90,7 +90,7 @@ public struct ComposeVolumeCreateRequest: Equatable, Sendable {
         name: String,
         driver: String? = nil,
         driverOpts: [String: String] = [:],
-        labels: [String: String] = [:]
+        labels: [String: String] = [:],
     ) {
         self.name = name
         self.driver = driver
@@ -194,18 +194,18 @@ public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
                 name: $0.name,
                 driver: $0.resolvedDriver,
                 driverOpts: $0.driverOpts,
-                labels: $0.labels
+                labels: $0.labels,
             )
         },
         listVolumes: @escaping ListVolumes = { try await ClientVolume.list().map(ComposeVolumeSummary.init(configuration:)) },
-        deleteVolume: @escaping DeleteVolume = { try await ClientVolume.delete(name: $0) }
+        deleteVolume: @escaping DeleteVolume = { try await ClientVolume.delete(name: $0) },
     ) {
-        self.createNetworkOperation = createNetwork
-        self.networkExistsOperation = networkExists
-        self.deleteNetworkOperation = deleteNetwork
-        self.createVolumeOperation = createVolume
-        self.listVolumesOperation = listVolumes
-        self.deleteVolumeOperation = deleteVolume
+        createNetworkOperation = createNetwork
+        networkExistsOperation = networkExists
+        deleteNetworkOperation = deleteNetwork
+        createVolumeOperation = createVolume
+        listVolumesOperation = listVolumes
+        deleteVolumeOperation = deleteVolume
     }
 
     /// Creates a network through `NetworkClient`.
@@ -253,11 +253,11 @@ public struct ContainerClientResourceManager: ContainerResourceManaging {
         let configuration = try NetworkConfiguration(
             name: request.name,
             mode: request.isInternal ? .hostOnly : .nat,
-            ipv4Subnet: try request.ipv4Subnet.map { try CIDRv4($0) },
-            ipv6Subnet: try request.ipv6Subnet.map { try CIDRv6($0) },
-            labels: try ResourceLabels(request.labels),
+            ipv4Subnet: request.ipv4Subnet.map { try CIDRv4($0) },
+            ipv6Subnet: request.ipv6Subnet.map { try CIDRv6($0) },
+            labels: ResourceLabels(request.labels),
             plugin: "container-network-vmnet",
-            options: request.driverOpts
+            options: request.driverOpts,
         )
         do {
             try await client.createNetwork(configuration: configuration)
@@ -280,7 +280,14 @@ public struct ContainerClientResourceManager: ContainerResourceManaging {
 
     /// Creates a Compose project volume through `ClientVolume`.
     public func createVolume(_ request: ComposeVolumeCreateRequest) async throws {
-        try await client.createVolume(request)
+        do {
+            try await client.createVolume(request)
+        } catch let error as VolumeError {
+            if case .volumeAlreadyExists = error {
+                return
+            }
+            throw error
+        }
     }
 
     /// Lists local volumes through `ClientVolume`.
