@@ -376,7 +376,7 @@ struct GlobalOptions: ParsableArguments {
     @Flag(name: .customLong("compatibility"), help: "Run compose in backward compatibility mode.")
     var compatibility: Bool = false
 
-    @Option(name: .customLong("parallel"), help: "Control max parallel image operations.")
+    @Option(name: .customLong("parallel"), help: "Control max parallelism, -1 for unlimited.")
     var parallel: Int?
 
     @Flag(name: .customLong("dry-run"), help: "Print container commands instead of running them.")

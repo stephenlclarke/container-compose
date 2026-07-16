@@ -2411,12 +2411,14 @@ struct ComposeOrchestratorTests {
         )
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
-        #expect(commands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
-        #expect(commands[1].containsSequence(["container", "build", "--tag", "demo_worker:latest"]))
-        #expect(commands[1].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("worker").standardizedFileURL.path)
-        #expect(commands[2].starts(with: ["container", "create", "--name", "demo-api-1"]))
-        #expect(commands[3].starts(with: ["container", "create", "--name", "demo-worker-1"]))
+        let apiBuild = try #require(commands.first { $0.containsSequence(["container", "build", "--tag", "example/api"]) })
+        let workerBuild = try #require(commands.first { $0.containsSequence(["container", "build", "--tag", "demo_worker:latest"]) })
+        let firstCreateIndex = try #require(commands.firstIndex { $0.starts(with: ["container", "create"]) })
+        #expect(apiBuild.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
+        #expect(workerBuild.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("worker").standardizedFileURL.path)
+        #expect(commands[..<firstCreateIndex].allSatisfy { $0.starts(with: ["container", "build"]) })
+        #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-api-1"]) })
+        #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-worker-1"]) })
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-worker-1"])
     }
 
@@ -12328,40 +12330,115 @@ struct ComposeOrchestratorTests {
         try await orchestrator.pull(project: project, services: ["api", "worker"])
         try await orchestrator.push(project: project, services: ["api", "worker"])
 
-        #expect(runner.commands[0].arguments.containsSequence(["container", "build", "--tag", "example/api:latest"]))
-        #expect(runner.commands[0].arguments.filter { $0 == "example/api:latest" }.count == 1)
-        #expect(runner.commands[0].arguments.containsSequence(["--tag", "example/api:dev"]))
-        #expect(runner.commands[0].arguments.containsSequence(["--tag", "example/api:test"]))
-        #expect(runner.commands[0].arguments.containsSequence([
+        let apiCommand = try #require(runner.commands.first { command in
+            command.arguments.containsSequence(["container", "build", "--tag", "example/api:latest"])
+        }?.arguments)
+        let workerCommand = try #require(runner.commands.first { command in
+            command.arguments.containsSequence(["container", "build", "--tag", "demo_worker:latest"])
+        }?.arguments)
+        #expect(apiCommand.filter { $0 == "example/api:latest" }.count == 1)
+        #expect(apiCommand.containsSequence(["--tag", "example/api:dev"]))
+        #expect(apiCommand.containsSequence(["--tag", "example/api:test"]))
+        #expect(apiCommand.containsSequence([
             "--file",
             URL(fileURLWithPath: project.workingDirectory, isDirectory: true)
                 .appendingPathComponent("api/Containerfile")
                 .standardizedFileURL
                 .path,
         ]))
-        #expect(runner.commands[0].arguments.containsSequence(["--target", "runtime"]))
-        #expect(runner.commands[0].arguments.contains("--no-cache"))
-        #expect(runner.commands[0].arguments.contains("--pull"))
-        #expect(runner.commands[0].arguments.containsSequence(["--platform", "linux/amd64"]))
-        #expect(runner.commands[0].arguments.containsSequence(["--platform", "linux/arm64"]))
-        #expect(runner.commands[0].arguments.containsSequence(["--cache-in", "type=registry,ref=example/api:cache"]))
-        #expect(runner.commands[0].arguments.containsSequence(["--cache-out", "type=local,dest=.cache"]))
-        #expect(runner.commands[0].arguments.containsSequence(["--label", "build.label=true"]))
-        #expect(runner.commands[0].arguments.containsSequence(["--label", "org.opencontainers.image.title=api"]))
-        #expect(runner.commands[0].arguments.containsSequence(["--secret", "id=file_token,src=./token.txt"]))
-        #expect(runner.commands[0].arguments.containsSequence(["--secret", "id=npm_token,env=NPM_TOKEN"]))
-        #expect(runner.commands[0].arguments.containsSequence(["--provenance", "mode=min"]))
-        #expect(!runner.commands[0].arguments.contains("--sbom"))
-        #expect(runner.commands[0].arguments.containsSequence(["--build-arg", "VERSION=1"]))
-        #expect(runner.commands[0].arguments.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
-        #expect(runner.commands[1].arguments.containsSequence(["--tag", "demo_worker:latest"]))
-        #expect(runner.commands[1].arguments.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("worker").standardizedFileURL.path)
+        #expect(apiCommand.containsSequence(["--target", "runtime"]))
+        #expect(apiCommand.contains("--no-cache"))
+        #expect(apiCommand.contains("--pull"))
+        #expect(apiCommand.containsSequence(["--platform", "linux/amd64"]))
+        #expect(apiCommand.containsSequence(["--platform", "linux/arm64"]))
+        #expect(apiCommand.containsSequence(["--cache-in", "type=registry,ref=example/api:cache"]))
+        #expect(apiCommand.containsSequence(["--cache-out", "type=local,dest=.cache"]))
+        #expect(apiCommand.containsSequence(["--label", "build.label=true"]))
+        #expect(apiCommand.containsSequence(["--label", "org.opencontainers.image.title=api"]))
+        #expect(apiCommand.containsSequence(["--secret", "id=file_token,src=./token.txt"]))
+        #expect(apiCommand.containsSequence(["--secret", "id=npm_token,env=NPM_TOKEN"]))
+        #expect(apiCommand.containsSequence(["--provenance", "mode=min"]))
+        #expect(!apiCommand.contains("--sbom"))
+        #expect(apiCommand.containsSequence(["--build-arg", "VERSION=1"]))
+        #expect(apiCommand.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
+        #expect(workerCommand.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("worker").standardizedFileURL.path)
         #expect(runner.commands.count == 2)
         #expect(await imageManager.requests == [
             .pull("example/api:latest"),
             .push("example/api:latest"),
         ])
         #expect(emitted.messages == ["example/api:latest"])
+    }
+
+    @Test("build honors the configured parallel engine call limit")
+    func buildHonorsConfiguredParallelEngineCallLimit() async throws {
+        let runner = DelayedBuildRunner(delay: .milliseconds(50))
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+                "cache": composeService(name: "cache", image: "example/cache:latest") {
+                    $0.build = ComposeBuild(context: "cache")
+                },
+                "worker": composeService(name: "worker", image: "example/worker:latest") {
+                    $0.build = ComposeBuild(context: "worker")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(maxParallelism: 2),
+        ).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.quiet = true
+            },
+        )
+
+        #expect(await runner.commands.count == 3)
+        #expect(await runner.maximumActiveOperations == 2)
+    }
+
+    @Test("build layers additional context dependencies before dependents")
+    func buildLayersAdditionalContextDependenciesBeforeDependents() async throws {
+        let runner = DelayedBuildRunner(delay: .milliseconds(50))
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(contexts: ComposeBuild.Contexts(
+                        context: "api",
+                        additionalContexts: ["base": "service:base"],
+                    ))
+                },
+                "base": composeService(name: "base", image: "example/base:latest") {
+                    $0.build = ComposeBuild(context: "base")
+                },
+                "worker": composeService(name: "worker", image: "example/worker:latest") {
+                    $0.build = ComposeBuild(context: "worker")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(maxParallelism: 2),
+        ).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.quiet = true
+            },
+        )
+
+        let commands = await runner.commands
+        let targets = commands.compactMap(\.last)
+        let baseIndex = try #require(targets.firstIndex { $0.hasSuffix("/base") })
+        let apiIndex = try #require(targets.firstIndex { $0.hasSuffix("/api") })
+        #expect(baseIndex < apiIndex)
+        #expect(await runner.maximumActiveOperations == 2)
     }
 
     @Test("build resolves Dockerfile relative to build context")
@@ -12484,8 +12561,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("pull include deps with missing policy pulls dependency images first")
-    func pullIncludeDepsWithMissingPolicyPullsDependencyImagesFirst() async throws {
+    @Test("pull include deps selects dependency images with the missing policy")
+    func pullIncludeDepsWithMissingPolicySelectsDependencyImages() async throws {
         let imageManager = RecordingContainerImageManager()
         let project = composeProject(
             name: "demo",
@@ -12512,10 +12589,10 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        #expect(await imageManager.requests == [
-            .pullMissing("example/db:latest"),
-            .pullMissing("example/api:latest"),
-        ])
+        let requests = await imageManager.requests
+        #expect(requests.count == 2)
+        #expect(requests.contains(.pullMissing("example/db:latest")))
+        #expect(requests.contains(.pullMissing("example/api:latest")))
     }
 
     @Test("pull ignore buildable skips services with build sections")
@@ -12567,10 +12644,10 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        #expect(await imageManager.requests == [
-            .pull("example/api:latest"),
-            .pull("example/worker:latest"),
-        ])
+        let requests = await imageManager.requests
+        #expect(requests.count == 2)
+        #expect(requests.contains(.pull("example/api:latest")))
+        #expect(requests.contains(.pull("example/worker:latest")))
     }
 
     @Test("pull honors configured parallel image operation limit")
@@ -12603,6 +12680,30 @@ struct ComposeOrchestratorTests {
         #expect(requests.contains(.pull("example/cache:latest")))
         #expect(requests.contains(.pull("example/worker:latest")))
         #expect(await concurrency.maximumActiveOperations == 2)
+    }
+
+    @Test("pull defaults to unlimited independent engine operations")
+    func pullDefaultsToUnlimitedParallelImageOperations() async throws {
+        let concurrency = OperationConcurrencyRecorder(delay: .milliseconds(50))
+        let imageManager = RecordingContainerImageManager(onPullImage: { _ in
+            await concurrency.recordOperation()
+        })
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest"),
+                "db": composeService(name: "db", image: "example/db:latest"),
+                "worker": composeService(name: "worker", image: "example/worker:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+            }
+        ).pull(project: project, options: ComposePullOptions())
+
+        #expect(await concurrency.maximumActiveOperations == 3)
     }
 
     @Test("pull rejects invalid parallelism before side effects")
@@ -12659,8 +12760,8 @@ struct ComposeOrchestratorTests {
         #expect(await imageManager.requests.isEmpty)
     }
 
-    @Test("push include deps pushes dependency images first")
-    func pushIncludeDepsPushesDependencyImagesFirst() async throws {
+    @Test("push include deps selects dependency images")
+    func pushIncludeDepsSelectsDependencyImages() async throws {
         let imageManager = RecordingContainerImageManager()
         let project = composeProject(
             name: "demo",
@@ -12687,10 +12788,10 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        #expect(await imageManager.requests == [
-            .push("example/db:latest"),
-            .push("example/api:latest"),
-        ])
+        let requests = await imageManager.requests
+        #expect(requests.count == 2)
+        #expect(requests.contains(.push("example/db:latest")))
+        #expect(requests.contains(.push("example/api:latest")))
     }
 
     @Test("push quiet suppresses emitted pushed references")
@@ -12746,10 +12847,10 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        #expect(await imageManager.requests == [
-            .push("example/api:latest"),
-            .push("example/worker:latest"),
-        ])
+        let requests = await imageManager.requests
+        #expect(requests.count == 2)
+        #expect(requests.contains(.push("example/api:latest")))
+        #expect(requests.contains(.push("example/worker:latest")))
     }
 
     @Test("push honors unlimited parallel image operations")
@@ -28221,6 +28322,40 @@ private actor OperationConcurrencyRecorder {
         maximum = max(maximum, activeOperations)
         try? await Task.sleep(for: delay)
         activeOperations -= 1
+    }
+}
+
+private actor DelayedBuildRunner: CommandRunning {
+    private let delay: Duration
+    private var activeOperations = 0
+    private var maximum = 0
+    private var storedCommands: [[String]] = []
+
+    init(delay: Duration) {
+        self.delay = delay
+    }
+
+    var commands: [[String]] {
+        storedCommands
+    }
+
+    var maximumActiveOperations: Int {
+        maximum
+    }
+
+    func run(
+        _ executable: String,
+        _ arguments: [String],
+        workingDirectory: URL?,
+        environment: [String: String]?,
+        io: CommandIO,
+    ) async throws -> CommandResult {
+        activeOperations += 1
+        maximum = max(maximum, activeOperations)
+        try? await Task.sleep(for: delay)
+        storedCommands.append(arguments)
+        activeOperations -= 1
+        return .success
     }
 }
 

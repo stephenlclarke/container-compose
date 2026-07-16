@@ -152,18 +152,11 @@ extension ComposeOrchestrator {
                 throw ComposeError.invalidProject("unknown service '\(name)'")
             }
             visiting.insert(name)
-            if includeRuntimeDependencies {
-                for (dependency, metadata) in serviceDependencies(service) {
-                    if metadata.required == false, project.services[dependency] == nil {
-                        continue
-                    }
-                    try visit(dependency)
-                }
-            }
-            for dependency in try buildAdditionalContextServiceNames(build: service.build) {
-                guard project.services[dependency] != nil else {
-                    throw ComposeError.invalidProject("build additional_contexts references unknown service '\(dependency)'")
-                }
+            for dependency in try buildServiceDependencies(
+                project: project,
+                service: service,
+                includeRuntimeDependencies: includeRuntimeDependencies,
+            ) {
                 try visit(dependency)
             }
             visiting.remove(name)
@@ -176,6 +169,64 @@ extension ComposeOrchestrator {
             try visit(name)
         }
         return ordered
+    }
+
+    /// Returns build-order dependencies for one service.
+    func buildServiceDependencies(
+        project: ComposeProject,
+        service: ComposeService,
+        includeRuntimeDependencies: Bool,
+    ) throws -> [String] {
+        var names = Set<String>()
+        if includeRuntimeDependencies {
+            for (dependency, metadata) in serviceDependencies(service) {
+                if metadata.required == false, project.services[dependency] == nil {
+                    continue
+                }
+                names.insert(dependency)
+            }
+        }
+        for dependency in try buildAdditionalContextServiceNames(build: service.build) {
+            guard project.services[dependency] != nil else {
+                throw ComposeError.invalidProject("build additional_contexts references unknown service '\(dependency)'")
+            }
+            names.insert(dependency)
+        }
+        return names.sorted()
+    }
+
+    /// Groups independently buildable services into dependency-safe layers.
+    func buildServiceLayers(
+        project: ComposeProject,
+        services: [ComposeService],
+        includeRuntimeDependencies: Bool,
+    ) throws -> [[ComposeService]] {
+        let buildServices = services.filter { $0.build != nil }
+        let buildServiceNames = Set(buildServices.map(\.name))
+        let servicesByName = Dictionary(uniqueKeysWithValues: buildServices.map { ($0.name, $0) })
+        var dependencies = [String: Set<String>]()
+        for service in buildServices {
+            dependencies[service.name] = Set(try buildServiceDependencies(
+                project: project,
+                service: service,
+                includeRuntimeDependencies: includeRuntimeDependencies,
+            )).intersection(buildServiceNames)
+        }
+
+        var remaining = buildServiceNames
+        var completed = Set<String>()
+        var layers = [[ComposeService]]()
+        while !remaining.isEmpty {
+            let ready = remaining.filter { dependencies[$0, default: []].isSubset(of: completed) }.sorted()
+            guard !ready.isEmpty else {
+                let names = remaining.sorted().joined(separator: ", ")
+                throw ComposeError.invalidProject("build dependency cycle involving \(names)")
+            }
+            layers.append(ready.compactMap { servicesByName[$0] })
+            remaining.subtract(ready)
+            completed.formUnion(ready)
+        }
+        return layers
     }
 
     /// Resolves Compose `dockerfile` relative to the build context for apple/container.

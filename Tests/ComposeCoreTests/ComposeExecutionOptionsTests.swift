@@ -33,6 +33,42 @@ struct ComposeExecutionOptionsTests {
     }
 
     @Test
+    func `parallelism defaults to unlimited when no control is configured`() throws {
+        #expect(try ComposeExecutionOptions.effectiveParallelism(explicit: nil, environment: [:]) == -1)
+    }
+
+    @Test
+    func `explicit parallelism overrides the environment`() throws {
+        #expect(try ComposeExecutionOptions.effectiveParallelism(
+            explicit: 2,
+            environment: ["COMPOSE_PARALLEL_LIMIT": "4"],
+        ) == 2)
+    }
+
+    @Test
+    func `parallelism uses the environment when the option is absent`() throws {
+        #expect(try ComposeExecutionOptions.effectiveParallelism(
+            explicit: nil,
+            environment: ["COMPOSE_PARALLEL_LIMIT": "3"],
+        ) == 3)
+    }
+
+    @Test
+    func `parallelism rejects an invalid environment value`() {
+        do {
+            _ = try ComposeExecutionOptions.effectiveParallelism(
+                explicit: nil,
+                environment: ["COMPOSE_PARALLEL_LIMIT": "0"],
+            )
+            Issue.record("Expected invalid COMPOSE_PARALLEL_LIMIT failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("COMPOSE_PARALLEL_LIMIT must be -1 or a positive integer"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test
     func `dynamic host port allocation supports wildcard UDP and bracketed IPv6`() throws {
         let wildcardUDPPort = try ComposeExecutionOptions.defaultHostPortAllocator(
             hostAddress: nil,

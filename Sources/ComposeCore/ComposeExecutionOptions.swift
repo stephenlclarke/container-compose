@@ -214,6 +214,27 @@ public struct ComposeExecutionOptions {
         self.maxParallelism = maxParallelism
     }
 
+    /// Resolves Docker Compose's root parallelism controls.
+    ///
+    /// An explicit `--parallel` value wins over `COMPOSE_PARALLEL_LIMIT`.
+    /// Docker Compose uses `-1` when neither control is supplied, which means
+    /// that independent engine calls are not locally capped.
+    public static func effectiveParallelism(
+        explicit: Int?,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+    ) throws -> Int {
+        if let explicit {
+            return try validateParallelism(explicit, source: "--parallel")
+        }
+        guard let configured = environment["COMPOSE_PARALLEL_LIMIT"] else {
+            return -1
+        }
+        guard let limit = Int(configured.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw ComposeError.invalidProject("COMPOSE_PARALLEL_LIMIT must be -1 or a positive integer")
+        }
+        return try validateParallelism(limit, source: "COMPOSE_PARALLEL_LIMIT")
+    }
+
     public init(dryRun: Bool = false, emit: @escaping @Sendable (String) -> Void) {
         self.init(
             dryRun: dryRun,
@@ -333,6 +354,14 @@ public struct ComposeExecutionOptions {
         ProcessInfo.processInfo.environment["CONTAINER_BIN"]
             ?? ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_CONTAINER"]
             ?? "container"
+    }
+
+    /// Validates the values accepted by Docker Compose's parallelism controls.
+    private static func validateParallelism(_ value: Int, source: String) throws -> Int {
+        guard value == -1 || value > 0 else {
+            throw ComposeError.invalidProject("\(source) must be -1 or a positive integer")
+        }
+        return value
     }
 
     public static func defaultInitImage() -> String? {

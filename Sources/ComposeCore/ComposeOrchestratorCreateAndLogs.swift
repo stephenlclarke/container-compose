@@ -243,20 +243,52 @@ public extension ComposeOrchestrator {
             try options.emit(renderBuildBakeFile(project: project, services: services, options: build))
             return
         }
-        for service in services where service.build != nil {
-            if build.quiet || options.dryRun {
-                try await buildService(project: project, service: service, options: build)
-            } else {
-                try await options.progress.activityWithExternalOutput("Building \(service.name)") {
-                    try await buildService(project: project, service: service, options: build)
+        let layers = try buildServiceLayers(
+            project: project,
+            services: services,
+            includeRuntimeDependencies: build.withDependencies,
+        )
+        let concurrentProject = ConcurrentEngineOperationValue(value: project)
+        let concurrentOptions = ConcurrentEngineOperationValue(value: build)
+        for layer in layers {
+            guard let limit = try engineOperationParallelLimit(operationCount: layer.count) else {
+                for service in layer {
+                    try await buildAndPushService(
+                        project: project,
+                        service: service,
+                        options: build,
+                    )
                 }
+                continue
             }
-            if build.push, !build.check, let image = service.image {
-                if options.dryRun {
-                    try await runContainer(["image", "push", image])
-                } else {
-                    try await imageManager.pushImage(image, emit: options.emit)
-                }
+            try await runBoundedEngineOperations(layer, limit: limit) { [self, concurrentProject, concurrentOptions] service in
+                try await buildAndPushService(
+                    project: concurrentProject.value,
+                    service: service,
+                    options: concurrentOptions.value,
+                )
+            }
+        }
+    }
+
+    /// Builds one service and performs its requested post-build push.
+    private func buildAndPushService(
+        project: ComposeProject,
+        service: ComposeService,
+        options buildOptions: ComposeBuildOptions,
+    ) async throws {
+        if buildOptions.quiet || options.dryRun {
+            try await buildService(project: project, service: service, options: buildOptions)
+        } else {
+            try await options.progress.activityWithExternalOutput("Building \(service.name)") {
+                try await buildService(project: project, service: service, options: buildOptions)
+            }
+        }
+        if buildOptions.push, !buildOptions.check, let image = service.image {
+            if options.dryRun {
+                try await runContainer(["image", "push", image])
+            } else {
+                try await imageManager.pushImage(image, emit: options.emit)
             }
         }
     }

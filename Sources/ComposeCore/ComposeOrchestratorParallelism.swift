@@ -17,15 +17,15 @@
 import Foundation
 
 extension ComposeOrchestrator {
-    /// Runs image operations sequentially by default, or with the Docker
-    /// Compose-compatible explicit `--parallel` limit when requested.
+    /// Runs independent image operations using Docker Compose's effective
+    /// parallelism limit.
     func runImageOperations(
         _ images: [String],
         progressMessage: String,
         quiet: Bool,
         operation: @escaping @Sendable (_ image: String, _ quiet: Bool) async throws -> Void,
     ) async throws {
-        guard let limit = try imageOperationParallelLimit(operationCount: images.count) else {
+        guard let limit = try engineOperationParallelLimit(operationCount: images.count) else {
             for image in images {
                 try await operation(image, quiet)
             }
@@ -33,20 +33,24 @@ extension ComposeOrchestrator {
         }
 
         try await progressActivity(progressMessage, quiet: quiet) {
-            try await runBoundedImageOperations(images, limit: limit) { image in
+            try await runBoundedEngineOperations(images, limit: limit) { image in
                 try await operation(image, true)
             }
         }
     }
 
-    /// Returns the effective bounded parallelism for image operations.
-    func imageOperationParallelLimit(operationCount: Int) throws -> Int? {
-        guard let requested = options.maxParallelism else {
-            return nil
-        }
-        guard requested == -1 || requested > 0 else {
-            throw ComposeError.invalidProject("--parallel must be -1 or a positive integer")
-        }
+    /// Returns the effective parallelism for independent engine operations.
+    ///
+    /// A `nil` return value preserves deterministic handling for dry runs,
+    /// single-operation batches, and an explicit limit of one.
+    func engineOperationParallelLimit(
+        operationCount: Int,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+    ) throws -> Int? {
+        let requested = try ComposeExecutionOptions.effectiveParallelism(
+            explicit: options.maxParallelism,
+            environment: environment,
+        )
         guard !options.dryRun, operationCount > 1 else {
             return nil
         }
@@ -56,35 +60,47 @@ extension ComposeOrchestrator {
         return requested > 1 ? min(requested, operationCount) : nil
     }
 
-    private func runBoundedImageOperations(
-        _ images: [String],
+    /// Executes values with a bounded task group while preserving cancellation.
+    func runBoundedEngineOperations<Value>(
+        _ values: [Value],
         limit: Int,
-        operation: @escaping @Sendable (String) async throws -> Void,
+        operation: @escaping @Sendable (Value) async throws -> Void,
     ) async throws {
-        var iterator = images.makeIterator()
+        var iterator = values.makeIterator()
         try await withThrowingTaskGroup(of: Void.self) { group in
             var activeTasks = 0
             for _ in 0 ..< limit {
-                guard let image = iterator.next() else {
+                guard let value = iterator.next() else {
                     break
                 }
                 activeTasks += 1
+                let concurrentValue = ConcurrentEngineOperationValue(value: value)
                 group.addTask {
-                    try await operation(image)
+                    try await operation(concurrentValue.value)
                 }
             }
 
             while activeTasks > 0 {
                 try await group.next()
                 activeTasks -= 1
-                guard let image = iterator.next() else {
+                guard let value = iterator.next() else {
                     continue
                 }
                 activeTasks += 1
+                let concurrentValue = ConcurrentEngineOperationValue(value: value)
                 group.addTask {
-                    try await operation(image)
+                    try await operation(concurrentValue.value)
                 }
             }
         }
     }
+}
+
+/// Carries an immutable value into an independent engine-operation task.
+///
+/// Compose models are copied before scheduling and never mutated while their
+/// task group is running. The wrapper confines that audited assumption to the
+/// parallel scheduler instead of marking the broad normalized model Sendable.
+struct ConcurrentEngineOperationValue<Value>: @unchecked Sendable {
+    let value: Value
 }
