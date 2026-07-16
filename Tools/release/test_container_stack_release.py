@@ -235,10 +235,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('asset="container-compose-plugin-current-${short_sha}-arm64.tar.gz"', workflow)
         self.assertIn('highlights_asset="release-highlights-current-${short_sha}.json"', workflow)
         self.assertIn('RELEASE_PHASE="${release_phase}"', workflow)
-        self.assertIn("Finalize current release pointer", workflow)
+        self.assertIn("Publish Current build release", workflow)
         self.assertLess(
             workflow.index("Commit atomic Homebrew stack update"),
-            workflow.index("Finalize current release pointer"),
+            workflow.index("Publish Current build release"),
         )
         self.assertIn('RELEASE_MUTABLE="${release_mutable}"', workflow)
         self.assertIn("--delete-superseded-current-releases", workflow)
@@ -318,6 +318,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("workflow_run:", workflow)
         self.assertIn("branches:\n      - main", workflow)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'", workflow)
+        self.assertIn('if [[ "${WORKFLOW_RUN_EVENT}" != "push" ]]', workflow)
+        self.assertIn('elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == "main" ]]', workflow)
         self.assertIn("timeout-minutes: 120", workflow)
         self.assertIn("name: Cache SwiftPM build artifacts", workflow)
         self.assertIn("container-compose/.build", workflow)

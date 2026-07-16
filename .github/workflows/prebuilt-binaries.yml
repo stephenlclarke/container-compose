@@ -918,7 +918,7 @@ jobs:
           git commit -m "chore(homebrew): update ${{ steps.lane.outputs.package_lane }} stack ${{ steps.lane.outputs.compose_version }}"
           git push
 
-      - name: Finalize current release pointer
+      - name: Publish Current build release
         if: steps.current-freshness.outputs.publish == 'true' && needs.resolve-publish-context.outputs.ref_type == 'branch'
         env:
           GH_TOKEN: ${{ github.token }}

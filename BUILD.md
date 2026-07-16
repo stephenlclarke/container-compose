@@ -167,7 +167,7 @@ check on that tag commit; the package workflow requires that check, then repeats
 
 There are two package lanes, with no manual asset copying:
 
-- Every green `main` commit refreshes the explicit `current` tag and one mutable GitHub prerelease named **Current build**, plus the opt-in `container-current` / `container-compose-current` Homebrew pair.
+- Every successful CI run that originates from a push to `main` refreshes the explicit `current` tag and a newly published mutable GitHub prerelease named **Current build**, plus the opt-in `container-current` / `container-compose-current` Homebrew pair. A commit superseded before promotion is skipped so the subsequent successful run publishes the newest `main` head.
 - A semantic release is an immutable `x.y.z` tag and becomes Homebrew's default `container` / `container-compose` pair.
 
 `current` is deliberately an unsigned, movable pointer; signing it would make
@@ -186,9 +186,12 @@ release helper enforces these rules.
 
 Current publication is recoverable across GitHub and Homebrew: it stages
 immutable commit-identified archives on the existing Current prerelease, updates
-the matching Homebrew formula pair, and only then advances the mutable `current`
-tag and release notes. If a later phase fails, the preceding formula pair stays
-installable and rerunning the same publication resumes it.
+the matching Homebrew formula pair, then moves the mutable `current` tag and
+recreates the release object from those staged assets. Recreating the object
+makes GitHub's published time represent this Current build rather than the
+first build that used the `current` tag. If that final replacement is
+interrupted, rerunning the same publication recreates the release from the same
+candidate assets.
 
 ### Scheduled Stable Releases
 
@@ -218,8 +221,9 @@ Do not copy, rename, or edit the mutable GitHub **Current build** prerelease.
 It is an installable view of green `main`, not a stable release candidate asset.
 Promotion always rebuilds the exact tagged source into immutable stable assets,
 which is what keeps the semantic version, runtime pin, checksums, Homebrew
-formulae, and release notes deterministic. The current prerelease is updated
-in place before its tag moves, so it is never deleted and recreated.
+formulae, and release notes deterministic. The current prerelease is recreated
+by its workflow after the matching Homebrew formulae update, so its GitHub
+published time always identifies the build users are viewing.
 
 After `make release-plan` confirms the intended next version, promote the
 validated `main` source with one selector. The selector is resolved from the

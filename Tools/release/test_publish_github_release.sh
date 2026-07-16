@@ -147,9 +147,11 @@ main_finalize_calls="${temporary_directory}/main-finalize.calls"
 run_publisher branch exists "${main_finalize_calls}" "" finalize
 grep -Fqx "tag --no-sign --force current 0123456789012345678901234567890123456789" "${main_finalize_calls}.git"
 grep -Fqx "push --force origin refs/tags/current" "${main_finalize_calls}.git"
-grep -Fqx "release edit current --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --target 0123456789012345678901234567890123456789 --prerelease" "${main_finalize_calls}"
-if grep -Eq 'release (create|upload|delete)' "${main_finalize_calls}"; then
-  printf 'current finalization unexpectedly changed release assets\n' >&2
+grep -Fqx "release delete current --repo stephenlclarke/container-compose --yes" "${main_finalize_calls}"
+grep -Fqx "release create current ${asset} ${checksum} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --verify-tag --prerelease --latest=false" "${main_finalize_calls}"
+grep -Fqx "release edit current --repo stephenlclarke/container-compose --target 0123456789012345678901234567890123456789 --prerelease" "${main_finalize_calls}"
+if grep -Eq 'release upload' "${main_finalize_calls}" || grep -Fq -- '--cleanup-tag' "${main_finalize_calls}"; then
+  printf 'current finalization unexpectedly changed staged assets or removed the current tag\n' >&2
   exit 1
 fi
 
@@ -160,14 +162,11 @@ grep -Fqx "tag --no-sign --force current 012345678901234567890123456789012345678
 grep -Fqx "push --force origin refs/tags/current" "${main_create_calls}.git"
 
 main_missing_finalize_calls="${temporary_directory}/main-missing-finalize.calls"
-if run_publisher branch missing "${main_missing_finalize_calls}" "" finalize; then
-  printf 'current finalization unexpectedly created a missing release\n' >&2
-  exit 1
-fi
-if [[ -e "${main_missing_finalize_calls}" || -e "${main_missing_finalize_calls}.git" ]]; then
-  printf 'current finalization mutated a missing release\n' >&2
-  exit 1
-fi
+run_publisher branch missing "${main_missing_finalize_calls}" "" finalize
+grep -Fqx "release create current ${asset} ${checksum} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --verify-tag --prerelease --latest=false" "${main_missing_finalize_calls}"
+grep -Fqx "release edit current --repo stephenlclarke/container-compose --target 0123456789012345678901234567890123456789 --prerelease" "${main_missing_finalize_calls}"
+grep -Fqx "tag --no-sign --force current 0123456789012345678901234567890123456789" "${main_missing_finalize_calls}.git"
+grep -Fqx "push --force origin refs/tags/current" "${main_missing_finalize_calls}.git"
 
 runtime_asset="${temporary_directory}/container-release-arm64.tar.gz"
 runtime_checksum="${runtime_asset}.sha256"
