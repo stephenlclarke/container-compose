@@ -233,29 +233,60 @@ extension ComposeOrchestrator {
         return args
     }
 
-    /// Validates active legacy links before runtime resources are created.
+    /// Validates active static host mappings before runtime resources are created.
     func projectByValidatingLinks(project: ComposeProject, activeServiceNames: Set<String>) throws -> ComposeProject {
         for sourceName in activeServiceNames.sorted() {
             guard let source = project.services[sourceName] else {
                 continue
             }
-            let extraHostnames = try Set(runtimeHostEntries(service: source).flatMap(\.hostnames))
-            var linkServicesByAlias: [String: String] = [:]
+            let extraHostnames = try Set(
+                runtimeHostEntries(service: source)
+                    .flatMap(\.hostnames)
+                    .map { $0.lowercased() },
+            )
+            var staticHostSources: [String: String] = [:]
             for link in try serviceLinkReferences(service: source, project: project) {
                 guard let target = project.services[link.serviceName] else {
                     continue
                 }
-                if extraHostnames.contains(link.alias) {
-                    throw ComposeError.unsupported("service '\(source.name)' links to '\(link.serviceName)' with alias '\(link.alias)', but extra_hosts already defines that hostname; static links cannot override host entries")
-                }
-                if let existingService = linkServicesByAlias[link.alias], existingService != link.serviceName {
-                    throw ComposeError.unsupported("service '\(source.name)' links to both '\(existingService)' and '\(link.serviceName)' with alias '\(link.alias)'; static links require each alias to reference exactly one service")
-                }
-                linkServicesByAlias[link.alias] = link.serviceName
+                try validateStaticHostAlias(
+                    link.alias,
+                    source: source,
+                    hostSource: "links to '\(link.serviceName)'",
+                    extraHostnames: extraHostnames,
+                    staticHostSources: &staticHostSources,
+                )
                 _ = try linkNetwork(source: source, target: target, link: link)
+            }
+            for link in try serviceExternalLinkReferences(service: source) {
+                try validateStaticHostAlias(
+                    link.alias,
+                    source: source,
+                    hostSource: "external_links to '\(link.containerName)'",
+                    extraHostnames: extraHostnames,
+                    staticHostSources: &staticHostSources,
+                )
             }
         }
         return project
+    }
+
+    /// Claims one hostname for a generated static host entry.
+    func validateStaticHostAlias(
+        _ alias: String,
+        source: ComposeService,
+        hostSource: String,
+        extraHostnames: Set<String>,
+        staticHostSources: inout [String: String],
+    ) throws {
+        let normalizedAlias = alias.lowercased()
+        if extraHostnames.contains(normalizedAlias) {
+            throw ComposeError.unsupported("service '\(source.name)' \(hostSource) with alias '\(alias)', but extra_hosts already defines that hostname; generated static host entries cannot override host entries")
+        }
+        if let existingSource = staticHostSources[normalizedAlias], existingSource != hostSource {
+            throw ComposeError.unsupported("service '\(source.name)' maps both \(existingSource) and \(hostSource) to alias '\(alias)'; generated static host entries require each alias to reference exactly one target")
+        }
+        staticHostSources[normalizedAlias] = hostSource
     }
 
     /// Resolves legacy links into static host entries after linked containers exist.
@@ -329,28 +360,44 @@ extension ComposeOrchestrator {
         guard !references.isEmpty else {
             return []
         }
-        let network = try externalLinkRuntimeNetwork(project: project, service: service)
         var entries: [String] = []
+        var seenEntries = Set<String>()
         for reference in references {
             guard let container = try await discoveryManager.getContainer(id: reference.containerName) else {
                 throw ComposeError.invalidProject("service '\(service.name)' external_links references missing container '\(reference.containerName)'")
             }
+            let network = try externalLinkRuntimeNetwork(
+                project: project,
+                service: service,
+                externalContainer: container,
+                reference: reference,
+            )
             let attachments = container.networks.filter { $0.network == network }
             guard attachments.count == 1, let attachment = attachments.first else {
                 throw ComposeError.unsupported("service '\(service.name)' external_links to '\(reference.containerName)'; external container must share exactly one runtime network with the service")
             }
-            entries.append("\(reference.alias)=\(attachment.ipv4Address)")
+            let entry = "\(reference.alias)=\(attachment.ipv4Address)"
+            if seenEntries.insert(entry).inserted {
+                entries.append(entry)
+            }
         }
         return entries
     }
 
-    /// Returns the single runtime network that can safely back legacy external links.
-    func externalLinkRuntimeNetwork(project: ComposeProject, service: ComposeService) throws -> String {
-        let networks = service.networks ?? []
-        guard networks.count == 1, let network = networks.first else {
-            throw ComposeError.unsupported("service '\(service.name)' uses external_links; external links require exactly one Compose network until apple/container exposes source-scoped DNS links")
+    /// Returns the single runtime network a source service shares with one external link.
+    func externalLinkRuntimeNetwork(
+        project: ComposeProject,
+        service: ComposeService,
+        externalContainer: ComposeContainerSummary,
+        reference: ComposeExternalLinkReference,
+    ) throws -> String {
+        let serviceNetworks = Set((service.networks ?? []).map { networkRuntimeName(project: project, composeName: $0) })
+        let externalNetworks = Set(externalContainer.networks.map(\.network))
+        let sharedNetworks = serviceNetworks.intersection(externalNetworks).sorted()
+        guard sharedNetworks.count == 1, let network = sharedNetworks.first else {
+            throw ComposeError.unsupported("service '\(service.name)' external_links to '\(reference.containerName)'; external container must share exactly one runtime network with the service")
         }
-        return networkRuntimeName(project: project, composeName: network)
+        return network
     }
 
     /// Returns the single shared network a legacy link can use.

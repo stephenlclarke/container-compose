@@ -6224,7 +6224,7 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.externalLinks = ["legacy_db:db", "legacy_cache"]
+                    $0.externalLinks = ["legacy_db:db", "legacy_db:db", "legacy_cache"]
                     $0.networks = ["backend"]
                 },
             ]
@@ -6242,10 +6242,53 @@ struct ComposeOrchestratorTests {
         #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
         #expect(command.containsSequence(["--network", "demo_backend"]))
         #expect(command.containsSequence(["--add-host", "db:192.168.64.20"]))
+        #expect(command.filter { $0 == "db:192.168.64.20" }.count == 1)
         #expect(command.containsSequence(["--add-host", "legacy_cache:192.168.64.21"]))
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
         #expect(await discoveryManager.getRequests.contains("legacy_db"))
         #expect(await discoveryManager.getRequests.contains("legacy_cache"))
+    }
+
+    @Test("up maps external links through one shared network when the source has multiple attachments")
+    func upMapsExternalLinksThroughOneSharedNetworkWhenSourceHasMultipleAttachments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "legacy_db",
+                status: "running",
+                networks: [
+                    ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
+                    ComposeContainerNetworkAttachment(network: "legacy_observability", ipv4Address: "192.168.65.20"),
+                ]
+            ),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.externalLinks = ["legacy_db:db"]
+                    $0.networks = ["backend", "observability"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(name: "backend"),
+                "observability": ComposeNetwork(name: "observability"),
+            ]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "demo_backend"]))
+        #expect(command.containsSequence(["--network", "demo_observability"]))
+        #expect(command.containsSequence(["--add-host", "db:192.168.64.20"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_observability"])
     }
 
     @Test("up rejects external links without a shared runtime network")
@@ -6271,6 +6314,52 @@ struct ComposeOrchestratorTests {
             ]
         ) {
             $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                discoveryManager: discoveryManager,
+                resourceManager: resourceManager
+            ).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported external links error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' external_links to 'legacy_db'; external container must share exactly one runtime network with the service"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up rejects external links with multiple shared runtime networks")
+    func upRejectsExternalLinksWithMultipleSharedRuntimeNetworks() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "legacy_db",
+                status: "running",
+                networks: [
+                    ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
+                    ComposeContainerNetworkAttachment(network: "demo_observability", ipv4Address: "192.168.65.20"),
+                ]
+            ),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.externalLinks = ["legacy_db:db"]
+                    $0.networks = ["backend", "observability"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(name: "backend"),
+                "observability": ComposeNetwork(name: "observability"),
+            ]
         }
 
         do {
@@ -6332,7 +6421,7 @@ struct ComposeOrchestratorTests {
                 },
                 "api": composeService(name: "api", image: "example/api") {
                     $0.links = ["redis:cache"]
-                    $0.extraHosts = ["cache=192.168.64.99"]
+                    $0.extraHosts = ["Cache=192.168.64.99"]
                     $0.networks = ["backend"]
                 },
             ]
@@ -6347,7 +6436,7 @@ struct ComposeOrchestratorTests {
                 })
             Issue.record("Expected conflicting host entry error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' links to 'redis' with alias 'cache', but extra_hosts already defines that hostname; static links cannot override host entries"))
+            #expect(error == .unsupported("service 'api' links to 'redis' with alias 'cache', but extra_hosts already defines that hostname; generated static host entries cannot override host entries"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -6385,7 +6474,43 @@ struct ComposeOrchestratorTests {
                 })
             Issue.record("Expected conflicting link alias error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' links to both 'redis' and 'cache' with alias 'database'; static links require each alias to reference exactly one service"))
+            #expect(error == .unsupported("service 'api' maps both links to 'redis' and links to 'cache' to alias 'database'; generated static host entries require each alias to reference exactly one target"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up rejects static host aliases shared by links and external links before creating resources")
+    func upRejectsStaticHostAliasesSharedByLinksAndExternalLinksBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "redis": composeService(name: "redis", image: "redis:7") {
+                    $0.networks = ["backend"]
+                },
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.links = ["redis:database"]
+                    $0.externalLinks = ["legacy_db:database"]
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions {
+                    $0.services = ["api"]
+                })
+            Issue.record("Expected conflicting static host alias error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' maps both links to 'redis' and external_links to 'legacy_db' to alias 'database'; generated static host entries require each alias to reference exactly one target"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

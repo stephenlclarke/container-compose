@@ -42,8 +42,9 @@ References:
 
 ## Commit Tracking
 
-- Compose code commit: `feat(links): resolve legacy links through host entries`
-  on this pull request
+- Compose code commits on this pull request:
+  - `feat(links): resolve legacy links through host entries`
+  - `feat(links): support multi-network external links`
 - Container code dependency: existing matched `stephenlclarke/container`
   inspection and host-entry APIs
 - Lower runtime code commit: not required
@@ -61,13 +62,13 @@ References:
   `up`, `create`, and one-off `run` inspect created link targets and add static
   `ALIAS=IP` entries to only the dependent source service before config
   hashing and container creation.
-- Reject a source `extra_hosts` mapping that conflicts with a link alias before
-  resource creation instead of relying on unspecified host-file ordering.
-- Reject one link alias that refers to multiple services before resource
-  creation instead of relying on unspecified host-file ordering.
+- Reject a generated `links` or `external_links` host entry that conflicts
+  case-insensitively with source `extra_hosts` or another generated link entry
+  before resource creation instead of relying on unspecified host-file
+  ordering.
 - Keep `external_links` policy separate from service links; the current
-  single-network external-link subset uses direct runtime inspection and
-  generated host entries.
+  shared-runtime-network external-link subset uses direct runtime inspection
+  and generated host entries, even when the source has other attachments.
 - Updated `STATUS.md` and relevant project docs.
 
 ## Docker Compose Compatibility Notes
@@ -82,8 +83,8 @@ References:
 - Remaining gap: dynamic source-scoped DNS aliases and address update events.
 - Remaining gap: links with zero or multiple shared networks.
 - Separate supported subset: `external_links` uses direct runtime inspection
-  and generated host entries when the source and external container share one
-  runtime network.
+  and generated host entries when the source and external container share
+  exactly one runtime network, even if the source has other attachments.
 
 ## Testing
 
