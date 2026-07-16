@@ -118,7 +118,12 @@ extension ComposeOrchestrator {
             return nil
         }
         if let test = fields["test"] {
-            return try explicitHealthCheck(test: test, fields: fields, serviceName: service.name, baseProcess: baseProcess)
+            return try explicitHealthCheck(
+                test: test,
+                fields: fields,
+                serviceName: service.name,
+                baseProcess: baseProcess,
+            )
         }
 
         let imageHealthCheck: ComposeImageHealthCheck?
@@ -201,7 +206,10 @@ extension ComposeOrchestrator {
             throw ComposeError.invalidProject("service '\(service.name)' healthcheck must be an object")
         }
         guard fields.keys.allSatisfy({ supportedHealthCheckKeys.contains($0) }) else {
-            let unsupported = fields.keys.filter { !supportedHealthCheckKeys.contains($0) }.sorted().joined(separator: ", ")
+            let unsupported = fields.keys
+                .filter { !supportedHealthCheckKeys.contains($0) }
+                .sorted()
+                .joined(separator: ", ")
             throw ComposeError.unsupported("service '\(service.name)' uses unsupported healthcheck fields \(unsupported)")
         }
         return fields
@@ -393,7 +401,11 @@ extension ComposeOrchestrator {
         args: inout [String],
     ) throws {
         for field in healthCheckDurationFields where fields[field.composeName] == nil {
-            guard let duration = try inheritedHealthCheckDuration(imageHealthCheck, field: field.composeName, serviceName: serviceName) else {
+            guard let duration = try inheritedHealthCheckDuration(
+                imageHealthCheck,
+                field: field.composeName,
+                serviceName: serviceName,
+            ) else {
                 continue
             }
             args.append(contentsOf: [field.runtimeName, duration])
@@ -455,35 +467,43 @@ extension ComposeOrchestrator {
         case let .string(command):
             return .command(command)
         case let .array(values):
-            let parts = try values.map { value -> String in
-                guard let string = value.stringValue else {
-                    throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test entries must be strings")
-                }
-                return string
-            }
-            guard let directive = parts.first else {
-                throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test cannot be empty")
-            }
-            switch directive {
-            case "NONE":
-                return .disabled
-            case "CMD-SHELL":
-                let command = parts.dropFirst().joined(separator: " ")
-                guard !command.isEmpty else {
-                    throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test CMD-SHELL requires a command")
-                }
-                return .command(command)
-            case "CMD":
-                let command = Array(parts.dropFirst())
-                guard !command.isEmpty else {
-                    throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test CMD requires a command")
-                }
-                return .command(shellQuoted(command))
-            default:
-                throw ComposeError.unsupported("service '\(serviceName)' healthcheck.test uses unsupported directive '\(directive)'")
-            }
+            return try runtimeHealthCheckCommand(parts: values, serviceName: serviceName)
         default:
             throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test must be a string or list")
+        }
+    }
+
+    /// Converts list-form Compose healthcheck `test` values to a container CLI command.
+    private func runtimeHealthCheckCommand(
+        parts values: [ComposeValue],
+        serviceName: String,
+    ) throws -> RuntimeHealthCheckCommand {
+        let parts = try values.map { value -> String in
+            guard let string = value.stringValue else {
+                throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test entries must be strings")
+            }
+            return string
+        }
+        guard let directive = parts.first else {
+            throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test cannot be empty")
+        }
+        switch directive {
+        case "NONE":
+            return .disabled
+        case "CMD-SHELL":
+            let command = parts.dropFirst().joined(separator: " ")
+            guard !command.isEmpty else {
+                throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test CMD-SHELL requires a command")
+            }
+            return .command(command)
+        case "CMD":
+            let command = Array(parts.dropFirst())
+            guard !command.isEmpty else {
+                throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test CMD requires a command")
+            }
+            return .command(shellQuoted(command))
+        default:
+            throw ComposeError.unsupported("service '\(serviceName)' healthcheck.test uses unsupported directive '\(directive)'")
         }
     }
 
@@ -582,7 +602,11 @@ extension ComposeOrchestrator {
                 field: "start_interval",
                 serviceName: serviceName,
             ),
-            retries: Int(try healthCheckRetries(fields["retries"], inherited: inherited?.retries, serviceName: serviceName)),
+            retries: Int(try healthCheckRetries(
+                fields["retries"],
+                inherited: inherited?.retries,
+                serviceName: serviceName,
+            )),
         )
     }
 
