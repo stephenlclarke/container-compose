@@ -1,19 +1,28 @@
-# Pull request: add network attachment aliases
+# Handoff PR: add container-facing DNS for network attachment aliases
 
 ## Type of Change
 
 - [ ] Bug fix
-- [x] New feature
+- [ ] New feature
 - [ ] Breaking change
 - [x] Documentation update
 
 ## Motivation and Context
 
-Docker exposes network-scoped aliases as a container network attachment primitive. Compose service `networks.<name>.aliases` depends on that primitive, and Docker documents that aliases are resolved only on the network where the container is connected.
+Docker exposes network-scoped aliases as a container network attachment
+primitive. [apple/container#1815](https://github.com/apple/container/pull/1815)
+already supplies that storage and allocator primitive. The remaining failure
+is that service containers have no supported DNS route to the allocator.
 
-This change adds the generic runtime surface to `apple/container` without adding Compose-specific behavior. The current `container-compose` implementation maps its single-network Compose alias subset onto this primitive; multi-network attach/connect and service DNS policy remain separate networking gaps.
+[apple/container#1813](https://github.com/apple/container/pull/1813) tested
+the obvious listener designs and deliberately leaves listener startup out:
+wildcard UDP/53 races with `mDNSResponder`, and a listener bound to the vmnet
+gateway fails with `EADDRNOTAVAIL`, including after disabling the vmnet DNS
+proxy. This handoff asks for the smallest Apple-owned mechanism that can
+actually receive service DNS traffic and retain source-network context.
 
-Following JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), the durable upstream ask is the typed attachment alias primitive. Docker/Compose network syntax stays in `container-compose`; any local `--network ...,alias=...` parser is only a bridge for the current command-vector create path.
+Docker/Compose network syntax stays in `container-compose`. No Compose-facing
+parser or policy belongs in this Apple change.
 
 References:
 
@@ -24,25 +33,42 @@ References:
 
 ## Commit Tracking
 
-- Container code commit: `cf5e8d1` in `stephenlclarke/container` (`feat(network): add attachment aliases`).
-- Lower runtime code commit: not required.
-- Compose mapping code commit: `0905db9` in `stephenlclarke/container-compose` (`feat(network): map compose network aliases`), not part of this Apple PR.
+- Alias-registration groundwork: `cf5e8d1` in `stephenlclarke/container`
+  (`feat(network): add attachment aliases`) and upstream
+  [apple/container#1815](https://github.com/apple/container/pull/1815).
+- DNS groundwork: [apple/container#1813](https://github.com/apple/container/pull/1813).
+- No new fork commit is proposed until maintainers identify the supported
+  vmnet-facing endpoint. The failed gateway-bind experiment is documented
+  upstream and should not be replaced with a local-only workaround.
 
 ## Implementation Details
 
-- Added `aliases` to `AttachmentOptions` and `Attachment`, with backward-compatible decoding that treats missing aliases as `[]`.
-- Added a network XPC `aliases` payload for allocation requests.
-- Extended `AttachmentAllocator` to reserve hostname and alias names for the same address index and release them together.
-- Updated container create validation so alias collisions fail before runtime resources are created.
-- Passed aliases from create options through to runtime attachment allocation.
-- The local fork also carried repeatable `alias=<name>` parsing on the `--network` attachment option and command-reference updates so the existing command-vector create path could validate the primitive; an upstream PR should drop or soften that bridge if maintainers prefer typed-only configuration.
+The Apple implementation should be limited to the runtime plumbing:
+
+1. Obtain a supported vmnet or macOS networking endpoint for DNS traffic from
+   guest service containers; do not bind wildcard port 53.
+2. Pass the ingress interface/network identity into the DNS handler and
+   attachment lookup.
+3. Resolve the existing hostname and alias entries from that network only,
+   preserving allocator cleanup semantics.
+4. Add an integration test that creates two real service containers and
+   resolves both the primary hostname and alias from the peer's configured DNS
+   path.
+
+The resolver should support both UDP and TCP if the selected platform endpoint
+requires it. The exact listener/packet-interception API is intentionally left
+to Apple maintainers because the known direct socket binds are not viable.
 
 ## Compatibility Notes
 
-- Existing persisted attachments that do not contain `aliases` continue to decode successfully.
-- Existing `--network <name>`, `--network <name>,mac=...`, and `--network <name>,mtu=...` forms keep their current behavior.
-- Alias names currently participate in the same uniqueness model as hostnames because the existing network lookup API is hostname-based and not source-network-scoped. Docker permits ambiguous alias sharing, but this smaller primitive is intentionally stricter until the DNS service can express network-scoped multi-answer behavior.
-- This does not add multi-network connect/disconnect, fixed IPs, service-name DNS for replicas, DNSRR, legacy links, or Compose-specific alias selection.
+- Existing persisted attachments that omit `aliases` continue to decode
+  successfully.
+- Existing attachment CLI forms retain their current behavior.
+- Alias names currently participate in a hostname-like uniqueness model. The
+  source-network-aware resolver is the prerequisite for Docker-compatible
+  shared aliases and multi-network behavior.
+- This does not add multi-network connect/disconnect, fixed IPs, service-name
+  DNS for replicas, DNSRR, legacy links, or Compose-specific alias selection.
 
 ## Testing
 
@@ -53,8 +79,12 @@ References:
 Focused validation:
 
 ```sh
-swift test --filter 'ParserTest/testParseNetworkWithAliases|ParserTest/testParseNetworkDeduplicatesAliases|ParserTest/testParseNetworkEmptyAlias|AttachmentConfigurationTest|AttachmentAllocatorTest/testLookupAllocatedAlias|AttachmentAllocatorTest/testAliasConflictThrows|AttachmentAllocatorTest/testHostnameCannotReuseExistingAlias|AttachmentAllocatorTest/testDuplicateAliasMapsToSingleAllocation|AttachmentAllocatorTest/testDeallocateRemovesAliases'
+swift test --filter 'AttachmentAllocatorTest|ForwardingResolverTest|CompositeResolverTest'
 ```
+
+The change is incomplete until a vmnet-backed integration test demonstrates
+peer resolution. Allocator and host-loopback tests alone are not acceptance
+evidence.
 
 Additional local checks:
 

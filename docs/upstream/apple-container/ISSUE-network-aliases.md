@@ -1,4 +1,4 @@
-# Feature request: network attachment aliases
+# Feature request: container-facing DNS for network attachment aliases
 
 ## Feature or enhancement request details
 
@@ -23,9 +23,23 @@ networks:
   backend: {}
 ```
 
-`apple/container` already allocates a hostname for each network attachment and resolves that hostname through the network service. It does not currently expose additional typed attachment aliases, so a Compose plugin cannot represent common service-discovery names without rewriting Compose files.
+`apple/container` now has an alias-registration proposal in
+[apple/container#1815](https://github.com/apple/container/pull/1815):
+`AttachmentOptions.aliases` records extra names in the per-network attachment
+registry. That is the right lower-level data model, but it is not enough for
+Compose parity because service containers cannot query the registry.
 
-Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this Apple-facing slice should stay focused on network attachment alias storage and lookup. Compose owns `networks.<name>.aliases`, legacy `links`, selected network restrictions, and Docker-compatible validation messaging.
+[apple/container#1813](https://github.com/apple/container/pull/1813) confirms
+the remaining platform constraint. It added forwarding and request-context
+groundwork but deliberately does not start a container-facing listener:
+wildcard UDP/53 conflicts with `mDNSResponder`, while binding the reported
+vmnet gateway address fails with `EADDRNOTAVAIL` even when the vmnet DNS proxy
+is disabled.
+
+Compose owns `networks.<name>.aliases`, legacy `links`, selected network
+restrictions, and Docker-compatible validation messaging. Apple owns a
+supported path from a service container's DNS request to its source network's
+attachment registry.
 
 Relevant references:
 
@@ -36,19 +50,34 @@ Relevant references:
 
 ## Proposed behavior
 
-- Add attachment `aliases` alongside the existing attachment hostname.
-- Validate aliases with the same RFC1123 hostname rules used by explicit hostnames when Apple accepts direct user input for this field.
-- Resolve aliases through the existing network lookup path.
-- Preserve existing persisted network attachment decoding by defaulting missing aliases to an empty list.
-- Keep multi-network attach/connect, DNSRR, fixed IPs, and Compose service policy out of this change.
+- Keep the existing `AttachmentOptions.aliases` groundwork.
+- Expose a platform-supported resolver endpoint or DNS interception mechanism
+  that receives requests from vmnet-backed service containers without binding
+  wildcard port 53.
+- Propagate source interface/network context to the network lookup path, so
+  names are resolved in the correct attachment registry.
+- Resolve an attachment hostname and its aliases over that container-facing
+  path, then remove the answer after the attachment is released.
+- Keep Compose syntax, service policy, DNSRR/VIP behavior, fixed IPs, and
+  multi-network attach/connect out of this runtime change.
 
 ## Minimal example
 
 Expected behavior:
 
-- The created container receives its normal network attachment.
-- Peers on the same `apple/container` network can resolve `api.internal` to the same address as the attachment hostname.
+- The created container receives its normal network attachment and aliases.
+- A peer on the same `apple/container` network resolves `api.internal` to the
+  same address as the attachment hostname through its configured DNS path.
+- A peer attached only to a different network does not receive that answer.
 - Existing callers that omit aliases preserve current behavior.
+
+## Design boundary
+
+Do not accept a host-loopback-only server or a listener that races
+`mDNSResponder` as a solution. The vmnet helper needs a supported endpoint
+provided by vmnet, packet interception, or another macOS networking facility.
+The existing gateway bind experiments prove that changing Compose or adding
+another `--network` parser cannot close this gap.
 
 ## Code of Conduct
 
