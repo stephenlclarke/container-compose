@@ -457,12 +457,14 @@ public extension ComposeOrchestrator {
         if options.dryRun {
             for target in targets {
                 let args = logRuntimeArguments(
-                    id: target.name,
-                    follow: logOptions.follow,
-                    tail: runtimeTail,
-                    since: logOptions.since,
-                    until: logOptions.until,
-                    timestamps: logOptions.timestamps,
+                    .init(
+                        id: target.name,
+                        follow: logOptions.follow,
+                        tail: runtimeTail,
+                        since: logOptions.since,
+                        until: logOptions.until,
+                        timestamps: logOptions.timestamps,
+                    )
                 )
                 emitComposeRuntimeOperation(args)
             }
