@@ -766,10 +766,32 @@ jobs:
             quality_release_kind="current"
           fi
           quality_snapshot="${RUNNER_TEMP}/quality-snapshot.md"
-          python3 Tools/release/capture-quality-snapshot.py \
-            --repo "${GITHUB_REPOSITORY}" \
-            --commit "${PUBLISH_SHA}" \
-            --release-kind "${quality_release_kind}" > "${quality_snapshot}"
+          sonar_snapshot_available=false
+          if nc -z -w 5 sonarcloud.io 443; then
+            set +e
+            sonar_status_code="$(curl --location --silent --show-error --connect-timeout 3 --max-time 5 \
+              --write-out '%{http_code}' https://sonarcloud.io/api/system/status --output /dev/null)"
+            sonar_status=$?
+            set -e
+            if [[ "${sonar_status}" -eq 0 && "${sonar_status_code}" =~ ^[1-4][0-9][0-9]$ ]]; then
+              sonar_snapshot_available=true
+            fi
+          fi
+          if [[ "${sonar_snapshot_available}" == "true" ]]; then
+            python3 Tools/release/capture-quality-snapshot.py \
+              --repo "${GITHUB_REPOSITORY}" \
+              --commit "${PUBLISH_SHA}" \
+              --release-kind "${quality_release_kind}" > "${quality_snapshot}"
+          else
+            printf '::warning title=SonarQube unavailable::The release quality snapshot omits SonarQube-derived metrics because the API preflight did not succeed within five seconds.\n'
+            cat > "${quality_snapshot}" <<'EOF'
+          ## Quality Snapshot
+
+          SonarQube was unavailable during promotion, so this release omits
+          SonarQube-derived metrics. Applicable CI checks and CodeQL completed
+          successfully for this source revision.
+          EOF
+          fi
           release_notes_args+=(--quality-snapshot "${quality_snapshot}")
           python3 Tools/release/release-notes.py "${release_notes_args[@]}" > "${notes}"
 

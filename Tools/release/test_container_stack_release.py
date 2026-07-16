@@ -263,9 +263,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("Current build VHS recording is missing", workflow)
         self.assertIn('--current-asset "${{ steps.lane.outputs.demo_asset }}"', workflow)
         tape = (ROOT / "docs" / "container-compose-demo.tape").read_text(encoding="utf-8")
-        self.assertIn("up --dry-run --wait", tape)
-        self.assertIn("ps --dry-run", tape)
-        self.assertIn("down --dry-run --volumes --remove-orphans", tape)
+        self.assertIn("up --wait", tape)
+        self.assertIn("stats --no-stream", tape)
+        self.assertIn("ps", tape)
+        self.assertIn("down --volumes --remove-orphans", tape)
+        self.assertNotIn("--dry-run", tape)
         self.assertIn(
             "releases/download/current/container-compose-demo-current.gif",
             readme,
@@ -285,6 +287,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('quality_release_kind="current"', workflow)
         self.assertIn('quality_release_kind="stable"', workflow)
         self.assertIn('--release-kind "${quality_release_kind}"', workflow)
+        self.assertIn('nc -z -w 5 sonarcloud.io 443', workflow)
+        self.assertIn('curl --location --silent --show-error --connect-timeout 3 --max-time 5', workflow)
+        self.assertIn('SonarQube was unavailable during promotion', workflow)
         self.assertIn('python3 Tools/release/release-notes.py "${release_notes_args[@]}"', workflow)
         self.assertNotIn("quality_snapshot_args", workflow)
 
