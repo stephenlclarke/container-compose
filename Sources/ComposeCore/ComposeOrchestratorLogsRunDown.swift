@@ -249,7 +249,11 @@ public extension ComposeOrchestrator {
         }
         let id = try await serviceContainerID(project: project, service: service, index: attach.index)
         if !attach.noStdin {
-            let arguments = ["attach", "--sig-proxy=\(proxySignals ? "true" : "false")", id]
+            var arguments = ["attach", "--sig-proxy=\(proxySignals ? "true" : "false")"]
+            if let detachKeys = attach.detachKeys, !detachKeys.isEmpty {
+                arguments.append("--detach-keys=\(detachKeys)")
+            }
+            arguments.append(id)
             try await runContainer(arguments, inheritedIO: true)
             return
         }
