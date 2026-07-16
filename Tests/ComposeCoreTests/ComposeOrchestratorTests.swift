@@ -20029,6 +20029,51 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["attached"])
     }
 
+    @Test("attach interactive mode invokes the runtime attach relay")
+    func attachInteractiveModeInvokesRuntimeAttachRelay() async throws {
+        let runner = RecordingRunner()
+        let logManager = RecordingContainerLogManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(),
+            logManager: logManager
+        ).attach(
+            project: project,
+            serviceName: "api",
+            options: ComposeAttachOptions()
+        )
+
+        #expect(runner.commands.map(\.arguments) == [["container", "attach", "--sig-proxy=true", "demo-api-1"]])
+        #expect(runner.commands.map(\.io) == [.inherited])
+        #expect(await logManager.requests.isEmpty)
+    }
+
+    @Test("attach interactive mode forwards disabled signal proxy")
+    func attachInteractiveModeForwardsDisabledSignalProxy() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).attach(
+            project: project,
+            serviceName: "api",
+            options: ComposeAttachOptions { $0.sigProxy = "false" }
+        )
+
+        #expect(runner.commands.map(\.arguments) == [["container", "attach", "--sig-proxy=false", "demo-api-1"]])
+    }
+
     @Test("attach output-only mode proxies received signals by default")
     func attachOutputOnlyModeProxiesReceivedSignalsByDefault() async throws {
         let emitted = MessageRecorder()
@@ -20212,25 +20257,21 @@ struct ComposeOrchestratorTests {
         #expect(await logManager.requests.isEmpty)
     }
 
-    @Test("attach reports apple/container runtime gap for interactive options")
-    func attachReportsAppleContainerRuntimeGapForInteractiveOptions() async throws {
+    @Test("attach rejects the remaining custom detach-key gap")
+    func attachRejectsRemainingCustomDetachKeyGap() async throws {
         let cases: [(options: ComposeAttachOptions, error: ComposeError)] = [
-            (
-                ComposeAttachOptions(),
-                .unsupported("attach: apple/container does not expose stdin/stdout/stderr reattach for already-running service containers; use --no-stdin for output-only logs")
-            ),
             (
                 ComposeAttachOptions {
                     $0.sigProxy = "false"
                     $0.detachKeys = "ctrl-x"
                 },
-                .unsupported("attach --detach-keys: apple/container does not expose detach-key handling for interactive attach")
+                .unsupported("attach --detach-keys: interactive stream reattachment is available, but detach-key handling is not yet available")
             ),
             (
                 ComposeAttachOptions {
-                    $0.sigProxy = "false"
+                    $0.detachKeys = ""
                 },
-                .unsupported("attach: apple/container does not expose stdin/stdout/stderr reattach for already-running service containers; use --no-stdin for output-only logs")
+                .unsupported("attach --detach-keys: interactive stream reattachment is available, but detach-key handling is not yet available")
             ),
             (
                 ComposeAttachOptions {
