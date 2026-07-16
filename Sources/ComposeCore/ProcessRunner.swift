@@ -504,11 +504,31 @@ public struct RecordedCommand: Equatable, Sendable {
 
 /// Test runner that records invocations and returns queued responses.
 public final class RecordingRunner: CommandRunning, @unchecked Sendable {
-    public private(set) var commands: [RecordedCommand] = []
-    public var responses: [CommandResult]
+    private let lock = NSLock()
+    private var commandStorage: [RecordedCommand] = []
+    private var responseStorage: [CommandResult]
+
+    public var commands: [RecordedCommand] {
+        lock.lock()
+        defer { lock.unlock() }
+        return commandStorage
+    }
+
+    public var responses: [CommandResult] {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return responseStorage
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            responseStorage = newValue
+        }
+    }
 
     public init(responses: [CommandResult] = []) {
-        self.responses = responses
+        responseStorage = responses
     }
 
     /// Records a command and returns the next queued response, or success.
@@ -519,16 +539,17 @@ public final class RecordingRunner: CommandRunning, @unchecked Sendable {
         environment: [String: String]?,
         io: CommandIO
     ) async throws -> CommandResult {
-        commands.append(RecordedCommand(
-            executable: executable,
-            arguments: arguments,
-            workingDirectory: workingDirectory,
-            environment: environment,
-            io: io
-        ))
-        if !responses.isEmpty {
-            return responses.removeFirst()
+        lock.withLock {
+            commandStorage.append(RecordedCommand(
+                executable: executable,
+                arguments: arguments,
+                workingDirectory: workingDirectory,
+                environment: environment,
+                io: io
+            ))
+            return responseStorage.isEmpty
+                ? CommandResult(status: 0, stdout: "", stderr: "")
+                : responseStorage.removeFirst()
         }
-        return CommandResult(status: 0, stdout: "", stderr: "")
     }
 }

@@ -36,7 +36,7 @@ Surface names follow the current Docker Docs [Compose file reference](https://do
 | Service attributes and runtime behavior | ⚠️ Partial | The complete grouped service surface is in [Service Attribute Surface](#service-attribute-surface), including details for every runtime-limited group. |
 | Dockerfile and build behavior | ⚠️ Partial | The complete instruction and Build Specification surface is in [Dockerfile And Build Surface](#dockerfile-and-build-surface); build-secret source and metadata shapes remain limited. |
 | CLI commands | ⚠️ Partial | 44 commands are ✅, 2 are ⚠️, and 0 are ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
-| CLI long options | ⚠️ Partial | 259 documented long options are ✅, 4 are ⚠️, and 0 are ❌. Every option is listed in [CLI Option Surface](#cli-option-surface). |
+| CLI long options | ⚠️ Partial | 260 documented long options are ✅, 3 are ⚠️, and 0 are ❌. Every option is listed in [CLI Option Surface](#cli-option-surface). |
 
 ## Compose File Surface
 
@@ -174,7 +174,7 @@ A ✅ option means the flag itself is parsed and mapped for the current command 
 
 | Option Surface | Parity | Details |
 | --- | --- | --- |
-| Root options | ⚠️ Partial | ✅ `--all-resources`: selected-service `config` and `convert` output keeps unreferenced top-level networks, volumes, configs, and secrets, ✅ `--ansi`, ✅ `--compatibility`: uses Docker Compose legacy underscore separators for generated service and one-off container names, ✅ `--dry-run`, ✅ `--env-file`, ✅ `--file`, ✅ `--profile`, ✅ `--progress`, ✅ `--project-directory`, ✅ `--project-name`, ✅ `--verbose`; ⚠️ `--parallel`: caps repeated `pull` and `push` image operations while dependency-sensitive orchestration stays ordered. |
+| Root options | ✅ Yes | ✅ `--all-resources`: selected-service `config` and `convert` output keeps unreferenced top-level networks, volumes, configs, and secrets, ✅ `--ansi`, ✅ `--compatibility`: uses Docker Compose legacy underscore separators for generated service and one-off container names, ✅ `--dry-run`, ✅ `--env-file`, ✅ `--file`, ✅ `--parallel` and `COMPOSE_PARALLEL_LIMIT`: limit independent pull, push, and build engine operations, with `-1` as the unlimited default; dependency-sensitive lifecycle orchestration remains ordered, ✅ `--profile`, ✅ `--progress`, ✅ `--project-directory`, ✅ `--project-name`, ✅ `--verbose`. |
 | `alpha` options | ✅ Yes | ✅ `--dry-run`. |
 | `alpha dry-run` options | ✅ Yes | ✅ `--dry-run`: accepted and implied for the wrapped command. |
 | `alpha scale` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-deps`. |
