@@ -156,14 +156,18 @@ extension ComposeOrchestrator {
     /// Emits the foreground log-follow plan for dry runs.
     func emitUpLogDryRun(_ session: ComposeUpLogSession) {
         for target in session.targets {
-            emitComposeRuntimeOperation(logRuntimeArguments(
-                id: target.name,
-                follow: true,
-                tail: nil,
-                since: nil,
-                until: nil,
-                timestamps: session.options.timestamps,
-            ))
+            emitComposeRuntimeOperation(
+                logRuntimeArguments(
+                    .init(
+                        id: target.name,
+                        follow: true,
+                        tail: nil,
+                        since: nil,
+                        until: nil,
+                        timestamps: session.options.timestamps,
+                    ),
+                ),
+            )
         }
     }
 
