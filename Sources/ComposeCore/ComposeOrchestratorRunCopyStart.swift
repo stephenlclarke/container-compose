@@ -143,6 +143,9 @@ extension ComposeOrchestrator {
             containerIndex: run.containerIndex,
             replicaCount: run.replicaCount,
         )
+        if !options.dryRun {
+            try await materializeExternalConfigs(project: project, service: service)
+        }
         let mounts = try effectiveServiceVolumes(
             project: project,
             service: service,

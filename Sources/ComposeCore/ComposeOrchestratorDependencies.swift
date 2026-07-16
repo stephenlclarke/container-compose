@@ -42,6 +42,7 @@ public struct ComposeOrchestratorCommandDependencies: Sendable {
 
 /// Container lifecycle collaborators used by the Compose orchestrator.
 public struct ComposeOrchestratorRuntimeDependencies: Sendable {
+    public var configReader: ContainerConfigReading
     public var discoveryManager: ContainerDiscoveryManaging
     public var eventsManager: ContainerEventsManaging
     public var lifecycleManager: ContainerLifecycleManaging
@@ -50,6 +51,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
     public var topManager: ContainerTopManaging
 
     public init(
+        configReader: ContainerConfigReading = ContainerClientConfigReader(),
         discoveryManager: ContainerDiscoveryManaging = ContainerLiveDiscoveryManager(),
         eventsManager: ContainerEventsManaging = ContainerClientEventsManager(),
         lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
@@ -57,6 +59,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
         statsManager: ContainerStatsManaging = ContainerClientStatsManager(),
         topManager: ContainerTopManaging = ContainerClientTopManager(),
     ) {
+        self.configReader = configReader
         self.discoveryManager = discoveryManager
         self.eventsManager = eventsManager
         self.lifecycleManager = lifecycleManager
@@ -68,6 +71,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
     public init(
         runner: CommandRunning,
         options: ComposeExecutionOptions,
+        configReader: ContainerConfigReading = ContainerClientConfigReader(),
         eventsManager: ContainerEventsManaging = ContainerClientEventsManager(),
         lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
         resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
@@ -75,6 +79,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
         topManager: ContainerTopManaging = ContainerClientTopManager(),
     ) {
         self.init(
+            configReader: configReader,
             discoveryManager: ContainerLiveDiscoveryManager(
                 runner: runner,
                 environmentLauncher: options.environmentLauncher,
@@ -113,6 +118,11 @@ public struct ComposeOrchestratorDependencies: Sendable {
     public var copier: ContainerCopying {
         get { commands.copier }
         set { commands.copier = newValue }
+    }
+
+    public var configReader: ContainerConfigReading {
+        get { runtime.configReader }
+        set { runtime.configReader = newValue }
     }
 
     public var discoveryManager: ContainerDiscoveryManaging {

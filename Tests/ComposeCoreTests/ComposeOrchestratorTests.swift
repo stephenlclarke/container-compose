@@ -9313,36 +9313,6 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects external configs before creating resources")
-    func upRejectsExternalConfigsBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
-        let project = composeProject(
-            name: "demo",
-            services: [
-                "api": composeService(name: "api", image: "example/api") {
-                    $0.configs = [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])]
-                    $0.networks = ["backend"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
-                },
-            ]
-        ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-            $0.configs = ["app_config": .object(["external": .bool(true)])]
-        }
-
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected external config error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses external config 'app_config'; external configs need an apple/container config store primitive"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-
-        #expect(runner.commands.isEmpty)
-    }
-
     @Test("up maps service restart policies to container create flags")
     func upMapsServiceRestartPoliciesToContainerCreateFlags() async throws {
         let runner = RecordingRunner(responses: [.success])

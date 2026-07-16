@@ -460,7 +460,7 @@ struct ComposeFileGrant {
 /// Project-local file content staged for runtime config or secret bind mounts.
 struct ComposeMaterializedFile {
     var url: URL
-    var contents: String
+    var contents: Data
     var permissions: Int
 
     /// Creates the backing file with restrictive directory permissions.
@@ -473,7 +473,7 @@ struct ComposeMaterializedFile {
             attributes: [.posixPermissions: 0o700],
         )
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-        let data = Data(contents.utf8)
+        let data = contents
         if fileManager.fileExists(atPath: url.path) {
             if try Data(contentsOf: url) != data {
                 try data.write(to: url, options: .atomic)

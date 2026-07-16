@@ -417,58 +417,137 @@ func composeFileGrantSourcePath(
     guard case let .object(fields) = definition else {
         throw ComposeError.invalidProject("\(kind.singularName.capitalized) '\(grant.source)' definition must be an object")
     }
-    if fields["external"]?.boolValue == true {
-        throw ComposeError.unsupported("service '\(service.name)' uses external \(kind.singularName) '\(grant.source)'; external \(kind.pluralName) need an apple/container \(kind.singularName) store primitive")
-    }
-    if let file = fields["file"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !file.isEmpty {
-        return resolvedProjectPath(file, project: project)
-    }
-    if let environment = fields["environment"] {
-        try validateMaterializedGrantOwnership(grant: grant, service: service, kind: kind)
-        let name = try composeFileGrantEnvironmentVariable(
-            environment,
-            grant: grant,
+    return try resolvedComposeFileGrantSourcePath(
+        grant: grant,
+        fields: fields,
+        context: ComposeFileGrantSourceContext(
+            project: project,
             service: service,
             kind: kind,
-        )
-        guard let contents = hostEnvironmentValue(name) else {
-            throw ComposeError.invalidProject("service '\(service.name)' uses environment-backed \(kind.singularName) '\(grant.source)', but host environment variable '\(name)' is not set")
-        }
-        let materialized = try materializedComposeFile(
-            project: project,
+            materializedConfigSecretRoot: materializedConfigSecretRoot,
+            materialize: materialize,
+        ),
+    )
+}
+
+private struct ComposeFileGrantSourceContext {
+    let project: ComposeProject
+    let service: ComposeService
+    let kind: ComposeFileMountKind
+    let materializedConfigSecretRoot: URL
+    let materialize: Bool
+}
+
+private func resolvedComposeFileGrantSourcePath(
+    grant: ComposeFileGrant,
+    fields: [String: ComposeValue],
+    context: ComposeFileGrantSourceContext,
+) throws -> String {
+    if fields["external"]?.boolValue == true {
+        return try externalComposeFileGrantSourcePath(
             grant: grant,
-            kind: kind,
-            contents: contents,
-            permissions: composeFileGrantPermissions(grant: grant, kind: kind, service: service),
-            root: materializedConfigSecretRoot,
+            fields: fields,
+            context: context,
         )
-        if materialize {
-            try materialized.write()
-        }
-        return materialized.url.path
+    }
+    if let file = fields["file"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !file.isEmpty {
+        return resolvedProjectPath(file, project: context.project)
+    }
+    if let environment = fields["environment"] {
+        return try environmentComposeFileGrantSourcePath(
+            environment,
+            grant: grant,
+            context: context,
+        )
     }
     if let content = fields["content"] {
-        guard kind == .config else {
-            throw ComposeError.unsupported("service '\(service.name)' uses content-backed secret '\(grant.source)'; Docker Compose secrets support file or environment sources")
-        }
-        try validateMaterializedGrantOwnership(grant: grant, service: service, kind: kind)
-        guard let contents = content.stringValue else {
-            throw ComposeError.invalidProject("config '\(grant.source)' content must be a string")
-        }
-        let materialized = try materializedComposeFile(
-            project: project,
+        return try contentComposeFileGrantSourcePath(
+            content,
             grant: grant,
-            kind: kind,
-            contents: contents,
-            permissions: composeFileGrantPermissions(grant: grant, kind: kind, service: service),
-            root: materializedConfigSecretRoot,
+            context: context,
         )
-        if materialize {
-            try materialized.write()
-        }
-        return materialized.url.path
     }
-    throw ComposeError.invalidProject("\(kind.singularName.capitalized) '\(grant.source)' must define \(kind.supportedDefinitionFields) for runtime mounting")
+    throw ComposeError.invalidProject("\(context.kind.singularName.capitalized) '\(grant.source)' must define \(context.kind.supportedDefinitionFields) for runtime mounting")
+}
+
+private func environmentComposeFileGrantSourcePath(
+    _ environment: ComposeValue,
+    grant: ComposeFileGrant,
+    context: ComposeFileGrantSourceContext,
+) throws -> String {
+    try validateMaterializedGrantOwnership(grant: grant, service: context.service, kind: context.kind)
+    let name = try composeFileGrantEnvironmentVariable(
+        environment,
+        grant: grant,
+        service: context.service,
+        kind: context.kind,
+    )
+    guard let contents = hostEnvironmentValue(name) else {
+        throw ComposeError.invalidProject("service '\(context.service.name)' uses environment-backed \(context.kind.singularName) '\(grant.source)', but host environment variable '\(name)' is not set")
+    }
+    return try materializedComposeFileGrantSourcePath(
+        grant: grant,
+        contents: contents,
+        context: context,
+    )
+}
+
+private func contentComposeFileGrantSourcePath(
+    _ content: ComposeValue,
+    grant: ComposeFileGrant,
+    context: ComposeFileGrantSourceContext,
+) throws -> String {
+    guard context.kind == .config else {
+        throw ComposeError.unsupported("service '\(context.service.name)' uses content-backed secret '\(grant.source)'; Docker Compose secrets support file or environment sources")
+    }
+    try validateMaterializedGrantOwnership(grant: grant, service: context.service, kind: context.kind)
+    guard let contents = content.stringValue else {
+        throw ComposeError.invalidProject("config '\(grant.source)' content must be a string")
+    }
+    return try materializedComposeFileGrantSourcePath(
+        grant: grant,
+        contents: contents,
+        context: context,
+    )
+}
+
+private func materializedComposeFileGrantSourcePath(
+    grant: ComposeFileGrant,
+    contents: String,
+    context: ComposeFileGrantSourceContext,
+) throws -> String {
+    let materialized = try materializedComposeFile(
+        project: context.project,
+        grant: grant,
+        kind: context.kind,
+        contents: contents,
+        permissions: composeFileGrantPermissions(grant: grant, kind: context.kind, service: context.service),
+        root: context.materializedConfigSecretRoot,
+    )
+    if context.materialize {
+        try materialized.write()
+    }
+    return materialized.url.path
+}
+
+private func externalComposeFileGrantSourcePath(
+    grant: ComposeFileGrant,
+    fields: [String: ComposeValue],
+    context: ComposeFileGrantSourceContext,
+) throws -> String {
+    guard context.kind == .config else {
+        throw ComposeError.unsupported("service '\(context.service.name)' uses external \(context.kind.singularName) '\(grant.source)'; external \(context.kind.pluralName) need an apple/container \(context.kind.singularName) store primitive")
+    }
+    try validateMaterializedGrantOwnership(grant: grant, service: context.service, kind: context.kind)
+    let name = try externalConfigRuntimeName(project: context.project, composeName: grant.source, fields: fields)
+    let permissions = try composeFileGrantPermissions(grant: grant, kind: context.kind, service: context.service)
+    return materializedExternalConfigURL(
+        project: context.project,
+        grant: grant,
+        runtimeName: name,
+        permissions: permissions,
+        root: context.materializedConfigSecretRoot,
+    ).path
 }
 
 /// Rejects generated grants that need an ownership-remapping runtime primitive.
@@ -553,9 +632,42 @@ func materializedComposeFile(
     let filename = "\(slug(grant.source))-\(digest.prefix(16))"
     return ComposeMaterializedFile(
         url: directory.appendingPathComponent(filename, isDirectory: false),
-        contents: contents,
+        contents: Data(contents.utf8),
         permissions: permissions,
     )
+}
+
+/// Resolves the configured runtime resource name for an external Compose config.
+func externalConfigRuntimeName(
+    project: ComposeProject,
+    composeName: String,
+    fields: [String: ComposeValue],
+) throws -> String {
+    guard fields["external"]?.boolValue == true else {
+        throw ComposeError.invalidProject("config '\(composeName)' is not external")
+    }
+    let declaredName = fields["name"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+    return declaredResourceName(
+        projectName: project.name,
+        composeName: composeName,
+        declaredName: declaredName ?? "",
+        external: true,
+    )
+}
+
+/// Returns the stable project-private file location for an external config.
+func materializedExternalConfigURL(
+    project: ComposeProject,
+    grant: ComposeFileGrant,
+    runtimeName: String,
+    permissions: Int,
+    root: URL,
+) -> URL {
+    let digest = stableHash("\(String(permissions, radix: 8))\n\(runtimeName)")
+    let directory = materializedProjectDirectory(project: project, root: root)
+        .appendingPathComponent(ComposeFileMountKind.config.pluralName, isDirectory: true)
+    let filename = "\(slug(grant.source))-external-\(digest.prefix(16))"
+    return directory.appendingPathComponent(filename, isDirectory: false)
 }
 
 /// Parses and validates supported `volumes_from` references.

@@ -31,6 +31,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     let runner: CommandRunning
     let options: ComposeExecutionOptions
     let copier: ContainerCopying
+    let configReader: ContainerConfigReading
     let discoveryManager: ContainerDiscoveryManaging
     let eventsManager: ContainerEventsManaging
     let execManager: ContainerExecManaging
@@ -54,6 +55,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.runner = runner
         self.options = options
         copier = dependencies.copier
+        configReader = dependencies.configReader
         discoveryManager = dependencies.discoveryManager
         eventsManager = dependencies.eventsManager
         execManager = dependencies.execManager
