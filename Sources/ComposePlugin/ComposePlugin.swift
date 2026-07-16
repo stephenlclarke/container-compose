@@ -1575,7 +1575,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var quietPull = false
     @Flag(name: .customLong("remove-orphans"), help: "Remove containers for services not defined in the Compose file.")
     var removeOrphans = false
-    @Flag(name: .customLong("use-aliases"), help: "Use the service's network aliases.")
+    @Flag(name: .customLong("use-aliases"), help: "Use the service's network aliases (requires container-facing DNS).")
     var useAliases = false
     @Option(name: .customLong("name"), help: "Assign a name to the one-off container.")
     var name: String?

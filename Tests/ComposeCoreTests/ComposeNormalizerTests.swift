@@ -18,7 +18,7 @@ import ComposeCore
 import Foundation
 import Testing
 
-@Suite("Compose normalizer")
+@Suite("Compose normalizer", .serialized)
 struct ComposeNormalizerTests {
     @Test("normalizes a compose file through compose-go")
     func normalizesComposeFileThroughComposeGo() async throws {
@@ -61,7 +61,9 @@ struct ComposeNormalizerTests {
                   - api.internal
                 driver_opts:
                   com.docker.network.driver.mtu: "1450"
+                gw_priority: 20
                 ipv4_address: 10.10.0.5
+                priority: 30
             ports:
               - "8080:80"
             environment:
@@ -168,7 +170,9 @@ struct ComposeNormalizerTests {
         #expect(project.services["api"]?.networkOptions == [
             "default": ComposeNetworkOptions(
                 driverOpts: ["com.docker.network.driver.mtu": "1450"],
-                addressing: .init(ipv4Address: "10.10.0.5")
+                gatewayPriority: 20,
+                addressing: .init(ipv4Address: "10.10.0.5"),
+                priority: 30
             ),
         ])
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")

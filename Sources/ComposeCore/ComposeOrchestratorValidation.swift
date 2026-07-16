@@ -51,9 +51,6 @@ extension ComposeOrchestrator {
     /// Validates network modes and attachment metadata, returning selected networks.
     func validateRuntimeNetworkSupport(service: ComposeService) throws -> [String] {
         let networks = service.networks ?? []
-        if networks.count > 1 {
-            throw ComposeError.unsupported("service '\(service.name)' declares multiple networks; apple/container does not expose network connect yet")
-        }
         try validateNetworkAliasSupport(service: service, networks: networks)
         if let networkOptions = service.networkOptions {
             for (network, options) in networkOptions.sorted(by: { $0.key < $1.key }) {
@@ -177,30 +174,29 @@ extension ComposeOrchestrator {
         isNoNetworkMode(networkMode) || isHostNetworkMode(networkMode)
     }
 
-    /// Allows MAC addresses only for the single-network attachment that apple/container
-    /// `container --network name,mac=...` can represent.
+    /// Validates per-network MAC addresses and selects a service MAC by Compose priority.
     func validateNetworkMACAddressSupport(service: ComposeService, networks: [String]) throws {
         let serviceMACAddress = nonEmpty(service.macAddress)
         let networkMACAddresses = (service.networkOptions ?? [:]).compactMapValues { nonEmpty($0.macAddress) }
         guard serviceMACAddress != nil || !networkMACAddresses.isEmpty else {
             return
         }
-        guard networks.count == 1, let network = networks.first else {
-            throw ComposeError.unsupported("service '\(service.name)' uses mac_address; MAC address support requires exactly one Compose network")
-        }
-        for networkName in networkMACAddresses.keys.sorted() where networkName != network {
+        for networkName in networkMACAddresses.keys.sorted() where !networks.contains(networkName) {
             throw ComposeError.unsupported("service '\(service.name)' sets mac_address on unattached network '\(networkName)'")
         }
-        if let serviceMACAddress,
-           let networkMACAddress = networkMACAddresses[network],
-           serviceMACAddress != networkMACAddress
-        {
+        guard let serviceMACAddress else {
+            return
+        }
+        guard let network = serviceMACAddressNetwork(service: service) else {
+            throw ComposeError.unsupported("service '\(service.name)' uses mac_address; MAC address support requires a Compose network")
+        }
+        if let networkMACAddress = networkMACAddresses[network], serviceMACAddress != networkMACAddress {
             throw ComposeError.invalidProject("service '\(service.name)' sets conflicting mac_address values '\(serviceMACAddress)' and '\(networkMACAddress)' on network '\(network)'")
         }
     }
 
-    /// Allows aliases only for the single-network attachment that apple/container
-    /// `container --network name,alias=...` can represent.
+    /// Validates aliases then rejects them until apple/container can resolve
+    /// network registry names from inside service containers.
     func validateNetworkAliasSupport(service: ComposeService, networks: [String]) throws {
         guard let networkAliases = service.networkAliases else {
             return
@@ -212,13 +208,13 @@ extension ComposeOrchestrator {
         guard !aliasNetworks.isEmpty else {
             return
         }
-        guard networks.count == 1, let network = networks.first else {
-            throw ComposeError.unsupported("service '\(service.name)' uses network aliases; network aliases require exactly one Compose network until apple/container exposes multi-network alias attachment")
+        for aliasNetwork in aliasNetworks {
+            guard networks.contains(aliasNetwork) else {
+                throw ComposeError.invalidProject("service '\(service.name)' sets network aliases on unattached network '\(aliasNetwork)'")
+            }
+            _ = try networkAliasValues(service: service, network: aliasNetwork)
         }
-        for aliasNetwork in aliasNetworks where aliasNetwork != network {
-            throw ComposeError.invalidProject("service '\(service.name)' sets network aliases on unattached network '\(aliasNetwork)'")
-        }
-        _ = try networkAliasValues(service: service, network: network)
+        throw ComposeError.unsupported("service '\(service.name)' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS")
     }
 
     /// Rejects build fields that apple/container `container build` cannot represent yet.

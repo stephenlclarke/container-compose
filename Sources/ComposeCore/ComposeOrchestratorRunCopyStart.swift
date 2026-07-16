@@ -58,11 +58,11 @@ extension ComposeOrchestrator {
         } else {
             containerName(project: project, service: service, oneOff: run.oneOff)
         }
-        let createPlan = try await serviceCreatePlan(
+        let createPlan = try await serviceCreatePlan(request: ServiceCreatePlanRequest(
             project: project,
             service: service,
             runtimeName: runtimeName,
-            planOptions: ContainerServiceCreatePlanOptions(
+            options: ContainerServiceCreatePlanOptions(
                 name: runtimeName,
                 oneOff: run.oneOff,
                 autoRemove: run.remove,
@@ -72,7 +72,7 @@ extension ComposeOrchestrator {
             externalVolumeMounts: externalVolumeMounts,
             labelOverrides: run.labelOverrides,
             imageHealthCheckCache: imageHealthCheckCache,
-        )
+        ))
         args.append(contentsOf: ["--name", runtimeName])
         if run.detach {
             args.append("--detach")
@@ -166,9 +166,11 @@ extension ComposeOrchestrator {
             args.append(contentsOf: ["--network", "none"])
         } else if isHostNetworkMode(service.networkMode) {
             args.append(contentsOf: ["--network", "host"])
-        } else if let network = (service.networks ?? []).first {
-            let networkArgument = try networkAttachmentArgument(project: project, service: service, network: network)
-            args.append(contentsOf: ["--network", networkArgument])
+        } else {
+            for network in orderedNetworkAttachments(service: service) {
+                let networkArgument = try networkAttachmentArgument(project: project, service: service, network: network)
+                args.append(contentsOf: ["--network", networkArgument])
+            }
         }
         if let pid = try runtimePIDArgument(service: service) {
             args.append(contentsOf: ["--pid", pid])
@@ -343,7 +345,7 @@ extension ComposeOrchestrator {
         var workingProject = project
         try await applyServicePullPolicies(project: workingProject, services: services)
         for serviceReference in services {
-            let service = workingProject.services[serviceReference.name] ?? serviceReference
+            var service = workingProject.services[serviceReference.name] ?? serviceReference
             if service.provider != nil {
                 let variables = try await runProvider(project: workingProject, service: service, action: .up)
                 if !variables.isEmpty {
@@ -359,6 +361,13 @@ extension ComposeOrchestrator {
             if service.image == nil, service.pullPolicy != "build", service.build != nil {
                 try await build(project: workingProject, services: [service.name], noCache: false)
             }
+
+            service = try await serviceByResolvingLinkHosts(
+                project: workingProject,
+                service: service,
+                scaleOverrides: [:],
+            )
+            workingProject.services[service.name] = service
 
             let name = containerName(project: workingProject, service: service, oneOff: false)
             let existing = try await inspectContainer(name)

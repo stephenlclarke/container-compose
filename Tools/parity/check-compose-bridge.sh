@@ -263,6 +263,15 @@ check_conversions() {
     fi
 }
 
+# Require a Docker Engine only for checks that compare Docker's live
+# transformer cache and extracted transformer source. Conversion parity can
+# still use Docker's versioned fixture when an Engine is unavailable.
+check_docker_engine() {
+    if ! "${DOCKER_COMPOSE_COMMAND[@]}" ls --format json >/dev/null 2>&1; then
+        skip_or_fail 'Docker Engine is not reachable; strict Compose Bridge transformer list and create parity requires a Docker daemon'
+    fi
+}
+
 # Check list and ls output against Docker Compose.
 check_transformer_lists() {
     local docker_table docker_json docker_quiet
@@ -306,6 +315,7 @@ main() {
     WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/compose-bridge-parity.XXXXXX")"
     trap cleanup EXIT
     check_conversions
+    check_docker_engine
     check_transformer_lists
     check_transformer_create
     info 'Docker Compose Bridge parity passed.'

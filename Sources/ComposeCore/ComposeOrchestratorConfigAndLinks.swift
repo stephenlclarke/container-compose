@@ -25,6 +25,16 @@ import ContainerizationOCI
 import ContainerResource
 import Foundation
 
+struct ServiceCreatePlanRequest {
+    var project: ComposeProject
+    var service: ComposeService
+    var runtimeName: String
+    var options: ContainerServiceCreatePlanOptions
+    var externalVolumeMounts: ExternalVolumeMounts
+    var labelOverrides: [ComposeLabelOverride]
+    var imageHealthCheckCache: ComposeImageHealthCheckCache?
+}
+
 extension ComposeOrchestrator {
     /// Renders the full canonical config in a supported output format.
     func config(project: ComposeProject, format: String?, commandName: String = "config") throws -> String {
@@ -47,7 +57,9 @@ extension ComposeOrchestrator {
         if options.hash != nil || options.images {
             return true
         }
-        if options.models || options.networks || options.profiles || options.servicesOnly || options.variables != nil || options.volumes {
+        if options.models || options.networks || options.profiles || options.servicesOnly ||
+            options.variables != nil || options.volumes
+        {
             return false
         }
         return true
@@ -153,15 +165,10 @@ extension ComposeOrchestrator {
 
     /// Builds the Compose-owned typed projection that will feed direct
     /// apple/container service creation once image/kernel resolution is wired.
-    func serviceCreatePlan(
-        project: ComposeProject,
-        service: ComposeService,
-        runtimeName: String,
-        planOptions: ContainerServiceCreatePlanOptions,
-        externalVolumeMounts: ExternalVolumeMounts,
-        labelOverrides: [ComposeLabelOverride],
-        imageHealthCheckCache: ComposeImageHealthCheckCache?,
-    ) async throws -> ContainerServiceCreatePlan {
+    func serviceCreatePlan(request: ServiceCreatePlanRequest) async throws -> ContainerServiceCreatePlan {
+        let project = request.project
+        let service = request.service
+        let planOptions = request.options
         guard let image = serviceImage(project: project, service: service) else {
             throw ComposeError.invalidProject("service '\(service.name)' has no image or build")
         }
@@ -170,7 +177,7 @@ extension ComposeOrchestrator {
             ? try await runtimeHealthCheck(
                 project: project,
                 service: service,
-                cache: imageHealthCheckCache,
+                cache: request.imageHealthCheckCache,
                 baseProcess: baseProcess,
             )
             : nil
@@ -178,7 +185,7 @@ extension ComposeOrchestrator {
             ? try runtimeRestartPolicy(service: service) ?? .no
             : .no
         let identity = try ContainerServiceCreateIdentity(
-            name: runtimeName,
+            name: request.runtimeName,
             imageReference: image,
             oneOff: planOptions.oneOff,
             autoRemove: planOptions.autoRemove,
@@ -186,8 +193,8 @@ extension ComposeOrchestrator {
                 project: project,
                 service: service,
                 oneOff: planOptions.oneOff,
-                externalVolumeMounts: externalVolumeMounts,
-                labelOverrides: labelOverrides,
+                externalVolumeMounts: request.externalVolumeMounts,
+                labelOverrides: request.labelOverrides,
             ),
         )
         var runtime = ContainerServiceCreateRuntime()
@@ -233,36 +240,108 @@ extension ComposeOrchestrator {
         return args
     }
 
-    /// Adds active legacy-link aliases to the target services they reference.
-    func projectByApplyingLinks(project: ComposeProject, activeServiceNames: Set<String>) throws -> ComposeProject {
-        var result = project
-        var projectedAliases: [ComposeProjectedLinkAlias] = []
+    /// Validates active static host mappings before runtime resources are created.
+    func projectByValidatingLinks(project: ComposeProject, activeServiceNames: Set<String>) throws -> ComposeProject {
         for sourceName in activeServiceNames.sorted() {
             guard let source = project.services[sourceName] else {
                 continue
             }
-            for link in try serviceLinkReferences(service: source, project: project) where activeServiceNames.contains(link.serviceName) {
-                guard var target = result.services[link.serviceName] else {
+            let extraHostnames = try Set(
+                runtimeHostEntries(service: source)
+                    .flatMap(\.hostnames)
+                    .map { $0.lowercased() },
+            )
+            var staticHostSources: [String: String] = [:]
+            for link in try serviceLinkReferences(service: source, project: project) {
+                guard let target = project.services[link.serviceName] else {
                     continue
                 }
-                let network = try linkNetwork(source: source, target: target, link: link)
-                var aliasesByNetwork = target.networkAliases ?? [:]
-                var aliases = aliasesByNetwork[network] ?? []
-                projectedAliases.append(ComposeProjectedLinkAlias(serviceName: target.name, network: network, alias: link.alias))
-                if !aliases.contains(link.alias) {
-                    aliases.append(link.alias)
-                }
-                aliasesByNetwork[network] = aliases
-                target.networkAliases = aliasesByNetwork
-                result.services[target.name] = target
+                try validateStaticHostAlias(
+                    link.alias,
+                    source: source,
+                    hostSource: "links to '\(link.serviceName)'",
+                    extraHostnames: extraHostnames,
+                    staticHostSources: &staticHostSources,
+                )
+                _ = try linkNetwork(source: source, target: target, link: link)
+            }
+            for link in try serviceExternalLinkReferences(service: source) {
+                try validateStaticHostAlias(
+                    link.alias,
+                    source: source,
+                    hostSource: "external_links to '\(link.containerName)'",
+                    extraHostnames: extraHostnames,
+                    staticHostSources: &staticHostSources,
+                )
             }
         }
-        try validateProjectedLinkAliases(
-            project: project,
-            aliases: projectedAliases,
-            activeServiceNames: activeServiceNames,
-        )
-        return result
+        return project
+    }
+
+    /// Claims one hostname for a generated static host entry.
+    func validateStaticHostAlias(
+        _ alias: String,
+        source: ComposeService,
+        hostSource: String,
+        extraHostnames: Set<String>,
+        staticHostSources: inout [String: String],
+    ) throws {
+        let normalizedAlias = alias.lowercased()
+        if extraHostnames.contains(normalizedAlias) {
+            throw ComposeError.unsupported("service '\(source.name)' \(hostSource) with alias '\(alias)', but extra_hosts already defines that hostname; generated static host entries cannot override host entries")
+        }
+        if let existingSource = staticHostSources[normalizedAlias], existingSource != hostSource {
+            throw ComposeError.unsupported("service '\(source.name)' maps both \(existingSource) and \(hostSource) to alias '\(alias)'; generated static host entries require each alias to reference exactly one target")
+        }
+        staticHostSources[normalizedAlias] = hostSource
+    }
+
+    /// Resolves legacy links into static host entries after linked containers exist.
+    func serviceByResolvingLinkHosts(
+        project: ComposeProject,
+        service: ComposeService,
+        scaleOverrides: [String: Int],
+    ) async throws -> ComposeService {
+        let references = try serviceLinkReferences(service: service, project: project)
+        guard !references.isEmpty else {
+            return service
+        }
+
+        var hostEntries: [String] = []
+        var seenEntries = Set<String>()
+        for reference in references {
+            guard let target = project.services[reference.serviceName] else {
+                continue
+            }
+            let network = try linkNetwork(source: service, target: target, link: reference)
+            let runtimeNetwork = networkRuntimeName(project: project, composeName: network)
+            let replicaCount = try serviceReplicaCount(target, scaleOverrides: scaleOverrides)
+            guard replicaCount > 0 else {
+                throw ComposeError.unsupported("service '\(service.name)' links to '\(reference.serviceName)'; linked service does not create containers")
+            }
+
+            for replicaIndex in 1 ... replicaCount {
+                let containerID = try serviceContainerName(project: project, service: target, index: replicaIndex)
+                guard let container = try await discoveryManager.getContainer(id: containerID) else {
+                    throw ComposeError.invalidProject("service '\(service.name)' links to '\(reference.serviceName)'; linked container '\(containerID)' does not exist")
+                }
+                let attachments = container.networks.filter { $0.network == runtimeNetwork }
+                guard attachments.count == 1, let attachment = attachments.first else {
+                    throw ComposeError.unsupported("service '\(service.name)' links to '\(reference.serviceName)'; linked container '\(containerID)' is not attached to runtime network '\(runtimeNetwork)'")
+                }
+                let entry = "\(reference.alias)=\(attachment.ipv4Address)"
+                if seenEntries.insert(entry).inserted {
+                    hostEntries.append(entry)
+                }
+            }
+        }
+
+        guard !hostEntries.isEmpty else {
+            return service
+        }
+        var resolvedService = service
+        resolvedService.extraHosts = (resolvedService.extraHosts ?? []) + hostEntries
+        return resolvedService
     }
 
     /// Resolves Compose `external_links` into runtime host entries for the supported local subset.
@@ -288,28 +367,49 @@ extension ComposeOrchestrator {
         guard !references.isEmpty else {
             return []
         }
-        let network = try externalLinkRuntimeNetwork(project: project, service: service)
         var entries: [String] = []
+        var seenEntries = Set<String>()
         for reference in references {
             guard let container = try await discoveryManager.getContainer(id: reference.containerName) else {
                 throw ComposeError.invalidProject("service '\(service.name)' external_links references missing container '\(reference.containerName)'")
             }
+            let network = try externalLinkRuntimeNetwork(
+                project: project,
+                service: service,
+                externalContainer: container,
+                reference: reference,
+            )
             let attachments = container.networks.filter { $0.network == network }
             guard attachments.count == 1, let attachment = attachments.first else {
                 throw ComposeError.unsupported("service '\(service.name)' external_links to '\(reference.containerName)'; external container must share exactly one runtime network with the service")
             }
-            entries.append("\(reference.alias)=\(attachment.ipv4Address)")
+            let entry = "\(reference.alias)=\(attachment.ipv4Address)"
+            if seenEntries.insert(entry).inserted {
+                entries.append(entry)
+            }
         }
         return entries
     }
 
-    /// Returns the single runtime network that can safely back legacy external links.
-    func externalLinkRuntimeNetwork(project: ComposeProject, service: ComposeService) throws -> String {
-        let networks = service.networks ?? []
-        guard networks.count == 1, let network = networks.first else {
-            throw ComposeError.unsupported("service '\(service.name)' uses external_links; external links require exactly one Compose network until apple/container exposes source-scoped DNS links")
+    /// Returns the single runtime network a source service shares with one external link.
+    func externalLinkRuntimeNetwork(
+        project: ComposeProject,
+        service: ComposeService,
+        externalContainer: ComposeContainerSummary,
+        reference: ComposeExternalLinkReference,
+    ) throws -> String {
+        let serviceNetworks = Set(
+            (service.networks ?? []).map { networkRuntimeName(project: project, composeName: $0) },
+        )
+        let externalNetworks = Set(externalContainer.networks.map(\.network))
+        let sharedNetworks = serviceNetworks.intersection(externalNetworks).sorted()
+        guard sharedNetworks.count == 1, let network = sharedNetworks.first else {
+            throw ComposeError.unsupported(
+                "service '\(service.name)' external_links to '\(reference.containerName)'; " +
+                    "external container must share exactly one runtime network with the service",
+            )
         }
-        return networkRuntimeName(project: project, composeName: network)
+        return network
     }
 
     /// Returns the single shared network a legacy link can use.
@@ -321,34 +421,5 @@ extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(source.name)' links to '\(link.serviceName)'; links require both services to share exactly one Compose network until apple/container exposes source-scoped DNS links")
         }
         return sharedNetworks[0]
-    }
-
-    /// Rejects projected link aliases the current apple/container DNS lookup cannot disambiguate.
-    func validateProjectedLinkAliases(
-        project: ComposeProject,
-        aliases projectedAliases: [ComposeProjectedLinkAlias],
-        activeServiceNames: Set<String>,
-    ) throws {
-        var ownersByNetwork: [String: [String: String]] = [:]
-        for projectedAlias in projectedAliases {
-            if let existingOwner = ownersByNetwork[projectedAlias.network]?[projectedAlias.alias],
-               existingOwner != projectedAlias.serviceName
-            {
-                throw ComposeError.unsupported("services '\(existingOwner)' and '\(projectedAlias.serviceName)' share network alias '\(projectedAlias.alias)' on network '\(projectedAlias.network)'; shared aliases need apple/container source-scoped DNS support")
-            }
-            ownersByNetwork[projectedAlias.network, default: [:]][projectedAlias.alias] = projectedAlias.serviceName
-
-            for serviceName in activeServiceNames.sorted() where serviceName != projectedAlias.serviceName {
-                guard let service = project.services[serviceName],
-                      service.networks?.count == 1,
-                      service.networks?.first == projectedAlias.network
-                else {
-                    continue
-                }
-                if try networkAliasValues(service: service, network: projectedAlias.network).contains(projectedAlias.alias) {
-                    throw ComposeError.unsupported("services '\(service.name)' and '\(projectedAlias.serviceName)' share network alias '\(projectedAlias.alias)' on network '\(projectedAlias.network)'; shared aliases need apple/container source-scoped DNS support")
-                }
-            }
-        }
     }
 }

@@ -227,10 +227,6 @@ services:
         target: /etc/api.conf
     secrets:
       - api_token
-    networks:
-      default:
-        aliases:
-          - api-alias
   worker:
     image: alpine:3.20
     command: ["sh", "-c", "sleep 60"]
@@ -333,9 +329,6 @@ require(mounts.get("/etc/api.conf", {}).get("ReadOnly") is True, "api config bin
 require(mounts.get("/run/secrets/api_token", {}).get("Source") == f"{tmpdir}/api-token.txt", "api secret bind was not rendered")
 require(mounts.get("/run/secrets/api_token", {}).get("ReadOnly") is True, "api secret bind was not readonly")
 
-network = api["NetworkSettings"]["Networks"][f"{project}_default"]
-require("api-alias" in network["Aliases"], "api network alias was not rendered")
-
 worker = inspect("worker")
 worker_host = worker["HostConfig"]
 require(worker_host["LogConfig"]["Type"] == "none", "worker disabled logging was not rendered")
@@ -368,7 +361,6 @@ validate_container_compose_dry_run() {
     [[ "$dry_run_output" == *"--publish 127.0.0.1:18080:8080"* ]]
     [[ "$dry_run_output" == *"--volume $TMPDIR/api.conf:/etc/api.conf:ro"* ]]
     [[ "$dry_run_output" == *"--volume $TMPDIR/api-token.txt:/run/secrets/api_token:ro"* ]]
-    [[ "$dry_run_output" == *"--network $CONTAINER_PROJECT_NAME""_default,alias=api-alias"* ]]
     [[ "$dry_run_output" == *"--workdir /srv/app"* ]]
     [[ "$dry_run_output" == *"--user 1000:1000"* ]]
     [[ "$dry_run_output" == *"--hostname api-host"* ]]

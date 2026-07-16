@@ -36,9 +36,6 @@ extension ComposeNetworkOptions {
             fields.append("driver_opts")
         }
         _ = try networkMTU()
-        if let gatewayPriority, gatewayPriority != 0 {
-            fields.append("gw_priority")
-        }
         if let interfaceName, !interfaceName.isEmpty {
             fields.append("interface_name")
         }
@@ -50,9 +47,6 @@ extension ComposeNetworkOptions {
         }
         if let linkLocalIPs, !linkLocalIPs.isEmpty {
             fields.append("link_local_ips")
-        }
-        if let priority, priority != 0 {
-            fields.append("priority")
         }
         return fields
     }
@@ -195,10 +189,10 @@ extension ComposeProject {
     private func referencedComposeResources(_ resources: [ComposeValue]?) -> [String] {
         resources?.compactMap { resource in
             switch resource {
-            case .string(let name):
+            case let .string(name):
                 return name
-            case .object(let fields):
-                if case .string(let source)? = fields["source"] {
+            case let .object(fields):
+                if case let .string(source)? = fields["source"] {
                     return source
                 }
                 return nil
@@ -293,7 +287,7 @@ func networkRuntimeName(project: ComposeProject, composeName: String) -> String 
     return networkRuntimeName(project: project, composeName: composeName, network: network)
 }
 
-/// Builds the single network attachment value accepted by apple/container.
+/// Builds one network attachment value accepted by apple/container.
 func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) throws -> String {
     var argument = networkRuntimeName(project: project, composeName: network)
     var options: [String] = []
@@ -312,12 +306,43 @@ func networkAttachmentArgument(project: ComposeProject, service: ComposeService,
     return argument
 }
 
-/// Resolves the effective MAC address for a supported single-network service.
-func networkMACAddress(service: ComposeService, network: String) -> String? {
-    nonEmpty(service.networkOptions?[network]?.macAddress) ?? nonEmpty(service.macAddress)
+/// Orders network attachments so the runtime's first interface has the selected gateway.
+func orderedNetworkAttachments(service: ComposeService) -> [String] {
+    let attachments = service.networks ?? []
+    return attachments.enumerated().sorted { lhs, rhs in
+        let lhsPriority = service.networkOptions?[lhs.element]?.gatewayPriority ?? 0
+        let rhsPriority = service.networkOptions?[rhs.element]?.gatewayPriority ?? 0
+        if lhsPriority != rhsPriority {
+            return lhsPriority > rhsPriority
+        }
+        return lhs.offset < rhs.offset
+    }.map(\.element)
 }
 
-/// Returns canonical network aliases for a supported single-network attachment.
+/// Returns the network selected for a service-level MAC address by `priority`.
+func serviceMACAddressNetwork(service: ComposeService) -> String? {
+    guard let firstNetwork = service.networks?.first else {
+        return nil
+    }
+    return service.networks?.dropFirst().reduce(firstNetwork) { selected, network in
+        let selectedPriority = service.networkOptions?[selected]?.priority ?? 0
+        let networkPriority = service.networkOptions?[network]?.priority ?? 0
+        return networkPriority > selectedPriority ? network : selected
+    }
+}
+
+/// Resolves the effective MAC address for a supported network attachment.
+func networkMACAddress(service: ComposeService, network: String) -> String? {
+    if let macAddress = nonEmpty(service.networkOptions?[network]?.macAddress) {
+        return macAddress
+    }
+    guard serviceMACAddressNetwork(service: service) == network else {
+        return nil
+    }
+    return nonEmpty(service.macAddress)
+}
+
+/// Returns canonical network aliases for an attachment.
 func networkAliasValues(service: ComposeService, network: String) throws -> [String] {
     var aliases: [String] = []
     var seen = Set<String>()

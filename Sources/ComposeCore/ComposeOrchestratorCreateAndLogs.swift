@@ -38,7 +38,7 @@ public extension ComposeOrchestrator {
         let selectedServiceReferences = try create.noDeps && !create.services.isEmpty
             ? selectedServices(project: project, selected: create.services)
             : orderedServices(project: project, selected: create.services)
-        var workingProject = try projectByApplyingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
+        var workingProject = try projectByValidatingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
         var services = try selectedServiceReferences.map { service in
             guard let activeService = workingProject.services[service.name] else {
                 throw ComposeError.invalidProject("unknown service '\(service.name)'")
@@ -73,10 +73,18 @@ public extension ComposeOrchestrator {
 
         try await ensureResources(project: workingProject)
 
-        for service in services {
+        for serviceReference in services {
+            var service = workingProject.services[serviceReference.name] ?? serviceReference
             if shouldBuildServiceForCreate(create, service: service) {
                 try await build(project: project, services: [service.name], noCache: false, quiet: create.quietBuild)
             }
+
+            service = try await serviceByResolvingLinkHosts(
+                project: workingProject,
+                service: service,
+                scaleOverrides: scaleOverrides,
+            )
+            workingProject.services[service.name] = service
 
             let replicaCount = try serviceReplicaCount(service, scaleOverrides: scaleOverrides)
             if replicaCount > 0 {

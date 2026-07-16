@@ -144,7 +144,7 @@ extension ComposeOrchestrator {
             ? selectedServices(project: project, selected: up.services)
             : orderedServices(project: project, selected: up.services)
         var waitTargets: [ServiceContainerTarget] = []
-        var workingProject = try projectByApplyingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
+        var workingProject = try projectByValidatingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
         var services = try selectedServiceReferences.map { service in
             guard let activeService = workingProject.services[service.name] else {
                 throw ComposeError.invalidProject("unknown service '\(service.name)'")
@@ -205,7 +205,7 @@ extension ComposeOrchestrator {
 
         var changedServices = Set<String>()
         for serviceReference in services {
-            let service = workingProject.services[serviceReference.name] ?? serviceReference
+            var service = workingProject.services[serviceReference.name] ?? serviceReference
             if validateDependencies {
                 try await waitForDependencyConditions(project: workingProject, service: service)
             }
@@ -225,6 +225,13 @@ extension ComposeOrchestrator {
             if shouldBuildServiceForUp(up, service: service) {
                 try await build(project: workingProject, services: [service.name], noCache: false, quiet: up.quietBuild)
             }
+
+            service = try await serviceByResolvingLinkHosts(
+                project: workingProject,
+                service: service,
+                scaleOverrides: scaleOverrides,
+            )
+            workingProject.services[service.name] = service
 
             let replicaCount = try serviceReplicaCount(service, scaleOverrides: scaleOverrides)
             var serviceChanged = false

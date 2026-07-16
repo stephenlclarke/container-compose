@@ -451,7 +451,7 @@ public extension ComposeOrchestrator {
             : orderedServices(project: runProject, selected: [serviceName]).filter { $0.name != serviceName }
         var activeServiceNames = Set(selectedDependencyServices.map(\.name))
         activeServiceNames.insert(serviceName)
-        runProject = try projectByApplyingLinks(project: runProject, activeServiceNames: activeServiceNames)
+        runProject = try projectByValidatingLinks(project: runProject, activeServiceNames: activeServiceNames)
         service = runProject.services[serviceName] ?? service
         var dependencyServices = try selectedDependencyServices.map { service in
             guard let activeService = runProject.services[service.name] else {
@@ -734,10 +734,15 @@ public extension ComposeOrchestrator {
             externalVolumeMounts: externalVolumeMounts,
             imageHealthCheckCache: cache,
         )
-        let preparedService = preparedProject.services[service.name] ?? service
+        var preparedService = preparedProject.services[service.name] ?? service
         if !run.noDeps {
             try await waitForDependencyConditions(project: preparedProject, service: preparedService)
         }
+        preparedService = try await serviceByResolvingLinkHosts(
+            project: preparedProject,
+            service: preparedService,
+            scaleOverrides: [:],
+        )
         return ComposeRunServicePreparation(
             project: preparedProject,
             service: preparedService,
