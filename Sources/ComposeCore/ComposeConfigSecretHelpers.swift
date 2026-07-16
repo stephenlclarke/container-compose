@@ -535,17 +535,20 @@ private func externalComposeFileGrantSourcePath(
     fields: [String: ComposeValue],
     context: ComposeFileGrantSourceContext,
 ) throws -> String {
-    guard context.kind == .config else {
-        throw ComposeError.unsupported("service '\(context.service.name)' uses external \(context.kind.singularName) '\(grant.source)'; external \(context.kind.pluralName) need an apple/container \(context.kind.singularName) store primitive")
-    }
     try validateMaterializedGrantOwnership(grant: grant, service: context.service, kind: context.kind)
-    let name = try externalConfigRuntimeName(project: context.project, composeName: grant.source, fields: fields)
+    let name = try externalComposeFileRuntimeName(
+        project: context.project,
+        composeName: grant.source,
+        fields: fields,
+        kind: context.kind,
+    )
     let permissions = try composeFileGrantPermissions(grant: grant, kind: context.kind, service: context.service)
-    return materializedExternalConfigURL(
+    return materializedExternalComposeFileURL(
         project: context.project,
         grant: grant,
         runtimeName: name,
         permissions: permissions,
+        kind: context.kind,
         root: context.materializedConfigSecretRoot,
     ).path
 }
@@ -637,14 +640,15 @@ func materializedComposeFile(
     )
 }
 
-/// Resolves the configured runtime resource name for an external Compose config.
-func externalConfigRuntimeName(
+/// Resolves the configured runtime resource name for an external Compose file grant.
+func externalComposeFileRuntimeName(
     project: ComposeProject,
     composeName: String,
     fields: [String: ComposeValue],
+    kind: ComposeFileMountKind,
 ) throws -> String {
     guard fields["external"]?.boolValue == true else {
-        throw ComposeError.invalidProject("config '\(composeName)' is not external")
+        throw ComposeError.invalidProject("\(kind.singularName) '\(composeName)' is not external")
     }
     let declaredName = fields["name"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
     return declaredResourceName(
@@ -655,17 +659,18 @@ func externalConfigRuntimeName(
     )
 }
 
-/// Returns the stable project-private file location for an external config.
-func materializedExternalConfigURL(
+/// Returns the stable project-private file location for an external config or secret.
+func materializedExternalComposeFileURL(
     project: ComposeProject,
     grant: ComposeFileGrant,
     runtimeName: String,
     permissions: Int,
+    kind: ComposeFileMountKind,
     root: URL,
 ) -> URL {
     let digest = stableHash("\(String(permissions, radix: 8))\n\(runtimeName)")
     let directory = materializedProjectDirectory(project: project, root: root)
-        .appendingPathComponent(ComposeFileMountKind.config.pluralName, isDirectory: true)
+        .appendingPathComponent(kind.pluralName, isDirectory: true)
     let filename = "\(slug(grant.source))-external-\(digest.prefix(16))"
     return directory.appendingPathComponent(filename, isDirectory: false)
 }

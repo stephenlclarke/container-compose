@@ -42,6 +42,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     let upMenuController: ComposeUpMenuControlling
     let pullMetadataStore: ComposePullMetadataStoring
     let resourceManager: ContainerResourceManaging
+    let secretReader: ContainerSecretReading
     let signalProxy: ComposeSignalProxying
     let statsManager: ContainerStatsManaging
     let topManager: ContainerTopManaging
@@ -66,6 +67,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         upMenuController = dependencies.upMenuController
         pullMetadataStore = dependencies.pullMetadataStore
         resourceManager = dependencies.resourceManager
+        secretReader = dependencies.secretReader
         signalProxy = dependencies.signalProxy
         statsManager = dependencies.statsManager
         topManager = dependencies.topManager

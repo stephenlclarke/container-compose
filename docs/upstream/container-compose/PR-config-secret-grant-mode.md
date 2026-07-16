@@ -44,7 +44,9 @@ The previous materialization slice gave `container-compose` control over generat
 - Supported: Compose writable-bit ignoring and executable-bit preservation.
 - Supported: file-backed grant metadata remains source-file controlled and is not mutated by `container-compose`.
 - Remaining gap: `uid`/`gid` ownership remapping for generated grants needs an `apple/container` runtime primitive.
-- Remaining gap: external configs/secrets still need an `apple/container` lookup or store primitive.
+- Remaining gap: generated config/secret ownership remapping still needs an
+  `apple/container` runtime primitive. External config and secret lookup are
+  supported by the respective local stores.
 
 ## Testing
 

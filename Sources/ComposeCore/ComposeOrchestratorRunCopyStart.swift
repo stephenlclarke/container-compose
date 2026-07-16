@@ -144,7 +144,7 @@ extension ComposeOrchestrator {
             replicaCount: run.replicaCount,
         )
         if !options.dryRun {
-            try await materializeExternalConfigs(project: project, service: service)
+            try await materializeExternalConfigSecrets(project: project, service: service)
         }
         let mounts = try effectiveServiceVolumes(
             project: project,

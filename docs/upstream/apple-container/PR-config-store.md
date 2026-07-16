@@ -52,5 +52,5 @@ container config --help
 ## Follow-Up Consumer
 
 `container-compose` can support external `configs` after this backend is
-available. External `secrets` intentionally remain partial pending a secure
-store.
+available. External secrets are supplied by the separate Keychain-backed
+secure-store follow-up; this config-store change remains non-secret by design.

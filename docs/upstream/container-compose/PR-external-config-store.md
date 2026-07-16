@@ -5,7 +5,8 @@
 - Resolve external Compose configs from the generic `container config` store.
 - Stage returned bytes as private, read-only files for existing bind mounts.
 - Preserve binary content, external `name:` resolution, and requested modes.
-- Keep external secrets rejected until a purpose-built secure store exists.
+- Keep external secrets out of this non-secret config-store change; they are
+  added separately by [PR-external-secret-store.md](PR-external-secret-store.md).
 
 ## Intended Review Delta
 
@@ -34,8 +35,9 @@ handoff is [PR-config-store.md](../apple-container/PR-config-store.md).
 
 - Supported: external config grants for `up`, `run`, and `create`, including
   external `name:`, binary content, default targets, and Compose read-only mode.
-- Not supported: external secrets, generated `uid`/`gid`, and live mutation of
-  an already-consumed immutable config.
+- Not supported by this config-store change: generated `uid`/`gid` and live
+  mutation of an already-consumed immutable config. External secrets are
+  supported by the separate secure-store follow-up.
 - Config updates follow immutable-resource semantics: delete and create the
   config, then recreate the service to consume its replacement.
 
