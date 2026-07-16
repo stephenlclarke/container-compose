@@ -16,11 +16,11 @@
 
 ## Motivation and Context
 
-Docker Compose supports file-like runtime config and secret sources that can be represented locally without a first-class runtime store. Configs support `file`, `environment`, `content`, and `external`; secrets support `file` and `environment` for Docker Compose local workflows.
+Docker Compose supports file-like runtime config and secret sources that can be represented locally without a first-class runtime store. Configs support `file`, `environment`, `content`, and `external`; secrets support `file` and `environment`, with external secrets supplied by the separate secure-store follow-up.
 
 `apple/container` already exposes the runtime primitive needed for local file-like grants: read-only bind mounts. This plugin can therefore support inline config content and environment-backed config/secret values without adding Compose-specific policy to `apple/container`.
 
-External configs and strict `uid`/`gid` ownership semantics remained separate runtime gaps at the time of this local materialization slice. External configs are now served by the config-store follow-up; external secrets and ownership remapping remain separate runtime gaps.
+External configs and strict `uid`/`gid` ownership semantics remained separate runtime gaps at the time of this local materialization slice. External configs are now served by the config-store follow-up, and external secrets are served by the secure-store follow-up; ownership remapping remains a runtime gap.
 
 ## Commit Tracking
 
@@ -47,7 +47,8 @@ External configs and strict `uid`/`gid` ownership semantics remained separate ru
 - Supported: runtime service grants for file-backed configs/secrets, `configs.content`, `configs.environment`, and `secrets.environment`.
 - Supported: Docker Compose default mount targets, including `/<config-name>` for configs and `/run/secrets/<secret-name>` for secrets.
 - Supported by the config-store follow-up: `external: true` configs, including external `name` lookup.
-- Remaining gap: `external: true` secrets need a secure `apple/container` store and lookup primitive.
+- Supported by the secure-store follow-up: `external: true` secrets, including
+  external `name` lookup.
 - Remaining gap: strict service-level `uid` and `gid` materialization needs runtime ownership support beyond bind-mounting a host file.
 
 ## Testing

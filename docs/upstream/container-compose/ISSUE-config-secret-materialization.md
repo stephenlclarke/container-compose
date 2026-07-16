@@ -27,7 +27,7 @@ secrets:
 
 ## Docker Compose v2 Behavior
 
-Docker Compose mounts granted configs and secrets as files. Config source data can come from `file`, `environment`, `content`, or `external`. Secret source data can come from `file` or `environment` for Docker Compose local workflows.
+Docker Compose mounts granted configs and secrets as files. Config source data can come from `file`, `environment`, `content`, or `external`. Secret source data can come from `file`, `environment`, or the later external secure-store follow-up.
 
 Reference surfaces:
 
@@ -42,7 +42,7 @@ With this change, `container-compose` materializes Docker Compose local file-lik
 
 ## Likely Owner
 
-`container-compose` owns this local-development behavior because the runtime already supports read-only file bind mounts. `apple/container` now owns the first-class non-secret external config store and lookup primitive consumed by this plugin. A secure external secret store and ownership-remapping primitive remain separate future runtime work.
+`container-compose` owns this local-development behavior because the runtime already supports read-only file bind mounts. `apple/container` now owns the first-class non-secret external config store and a local Keychain-backed external secret store consumed by this plugin. Ownership remapping remains separate future runtime work.
 
 ## Minimal Example
 

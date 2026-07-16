@@ -49,6 +49,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
     public var resourceManager: ContainerResourceManaging
     public var statsManager: ContainerStatsManaging
     public var topManager: ContainerTopManaging
+    public var secretReader: ContainerSecretReading
 
     public init(
         configReader: ContainerConfigReading = ContainerClientConfigReader(),
@@ -58,6 +59,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
         resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
         statsManager: ContainerStatsManaging = ContainerClientStatsManager(),
         topManager: ContainerTopManaging = ContainerClientTopManager(),
+        secretReader: ContainerSecretReading = ContainerClientSecretReader(),
     ) {
         self.configReader = configReader
         self.discoveryManager = discoveryManager
@@ -66,6 +68,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
         self.resourceManager = resourceManager
         self.statsManager = statsManager
         self.topManager = topManager
+        self.secretReader = secretReader
     }
 
     public init(
@@ -77,6 +80,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
         resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
         statsManager: ContainerStatsManaging = ContainerClientStatsManager(),
         topManager: ContainerTopManaging = ContainerClientTopManager(),
+        secretReader: ContainerSecretReading = ContainerClientSecretReader(),
     ) {
         self.init(
             configReader: configReader,
@@ -90,6 +94,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
             resourceManager: resourceManager,
             statsManager: statsManager,
             topManager: topManager,
+            secretReader: secretReader,
         )
     }
 }
@@ -123,6 +128,11 @@ public struct ComposeOrchestratorDependencies: Sendable {
     public var configReader: ContainerConfigReading {
         get { runtime.configReader }
         set { runtime.configReader = newValue }
+    }
+
+    public var secretReader: ContainerSecretReading {
+        get { runtime.secretReader }
+        set { runtime.secretReader = newValue }
     }
 
     public var discoveryManager: ContainerDiscoveryManaging {

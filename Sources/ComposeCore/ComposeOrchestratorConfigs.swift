@@ -17,36 +17,72 @@
 import Foundation
 
 extension ComposeOrchestrator {
-    /// Stages external Compose configs as private files for read-only bind mounts.
-    func materializeExternalConfigs(project: ComposeProject, service: ComposeService) async throws {
-        for value in service.configs ?? [] {
-            let grant = try parseComposeFileGrant(value, kind: .config, service: service)
-            guard let definition = project.configs?[grant.source] else {
-                throw ComposeError.invalidProject("service '\(service.name)' references undefined config '\(grant.source)'")
+    /// Stages external Compose configs and secrets as private read-only files.
+    func materializeExternalConfigSecrets(project: ComposeProject, service: ComposeService) async throws {
+        try await materializeExternalComposeFileGrants(
+            project: project,
+            service: service,
+            kind: .config,
+            grants: service.configs ?? [],
+            definitions: project.configs ?? [:],
+            read: { [configReader] name in
+                try await configReader.readConfig(name: name)
+            },
+        )
+        try await materializeExternalComposeFileGrants(
+            project: project,
+            service: service,
+            kind: .secret,
+            grants: service.secrets ?? [],
+            definitions: project.secrets ?? [:],
+            read: { [secretReader] name in
+                try await secretReader.readSecret(name: name)
+            },
+        )
+    }
+
+    private func materializeExternalComposeFileGrants(
+        project: ComposeProject,
+        service: ComposeService,
+        kind: ComposeFileMountKind,
+        grants: [ComposeValue],
+        definitions: [String: ComposeValue],
+        read: @Sendable (String) async throws -> Data,
+    ) async throws {
+        for value in grants {
+            let grant = try parseComposeFileGrant(value, kind: kind, service: service)
+            guard let definition = definitions[grant.source] else {
+                throw ComposeError.invalidProject("service '\(service.name)' references undefined \(kind.singularName) '\(grant.source)'")
             }
             guard case let .object(fields) = definition else {
-                throw ComposeError.invalidProject("config '\(grant.source)' definition must be an object")
+                throw ComposeError.invalidProject("\(kind.singularName.capitalized) '\(grant.source)' definition must be an object")
             }
             guard fields["external"]?.boolValue == true else {
                 continue
             }
 
-            try validateMaterializedGrantOwnership(grant: grant, service: service, kind: .config)
-            let runtimeName = try externalConfigRuntimeName(project: project, composeName: grant.source, fields: fields)
+            try validateMaterializedGrantOwnership(grant: grant, service: service, kind: kind)
+            let runtimeName = try externalComposeFileRuntimeName(
+                project: project,
+                composeName: grant.source,
+                fields: fields,
+                kind: kind,
+            )
             let contents: Data
             do {
-                contents = try await configReader.readConfig(name: runtimeName)
+                contents = try await read(runtimeName)
             } catch {
-                throw ComposeError.invalidProject("service '\(service.name)' could not read external config '\(grant.source)' as '\(runtimeName)': \(error.localizedDescription)")
+                throw ComposeError.invalidProject("service '\(service.name)' could not read external \(kind.singularName) '\(grant.source)' as '\(runtimeName)': \(error.localizedDescription)")
             }
 
-            let permissions = try composeFileGrantPermissions(grant: grant, kind: .config, service: service)
+            let permissions = try composeFileGrantPermissions(grant: grant, kind: kind, service: service)
             let materialized = ComposeMaterializedFile(
-                url: materializedExternalConfigURL(
+                url: materializedExternalComposeFileURL(
                     project: project,
                     grant: grant,
                     runtimeName: runtimeName,
                     permissions: permissions,
+                    kind: kind,
                     root: options.materializedConfigSecretDirectory,
                 ),
                 contents: contents,

@@ -18,7 +18,7 @@ import ComposeCore
 import Foundation
 import Testing
 
-@Suite("External config orchestration")
+@Suite("External config and secret orchestration")
 struct ExternalConfigOrchestratorTests {
     @Test
     func `up materializes external configs through the container config store`() async throws {
@@ -74,25 +74,83 @@ struct ExternalConfigOrchestratorTests {
     }
 
     @Test
-    func `up rejects external secrets before creating resources`() async throws {
+    func `up materializes external secrets through the container secret store`() async throws {
+        let directory = try temporaryExternalConfigDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let reader = ExternalSecretReader(secrets: [
+            "shared_api_secret": Data([0x00, 0xFF, 0x0A]),
+        ])
         let runner = RecordingRunner()
         var service = ComposeService(name: "api", image: "example/api")
-        service.secrets = [.object(["source": .string("app_secret")])]
+        service.attach = false
+        service.secrets = [
+            .object([
+                "mode": .string("0440"),
+                "source": .string("api_secret"),
+                "target": .string("api-token"),
+            ]),
+        ]
         var project = ComposeProject(name: "demo", services: ["api": service])
-        project.secrets = ["app_secret": .object(["external": .bool(true)])]
-        let expectedError = ComposeError.unsupported(
-            "service 'api' uses external secret 'app_secret'; external secrets need "
-                + "an apple/container secret store primitive",
+        project.secrets = [
+            "api_secret": .object([
+                "external": .bool(true),
+                "name": .string("shared_api_secret"),
+            ]),
+        ]
+        var options = ComposeExecutionOptions()
+        options.materializedConfigSecretDirectory = directory.appendingPathComponent(
+            "state",
+            isDirectory: true,
+        )
+        var runtime = ComposeOrchestratorRuntimeDependencies()
+        runtime.secretReader = reader
+        runtime.discoveryManager = EmptyContainerDiscovery()
+        let dependencies = ComposeOrchestratorDependencies(
+            runner: runner,
+            options: options,
+            runtime: runtime,
         )
 
-        await #expect(throws: expectedError) {
-            try await ComposeOrchestrator(runner: runner).up(
-                project: project,
-                options: ComposeUpOptions(),
-            )
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: options,
+            dependencies: dependencies,
+        ).up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        let source = try #require(readOnlyVolumeSource(target: "/run/secrets/api-token", in: command))
+        #expect(try Data(contentsOf: URL(fileURLWithPath: source)) == Data([0x00, 0xFF, 0x0A]))
+        #expect(try posixPermissions(at: source) == 0o440)
+        #expect(await reader.requests == ["shared_api_secret"])
+    }
+
+    @Test
+    func `dry run does not read external secrets`() async throws {
+        let reader = ExternalSecretReader(secrets: [:])
+        let runner = RecordingRunner()
+        var service = ComposeService(name: "api", image: "example/api")
+        service.secrets = [.object(["source": .string("api_secret")])]
+        var project = ComposeProject(name: "demo", services: ["api": service])
+        project.secrets = ["api_secret": .object(["external": .bool(true)])]
+        var runtime = ComposeOrchestratorRuntimeDependencies()
+        runtime.secretReader = reader
+        runtime.discoveryManager = EmptyContainerDiscovery()
+        let options = ComposeExecutionOptions(dryRun: true)
+        let dependencies = ComposeOrchestratorDependencies(
+            runner: runner,
+            options: options,
+            runtime: runtime,
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: options,
+            dependencies: dependencies,
+        ).up(project: project, options: ComposeUpOptions())
+
+        #expect(await reader.requests.isEmpty)
     }
 }
 
@@ -112,6 +170,27 @@ private actor ExternalConfigReader: ContainerConfigReading {
         storage.append(name)
         guard let contents = configs[name] else {
             throw ComposeError.invalidProject("missing external config fixture '\(name)'")
+        }
+        return contents
+    }
+}
+
+private actor ExternalSecretReader: ContainerSecretReading {
+    private let secrets: [String: Data]
+    private var storage: [String] = []
+
+    init(secrets: [String: Data]) {
+        self.secrets = secrets
+    }
+
+    var requests: [String] {
+        storage
+    }
+
+    func readSecret(name: String) async throws -> Data {
+        storage.append(name)
+        guard let contents = secrets[name] else {
+            throw ComposeError.invalidProject("missing external secret fixture '\(name)'")
         }
         return contents
     }
