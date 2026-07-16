@@ -450,14 +450,18 @@ extension ComposeOrchestrator {
         }
         if options.dryRun {
             for target in targets {
-                emitComposeRuntimeOperation(logRuntimeArguments(
-                    id: target.name,
-                    follow: true,
-                    tail: nil,
-                    since: nil,
-                    until: nil,
-                    timestamps: up.timestamps,
-                ))
+                emitComposeRuntimeOperation(
+                    logRuntimeArguments(
+                        .init(
+                            id: target.name,
+                            follow: true,
+                            tail: nil,
+                            since: nil,
+                            until: nil,
+                            timestamps: up.timestamps,
+                        )
+                    )
+                )
             }
             return
         }
@@ -505,14 +509,18 @@ extension ComposeOrchestrator {
     ) async throws -> Int32? {
         if options.dryRun {
             for target in targets {
-                emitComposeRuntimeOperation(logRuntimeArguments(
-                    id: target.name,
-                    follow: true,
-                    tail: nil,
-                    since: nil,
-                    until: nil,
-                    timestamps: up.timestamps,
-                ))
+                emitComposeRuntimeOperation(
+                    logRuntimeArguments(
+                        .init(
+                            id: target.name,
+                            follow: true,
+                            tail: nil,
+                            since: nil,
+                            until: nil,
+                            timestamps: up.timestamps,
+                        )
+                    )
+                )
             }
             if let exitControlOperation {
                 return try await exitControlOperation()

@@ -25,26 +25,56 @@ import ContainerizationOCI
 import ContainerResource
 import Foundation
 
+/// Direct-runtime log arguments used by dry-run rendering.
+struct RuntimeLogArgumentRequest {
+    let id: String
+    let follow: Bool
+    let tail: Int?
+    let since: String?
+    let until: String?
+    let timestamps: Bool
+}
+
+private struct ComposeRunProjectConfiguration {
+    let project: ComposeProject
+    let service: ComposeService
+}
+
+private struct ComposeRunDependencyPreparation {
+    let project: ComposeProject
+    let service: ComposeService
+    let dependencies: [ComposeService]
+    let labelOverrides: [ComposeLabelOverride]
+    let publishedPorts: [String]
+}
+
+private struct ComposeRunServicePreparation {
+    let project: ComposeProject
+    let service: ComposeService
+    let externalVolumeMounts: ExternalVolumeMounts
+    let imageHealthCheckCache: ComposeImageHealthCheckCache
+}
+
 public extension ComposeOrchestrator {
     /// Renders direct runtime arguments for log dry-run output.
-    internal func logRuntimeArguments(id: String, follow: Bool, tail: Int?, since: String?, until: String?, timestamps: Bool) -> [String] {
+    internal func logRuntimeArguments(_ request: RuntimeLogArgumentRequest) -> [String] {
         var args = ["logs"]
-        if follow {
+        if request.follow {
             args.append("--follow")
         }
-        if let tail {
+        if let tail = request.tail {
             args.append(contentsOf: ["-n", String(tail)])
         }
-        if let since {
+        if let since = request.since {
             args.append(contentsOf: ["--since", since])
         }
-        if let until {
+        if let until = request.until {
             args.append(contentsOf: ["--until", until])
         }
-        if timestamps {
+        if request.timestamps {
             args.append("--timestamps")
         }
-        args.append(id)
+        args.append(request.id)
         return args
     }
 
@@ -265,71 +295,96 @@ public extension ComposeOrchestrator {
         guard !exec.command.isEmpty else {
             throw ComposeError.invalidProject("exec requires a command")
         }
-        var args = ["exec"]
+        let containerID = try await serviceContainerID(project: project, service: service, index: exec.index)
+        let arguments = execArguments(containerID: containerID, options: exec)
+        try await executeCommand(
+            service: service,
+            containerID: containerID,
+            options: exec,
+            arguments: arguments,
+        )
+    }
+
+    /// Renders the direct runtime argument vector for `compose exec`.
+    private func execArguments(containerID: String, options exec: ComposeExecOptions) -> [String] {
+        var arguments = ["exec"]
         if exec.detach {
-            args.append("--detach")
+            arguments.append("--detach")
         }
         for environment in exec.environment {
-            args.append(contentsOf: ["--env", environment])
+            arguments.append(contentsOf: ["--env", environment])
         }
         if let user = exec.user {
-            args.append(contentsOf: ["--user", user])
+            arguments.append(contentsOf: ["--user", user])
         }
         if let workingDirectory = exec.workingDirectory {
-            args.append(contentsOf: ["--workdir", workingDirectory])
+            arguments.append(contentsOf: ["--workdir", workingDirectory])
         }
         if exec.privileged {
-            args.append("--privileged")
+            arguments.append("--privileged")
         }
         if exec.interactive, !exec.detach {
-            args.append("--interactive")
+            arguments.append("--interactive")
         }
         if exec.tty, !exec.detach {
-            args.append("--tty")
+            arguments.append("--tty")
         }
-        let containerID = try await serviceContainerID(project: project, service: service, index: exec.index)
-        args.append(containerID)
-        args.append(contentsOf: exec.command)
-        if !options.dryRun {
-            if exec.detach {
-                try await execManager.execDetached(
-                    request: ContainerDetachedExecRequest(
-                        id: containerID,
-                        command: exec.command,
-                        environment: exec.environment,
-                        user: exec.user,
-                        workingDirectory: exec.workingDirectory,
-                        privileged: exec.privileged,
-                    ),
-                    emit: options.emit,
-                )
-                return
-            }
-            if exec.interactive || exec.tty {
-                options.progress.handoff("Executing \(service.name)")
-            }
-            let status = try await execManager.execAttached(
-                request: ContainerAttachedExecRequest(
+        arguments.append(containerID)
+        arguments.append(contentsOf: exec.command)
+        return arguments
+    }
+
+    /// Executes an already-rendered `compose exec` operation.
+    private func executeCommand(
+        service: ComposeService,
+        containerID: String,
+        options exec: ComposeExecOptions,
+        arguments: [String],
+    ) async throws {
+        if options.dryRun {
+            let interactive = !exec.detach && (exec.interactive || exec.tty)
+            try await runContainer(
+                arguments,
+                inheritedIO: interactive,
+                replaceProcess: interactive,
+            )
+            return
+        }
+        if exec.detach {
+            try await execManager.execDetached(
+                request: ContainerDetachedExecRequest(
                     id: containerID,
                     command: exec.command,
                     environment: exec.environment,
                     user: exec.user,
                     workingDirectory: exec.workingDirectory,
                     privileged: exec.privileged,
-                    terminal: .init(interactive: exec.interactive, tty: exec.tty),
                 ),
+                emit: options.emit,
             )
-            if status != 0 {
-                throw ComposeError.commandFailed(command: shellQuoted([options.containerBinary] + args), status: status, stderr: "")
-            }
             return
         }
-        let foregroundInteractiveExec = !exec.detach && (exec.interactive || exec.tty)
-        try await runContainer(
-            args,
-            inheritedIO: foregroundInteractiveExec,
-            replaceProcess: foregroundInteractiveExec,
+        if exec.interactive || exec.tty {
+            options.progress.handoff("Executing \(service.name)")
+        }
+        let status = try await execManager.execAttached(
+            request: ContainerAttachedExecRequest(
+                id: containerID,
+                command: exec.command,
+                environment: exec.environment,
+                user: exec.user,
+                workingDirectory: exec.workingDirectory,
+                privileged: exec.privileged,
+                terminal: .init(interactive: exec.interactive, tty: exec.tty),
+            ),
         )
+        guard status == 0 else {
+            throw ComposeError.commandFailed(
+                command: shellQuoted([options.containerBinary] + arguments),
+                status: status,
+                stderr: "",
+            )
+        }
     }
 
     /// Runs a one-off container for a service.
@@ -346,8 +401,180 @@ public extension ComposeOrchestrator {
 
     /// Runs a one-off container for a service with Docker Compose compatible options.
     func run(project: ComposeProject, serviceName: String, options run: ComposeRunOptions) async throws {
+        let configuration = try runProjectConfiguration(
+            project: project,
+            serviceName: serviceName,
+            options: run,
+        )
+        let dependencies = try await prepareRunDependencies(
+            project: configuration.project,
+            service: configuration.service,
+            serviceName: serviceName,
+            options: run,
+        )
+        let preparation = try await prepareRunService(
+            project: dependencies.project,
+            service: dependencies.service,
+            dependencies: dependencies.dependencies,
+            options: run,
+        )
+        try await executeOneOffRun(
+            preparation: preparation,
+            labelOverrides: dependencies.labelOverrides,
+            publishedPorts: dependencies.publishedPorts,
+            options: run,
+        )
+    }
+
+    /// Validates the selected service and its dependency graph for a one-off run.
+    private func prepareRunDependencies(
+        project: ComposeProject,
+        service: ComposeService,
+        serviceName: String,
+        options run: ComposeRunOptions,
+    ) async throws -> ComposeRunDependencyPreparation {
         var runProject = project
-        guard var service = runProject.services[serviceName] else {
+        var service = service
+        try validateProjectNetworks(runProject)
+        let labelOverrides = try parseRunLabelOverrides(run.labels)
+        try validateRunLabelOverridesAgainstAnnotations(labelOverrides, service: service)
+        try validatePullPolicy(run.pullPolicy)
+        let selectedDependencyServices = try run.noDeps
+            ? []
+            : orderedServices(project: runProject, selected: [serviceName]).filter { $0.name != serviceName }
+        var activeServiceNames = Set(selectedDependencyServices.map(\.name))
+        activeServiceNames.insert(serviceName)
+        runProject = try projectByApplyingLinks(project: runProject, activeServiceNames: activeServiceNames)
+        service = runProject.services[serviceName] ?? service
+        var dependencyServices = try selectedDependencyServices.map { service in
+            guard let activeService = runProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
+        try validateRuntimeSupport(
+            services: dependencyServices + [service],
+            project: runProject,
+            validateDependencies: !run.noDeps,
+        )
+        runProject = try await projectByResolvingExternalLinks(
+            project: runProject,
+            services: dependencyServices + [service],
+        )
+        service = runProject.services[serviceName] ?? service
+        dependencyServices = try selectedDependencyServices.map { service in
+            guard let activeService = runProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
+        try validateOneOffRunLifecycleHooks(service: service, options: run)
+        try validatePublishedPorts(services: dependencyServices)
+        let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
+        try validatePublishedPorts(publishedPorts, serviceName: service.name)
+        return ComposeRunDependencyPreparation(
+            project: runProject,
+            service: service,
+            dependencies: dependencyServices,
+            labelOverrides: labelOverrides,
+            publishedPorts: publishedPorts,
+        )
+    }
+
+    /// Starts and runs the one-off service container after dependency preparation.
+    private func executeOneOffRun(
+        preparation: ComposeRunServicePreparation,
+        labelOverrides: [ComposeLabelOverride],
+        publishedPorts: [String],
+        options run: ComposeRunOptions,
+    ) async throws {
+        let containerName = oneOffRunContainerName(
+            project: preparation.project,
+            service: preparation.service,
+            requestedName: run.containerName,
+        )
+        let foregroundInteractiveRun = isForegroundInteractiveRun(
+            service: preparation.service,
+            options: run,
+        )
+        try await removeRunOrphans(
+            project: preparation.project,
+            requested: run.removeOrphans,
+            foregroundInteractive: foregroundInteractiveRun,
+        )
+        try await ensureRunAnonymousVolumes(preparation: preparation)
+        let arguments = try await runArguments(
+            project: preparation.project,
+            service: preparation.service,
+            options: RunArgumentOptions {
+                $0.detach = run.detach
+                $0.remove = run.remove
+                $0.oneOff = true
+                $0.publishedPorts = publishedPorts
+                $0.containerNameOverride = containerName
+                $0.labelOverrides = labelOverrides
+                $0.envFiles = run.envFiles
+            },
+            externalVolumeMounts: preparation.externalVolumeMounts,
+            imageHealthCheckCache: preparation.imageHealthCheckCache,
+        )
+        try await runContainerWithProgress(
+            arguments,
+            message: "Running \(preparation.service.name)",
+            quiet: run.quiet,
+            inheritedIO: foregroundInteractiveRun,
+            replaceProcess: foregroundInteractiveRun,
+        )
+        try await runPostStartHooksIfDetached(
+            service: preparation.service,
+            containerID: containerName,
+            detached: run.detach,
+        )
+        try await removeRunOrphans(
+            project: preparation.project,
+            requested: run.removeOrphans,
+            foregroundInteractive: !foregroundInteractiveRun,
+        )
+    }
+
+    /// Determines whether the runtime should inherit terminal input and output for a run.
+    private func isForegroundInteractiveRun(service: ComposeService, options run: ComposeRunOptions) -> Bool {
+        !run.quiet && !run.detach && (service.tty == true || service.stdinOpen == true)
+    }
+
+    /// Creates labeled anonymous volumes that the one-off service requires.
+    private func ensureRunAnonymousVolumes(preparation: ComposeRunServicePreparation) async throws {
+        try await ensureLabeledAnonymousVolumes(
+            project: preparation.project,
+            service: preparation.service,
+            context: MountRenderContext(
+                project: preparation.project,
+                service: preparation.service,
+                containerIndex: nil,
+                replicaCount: nil,
+            ),
+            externalVolumeMounts: preparation.externalVolumeMounts,
+        )
+    }
+
+    /// Executes post-start hooks when a one-off container was started in the background.
+    private func runPostStartHooksIfDetached(
+        service: ComposeService,
+        containerID: String,
+        detached: Bool,
+    ) async throws {
+        guard detached else { return }
+        try await runPostStartHooks(service: service, containerID: containerID)
+    }
+
+    /// Applies one-off CLI overrides before validating the project graph.
+    private func runProjectConfiguration(
+        project: ComposeProject,
+        serviceName: String,
+        options run: ComposeRunOptions,
+    ) throws -> ComposeRunProjectConfiguration {
+        var project = project
+        guard var service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
         if !run.command.isEmpty {
@@ -373,124 +600,70 @@ public extension ComposeOrchestrator {
         }
         try applyRunEnvironmentOverrides(run, service: &service)
         try applyRunCapabilityOverrides(run, service: &service)
-        try applyRunVolumeOverrides(run, project: &runProject, service: &service)
-        runProject.services[serviceName] = service
-        try validateProjectNetworks(runProject)
-        let labelOverrides = try parseRunLabelOverrides(run.labels)
-        try validateRunLabelOverridesAgainstAnnotations(labelOverrides, service: service)
-        try validatePullPolicy(run.pullPolicy)
-        let selectedDependencyServices = try run.noDeps
-            ? []
-            : orderedServices(project: runProject, selected: [serviceName]).filter { $0.name != serviceName }
-        var activeServiceNames = Set(selectedDependencyServices.map(\.name))
-        activeServiceNames.insert(serviceName)
-        runProject = try projectByApplyingLinks(project: runProject, activeServiceNames: activeServiceNames)
-        service = runProject.services[serviceName] ?? service
-        var dependencyServices = try selectedDependencyServices.map { service in
-            guard let activeService = runProject.services[service.name] else {
-                throw ComposeError.invalidProject("unknown service '\(service.name)'")
-            }
-            return activeService
-        }
-        try validateRuntimeSupport(services: dependencyServices + [service], project: runProject, validateDependencies: !run.noDeps)
-        runProject = try await projectByResolvingExternalLinks(project: runProject, services: dependencyServices + [service])
-        service = runProject.services[serviceName] ?? service
-        dependencyServices = try selectedDependencyServices.map { service in
-            guard let activeService = runProject.services[service.name] else {
-                throw ComposeError.invalidProject("unknown service '\(service.name)'")
-            }
-            return activeService
-        }
-        try validateOneOffRunLifecycleHooks(service: service, options: run)
-        try validatePublishedPorts(services: dependencyServices)
-        let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
-        try validatePublishedPorts(publishedPorts, serviceName: service.name)
-        let imageHealthCheckCache = ComposeImageHealthCheckCache()
+        try applyRunVolumeOverrides(run, project: &project, service: &service)
+        project.services[serviceName] = service
+        return ComposeRunProjectConfiguration(project: project, service: service)
+    }
+
+    /// Removes orphaned project containers at the lifecycle phase selected by Compose.
+    private func removeRunOrphans(
+        project: ComposeProject,
+        requested: Bool,
+        foregroundInteractive: Bool,
+    ) async throws {
+        guard requested, foregroundInteractive else { return }
+        let declaredContainers = try declaredServiceContainerNames(project: project, scaleOverrides: [:])
+        let preservedServices = orphanProtectedServiceNames(project: project, scaleOverrides: [:])
+        try await removeRemainingProjectContainers(
+            project: project,
+            excluding: declaredContainers,
+            preservingServices: preservedServices,
+        )
+    }
+
+    /// Builds images and starts dependency services before the one-off container runs.
+    private func prepareRunService(
+        project: ComposeProject,
+        service: ComposeService,
+        dependencies: [ComposeService],
+        options run: ComposeRunOptions,
+    ) async throws -> ComposeRunServicePreparation {
+        let cache = ComposeImageHealthCheckCache()
+        let services = dependencies + [service]
         let externalVolumeMounts = try await resolveExternalVolumeMounts(
-            project: runProject,
-            services: dependencyServices + [service],
+            project: project,
+            services: services,
         )
         if run.build, service.build != nil {
-            try await build(project: runProject, services: [service.name], noCache: false, quiet: run.quietBuild)
+            try await build(project: project, services: [service.name], noCache: false, quiet: run.quietBuild)
         }
         try await applyPullPolicy(
             run.pullPolicy,
-            project: runProject,
+            project: project,
             services: [service],
             quiet: run.quietPull,
             quietBuild: run.quietBuild,
         )
-        try await validateRuntimeHealthChecks(project: runProject, services: dependencyServices + [service], cache: imageHealthCheckCache)
-        try await ensureResources(project: projectBySelectingResources(
-            project: runProject,
-            services: dependencyServices + [service],
-        ))
-        runProject = try await startDependencyServices(
-            project: runProject,
-            services: dependencyServices,
-            externalVolumeMounts: externalVolumeMounts,
-            imageHealthCheckCache: imageHealthCheckCache,
+        try await validateRuntimeHealthChecks(project: project, services: services, cache: cache)
+        try await ensureResources(
+            project: projectBySelectingResources(project: project, services: services),
         )
-        service = runProject.services[serviceName] ?? service
+        let preparedProject = try await startDependencyServices(
+            project: project,
+            services: dependencies,
+            externalVolumeMounts: externalVolumeMounts,
+            imageHealthCheckCache: cache,
+        )
+        let preparedService = preparedProject.services[service.name] ?? service
         if !run.noDeps {
-            try await waitForDependencyConditions(project: runProject, service: service)
+            try await waitForDependencyConditions(project: preparedProject, service: preparedService)
         }
-        let containerName = oneOffRunContainerName(project: runProject, service: service, requestedName: run.containerName)
-        let foregroundInteractiveRun = !run.quiet && !run.detach && (service.tty == true || service.stdinOpen == true)
-        if run.removeOrphans, foregroundInteractiveRun {
-            let declaredContainers = try declaredServiceContainerNames(project: runProject, scaleOverrides: [:])
-            let preservedServices = orphanProtectedServiceNames(project: runProject, scaleOverrides: [:])
-            try await removeRemainingProjectContainers(
-                project: runProject,
-                excluding: declaredContainers,
-                preservingServices: preservedServices,
-            )
-        }
-        try await ensureLabeledAnonymousVolumes(
-            project: runProject,
-            service: service,
-            context: MountRenderContext(
-                project: runProject,
-                service: service,
-                containerIndex: nil,
-                replicaCount: nil,
-            ),
-            externalVolumeMounts: externalVolumeMounts
-        )
-        let arguments = try await runArguments(
-            project: runProject,
-            service: service,
-            options: RunArgumentOptions {
-                $0.detach = run.detach
-                $0.remove = run.remove
-                $0.oneOff = true
-                $0.publishedPorts = publishedPorts
-                $0.containerNameOverride = containerName
-                $0.labelOverrides = labelOverrides
-                $0.envFiles = run.envFiles
-            },
+        return ComposeRunServicePreparation(
+            project: preparedProject,
+            service: preparedService,
             externalVolumeMounts: externalVolumeMounts,
-            imageHealthCheckCache: imageHealthCheckCache,
+            imageHealthCheckCache: cache,
         )
-        try await runContainerWithProgress(
-            arguments,
-            message: "Running \(service.name)",
-            quiet: run.quiet,
-            inheritedIO: foregroundInteractiveRun,
-            replaceProcess: foregroundInteractiveRun,
-        )
-        if run.detach {
-            try await runPostStartHooks(service: service, containerID: containerName)
-        }
-        if run.removeOrphans, !foregroundInteractiveRun {
-            let declaredContainers = try declaredServiceContainerNames(project: runProject, scaleOverrides: [:])
-            let preservedServices = orphanProtectedServiceNames(project: runProject, scaleOverrides: [:])
-            try await removeRemainingProjectContainers(
-                project: runProject,
-                excluding: declaredContainers,
-                preservingServices: preservedServices,
-            )
-        }
     }
 
     /// Starts selected service containers.
@@ -565,7 +738,11 @@ public extension ComposeOrchestrator {
         volumes: Bool = false,
     ) async throws {
         let services = try selectedServices(project: project, selected: selected)
-        let targets = try await removableServiceContainerTargets(project: project, services: services, stopFirst: stopFirst)
+        let targets = try await removableServiceContainerTargets(
+            project: project,
+            services: services,
+            stopFirst: stopFirst,
+        )
         if targets.isEmpty, !options.dryRun {
             options.emit("No stopped containers")
             return
@@ -577,11 +754,9 @@ public extension ComposeOrchestrator {
             }
         }
         if stopFirst {
-            for target in targets {
-                if target.status.map({ !isRemovableStoppedContainerStatus($0) }) ?? true {
-                    try await ignoringMissingContainer {
-                        try await stopContainer(service: target.service, containerName: target.name)
-                    }
+            for target in targets where target.status.map({ !isRemovableStoppedContainerStatus($0) }) ?? true {
+                try await ignoringMissingContainer {
+                    try await stopContainer(service: target.service, containerName: target.name)
                 }
             }
         }
