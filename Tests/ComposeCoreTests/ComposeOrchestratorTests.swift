@@ -6503,9 +6503,10 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
-    @Test("up rejects multiple networks with apple/container runtime gap before creating resources")
-    func upRejectsMultipleNetworksBeforeCreatingResources() async throws {
+    @Test("up maps multiple network attachments at create time")
+    func upMapsMultipleNetworksAtCreateTime() async throws {
         let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -6522,16 +6523,14 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported multiple network error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' declares multiple networks; apple/container does not expose network connect yet"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        let resourceNames = await resourceManager.requests.map(\.name)
+        #expect(runner.commands.count == 1)
+        #expect(command.containsSequence(["--network", "demo_frontend", "--network", "demo_backend"]))
+        #expect(Set(resourceNames) == ["demo_frontend", "demo_backend", "demo_cache"])
     }
 
     @Test("up rejects unsupported network options before creating resources")
@@ -25121,6 +25120,7 @@ struct ComposeOrchestratorTests {
         let unsupportedProjects = [
             ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
                 $0.networks = ["a", "b"]
+                $0.networkAliases = ["a": ["api"]]
             }]),
         ]
 

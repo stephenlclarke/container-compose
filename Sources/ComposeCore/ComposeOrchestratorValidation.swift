@@ -51,9 +51,6 @@ extension ComposeOrchestrator {
     /// Validates network modes and attachment metadata, returning selected networks.
     func validateRuntimeNetworkSupport(service: ComposeService) throws -> [String] {
         let networks = service.networks ?? []
-        if networks.count > 1 {
-            throw ComposeError.unsupported("service '\(service.name)' declares multiple networks; apple/container does not expose network connect yet")
-        }
         try validateNetworkAliasSupport(service: service, networks: networks)
         if let networkOptions = service.networkOptions {
             for (network, options) in networkOptions.sorted(by: { $0.key < $1.key }) {

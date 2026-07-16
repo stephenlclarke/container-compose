@@ -293,7 +293,7 @@ func networkRuntimeName(project: ComposeProject, composeName: String) -> String 
     return networkRuntimeName(project: project, composeName: composeName, network: network)
 }
 
-/// Builds the single network attachment value accepted by apple/container.
+/// Builds one network attachment value accepted by apple/container.
 func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) throws -> String {
     var argument = networkRuntimeName(project: project, composeName: network)
     var options: [String] = []
@@ -312,7 +312,7 @@ func networkAttachmentArgument(project: ComposeProject, service: ComposeService,
     return argument
 }
 
-/// Resolves the effective MAC address for a supported single-network service.
+/// Resolves the effective MAC address for a supported network attachment.
 func networkMACAddress(service: ComposeService, network: String) -> String? {
     nonEmpty(service.networkOptions?[network]?.macAddress) ?? nonEmpty(service.macAddress)
 }

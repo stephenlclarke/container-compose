@@ -33,13 +33,13 @@ References:
 
 Before this change, `container-compose` rejected any service network aliases as an `apple/container` runtime gap.
 
-With this change, `container-compose` supports aliases for the current single-network local subset by mapping compose-go normalized aliases to the plugin-owned network-alias projection. The current live execution path still renders `container run/create --network <name>,alias=<alias>` through the command-vector bridge while typed service creation is being wired. Invalid aliases and aliases declared on unattached networks are rejected before resources are created.
+With this change, `container-compose` supports aliases for the current single-network local subset by mapping compose-go normalized aliases to the plugin-owned network-alias projection. The current live execution path emits repeatable `container run/create --network <name>` arguments, so plain multi-network attachments are supported at container creation on macOS 26+. Aliases remain intentionally limited to one attachment: the runtime's container DNS configuration uses the primary attachment and does not yet provide Docker-compatible source-network-aware DNS. Invalid aliases and aliases declared on unattached networks are rejected before resources are created.
 
 ## Likely owner
 
 both
 
-`apple/container` owns the runtime network attachment alias primitive. `container-compose` owns Compose model validation, single-network subset selection, and projection.
+`apple/container` owns the runtime network attachment alias primitive and multi-attachment creation. `container-compose` owns Compose model validation, the alias subset selection, and projection.
 
 ## Minimal example
 
@@ -61,9 +61,9 @@ networks:
 
 Expected runtime behavior with the current fork-backed runtime:
 
-- `container-compose` currently emits `--network alias-demo_backend,alias=api.internal` through the command-vector bridge.
+- `container-compose` emits `--network alias-demo_backend,alias=api.internal` through the command-vector bridge.
 - Peers on the same `apple/container` network can resolve `api.internal` to the service container's attachment address.
-- Multi-network alias behavior remains blocked until `apple/container` exposes multi-network attach/connect and source-network-aware DNS behavior.
+- Plain multi-network attachment creation is supported; multi-network alias behavior remains blocked until `apple/container` exposes source-network-aware DNS behavior.
 
 ## Code of Conduct and documentation
 
