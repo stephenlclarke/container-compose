@@ -6867,6 +6867,35 @@ struct ComposeOrchestratorTests {
         #expect(Set(resourceNames) == ["demo_frontend", "demo_backend", "demo_cache"])
     }
 
+    @Test("up maps link-local IPs to runtime network attachments")
+    func upMapsLinkLocalIPsToRuntimeNetworkAttachments() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(
+                            addressing: .init(linkLocalIPs: ["169.254.1.5", "fe80::5"])
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence([
+            "--network", "demo_backend,address=169.254.1.5,address=fe80::5",
+        ]))
+    }
+
     @Test("up selects default route and service MAC networks by their independent priorities")
     func upMapsNetworkGatewayAndConnectionPriorities() async throws {
         let runner = RecordingRunner()
@@ -8880,6 +8909,78 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected invalid interface_name error")
         } catch let error as ComposeError {
             #expect(error == .invalidProject("service 'api' interface_name 'eth0,alias=unexpected' cannot contain ','"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up rejects delimited link-local IPs before creating resources")
+    func upRejectsDelimitedLinkLocalIPsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(
+                            addressing: .init(linkLocalIPs: ["169.254.1.5,address=unexpected"])
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid link_local_ips error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject(
+                "service 'api' link_local_ips value '169.254.1.5,address=unexpected' cannot contain ','"
+            ))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up rejects unspecified link-local IPs before creating resources")
+    func upRejectsUnspecifiedLinkLocalIPsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(
+                            addressing: .init(linkLocalIPs: ["::"])
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid link_local_ips error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject(
+                "service 'api' link_local_ips value '::' must not be unspecified"
+            ))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -23240,6 +23341,38 @@ struct ComposeOrchestratorTests {
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--network", "demo_backend,interface=eth0"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+    }
+
+    @Test("run maps link-local IPs to runtime network attachments")
+    func runMapsLinkLocalIPsToRuntimeNetworkAttachments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(
+                            addressing: .init(linkLocalIPs: ["169.254.1.5", "fe80::5"])
+                        ),
+                    ]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence([
+            "--network", "demo_backend,address=169.254.1.5,address=fe80::5",
+        ]))
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
     }
 

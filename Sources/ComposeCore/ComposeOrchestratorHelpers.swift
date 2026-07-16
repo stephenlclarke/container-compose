@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 import ContainerResource
+import ContainerizationExtras
 import CryptoKit
 import Foundation
 
@@ -41,9 +42,6 @@ extension ComposeNetworkOptions {
         }
         if let ipv6Address, !ipv6Address.isEmpty {
             fields.append("ipv6_address")
-        }
-        if let linkLocalIPs, !linkLocalIPs.isEmpty {
-            fields.append("link_local_ips")
         }
         return fields
     }
@@ -300,6 +298,9 @@ func networkAttachmentArgument(project: ComposeProject, service: ComposeService,
     if let interfaceName = try networkGuestInterfaceName(service: service, network: network) {
         options.append("interface=\(interfaceName)")
     }
+    for address in try networkLinkLocalIPValues(service: service, network: network) {
+        options.append("address=\(address)")
+    }
     if !options.isEmpty {
         argument += "," + options.joined(separator: ",")
     }
@@ -353,6 +354,33 @@ func networkGuestInterfaceName(service: ComposeService, network: String) throws 
         )
     }
     return interfaceName
+}
+
+/// Returns Compose link-local IP values that are safe to encode in a runtime attachment.
+func networkLinkLocalIPValues(service: ComposeService, network: String) throws -> [String] {
+    let addresses = service.networkOptions?[network]?.linkLocalIPs ?? []
+    for address in addresses {
+        guard !address.contains(",") else {
+            throw ComposeError.invalidProject(
+                "service '\(service.name)' link_local_ips value '\(address)' cannot contain ','"
+            )
+        }
+        do {
+            let parsed = try IPAddress(address)
+            guard !parsed.isUnspecified else {
+                throw ComposeError.invalidProject(
+                    "service '\(service.name)' link_local_ips value '\(address)' must not be unspecified"
+                )
+            }
+        } catch let error as ComposeError {
+            throw error
+        } catch {
+            throw ComposeError.invalidProject(
+                "service '\(service.name)' link_local_ips value '\(address)' must be a valid IPv4 or IPv6 address"
+            )
+        }
+    }
+    return addresses
 }
 
 /// Returns canonical network aliases for an attachment.
