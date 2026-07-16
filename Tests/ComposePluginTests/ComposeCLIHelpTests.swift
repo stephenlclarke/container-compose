@@ -116,8 +116,9 @@ struct ComposeCLIHelpTests {
         let publishHelp = try #require(ComposeCLIHelp.commandHelpText(command: "publish"))
 
         #expect(commitHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(commitHelp.contains("running-container commit, including --pause=false"))
-        #expect(commitHelp.contains("\u{001B}[32m--pause\u{001B}[0m"))
+        #expect(commitHelp.contains("--pause has no effect on stopped containers"))
+        #expect(commitHelp.contains("\u{001B}[38;5;208m--pause\u{001B}[0m"))
+        #expect(commitHelp.contains("requires Apple live export/commit support"))
         #expect(copyHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(!copyHelp.contains("Limitations:"))
         #expect(publishHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))

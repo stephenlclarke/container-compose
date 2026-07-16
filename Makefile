@@ -406,7 +406,7 @@ cli-smoke-built:
 	commit_help_output="$$(".build/debug/compose" commit --help)"; \
 	[[ "$$commit_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
 	[[ "$$commit_help_output" == *"$${ansi_escape}[32m--author$${ansi_escape}[0m"* ]]; \
-	[[ "$$commit_help_output" == *"$${ansi_escape}[32m--pause$${ansi_escape}[0m"* ]]; \
+	[[ "$$commit_help_output" == *"$${ansi_escape}[38;5;208m--pause$${ansi_escape}[0m"* ]]; \
 	config_help_output="$$(".build/debug/compose" config --help)"; \
 	[[ "$$config_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
@@ -550,7 +550,7 @@ cli-smoke-built:
 	[[ "$$bridge_transformations_list_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	commit_help_output="$$(".build/debug/compose" commit --help)"; \
 	[[ "$$commit_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
-	[[ "$$commit_help_output" == *"$${ansi_escape}[32m--pause$${ansi_escape}[0m"* ]]; \
+	[[ "$$commit_help_output" == *"$${ansi_escape}[38;5;208m--pause$${ansi_escape}[0m"* ]]; \
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
 	printf 'enabled=true\n' > "$$tmpdir/api.conf"; \

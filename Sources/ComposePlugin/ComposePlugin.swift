@@ -1970,7 +1970,7 @@ struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     @Flag(
         name: .customLong("pause"),
         inversion: .prefixedNo,
-        help: "Pause container during commit. Running-container commit is blocked until Apple live export/commit support exists."
+        help: "Pause a running container during commit. Requires Apple live export/commit support."
     )
     var pause = true
     @Argument(help: "Service name.")

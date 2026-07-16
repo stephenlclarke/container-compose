@@ -23,7 +23,7 @@ Current Apple upstream context:
 
 ## Acceptance Criteria
 
-- `container compose help commit` reports the command as partial and all documented options as supported.
+- `container compose help commit` reports the command as partial, marks `--pause` as partial because it only applies to unavailable running-container commit, and marks the remaining documented options as supported.
 - `commit --author`, repeated `--change`, `--index`, `--message`, and `--pause` parse in Docker Compose-compatible forms, including omitted `--index`, `--index=0`, `-a`, `-c`, `-m`, and `-p=false` through the Compose argument rewriter.
 - A stopped service container is exported with the existing runtime export adapter, wrapped as a single-layer OCI image archive, and loaded through the image adapter.
 - The generated OCI config carries Compose service image metadata plus Docker-compatible `--change` instructions for `CMD`, `ENTRYPOINT`, `ENV`, `EXPOSE`, `LABEL`, `ONBUILD`, `USER`, `VOLUME`, and `WORKDIR`.
