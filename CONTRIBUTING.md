@@ -59,6 +59,39 @@ pull request title and body clear enough to stand alone as the final change
 description. Use imperative wording, describe what changed, and include the
 reason for the change.
 
+### Topic Worktree Close-Out
+
+Use one named topic branch only when it has an active pull request or a recorded
+review purpose. Create exploratory and validation-only worktrees detached from
+the target commit so they cannot leave a branch behind.
+
+Before creating a topic branch, and again when a pull request reaches a terminal
+state, run:
+
+```sh
+git fetch --all --prune --no-tags
+make worktree-audit
+```
+
+After a pull request is merged or deliberately superseded, remove its clean
+worktree and local branch in the same close-out step, then prune stale worktree
+metadata:
+
+```sh
+git worktree remove /path/to/topic-worktree
+git branch -d topic-branch || git branch -D topic-branch
+git worktree prune
+```
+
+Do not delete a branch merely because its remote was removed: squash merges and
+closed pull requests can leave unique local commits. `make worktree-audit`
+separates active remote branches, safe integrated cleanup candidates, and local
+branches that need a pull request or an explicit retention decision. Use
+`make worktree-audit-strict` after close-out to fail when a clean integrated
+candidate is still present. The forced fallback is only appropriate after the
+pull request is confirmed merged or deliberately superseded and the audit shows
+no unique patches.
+
 ## Conventional Commits
 
 Use Conventional Commits for commit messages and pull request titles:
