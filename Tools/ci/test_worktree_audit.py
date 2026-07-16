@@ -79,7 +79,7 @@ class WorktreeAuditTests(unittest.TestCase):
             self.assertEqual(audits["integrated"].category, "integrated")
             self.assertEqual(audits["retained"].category, "retain")
 
-    def test_retains_a_merge_commit_even_when_its_patch_is_on_main(self) -> None:
+    def test_classifies_a_merged_topic_as_integrated_when_its_patch_is_on_main(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             repository = Path(temporary_directory)
             git(repository, "init", "-b", "main")
@@ -98,4 +98,24 @@ class WorktreeAuditTests(unittest.TestCase):
 
             audits = {entry.name: entry for entry in audit.audit_branches(repository, "main")}
 
-            self.assertEqual(audits["merged-topic"].category, "retain")
+            self.assertEqual(audits["merged-topic"].category, "integrated")
+
+    def test_classifies_a_squash_merged_topic_as_integrated(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repository = Path(temporary_directory)
+            git(repository, "init", "-b", "main")
+            git(repository, "config", "user.email", "test@example.com")
+            git(repository, "config", "user.name", "Test User")
+            commit_file(repository, "README.md", "base\n", "base")
+
+            git(repository, "switch", "-c", "squashed-topic")
+            commit_file(repository, "first.txt", "first\n", "first change")
+            commit_file(repository, "second.txt", "second\n", "second change")
+
+            git(repository, "switch", "main")
+            git(repository, "cherry-pick", "--no-commit", "squashed-topic~1", "squashed-topic")
+            git(repository, "commit", "-m", "squashed topic")
+
+            audits = {entry.name: entry for entry in audit.audit_branches(repository, "main")}
+
+            self.assertEqual(audits["squashed-topic"].category, "integrated")

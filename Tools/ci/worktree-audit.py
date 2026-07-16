@@ -90,7 +90,41 @@ def has_remote_branch(repository: Path, branch: str) -> bool:
     return result.returncode == 0
 
 
+def patch_ids(repository: Path, patch: str) -> set[str]:
+    if not patch.strip():
+        return set()
+    result = subprocess.run(
+        ["git", "patch-id", "--stable"],
+        cwd=repository,
+        capture_output=True,
+        check=False,
+        input=patch,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+        raise RuntimeError(f"git patch-id failed: {detail}")
+    return {line.split()[0] for line in result.stdout.splitlines() if line}
+
+
+def has_squash_merged_patch(repository: Path, main_branch: str, branch: str) -> bool:
+    merge_base = run_git(repository, "merge-base", main_branch, branch).stdout.strip()
+    branch_patch_ids = patch_ids(
+        repository,
+        run_git(repository, "diff", "--no-ext-diff", merge_base, branch).stdout,
+    )
+    if not branch_patch_ids:
+        return True
+    main_patch_ids = patch_ids(
+        repository,
+        run_git(repository, "log", "--no-merges", "--format=", "--patch", f"{merge_base}..{main_branch}").stdout,
+    )
+    return branch_patch_ids <= main_patch_ids
+
+
 def has_unique_patch(repository: Path, main_branch: str, branch: str) -> bool:
+    if has_squash_merged_patch(repository, main_branch, branch):
+        return False
     merge_commits = run_git(
         repository,
         "rev-list",
