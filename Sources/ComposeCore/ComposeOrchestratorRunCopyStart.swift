@@ -345,7 +345,7 @@ extension ComposeOrchestrator {
         var workingProject = project
         try await applyServicePullPolicies(project: workingProject, services: services)
         for serviceReference in services {
-            let service = workingProject.services[serviceReference.name] ?? serviceReference
+            var service = workingProject.services[serviceReference.name] ?? serviceReference
             if service.provider != nil {
                 let variables = try await runProvider(project: workingProject, service: service, action: .up)
                 if !variables.isEmpty {
@@ -361,6 +361,13 @@ extension ComposeOrchestrator {
             if service.image == nil, service.pullPolicy != "build", service.build != nil {
                 try await build(project: workingProject, services: [service.name], noCache: false)
             }
+
+            service = try await serviceByResolvingLinkHosts(
+                project: workingProject,
+                service: service,
+                scaleOverrides: [:],
+            )
+            workingProject.services[service.name] = service
 
             let name = containerName(project: workingProject, service: service, oneOff: false)
             let existing = try await inspectContainer(name)

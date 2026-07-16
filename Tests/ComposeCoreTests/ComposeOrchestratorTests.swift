@@ -1938,6 +1938,51 @@ struct ComposeOrchestratorTests {
         #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
     }
 
+    @Test("create maps legacy links to static host entries after creating dependencies")
+    func createMapsLegacyLinksToStaticHostEntriesAfterCreatingDependencies() async throws {
+        let runner = RecordingRunner(responses: [.success, .success])
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
+            "demo-db-1": [
+                nil,
+                ComposeContainerSummary(
+                    id: "demo-db-1",
+                    status: "created",
+                    networks: [
+                        ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
+                    ]
+                ),
+            ],
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "db": composeService(name: "db", image: "postgres:18") {
+                    $0.networks = ["backend"]
+                },
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.links = ["db:database"]
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager,
+        ).create(project: project, options: ComposeCreateOptions())
+
+        let dependencyCommand = try #require(runner.commands.first?.arguments)
+        let createCommand = try #require(runner.commands.last?.arguments)
+        #expect(dependencyCommand.containsSequence(["--name", "demo-db-1"]))
+        #expect(createCommand.containsSequence(["--network", "demo_backend"]))
+        #expect(createCommand.containsSequence(["--add-host", "database:192.168.64.20"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
+    }
+
     @Test("create maps disabled logging driver to runtime policy")
     func createMapsDisabledLoggingDriverToRuntimePolicy() async throws {
         for testCase in disabledServiceLoggingFieldCases() {
@@ -5960,10 +6005,22 @@ struct ComposeOrchestratorTests {
         #expect(commands[0].starts(with: ["container", "run", "--name", "demo-job-1"]))
     }
 
-    @Test("up rejects links until the runtime exposes container-facing DNS")
-    func upRejectsLinksUntilRuntimeExposesContainerFacingDNS() async throws {
+    @Test("up maps explicit legacy links to static host entries")
+    func upMapsExplicitLegacyLinksToStaticHostEntries() async throws {
         let runner = RecordingRunner(responses: [.success, .success])
         let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
+            "demo-redis-1": [
+                nil,
+                ComposeContainerSummary(
+                    id: "demo-redis-1",
+                    status: "running",
+                    networks: [
+                        ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
+                    ]
+                ),
+            ],
+        ])
         let project = composeProject(
             name: "demo",
             services: [
@@ -5979,24 +6036,40 @@ struct ComposeOrchestratorTests {
             $0.networks = ["backend": ComposeNetwork(name: "backend")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-                .up(project: project, options: ComposeUpOptions {
-                    $0.services = ["api"]
-                })
-            Issue.record("Expected container-facing DNS error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'redis' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS"))
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager,
+        ).up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+        })
 
-        #expect(runner.commands.isEmpty)
-        #expect(await resourceManager.requests.isEmpty)
+        let redisCommand = try #require(runner.commands.first?.arguments)
+        let apiCommand = try #require(runner.commands.last?.arguments)
+        #expect(redisCommand.containsSequence(["--network", "demo_backend"]))
+        #expect(!redisCommand.contains("demo_backend,alias=cache"))
+        #expect(apiCommand.containsSequence(["--network", "demo_backend"]))
+        #expect(apiCommand.containsSequence(["--add-host", "cache:192.168.64.20"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
+        #expect(await discoveryManager.getRequests == ["demo-redis-1", "demo-redis-1", "demo-api-1"])
     }
 
-    @Test("up rejects implicit link aliases until the runtime exposes container-facing DNS")
-    func upRejectsImplicitLinkAliasesUntilRuntimeExposesContainerFacingDNS() async throws {
+    @Test("up maps implicit legacy links to static host entries")
+    func upMapsImplicitLegacyLinksToStaticHostEntries() async throws {
         let runner = RecordingRunner(responses: [.success, .success])
         let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
+            "demo-redis-1": [
+                nil,
+                ComposeContainerSummary(
+                    id: "demo-redis-1",
+                    status: "running",
+                    networks: [
+                        ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
+                    ]
+                ),
+            ],
+        ])
         let project = composeProject(
             name: "demo",
             services: [
@@ -6012,24 +6085,35 @@ struct ComposeOrchestratorTests {
             $0.networks = ["backend": ComposeNetwork(name: "backend")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-                .up(project: project, options: ComposeUpOptions {
-                    $0.services = ["api"]
-                })
-            Issue.record("Expected container-facing DNS error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'redis' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS"))
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager,
+        ).up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+        })
 
-        #expect(runner.commands.isEmpty)
-        #expect(await resourceManager.requests.isEmpty)
+        let apiCommand = try #require(runner.commands.last?.arguments)
+        #expect(apiCommand.containsSequence(["--add-host", "redis:192.168.64.20"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
     }
 
-    @Test("up rejects links on the default network until the runtime exposes container-facing DNS")
-    func upRejectsLinksOnDefaultNetworkUntilRuntimeExposesContainerFacingDNS() async throws {
+    @Test("up resolves legacy links through the normalized default network")
+    func upResolvesLegacyLinksThroughNormalizedDefaultNetwork() async throws {
         let runner = RecordingRunner(responses: [.success, .success])
         let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
+            "demo-redis-1": [
+                nil,
+                ComposeContainerSummary(
+                    id: "demo-redis-1",
+                    status: "running",
+                    networks: [
+                        ComposeContainerNetworkAttachment(network: "demo_default", ipv4Address: "192.168.64.20"),
+                    ]
+                ),
+            ],
+        ])
         let project = composeProject(
             name: "demo",
             services: [
@@ -6045,18 +6129,75 @@ struct ComposeOrchestratorTests {
             $0.networks = ["default": ComposeNetwork(name: "demo_default")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-                .up(project: project, options: ComposeUpOptions {
-                    $0.services = ["api"]
-                })
-            Issue.record("Expected container-facing DNS error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'redis' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS"))
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager,
+        ).up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+        })
+
+        let apiCommand = try #require(runner.commands.last?.arguments)
+        #expect(apiCommand.containsSequence(["--network", "demo_default"]))
+        #expect(apiCommand.containsSequence(["--add-host", "cache:192.168.64.20"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_default"])
+    }
+
+    @Test("up maps every linked replica through its single shared network")
+    func upMapsEveryLinkedReplicaThroughItsSingleSharedNetwork() async throws {
+        let runner = RecordingRunner(responses: [.success, .success, .success])
+        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
+            "demo-db-1": [
+                nil,
+                ComposeContainerSummary(
+                    id: "demo-db-1",
+                    status: "running",
+                    networks: [
+                        ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
+                    ]
+                ),
+            ],
+            "demo-db-2": [
+                nil,
+                ComposeContainerSummary(
+                    id: "demo-db-2",
+                    status: "running",
+                    networks: [
+                        ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.21"),
+                    ]
+                ),
+            ],
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "db": composeService(name: "db", image: "postgres:18") {
+                    $0.networks = ["backend", "storage"]
+                    $0.scale = 2
+                },
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.links = ["db:database"]
+                    $0.networks = ["frontend", "backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "frontend": ComposeNetwork(name: "frontend"),
+                "backend": ComposeNetwork(name: "backend"),
+                "storage": ComposeNetwork(name: "storage"),
+            ]
         }
 
-        #expect(runner.commands.isEmpty)
-        #expect(await resourceManager.requests.isEmpty)
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions {
+                $0.services = ["api"]
+            })
+
+        let apiCommand = try #require(runner.commands.last?.arguments)
+        #expect(apiCommand.containsSequence(["--network", "demo_frontend"]))
+        #expect(apiCommand.containsSequence(["--network", "demo_backend"]))
+        #expect(apiCommand.containsSequence(["--add-host", "database:192.168.64.20"]))
+        #expect(apiCommand.containsSequence(["--add-host", "database:192.168.64.21"]))
     }
 
     @Test("up maps external links to generated host entries")
@@ -6179,6 +6320,80 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects legacy link aliases that conflict with extra hosts before creating resources")
+    func upRejectsLegacyLinkAliasesThatConflictWithExtraHostsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "redis": composeService(name: "redis", image: "redis:7") {
+                    $0.networks = ["backend"]
+                },
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.links = ["redis:cache"]
+                    $0.extraHosts = ["cache=192.168.64.99"]
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions {
+                    $0.services = ["api"]
+                })
+            Issue.record("Expected conflicting host entry error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' links to 'redis' with alias 'cache', but extra_hosts already defines that hostname; static links cannot override host entries"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up rejects legacy link aliases that resolve multiple services before creating resources")
+    func upRejectsLegacyLinkAliasesThatResolveMultipleServicesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "redis": composeService(name: "redis", image: "redis:7") {
+                    $0.networks = ["backend"]
+                },
+                "cache": composeService(name: "cache", image: "memcached:1.6") {
+                    $0.networks = ["backend"]
+                },
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.links = ["redis:database", "cache:database"]
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions {
+                    $0.services = ["api"]
+                })
+            Issue.record("Expected conflicting link alias error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' links to both 'redis' and 'cache' with alias 'database'; static links require each alias to reference exactly one service"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("up rejects links without one shared network")
     func upRejectsLinksWithoutOneSharedNetwork() async throws {
         let runner = RecordingRunner()
@@ -6199,40 +6414,6 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported links error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'api' links to 'redis'; links require both services to share exactly one Compose network until apple/container exposes source-scoped DNS links"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-
-        #expect(runner.commands.isEmpty)
-    }
-
-    @Test("up rejects shared link aliases before creating resources")
-    func upRejectsSharedLinkAliasesBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
-        let project = composeProject(
-            name: "demo",
-            services: [
-                "cache": composeService(name: "cache", image: "redis:7") {
-                    $0.networks = ["backend"]
-                    $0.networkAliases = ["backend": ["database"]]
-                },
-                "db": composeService(name: "db", image: "postgres:18") {
-                    $0.networks = ["backend"]
-                },
-                "api": composeService(name: "api", image: "example/api") {
-                    $0.links = ["db:database"]
-                    $0.networks = ["backend"]
-                },
-            ]
-        ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-        }
-
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected shared alias error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("services 'cache' and 'db' share network alias 'database' on network 'backend'; shared aliases need apple/container source-scoped DNS support"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -22272,10 +22453,22 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests.contains("legacy_db"))
     }
 
-    @Test("run rejects links until the runtime exposes container-facing DNS")
-    func runRejectsLinksUntilRuntimeExposesContainerFacingDNS() async throws {
+    @Test("run maps legacy links to static host entries after starting dependencies")
+    func runMapsLegacyLinksToStaticHostEntriesAfterStartingDependencies() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
+            "demo-db-1": [
+                nil,
+                ComposeContainerSummary(
+                    id: "demo-db-1",
+                    status: "running",
+                    networks: [
+                        ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
+                    ]
+                ),
+            ],
+        ])
         let project = composeProject(
             name: "demo",
             services: [
@@ -22291,16 +22484,18 @@ struct ComposeOrchestratorTests {
             $0.networks = ["backend": ComposeNetwork(name: "backend")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-                .run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected container-facing DNS error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'db' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS"))
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager,
+        ).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
-        #expect(await resourceManager.requests.isEmpty)
+        let dependencyCommand = try #require(runner.commands.first?.arguments)
+        let runCommand = try #require(runner.commands.last?.arguments)
+        #expect(dependencyCommand.containsSequence(["--name", "demo-db-1"]))
+        #expect(runCommand.containsSequence(["--network", "demo_backend"]))
+        #expect(runCommand.containsSequence(["--add-host", "database:192.168.64.20"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
     }
 
     @Test("run maps hostnames to runtime arguments")

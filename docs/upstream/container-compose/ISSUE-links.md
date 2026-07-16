@@ -37,28 +37,36 @@ References:
 
 ## Current container-compose behavior
 
-`container-compose` supports the safe local subset that can be represented by
-the fork-backed single-network alias primitive:
+`container-compose` supports a safe static-host subset:
 
 - The linked service is started before the service declaring the link.
-- `SERVICE:ALIAS` maps `ALIAS` to the linked service's network attachment.
-- `SERVICE` maps the linked service name as the alias.
+- `SERVICE:ALIAS` maps `ALIAS` to the linked service's resolved IPv4 address
+  through a generated source-container `--add-host` entry.
+- `SERVICE` maps the linked service name through the same static-host entry.
 - The source and target services must share exactly one normalized Compose
   network, including the implicit `default` network.
-- Shared aliases are rejected before side effects because the current
-  `apple/container` DNS lookup cannot disambiguate Docker's ambiguous shared
-  alias behavior yet.
+- The address is resolved during Compose reconciliation. Re-run `compose up`
+  after an out-of-band network or address change to recreate dependent source
+  containers with the current address.
+- A source `extra_hosts` entry using the same hostname as a link alias is
+  rejected before side effects rather than relying on host-file ordering.
+- Two linked services cannot use the same alias; that ambiguous static-host
+  mapping is rejected before side effects.
+
+This intentionally does not claim runtime DNS compatibility. Direct
+`services.<name>.networks.<network>.aliases` remains rejected, and
+source-scoped dynamic alias resolution, links with zero or multiple shared
+networks, and richer external-service discovery need runtime work.
 
 ## Likely owner
 
 container-compose
 
-`container-compose` owns legacy Compose link interpretation and dependency
-ordering. `apple/container` already owns the current single-network alias
-primitive in the fork. The current live execution path projects those aliases
-through `--network ...,alias=...` command-vector output while typed service
-creation is being wired. Full Docker parity still needs upstream runtime DNS
-work for source-scoped link aliases and shared aliases.
+`container-compose` owns legacy Compose link interpretation, dependency
+ordering, and static host-entry projection. `apple/container` needs no new
+primitive for this limited fallback: the existing `--add-host` surface writes
+the source container's static host entries. Full Docker parity still needs
+upstream runtime DNS work for source-scoped dynamic aliases.
 
 ## Minimal example
 
@@ -86,12 +94,13 @@ networks:
 Expected runtime behavior with the current fork-backed runtime:
 
 - `container-compose` creates or reuses `redis` before `api`.
-- The `redis` service container currently receives `--network links-demo_backend,alias=cache` through the command-vector bridge.
-- The `api` service container attaches to the same network.
-- `external_links` has its own supported single-network subset through direct
-  runtime inspection and generated host entries.
-- Multi-network links, shared aliases, and source-scoped DNS remain runtime
-  gaps.
+- `container-compose` resolves `redis` on `links-demo_backend` and gives `api`
+  `--add-host cache:<redis-ip>` while attaching `api` to that network.
+- `external_links` uses the same direct-runtime-inspection and generated-host
+  approach for its supported single-network subset.
+- The fallback is static per source container, not a runtime DNS record.
+  Runtime aliases, dynamic address updates, links with zero or multiple shared
+  networks, and source-scoped DNS remain runtime gaps.
 
 ## Code of Conduct and documentation
 

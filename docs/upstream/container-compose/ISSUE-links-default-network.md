@@ -35,7 +35,11 @@ The runtime mapping already supports links when source and target services share
 
 container-compose
 
-`container-compose` owns the Compose model translation and documentation. No new `apple/container` primitive is needed for the normalized single-network case beyond the existing fork-backed alias surface. The current live execution path still renders aliases through the command-vector bridge while typed service creation is being wired.
+`container-compose` owns the Compose model translation and documentation. No
+new `apple/container` primitive is needed for the normalized single-network
+case: the plugin uses the existing `--add-host` surface after resolving the
+linked service's attachment. Full dynamic alias behavior still needs a
+container-facing runtime DNS API.
 
 ## Minimal example
 
@@ -56,7 +60,10 @@ Expected runtime behavior with the current fork-backed runtime:
 
 - compose-go normalizes both services onto `default`.
 - `container-compose` creates `default-links-demo_default`.
-- `container-compose` starts `redis` before `api` and currently emits `--network default-links-demo_default,alias=cache` for the linked target service through the command-vector bridge.
+- `container-compose` creates or reuses `redis` before `api`, resolves the
+  `redis` attachment on `default-links-demo_default`, and gives `api` a static
+  `--add-host cache:<redis-ip>` entry. This is not a dynamic runtime DNS alias;
+  an out-of-band address change requires `compose up` to reconcile `api`.
 
 ## Code of Conduct and documentation
 

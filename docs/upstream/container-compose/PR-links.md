@@ -2,12 +2,13 @@
 
 ## Summary
 
-- Map legacy Compose `links` to implicit service dependencies plus target
-  service network aliases for the safe single-network local subset.
-- Validate link syntax, target services, alias names, shared network
-  ownership, and projected link-alias conflicts before side effects.
-- Document current Docker Compose parity gaps around multi-network links,
-  source-scoped DNS, and shared aliases.
+- Map legacy Compose `links` to implicit service dependencies plus generated
+  source-container static host entries for the safe single-network local
+  subset.
+- Validate link syntax, target services, alias names, and shared network
+  ownership before resources are created.
+- Document current Docker Compose parity gaps around dynamic aliases,
+  multi-network links, and source-scoped DNS.
 
 ## Type of Change
 
@@ -23,13 +24,12 @@ needed for ordinary service-to-service communication, but they remain part of
 the Compose file surface and they carry two behaviors: implicit dependency
 ordering and optional alias names for the linked service.
 
-The local container fork now exposes a single-network alias primitive through
-typed attachment aliases. This plugin change maps only the part of `links` that
-can be represented cleanly by that primitive. The current live execution path
-still renders `container run/create --network <name>,alias=<value>` through the
-command-vector bridge while typed service creation is being wired.
-Compose-specific legacy-link parsing stays in `container-compose`; no
-Compose-specific policy is added to `apple/container`.
+The local container fork exposes container inspection and explicit host-entry
+injection. This plugin maps only the part of `links` that can be represented
+cleanly by those primitives: after the target is created, the source receives
+`--add-host <alias>:<target-ip>`. Compose-specific legacy-link parsing stays
+in `container-compose`; no Compose-specific policy is added to
+`apple/container`.
 
 References:
 
@@ -42,8 +42,10 @@ References:
 
 ## Commit Tracking
 
-- Compose code commit: `48367c7` (`feat(network): map compose links`)
-- Container code dependency: `cf5e8d1` in `stephenlclarke/container` (`feat(network): add attachment aliases`)
+- Compose code commit: `feat(links): resolve legacy links through host entries`
+  on this pull request
+- Container code dependency: existing matched `stephenlclarke/container`
+  inspection and host-entry APIs
 - Lower runtime code commit: not required
 
 ## Implementation Details
@@ -53,13 +55,16 @@ References:
 - Included link targets in `serviceDependencies(_:)` so `up`, `create`, and
   one-off `run` start linked services before dependents unless `--no-deps`
   removes dependency startup.
-- Added `projectByApplyingLinks(project:activeServiceNames:)` to build a
-  runtime working project with active link aliases projected onto linked target
-  services before validation, config hashing, resource creation, and container
-  creation.
-- Added a projected link-alias validation guard because the current fork-backed
-  `apple/container` alias lookup is hostname-like and cannot model Docker's
-  ambiguous shared-alias behavior yet.
+- Added `projectByValidatingLinks(project:activeServiceNames:)` to validate
+  link topology before resources are created.
+- Added `serviceByResolvingLinkHosts(project:service:scaleOverrides:)` so
+  `up`, `create`, and one-off `run` inspect created link targets and add static
+  `ALIAS=IP` entries to only the dependent source service before config
+  hashing and container creation.
+- Reject a source `extra_hosts` mapping that conflicts with a link alias before
+  resource creation instead of relying on unspecified host-file ordering.
+- Reject one link alias that refers to multiple services before resource
+  creation instead of relying on unspecified host-file ordering.
 - Keep `external_links` policy separate from service links; the current
   single-network external-link subset uses direct runtime inspection and
   generated host entries.
@@ -69,13 +74,13 @@ References:
 
 - Supported with the current fork-backed runtime: `links` for services that
   share exactly one normalized Compose network, including the implicit
-  `default` network, currently through the command-vector bridge.
-- Supported: `SERVICE:ALIAS` link aliases.
-- Supported: `SERVICE` entries mapped to the target service name as an
-  alias.
+  `default` network, through generated `--add-host` source entries.
+- Supported: `SERVICE:ALIAS` static link host entries.
+- Supported: `SERVICE` entries mapped to the target service name as a static
+  host entry.
 - Supported: implicit dependency ordering from links.
-- Remaining gap: Docker-compatible shared aliases and source-scoped DNS.
-- Remaining gap: multi-network link behavior.
+- Remaining gap: dynamic source-scoped DNS aliases and address update events.
+- Remaining gap: links with zero or multiple shared networks.
 - Separate supported subset: `external_links` uses direct runtime inspection
   and generated host entries when the source and external container share one
   runtime network.
@@ -89,7 +94,7 @@ References:
 Focused validation:
 
 ```sh
-swift test --filter 'ComposeOrchestratorTests/upMapsLinksToTargetNetworkAliases|ComposeOrchestratorTests/upMapsLinkWithoutAliasToTargetServiceName|ComposeOrchestratorTests/upRejectsInvalidLinkAliasesBeforeCreatingResources|ComposeOrchestratorTests/upRejectsLinksWithoutOneExplicitSharedNetwork|ComposeOrchestratorTests/upRejectsSharedLinkAliasesBeforeCreatingResources|ComposeOrchestratorTests/runMapsLinksToDependencyNetworkAliases'
+swift test --filter LegacyLinks
 ```
 
 Additional local checks:
