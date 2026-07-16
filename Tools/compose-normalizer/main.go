@@ -887,7 +887,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		Models:                  serviceModelValues(service.Models),
 		OomKillDisable:          service.OomKillDisable,
 		OomScoreAdj:             service.OomScoreAdj,
-		PidsLimit:               service.PidsLimit,
+		PidsLimit:               firstNonZero(service.PidsLimit, deployLimitPids(service.Deploy)),
 		CPUS:                    firstNonEmpty(cpusValue(service.CPUS), deployLimitCPUS(service.Deploy)),
 		ShmSize:                 unitBytesValue(service.ShmSize),
 		Ulimits:                 ulimitValues(service.Ulimits),
@@ -1165,7 +1165,6 @@ func unsupportedDeployLimitFields(resource *types.Resource) []string {
 		return nil
 	}
 	fields := []string{}
-	appendUnsupportedDeployField(&fields, "resources.limits.pids", resource.Pids != 0)
 	appendUnsupportedDeployField(&fields, "resources.limits.devices", len(resource.Devices) > 0)
 	appendUnsupportedDeployField(&fields, "resources.limits.generic_resources", len(resource.GenericResources) > 0)
 	return fields
@@ -1869,6 +1868,16 @@ func deployLimitMemory(deploy *types.DeployConfig) string {
 	return unitBytesValue(deploy.Resources.Limits.MemoryBytes)
 }
 
+// deployLimitPids returns the local pids cgroup limit from
+// deploy.resources.limits. The value uses the same runtime primitive as the
+// Compose service-level pids_limit field.
+func deployLimitPids(deploy *types.DeployConfig) int64 {
+	if deploy == nil || deploy.Resources.Limits == nil {
+		return 0
+	}
+	return deploy.Resources.Limits.Pids
+}
+
 // durationSeconds converts Compose durations to whole seconds for container stop.
 func durationSeconds(duration *types.Duration) *int64 {
 	if duration == nil {
@@ -1932,4 +1941,15 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// firstNonZero selects the first non-zero numeric candidate. Compose-go uses
+// zero to represent an omitted pids limit in both service and Deploy models.
+func firstNonZero(values ...int64) int64 {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
 }

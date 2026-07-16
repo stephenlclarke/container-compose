@@ -7638,14 +7638,14 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported deploy resource limits as apple/container runtime gaps")
+    @Test("up rejects unsupported generic deploy resource limits as apple/container runtime gaps")
     func upRejectsUnsupportedDeployResourceLimitsAsAppleContainerRuntimeGaps() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.unsupportedDeployFields = ["resources.limits.pids"]
+                    $0.unsupportedDeployFields = ["resources.limits.generic_resources"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
@@ -7657,7 +7657,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported deploy resource limit error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses deploy.resources.limits.pids; apple/container exposes local deploy CPU and memory limits but not this deploy resource limit yet"))
+            #expect(error == .unsupported("service 'api' uses deploy.resources.limits.generic_resources; apple/container exposes local deploy CPU, memory, and pids limits but not this deploy resource limit yet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

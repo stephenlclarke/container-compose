@@ -38,7 +38,7 @@ Docker Compose V2 accepts both documented `deploy.update_config.order` values. I
 - Swarm scheduler placement decisions
 - Rollback orchestration after failed rolling updates
 - Swarm update timing, failure handling, and parallelism orchestration
-- pids, device, and generic resource reservations or limits
+- pids reservations, plus device and generic resource reservations or limits
 
 ## Upstream references
 

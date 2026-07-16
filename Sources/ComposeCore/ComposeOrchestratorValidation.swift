@@ -241,7 +241,7 @@ extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.update_config.order; unsupported update orders need Docker Compose compatible apple/container update orchestration primitives")
         }
         if let field = unsupportedDeployResourceLimitField(in: fields) {
-            throw ComposeError.unsupported("service '\(service.name)' uses deploy.\(field); apple/container exposes local deploy CPU and memory limits but not this deploy resource limit yet")
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.\(field); apple/container exposes local deploy CPU, memory, and pids limits but not this deploy resource limit yet")
         }
         if fields.contains("resources.reservations.devices") {
             throw ComposeError.unsupported("service '\(service.name)' uses a non-GPU deploy device reservation; the Apple backend supports only the generic GPU capability")

@@ -4,7 +4,7 @@
 
 - Preserves compose-go normalized `deploy.update_config`, `deploy.rollback_config`, and `deploy.placement` metadata in `container compose config --format json`.
 - Accepts both documented `deploy.update_config.order` values in local mode and includes Deploy metadata in the recreate fingerprint.
-- Keeps Swarm placement, rollback, timing, and parallelism orchestration out of the Apple runtime bridge; pids/device/generic resource reservations or limits remain rejected.
+- Keeps Swarm placement, rollback, timing, and parallelism orchestration out of the Apple runtime bridge; pids reservations plus device/generic resource reservations or limits remain rejected.
 - Adds Go and Swift normalizer coverage plus a local-only Docker Compose parity target for config and dry-run `up --no-start`.
 - Updates the current parity ledger so `STATUS.md` no longer lists accepted scheduler metadata as missing functionality.
 
