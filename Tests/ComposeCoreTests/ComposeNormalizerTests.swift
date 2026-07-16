@@ -18,7 +18,7 @@ import ComposeCore
 import Foundation
 import Testing
 
-@Suite("Compose normalizer")
+@Suite("Compose normalizer", .serialized)
 struct ComposeNormalizerTests {
     @Test("normalizes a compose file through compose-go")
     func normalizesComposeFileThroughComposeGo() async throws {
