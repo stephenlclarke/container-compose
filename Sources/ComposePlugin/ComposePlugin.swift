@@ -1955,7 +1955,7 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Implements `compose commit` for stopped service containers.
+/// Implements `compose commit` for stopped containers and default live snapshots.
 struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "commit", abstract: "Create an image from a service container.")
     @OptionGroup var global: GlobalOptions
@@ -1977,7 +1977,7 @@ struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     var service: String
     @Argument(help: "Optional image reference.")
     var reference: String?
-    /// Commits the selected stopped service container as a new image.
+    /// Commits the selected service container as a new image.
     func run() async throws {
         let loadedProject = try await project()
         try await orchestrator().commit(

@@ -41,7 +41,8 @@ public extension ComposeOrchestrator {
         try await exporter.exportContainer(id: containerID, output: export.output, live: live)
     }
 
-    /// Creates an image from a stopped service container's filesystem.
+    /// Creates an image from a service container filesystem, taking a brief
+    /// filesystem-consistent snapshot when the selected container is running.
     func commit(
         project: ComposeProject,
         serviceName: String,
