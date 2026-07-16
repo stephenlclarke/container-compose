@@ -147,6 +147,51 @@ extension ComposeOrchestrator {
         )
     }
 
+    /// Resolves the image config healthcheck a Compose commit should retain.
+    ///
+    /// `commit` creates an image, so it must preserve the Docker image form of
+    /// the effective probe rather than the runtime command-vector projection.
+    package func commitImageHealthCheck(
+        service: ComposeService,
+        inherited: ComposeImageHealthCheck?,
+    ) throws -> ComposeImageHealthCheck? {
+        let fields = try healthCheckFields(service: service)
+        guard fields["disable"]?.boolValue != true else {
+            return ComposeImageHealthCheck(test: ["NONE"])
+        }
+
+        guard let test = fields["test"] else {
+            guard healthCheckRequiresInheritedCommand(fields),
+                  let inherited,
+                  let inheritedTest = inherited.test,
+                  !inheritedTest.isEmpty
+            else {
+                return inherited
+            }
+            let inheritedValue = ComposeValue.array(inheritedTest.map { .string($0) })
+            guard case .command = try runtimeHealthCheckCommand(test: inheritedValue, serviceName: service.name) else {
+                return inherited
+            }
+            return try resolvedCommitImageHealthCheck(
+                test: inheritedTest,
+                fields: fields,
+                inherited: inherited,
+                serviceName: service.name,
+            )
+        }
+
+        let dockerTest = try commitImageHealthCheckTest(test, serviceName: service.name)
+        guard dockerTest != ["NONE"] else {
+            return ComposeImageHealthCheck(test: dockerTest)
+        }
+        return try resolvedCommitImageHealthCheck(
+            test: dockerTest,
+            fields: fields,
+            inherited: nil,
+            serviceName: service.name,
+        )
+    }
+
     /// Returns validated Compose healthcheck fields.
     func healthCheckFields(service: ComposeService) throws -> [String: ComposeValue] {
         guard let healthcheck = service.healthcheck else {
@@ -502,5 +547,85 @@ extension ComposeOrchestrator {
             throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.retries must be between 0 and \(UInt32.max)")
         }
         return UInt32(retries)
+    }
+
+    /// Converts the effective Compose healthcheck to Docker image config data.
+    private func resolvedCommitImageHealthCheck(
+        test: [String],
+        fields: [String: ComposeValue],
+        inherited: ComposeImageHealthCheck?,
+        serviceName: String,
+    ) throws -> ComposeImageHealthCheck {
+        ComposeImageHealthCheck(
+            test: test,
+            intervalInNanoseconds: try commitHealthCheckDuration(
+                fields["interval"],
+                inherited: inherited?.intervalInNanoseconds,
+                field: "interval",
+                serviceName: serviceName,
+            ) ?? Int64(ContainerHealthCheck.defaultIntervalInNanoseconds),
+            timeoutInNanoseconds: try commitHealthCheckDuration(
+                fields["timeout"],
+                inherited: inherited?.timeoutInNanoseconds,
+                field: "timeout",
+                serviceName: serviceName,
+            ) ?? Int64(ContainerHealthCheck.defaultTimeoutInNanoseconds),
+            startPeriodInNanoseconds: try commitHealthCheckDuration(
+                fields["start_period"],
+                inherited: inherited?.startPeriodInNanoseconds,
+                field: "start_period",
+                serviceName: serviceName,
+            ) ?? Int64(ContainerHealthCheck.defaultStartPeriodInNanoseconds),
+            startIntervalInNanoseconds: try commitHealthCheckDuration(
+                fields["start_interval"],
+                inherited: inherited?.startIntervalInNanoseconds,
+                field: "start_interval",
+                serviceName: serviceName,
+            ),
+            retries: Int(try healthCheckRetries(fields["retries"], inherited: inherited?.retries, serviceName: serviceName)),
+        )
+    }
+
+    /// Maps Compose duration values to Docker image config's signed nanoseconds.
+    private func commitHealthCheckDuration(
+        _ value: ComposeValue?,
+        inherited: Int64?,
+        field: String,
+        serviceName: String,
+    ) throws -> Int64? {
+        guard let nanoseconds = try healthCheckDurationNanoseconds(
+            value,
+            inherited: inherited,
+            field: field,
+            serviceName: serviceName,
+        ) else {
+            return nil
+        }
+        guard let signedNanoseconds = Int64(exactly: nanoseconds) else {
+            throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.\(field) is outside the Docker image config range")
+        }
+        return signedNanoseconds
+    }
+
+    /// Preserves Compose's test form while validating it against the runtime projection.
+    private func commitImageHealthCheckTest(_ test: ComposeValue, serviceName: String) throws -> [String] {
+        let runtimeCommand = try runtimeHealthCheckCommand(test: test, serviceName: serviceName)
+        guard case .command = runtimeCommand else {
+            return ["NONE"]
+        }
+
+        switch test {
+        case let .string(command):
+            return ["CMD-SHELL", command]
+        case let .array(values):
+            return try values.map { value in
+                guard let value = value.stringValue else {
+                    throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test entries must be strings")
+                }
+                return value
+            }
+        default:
+            throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test must be a string or list")
+        }
     }
 }

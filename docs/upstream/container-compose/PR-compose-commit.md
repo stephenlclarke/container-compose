@@ -9,6 +9,7 @@ This change fills the Compose-owned part of Docker Compose v2 `commit` parity:
 - Exports stopped service container filesystems through the existing runtime export adapter and requests a filesystem-consistent live snapshot for running containers with default `--pause=true`.
 - Builds a single-layer OCI image archive with Docker-compatible image config metadata.
 - Seeds committed image config from base image metadata before applying Compose service overrides and `--change`.
+- Preserves Docker `Healthcheck` metadata and resolves Compose healthcheck overrides into the committed image config.
 - Matches Docker Compose's `--index` default by treating omitted `--index` and `--index=0` as unset service-container selection.
 - Loads the generated image archive through the direct image adapter.
 - Keeps `--pause=false` partial because the runtime cannot safely export a writable filesystem without the brief freeze used by the default live snapshot.
@@ -34,7 +35,7 @@ The stopped-container path reuses export and image-load primitives, builds a sta
 - Added `ComposeCommitOptions` and a `ComposeOrchestrator.commit(project:serviceName:options:)` path.
 - Added `ComposeCommitImageArchive` to write an OCI layout tar from an exported rootfs archive.
 - Added image archive load support to `ContainerImageAPIClienting`, `ContainerImageManaging`, and the live image adapter.
-- Extended compact image metadata with config fields needed to preserve Docker commit image config parity.
+- Extended compact image metadata with config fields, including Docker `Healthcheck`, needed to preserve Docker commit image config parity.
 - Implemented stopped-container export and running-container live-snapshot selection through `ContainerDiscoveryManaging.getContainer(id:)`.
 - Resolves omitted `--index` and `--index=0` through Docker Compose-compatible default service-container selection.
 - Uses the live-export primitive for running containers with default `--pause=true`, and rejects `--pause=false` before export with the exact platform limitation.
@@ -55,6 +56,7 @@ Focused validation:
 swift test --filter ComposeOrchestratorTests/commit
 swift test --filter ComposeArgumentRewriterTests
 swift test --filter ComposeCLIHelpTests
+make docker-compose-commit-parity
 ```
 
 Before release promotion:

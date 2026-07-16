@@ -68,6 +68,8 @@ public struct ComposeImageMetadata: Sendable, Equatable {
     public var exposedPorts: [String]
     /// Docker image config stop signal.
     public var stopSignal: String?
+    /// Docker image config healthcheck.
+    public var healthCheck: ComposeImageHealthCheck?
 
     public init(reference: String) {
         self.reference = reference
@@ -80,6 +82,7 @@ public struct ComposeImageMetadata: Sendable, Equatable {
         labels = [:]
         exposedPorts = []
         stopSignal = nil
+        healthCheck = nil
     }
 
     public init(reference: String, _ configure: (inout ComposeImageMetadata) -> Void) {
