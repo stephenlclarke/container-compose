@@ -618,7 +618,7 @@ enum ComposeCLIHelp {
             "--remove-orphans": .supported,
             "--rm": .supported,
             "--service-ports": .supported,
-            "--use-aliases": .supported,
+            "--use-aliases": .partiallySupported,
             "--user": .supported,
             "--volume": .supported,
             "--workdir": .supported,
@@ -1606,7 +1606,7 @@ enum ComposeCLIHelp {
               --remove-orphans              Remove containers for services not defined in the Compose file
               --rm                          Automatically remove the container when it exits
           -P, --service-ports               Run command with all service's ports enabled and mapped to the host
-              --use-aliases                 Use the service's network aliases
+              --use-aliases                 Use the service's network aliases (requires container-facing DNS)
           -u, --user string                 Run as specified username or uid
           -v, --volume stringArray          Bind mount a volume
           -w, --workdir string              Working directory inside the container

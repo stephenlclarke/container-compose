@@ -434,15 +434,16 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--dry-run\u{001B}[0m"))
     }
 
-    @Test("run command and options are shown as supported")
-    func runCommandAndOptionsAreShownAsSupported() throws {
+    @Test("run command and options accurately report support")
+    func runCommandAndOptionsAccuratelyReportSupport() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "run"))
 
         #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--build\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--no-deps\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--service-ports\u{001B}[0m"))
-        #expect(help.contains("\u{001B}[32m--use-aliases\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[38;5;208m--use-aliases\u{001B}[0m"))
+        #expect(help.contains("requires container-facing DNS"))
     }
 
     @Test("exec command and privileged option are shown as supported")

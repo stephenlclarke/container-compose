@@ -5960,8 +5960,8 @@ struct ComposeOrchestratorTests {
         #expect(commands[0].starts(with: ["container", "run", "--name", "demo-job-1"]))
     }
 
-    @Test("up maps links to target network aliases")
-    func upMapsLinksToTargetNetworkAliases() async throws {
+    @Test("up rejects links until the runtime exposes container-facing DNS")
+    func upRejectsLinksUntilRuntimeExposesContainerFacingDNS() async throws {
         let runner = RecordingRunner(responses: [.success, .success])
         let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
@@ -5979,22 +5979,22 @@ struct ComposeOrchestratorTests {
             $0.networks = ["backend": ComposeNetwork(name: "backend")]
         }
 
-        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-            .up(project: project, options: ComposeUpOptions {
-                $0.services = ["api"]
-            })
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions {
+                    $0.services = ["api"]
+                })
+            Issue.record("Expected container-facing DNS error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'redis' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS"))
+        }
 
-        let commands = runner.commands.map(\.arguments)
-        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
-        #expect(commands.count == 2)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-redis-1"]))
-        #expect(commands[0].containsSequence(["--network", "demo_backend,alias=cache"]))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
-        #expect(commands[1].containsSequence(["--network", "demo_backend"]))
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
     }
 
-    @Test("up maps link without alias to target service name")
-    func upMapsLinkWithoutAliasToTargetServiceName() async throws {
+    @Test("up rejects implicit link aliases until the runtime exposes container-facing DNS")
+    func upRejectsImplicitLinkAliasesUntilRuntimeExposesContainerFacingDNS() async throws {
         let runner = RecordingRunner(responses: [.success, .success])
         let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
@@ -6012,19 +6012,22 @@ struct ComposeOrchestratorTests {
             $0.networks = ["backend": ComposeNetwork(name: "backend")]
         }
 
-        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-            .up(project: project, options: ComposeUpOptions {
-                $0.services = ["api"]
-            })
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions {
+                    $0.services = ["api"]
+                })
+            Issue.record("Expected container-facing DNS error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'redis' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS"))
+        }
 
-        let commands = runner.commands.map(\.arguments)
-        #expect(commands.count == 2)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-redis-1"]))
-        #expect(commands[0].containsSequence(["--network", "demo_backend,alias=redis"]))
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
     }
 
-    @Test("up maps links on the normalized default network")
-    func upMapsLinksOnNormalizedDefaultNetwork() async throws {
+    @Test("up rejects links on the default network until the runtime exposes container-facing DNS")
+    func upRejectsLinksOnDefaultNetworkUntilRuntimeExposesContainerFacingDNS() async throws {
         let runner = RecordingRunner(responses: [.success, .success])
         let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
@@ -6042,18 +6045,18 @@ struct ComposeOrchestratorTests {
             $0.networks = ["default": ComposeNetwork(name: "demo_default")]
         }
 
-        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-            .up(project: project, options: ComposeUpOptions {
-                $0.services = ["api"]
-            })
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions {
+                    $0.services = ["api"]
+                })
+            Issue.record("Expected container-facing DNS error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'redis' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS"))
+        }
 
-        let commands = runner.commands.map(\.arguments)
-        #expect(await resourceManager.requests.map(\.name) == ["demo_default"])
-        #expect(commands.count == 2)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-redis-1"]))
-        #expect(commands[0].containsSequence(["--network", "demo_default,alias=cache"]))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
-        #expect(commands[1].containsSequence(["--network", "demo_default"]))
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
     }
 
     @Test("up maps external links to generated host entries")
@@ -6411,8 +6414,8 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--sysctl", "net.ipv4.ip_forward=1"]))
     }
 
-    @Test("up maps network aliases to single network attachment")
-    func upMapsNetworkAliasesToSingleNetworkAttachment() async throws {
+    @Test("up rejects network aliases until the runtime exposes container-facing DNS")
+    func upRejectsNetworkAliasesUntilRuntimeExposesContainerFacingDNS() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
@@ -6429,13 +6432,16 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-            .up(project: project, options: ComposeUpOptions())
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected container-facing DNS error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS"))
+        }
 
-        let commands = runner.commands.map(\.arguments)
-        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
-        #expect(commands.count == 1)
-        #expect(commands[0].containsSequence(["--network", "demo_backend,alias=api,alias=api.internal"]))
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
     }
 
     @Test("up rejects invalid network aliases before creating resources")
@@ -22266,8 +22272,8 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests.contains("legacy_db"))
     }
 
-    @Test("run maps links to dependency network aliases")
-    func runMapsLinksToDependencyNetworkAliases() async throws {
+    @Test("run rejects links until the runtime exposes container-facing DNS")
+    func runRejectsLinksUntilRuntimeExposesContainerFacingDNS() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
@@ -22285,16 +22291,16 @@ struct ComposeOrchestratorTests {
             $0.networks = ["backend": ComposeNetwork(name: "backend")]
         }
 
-        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-            .run(project: project, serviceName: "job", command: ["true"], remove: true)
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected container-facing DNS error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'db' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS"))
+        }
 
-        let commands = runner.commands.map(\.arguments)
-        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
-        #expect(commands.count == 2)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-db-1"]))
-        #expect(commands[0].containsSequence(["--network", "demo_backend,alias=database"]))
-        #expect(commands[1].starts(with: ["container", "run", "--name"]))
-        #expect(commands[1].containsSequence(["--network", "demo_backend"]))
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
     }
 
     @Test("run maps hostnames to runtime arguments")
@@ -22445,8 +22451,8 @@ struct ComposeOrchestratorTests {
         #expect(!commands[0].contains("demo_backend,alias=job,alias=job.internal"))
     }
 
-    @Test("run use-aliases maps network aliases to single network attachment")
-    func runUseAliasesMapsNetworkAliasesToSingleNetworkAttachment() async throws {
+    @Test("run use-aliases rejects network aliases until the runtime exposes container-facing DNS")
+    func runUseAliasesRejectsNetworkAliasesUntilRuntimeExposesContainerFacingDNS() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
@@ -22463,16 +22469,19 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-            .run(project: project, serviceName: "job", options: composeRunOptions(command: ["true"]) {
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .run(project: project, serviceName: "job", options: composeRunOptions(command: ["true"]) {
                 $0.remove = true
                 $0.useAliases = true
-            })
+                })
+            Issue.record("Expected container-facing DNS error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS"))
+        }
 
-        let commands = runner.commands.map(\.arguments)
-        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
-        #expect(commands.count == 1)
-        #expect(commands[0].containsSequence(["--network", "demo_backend,alias=job,alias=job.internal"]))
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
     }
 
     @Test("run rejects unsupported network options before creating resources")

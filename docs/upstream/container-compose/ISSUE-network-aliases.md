@@ -28,18 +28,19 @@ References:
 - Compose service network `aliases`: <https://docs.docker.com/reference/compose-file/services/#aliases>
 - Docker `network connect --alias`: <https://docs.docker.com/reference/cli/docker/network/connect/>
 - Docker networking overview: <https://docs.docker.com/engine/network/>
+- Apple container-to-container DNS request: <https://github.com/apple/container/issues/1809>
+- Apple DNS forwarding groundwork: <https://github.com/apple/container/pull/1813>
+- Apple network-attachment aliases: <https://github.com/apple/container/pull/1815>
 
 ## Current container-compose behavior
 
-Before this change, `container-compose` rejected any service network aliases as an `apple/container` runtime gap.
-
-With this change, `container-compose` supports aliases for the current single-network local subset by mapping compose-go normalized aliases to the plugin-owned network-alias projection. The current live execution path emits repeatable `container run/create --network <name>` arguments, so plain multi-network attachments are supported at container creation on macOS 26+. Aliases remain intentionally limited to one attachment: the runtime's container DNS configuration uses the primary attachment and does not yet provide Docker-compatible source-network-aware DNS. Invalid aliases and aliases declared on unattached networks are rejected before resources are created.
+`container-compose` validates alias syntax and attachment ownership, then rejects every valid network-alias request before resource creation. The runtime can register aliases on repeated `--network` attachment arguments, and plain multi-network attachments are supported at container creation on macOS 26+. However, it configures service containers with only the first attachment gateway as their nameserver and has no container-facing DNS listener to resolve the registry entries. Passing the arguments through would therefore advertise a feature that peers cannot use.
 
 ## Likely owner
 
 both
 
-`apple/container` owns the runtime network attachment alias primitive and multi-attachment creation. `container-compose` owns Compose model validation, the alias subset selection, and projection.
+`apple/container` owns the missing container-facing DNS listener and source-network routing model. `container-compose` owns Compose model validation and the early, explicit unsupported error.
 
 ## Minimal example
 
@@ -59,14 +60,14 @@ networks:
   backend: {}
 ```
 
-Expected runtime behavior with the current fork-backed runtime:
+Current behavior with the fork-backed runtime:
 
-- `container-compose` emits `--network alias-demo_backend,alias=api.internal` through the command-vector bridge.
-- Peers on the same `apple/container` network can resolve `api.internal` to the service container's attachment address.
-- Plain multi-network attachment creation is supported; multi-network alias behavior remains blocked until `apple/container` exposes source-network-aware DNS behavior.
+- `container-compose` rejects this project before creating networks, volumes, or containers.
+- `apple/container` can register `api.internal` in its per-network registry but cannot answer that lookup from a service container.
+- Plain multi-network attachment creation is supported; all alias behavior remains blocked until `apple/container` exposes a container-facing DNS listener with source-network-aware routing.
 
 ## Code of Conduct and documentation
 
 - [x] I agree to follow this project's Code of Conduct.
 - [x] I checked `STATUS.md`.
-- [x] I checked `STATUS.md` and relevant upstream docs.
+- [x] I checked relevant upstream DNS design and alias proposals.

@@ -317,7 +317,7 @@ func networkMACAddress(service: ComposeService, network: String) -> String? {
     nonEmpty(service.networkOptions?[network]?.macAddress) ?? nonEmpty(service.macAddress)
 }
 
-/// Returns canonical network aliases for a supported single-network attachment.
+/// Returns canonical network aliases for an attachment.
 func networkAliasValues(service: ComposeService, network: String) throws -> [String] {
     var aliases: [String] = []
     var seen = Set<String>()

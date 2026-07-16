@@ -196,8 +196,8 @@ extension ComposeOrchestrator {
         }
     }
 
-    /// Allows aliases only for the single-network attachment that apple/container
-    /// `container --network name,alias=...` can represent.
+    /// Validates aliases then rejects them until apple/container can resolve
+    /// network registry names from inside service containers.
     func validateNetworkAliasSupport(service: ComposeService, networks: [String]) throws {
         guard let networkAliases = service.networkAliases else {
             return
@@ -209,13 +209,13 @@ extension ComposeOrchestrator {
         guard !aliasNetworks.isEmpty else {
             return
         }
-        guard networks.count == 1, let network = networks.first else {
-            throw ComposeError.unsupported("service '\(service.name)' uses network aliases; network aliases require exactly one Compose network until apple/container exposes multi-network alias attachment")
+        for aliasNetwork in aliasNetworks {
+            guard networks.contains(aliasNetwork) else {
+                throw ComposeError.invalidProject("service '\(service.name)' sets network aliases on unattached network '\(aliasNetwork)'")
+            }
+            _ = try networkAliasValues(service: service, network: aliasNetwork)
         }
-        for aliasNetwork in aliasNetworks where aliasNetwork != network {
-            throw ComposeError.invalidProject("service '\(service.name)' sets network aliases on unattached network '\(aliasNetwork)'")
-        }
-        _ = try networkAliasValues(service: service, network: network)
+        throw ComposeError.unsupported("service '\(service.name)' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS")
     }
 
     /// Rejects build fields that apple/container `container build` cannot represent yet.
