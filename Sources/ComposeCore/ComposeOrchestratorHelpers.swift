@@ -195,10 +195,10 @@ extension ComposeProject {
     private func referencedComposeResources(_ resources: [ComposeValue]?) -> [String] {
         resources?.compactMap { resource in
             switch resource {
-            case .string(let name):
+            case let .string(name):
                 return name
-            case .object(let fields):
-                if case .string(let source)? = fields["source"] {
+            case let .object(fields):
+                if case let .string(source)? = fields["source"] {
                     return source
                 }
                 return nil
