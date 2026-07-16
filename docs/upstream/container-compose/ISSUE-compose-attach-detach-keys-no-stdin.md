@@ -4,7 +4,7 @@
 
 `container compose attach --no-stdin --detach-keys=ctrl-x SERVICE` should use the supported output-only attach path instead of failing on detach-key validation.
 
-Docker Compose accepts `--detach-keys` as an attach option. This plugin cannot implement interactive detach handling until apple/container exposes a stdin/stdout/stderr reattach primitive, but the option is irrelevant when `--no-stdin` has already selected log-follow output mode.
+Docker Compose accepts `--detach-keys` as an attach option. This plugin cannot implement interactive detach handling until `apple/container` exposes a stdin/stdout/stderr reattach primitive, but the option is irrelevant when `--no-stdin` has already selected log-follow output mode. The exact runtime boundary and required Apple-shaped primitive are documented in [ISSUE-attach-stream-reattach.md](../apple-container/ISSUE-attach-stream-reattach.md) and tracked by [apple/container#378](https://github.com/apple/container/issues/378).
 
 ## Acceptance Criteria
 
@@ -16,4 +16,4 @@ Docker Compose accepts `--detach-keys` as an attach option. This plugin cannot i
 
 ## Notes
 
-This does not add interactive attach support. It only accepts a harmless option value on the already-supported output-only attach path.
+This does not add interactive attach support. It only accepts a harmless option value on the already-supported output-only attach path. Do not replace the missing reattach primitive with `exec`, `tmux`, or log replay: those do not reconnect to the original init process or preserve Docker-compatible terminal semantics.
