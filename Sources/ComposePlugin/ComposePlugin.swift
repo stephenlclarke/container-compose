@@ -1955,7 +1955,7 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Implements `compose commit` for stopped containers and default live snapshots.
+/// Implements `compose commit` for stopped containers and live snapshots.
 struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "commit", abstract: "Create an image from a service container.")
     @OptionGroup var global: GlobalOptions
@@ -1970,7 +1970,7 @@ struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     @Flag(
         name: .customLong("pause"),
         inversion: .prefixedNo,
-        help: "Use a filesystem-consistent snapshot for a running container. --pause=false is unavailable because it cannot safely export a writable filesystem."
+        help: "Use a filesystem-consistent snapshot for a running container (default true). Set --pause=false for a best-effort snapshot without freezing its filesystem."
     )
     var pause = true
     @Argument(help: "Service name.")

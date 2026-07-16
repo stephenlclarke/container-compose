@@ -21572,6 +21572,7 @@ struct ComposeOrchestratorTests {
         #expect(exports.first?.id == "demo-api-1")
         #expect(exports.first?.output?.hasSuffix("/rootfs.tar") == true)
         #expect(exports.first?.live == true)
+        #expect(exports.first?.noFreeze == false)
         let imageRequests = await imageManager.requests
         #expect(imageRequests.count == 2)
         #expect(imageRequests.first == .metadata("example/api"))
@@ -21582,8 +21583,8 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("commit rejects running service containers when pause is disabled")
-    func commitRejectsRunningServiceContainersWhenPauseIsDisabled() async throws {
+    @Test("commit takes a no-freeze live snapshot when pause is disabled")
+    func commitTakesNoFreezeLiveSnapshotWhenPauseIsDisabled() async throws {
         let exporter = RecordingContainerExporter(archiveData: try rootfsArchiveData())
         let imageManager = RecordingContainerImageManager()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
@@ -21601,21 +21602,19 @@ struct ComposeOrchestratorTests {
             $0.imageManager = imageManager
         })
 
-        do {
-            try await orchestrator.commit(project: project, serviceName: "api", options: ComposeCommitOptions {
-                $0.pause = false
-            })
-            Issue.record("Expected running commit with --pause=false to fail")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("commit: service 'api' container 'demo-api-1' is running; --pause=false is unavailable because the runtime cannot safely export a writable filesystem without a brief filesystem freeze. Omit --pause=false (the default takes a filesystem-consistent live snapshot) or stop the service container before committing."))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await orchestrator.commit(project: project, serviceName: "api", options: ComposeCommitOptions {
+            $0.pause = false
+        })
 
         #expect(await discoveryManager.listRequests == [true])
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
-        #expect(await exporter.requests.isEmpty)
-        #expect(await imageManager.requests.isEmpty)
+        let exports = await exporter.requests
+        #expect(exports.count == 1)
+        #expect(exports.first?.id == "demo-api-1")
+        #expect(exports.first?.output?.hasSuffix("/rootfs.tar") == true)
+        #expect(exports.first?.live == true)
+        #expect(exports.first?.noFreeze == true)
+        #expect((await imageManager.requests).count == 2)
     }
 
     @Test("commit image archive applies Docker change instructions")
@@ -26557,6 +26556,7 @@ private struct ContainerExportRequest: Equatable {
     var id: String
     var output: String?
     var live: Bool = false
+    var noFreeze: Bool = false
 }
 
 private enum ContainerCopyRequest: Equatable {
@@ -28286,8 +28286,8 @@ private actor RecordingContainerExporter: ContainerExporting {
         storage
     }
 
-    func exportContainer(id: String, output: String?, live: Bool) async throws {
-        storage.append(ContainerExportRequest(id: id, output: output, live: live))
+    func exportContainer(id: String, output: String?, live: Bool, noFreeze: Bool) async throws {
+        storage.append(ContainerExportRequest(id: id, output: output, live: live, noFreeze: noFreeze))
         if let failure {
             throw failure
         }

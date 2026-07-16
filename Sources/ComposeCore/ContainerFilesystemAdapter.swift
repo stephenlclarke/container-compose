@@ -187,9 +187,17 @@ extension ContainerCopying {
 /// Direct apple/container API used for service container filesystem exports.
 public protocol ContainerExporting: Sendable {
     /// Exports `id` as a tar archive to `output`, or streams the archive to
-    /// stdout when `output` is nil. `live` asks the runtime to take a
-    /// filesystem-consistent snapshot of a running container.
-    func exportContainer(id: String, output: String?, live: Bool) async throws
+    /// stdout when `output` is nil. `live` asks the runtime to take a snapshot
+    /// of a running container. `noFreeze` opts into a best-effort snapshot that
+    /// leaves the guest filesystem writable.
+    func exportContainer(id: String, output: String?, live: Bool, noFreeze: Bool) async throws
+}
+
+public extension ContainerExporting {
+    /// Exports a container with the runtime's default snapshot behavior.
+    func exportContainer(id: String, output: String?, live: Bool) async throws {
+        try await exportContainer(id: id, output: output, live: live, noFreeze: false)
+    }
 }
 
 /// `ContainerClient`-backed copier for real service container file copies.
@@ -303,8 +311,8 @@ public struct ContainerClientExporter: ContainerExporting {
         _ = Self.isStateless
     }
 
-    /// Exports through `ContainerClient.export(id:archive:live:)`.
-    public func exportContainer(id: String, output: String?, live: Bool) async throws {
+    /// Exports through `ContainerClient.export(id:archive:live:noFreeze:)`.
+    public func exportContainer(id: String, output: String?, live: Bool, noFreeze: Bool) async throws {
         let client = ContainerClient()
         let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -313,7 +321,7 @@ public struct ContainerClientExporter: ContainerExporting {
         }
 
         let archive = tempDirectory.appendingPathComponent("archive.tar")
-        try await client.export(id: id, archive: archive, live: live)
+        try await client.export(id: id, archive: archive, live: live, noFreeze: noFreeze)
 
         if let output {
             try FileManager.default.moveItem(at: archive, to: Self.outputURL(output))

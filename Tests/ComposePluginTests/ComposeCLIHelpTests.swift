@@ -95,33 +95,16 @@ struct ComposeCLIHelpTests {
         }
     }
 
-    @Test("partially supported commands explain their remaining gap")
-    func partiallySupportedCommandsExplainTheirRemainingGap() throws {
+    @Test("all command support entries are fully supported")
+    func allCommandSupportEntriesAreFullySupported() throws {
         let partialCommands = ComposeCLIHelp.commandSupportSnapshots
             .filter { $0.support == "partially supported" }
-
-        for command in partialCommands {
-            let detail = try #require(command.detail)
-            let help = try #require(ComposeCLIHelp.helpText(commandPath: command.commandPath))
-
-            #expect(!detail.isEmpty)
-            #expect(help.contains("Limitations: \(detail)"))
-        }
-    }
-
-    @Test("partial commands expose command-level parity limitations")
-    func partialCommandsExposeCommandLevelParityLimitations() throws {
         let commitHelp = try #require(ComposeCLIHelp.commandHelpText(command: "commit"))
-        let copyHelp = try #require(ComposeCLIHelp.commandHelpText(command: "cp"))
-        let publishHelp = try #require(ComposeCLIHelp.commandHelpText(command: "publish"))
 
-        #expect(commitHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(commitHelp.contains("running containers with default --pause=true can be committed"))
-        #expect(commitHelp.contains("\u{001B}[38;5;208m--pause\u{001B}[0m"))
-        #expect(copyHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
-        #expect(!copyHelp.contains("Limitations:"))
-        #expect(publishHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
-        #expect(!publishHelp.contains("Limitations:"))
+        #expect(partialCommands.isEmpty)
+        #expect(commitHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(commitHelp.contains("best-effort snapshot"))
+        #expect(commitHelp.contains("\u{001B}[32m--pause\u{001B}[0m"))
     }
 
     @Test("every documented command option is covered by a parse representative")
@@ -1203,6 +1186,9 @@ struct ComposeCLIHelpTests {
                 #expect(command.pause)
                 #expect(command.service == "api")
                 #expect(command.reference == "example/api:snapshot")
+
+                let noPause = try Commit.parse(["--no-pause", "api"])
+                #expect(!noPause.pause)
             }),
             (["config"], [
                 "--dry-run", "--environment", "--format", "--hash", "--images", "--lock-image-digests", "--models", "--networks",

@@ -35,8 +35,8 @@ Surface names follow the current Docker Docs [Compose file reference](https://do
 | Project discovery and source loading | ✅ Yes | Default local discovery, stdin, environment files, Git resources, and `oci://` project artifacts are implemented. Runtime-backed Compose file attributes are tracked separately below. |
 | Service attributes and runtime behavior | ⚠️ Partial | The complete grouped service surface is in [Service Attribute Surface](#service-attribute-surface), including details for every runtime-limited group. |
 | Dockerfile and build behavior | ⚠️ Partial | The complete instruction and Build Specification surface is in [Dockerfile And Build Surface](#dockerfile-and-build-surface); build-secret source and metadata shapes remain limited. |
-| CLI commands | ⚠️ Partial | 45 commands are ✅, 1 are ⚠️, and 0 are ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
-| CLI long options | ⚠️ Partial | 261 documented long options are ✅, 2 are ⚠️, and 0 are ❌. Every option is listed in [CLI Option Surface](#cli-option-surface). |
+| CLI commands | ✅ Yes | 46 commands are ✅, 0 are ⚠️, and 0 are ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
+| CLI long options | ✅ Yes | 262 documented long options are ✅, 1 are ⚠️, and 0 are ❌. Every option is listed in [CLI Option Surface](#cli-option-surface). |
 
 ## Compose File Surface
 
@@ -131,7 +131,7 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `bridge transformations list` | ✅ Yes | Local transformer images labelled `com.docker.compose.bridge=transformation` are listed in Docker-shaped table, JSON, and quiet modes. |
 | `bridge transformations ls` | ✅ Yes | Alias for `bridge transformations list`. |
 | `build` | ✅ Yes | Dockerfile/build parity is implemented for the supported build surface above. |
-| `commit` | ⚠️ Partial | Stopped service containers and running containers with the default `--pause=true` commit to OCI images through export, archive creation, and image load. The generated image preserves Docker `Healthcheck` metadata and effective Compose healthcheck overrides. The running path uses the generic live-export snapshot in the pinned `stephenlclarke/container` fork, which briefly freezes the root filesystem rather than pausing all processes. `--pause=false` remains unavailable because the backend cannot safely export a writable filesystem without that freeze. Omitted `--index` and `--index=0` use Docker Compose's default service-container selection. |
+| `commit` | ✅ Yes | Stopped service containers and running containers commit to OCI images through export, archive creation, and image load. The generated image preserves Docker `Healthcheck` metadata and effective Compose healthcheck overrides. The default `--pause=true` running path briefly freezes the root filesystem; `--pause=false` uses the generic best-effort APFS copy-on-write snapshot in the pinned `stephenlclarke/container` fork and leaves the filesystem writable. Omitted `--index` and `--index=0` use Docker Compose's default service-container selection. |
 | `config` | ✅ Yes | Compose project rendering and config query options are implemented. |
 | `convert` | ✅ Yes | Docker Compose's config-compatible model conversion projections are implemented for the documented local output modes. |
 | `cp` | ✅ Yes | Local-to-service, service-to-local, service-to-service, stdin tar archive, and stdout tar archive copies are implemented, including archive, follow-link, replica-index, and one-off-container modes. |
@@ -187,7 +187,7 @@ A ✅ option means the flag itself is parsed and mapped for the current command 
 | `bridge transformations list` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--quiet`. |
 | `bridge transformations ls` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--quiet`. |
 | `build` options | ✅ Yes | ✅ `--build-arg`, ✅ `--builder`, ✅ `--check`, ✅ `--dry-run`, ✅ `--memory`, ✅ `--no-cache`, ✅ `--print`, ✅ `--provenance`, ✅ `--pull`, ✅ `--push`, ✅ `--quiet`, ✅ `--sbom`, ✅ `--ssh`, ✅ `--with-dependencies`. |
-| `commit` options | ⚠️ Partial | ✅ `--author`, ✅ `--change`, ✅ `--dry-run`, ✅ `--index`, ✅ `--message`, ⚠️ `--pause`: the default uses a brief filesystem-consistent live snapshot for running containers; `--pause=false` is unavailable. |
+| `commit` options | ✅ Yes | ✅ `--author`, ✅ `--change`, ✅ `--dry-run`, ✅ `--index`, ✅ `--message`, ✅ `--pause`: the default uses a brief filesystem-consistent live snapshot for running containers; `--pause=false` uses a best-effort no-freeze snapshot. |
 | `config` options | ✅ Yes | ✅ `--dry-run`, ✅ `--environment`, ✅ `--format`, ✅ `--hash`, ✅ `--images`, ✅ `--lock-image-digests`, ✅ `--models`, ✅ `--networks`, ✅ `--no-consistency`, ✅ `--no-env-resolution`, ✅ `--no-interpolate`, ✅ `--no-normalize`, ✅ `--no-path-resolution`, ✅ `--output`, ✅ `--profiles`, ✅ `--quiet`, ✅ `--resolve-image-digests`, ✅ `--services`, ✅ `--variables`, ✅ `--volumes`. |
 | `convert` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--hash`, ✅ `--images`, ✅ `--no-consistency`, ✅ `--no-interpolate`, ✅ `--no-normalize`, ✅ `--output`, ✅ `--profiles`, ✅ `--quiet`, ✅ `--resolve-image-digests`, ✅ `--services`, ✅ `--volumes`. |
 | `cp` options | ✅ Yes | ✅ `--all`, ✅ `--archive`, ✅ `--dry-run`, ✅ `--follow-link`, ✅ `--index`. |
@@ -227,7 +227,6 @@ Released Apple `container` compatibility is not a supported-lane functionality g
 
 ## Remaining Gap Focus
 
-- There are no remaining red CLI command or long-option surfaces.
-- The remaining orange command surface is `commit`; `commit --pause=false` needs a safe no-freeze writable-filesystem snapshot. Its table row above describes the exact supported subset.
+- All documented CLI commands are green. The `run --use-aliases` long option remains partial pending container-facing DNS support.
 - Runtime-primitive blockers include vendor/native GPU passthrough, multiple GPUs, arbitrary macOS hardware passthrough, external config/secret lookup, generic service endpoint `driver_opts`, and non-GPU Deploy device/generic reservations.
 - When touching slow runtime paths, keep first-frame progress rendering covered so local `container compose` runs do not appear to hang before visible output.
