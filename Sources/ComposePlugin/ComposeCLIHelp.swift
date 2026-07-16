@@ -86,7 +86,7 @@ enum ComposeCLIHelp {
                     commandPath: commandPath(from: key),
                     support: support.label,
                     color: support.color,
-                    detail: supportDetailByCommand[key]
+                    detail: nil
                 )
             }
             .sorted { $0.commandPath.lexicographicallyPrecedes($1.commandPath) }
@@ -304,7 +304,7 @@ enum ComposeCLIHelp {
         "bridge transformations list": .supported,
         "bridge transformations ls": .supported,
         "build": .supported,
-        "commit": .partiallySupported,
+        "commit": .supported,
         "config": .supported,
         "convert": .supported,
         "cp": .supported,
@@ -338,10 +338,6 @@ enum ComposeCLIHelp {
         "volumes": .supported,
         "wait": .supported,
         "watch": .supported,
-    ]
-
-    private static let supportDetailByCommand: [String: String] = [
-        "commit": "Stopped containers and running containers with default --pause=true can be committed; the running path uses a brief filesystem freeze. --pause=false remains unavailable because a writable filesystem cannot be exported safely without that freeze.",
     ]
 
     private static let supportByOption: [String: [String: SupportLevel]] = [
@@ -429,7 +425,7 @@ enum ComposeCLIHelp {
             "--dry-run": .supported,
             "--index": .supported,
             "--message": .supported,
-            "--pause": .partiallySupported,
+            "--pause": .supported,
         ],
         "config": [
             "--dry-run": .supported,
@@ -726,7 +722,7 @@ enum ComposeCLIHelp {
             rendered = insertSupportLine(
                 into: rendered,
                 support: support,
-                detail: supportDetailByCommand[commandPath.joined(separator: " ")],
+                detail: nil,
                 useANSI: useANSI
             )
         }
@@ -1311,7 +1307,7 @@ enum ComposeCLIHelp {
               --dry-run          Execute command in dry run mode
               --index int        index of the container if service has multiple replicas.
           -m, --message string   Commit message
-          -p, --pause            Use a filesystem-consistent snapshot for a running container (default true). This briefly freezes its filesystem; --pause=false is unavailable.
+          -p, --pause            Use a filesystem-consistent snapshot for a running container (default true). Set --pause=false for a best-effort snapshot without freezing its filesystem.
         """,
         "config": """
         Usage:  container compose config [OPTIONS] [SERVICE...]

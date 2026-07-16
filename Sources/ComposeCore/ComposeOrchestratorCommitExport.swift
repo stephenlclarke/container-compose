@@ -41,8 +41,10 @@ public extension ComposeOrchestrator {
         try await exporter.exportContainer(id: containerID, output: export.output, live: live)
     }
 
-    /// Creates an image from a service container filesystem, taking a brief
-    /// filesystem-consistent snapshot when the selected container is running.
+    /// Creates an image from a service container filesystem.
+    ///
+    /// Running containers use a filesystem-consistent snapshot by default;
+    /// `--pause=false` takes a best-effort no-freeze snapshot instead.
     func commit(
         project: ComposeProject,
         serviceName: String,
@@ -72,7 +74,23 @@ public extension ComposeOrchestrator {
         guard let container = try await discoveryManager.getContainer(id: containerID) else {
             throw ComposeError.invalidProject("service '\(service.name)' container '\(containerID)' does not exist")
         }
-        let live = try commitUsesLiveExport(container, service: service, pause: commit.pause)
+        try await writeCommitImage(
+            project: project,
+            service: service,
+            options: commit,
+            container: container,
+        )
+    }
+
+    /// Exports a container root filesystem and writes it as a Compose image archive.
+    func writeCommitImage(
+        project: ComposeProject,
+        service: ComposeService,
+        options commit: ComposeCommitOptions,
+        container: ComposeContainerSummary,
+    ) async throws {
+        let live = try commitUsesLiveExport(container, service: service)
+        let noFreeze = live && !commit.pause
         let baseImageMetadata = await commitBaseImageMetadata(project: project, service: service)
         let healthCheck = try commitImageHealthCheck(
             service: service,
@@ -90,7 +108,12 @@ public extension ComposeOrchestrator {
 
         let rootfs = tempDirectory.appendingPathComponent("rootfs.tar")
         let archive = tempDirectory.appendingPathComponent("image.tar")
-        try await exporter.exportContainer(id: containerID, output: rootfs.path, live: live)
+        try await exporter.exportContainer(
+            id: container.id,
+            output: rootfs.path,
+            live: live,
+            noFreeze: noFreeze,
+        )
         try ComposeCommitImageArchive.write(
             rootfsArchive: rootfs,
             output: archive,
@@ -183,21 +206,15 @@ public extension ComposeOrchestrator {
         return args
     }
 
-    /// Chooses a stopped-rootfs export or a consistent snapshot for a running service.
+    /// Chooses a stopped-rootfs export or a live snapshot for a running service.
     func commitUsesLiveExport(
         _ container: ComposeContainerSummary,
         service: ComposeService,
-        pause: Bool,
     ) throws -> Bool {
         switch container.status.lowercased() {
         case "created", "dead", "exited", "stopped":
             return false
         case "running":
-            guard pause else {
-                throw ComposeError.unsupported(
-                    "commit: service '\(service.name)' container '\(container.id)' is running; --pause=false is unavailable because the runtime cannot safely export a writable filesystem without a brief filesystem freeze. Omit --pause=false (the default takes a filesystem-consistent live snapshot) or stop the service container before committing.",
-                )
-            }
             return true
         default:
             throw ComposeError.unsupported(
