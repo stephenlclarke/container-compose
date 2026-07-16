@@ -12,7 +12,9 @@
 - `stephenlclarke/container`
   `bc43e52b82dd5318e6c468aed761d837e4ef6196`
   `feat(config): add persistent config store`
-- `container-compose` implementation commit: recorded when this slice lands.
+- `container-compose`
+  `a726ad06b35ca837badea912b7945f92c356f96b`
+  `feat(configs): support external config stores`
 
 Neither change is pushed to an Apple repository. The Apple-shaped backend
 handoff is [PR-config-store.md](../apple-container/PR-config-store.md).
