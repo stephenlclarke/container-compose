@@ -142,6 +142,13 @@ services:
       BASE_VALUE: original
     expose:
       - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /etc/alpine-release"]
+      interval: 5s
+      timeout: 3s
+      start_period: 1s
+      start_interval: 500ms
+      retries: 2
 YAML
 }
 
@@ -199,7 +206,8 @@ import pathlib
 import sys
 
 docker = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))[0]["Config"]
-container = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))[0]["variants"][0]["config"]["config"]
+container_variant = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))[0]["variants"][0]
+container = container_variant["config"]["config"]
 
 def env_map(config):
     result = {}
@@ -214,7 +222,26 @@ def exposed(config):
 def labels(config):
     return config.get("Labels") or {}
 
-for source, config in [("Docker Compose", docker), ("container-compose", container)]:
+def assert_healthcheck(source, healthcheck):
+    if healthcheck is None:
+        raise SystemExit(f"{source} committed healthcheck is missing")
+    if healthcheck.get("Test") != ["CMD-SHELL", "test -f /etc/alpine-release"]:
+        raise SystemExit(f"{source} committed healthcheck Test = {healthcheck.get('Test')!r}")
+    if healthcheck.get("Interval") != 5_000_000_000:
+        raise SystemExit(f"{source} committed healthcheck Interval = {healthcheck.get('Interval')!r}")
+    if healthcheck.get("Timeout") != 3_000_000_000:
+        raise SystemExit(f"{source} committed healthcheck Timeout = {healthcheck.get('Timeout')!r}")
+    if healthcheck.get("StartPeriod") != 1_000_000_000:
+        raise SystemExit(f"{source} committed healthcheck StartPeriod = {healthcheck.get('StartPeriod')!r}")
+    if healthcheck.get("StartInterval") != 500_000_000:
+        raise SystemExit(f"{source} committed healthcheck StartInterval = {healthcheck.get('StartInterval')!r}")
+    if healthcheck.get("Retries") != 2:
+        raise SystemExit(f"{source} committed healthcheck Retries = {healthcheck.get('Retries')!r}")
+
+for source, config, healthcheck in [
+    ("Docker Compose", docker, docker.get("Healthcheck")),
+    ("container-compose", container, container_variant.get("healthCheck")),
+]:
     env = env_map(config)
     if env.get("BASE_VALUE") != "original" or env.get("SNAPSHOT") != "true" or "PATH" not in env:
         raise SystemExit(f"{source} committed env = {config.get('Env')!r}")
@@ -229,6 +256,7 @@ for source, config in [("Docker Compose", docker), ("container-compose", contain
     ports = exposed(config)
     if not {"8080/tcp", "8443/tcp"}.issubset(ports):
         raise SystemExit(f"{source} committed exposed ports = {ports!r}")
+    assert_healthcheck(source, healthcheck)
 PY
 }
 

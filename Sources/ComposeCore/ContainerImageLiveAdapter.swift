@@ -78,6 +78,7 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
             $0.labels = imageConfig?.labels ?? [:]
             $0.exposedPorts = variant?.exposedPorts ?? []
             $0.stopSignal = imageConfig?.stopSignal
+            $0.healthCheck = variant?.healthCheck.map(ComposeImageHealthCheck.init)
         }
     }
 

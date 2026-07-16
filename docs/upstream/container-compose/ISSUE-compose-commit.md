@@ -26,7 +26,7 @@ Current Apple upstream context:
 - `container compose help commit` reports the command as partial and all documented options as supported.
 - `commit --author`, repeated `--change`, `--index`, `--message`, and `--pause` parse in Docker Compose-compatible forms, including omitted `--index`, `--index=0`, `-a`, `-c`, `-m`, and `-p=false` through the Compose argument rewriter.
 - A stopped service container is exported with the existing runtime export adapter, wrapped as a single-layer OCI image archive, and loaded through the image adapter.
-- The generated OCI config carries Compose service image metadata plus Docker-compatible `--change` instructions for `CMD`, `ENTRYPOINT`, `ENV`, `EXPOSE`, `LABEL`, `ONBUILD`, `USER`, `VOLUME`, and `WORKDIR`.
+- The generated OCI config carries Compose service image metadata, including Docker `Healthcheck` metadata and effective Compose healthcheck overrides, plus Docker-compatible `--change` instructions for `CMD`, `ENTRYPOINT`, `ENV`, `EXPOSE`, `LABEL`, `ONBUILD`, `USER`, `VOLUME`, and `WORKDIR`.
 - A running service container with the default `--pause=true` exports a filesystem-consistent snapshot before image creation and load.
 - A running service container with `--pause=false` fails before export or image load, explaining that a safe no-freeze writable-filesystem snapshot is unavailable.
 - The Compose layer owns service selection, Docker Compose option parsing, dry-run text, and Docker-shaped image config changes.

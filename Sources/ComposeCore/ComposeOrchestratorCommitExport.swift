@@ -74,6 +74,10 @@ public extension ComposeOrchestrator {
         }
         let live = try commitUsesLiveExport(container, service: service, pause: commit.pause)
         let baseImageMetadata = await commitBaseImageMetadata(project: project, service: service)
+        let healthCheck = try commitImageHealthCheck(
+            service: service,
+            inherited: baseImageMetadata?.healthCheck,
+        )
 
         let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
             UUID().uuidString,
@@ -93,6 +97,7 @@ public extension ComposeOrchestrator {
             service: service,
             options: commit,
             baseImageMetadata: baseImageMetadata,
+            healthCheck: healthCheck,
         )
         try await imageManager.loadImageArchive(archive.path, emit: options.emit)
     }
@@ -125,7 +130,23 @@ public extension ComposeOrchestrator {
         guard let image = serviceImage(project: project, service: service) else {
             return nil
         }
-        return try? await imageManager.imageMetadata(image)
+        guard var metadata = try? await imageManager.imageMetadata(image) else {
+            return nil
+        }
+        guard service.platform != nil else {
+            return metadata
+        }
+        do {
+            // Image metadata uses the local default variant, while Compose can
+            // select a different service platform. Resolve this field again
+            // for the service so the committed config matches that variant.
+            metadata.healthCheck = try await imageManager.imageHealthCheck(image, platform: service.platform)
+        } catch {
+            // Metadata is best-effort for commit parity. Keep the complete
+            // metadata result when the more specific healthcheck query is
+            // unavailable, matching the existing metadata fallback policy.
+        }
+        return metadata
     }
 
     /// Renders the Compose-owned archive creation step for dry-run output.

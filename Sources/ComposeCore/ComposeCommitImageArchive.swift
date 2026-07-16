@@ -31,6 +31,7 @@ package enum ComposeCommitImageArchive {
         service: ComposeService,
         options: ComposeCommitOptions,
         baseImageMetadata: ComposeImageMetadata? = nil,
+        healthCheck: ComposeImageHealthCheck? = nil,
         createdAt: Date = Date(),
         shellPath: String = defaultComposeCommitShellPath,
     ) throws {
@@ -46,7 +47,12 @@ package enum ComposeCommitImageArchive {
 
         let writer = try ContentWriter(for: blobsDirectory)
         let layer = try writer.create(from: rootfsArchive)
-        var config = try CommitImageConfig(baseImageMetadata: baseImageMetadata, service: service, shellPath: shellPath)
+        var config = try CommitImageConfig(
+            baseImageMetadata: baseImageMetadata,
+            service: service,
+            healthCheck: healthCheck,
+            shellPath: shellPath,
+        )
         try config.apply(changes: options.changes)
 
         let platform = try service.platform.map(ContainerizationOCI.Platform.init(from:)) ?? .current
@@ -173,6 +179,7 @@ private struct CommitImageConfig: Encodable {
     var labels: [String: String]?
     var exposedPorts: [String: [String: String]]?
     var stopSignal: String?
+    var healthCheck: CommitImageHealthCheck?
     var volumes: [String: [String: String]]?
     var onBuild: [String]?
 
@@ -185,11 +192,17 @@ private struct CommitImageConfig: Encodable {
         case labels = "Labels"
         case exposedPorts = "ExposedPorts"
         case stopSignal = "StopSignal"
+        case healthCheck = "Healthcheck"
         case volumes = "Volumes"
         case onBuild = "OnBuild"
     }
 
-    init(baseImageMetadata base: ComposeImageMetadata?, service: ComposeService, shellPath: String) throws {
+    init(
+        baseImageMetadata base: ComposeImageMetadata?,
+        service: ComposeService,
+        healthCheck: ComposeImageHealthCheck?,
+        shellPath: String,
+    ) throws {
         self.shellPath = shellPath
         user = normalizedString(service.user) ?? normalizedString(base?.user)
         env = environmentEntries(base: base?.environment, service: service.environment)
@@ -199,6 +212,7 @@ private struct CommitImageConfig: Encodable {
         labels = mergedLabels(base: base?.labels, service: service.labels)
         exposedPorts = try exposedPortMap(base: base?.exposedPorts, service: service)
         stopSignal = normalizedString(service.stopSignal) ?? normalizedString(base?.stopSignal)
+        self.healthCheck = (healthCheck ?? base?.healthCheck).map(CommitImageHealthCheck.init)
         volumes = nil
         onBuild = nil
     }
@@ -242,6 +256,34 @@ private struct CommitImageConfig: Encodable {
         default:
             throw ComposeError.unsupported("commit --change instruction '\(instruction)' is not supported")
         }
+    }
+}
+
+/// Docker image config healthcheck fields, encoded with Docker's capitalized keys.
+private struct CommitImageHealthCheck: Encodable {
+    var test: [String]?
+    var intervalInNanoseconds: Int64?
+    var timeoutInNanoseconds: Int64?
+    var startPeriodInNanoseconds: Int64?
+    var startIntervalInNanoseconds: Int64?
+    var retries: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case test = "Test"
+        case intervalInNanoseconds = "Interval"
+        case timeoutInNanoseconds = "Timeout"
+        case startPeriodInNanoseconds = "StartPeriod"
+        case startIntervalInNanoseconds = "StartInterval"
+        case retries = "Retries"
+    }
+
+    init(_ healthCheck: ComposeImageHealthCheck) {
+        test = healthCheck.test
+        intervalInNanoseconds = healthCheck.intervalInNanoseconds
+        timeoutInNanoseconds = healthCheck.timeoutInNanoseconds
+        startPeriodInNanoseconds = healthCheck.startPeriodInNanoseconds
+        startIntervalInNanoseconds = healthCheck.startIntervalInNanoseconds
+        retries = healthCheck.retries
     }
 }
 

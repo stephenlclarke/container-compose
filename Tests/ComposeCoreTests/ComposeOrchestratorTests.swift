@@ -115,8 +115,27 @@ private struct CommitArchiveImageConfig: Decodable {
         var labels: [String: String]?
         var exposedPorts: [String: [String: String]]?
         var stopSignal: String?
+        var healthCheck: HealthCheck?
         var volumes: [String: [String: String]]?
         var onBuild: [String]?
+
+        struct HealthCheck: Decodable, Equatable {
+            var test: [String]?
+            var intervalInNanoseconds: Int64?
+            var timeoutInNanoseconds: Int64?
+            var startPeriodInNanoseconds: Int64?
+            var startIntervalInNanoseconds: Int64?
+            var retries: Int?
+
+            enum CodingKeys: String, CodingKey {
+                case test = "Test"
+                case intervalInNanoseconds = "Interval"
+                case timeoutInNanoseconds = "Timeout"
+                case startPeriodInNanoseconds = "StartPeriod"
+                case startIntervalInNanoseconds = "StartInterval"
+                case retries = "Retries"
+            }
+        }
 
         enum CodingKeys: String, CodingKey {
             case user = "User"
@@ -127,6 +146,7 @@ private struct CommitArchiveImageConfig: Decodable {
             case labels = "Labels"
             case exposedPorts = "ExposedPorts"
             case stopSignal = "StopSignal"
+            case healthCheck = "Healthcheck"
             case volumes = "Volumes"
             case onBuild = "OnBuild"
         }
@@ -21179,6 +21199,167 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["loaded:latest"])
     }
 
+    @Test("commit preserves effective healthchecks in the loaded image archive")
+    func commitPreservesEffectiveHealthchecksInLoadedImageArchive() async throws {
+        let exporter = RecordingContainerExporter(archiveData: try rootfsArchiveData())
+        let imageManager = RecordingContainerImageManager(imageMetadata: [
+            "example/api": ComposeImageMetadata(reference: "example/api") {
+                $0.healthCheck = ComposeImageHealthCheck(
+                    test: ["CMD-SHELL", "curl --fail http://localhost/health"],
+                    intervalInNanoseconds: 15_000_000_000,
+                    timeoutInNanoseconds: 5_000_000_000,
+                    startPeriodInNanoseconds: 2_000_000_000,
+                    startIntervalInNanoseconds: 1_000_000_000,
+                    retries: 4,
+                )
+            },
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.healthcheck = .object([
+                        "interval": .string("5s"),
+                        "retries": .number(2),
+                    ])
+                },
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.exporter = exporter
+            $0.imageManager = imageManager
+        })
+
+        try await orchestrator.commit(project: project, serviceName: "api")
+
+        let archives = await imageManager.loadedArchiveData
+        let archiveData = try #require(archives.first)
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archive = directory.appendingPathComponent("image.tar")
+        try archiveData.write(to: archive)
+        let config = try commitArchiveConfig(from: archive)
+        #expect(config.config.healthCheck == .init(
+            test: ["CMD-SHELL", "curl --fail http://localhost/health"],
+            intervalInNanoseconds: 5_000_000_000,
+            timeoutInNanoseconds: 5_000_000_000,
+            startPeriodInNanoseconds: 2_000_000_000,
+            startIntervalInNanoseconds: 1_000_000_000,
+            retries: 2,
+        ))
+    }
+
+    @Test("commit preserves healthchecks from the service platform variant")
+    func commitPreservesServicePlatformHealthcheck() async throws {
+        let exporter = RecordingContainerExporter(archiveData: try rootfsArchiveData())
+        let hostHealthCheck = ComposeImageHealthCheck(test: ["CMD-SHELL", "test -f /host-variant"])
+        let serviceHealthCheck = ComposeImageHealthCheck(test: ["CMD-SHELL", "test -f /service-variant"])
+        let imageManager = RecordingContainerImageManager(
+            platformHealthChecks: [
+                ImageHealthCheckRequestKey(reference: "example/api", platform: "linux/amd64"): serviceHealthCheck,
+            ],
+            imageMetadata: [
+                "example/api": ComposeImageMetadata(reference: "example/api") {
+                    $0.healthCheck = hostHealthCheck
+                },
+            ],
+        )
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.platform = "linux/amd64"
+                },
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.exporter = exporter
+            $0.imageManager = imageManager
+        })
+
+        try await orchestrator.commit(project: project, serviceName: "api")
+
+        let archiveData = try #require((await imageManager.loadedArchiveData).first)
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archive = directory.appendingPathComponent("image.tar")
+        try archiveData.write(to: archive)
+        let config = try commitArchiveConfig(from: archive)
+        #expect(config.config.healthCheck?.test == serviceHealthCheck.test)
+        #expect(await imageManager.requests.contains(.healthCheck(reference: "example/api", platform: "linux/amd64")))
+    }
+
+    @Test("commit resolves effective Compose healthchecks for image config")
+    func commitResolvesEffectiveHealthchecksForImageConfig() throws {
+        let inherited = ComposeImageHealthCheck(
+            test: ["CMD-SHELL", "curl --fail http://localhost/health"],
+            intervalInNanoseconds: 15_000_000_000,
+            timeoutInNanoseconds: 5_000_000_000,
+            startPeriodInNanoseconds: 2_000_000_000,
+            startIntervalInNanoseconds: 1_000_000_000,
+            retries: 4,
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner())
+
+        let inheritedResult = try orchestrator.commitImageHealthCheck(
+            service: composeService(name: "api", image: "example/api"),
+            inherited: inherited,
+        )
+        #expect(inheritedResult == inherited)
+
+        let tunedResult = try orchestrator.commitImageHealthCheck(
+            service: composeService(name: "api", image: "example/api") {
+                $0.healthcheck = .object([
+                    "interval": .string("5s"),
+                    "retries": .number(2),
+                ])
+            },
+            inherited: inherited,
+        )
+        #expect(tunedResult == ComposeImageHealthCheck(
+            test: ["CMD-SHELL", "curl --fail http://localhost/health"],
+            intervalInNanoseconds: 5_000_000_000,
+            timeoutInNanoseconds: 5_000_000_000,
+            startPeriodInNanoseconds: 2_000_000_000,
+            startIntervalInNanoseconds: 1_000_000_000,
+            retries: 2,
+        ))
+
+        let explicitResult = try orchestrator.commitImageHealthCheck(
+            service: composeService(name: "api", image: "example/api") {
+                $0.healthcheck = .object([
+                    "test": .array([.string("CMD"), .string("/usr/local/bin/health")]),
+                    "timeout": .string("4s"),
+                ])
+            },
+            inherited: inherited,
+        )
+        #expect(explicitResult == ComposeImageHealthCheck(
+            test: ["CMD", "/usr/local/bin/health"],
+            intervalInNanoseconds: 30_000_000_000,
+            timeoutInNanoseconds: 4_000_000_000,
+            startPeriodInNanoseconds: 0,
+            startIntervalInNanoseconds: nil,
+            retries: 3,
+        ))
+
+        let disabledResult = try orchestrator.commitImageHealthCheck(
+            service: composeService(name: "api", image: "example/api") {
+                $0.healthcheck = .object(["disable": .bool(true)])
+            },
+            inherited: inherited,
+        )
+        #expect(disabledResult == ComposeImageHealthCheck(test: ["NONE"]))
+    }
+
     @Test("commit rejects negative replica indexes")
     func commitRejectsNegativeReplicaIndexes() async throws {
         let exporter = RecordingContainerExporter(archiveData: try rootfsArchiveData())
@@ -21344,6 +21525,14 @@ struct ComposeOrchestratorTests {
                 ]
                 $0.exposedPorts = ["9090/tcp"]
                 $0.stopSignal = "SIGINT"
+                $0.healthCheck = ComposeImageHealthCheck(
+                    test: ["CMD-SHELL", "curl --fail http://localhost/health"],
+                    intervalInNanoseconds: 15_000_000_000,
+                    timeoutInNanoseconds: 5_000_000_000,
+                    startPeriodInNanoseconds: 2_000_000_000,
+                    startIntervalInNanoseconds: 1_000_000_000,
+                    retries: 4,
+                )
             },
             createdAt: date("2026-07-12T09:00:00Z")
         )
@@ -21367,6 +21556,14 @@ struct ComposeOrchestratorTests {
         ])
         #expect(config.config.onBuild == ["RUN echo next"])
         #expect(config.config.stopSignal == "SIGTERM")
+        #expect(config.config.healthCheck == .init(
+            test: ["CMD-SHELL", "curl --fail http://localhost/health"],
+            intervalInNanoseconds: 15_000_000_000,
+            timeoutInNanoseconds: 5_000_000_000,
+            startPeriodInNanoseconds: 2_000_000_000,
+            startIntervalInNanoseconds: 1_000_000_000,
+            retries: 4,
+        ))
         #expect(config.config.user == "app")
         #expect(config.config.volumes == [
             "/cache": [:],
@@ -27393,6 +27590,7 @@ private actor RecordingContainerTopAPIClient: ContainerTopAPIClienting {
 
 private actor RecordingContainerImageManager: ContainerImageManaging {
     private var storage: [ContainerImageRequest] = []
+    private var archivedImageData: [Data] = []
     private var existingReferences: Set<String>
     private var digests: [String: String]
     private var healthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck]
@@ -27447,6 +27645,10 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
 
     var requests: [ContainerImageRequest] {
         storage
+    }
+
+    var loadedArchiveData: [Data] {
+        archivedImageData
     }
 
     func imageExists(_ reference: String) async throws -> Bool {
@@ -27548,6 +27750,9 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
             throw failure
         }
         storage.append(.load(path))
+        if let archiveData = try? Data(contentsOf: URL(fileURLWithPath: path)) {
+            archivedImageData.append(archiveData)
+        }
         for reference in loadOutputs[path] ?? ["loaded:latest"] {
             emit(reference)
         }
