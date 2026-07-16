@@ -1925,21 +1925,21 @@ struct Scale: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Implements output-only `compose attach` through the runtime log stream.
+/// Implements `compose attach` through the runtime stream relay or log stream.
 struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "attach", abstract: "Attach to a service container.")
     @OptionGroup var global: GlobalOptions
-    @Flag(name: .customLong("no-stdin"), help: "Do not attach stdin. Required for the supported output-only log attach path.")
+    @Flag(name: .customLong("no-stdin"), help: "Do not attach stdin.")
     var noStdin = false
-    @Option(name: .customLong("detach-keys"), help: "Override detach key sequence. Ignored with --no-stdin output-only attach.")
+    @Option(name: .customLong("detach-keys"), help: "Override detach key sequence. Ignored with --no-stdin output-only attach; interactive handling is not yet available.")
     var detachKeys: String?
     @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1
-    @Option(name: .customLong("sig-proxy"), help: "Proxy signals to the service process for output-only attach.")
+    @Option(name: .customLong("sig-proxy"), help: "Proxy signals to the service process (default true).")
     var sigProxy = "true"
     @Argument(help: "Service name.")
     var service: String
-    /// Streams the selected service container output.
+    /// Attaches to the selected service container.
     func run() async throws {
         let loadedProject = try await project()
         try await orchestrator().attach(

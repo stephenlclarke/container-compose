@@ -241,13 +241,19 @@ public extension ComposeOrchestrator {
         }
     }
 
-    /// Attaches to service output using the apple/container log stream.
+    /// Attaches to a service container through the runtime stream relay.
     func attach(project: ComposeProject, serviceName: String, options attach: ComposeAttachOptions) async throws {
         let proxySignals = try validateAttachOptions(attach)
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
         let id = try await serviceContainerID(project: project, service: service, index: attach.index)
+        if !attach.noStdin {
+            let arguments = ["attach", "--sig-proxy=\(proxySignals ? "true" : "false")", id]
+            try await runContainer(arguments, inheritedIO: true)
+            return
+        }
+
         let args = ["logs", "--follow", id]
         let followLogs: @Sendable () async throws -> Void = {
             try await self.logManager.logs(

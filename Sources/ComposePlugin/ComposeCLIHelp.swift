@@ -341,7 +341,7 @@ enum ComposeCLIHelp {
     ]
 
     private static let supportDetailByCommand: [String: String] = [
-        "attach": "Output-only attach is supported; interactive stream reattachment and detach-key handling require additional runtime support.",
+        "attach": "Interactive stream reattachment and signal proxy are supported; custom detach-key handling is pending terminal-session support.",
         "commit": "Stopped containers and running containers with default --pause=true can be committed; the running path uses a brief filesystem freeze. --pause=false remains unavailable because a writable filesystem cannot be exported safely without that freeze.",
     ]
 
@@ -1274,7 +1274,7 @@ enum ComposeCLIHelp {
         Attach local standard input, output, and error streams to a service's running container
 
         Options:
-              --detach-keys string   Override the key sequence for detaching from a container. Ignored with --no-stdin output-only attach.
+              --detach-keys string   Override the key sequence for detaching from a container. Ignored with --no-stdin output-only attach; interactive handling is not yet available.
               --dry-run              Execute command in dry run mode
               --index int            index of the container if service has multiple replicas.
               --no-stdin             Do not attach STDIN

@@ -474,7 +474,8 @@ struct ComposeCLIHelpTests {
 
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[38;5;208m--detach-keys\u{001B}[0m"))
-        #expect(help.contains("Ignored with --no-stdin output-only attach."))
+        #expect(help.contains("Interactive stream reattachment and signal proxy are supported"))
+        #expect(help.contains("Ignored with --no-stdin output-only attach; interactive handling is not yet available."))
         #expect(help.contains("\u{001B}[32m--index\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--no-stdin\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--sig-proxy\u{001B}[0m"))

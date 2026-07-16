@@ -286,13 +286,10 @@ extension ComposeOrchestrator {
         }
     }
 
-    /// Validates that attach stays on the output-only log-follow path apple/container exposes today.
+    /// Validates Compose attach client options before selecting its stream path.
     func validateAttachOptions(_ attach: ComposeAttachOptions) throws -> Bool {
-        if !attach.noStdin, let detachKeys = attach.detachKeys, !detachKeys.isEmpty {
-            throw ComposeError.unsupported("attach --detach-keys: apple/container does not expose detach-key handling for interactive attach")
-        }
-        if !attach.noStdin {
-            throw ComposeError.unsupported("attach: apple/container does not expose stdin/stdout/stderr reattach for already-running service containers; use --no-stdin for output-only logs")
+        if !attach.noStdin, attach.detachKeys != nil {
+            throw ComposeError.unsupported("attach --detach-keys: interactive stream reattachment is available, but detach-key handling is not yet available")
         }
         let sigProxy = attach.sigProxy.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch sigProxy {
