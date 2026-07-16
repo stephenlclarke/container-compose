@@ -813,8 +813,8 @@ struct ComposeNormalizerTests {
         #expect(blkio.deviceWriteIOps == [ComposeBlkioThrottleDevice(path: "8:0", rate: "2000")])
     }
 
-    @Test("normalizes unsupported deploy resource fields through compose-go")
-    func normalizesUnsupportedDeployResourceFieldsThroughComposeGo() async throws {
+    @Test("normalizes deploy resource limits through compose-go")
+    func normalizesDeployResourceLimitsThroughComposeGo() async throws {
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
@@ -852,9 +852,8 @@ struct ComposeNormalizerTests {
         let api = try #require(project.services["api"])
         #expect(api.cpus == "1.5")
         #expect(api.memLimit?.isEmpty == false)
-        #expect(api.unsupportedDeployFields == [
-            "resources.limits.pids",
-        ])
+        #expect(api.pidsLimit == 64)
+        #expect(api.unsupportedDeployFields ?? [] == [])
         #expect(api.deployGPURequests?.count == 1)
         guard case .object(let gpu)? = api.deployGPURequests?.first else {
             Issue.record("Expected normalized deploy GPU request")

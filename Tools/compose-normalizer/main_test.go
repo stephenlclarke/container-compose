@@ -1618,6 +1618,9 @@ services:
 	}
 
 	api := project.Services["api"]
+	if api.PidsLimit != 64 {
+		t.Fatalf("api.PidsLimit = %d, want 64", api.PidsLimit)
+	}
 	if api.Deploy == nil {
 		t.Fatal("api.Deploy = nil, want preserved deploy metadata")
 	}
@@ -1639,11 +1642,8 @@ services:
 	if got, want := api.DeployLabels, map[string]string{"com.example.role": "api"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.DeployLabels = %#v, want %#v", got, want)
 	}
-	want := []string{
-		"resources.limits.pids",
-	}
-	if !reflect.DeepEqual(api.UnsupportedDeployFields, want) {
-		t.Fatalf("api.UnsupportedDeployFields = %#v, want %#v", api.UnsupportedDeployFields, want)
+	if len(api.UnsupportedDeployFields) != 0 {
+		t.Fatalf("api.UnsupportedDeployFields = %#v, want empty", api.UnsupportedDeployFields)
 	}
 	if len(api.DeployGPURequests) != 1 {
 		t.Fatalf("api.DeployGPURequests = %#v, want one GPU reservation", api.DeployGPURequests)
@@ -2283,6 +2283,15 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if got := firstNonEmpty("", ""); got != "" {
 		t.Fatalf("firstNonEmpty empty = %q, want empty", got)
 	}
+	if got := firstNonZero(0, 64); got != 64 {
+		t.Fatalf("firstNonZero fallback = %d, want 64", got)
+	}
+	if got := firstNonZero(128, 64); got != 128 {
+		t.Fatalf("firstNonZero precedence = %d, want 128", got)
+	}
+	if got := firstNonZero(0, 0); got != 0 {
+		t.Fatalf("firstNonZero empty = %d, want 0", got)
+	}
 }
 
 func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
@@ -2324,7 +2333,6 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 	})
 	want := []string{
 		"mode",
-		"resources.limits.pids",
 		"resources.reservations.generic_resources",
 	}
 	if !reflect.DeepEqual(got, want) {
