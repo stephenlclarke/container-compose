@@ -36,9 +36,6 @@ extension ComposeNetworkOptions {
             fields.append("driver_opts")
         }
         _ = try networkMTU()
-        if let interfaceName, !interfaceName.isEmpty {
-            fields.append("interface_name")
-        }
         if let ipv4Address, !ipv4Address.isEmpty {
             fields.append("ipv4_address")
         }
@@ -300,6 +297,9 @@ func networkAttachmentArgument(project: ComposeProject, service: ComposeService,
     if let mtu = try service.networkOptions?[network]?.networkMTU() {
         options.append("mtu=\(mtu)")
     }
+    if let interfaceName = try networkGuestInterfaceName(service: service, network: network) {
+        options.append("interface=\(interfaceName)")
+    }
     if !options.isEmpty {
         argument += "," + options.joined(separator: ",")
     }
@@ -340,6 +340,19 @@ func networkMACAddress(service: ComposeService, network: String) -> String? {
         return nil
     }
     return nonEmpty(service.macAddress)
+}
+
+/// Returns an interface name that is safe to encode in a runtime attachment.
+func networkGuestInterfaceName(service: ComposeService, network: String) throws -> String? {
+    guard let interfaceName = nonEmpty(service.networkOptions?[network]?.interfaceName) else {
+        return nil
+    }
+    guard !interfaceName.contains(",") else {
+        throw ComposeError.invalidProject(
+            "service '\(service.name)' interface_name '\(interfaceName)' cannot contain ','"
+        )
+    }
+    return interfaceName
 }
 
 /// Returns canonical network aliases for an attachment.

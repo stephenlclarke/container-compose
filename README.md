@@ -38,6 +38,9 @@ supported commands include a `Limitations` line that names the remaining gap.
 Use `--ansi never` for plain output. Unsupported runtime behavior fails before
 side effects with an explicit `unsupported compose feature` message.
 
+Network attachments support Compose `interface_name`, which assigns a stable
+interface name inside the Linux guest.
+
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
 

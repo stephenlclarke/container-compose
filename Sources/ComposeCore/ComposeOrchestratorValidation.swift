@@ -59,6 +59,7 @@ extension ComposeOrchestrator {
                     let fieldList = fields.joined(separator: ", ")
                     throw ComposeError.unsupported("service '\(service.name)' uses network attachment options \(fieldList) on network '\(network)'; network attachment options need an apple/container runtime gap PR")
                 }
+                _ = try networkGuestInterfaceName(service: service, network: network)
             }
         }
         if let networkMode = service.networkMode, !networkMode.isEmpty, !isSupportedNetworkMode(networkMode) {
