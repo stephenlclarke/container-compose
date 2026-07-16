@@ -301,14 +301,6 @@ extension ComposeOrchestrator {
         }
     }
 
-    /// Rejects foreground `up` when `post_start` would otherwise run too late.
-    func validateAttachedPostStartSupport(target: ServiceContainerTarget?) throws {
-        guard let service = target?.service, hasPostStartHooks(service) else {
-            return
-        }
-        throw ComposeError.unsupported("service '\(service.name)' uses post_start; attached up cannot run lifecycle hooks before foreground attach because apple/container does not expose reattaching to the init process after a hookable detached start, use --detach")
-    }
-
     /// Validates lifecycle hooks for one-off containers.
     func validateOneOffRunLifecycleHooks(service: ComposeService, options run: ComposeRunOptions) throws {
         if hasPreStopHooks(service), !run.detach {

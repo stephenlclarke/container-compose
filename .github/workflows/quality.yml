@@ -462,6 +462,7 @@ jobs:
           esac
 
           while IFS= read -r path; do
+            [[ -f "$path" ]] || continue
             # These legacy command and orchestrator files predate the strict changed-file style gate.
             case "$path" in
               Sources/ComposePlugin/ComposeCLIHelp.swift|Tests/ComposePluginTests/ComposeCLIHelpTests.swift)

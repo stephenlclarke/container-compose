@@ -4,7 +4,15 @@
 
 `container compose attach --no-stdin --detach-keys=ctrl-x SERVICE` should use the supported output-only attach path instead of failing on detach-key validation.
 
-Docker Compose accepts `--detach-keys` as an attach option. This plugin cannot implement interactive detach handling until `apple/container` exposes a stdin/stdout/stderr reattach primitive, but the option is irrelevant when `--no-stdin` has already selected log-follow output mode. The exact runtime boundary and required Apple-shaped primitive are documented in [ISSUE-attach-stream-reattach.md](../apple-container/ISSUE-attach-stream-reattach.md) and tracked by [apple/container#378](https://github.com/apple/container/issues/378).
+Docker Compose accepts `--detach-keys` as an attach option. This plugin cannot implement interactive detach handling until [apple/container#378](https://github.com/apple/container/issues/378) exposes a generic stdin/stdout/stderr reattach primitive for an existing init process, but the option is irrelevant when `--no-stdin` has already selected log-follow output mode. The exact runtime boundary and required Apple-shaped primitive are documented in [ISSUE-attach-stream-reattach.md](../apple-container/ISSUE-attach-stream-reattach.md).
+
+The runtime work must stay Apple-shaped: route an attach request to an existing
+container init process and multiplex the process streams back to the client.
+It must not contain Compose service selection, log prefixes, detach-key parsing,
+or Docker-compatible CLI behavior. The current client process API only creates
+new processes or controls an existing process; it cannot reconnect its standard
+streams. Until that primitive exists, `container-compose` deliberately exposes
+only the read-only log-follow path.
 
 ## Acceptance Criteria
 
