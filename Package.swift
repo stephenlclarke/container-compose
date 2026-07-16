@@ -27,11 +27,11 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/stephenlclarke/container.git",
-            revision: "f9a6ab644111d1d61559aa9d52fe60a22b1fa76e",
+            revision: "b831d029a7dbfae99b0fac83392580fb950b3164",
         ),
         .package(
             url: "https://github.com/stephenlclarke/containerization.git",
-            revision: "be89a7e7237ad14e24621647e27816bc0ccf5283",
+            revision: "256dfe4cc8f5a5c6c6c27bb0f4611272665a7a1b",
         ),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.4.0"),
