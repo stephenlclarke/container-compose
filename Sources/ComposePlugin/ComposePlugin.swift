@@ -1955,7 +1955,7 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Implements `compose commit` for stopped service containers.
+/// Implements `compose commit` for stopped containers and default live snapshots.
 struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "commit", abstract: "Create an image from a service container.")
     @OptionGroup var global: GlobalOptions
@@ -1970,14 +1970,14 @@ struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     @Flag(
         name: .customLong("pause"),
         inversion: .prefixedNo,
-        help: "Pause container during commit. Running-container commit is blocked until Apple live export/commit support exists."
+        help: "Use a filesystem-consistent snapshot for a running container. --pause=false is unavailable because it cannot safely export a writable filesystem."
     )
     var pause = true
     @Argument(help: "Service name.")
     var service: String
     @Argument(help: "Optional image reference.")
     var reference: String?
-    /// Commits the selected stopped service container as a new image.
+    /// Commits the selected service container as a new image.
     func run() async throws {
         let loadedProject = try await project()
         try await orchestrator().commit(

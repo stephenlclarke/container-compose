@@ -342,7 +342,7 @@ enum ComposeCLIHelp {
 
     private static let supportDetailByCommand: [String: String] = [
         "attach": "Output-only attach is supported; interactive stream reattachment and detach-key handling require additional runtime support.",
-        "commit": "Stopped service containers can be committed to images; running-container commit, including --pause=false, waits for Apple live export/commit support.",
+        "commit": "Stopped containers and running containers with default --pause=true can be committed; the running path uses a brief filesystem freeze. --pause=false remains unavailable because a writable filesystem cannot be exported safely without that freeze.",
     ]
 
     private static let supportByOption: [String: [String: SupportLevel]] = [
@@ -430,7 +430,7 @@ enum ComposeCLIHelp {
             "--dry-run": .supported,
             "--index": .supported,
             "--message": .supported,
-            "--pause": .supported,
+            "--pause": .partiallySupported,
         ],
         "config": [
             "--dry-run": .supported,
@@ -1312,7 +1312,7 @@ enum ComposeCLIHelp {
               --dry-run          Execute command in dry run mode
               --index int        index of the container if service has multiple replicas.
           -m, --message string   Commit message
-          -p, --pause            Pause container during commit (default true). Accepted for Docker Compose CLI compatibility; running commits still require Apple live export/commit support.
+          -p, --pause            Use a filesystem-consistent snapshot for a running container (default true). This briefly freezes its filesystem; --pause=false is unavailable.
         """,
         "config": """
         Usage:  container compose config [OPTIONS] [SERVICE...]

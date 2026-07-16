@@ -187,8 +187,9 @@ extension ContainerCopying {
 /// Direct apple/container API used for service container filesystem exports.
 public protocol ContainerExporting: Sendable {
     /// Exports `id` as a tar archive to `output`, or streams the archive to
-    /// stdout when `output` is nil.
-    func exportContainer(id: String, output: String?) async throws
+    /// stdout when `output` is nil. `live` asks the runtime to take a
+    /// filesystem-consistent snapshot of a running container.
+    func exportContainer(id: String, output: String?, live: Bool) async throws
 }
 
 /// `ContainerClient`-backed copier for real service container file copies.
@@ -302,8 +303,8 @@ public struct ContainerClientExporter: ContainerExporting {
         _ = Self.isStateless
     }
 
-    /// Exports through `ContainerClient.export(id:archive:)`.
-    public func exportContainer(id: String, output: String?) async throws {
+    /// Exports through `ContainerClient.export(id:archive:live:)`.
+    public func exportContainer(id: String, output: String?, live: Bool) async throws {
         let client = ContainerClient()
         let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -312,7 +313,7 @@ public struct ContainerClientExporter: ContainerExporting {
         }
 
         let archive = tempDirectory.appendingPathComponent("archive.tar")
-        try await client.export(id: id, archive: archive)
+        try await client.export(id: id, archive: archive, live: live)
 
         if let output {
             try FileManager.default.moveItem(at: archive, to: Self.outputURL(output))

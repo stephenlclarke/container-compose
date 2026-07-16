@@ -36,7 +36,7 @@ Surface names follow the current Docker Docs [Compose file reference](https://do
 | Service attributes and runtime behavior | ⚠️ Partial | The complete grouped service surface is in [Service Attribute Surface](#service-attribute-surface), including details for every runtime-limited group. |
 | Dockerfile and build behavior | ⚠️ Partial | The complete instruction and Build Specification surface is in [Dockerfile And Build Surface](#dockerfile-and-build-surface); build-secret source and metadata shapes remain limited. |
 | CLI commands | ⚠️ Partial | 44 commands are ✅, 2 are ⚠️, and 0 are ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
-| CLI long options | ⚠️ Partial | 261 documented long options are ✅, 2 are ⚠️, and 0 are ❌. Every option is listed in [CLI Option Surface](#cli-option-surface). |
+| CLI long options | ⚠️ Partial | 260 documented long options are ✅, 3 are ⚠️, and 0 are ❌. Every option is listed in [CLI Option Surface](#cli-option-surface). |
 
 ## Compose File Surface
 
@@ -131,7 +131,7 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `bridge transformations list` | ✅ Yes | Local transformer images labelled `com.docker.compose.bridge=transformation` are listed in Docker-shaped table, JSON, and quiet modes. |
 | `bridge transformations ls` | ✅ Yes | Alias for `bridge transformations list`. |
 | `build` | ✅ Yes | Dockerfile/build parity is implemented for the supported build surface above. |
-| `commit` | ⚠️ Partial | Stopped service containers can be committed to OCI images through export, archive creation, and image load, including Docker Compose `--author`, `--change`, `--index`, `--message`, and `--pause` parsing. Omitted `--index` and `--index=0` use Docker Compose's default service-container selection. Running-container commit, including `--pause=false`, remains blocked on Apple live export/commit support tracked by [apple/container#1400](https://github.com/apple/container/issues/1400), [apple/container#1630](https://github.com/apple/container/pull/1630), and [apple/container#1762](https://github.com/apple/container/pull/1762); lower-runtime freeze/thaw support is already present through [apple/containerization#685](https://github.com/apple/containerization/pull/685). |
+| `commit` | ⚠️ Partial | Stopped service containers and running containers with the default `--pause=true` commit to OCI images through export, archive creation, and image load. The running path uses the generic live-export snapshot in the pinned `stephenlclarke/container` fork, which briefly freezes the root filesystem rather than pausing all processes. `--pause=false` remains unavailable because the backend cannot safely export a writable filesystem without that freeze. Omitted `--index` and `--index=0` use Docker Compose's default service-container selection. |
 | `config` | ✅ Yes | Compose project rendering and config query options are implemented. |
 | `convert` | ✅ Yes | Docker Compose's config-compatible model conversion projections are implemented for the documented local output modes. |
 | `cp` | ✅ Yes | Local-to-service, service-to-local, service-to-service, stdin tar archive, and stdout tar archive copies are implemented, including archive, follow-link, replica-index, and one-off-container modes. |
@@ -139,7 +139,7 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `down` | ✅ Yes | Container, network, image, volume, timeout, orphan, and service-scoped cleanup are implemented. |
 | `events` | ✅ Yes | Event output, JSON mode, and time filters are implemented. |
 | `exec` | ✅ Yes | Service exec options, indexes, env, user, workdir, tty, detach, and privileged mode are implemented. |
-| `export` | ✅ Yes | Container filesystem export to an archive path is implemented. |
+| `export` | ✅ Yes | Container filesystem export to an archive path is implemented for stopped containers and automatically uses the generic live snapshot path for running service containers. |
 | `help` | ✅ Yes | Docker Compose-compatible help rendering and support colors are implemented. |
 | `images` | ✅ Yes | Image listing and formatting are implemented. |
 | `kill` | ✅ Yes | Signal and orphan handling are implemented. |
@@ -187,7 +187,7 @@ A ✅ option means the flag itself is parsed and mapped for the current command 
 | `bridge transformations list` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--quiet`. |
 | `bridge transformations ls` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--quiet`. |
 | `build` options | ✅ Yes | ✅ `--build-arg`, ✅ `--builder`, ✅ `--check`, ✅ `--dry-run`, ✅ `--memory`, ✅ `--no-cache`, ✅ `--print`, ✅ `--provenance`, ✅ `--pull`, ✅ `--push`, ✅ `--quiet`, ✅ `--sbom`, ✅ `--ssh`, ✅ `--with-dependencies`. |
-| `commit` options | ✅ Yes | ✅ `--author`, ✅ `--change`, ✅ `--dry-run`, ✅ `--index`, ✅ `--message`, ✅ `--pause`. |
+| `commit` options | ⚠️ Partial | ✅ `--author`, ✅ `--change`, ✅ `--dry-run`, ✅ `--index`, ✅ `--message`, ⚠️ `--pause`: the default uses a brief filesystem-consistent live snapshot for running containers; `--pause=false` is unavailable. |
 | `config` options | ✅ Yes | ✅ `--dry-run`, ✅ `--environment`, ✅ `--format`, ✅ `--hash`, ✅ `--images`, ✅ `--lock-image-digests`, ✅ `--models`, ✅ `--networks`, ✅ `--no-consistency`, ✅ `--no-env-resolution`, ✅ `--no-interpolate`, ✅ `--no-normalize`, ✅ `--no-path-resolution`, ✅ `--output`, ✅ `--profiles`, ✅ `--quiet`, ✅ `--resolve-image-digests`, ✅ `--services`, ✅ `--variables`, ✅ `--volumes`. |
 | `convert` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--hash`, ✅ `--images`, ✅ `--no-consistency`, ✅ `--no-interpolate`, ✅ `--no-normalize`, ✅ `--output`, ✅ `--profiles`, ✅ `--quiet`, ✅ `--resolve-image-digests`, ✅ `--services`, ✅ `--volumes`. |
 | `cp` options | ✅ Yes | ✅ `--all`, ✅ `--archive`, ✅ `--dry-run`, ✅ `--follow-link`, ✅ `--index`. |
@@ -228,6 +228,6 @@ Released Apple `container` compatibility is not a supported-lane functionality g
 ## Remaining Gap Focus
 
 - There are no remaining red CLI command or long-option surfaces.
-- The remaining orange command surfaces are `attach` and `commit`; their table rows above describe the exact missing runtime primitive or metadata surface.
+- The remaining orange command surfaces are `attach` and `commit`; `attach` needs an interactive runtime stream reattach/multiplexer, while `commit --pause=false` needs a safe no-freeze writable-filesystem snapshot. Their table rows above describe the exact supported subset.
 - Runtime-primitive blockers include vendor/native GPU passthrough, multiple GPUs, arbitrary macOS hardware passthrough, external config/secret lookup, generic service endpoint `driver_opts`, and non-GPU Deploy device/generic reservations.
 - When touching slow runtime paths, keep first-frame progress rendering covered so local `container compose` runs do not appear to hang before visible output.
