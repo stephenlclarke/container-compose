@@ -125,8 +125,9 @@ esac
 #
 #   stage    upload immutable, commit-addressed assets while the existing tap
 #            formulae and current tag remain usable;
-#   finalize update the release notes and then advance the current tag, after
-#            the matching Homebrew formula pair has been committed.
+#   finalize advance the current tag, then replace the mutable release object
+#            after the matching Homebrew formula pair has been committed. This
+#            gives GitHub a publication timestamp for the build being released.
 #
 # GitHub releases and the Homebrew tap are separate repositories, so this is
 # not a distributed transaction. It does guarantee that an interrupted current
@@ -170,46 +171,6 @@ if [[ -n "${RELEASE_EXTRA_ASSETS_FILE:-}" ]]; then
   done < "${RELEASE_EXTRA_ASSETS_FILE}"
 fi
 
-if [[ "${published_release_state}" == "exists" ]]; then
-  if [[ "${RELEASE_MUTABLE}" != "true" ]]; then
-    printf 'release %s already exists; published releases are immutable\n' \
-      "${RELEASE_TAG}" >&2
-    exit 1
-  fi
-
-  if [[ "${RELEASE_PHASE}" == "stage" ]]; then
-    "${GH}" release upload "${RELEASE_TAG}" "${release_assets[@]}" \
-      --repo "${RELEASE_REPOSITORY}" --clobber
-    exit 0
-  fi
-
-  "${GH}" release edit "${RELEASE_TAG}" \
-    --repo "${RELEASE_REPOSITORY}" \
-    --title "${RELEASE_TITLE}" \
-    --notes-file "${RELEASE_NOTES_FILE}" \
-    --target "${PUBLISH_SHA}" \
-    --prerelease
-
-  # `current` is a lightweight, mutable pointer. Explicitly disable signing so
-  # a developer-level tag.gpgSign setting cannot open an annotation editor.
-  "${GIT}" tag --no-sign --force "${RELEASE_TAG}" "${PUBLISH_SHA}"
-  "${GIT}" push --force origin "refs/tags/${RELEASE_TAG}"
-  exit 0
-fi
-
-if [[ "${PUBLISH_REF_TYPE}" == "branch" && "${RELEASE_PHASE}" == "finalize" ]]; then
-  printf 'cannot finalize current: release %s does not exist\n' "${RELEASE_TAG}" >&2
-  exit 1
-fi
-
-if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
-  # Create the explicit current tag before the first prerelease. This avoids a
-  # GitHub release with only an implicit target and makes the mutable lane
-  # visible and verifiable in the tag list from its first publication.
-  "${GIT}" tag --no-sign --force "${RELEASE_TAG}" "${PUBLISH_SHA}"
-  "${GIT}" push --force origin "refs/tags/${RELEASE_TAG}"
-fi
-
 create_args=(
   "${release_assets[@]}" \
   --repo "${RELEASE_REPOSITORY}"
@@ -223,4 +184,56 @@ else
 fi
 create_args+=("${release_flags[@]}")
 
-exec "${GH}" release create "${RELEASE_TAG}" "${create_args[@]}"
+move_current_tag() {
+  # `current` is a lightweight, mutable pointer. Explicitly disable signing so
+  # a developer-level tag.gpgSign setting cannot open an annotation editor.
+  "${GIT}" tag --no-sign --force "${RELEASE_TAG}" "${PUBLISH_SHA}"
+  "${GIT}" push --force origin "refs/tags/${RELEASE_TAG}"
+}
+
+create_release() {
+  "${GH}" release create "${RELEASE_TAG}" "${create_args[@]}"
+}
+
+if [[ "${published_release_state}" == "exists" ]]; then
+  if [[ "${RELEASE_MUTABLE}" != "true" ]]; then
+    printf 'release %s already exists; published releases are immutable\n' \
+      "${RELEASE_TAG}" >&2
+    exit 1
+  fi
+
+  if [[ "${RELEASE_PHASE}" == "stage" ]]; then
+    "${GH}" release upload "${RELEASE_TAG}" "${release_assets[@]}" \
+      --repo "${RELEASE_REPOSITORY}" --clobber
+    exit 0
+  fi
+
+  move_current_tag
+  # GitHub retains `published_at` when a release is edited. Delete only the
+  # mutable release object (not its source tag), then create it from the staged
+  # assets so the release page shows when this Current build was published.
+  "${GH}" release delete "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" --yes
+  create_release
+  # `--verify-tag` preserves the already-validated source tag; set the release
+  # target explicitly too, so GitHub's release metadata records the commit.
+  "${GH}" release edit "${RELEASE_TAG}" \
+    --repo "${RELEASE_REPOSITORY}" \
+    --target "${PUBLISH_SHA}" \
+    --prerelease
+  exit 0
+fi
+
+if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
+  # Create the explicit current tag before the first prerelease or a recovered
+  # finalization. This avoids an implicit target and keeps the lane verifiable.
+  move_current_tag
+fi
+
+create_release
+
+if [[ "${PUBLISH_REF_TYPE}" == "branch" && "${RELEASE_PHASE}" == "finalize" ]]; then
+  "${GH}" release edit "${RELEASE_TAG}" \
+    --repo "${RELEASE_REPOSITORY}" \
+    --target "${PUBLISH_SHA}" \
+    --prerelease
+fi
