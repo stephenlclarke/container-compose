@@ -332,9 +332,30 @@ jobs:
             printf 'available=false\n' >> "${GITHUB_OUTPUT}"
           fi
 
+      - name: Check SonarQube API availability
+        id: sonar_api
+        if: github.ref == 'refs/heads/main' && steps.sonar_tcp.outputs.available == 'true'
+        env:
+          SONAR_STATUS_URL: https://sonarcloud.io/api/system/status
+        run: |
+          set -euo pipefail
+          set +e
+          status_code="$(curl --location --silent --show-error --connect-timeout 3 --max-time 5 \
+            --write-out '%{http_code}' "${SONAR_STATUS_URL}" --output /dev/null)"
+          curl_status="$?"
+          set -e
+          if [[ "${curl_status}" -eq 0 && "${status_code}" =~ ^[1-4][0-9][0-9]$ ]]; then
+            printf 'available=true\n' >> "${GITHUB_OUTPUT}"
+          else
+            printf 'available=false\n' >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Install Sonar Scanner CLI
         id: sonar_install
-        if: github.ref == 'refs/heads/main' && steps.sonar_tcp.outputs.available == 'true'
+        if: >
+          github.ref == 'refs/heads/main' &&
+          steps.sonar_tcp.outputs.available == 'true' &&
+          steps.sonar_api.outputs.available == 'true'
         continue-on-error: true
         env:
           SONAR_SCANNER_GPG_FINGERPRINT: 679F1EE92B19609DE816FDE81DB198F93525EC1A
@@ -392,6 +413,7 @@ jobs:
         if: >
           github.ref == 'refs/heads/main' &&
           steps.sonar_tcp.outputs.available == 'true' &&
+          steps.sonar_api.outputs.available == 'true' &&
           steps.sonar_install.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 10
@@ -404,17 +426,18 @@ jobs:
       - name: Enforce SonarQube failures when the service is available
         if: >
           github.ref == 'refs/heads/main' &&
-          (steps.sonar_tcp.outputs.available != 'true' || steps.sonar_install.outcome == 'failure' || steps.sonar_scan.outcome == 'failure')
+          (steps.sonar_tcp.outputs.available != 'true' || steps.sonar_api.outputs.available != 'true' || steps.sonar_install.outcome == 'failure' || steps.sonar_scan.outcome == 'failure')
         env:
           SONAR_TCP_AVAILABLE: ${{ steps.sonar_tcp.outputs.available }}
+          SONAR_API_AVAILABLE: ${{ steps.sonar_api.outputs.available }}
           SONAR_STATUS_URL: https://sonarcloud.io/api/system/status
         run: |
           set -euo pipefail
-          if [[ "${SONAR_TCP_AVAILABLE}" != "true" ]]; then
-            printf '::warning title=SonarQube unavailable::SonarQube TCP preflight to sonarcloud.io:443 failed within five seconds; skipping scanner installation and analysis.\n'
+          if [[ "${SONAR_TCP_AVAILABLE}" != "true" || "${SONAR_API_AVAILABLE}" != "true" ]]; then
+            printf '::warning title=SonarQube unavailable::SonarQube TCP or API preflight failed within five seconds; skipping scanner installation and analysis.\n'
             {
               printf '## SonarQube scan deferred\n\n'
-              printf 'The SonarQube TCP preflight failed within five seconds, so this external quality scan did not delay or fail CI. Local source checks, tests, coverage gates, and CodeQL remain required.\n'
+              printf 'The SonarQube TCP or API preflight failed within five seconds, so this external quality scan did not delay or fail CI. Local source checks, tests, coverage gates, and CodeQL remain required.\n'
             } >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
