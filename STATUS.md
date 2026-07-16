@@ -35,8 +35,8 @@ Surface names follow the current Docker Docs [Compose file reference](https://do
 | Project discovery and source loading | ✅ Yes | Default local discovery, stdin, environment files, Git resources, and `oci://` project artifacts are implemented. Runtime-backed Compose file attributes are tracked separately below. |
 | Service attributes and runtime behavior | ⚠️ Partial | The complete grouped service surface is in [Service Attribute Surface](#service-attribute-surface), including details for every runtime-limited group. |
 | Dockerfile and build behavior | ⚠️ Partial | The complete instruction and Build Specification surface is in [Dockerfile And Build Surface](#dockerfile-and-build-surface); build-secret source and metadata shapes remain limited. |
-| CLI commands | ⚠️ Partial | 44 commands are ✅, 2 are ⚠️, and 0 are ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
-| CLI long options | ⚠️ Partial | 260 documented long options are ✅, 3 are ⚠️, and 0 are ❌. Every option is listed in [CLI Option Surface](#cli-option-surface). |
+| CLI commands | ⚠️ Partial | 45 commands are ✅, 1 are ⚠️, and 0 are ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
+| CLI long options | ⚠️ Partial | 261 documented long options are ✅, 2 are ⚠️, and 0 are ❌. Every option is listed in [CLI Option Surface](#cli-option-surface). |
 
 ## Compose File Surface
 
@@ -123,7 +123,7 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `alpha dry-run` | ✅ Yes | Experimental `alpha dry-run -- COMMAND` wraps the requested Compose command with root `--dry-run` while preserving project/global options. |
 | `alpha scale` | ✅ Yes | Experimental `alpha scale` is implemented as an alias for the stable `scale` command. |
 | `alpha watch` | ✅ Yes | Experimental `alpha watch` is implemented as an alias for the stable `watch` command. |
-| `attach` | ⚠️ Partial | Interactive init-process stream reattachment and `--sig-proxy` are implemented through the forked runtime primitive tracked by [apple/container#378](https://github.com/apple/container/issues/378); output-only attach continues to follow persisted logs. Custom `--detach-keys` remains the only command gap because a terminal session needs a cancellable wait path before it can safely disconnect without stopping the service. |
+| `attach` | ✅ Yes | Interactive init-process stream reattachment, `--sig-proxy`, and Docker-compatible `--detach-keys` are implemented through the forked runtime primitive tracked by [apple/container#378](https://github.com/apple/container/issues/378); output-only attach continues to follow persisted logs. |
 | `bridge` | ✅ Yes | The complete Compose Bridge CLI runtime is implemented for the `stephenlclarke` runtime lane. |
 | `bridge convert` | ✅ Yes | Models include image ports, published target ports, and text or binary config and secret content; Kubernetes, Helm, custom templates, repeated transformations, and empty-output current-directory mode run through local transformer images. |
 | `bridge transformations` | ✅ Yes | Bridge transformation image management is implemented. |
@@ -179,7 +179,7 @@ A ✅ option means the flag itself is parsed and mapped for the current command 
 | `alpha dry-run` options | ✅ Yes | ✅ `--dry-run`: accepted and implied for the wrapped command. |
 | `alpha scale` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-deps`. |
 | `alpha watch` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-up`, ✅ `--quiet`. |
-| `attach` options | ⚠️ Partial | ✅ `--dry-run`, ✅ `--index`, ✅ `--no-stdin`, ✅ `--sig-proxy`; ⚠️ `--detach-keys`: parsed and documented, ignored for output-only attach, and rejected for interactive attach until a safe terminal-session disconnect path exists. |
+| `attach` options | ✅ Yes | ✅ `--detach-keys`: forwarded to the interactive runtime stream relay and ignored for output-only attach, ✅ `--dry-run`, ✅ `--index`, ✅ `--no-stdin`, ✅ `--sig-proxy`. |
 | `bridge` options | ✅ Yes | ✅ `--dry-run`. |
 | `bridge convert` options | ✅ Yes | ✅ `--dry-run`, ✅ `--output`, ✅ `--templates`, ✅ `--transformation`. |
 | `bridge transformations` options | ✅ Yes | ✅ `--dry-run`. |
@@ -228,6 +228,6 @@ Released Apple `container` compatibility is not a supported-lane functionality g
 ## Remaining Gap Focus
 
 - There are no remaining red CLI command or long-option surfaces.
-- The remaining orange command surfaces are `attach` and `commit`; `attach` needs only safe custom detach-key handling over the existing interactive stream relay, while `commit --pause=false` needs a safe no-freeze writable-filesystem snapshot. Their table rows above describe the exact supported subset.
+- The remaining orange command surface is `commit`; `commit --pause=false` needs a safe no-freeze writable-filesystem snapshot. Its table row above describes the exact supported subset.
 - Runtime-primitive blockers include vendor/native GPU passthrough, multiple GPUs, arbitrary macOS hardware passthrough, external config/secret lookup, generic service endpoint `driver_opts`, and non-GPU Deploy device/generic reservations.
 - When touching slow runtime paths, keep first-frame progress rendering covered so local `container compose` runs do not appear to hang before visible output.

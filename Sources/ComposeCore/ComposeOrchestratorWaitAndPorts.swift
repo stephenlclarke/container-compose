@@ -288,9 +288,6 @@ extension ComposeOrchestrator {
 
     /// Validates Compose attach client options before selecting its stream path.
     func validateAttachOptions(_ attach: ComposeAttachOptions) throws -> Bool {
-        if !attach.noStdin, attach.detachKeys != nil {
-            throw ComposeError.unsupported("attach --detach-keys: interactive stream reattachment is available, but detach-key handling is not yet available")
-        }
         let sigProxy = attach.sigProxy.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch sigProxy {
         case "true", "1", "yes":

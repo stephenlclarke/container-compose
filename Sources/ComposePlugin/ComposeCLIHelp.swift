@@ -296,7 +296,7 @@ enum ComposeCLIHelp {
         "alpha dry-run": .supported,
         "alpha scale": .supported,
         "alpha watch": .supported,
-        "attach": .partiallySupported,
+        "attach": .supported,
         "bridge": .supported,
         "bridge convert": .supported,
         "bridge transformations": .supported,
@@ -341,7 +341,6 @@ enum ComposeCLIHelp {
     ]
 
     private static let supportDetailByCommand: [String: String] = [
-        "attach": "Interactive stream reattachment and signal proxy are supported; custom detach-key handling is pending terminal-session support.",
         "commit": "Stopped containers and running containers with default --pause=true can be committed; the running path uses a brief filesystem freeze. --pause=false remains unavailable because a writable filesystem cannot be exported safely without that freeze.",
     ]
 
@@ -376,7 +375,7 @@ enum ComposeCLIHelp {
             "--quiet": .supported,
         ],
         "attach": [
-            "--detach-keys": .partiallySupported,
+            "--detach-keys": .supported,
             "--dry-run": .supported,
             "--index": .supported,
             "--no-stdin": .supported,
@@ -1274,7 +1273,7 @@ enum ComposeCLIHelp {
         Attach local standard input, output, and error streams to a service's running container
 
         Options:
-              --detach-keys string   Override the key sequence for detaching from a container. Ignored with --no-stdin output-only attach; interactive handling is not yet available.
+              --detach-keys string   Override the key sequence for detaching from a container. Ignored with --no-stdin output-only attach.
               --dry-run              Execute command in dry run mode
               --index int            index of the container if service has multiple replicas.
               --no-stdin             Do not attach STDIN

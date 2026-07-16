@@ -5195,10 +5195,10 @@ struct ComposeOrchestratorTests {
 
         let buildCommands = runner.commands.map(\.arguments).filter { $0.starts(with: ["container", "build"]) }
         #expect(buildCommands.count == 2)
-        #expect(buildCommands[0].containsSequence(["--tag", "example/api"]))
-        #expect(buildCommands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
-        #expect(buildCommands[1].containsSequence(["--tag", "demo_worker:latest"]))
-        #expect(buildCommands[1].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("worker").standardizedFileURL.path)
+        let apiCommand = try #require(buildCommands.first { $0.containsSequence(["--tag", "example/api"]) })
+        let workerCommand = try #require(buildCommands.first { $0.containsSequence(["--tag", "demo_worker:latest"]) })
+        #expect(apiCommand.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
+        #expect(workerCommand.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("worker").standardizedFileURL.path)
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-worker-1"])
     }
 
@@ -20074,6 +20074,25 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.map(\.arguments) == [["container", "attach", "--sig-proxy=false", "demo-api-1"]])
     }
 
+    @Test("attach interactive mode forwards custom detach keys")
+    func attachInteractiveModeForwardsCustomDetachKeys() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).attach(
+            project: project,
+            serviceName: "api",
+            options: ComposeAttachOptions { $0.detachKeys = "ctrl-x,x" }
+        )
+
+        #expect(runner.commands.map(\.arguments) == [["container", "attach", "--sig-proxy=true", "--detach-keys=ctrl-x,x", "demo-api-1"]])
+    }
+
     @Test("attach output-only mode proxies received signals by default")
     func attachOutputOnlyModeProxiesReceivedSignalsByDefault() async throws {
         let emitted = MessageRecorder()
@@ -20257,22 +20276,9 @@ struct ComposeOrchestratorTests {
         #expect(await logManager.requests.isEmpty)
     }
 
-    @Test("attach rejects the remaining custom detach-key gap")
-    func attachRejectsRemainingCustomDetachKeyGap() async throws {
+    @Test("attach validates signal-proxy before runtime commands")
+    func attachValidatesSignalProxyBeforeRuntimeCommands() async throws {
         let cases: [(options: ComposeAttachOptions, error: ComposeError)] = [
-            (
-                ComposeAttachOptions {
-                    $0.sigProxy = "false"
-                    $0.detachKeys = "ctrl-x"
-                },
-                .unsupported("attach --detach-keys: interactive stream reattachment is available, but detach-key handling is not yet available")
-            ),
-            (
-                ComposeAttachOptions {
-                    $0.detachKeys = ""
-                },
-                .unsupported("attach --detach-keys: interactive stream reattachment is available, but detach-key handling is not yet available")
-            ),
             (
                 ComposeAttachOptions {
                     $0.noStdin = true
