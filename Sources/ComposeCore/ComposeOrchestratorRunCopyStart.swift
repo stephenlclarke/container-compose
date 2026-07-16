@@ -58,11 +58,11 @@ extension ComposeOrchestrator {
         } else {
             containerName(project: project, service: service, oneOff: run.oneOff)
         }
-        let createPlan = try await serviceCreatePlan(
+        let createPlan = try await serviceCreatePlan(request: ServiceCreatePlanRequest(
             project: project,
             service: service,
             runtimeName: runtimeName,
-            planOptions: ContainerServiceCreatePlanOptions(
+            options: ContainerServiceCreatePlanOptions(
                 name: runtimeName,
                 oneOff: run.oneOff,
                 autoRemove: run.remove,
@@ -72,7 +72,7 @@ extension ComposeOrchestrator {
             externalVolumeMounts: externalVolumeMounts,
             labelOverrides: run.labelOverrides,
             imageHealthCheckCache: imageHealthCheckCache,
-        )
+        ))
         args.append(contentsOf: ["--name", runtimeName])
         if run.detach {
             args.append("--detach")
@@ -167,7 +167,7 @@ extension ComposeOrchestrator {
         } else if isHostNetworkMode(service.networkMode) {
             args.append(contentsOf: ["--network", "host"])
         } else {
-            for network in service.networks ?? [] {
+            for network in orderedNetworkAttachments(service: service) {
                 let networkArgument = try networkAttachmentArgument(project: project, service: service, network: network)
                 args.append(contentsOf: ["--network", networkArgument])
             }

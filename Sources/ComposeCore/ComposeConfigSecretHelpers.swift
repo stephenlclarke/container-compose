@@ -104,7 +104,7 @@ func serviceDependencies(
     return dependencies.sorted(by: { $0.key < $1.key })
 }
 
-/// Returns parsed legacy `links` references for validation and static host mapping.
+/// Returns parsed legacy `links` references for validation and alias mapping.
 func serviceLinkReferences(service: ComposeService, project: ComposeProject) throws -> [ComposeLinkReference] {
     try (service.links ?? []).map { rawValue in
         let reference = try serviceLinkReference(rawValue, service: service)

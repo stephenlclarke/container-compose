@@ -6845,6 +6845,71 @@ struct ComposeOrchestratorTests {
         #expect(Set(resourceNames) == ["demo_frontend", "demo_backend", "demo_cache"])
     }
 
+    @Test("up selects default route and service MAC networks by their independent priorities")
+    func upMapsNetworkGatewayAndConnectionPriorities() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.macAddress = "02:42:ac:11:00:03"
+                    $0.networks = ["frontend", "backend"]
+                    $0.networkOptions = [
+                        "frontend": ComposeNetworkOptions(gatewayPriority: 10, priority: 100),
+                        "backend": ComposeNetworkOptions(gatewayPriority: 100, priority: 10),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "frontend": ComposeNetwork(name: "frontend"),
+                "backend": ComposeNetwork(name: "backend"),
+            ]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence([
+            "--network", "demo_backend",
+            "--network", "demo_frontend,mac=02:42:ac:11:00:03",
+        ]))
+    }
+
+    @Test("up maps distinct per-network MAC addresses across multiple attachments")
+    func upMapsPerNetworkMACAddressesAcrossMultipleAttachments() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["frontend", "backend"]
+                    $0.networkOptions = [
+                        "frontend": ComposeNetworkOptions(addressing: .init(macAddress: "02:42:ac:11:00:03")),
+                        "backend": ComposeNetworkOptions(addressing: .init(macAddress: "02:42:ac:11:00:04")),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "frontend": ComposeNetwork(name: "frontend"),
+                "backend": ComposeNetwork(name: "backend"),
+            ]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence([
+            "--network", "demo_frontend,mac=02:42:ac:11:00:03",
+            "--network", "demo_backend,mac=02:42:ac:11:00:04",
+        ]))
+    }
+
     @Test("up rejects unsupported network options before creating resources")
     func upRejectsUnsupportedNetworkOptionsBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -6872,7 +6937,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported network option error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses network attachment options driver_opts, ipv4_address, priority on network 'backend'; network attachment options need an apple/container runtime gap PR"))
+            #expect(error == .unsupported("service 'api' uses network attachment options driver_opts, ipv4_address on network 'backend'; network attachment options need an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -8769,8 +8834,8 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
-    @Test("up rejects MAC address without a single network before creating resources")
-    func upRejectsMACAddressWithoutSingleNetworkBeforeCreatingResources() async throws {
+    @Test("up rejects MAC address without a network before creating resources")
+    func upRejectsMACAddressWithoutNetworkBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -8788,7 +8853,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported MAC address error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses mac_address; MAC address support requires exactly one Compose network"))
+            #expect(error == .unsupported("service 'api' uses mac_address; MAC address support requires a Compose network"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

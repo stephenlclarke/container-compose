@@ -1060,6 +1060,13 @@ struct ComposeExternalLinkReference {
     var alias: String
 }
 
+/// One legacy-link alias projected onto a target service attachment.
+struct ComposeProjectedLinkAlias {
+    var serviceName: String
+    var network: String
+    var alias: String
+}
+
 /// External `volumes_from` container reference that needs runtime inspection.
 struct ExternalVolumesFromReference {
     var serviceName: String

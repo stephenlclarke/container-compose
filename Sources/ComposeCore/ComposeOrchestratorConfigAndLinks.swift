@@ -25,6 +25,16 @@ import ContainerizationOCI
 import ContainerResource
 import Foundation
 
+struct ServiceCreatePlanRequest {
+    var project: ComposeProject
+    var service: ComposeService
+    var runtimeName: String
+    var options: ContainerServiceCreatePlanOptions
+    var externalVolumeMounts: ExternalVolumeMounts
+    var labelOverrides: [ComposeLabelOverride]
+    var imageHealthCheckCache: ComposeImageHealthCheckCache?
+}
+
 extension ComposeOrchestrator {
     /// Renders the full canonical config in a supported output format.
     func config(project: ComposeProject, format: String?, commandName: String = "config") throws -> String {
@@ -47,7 +57,9 @@ extension ComposeOrchestrator {
         if options.hash != nil || options.images {
             return true
         }
-        if options.models || options.networks || options.profiles || options.servicesOnly || options.variables != nil || options.volumes {
+        if options.models || options.networks || options.profiles || options.servicesOnly ||
+            options.variables != nil || options.volumes
+        {
             return false
         }
         return true
@@ -153,15 +165,10 @@ extension ComposeOrchestrator {
 
     /// Builds the Compose-owned typed projection that will feed direct
     /// apple/container service creation once image/kernel resolution is wired.
-    func serviceCreatePlan(
-        project: ComposeProject,
-        service: ComposeService,
-        runtimeName: String,
-        planOptions: ContainerServiceCreatePlanOptions,
-        externalVolumeMounts: ExternalVolumeMounts,
-        labelOverrides: [ComposeLabelOverride],
-        imageHealthCheckCache: ComposeImageHealthCheckCache?,
-    ) async throws -> ContainerServiceCreatePlan {
+    func serviceCreatePlan(request: ServiceCreatePlanRequest) async throws -> ContainerServiceCreatePlan {
+        let project = request.project
+        let service = request.service
+        let planOptions = request.options
         guard let image = serviceImage(project: project, service: service) else {
             throw ComposeError.invalidProject("service '\(service.name)' has no image or build")
         }
@@ -170,7 +177,7 @@ extension ComposeOrchestrator {
             ? try await runtimeHealthCheck(
                 project: project,
                 service: service,
-                cache: imageHealthCheckCache,
+                cache: request.imageHealthCheckCache,
                 baseProcess: baseProcess,
             )
             : nil
@@ -178,7 +185,7 @@ extension ComposeOrchestrator {
             ? try runtimeRestartPolicy(service: service) ?? .no
             : .no
         let identity = try ContainerServiceCreateIdentity(
-            name: runtimeName,
+            name: request.runtimeName,
             imageReference: image,
             oneOff: planOptions.oneOff,
             autoRemove: planOptions.autoRemove,
@@ -186,8 +193,8 @@ extension ComposeOrchestrator {
                 project: project,
                 service: service,
                 oneOff: planOptions.oneOff,
-                externalVolumeMounts: externalVolumeMounts,
-                labelOverrides: labelOverrides,
+                externalVolumeMounts: request.externalVolumeMounts,
+                labelOverrides: request.labelOverrides,
             ),
         )
         var runtime = ContainerServiceCreateRuntime()
@@ -391,11 +398,16 @@ extension ComposeOrchestrator {
         externalContainer: ComposeContainerSummary,
         reference: ComposeExternalLinkReference,
     ) throws -> String {
-        let serviceNetworks = Set((service.networks ?? []).map { networkRuntimeName(project: project, composeName: $0) })
+        let serviceNetworks = Set(
+            (service.networks ?? []).map { networkRuntimeName(project: project, composeName: $0) },
+        )
         let externalNetworks = Set(externalContainer.networks.map(\.network))
         let sharedNetworks = serviceNetworks.intersection(externalNetworks).sorted()
         guard sharedNetworks.count == 1, let network = sharedNetworks.first else {
-            throw ComposeError.unsupported("service '\(service.name)' external_links to '\(reference.containerName)'; external container must share exactly one runtime network with the service")
+            throw ComposeError.unsupported(
+                "service '\(service.name)' external_links to '\(reference.containerName)'; " +
+                    "external container must share exactly one runtime network with the service",
+            )
         }
         return network
     }

@@ -37,15 +37,15 @@ public extension ComposeOrchestrator {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
         let runtimeName = options.name ?? containerName(project: project, service: service, oneOff: options.oneOff)
-        return try await serviceCreatePlan(
+        return try await serviceCreatePlan(request: ServiceCreatePlanRequest(
             project: project,
             service: service,
             runtimeName: runtimeName,
-            planOptions: options,
+            options: options,
             externalVolumeMounts: [:],
             labelOverrides: [],
             imageHealthCheckCache: nil,
-        )
+        ))
     }
 
     /// Returns selected services after their dependencies using a stable

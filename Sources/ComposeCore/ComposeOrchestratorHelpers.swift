@@ -36,9 +36,6 @@ extension ComposeNetworkOptions {
             fields.append("driver_opts")
         }
         _ = try networkMTU()
-        if let gatewayPriority, gatewayPriority != 0 {
-            fields.append("gw_priority")
-        }
         if let interfaceName, !interfaceName.isEmpty {
             fields.append("interface_name")
         }
@@ -50,9 +47,6 @@ extension ComposeNetworkOptions {
         }
         if let linkLocalIPs, !linkLocalIPs.isEmpty {
             fields.append("link_local_ips")
-        }
-        if let priority, priority != 0 {
-            fields.append("priority")
         }
         return fields
     }
@@ -312,9 +306,40 @@ func networkAttachmentArgument(project: ComposeProject, service: ComposeService,
     return argument
 }
 
+/// Orders network attachments so the runtime's first interface has the selected gateway.
+func orderedNetworkAttachments(service: ComposeService) -> [String] {
+    let attachments = service.networks ?? []
+    return attachments.enumerated().sorted { lhs, rhs in
+        let lhsPriority = service.networkOptions?[lhs.element]?.gatewayPriority ?? 0
+        let rhsPriority = service.networkOptions?[rhs.element]?.gatewayPriority ?? 0
+        if lhsPriority != rhsPriority {
+            return lhsPriority > rhsPriority
+        }
+        return lhs.offset < rhs.offset
+    }.map(\.element)
+}
+
+/// Returns the network selected for a service-level MAC address by `priority`.
+func serviceMACAddressNetwork(service: ComposeService) -> String? {
+    guard let firstNetwork = service.networks?.first else {
+        return nil
+    }
+    return service.networks?.dropFirst().reduce(firstNetwork) { selected, network in
+        let selectedPriority = service.networkOptions?[selected]?.priority ?? 0
+        let networkPriority = service.networkOptions?[network]?.priority ?? 0
+        return networkPriority > selectedPriority ? network : selected
+    }
+}
+
 /// Resolves the effective MAC address for a supported network attachment.
 func networkMACAddress(service: ComposeService, network: String) -> String? {
-    nonEmpty(service.networkOptions?[network]?.macAddress) ?? nonEmpty(service.macAddress)
+    if let macAddress = nonEmpty(service.networkOptions?[network]?.macAddress) {
+        return macAddress
+    }
+    guard serviceMACAddressNetwork(service: service) == network else {
+        return nil
+    }
+    return nonEmpty(service.macAddress)
 }
 
 /// Returns canonical network aliases for an attachment.

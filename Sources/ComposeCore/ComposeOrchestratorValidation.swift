@@ -174,24 +174,23 @@ extension ComposeOrchestrator {
         isNoNetworkMode(networkMode) || isHostNetworkMode(networkMode)
     }
 
-    /// Allows MAC addresses only for the single-network attachment that apple/container
-    /// `container --network name,mac=...` can represent.
+    /// Validates per-network MAC addresses and selects a service MAC by Compose priority.
     func validateNetworkMACAddressSupport(service: ComposeService, networks: [String]) throws {
         let serviceMACAddress = nonEmpty(service.macAddress)
         let networkMACAddresses = (service.networkOptions ?? [:]).compactMapValues { nonEmpty($0.macAddress) }
         guard serviceMACAddress != nil || !networkMACAddresses.isEmpty else {
             return
         }
-        guard networks.count == 1, let network = networks.first else {
-            throw ComposeError.unsupported("service '\(service.name)' uses mac_address; MAC address support requires exactly one Compose network")
-        }
-        for networkName in networkMACAddresses.keys.sorted() where networkName != network {
+        for networkName in networkMACAddresses.keys.sorted() where !networks.contains(networkName) {
             throw ComposeError.unsupported("service '\(service.name)' sets mac_address on unattached network '\(networkName)'")
         }
-        if let serviceMACAddress,
-           let networkMACAddress = networkMACAddresses[network],
-           serviceMACAddress != networkMACAddress
-        {
+        guard let serviceMACAddress else {
+            return
+        }
+        guard let network = serviceMACAddressNetwork(service: service) else {
+            throw ComposeError.unsupported("service '\(service.name)' uses mac_address; MAC address support requires a Compose network")
+        }
+        if let networkMACAddress = networkMACAddresses[network], serviceMACAddress != networkMACAddress {
             throw ComposeError.invalidProject("service '\(service.name)' sets conflicting mac_address values '\(serviceMACAddress)' and '\(networkMACAddress)' on network '\(network)'")
         }
     }
