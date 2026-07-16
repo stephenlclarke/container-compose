@@ -115,6 +115,7 @@ class WorktreeAuditTests(unittest.TestCase):
             git(repository, "switch", "main")
             git(repository, "cherry-pick", "--no-commit", "squashed-topic~1", "squashed-topic")
             git(repository, "commit", "-m", "squashed topic")
+            commit_file(repository, "unrelated.txt", "unrelated\n", "unrelated main change")
 
             audits = {entry.name: entry for entry in audit.audit_branches(repository, "main")}
 

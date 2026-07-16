@@ -117,7 +117,7 @@ def has_squash_merged_patch(repository: Path, main_branch: str, branch: str) -> 
         return True
     main_patch_ids = patch_ids(
         repository,
-        run_git(repository, "log", "--no-merges", "--format=", "--patch", f"{merge_base}..{main_branch}").stdout,
+        run_git(repository, "log", "--no-merges", "--patch", f"{merge_base}..{main_branch}").stdout,
     )
     return branch_patch_ids <= main_patch_ids
 
