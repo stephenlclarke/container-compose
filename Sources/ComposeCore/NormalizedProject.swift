@@ -715,6 +715,8 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         public var readOnly: Bool?
         public var bindCreateHostPath: Bool?
         public var bindPropagation: String?
+        public var fileOwnerUID: UInt32?
+        public var fileOwnerGID: UInt32?
         public var volumeLabels: [String: String]?
         public var tmpfs: TmpfsOptions
 
@@ -722,12 +724,16 @@ public struct ComposeMount: Codable, Equatable, Sendable {
             readOnly: Bool? = nil,
             bindCreateHostPath: Bool? = nil,
             bindPropagation: String? = nil,
+            fileOwnerUID: UInt32? = nil,
+            fileOwnerGID: UInt32? = nil,
             volumeLabels: [String: String]? = nil,
             tmpfs: TmpfsOptions = TmpfsOptions(),
         ) {
             self.readOnly = readOnly
             self.bindCreateHostPath = bindCreateHostPath
             self.bindPropagation = bindPropagation
+            self.fileOwnerUID = fileOwnerUID
+            self.fileOwnerGID = fileOwnerGID
             self.volumeLabels = volumeLabels
             self.tmpfs = tmpfs
         }
@@ -739,6 +745,8 @@ public struct ComposeMount: Codable, Equatable, Sendable {
     public var readOnly: Bool?
     public var bindCreateHostPath: Bool?
     public var bindPropagation: String?
+    public var fileOwnerUID: UInt32?
+    public var fileOwnerGID: UInt32?
     public var volumeLabels: [String: String]?
     public var tmpfsSize: String?
     public var tmpfsMode: String?
@@ -759,6 +767,8 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         readOnly = options.readOnly
         bindCreateHostPath = options.bindCreateHostPath
         bindPropagation = options.bindPropagation
+        fileOwnerUID = options.fileOwnerUID
+        fileOwnerGID = options.fileOwnerGID
         volumeLabels = options.volumeLabels
         tmpfsSize = options.tmpfs.size
         tmpfsMode = options.tmpfs.mode
@@ -773,6 +783,8 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         readOnly: Bool? = nil,
         bindCreateHostPath: Bool? = nil,
         bindPropagation: String? = nil,
+        fileOwnerUID: UInt32? = nil,
+        fileOwnerGID: UInt32? = nil,
         raw: String? = nil,
     ) {
         self.init(
@@ -783,6 +795,8 @@ public struct ComposeMount: Codable, Equatable, Sendable {
                 readOnly: readOnly,
                 bindCreateHostPath: bindCreateHostPath,
                 bindPropagation: bindPropagation,
+                fileOwnerUID: fileOwnerUID,
+                fileOwnerGID: fileOwnerGID,
             ),
             raw: raw,
         )

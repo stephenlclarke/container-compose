@@ -38,8 +38,9 @@ and [PR-secret-store.md](../apple-container/PR-secret-store.md).
 
 - Supported: `external: true` secrets, optional external `name:`, binary
   content, default and explicit targets, and Compose read-only mode.
-- Still unsupported: generated `uid`/`gid` ownership remapping and live
-  mutation of an already-consumed immutable secret.
+- Generated `uid`/`gid` ownership is supported by the owned-file snapshot
+  follow-up. Live mutation of an already-consumed immutable secret remains
+  unsupported.
 - Secret values require a local Keychain session accessible to the Compose
   caller; they are intentionally not delegated to an XPC server.
 

@@ -51,6 +51,31 @@ extension ComposeOrchestrator {
             source
         }
 
+        if mount.fileOwnerUID != nil || mount.fileOwnerGID != nil {
+            guard mount.type == "bind" else {
+                throw ComposeError.invalidProject("file ownership is only supported for bind mounts")
+            }
+            guard nonEmpty(mount.bindPropagation) == nil else {
+                throw ComposeError.invalidProject("file ownership cannot be combined with bind propagation")
+            }
+            var fields = [
+                "type=bind",
+                "source=\(mappedSource)",
+                "destination=\(target)",
+            ]
+            if mount.readOnly == true {
+                fields.append("readonly")
+            }
+            if let uid = mount.fileOwnerUID {
+                fields.append("uid=\(uid)")
+            }
+            if let gid = mount.fileOwnerGID {
+                fields.append("gid=\(gid)")
+            }
+            args.append(contentsOf: ["--mount", fields.joined(separator: ",")])
+            return
+        }
+
         var value = "\(mappedSource):\(target)"
         let options = try volumeMountOptions(mount)
         if !options.isEmpty {

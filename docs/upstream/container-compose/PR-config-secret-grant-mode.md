@@ -5,7 +5,7 @@
 - Honor service-level `mode` on generated runtime config and secret grants.
 - Parse Compose octal mode strings from compose-go, ignore writable bits, and preserve executable bits.
 - Include effective permissions in materialized file names so mode-only changes affect recreate hashes.
-- Keep file-backed grants on Docker Compose bind-mount semantics and reject generated `uid`/`gid` ownership remapping clearly.
+- Keep file-backed grants on Docker Compose bind-mount semantics and hand generated `uid`/`gid` ownership requests to the runtime snapshot primitive.
 
 ## Type of Change
 
@@ -20,7 +20,10 @@ Docker Compose service `configs` and `secrets` long syntax includes `mode` for m
 
 The previous materialization slice gave `container-compose` control over generated local files for `configs.content`, `configs.environment`, and `secrets.environment`. That means `container-compose` can now apply the Compose `mode` contract locally without adding Compose-specific policy to `apple/container`.
 
-`uid` and `gid` remain runtime gaps. A host bind mount cannot reliably project arbitrary in-container ownership, so generated grants that request ownership remapping fail before resources are created.
+The follow-up owned-file runtime primitive now projects generated `uid` and
+`gid` through a private guest snapshot. File-backed grants remain direct binds,
+so their ownership metadata remains intentionally ignored as Docker Compose
+does.
 
 ## Commit Tracking
 
@@ -36,17 +39,18 @@ The previous materialization slice gave `container-compose` control over generat
 - Changed generated config and secret default permissions to Compose default `0444`.
 - Included the effective permission mode in the materialized file digest so permission-only changes change the bind-mount source path and service config hash.
 - Left file-backed grants as direct read-only bind mounts without mutating source permissions, matching Docker Compose local bind-mount behavior.
-- Added clear unsupported errors for generated grant `uid`/`gid` requests.
+- Added strict numeric validation and runtime-owned snapshots for generated
+  grant `uid`/`gid` requests.
 
 ## Docker Compose Compatibility Notes
 
 - Supported: generated `configs.content`, `configs.environment`, and `secrets.environment` grant modes.
 - Supported: Compose writable-bit ignoring and executable-bit preservation.
 - Supported: file-backed grant metadata remains source-file controlled and is not mutated by `container-compose`.
-- Remaining gap: `uid`/`gid` ownership remapping for generated grants needs an `apple/container` runtime primitive.
-- Remaining gap: generated config/secret ownership remapping still needs an
-  `apple/container` runtime primitive. External config and secret lookup are
-  supported by the respective local stores.
+- Supported: generated `uid`/`gid` ownership through a private regular-file
+  snapshot at container creation.
+- File-backed config and secret grants remain live source-file binds; their
+  `uid`/`gid` metadata is ignored without mutating the host source.
 
 ## Testing
 

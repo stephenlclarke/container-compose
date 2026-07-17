@@ -9548,7 +9548,7 @@ struct ComposeOrchestratorTests {
             services: [
                 "api": composeService(name: "api", image: "example/api") {
                     $0.configs = [
-                        .object(["source": .string("app_config")]),
+                        .object(["source": .string("app_config"), "uid": .string("103"), "gid": .string("104")]),
                         .object(["source": .string("other_config"), "target": .string("/etc/other.conf")]),
                     ]
                     $0.secrets = [
@@ -9579,6 +9579,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--volume", "\(otherConfig.path):/etc/other.conf:ro"]))
         #expect(command.containsSequence(["--volume", "\(secret.path):/run/secrets/app_secret:ro"]))
         #expect(command.containsSequence(["--volume", "\(otherSecret.path):/run/secrets/custom-token:ro"]))
+        #expect(!command.contains("--mount"))
     }
 
     @Test("up does not create missing file-backed config sources")
@@ -9745,14 +9746,59 @@ struct ComposeOrchestratorTests {
         #expect(emitted.snapshot.contains { $0.contains("--volume") && $0.contains(":/etc/inline.conf:ro") })
     }
 
-    @Test("up rejects generated config ownership remapping before creating resources")
-    func upRejectsGeneratedConfigOwnershipRemappingBeforeCreatingResources() async throws {
+    @Test("up maps generated config ownership to an owned file snapshot")
+    func upMapsGeneratedConfigOwnershipToOwnedFileSnapshot() async throws {
+        let runner = RecordingRunner()
+        let directory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.configs = [.object(["source": .string("inline_config"), "target": .string("/etc/inline.conf"), "uid": .string("103"), "gid": .string("104")])]
+                },
+            ]
+        ) {
+            $0.workingDirectory = directory.path
+            $0.configs = ["inline_config": .object(["content": .string("inline config\n")])]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(materializedConfigSecretDirectory: directory.appendingPathComponent("state", isDirectory: true)),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = RecordingContainerDiscoveryManager()
+            }
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        let mount = try #require(command.value(after: "--mount"))
+        let fields: [String: String] = Dictionary(uniqueKeysWithValues: mount.split(separator: ",").compactMap { field in
+            let components = field.split(separator: "=", maxSplits: 1)
+            guard components.count == 2 else {
+                return nil
+            }
+            return (String(components[0]), String(components[1]))
+        })
+        let source = try #require(fields["source"])
+        #expect(fields["type"] == "bind")
+        #expect(fields["destination"] == "/etc/inline.conf")
+        #expect(mount.contains("readonly"))
+        #expect(fields["uid"] == "103")
+        #expect(fields["gid"] == "104")
+        #expect(try String(contentsOfFile: source, encoding: .utf8) == "inline config\n")
+    }
+
+    @Test("up rejects invalid generated config ownership before creating resources")
+    func upRejectsInvalidGeneratedConfigOwnershipBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.configs = [.object(["source": .string("inline_config"), "target": .string("/etc/inline.conf"), "uid": .string("103"), "gid": .string("103")])]
+                    $0.configs = [.object(["source": .string("inline_config"), "uid": .string("-1")])]
                     $0.networks = ["backend"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
@@ -9765,9 +9811,9 @@ struct ComposeOrchestratorTests {
 
         do {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected generated config ownership remapping to fail")
+            Issue.record("Expected invalid generated config ownership to fail")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses uid/gid on generated config 'inline_config'; apple/container bind mounts do not expose config/secret ownership remapping"))
+            #expect(error == .invalidProject("service 'api' config 'inline_config' uid '-1' must be an unsigned 32-bit integer"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

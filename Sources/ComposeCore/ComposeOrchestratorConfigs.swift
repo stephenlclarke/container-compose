@@ -61,7 +61,7 @@ extension ComposeOrchestrator {
                 continue
             }
 
-            try validateMaterializedGrantOwnership(grant: grant, service: service, kind: kind)
+            _ = try composeFileGrantOwnership(grant: grant, service: service, kind: kind)
             let runtimeName = try externalComposeFileRuntimeName(
                 project: project,
                 composeName: grant.source,

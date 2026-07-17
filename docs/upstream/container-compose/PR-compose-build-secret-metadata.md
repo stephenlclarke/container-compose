@@ -52,7 +52,7 @@ git diff --check
 
 ## Compatibility
 
-This change makes `container-compose` more permissive for Docker Compose files that already parse and build under Docker Compose V2. It does not claim that build-secret ownership or permissions are honored by BuildKit. Service runtime secrets keep their existing behavior: generated runtime secret grants can apply mode locally, while generated runtime uid/gid ownership remapping remains unsupported.
+This change makes `container-compose` more permissive for Docker Compose files that already parse and build under Docker Compose V2. It does not claim that build-secret ownership or permissions are honored by BuildKit. Service runtime secrets now honor generated `uid`, `gid`, and mode through the separate owned-file snapshot primitive; build-secret metadata remains intentionally unprojected because BuildKit does not implement it.
 
 ## Remaining Risks
 

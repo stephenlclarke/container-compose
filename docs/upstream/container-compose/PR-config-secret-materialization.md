@@ -20,7 +20,9 @@ Docker Compose supports file-like runtime config and secret sources that can be 
 
 `apple/container` already exposes the runtime primitive needed for local file-like grants: read-only bind mounts. This plugin can therefore support inline config content and environment-backed config/secret values without adding Compose-specific policy to `apple/container`.
 
-External configs and strict `uid`/`gid` ownership semantics remained separate runtime gaps at the time of this local materialization slice. External configs are now served by the config-store follow-up, and external secrets are served by the secure-store follow-up; ownership remapping remains a runtime gap.
+External configs are now served by the config-store follow-up, external secrets
+by the secure-store follow-up, and generated `uid`/`gid` ownership by the
+owned-file snapshot follow-up.
 
 ## Commit Tracking
 
