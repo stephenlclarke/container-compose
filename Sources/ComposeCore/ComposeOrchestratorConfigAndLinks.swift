@@ -172,7 +172,10 @@ extension ComposeOrchestrator {
         guard let image = serviceImage(project: project, service: service) else {
             throw ComposeError.invalidProject("service '\(service.name)' has no image or build")
         }
-        let baseProcess = serviceCreateBaseProcess(service: service)
+        let baseProcess = serviceCreateBaseProcess(
+            service: service,
+            supplementalGroups: try runtimeSupplementalGroupIDs(service: service),
+        )
         let healthCheck = planOptions.resolveHealthCheck
             ? try await runtimeHealthCheck(
                 project: project,

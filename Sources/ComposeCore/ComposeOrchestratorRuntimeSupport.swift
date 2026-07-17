@@ -96,11 +96,31 @@ extension ComposeOrchestrator {
         return fields
     }
 
+    /// Returns the supplemental group IDs supported by the runtime.
+    func runtimeSupplementalGroupIDs(service: ComposeService) throws -> [UInt32] {
+        var identifiers: [UInt32] = []
+        var seen = Set<UInt32>()
+        for group in service.groupAdd ?? [] {
+            guard let identifier = UInt32(group) else {
+                throw ComposeError.unsupported("service '\(service.name)' uses group_add '\(group)'; named supplemental groups need an image-aware apple/container runtime primitive")
+            }
+            if seen.insert(identifier).inserted {
+                identifiers.append(identifier)
+            }
+        }
+        return identifiers
+    }
+
+    /// Returns repeatable generic runtime arguments for supplemental group IDs.
+    func runtimeSupplementalGroupArguments(service: ComposeService) throws -> [String] {
+        try runtimeSupplementalGroupIDs(service: service).map(String.init)
+    }
+
     /// Returns unsupported user and security option fields.
     func unsupportedUserAndSecurityOptionFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
         var fields: [(composeName: String, value: String, reason: String)] = []
-        if let group = service.groupAdd?.first(where: { !$0.isEmpty }) {
-            fields.append(("group_add", group, "supplemental group support needs an apple/container runtime gap PR"))
+        if let group = service.groupAdd?.first(where: { UInt32($0) == nil }) {
+            fields.append(("group_add", group, "named supplemental groups need an image-aware apple/container runtime primitive"))
         }
         if let securityOption = service.securityOpt?.first(where: { !$0.isEmpty }) {
             fields.append(("security_opt", securityOption, "security option support needs an apple/container runtime gap PR"))

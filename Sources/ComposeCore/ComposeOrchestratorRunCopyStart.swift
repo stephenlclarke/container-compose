@@ -190,6 +190,9 @@ extension ComposeOrchestrator {
         if let user = service.user {
             args.append(contentsOf: ["--user", user])
         }
+        for group in try runtimeSupplementalGroupArguments(service: service) {
+            args.append(contentsOf: ["--group-add", group])
+        }
         if service.tty == true {
             args.append("--tty")
         }

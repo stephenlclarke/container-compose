@@ -2393,6 +2393,7 @@ struct ComposeOrchestratorTests {
                     ]
                     $0.workingDir = "/work"
                     $0.user = "1000:1000"
+                    $0.groupAdd = ["1000", "1001", "1000"]
                 },
             ]
         )
@@ -2404,6 +2405,7 @@ struct ComposeOrchestratorTests {
         #expect(plan.initProcess.environment == ["EMPTY", "LOG_LEVEL=debug"])
         #expect(plan.initProcess.workingDirectory == "/work")
         #expect(plan.initProcess.user.description == "1000:1000")
+        #expect(plan.initProcess.supplementalGroups == [1000, 1001])
     }
 
     @Test("service create plan maps explicit healthcheck to typed policy")
@@ -22492,6 +22494,7 @@ struct ComposeOrchestratorTests {
                     ]
                     $0.workingDir = "/work"
                     $0.user = "1000"
+                    $0.groupAdd = ["1000", "1001"]
                     $0.tty = true
                     $0.stdinOpen = true
                     $0.readOnly = true
@@ -22530,6 +22533,9 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--tmpfs", "/tmp"]))
         #expect(command.containsSequence(["--workdir", "/work"]))
         #expect(command.containsSequence(["--user", "1000"]))
+        #expect(command.containsSequence(["--group-add", "1000"]))
+        #expect(command.containsSequence(["--group-add", "1001"]))
+        #expect(command.filter { $0 == "--group-add" }.count == 2)
         #expect(command.contains("--tty"))
         #expect(command.contains("--interactive"))
         #expect(command.containsSequence(["--platform", "linux/arm64"]))
@@ -26611,7 +26617,7 @@ private func unsupportedUserAndSecurityOptionFieldCases() -> [UnsupportedUserAnd
         UnsupportedUserAndSecurityOptionFieldCase(
             composeName: "group_add",
             value: "video",
-            reason: "supplemental group support needs an apple/container runtime gap PR",
+            reason: "named supplemental groups need an image-aware apple/container runtime primitive",
             configure: { $0.groupAdd = ["video", "staff"] }
         ),
         UnsupportedUserAndSecurityOptionFieldCase(

@@ -86,6 +86,7 @@ extension ComposeOrchestrator {
         _ = try runtimeDeviceCgroupRuleArguments(service: service)
         _ = try runtimeDeviceArguments(service: service)
         _ = try runtimeGPUArguments(service: service)
+        _ = try runtimeSupplementalGroupIDs(service: service)
         if let gap = unsupportedUserAndSecurityOptionFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
