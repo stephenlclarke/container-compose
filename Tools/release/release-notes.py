@@ -262,15 +262,19 @@ def release_range(
     if head_commit is None:
         raise ValueError(f"could not resolve release head: {head_ref}")
 
-    tagged_commit = commit_for_ref(repo, f"refs/tags/{release_tag}")
-    if tagged_commit is not None:
-        if tagged_commit != head_commit:
-            return ReleaseRange(
-                base_ref=f"refs/tags/{release_tag}",
-                base_label=release_tag,
-                head_ref=head_ref,
-                head_commit=head_commit,
-            )
+    # `current` is a mutable prerelease pointer, not a release baseline. Every
+    # Current build must describe the complete delta from the latest stable
+    # release, even after the pointer was advanced by an earlier build.
+    if release_tag != "current":
+        tagged_commit = commit_for_ref(repo, f"refs/tags/{release_tag}")
+        if tagged_commit is not None:
+            if tagged_commit != head_commit:
+                return ReleaseRange(
+                    base_ref=f"refs/tags/{release_tag}",
+                    base_label=release_tag,
+                    head_ref=head_ref,
+                    head_commit=head_commit,
+                )
 
     previous_tag = previous_published_stable_tag(
         repo,

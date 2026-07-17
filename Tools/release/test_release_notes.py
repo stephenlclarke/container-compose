@@ -74,6 +74,31 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("docs: refresh compose guidance", notes)
             self.assertNotIn("chore: initial import", notes)
 
+    def test_current_release_ignores_the_previous_current_pointer_as_a_baseline(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(repo, "feat(runtime): add the first current change")
+            self.git(repo, "tag", "--no-sign", "current")
+            self.commit(repo, "fix(runtime): add the next current change")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="current",
+                release_label="current build",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-current-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn("Commits since `0.6.0`", notes)
+            self.assertIn("feat(runtime): add the first current change", notes)
+            self.assertIn("fix(runtime): add the next current change", notes)
+            self.assertNotIn("Commits since `current`", notes)
+
     def test_current_notes_record_the_matched_runtime_checksum(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:

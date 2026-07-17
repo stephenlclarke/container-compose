@@ -215,6 +215,7 @@ extension ComposeOrchestrator {
         runtime.sysctls = try runtimeSysctls(service: service)
         runtime.blockIO = try runtimeBlockIO(service: service)
         runtime.cpuShares = try runtimeCPUShares(service: service)
+        runtime.memoryReservationInBytes = try runtimeMemoryReservationInBytes(service: service)
         return ContainerServiceCreatePlan(identity: identity, runtime: runtime)
     }
 

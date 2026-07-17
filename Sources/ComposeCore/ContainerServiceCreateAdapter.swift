@@ -52,6 +52,7 @@ public struct ContainerServiceCreateRuntime: Sendable {
     public var sysctls: [String: String]
     public var blockIO: LinuxBlockIO?
     public var cpuShares: UInt64?
+    public var memoryReservationInBytes: Int64?
 
     public init() {
         initProcess = ComposeRuntimeDefaults.shellProcess()
@@ -64,6 +65,7 @@ public struct ContainerServiceCreateRuntime: Sendable {
         sysctls = [:]
         blockIO = nil
         cpuShares = nil
+        memoryReservationInBytes = nil
     }
 }
 
@@ -88,6 +90,7 @@ public struct ContainerServiceCreatePlan: Sendable {
     public var sysctls: [String: String]
     public var blockIO: LinuxBlockIO?
     public var cpuShares: UInt64?
+    public var memoryReservationInBytes: Int64?
 
     public init(
         identity: ContainerServiceCreateIdentity,
@@ -108,6 +111,7 @@ public struct ContainerServiceCreatePlan: Sendable {
         self.sysctls = runtime.sysctls
         self.blockIO = runtime.blockIO
         self.cpuShares = runtime.cpuShares
+        self.memoryReservationInBytes = runtime.memoryReservationInBytes
     }
 }
 

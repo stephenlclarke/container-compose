@@ -253,6 +253,9 @@ extension ComposeOrchestrator {
         if let memLimit = service.memLimit, !memLimit.isEmpty {
             args.append(contentsOf: ["--memory", memLimit])
         }
+        if let memoryReservationInBytes = createPlan.memoryReservationInBytes {
+            args.append(contentsOf: ["--memory-reservation", "\(memoryReservationInBytes)"])
+        }
         if let cpus = service.cpus, !cpus.isEmpty {
             args.append(contentsOf: ["--cpus", cpus])
         }
