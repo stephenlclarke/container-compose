@@ -136,6 +136,7 @@ struct ComposeNormalizerTests {
               config:
                 - subnet: 10.10.0.0/24
                   gateway: 10.10.0.254
+                  ip_range: 10.10.0.128/25
                 - subnet: fd00:10::/64
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
@@ -224,6 +225,7 @@ struct ComposeNormalizerTests {
                 subnets: ComposeNetwork.Subnets(
                     ipv4Subnet: "10.10.0.0/24",
                     ipv4Gateway: "10.10.0.254",
+                    ipv4AllocationRange: "10.10.0.128/25",
                     ipv6Subnet: "fd00:10::/64"
                 )
             )

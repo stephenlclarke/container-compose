@@ -513,6 +513,43 @@ func validateNetworkIPv4Gateway(_ network: ComposeNetwork, name: String) throws 
     }
 }
 
+/// Validates the optional IPv4 IPAM allocation range before creating any project resource.
+func validateNetworkIPv4AllocationRange(_ network: ComposeNetwork, name: String) throws {
+    guard let allocationRangeText = nonEmpty(network.ipv4AllocationRange) else {
+        return
+    }
+    guard let subnetText = nonEmpty(network.ipv4Subnet) else {
+        throw ComposeError.invalidProject("network '\(name)' IPv4 IPAM allocation range requires an IPv4 IPAM subnet")
+    }
+    let subnet: CIDRv4
+    do {
+        subnet = try CIDRv4(subnetText)
+    } catch {
+        throw ComposeError.invalidProject("network '\(name)' IPv4 IPAM subnet '\(subnetText)' is invalid")
+    }
+    let allocationRange: CIDRv4
+    do {
+        allocationRange = try CIDRv4(allocationRangeText)
+    } catch {
+        throw ComposeError.invalidProject("network '\(name)' IPv4 IPAM allocation range '\(allocationRangeText)' is invalid")
+    }
+    guard subnet.contains(allocationRange.lower), subnet.contains(allocationRange.upper) else {
+        throw ComposeError.invalidProject(
+            "network '\(name)' IPv4 IPAM allocation range '\(allocationRange)' must be contained in subnet '\(subnet)'"
+        )
+    }
+    guard subnet.upper.value - subnet.lower.value >= 4 else {
+        throw ComposeError.invalidProject("network '\(name)' IPv4 IPAM subnet '\(subnet)' has no allocatable host addresses")
+    }
+    let allocationLower = max(subnet.lower.value + 2, allocationRange.lower.value)
+    let allocationUpper = min(subnet.upper.value - 2, allocationRange.upper.value)
+    guard allocationLower <= allocationUpper else {
+        throw ComposeError.invalidProject(
+            "network '\(name)' IPv4 IPAM allocation range '\(allocationRange)' contains no allocatable host addresses in subnet '\(subnet)'"
+        )
+    }
+}
+
 private func validateStaticIPv6Address(
     _ address: IPv6Address,
     project: ComposeProject,

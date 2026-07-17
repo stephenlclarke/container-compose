@@ -1275,8 +1275,8 @@ struct ComposeOrchestratorTests {
         })
     }
 
-    @Test("up creates internal IPAM networks through direct API")
-    func upCreatesInternalIPAMNetworksThroughDirectAPI() async throws {
+    @Test("up creates IPAM networks through direct API with static IPv4 outside allocation range")
+    func upCreatesIPAMNetworksThroughDirectAPIWithStaticIPv4OutsideAllocationRange() async throws {
         let runner = RecordingRunner(responses: [
             .success,
         ])
@@ -1287,6 +1287,9 @@ struct ComposeOrchestratorTests {
             services: [
                 "api": composeService(name: "api", image: "example/api:latest") {
                     $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(addressing: .init(ipv4Address: "10.77.0.20")),
+                    ]
                 },
             ]
         ) {
@@ -1299,6 +1302,7 @@ struct ComposeOrchestratorTests {
                         subnets: ComposeNetwork.Subnets(
                             ipv4Subnet: "10.77.0.0/24",
                             ipv4Gateway: "10.77.0.254",
+                            ipv4AllocationRange: "10.77.0.128/25",
                             ipv6Subnet: "fd77::/64"
                         )
                     )
@@ -1319,6 +1323,7 @@ struct ComposeOrchestratorTests {
             #expect(request.isInternal == true)
             #expect(request.ipv4Subnet == "10.77.0.0/24")
             #expect(request.ipv4Gateway == "10.77.0.254")
+            #expect(request.ipv4AllocationRange == "10.77.0.128/25")
             #expect(request.ipv6Subnet == "fd77::/64")
             #expect(request.driverOpts == [:])
             #expect(request.labels["com.apple.container.compose.project"] == "demo")
@@ -1327,7 +1332,7 @@ struct ComposeOrchestratorTests {
         } else {
             Issue.record("Expected network creation through direct API")
         }
-        #expect(runner.commands.map(\.arguments)[0].containsSequence(["--network", "demo_backend"]))
+        #expect(runner.commands.map(\.arguments)[0].containsSequence(["--network", "demo_backend,ip=10.77.0.20"]))
     }
 
     @Test("up creates network driver options through direct API")
@@ -1397,6 +1402,7 @@ struct ComposeOrchestratorTests {
                         subnets: ComposeNetwork.Subnets(
                             ipv4Subnet: "10.77.0.0/24",
                             ipv4Gateway: "10.77.0.254",
+                            ipv4AllocationRange: "10.77.0.128/25",
                             ipv6Subnet: "fd77::/64"
                         )
                     )
@@ -1408,7 +1414,7 @@ struct ComposeOrchestratorTests {
             .up(project: project, options: ComposeUpOptions())
 
         #expect(emitted.messages.contains { message in
-            message.contains("container network create --internal --subnet 10.77.0.0/24 --gateway 10.77.0.254 --subnet-v6 fd77::/64")
+            message.contains("container network create --internal --subnet 10.77.0.0/24 --gateway 10.77.0.254 --ip-range 10.77.0.128/25 --subnet-v6 fd77::/64")
         })
     }
 
@@ -1471,7 +1477,7 @@ struct ComposeOrchestratorTests {
                 .up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported project network options error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, attachable, enable_ipv4, enable_ipv6; supported project network fields are name, external, internal, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with an optional gateway plus one IPv6 IPAM subnet"))
+            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, attachable, enable_ipv4, enable_ipv6; supported project network fields are name, external, internal, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway and allocation range plus one IPv6 IPAM subnet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -1510,6 +1516,45 @@ struct ComposeOrchestratorTests {
         } catch let error as ComposeError {
             #expect(error == .invalidProject(
                 "network 'backend' IPv4 IPAM gateway '10.77.0.0' must be an allocatable host address in subnet '10.77.0.0/24'"
+            ))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up rejects invalid project network allocation ranges before side effects")
+    func upRejectsInvalidProjectNetworkAllocationRangesBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: .init(subnets: .init(
+                        ipv4Subnet: "10.77.0.0/24",
+                        ipv4AllocationRange: "10.78.0.0/24"
+                    ))
+                ),
+            ]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid project network allocation range error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject(
+                "network 'backend' IPv4 IPAM allocation range '10.78.0.0/24' must be contained in subnet '10.77.0.0/24'"
             ))
         } catch {
             Issue.record("Unexpected error: \(error)")
@@ -18174,6 +18219,7 @@ struct ComposeOrchestratorTests {
             isInternal: true,
             ipv4Subnet: "10.10.0.0/24",
             ipv4Gateway: "10.10.0.254",
+            ipv4AllocationRange: "10.10.0.128/25",
             ipv6Subnet: "fd00:10::/64",
             driverOpts: ["variant": "vzNAT"],
             labels: labels
@@ -18196,6 +18242,7 @@ struct ComposeOrchestratorTests {
                 plugin: "container-network-vmnet",
                 ipv4Subnet: "10.10.0.0/24",
                 ipv4Gateway: "10.10.0.254",
+                ipv4AllocationRange: "10.10.0.128/25",
                 ipv6Subnet: "fd00:10::/64",
                 options: ["variant": "vzNAT"],
                 labels: labels
@@ -18312,6 +18359,7 @@ struct ComposeOrchestratorTests {
                 plugin: "container-network-vmnet",
                 ipv4Subnet: nil,
                 ipv4Gateway: nil,
+                ipv4AllocationRange: nil,
                 ipv6Subnet: nil,
                 options: [:],
                 labels: [:]
@@ -18403,6 +18451,7 @@ struct ComposeOrchestratorTests {
                 plugin: "container-network-vmnet",
                 ipv4Subnet: nil,
                 ipv4Gateway: nil,
+                ipv4AllocationRange: nil,
                 ipv6Subnet: nil,
                 options: [:],
                 labels: labels
@@ -27110,6 +27159,7 @@ private enum ContainerResourceAPIRequest: Equatable {
         plugin: String,
         ipv4Subnet: String?,
         ipv4Gateway: String?,
+        ipv4AllocationRange: String?,
         ipv6Subnet: String?,
         options: [String: String],
         labels: [String: String]
@@ -28585,6 +28635,7 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
             plugin: configuration.plugin,
             ipv4Subnet: configuration.ipv4Subnet?.description,
             ipv4Gateway: configuration.ipv4Gateway?.description,
+            ipv4AllocationRange: configuration.ipv4AllocationRange?.description,
             ipv6Subnet: configuration.ipv6Subnet?.description,
             options: configuration.options,
             labels: configuration.labels.dictionary

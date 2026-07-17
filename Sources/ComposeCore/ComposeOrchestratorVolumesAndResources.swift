@@ -562,6 +562,9 @@ extension ComposeOrchestrator {
         if let ipv4Gateway = network.ipv4Gateway, !ipv4Gateway.isEmpty {
             args.append(contentsOf: ["--gateway", ipv4Gateway])
         }
+        if let ipv4AllocationRange = network.ipv4AllocationRange, !ipv4AllocationRange.isEmpty {
+            args.append(contentsOf: ["--ip-range", ipv4AllocationRange])
+        }
         if let ipv6Subnet = network.ipv6Subnet, !ipv6Subnet.isEmpty {
             args.append(contentsOf: ["--subnet-v6", ipv6Subnet])
         }
@@ -585,6 +588,7 @@ extension ComposeOrchestrator {
                 isInternal: network.isInternal == true,
                 ipv4Subnet: network.ipv4Subnet,
                 ipv4Gateway: network.ipv4Gateway,
+                ipv4AllocationRange: network.ipv4AllocationRange,
                 ipv6Subnet: network.ipv6Subnet,
                 driverOpts: driverOpts,
                 labels: resourceLabels(project: project, labels: network.labels),
