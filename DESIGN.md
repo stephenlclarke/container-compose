@@ -76,7 +76,11 @@ Docker and Compose syntax is normalized into typed Compose-owned plans before
 runtime projection. For example, `ContainerServiceCreatePlan` keeps service
 identity, process configuration, logging, health, restart, hostname, hosts,
 sysctls, block-I/O, and resource values typed even while part of execution
-still renders `container` command arguments.
+still renders `container` command arguments. `memswap_limit` is resolved here
+as a total memory-plus-swap byte value: Compose validates its relationship to
+`mem_limit` and calculates Docker's default, then the current explicit CLI
+adapter carries the resulting `--memory-swap` value. The lower stack receives
+only the generic typed primitive and projects it to OCI.
 
 Missing runtime capabilities belong in Apple-shaped issue and pull request
 drafts under [`docs/upstream/`](docs/upstream/). Those drafts request reusable
@@ -123,7 +127,7 @@ flowchart TD
         direction TB
         Model["ComposeProject"] --> Orchestrator["ComposeOrchestrator"]
         Orchestrator --> Planner["Selection, dependencies, labels, hashes"]
-        Planner --> CreatePlan["Typed service-create plan"]
+        Planner --> CreatePlan["Typed service-create plan\nresources include total memory + swap"]
         Orchestrator --> Output["Compose-compatible output"]
     end
 

@@ -85,6 +85,7 @@ extension ComposeOrchestrator {
         _ = try runtimeOOMScoreAdj(service: service)
         _ = try runtimeCPUShares(service: service)
         _ = try runtimeMemoryReservationInBytes(service: service)
+        _ = try runtimeMemorySwapLimitInBytes(service: service)
         _ = try runtimeBlkioArguments(service: service)
         _ = try runtimeDeviceCgroupRuleArguments(service: service)
         _ = try runtimeDeviceArguments(service: service)

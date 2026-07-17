@@ -53,6 +53,7 @@ public struct ContainerServiceCreateRuntime: Sendable {
     public var blockIO: LinuxBlockIO?
     public var cpuShares: UInt64?
     public var memoryReservationInBytes: Int64?
+    public var memorySwapLimitInBytes: Int64?
 
     public init() {
         initProcess = ComposeRuntimeDefaults.shellProcess()
@@ -66,6 +67,7 @@ public struct ContainerServiceCreateRuntime: Sendable {
         blockIO = nil
         cpuShares = nil
         memoryReservationInBytes = nil
+        memorySwapLimitInBytes = nil
     }
 }
 
@@ -91,6 +93,7 @@ public struct ContainerServiceCreatePlan: Sendable {
     public var blockIO: LinuxBlockIO?
     public var cpuShares: UInt64?
     public var memoryReservationInBytes: Int64?
+    public var memorySwapLimitInBytes: Int64?
 
     public init(
         identity: ContainerServiceCreateIdentity,
@@ -112,6 +115,7 @@ public struct ContainerServiceCreatePlan: Sendable {
         blockIO = runtime.blockIO
         cpuShares = runtime.cpuShares
         memoryReservationInBytes = runtime.memoryReservationInBytes
+        memorySwapLimitInBytes = runtime.memorySwapLimitInBytes
     }
 }
 

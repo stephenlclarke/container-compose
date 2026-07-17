@@ -2286,6 +2286,28 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--memory-reservation", "268435456"]))
     }
 
+    @Test("create maps memswap_limit to runtime arguments")
+    func createMapsMemorySwapLimitToRuntimeArguments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.memLimit = "536870912"
+                    $0.memSwapLimit = "-1"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--memory-swap", "-1"]))
+    }
+
     @Test("create maps bind propagation to volume options")
     func createMapsBindPropagationToVolumeOptions() async throws {
         let fileManager = FileManager.default
@@ -2598,6 +2620,44 @@ struct ComposeOrchestratorTests {
                 let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "job")
                 let expectedReservation = testCase.reservation.flatMap(Int64.init).flatMap { $0 == 0 ? nil : $0 }
                 #expect(plan.memoryReservationInBytes == expectedReservation)
+            }
+        }
+    }
+
+    @Test("service create plan validates memory swap limits")
+    func serviceCreatePlanValidatesMemorySwapLimits() async throws {
+        let cases: [(swapLimit: String?, memoryLimit: String?, expectedLimit: Int64?, expectedMessage: String?)] = [
+            (nil, nil, nil, nil),
+            ("0", nil, nil, nil),
+            (nil, "536870912", 1_073_741_824, nil),
+            ("0", "536870912", 1_073_741_824, nil),
+            ("-1", "536870912", -1, nil),
+            ("1073741824", "536870912", 1_073_741_824, nil),
+            ("-1", nil, nil, "service 'job' uses memswap_limit; memswap_limit requires a positive mem_limit"),
+            ("268435456", nil, nil, "service 'job' uses memswap_limit; memswap_limit requires a positive mem_limit"),
+            ("-2", "536870912", nil, "service 'job' uses invalid memswap_limit '-2'; expected -1, 0, or a positive byte value"),
+            ("268435456", "536870912", nil, "service 'job' uses memswap_limit '268435456'; memswap_limit must be at least mem_limit '536870912'"),
+            (nil, "9223372036854775807", nil, "service 'job' uses mem_limit '9223372036854775807'; Docker-compatible default memswap_limit exceeds the runtime range"),
+        ]
+
+        for testCase in cases {
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        $0.memSwapLimit = testCase.swapLimit
+                        $0.memLimit = testCase.memoryLimit
+                    },
+                ]
+            )
+
+            if let expectedMessage = testCase.expectedMessage {
+                await #expect(throws: ComposeError.invalidProject(expectedMessage)) {
+                    _ = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "job")
+                }
+            } else {
+                let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "job")
+                #expect(plan.memorySwapLimitInBytes == testCase.expectedLimit)
             }
         }
     }
@@ -7622,6 +7682,33 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up rejects invalid memory swap limits before creating resources")
+    func upRejectsInvalidMemorySwapLimitsBeforeCreatingResources() async throws {
+        let cases: [(swapLimit: String, memoryLimit: String?, expectedMessage: String)] = [
+            ("-1", nil, "service 'api' uses memswap_limit; memswap_limit requires a positive mem_limit"),
+            ("268435456", "536870912", "service 'api' uses memswap_limit '268435456'; memswap_limit must be at least mem_limit '536870912'"),
+            ("-2", "536870912", "service 'api' uses invalid memswap_limit '-2'; expected -1, 0, or a positive byte value"),
+        ]
+
+        for testCase in cases {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        $0.memSwapLimit = testCase.swapLimit
+                        $0.memLimit = testCase.memoryLimit
+                    },
+                ]
+            )
+
+            await #expect(throws: ComposeError.invalidProject(testCase.expectedMessage)) {
+                try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            }
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("up rejects unsupported memory and process resource fields before creating resources")
     func upRejectsUnsupportedMemoryAndProcessResourceFieldsBeforeCreatingResources() async throws {
         for testCase in unsupportedMemoryAndProcessResourceFieldCases() {
@@ -7741,6 +7828,50 @@ struct ComposeOrchestratorTests {
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--memory", "536870912"]))
         #expect(command.containsSequence(["--memory-reservation", "268435456"]))
+    }
+
+    @Test("up maps explicit memswap_limit to runtime arguments")
+    func upMapsMemorySwapLimitToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.memLimit = "536870912"
+                    $0.memSwapLimit = "1073741824"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--memory", "536870912"]))
+        #expect(command.containsSequence(["--memory-swap", "1073741824"]))
+    }
+
+    @Test("up maps Docker default memory swap limit")
+    func upMapsDefaultMemorySwapLimitToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.memLimit = "536870912"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--memory-swap", "1073741824"]))
     }
 
     @Test("up omits default cpu_shares from runtime arguments")
@@ -22975,6 +23106,7 @@ struct ComposeOrchestratorTests {
                     $0.oomScoreAdj = -250
                     $0.memLimit = "1024"
                     $0.memReservation = "512"
+                    $0.memSwapLimit = "2048"
                     $0.cpus = "2"
                     $0.shmSize = "67108864"
                     $0.ulimits = ["nofile=1024:2048", "nproc=512"]
@@ -23017,6 +23149,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--add-host", "db:10.0.0.5"]))
         #expect(command.containsSequence(["--memory", "1024"]))
         #expect(command.containsSequence(["--memory-reservation", "512"]))
+        #expect(command.containsSequence(["--memory-swap", "2048"]))
         #expect(command.containsSequence(["--cpus", "2"]))
         #expect(command.containsSequence(["--shm-size", "67108864"]))
         #expect(command.containsSequence(["--ulimit", "nofile=1024:2048"]))
@@ -27121,11 +27254,6 @@ private struct UnsupportedMemoryAndProcessResourceFieldCase: Sendable {
 
 private func unsupportedMemoryAndProcessResourceFieldCases() -> [UnsupportedMemoryAndProcessResourceFieldCase] {
     [
-        UnsupportedMemoryAndProcessResourceFieldCase(
-            composeName: "memswap_limit",
-            value: "256m",
-            configure: { $0.memSwapLimit = "256m" }
-        ),
         UnsupportedMemoryAndProcessResourceFieldCase(
             composeName: "mem_swappiness",
             value: "60",

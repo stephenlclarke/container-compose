@@ -126,7 +126,6 @@ extension ComposeOrchestrator {
     func unsupportedMemoryAndProcessResourceFields(service: ComposeService) -> [ComposeRuntimeUnsupportedValue] {
         let reason = "memory, OOM, and process resource support needs an apple/container runtime gap PR"
         var fields: [ComposeRuntimeUnsupportedValue] = []
-        appendUnsupportedStringField("memswap_limit", value: service.memSwapLimit, reason: reason, to: &fields)
         appendUnsupportedStringField("mem_swappiness", value: service.memSwappiness, reason: reason, to: &fields)
         if service.oomKillDisable == true {
             fields.append(.init(composeName: "oom_kill_disable", value: "true", reason: reason))
@@ -184,6 +183,58 @@ extension ComposeOrchestrator {
             )
         }
         return reservationInBytes
+    }
+
+    /// Returns Docker-compatible combined memory and swap usage in bytes. A
+    /// zero value is treated as unset; when a hard memory limit is set without
+    /// an explicit swap value, Docker limits total memory plus swap to twice
+    /// the hard memory limit.
+    func runtimeMemorySwapLimitInBytes(service: ComposeService) throws -> Int64? {
+        let requestedLimit: Int64?
+        if let swapLimit = service.memSwapLimit, !swapLimit.isEmpty {
+            guard let parsedLimit = Int64(swapLimit), parsedLimit == -1 || parsedLimit >= 0 else {
+                throw ComposeError.invalidProject(
+                    "service '\(service.name)' uses invalid memswap_limit '\(swapLimit)'; expected -1, 0, or a positive byte value",
+                )
+            }
+            requestedLimit = parsedLimit == 0 ? nil : parsedLimit
+        } else {
+            requestedLimit = nil
+        }
+
+        guard let memoryLimit = service.memLimit, !memoryLimit.isEmpty else {
+            guard requestedLimit == nil else {
+                throw ComposeError.invalidProject(
+                    "service '\(service.name)' uses memswap_limit; memswap_limit requires a positive mem_limit",
+                )
+            }
+            return nil
+        }
+        guard let memoryLimitInBytes = Int64(memoryLimit), memoryLimitInBytes > 0 else {
+            guard requestedLimit == nil else {
+                throw ComposeError.invalidProject(
+                    "service '\(service.name)' uses memswap_limit; memswap_limit requires a positive mem_limit",
+                )
+            }
+            return nil
+        }
+
+        if let requestedLimit {
+            guard requestedLimit == -1 || requestedLimit >= memoryLimitInBytes else {
+                throw ComposeError.invalidProject(
+                    "service '\(service.name)' uses memswap_limit '\(requestedLimit)'; memswap_limit must be at least mem_limit '\(memoryLimit)'",
+                )
+            }
+            return requestedLimit
+        }
+
+        let (defaultLimit, overflow) = memoryLimitInBytes.multipliedReportingOverflow(by: 2)
+        guard !overflow else {
+            throw ComposeError.invalidProject(
+                "service '\(service.name)' uses mem_limit '\(memoryLimit)'; Docker-compatible default memswap_limit exceeds the runtime range",
+            )
+        }
+        return defaultLimit
     }
 
     /// Splits Compose supplemental groups into numeric IDs and guest-image group names.

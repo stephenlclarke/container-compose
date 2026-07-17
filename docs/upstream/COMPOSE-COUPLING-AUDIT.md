@@ -36,6 +36,7 @@ The complete Compose-only external-resource slice has moved:
 The remaining runtime-composition candidates are deliberately retained:
 
 - Resource controls, device/GPU settings, mounts, process namespaces, guest networking and address allocation require lower-runtime behavior, not a Compose wrapper.
+- Memory-plus-swap support follows that rule: Compose owns the `memswap_limit` relationship and defaulting policy, while the matched runtime carries one optional signed-byte primitive to OCI `LinuxMemory.swap`.
 - Copy/export, log/event streaming, health observation, and lifecycle paths require runtime-owned state or guest processes.
 - Build attestations, SSH forwarding, named-builder selection, checks, and BuildKit transport remain builder primitives. Recreating the builder-shim lifecycle in Compose would increase, rather than reduce, coupling.
 

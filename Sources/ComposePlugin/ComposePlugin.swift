@@ -110,10 +110,10 @@ private struct ComposeBuildInfo: Codable {
             lane: lane(for: branch),
             commit: git(["rev-parse", "HEAD"], root: root) ?? "unspecified",
             buildType: defaultBuildType,
-            containerSource: "stephenlclarke/container",
-            containerRef: localContainerRef(root: root) ?? "unspecified",
-            containerizationSource: normalizedSource(packageResolvedValue(root: root, key: "location") ?? "unspecified"),
-            containerizationRef: packageResolvedState(root: root) ?? "unspecified",
+            containerSource: normalizedSource(packageResolvedValue(root: root, identity: "container", key: "location") ?? "stephenlclarke/container"),
+            containerRef: packageResolvedState(root: root, identity: "container") ?? localContainerRef(root: root) ?? "unspecified",
+            containerizationSource: normalizedSource(packageResolvedValue(root: root, identity: "containerization", key: "location") ?? "unspecified"),
+            containerizationRef: packageResolvedState(root: root, identity: "containerization") ?? "unspecified",
             composeGoVersion: goModuleVersion(root: root, module: "github.com/compose-spec/compose-go/v2")
         )
     }
@@ -233,24 +233,24 @@ private extension ComposeBuildInfo {
         return git(["rev-parse", "HEAD"], root: dependencyRoot)
     }
 
-    static func packageResolvedValue(root: String, key: String) -> String? {
-        packageResolvedPin(root: root)?[key] as? String
+    static func packageResolvedValue(root: String, identity: String, key: String) -> String? {
+        packageResolvedPin(root: root, identity: identity)?[key] as? String
     }
 
-    static func packageResolvedState(root: String) -> String? {
-        guard let state = packageResolvedPin(root: root)?["state"] as? [String: Any] else {
+    static func packageResolvedState(root: String, identity: String) -> String? {
+        guard let state = packageResolvedPin(root: root, identity: identity)?["state"] as? [String: Any] else {
             return nil
         }
         return (state["revision"] ?? state["branch"] ?? state["version"]) as? String
     }
 
-    static func packageResolvedPin(root: String) -> [String: Any]? {
+    static func packageResolvedPin(root: String, identity: String) -> [String: Any]? {
         guard let data = FileManager.default.contents(atPath: "\(root)/Package.resolved"),
               let rootObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let pins = rootObject["pins"] as? [[String: Any]] else {
             return nil
         }
-        return pins.first { $0["identity"] as? String == "containerization" }
+        return pins.first { $0["identity"] as? String == identity }
     }
 
     static func goModuleVersion(root: String, module: String) -> String? {
