@@ -383,6 +383,7 @@ extension ComposeOrchestrator {
                 terminal: false,
                 user: baseProcess.user,
                 supplementalGroups: baseProcess.supplementalGroups,
+                supplementalGroupNames: baseProcess.supplementalGroupNames,
                 rlimits: baseProcess.rlimits,
             ),
             intervalInNanoseconds: interval,

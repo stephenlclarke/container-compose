@@ -10,17 +10,19 @@ Docker Compose passes each `group_add` entry to Docker Engine, where names are r
 
 Reference: <https://docs.docker.com/reference/compose-file/services/#group_add>
 
-## Previous behavior
+## Implemented behavior
 
-All `group_add` values were rejected before any Compose resource side effect because the backend CLI did not expose its typed supplemental GID process configuration.
+`container-compose` separates `group_add` values into numeric GIDs and group names before service creation. Numeric IDs and names are independently de-duplicated while retaining first occurrence. The same normalized list is used by typed service creation and repeatable `container run --group-add` arguments.
 
-## Ownership and minimal implementation
+The matched runtime resolves named groups from the selected guest image's `/etc/group` file, then adds the resulting GIDs to the process configuration. This keeps image-account lookup in the guest-image-owning runtime rather than teaching the Compose layer about image filesystem layout.
 
-The runtime fork exposes repeatable numeric `--group-add` arguments and continues to pass them through its existing typed `ProcessConfiguration.supplementalGroups` path. `container-compose` validates and de-duplicates numeric values before service creation and one-off `run` execution.
+## Validation and boundaries
 
-## Expected behavior
+- Numeric values are accepted through the `UInt32` GID range; empty values and out-of-range numeric IDs fail before side effects.
+- Named values are accepted for managed service creation and `compose run`; an absent name fails while the guest image is prepared.
+- Numeric IDs are applied before name-resolved GIDs, matching the runtime's typed process model.
+- This does not add group management, host account lookup, or Docker-specific identity semantics.
 
-- Numeric values are accepted for managed service creation and `compose run`.
-- Duplicate numeric IDs retain their first occurrence and are sent once.
-- A named group fails before side effects with an explicit image-aware runtime-gap message.
-- Name resolution remains out of scope until the runtime offers an image-aware account-database primitive.
+## Ownership
+
+The generic image-aware primitive lives in the Stephen-owned `containerization` and `container` forks. The Apple remotes were not modified; their review-ready handoff is recorded under `docs/upstream/apple-container/`.
