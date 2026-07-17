@@ -375,6 +375,7 @@ type normalizedNetwork struct {
 	Internal          bool              `json:"internal,omitempty"`
 	Labels            map[string]string `json:"labels,omitempty"`
 	IPv4Subnet        string            `json:"ipv4Subnet,omitempty"`
+	IPv4Gateway       string            `json:"ipv4Gateway,omitempty"`
 	IPv6Subnet        string            `json:"ipv6Subnet,omitempty"`
 	UnsupportedFields []string          `json:"unsupportedFields,omitempty"`
 }
@@ -741,7 +742,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 		result.Services[service.Name] = normalizeService(service, project.Secrets)
 	}
 	for name, network := range project.Networks {
-		ipv4Subnet, ipv6Subnet, unsupportedFields := projectNetworkValues(network)
+		ipv4Subnet, ipv4Gateway, ipv6Subnet, unsupportedFields := projectNetworkValues(network)
 		result.Networks[name] = normalizedNetwork{
 			Name:              firstNonEmpty(network.Name, name),
 			External:          bool(network.External),
@@ -750,6 +751,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 			Internal:          network.Internal,
 			Labels:            mapLabels(network.Labels),
 			IPv4Subnet:        ipv4Subnet,
+			IPv4Gateway:       ipv4Gateway,
 			IPv6Subnet:        ipv6Subnet,
 			UnsupportedFields: unsupportedFields,
 		}
@@ -779,10 +781,10 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 	return result
 }
 
-// projectNetworkValues returns mapped subnets and project network fields that
+// projectNetworkValues returns mapped IPAM values and project network fields that
 // need runtime behavior beyond apple/container's current network API.
-func projectNetworkValues(network types.NetworkConfig) (string, string, []string) {
-	ipv4Subnet, ipv6Subnet, ipamFields := networkIPAMValues(network.Ipam)
+func projectNetworkValues(network types.NetworkConfig) (string, string, string, []string) {
+	ipv4Subnet, ipv4Gateway, ipv6Subnet, ipamFields := networkIPAMValues(network.Ipam)
 	fields := []string{}
 	driver := strings.TrimSpace(network.Driver)
 	appendUnsupportedNetworkField(&fields, "driver", driver != "" && driver != "bridge")
@@ -794,9 +796,9 @@ func projectNetworkValues(network types.NetworkConfig) (string, string, []string
 	}
 	fields = append(fields, ipamFields...)
 	if len(fields) == 0 {
-		return ipv4Subnet, ipv6Subnet, nil
+		return ipv4Subnet, ipv4Gateway, ipv6Subnet, nil
 	}
-	return ipv4Subnet, ipv6Subnet, fields
+	return ipv4Subnet, ipv4Gateway, ipv6Subnet, fields
 }
 
 // normalizeService copies a compose-go service into the stable Swift model.
@@ -1480,31 +1482,44 @@ func networkValues(networks map[string]*types.ServiceNetworkConfig) []string {
 	return result
 }
 
-// networkIPAMValues returns the one IPv4 and one IPv6 subnet apple/container can create.
-func networkIPAMValues(ipam types.IPAMConfig) (string, string, []string) {
+// networkIPAMValues returns the one IPv4 subnet, IPv4 gateway, and IPv6 subnet
+// that apple/container can create.
+func networkIPAMValues(ipam types.IPAMConfig) (string, string, string, []string) {
 	fields := []string{}
 	appendUnsupportedNetworkField(&fields, "ipam.driver", ipam.Driver != "")
 	appendUnsupportedNetworkField(&fields, "ipam.options", len(ipam.Options) > 0)
 	var ipv4Subnet string
+	var ipv4Gateway string
 	var ipv6Subnet string
 	for _, pool := range ipam.Config {
 		if pool == nil {
 			continue
 		}
-		appendUnsupportedNetworkField(&fields, "ipam.config.gateway", pool.Gateway != "")
 		appendUnsupportedNetworkField(&fields, "ipam.config.ip_range", pool.IPRange != "")
 		appendUnsupportedNetworkField(&fields, "ipam.config.aux_addresses", len(pool.AuxiliaryAddresses) > 0)
 		subnet := strings.TrimSpace(pool.Subnet)
+		gateway := strings.TrimSpace(pool.Gateway)
 		if subnet == "" {
+			appendUnsupportedNetworkField(&fields, "ipam.config.gateway", gateway != "")
 			continue
 		}
 		if strings.Contains(subnet, ":") {
+			appendUnsupportedNetworkField(&fields, "ipam.config.gateway", gateway != "")
 			if ipv6Subnet != "" {
 				appendUnsupportedNetworkField(&fields, "ipam.config.subnet", true)
 				continue
 			}
 			ipv6Subnet = subnet
 			continue
+		}
+		if strings.Contains(gateway, ":") {
+			appendUnsupportedNetworkField(&fields, "ipam.config.gateway", true)
+			gateway = ""
+		}
+		if ipv4Gateway == "" {
+			ipv4Gateway = gateway
+		} else {
+			appendUnsupportedNetworkField(&fields, "ipam.config.gateway", gateway != "")
 		}
 		if ipv4Subnet != "" {
 			appendUnsupportedNetworkField(&fields, "ipam.config.subnet", true)
@@ -1513,9 +1528,9 @@ func networkIPAMValues(ipam types.IPAMConfig) (string, string, []string) {
 		ipv4Subnet = subnet
 	}
 	if len(fields) == 0 {
-		return ipv4Subnet, ipv6Subnet, nil
+		return ipv4Subnet, ipv4Gateway, ipv6Subnet, nil
 	}
-	return ipv4Subnet, ipv6Subnet, fields
+	return ipv4Subnet, ipv4Gateway, ipv6Subnet, fields
 }
 
 // appendUnsupportedNetworkField records unsupported network metadata once.

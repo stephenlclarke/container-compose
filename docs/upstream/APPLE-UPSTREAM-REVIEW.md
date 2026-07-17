@@ -34,6 +34,7 @@ fails if any snapshot is deleted or retargeted.
 | `apple/container` | [Live filesystem snapshot export](apple-container/PR-live-export-snapshot.md) adds a generic `export --live` primitive for a running container, based on the direction in [apple/container#1630](https://github.com/apple/container/pull/1630). |
 | `apple/container` | [Additional guest interface addresses](apple-container/PR-additional-interface-addresses.md) carry generic typed CIDRs through runtime attachment strategies. |
 | `apple/container` | [Requested primary network addresses](apple-container/PR-requested-primary-network-addresses.md) reserve generic typed IPv4 and IPv6 attachment addresses with collision checks. |
+| `apple/container` | [IPv4 network gateway configuration](apple-container/PR-network-ipam-gateway.md) carries a validated generic gateway through persisted network configuration, helper startup, vmnet setup, and attachment allocation. |
 | `apple/containerization` | [Fork CI validation](apple-containerization/PR-fork-ci-validation.md) runs supported checks in contributor forks while retaining official guest image and integration work. |
 | `apple/containerization` | [Additional guest interface addresses](apple-containerization/PR-additional-interface-addresses.md) configure generic supplemental IPv4/IPv6 CIDRs before link-up. |
 | `apple/containerization` | [Cgroup formatter catch spacing](apple-containerization/PR-cgroup-catch-format.md) restores the exact spelling required by the strict Swift formatter without changing runtime behavior. |

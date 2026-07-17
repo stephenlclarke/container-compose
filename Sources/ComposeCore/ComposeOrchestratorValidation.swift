@@ -155,10 +155,11 @@ extension ComposeOrchestrator {
     func validateProjectNetworks(_ project: ComposeProject) throws {
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) {
             guard let fields = network.unsupportedFields, !fields.isEmpty else {
+                try validateNetworkIPv4Gateway(network, name: name)
                 continue
             }
             let fieldList = fields.joined(separator: ", ")
-            throw ComposeError.unsupported("network '\(name)' uses unsupported fields \(fieldList); supported project network fields are name, external, internal, labels, driver_opts, the default bridge driver, and one IPv4/IPv6 IPAM subnet")
+            throw ComposeError.unsupported("network '\(name)' uses unsupported fields \(fieldList); supported project network fields are name, external, internal, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with an optional gateway plus one IPv6 IPAM subnet")
         }
     }
 

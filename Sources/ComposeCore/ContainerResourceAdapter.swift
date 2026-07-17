@@ -58,6 +58,7 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
     public var name: String
     public var isInternal: Bool
     public var ipv4Subnet: String?
+    public var ipv4Gateway: String?
     public var ipv6Subnet: String?
     public var driverOpts: [String: String]
     public var labels: [String: String]
@@ -66,6 +67,7 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
         name: String,
         isInternal: Bool = false,
         ipv4Subnet: String? = nil,
+        ipv4Gateway: String? = nil,
         ipv6Subnet: String? = nil,
         driverOpts: [String: String] = [:],
         labels: [String: String] = [:],
@@ -73,6 +75,7 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
         self.name = name
         self.isInternal = isInternal
         self.ipv4Subnet = ipv4Subnet
+        self.ipv4Gateway = ipv4Gateway
         self.ipv6Subnet = ipv6Subnet
         self.driverOpts = driverOpts
         self.labels = labels
@@ -254,6 +257,7 @@ public struct ContainerClientResourceManager: ContainerResourceManaging {
             name: request.name,
             mode: request.isInternal ? .hostOnly : .nat,
             ipv4Subnet: request.ipv4Subnet.map { try CIDRv4($0) },
+            ipv4Gateway: request.ipv4Gateway.map { try IPv4Address($0) },
             ipv6Subnet: request.ipv6Subnet.map { try CIDRv6($0) },
             labels: ResourceLabels(request.labels),
             plugin: "container-network-vmnet",
