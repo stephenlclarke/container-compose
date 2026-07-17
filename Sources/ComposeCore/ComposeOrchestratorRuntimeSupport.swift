@@ -82,11 +82,11 @@ extension ComposeOrchestrator {
         return fields
     }
 
-    /// Returns unsupported memory, OOM, and process resource controls beyond `mem_limit` and `oom_score_adj`.
+    /// Returns unsupported memory, OOM, and process resource controls beyond
+    /// `mem_limit`, `mem_reservation`, and `oom_score_adj`.
     func unsupportedMemoryAndProcessResourceFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
         let reason = "memory, OOM, and process resource support needs an apple/container runtime gap PR"
         var fields: [(composeName: String, value: String, reason: String)] = []
-        appendUnsupportedStringField("mem_reservation", value: service.memReservation, reason: reason, to: &fields)
         appendUnsupportedStringField("memswap_limit", value: service.memSwapLimit, reason: reason, to: &fields)
         appendUnsupportedStringField("mem_swappiness", value: service.memSwappiness, reason: reason, to: &fields)
         if service.oomKillDisable == true {
@@ -120,6 +120,31 @@ extension ComposeOrchestrator {
             )
         }
         return UInt64(cpuShares)
+    }
+
+    /// Returns a Docker-compatible soft memory reservation in bytes. Zero
+    /// leaves the runtime default unchanged; an explicit hard memory limit must
+    /// be strictly higher than the reservation.
+    func runtimeMemoryReservationInBytes(service: ComposeService) throws -> Int64? {
+        guard let reservation = service.memReservation, !reservation.isEmpty else {
+            return nil
+        }
+        guard let reservationInBytes = Int64(reservation), reservationInBytes >= 0 else {
+            throw ComposeError.invalidProject(
+                "service '\(service.name)' uses invalid mem_reservation '\(reservation)'; expected a non-negative byte value"
+            )
+        }
+        guard reservationInBytes != 0 else {
+            return nil
+        }
+        if let memoryLimit = service.memLimit, !memoryLimit.isEmpty,
+           let memoryLimitInBytes = Int64(memoryLimit), reservationInBytes >= memoryLimitInBytes
+        {
+            throw ComposeError.invalidProject(
+                "service '\(service.name)' uses mem_reservation '\(reservation)'; mem_reservation must be lower than mem_limit '\(memoryLimit)'"
+            )
+        }
+        return reservationInBytes
     }
 
     /// Splits Compose supplemental groups into numeric IDs and guest-image group names.

@@ -2260,6 +2260,27 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--cpu-shares", "512"]))
     }
 
+    @Test("create maps mem_reservation to runtime arguments")
+    func createMapsMemoryReservationToRuntimeArguments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.memReservation = "268435456"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--memory-reservation", "268435456"]))
+    }
+
     @Test("create maps bind propagation to volume options")
     func createMapsBindPropagationToVolumeOptions() async throws {
         let fileManager = FileManager.default
@@ -2417,6 +2438,7 @@ struct ComposeOrchestratorTests {
                     $0.groupAdd = ["1000", "video", "1001", "staff", "1000", "video"]
                     $0.oomScoreAdj = -250
                     $0.cpuShares = 512
+                    $0.memReservation = "268435456"
                 },
             ]
         )
@@ -2432,6 +2454,7 @@ struct ComposeOrchestratorTests {
         #expect(plan.initProcess.supplementalGroupNames == ["video", "staff"])
         #expect(plan.initProcess.oomScoreAdj == -250)
         #expect(plan.cpuShares == 512)
+        #expect(plan.memoryReservationInBytes == 268435456)
     }
 
     @Test("service create plan maps explicit healthcheck to typed policy")
@@ -2535,6 +2558,42 @@ struct ComposeOrchestratorTests {
             } else {
                 let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "job")
                 #expect(plan.cpuShares == (cpuShares == 0 ? nil : UInt64(cpuShares)))
+            }
+        }
+    }
+
+    @Test("service create plan validates memory reservations")
+    func serviceCreatePlanValidatesMemoryReservations() async throws {
+        let cases: [(reservation: String?, memoryLimit: String?, expectedMessage: String?)] = [
+            (nil, nil, nil),
+            ("0", nil, nil),
+            ("268435456", nil, nil),
+            ("268435456", "536870912", nil),
+            ("-1", nil, "service 'job' uses invalid mem_reservation '-1'; expected a non-negative byte value"),
+            ("invalid", nil, "service 'job' uses invalid mem_reservation 'invalid'; expected a non-negative byte value"),
+            ("536870912", "536870912", "service 'job' uses mem_reservation '536870912'; mem_reservation must be lower than mem_limit '536870912'"),
+            ("536870913", "536870912", "service 'job' uses mem_reservation '536870913'; mem_reservation must be lower than mem_limit '536870912'"),
+        ]
+
+        for testCase in cases {
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        $0.memReservation = testCase.reservation
+                        $0.memLimit = testCase.memoryLimit
+                    },
+                ]
+            )
+
+            if let expectedMessage = testCase.expectedMessage {
+                await #expect(throws: ComposeError.invalidProject(expectedMessage)) {
+                    _ = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "job")
+                }
+            } else {
+                let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "job")
+                let expectedReservation = testCase.reservation.flatMap(Int64.init).flatMap { $0 == 0 ? nil : $0 }
+                #expect(plan.memoryReservationInBytes == expectedReservation)
             }
         }
     }
@@ -7533,6 +7592,32 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up rejects invalid memory reservations before creating resources")
+    func upRejectsInvalidMemoryReservationsBeforeCreatingResources() async throws {
+        let cases: [(reservation: String, memoryLimit: String?, expectedMessage: String)] = [
+            ("-1", nil, "service 'api' uses invalid mem_reservation '-1'; expected a non-negative byte value"),
+            ("536870912", "536870912", "service 'api' uses mem_reservation '536870912'; mem_reservation must be lower than mem_limit '536870912'"),
+        ]
+
+        for testCase in cases {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        $0.memReservation = testCase.reservation
+                        $0.memLimit = testCase.memoryLimit
+                    },
+                ]
+            )
+
+            await #expect(throws: ComposeError.invalidProject(testCase.expectedMessage)) {
+                try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            }
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("up rejects unsupported memory and process resource fields before creating resources")
     func upRejectsUnsupportedMemoryAndProcessResourceFieldsBeforeCreatingResources() async throws {
         for testCase in unsupportedMemoryAndProcessResourceFieldCases() {
@@ -7631,6 +7716,29 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--cpu-shares", "512"]))
     }
 
+    @Test("up maps mem_reservation to runtime arguments")
+    func upMapsMemoryReservationToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.memReservation = "268435456"
+                    $0.memLimit = "536870912"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--memory", "536870912"]))
+        #expect(command.containsSequence(["--memory-reservation", "268435456"]))
+    }
+
     @Test("up omits default cpu_shares from runtime arguments")
     func upOmitsDefaultCPUSharesFromRuntimeArguments() async throws {
         let runner = RecordingRunner()
@@ -7650,6 +7758,27 @@ struct ComposeOrchestratorTests {
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(!command.contains("--cpu-shares"))
+    }
+
+    @Test("up omits zero mem_reservation from runtime arguments")
+    func upOmitsZeroMemoryReservationFromRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.memReservation = "0"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(!command.contains("--memory-reservation"))
     }
 
     @Test("up omits unlimited pids_limit from runtime arguments")
@@ -22827,6 +22956,7 @@ struct ComposeOrchestratorTests {
                     $0.privileged = true
                     $0.oomScoreAdj = -250
                     $0.memLimit = "1024"
+                    $0.memReservation = "512"
                     $0.cpus = "2"
                     $0.shmSize = "67108864"
                     $0.ulimits = ["nofile=1024:2048", "nproc=512"]
@@ -22868,6 +22998,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--hostname", "custom-job"]))
         #expect(command.containsSequence(["--add-host", "db:10.0.0.5"]))
         #expect(command.containsSequence(["--memory", "1024"]))
+        #expect(command.containsSequence(["--memory-reservation", "512"]))
         #expect(command.containsSequence(["--cpus", "2"]))
         #expect(command.containsSequence(["--shm-size", "67108864"]))
         #expect(command.containsSequence(["--ulimit", "nofile=1024:2048"]))
@@ -24364,6 +24495,24 @@ struct ComposeOrchestratorTests {
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--cpu-shares", "512"]))
+    }
+
+    @Test("run maps mem_reservation to runtime arguments")
+    func runMapsMemoryReservationToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.memReservation = "268435456"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--memory-reservation", "268435456"]))
     }
 
     @Test("run omits default cpu_shares from runtime arguments")
@@ -26950,11 +27099,6 @@ private struct UnsupportedMemoryAndProcessResourceFieldCase: Sendable {
 
 private func unsupportedMemoryAndProcessResourceFieldCases() -> [UnsupportedMemoryAndProcessResourceFieldCase] {
     [
-        UnsupportedMemoryAndProcessResourceFieldCase(
-            composeName: "mem_reservation",
-            value: "134217728",
-            configure: { $0.memReservation = "134217728" }
-        ),
         UnsupportedMemoryAndProcessResourceFieldCase(
             composeName: "memswap_limit",
             value: "268435456",
