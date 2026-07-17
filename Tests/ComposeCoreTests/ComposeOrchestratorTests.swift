@@ -2239,6 +2239,27 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("create maps cpu_shares to runtime arguments")
+    func createMapsCPUSharesToRuntimeArguments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.cpuShares = 512
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--cpu-shares", "512"]))
+    }
+
     @Test("create maps bind propagation to volume options")
     func createMapsBindPropagationToVolumeOptions() async throws {
         let fileManager = FileManager.default
@@ -2395,6 +2416,7 @@ struct ComposeOrchestratorTests {
                     $0.user = "1000:1000"
                     $0.groupAdd = ["1000", "video", "1001", "staff", "1000", "video"]
                     $0.oomScoreAdj = -250
+                    $0.cpuShares = 512
                 },
             ]
         )
@@ -2409,6 +2431,7 @@ struct ComposeOrchestratorTests {
         #expect(plan.initProcess.supplementalGroups == [1000, 1001])
         #expect(plan.initProcess.supplementalGroupNames == ["video", "staff"])
         #expect(plan.initProcess.oomScoreAdj == -250)
+        #expect(plan.cpuShares == 512)
     }
 
     @Test("service create plan maps explicit healthcheck to typed policy")
@@ -2484,6 +2507,35 @@ struct ComposeOrchestratorTests {
 
         await #expect(throws: ComposeError.invalidProject("service 'job' uses oom_score_adj '1001' outside the supported range -1000...1000")) {
             _ = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "job")
+        }
+    }
+
+    @Test("service create plan validates CPU shares")
+    func serviceCreatePlanValidatesCPUShares() async throws {
+        for (cpuShares, expectedMessage) in [
+            (0, nil),
+            (2, nil),
+            (512, nil),
+            (1, "service 'job' uses cpu_shares '1'; cpu_shares must be 0 or at least 2"),
+            (-1, "service 'job' uses cpu_shares '-1'; cpu_shares must be 0 or at least 2"),
+        ] {
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        $0.cpuShares = cpuShares
+                    },
+                ]
+            )
+
+            if let expectedMessage {
+                await #expect(throws: ComposeError.invalidProject(expectedMessage)) {
+                    _ = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "job")
+                }
+            } else {
+                let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "job")
+                #expect(plan.cpuShares == (cpuShares == 0 ? nil : UInt64(cpuShares)))
+            }
         }
     }
 
@@ -7459,6 +7511,28 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up rejects invalid cpu_shares before creating resources")
+    func upRejectsInvalidCPUSharesBeforeCreatingResources() async throws {
+        for cpuShares in [1, -1] {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        $0.cpuShares = cpuShares
+                    },
+                ]
+            )
+
+            await #expect(throws: ComposeError.invalidProject(
+                "service 'api' uses cpu_shares '\(cpuShares)'; cpu_shares must be 0 or at least 2"
+            )) {
+                try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            }
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("up rejects unsupported memory and process resource fields before creating resources")
     func upRejectsUnsupportedMemoryAndProcessResourceFieldsBeforeCreatingResources() async throws {
         for testCase in unsupportedMemoryAndProcessResourceFieldCases() {
@@ -7534,6 +7608,48 @@ struct ComposeOrchestratorTests {
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--pids-limit", "128"]))
+    }
+
+    @Test("up maps cpu_shares to runtime arguments")
+    func upMapsCPUSharesToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.cpuShares = 512
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--cpu-shares", "512"]))
+    }
+
+    @Test("up omits default cpu_shares from runtime arguments")
+    func upOmitsDefaultCPUSharesFromRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.cpuShares = 0
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(!command.contains("--cpu-shares"))
     }
 
     @Test("up omits unlimited pids_limit from runtime arguments")
@@ -24232,6 +24348,42 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--pids-limit", "256"]))
     }
 
+    @Test("run maps cpu_shares to runtime arguments")
+    func runMapsCPUSharesToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.cpuShares = 512
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--cpu-shares", "512"]))
+    }
+
+    @Test("run omits default cpu_shares from runtime arguments")
+    func runOmitsDefaultCPUSharesFromRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.cpuShares = 0
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(!command.contains("--cpu-shares"))
+    }
+
     @Test("run omits non-positive pids_limit from runtime arguments")
     func runOmitsNonPositivePidsLimitFromRuntimeArguments() async throws {
         let runner = RecordingRunner()
@@ -26782,11 +26934,6 @@ private func unsupportedCPUResourceFieldCases() -> [UnsupportedCPUResourceFieldC
             composeName: "cpuset",
             value: "0-1",
             configure: { $0.cpuset = "0-1" }
-        ),
-        UnsupportedCPUResourceFieldCase(
-            composeName: "cpu_shares",
-            value: "512",
-            configure: { $0.cpuShares = 512 }
         ),
     ]
 }

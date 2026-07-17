@@ -65,7 +65,8 @@ extension ComposeOrchestrator {
         return "host"
     }
 
-    /// Returns unsupported CPU scheduler fields beyond the supported `cpus` limit.
+    /// Returns unsupported CPU scheduler fields beyond the supported `cpus` and
+    /// relative `cpu_shares` controls.
     func unsupportedCPUResourceFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
         let reason = "advanced CPU resource support needs an apple/container runtime gap PR"
         var fields: [(composeName: String, value: String, reason: String)] = []
@@ -78,7 +79,6 @@ extension ComposeOrchestrator {
         if let cpuset = service.cpuset, !cpuset.isEmpty {
             fields.append(("cpuset", cpuset, reason))
         }
-        appendUnsupportedIntegerField("cpu_shares", value: service.cpuShares, reason: reason, to: &fields)
         return fields
     }
 
@@ -106,6 +106,20 @@ extension ComposeOrchestrator {
             )
         }
         return oomScoreAdj
+    }
+
+    /// Returns a Docker-compatible relative CPU scheduling weight. Zero leaves
+    /// the runtime default unchanged; non-zero weights start at two.
+    func runtimeCPUShares(service: ComposeService) throws -> UInt64? {
+        guard let cpuShares = service.cpuShares, cpuShares != 0 else {
+            return nil
+        }
+        guard cpuShares >= 2 else {
+            throw ComposeError.invalidProject(
+                "service '\(service.name)' uses cpu_shares '\(cpuShares)'; cpu_shares must be 0 or at least 2"
+            )
+        }
+        return UInt64(cpuShares)
     }
 
     /// Splits Compose supplemental groups into numeric IDs and guest-image group names.
