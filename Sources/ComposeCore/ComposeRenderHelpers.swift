@@ -122,34 +122,26 @@ func renderComposeContainerTemplate(
         supported: composePsTemplateFields,
     )
     let rows = try containers.map { container in
-        try renderDockerTemplate(template) { field in
-            switch field {
-            case "ID":
-                noTrunc ? container.id : truncatedDockerIdentifier(container.id)
-            case "Name":
-                container.id
-            case "Image":
-                container.imageReference
-            case "ExitCode":
-                container.exitCode.map(String.init) ?? ""
-            case "Health":
-                container.health ?? ""
-            case "Ports":
-                renderComposePublishedPorts(container.publishedPorts)
-            case "Publishers":
-                renderComposePublishedPorts(container.publishedPorts)
-            case "Service":
-                container.serviceName ?? ""
-            case "State", "Status":
-                container.status
-            case "Project":
-                container.projectName ?? ""
-            default:
-                throw unsupportedDockerTemplateField(field, command: "ps", supported: composePsTemplateFields)
-            }
-        }
+        try renderDockerTemplate(template, values: composeContainerTemplateValues(container, noTrunc: noTrunc))
     }
     return table ? renderDockerTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
+}
+
+private func composeContainerTemplateValues(_ container: ComposeContainerSummary, noTrunc: Bool) -> [String: String] {
+    let ports = renderComposePublishedPorts(container.publishedPorts)
+    return [
+        "ExitCode": container.exitCode.map(String.init) ?? "",
+        "Health": container.health ?? "",
+        "ID": noTrunc ? container.id : truncatedDockerIdentifier(container.id),
+        "Image": container.imageReference,
+        "Name": container.id,
+        "Ports": ports,
+        "Project": container.projectName ?? "",
+        "Publishers": ports,
+        "Service": container.serviceName ?? "",
+        "State": container.status,
+        "Status": container.status,
+    ]
 }
 
 /// Renders published ports the way Docker Compose shows them in `ps`.
@@ -607,34 +599,24 @@ func renderComposeVolumeTemplate(_ records: [ComposeVolumeRecord], template: Str
     try validateDockerTemplateActions(in: template)
     try validateDockerTemplateFields(fields, command: "volumes", supported: composeVolumesTemplateFields)
     let rows = try records.map { record in
-        try renderDockerTemplate(template) { field in
-            switch field {
-            case "Availability":
-                record.availability
-            case "Driver":
-                record.driver
-            case "Group":
-                record.group
-            case "Labels":
-                record.labels
-            case "Links":
-                record.links
-            case "Mountpoint":
-                record.mountpoint
-            case "Name":
-                record.name
-            case "Scope":
-                record.scope
-            case "Size":
-                record.size
-            case "Status":
-                record.status
-            default:
-                throw unsupportedDockerTemplateField(field, command: "volumes", supported: composeVolumesTemplateFields)
-            }
-        }
+        try renderDockerTemplate(template, values: composeVolumeTemplateValues(record))
     }
     return table ? renderComposeVolumeTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
+}
+
+private func composeVolumeTemplateValues(_ record: ComposeVolumeRecord) -> [String: String] {
+    [
+        "Availability": record.availability,
+        "Driver": record.driver,
+        "Group": record.group,
+        "Labels": record.labels,
+        "Links": record.links,
+        "Mountpoint": record.mountpoint,
+        "Name": record.name,
+        "Scope": record.scope,
+        "Size": record.size,
+        "Status": record.status,
+    ]
 }
 
 /// Renders volume template table rows with Docker Compose's volume headers.

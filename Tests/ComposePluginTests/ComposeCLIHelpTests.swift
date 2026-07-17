@@ -95,13 +95,14 @@ struct ComposeCLIHelpTests {
         }
     }
 
-    @Test("all command support entries are fully supported")
-    func allCommandSupportEntriesAreFullySupported() throws {
+    @Test("command support entries classify the remaining template-language gaps")
+    func commandSupportEntriesClassifyTheRemainingTemplateLanguageGaps() throws {
         let partialCommands = ComposeCLIHelp.commandSupportSnapshots
             .filter { $0.support == "partially supported" }
+            .map(\.commandPath)
         let commitHelp = try #require(ComposeCLIHelp.commandHelpText(command: "commit"))
 
-        #expect(partialCommands.isEmpty)
+        #expect(partialCommands == [["ps"], ["stats"], ["volumes"]])
         #expect(commitHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(commitHelp.contains("best-effort snapshot"))
         #expect(commitHelp.contains("\u{001B}[32m--pause\u{001B}[0m"))
@@ -385,11 +386,11 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--resolve-image-digests\u{001B}[0m"))
     }
 
-    @Test("ps command and options are shown as supported")
-    func psCommandAndOptionsAreShownAsSupported() throws {
+    @Test("ps command is shown as partially supported while its options are supported")
+    func psCommandIsShownAsPartiallySupportedWhileOptionsAreSupported() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "ps"))
 
-        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--filter\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--format\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--services\u{001B}[0m"))
@@ -707,9 +708,10 @@ struct ComposeCLIHelpTests {
         let partial = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "partially supported" }.count
         let unsupported = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "not supported" }.count
         let dockerDocumentedUnsupported = 0
+        let partialVerb = partial == 1 ? "is" : "are"
 
         #expect(
-            status.contains("\(supported) documented long options are ✅, \(partial) are ⚠️, and \(unsupported + dockerDocumentedUnsupported) are ❌"),
+            status.contains("\(supported) documented long options are ✅, \(partial) \(partialVerb) ⚠️, and \(unsupported + dockerDocumentedUnsupported) are ❌"),
             "STATUS.md CLI option totals do not match ComposeCLIHelp metadata plus Docker-documented unsupported surfaces"
         )
     }

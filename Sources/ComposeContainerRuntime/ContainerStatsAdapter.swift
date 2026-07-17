@@ -217,38 +217,13 @@ public struct ContainerClientStatsManager: ComposeRuntimeStatsManaging {
         ]
     }
 
-    /// Projects one stats snapshot pair into template fields.
-    private func statsTemplateValue(_ field: String, snapshot: StatsSnapshot, noTrunc: Bool) throws -> String {
-        let display = statsDisplayValues(snapshot, noTrunc: noTrunc)
-        switch field {
-        case "Container", "ID", "Name":
-            return display.container
-        case "CPUPerc":
-            return display.cpuPercent
-        case "MemUsage":
-            return "\(display.memoryUsage) / \(display.memoryLimit)"
-        case "MemPerc":
-            return display.memoryPercent
-        case "NetIO":
-            return "\(display.networkRx) / \(display.networkTx)"
-        case "BlockIO":
-            return "\(display.blockRead) / \(display.blockWrite)"
-        case "PIDs":
-            return display.pids
-        default:
-            throw unsupportedDockerTemplateField(field, command: "stats", supported: composeStatsTemplateFields)
-        }
-    }
-
     /// Renders stats rows through a Docker-style field template.
     private func renderStatsTemplate(_ records: [StatsSnapshot], template: String, table: Bool, noTrunc: Bool) throws -> String {
         let fields = dockerTemplateFields(in: template)
         try validateDockerTemplateActions(in: template)
         try validateDockerTemplateFields(fields, command: "stats", supported: composeStatsTemplateFields)
         let rows = try records.map { snapshot in
-            try renderDockerTemplate(template) { field in
-                try statsTemplateValue(field, snapshot: snapshot, noTrunc: noTrunc)
-            }
+            try renderDockerTemplate(template, values: statsTemplateValues(snapshot, noTrunc: noTrunc))
         }
         return table ? renderDockerTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
     }
@@ -306,6 +281,20 @@ public struct ContainerClientStatsManager: ComposeRuntimeStatsManaging {
             "NetIO": "\(display.networkRx) / \(display.networkTx)",
             "PIDs": display.pids,
         ]
+    }
+
+    /// Keeps custom templates aligned with the pre-existing table field values.
+    ///
+    /// JSON output intentionally retains the runtime identifier in `Container`
+    /// and `Name`; a custom template historically rendered all three identifier
+    /// aliases through the display/truncation policy.
+    private func statsTemplateValues(_ snapshot: StatsSnapshot, noTrunc: Bool) -> [String: String] {
+        var values = statsJSONObject(snapshot, noTrunc: noTrunc)
+        let container = statsDisplayValues(snapshot, noTrunc: noTrunc).container
+        values["Container"] = container
+        values["ID"] = container
+        values["Name"] = container
+        return values
     }
 
     /// Computes CPU percentage from two microsecond counters.

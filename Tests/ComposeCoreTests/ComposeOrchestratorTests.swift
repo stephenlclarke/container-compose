@@ -11170,24 +11170,33 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
-    @Test("volumes rejects unsupported template actions")
-    func volumesRejectsUnsupportedTemplateActions() async throws {
+    @Test("volumes accepts JSON template actions")
+    func volumesAcceptsJSONTemplateActions() async throws {
         let runner = RecordingRunner()
-        let resourceManager = RecordingContainerResourceManager()
+        let emitted = MessageRecorder()
+        let resourceManager = RecordingContainerResourceManager(volumes: [
+            ComposeVolumeSummary(
+                name: "demo_cache",
+                driver: "local",
+                source: "/volumes/demo_cache",
+                labels: [composeProjectLabel: "demo"]
+            ),
+        ])
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
 
-        do {
-            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-                .volumes(project: project, options: ComposeVolumesOptions(format: "{{json .}}"))
-            Issue.record("Expected unsupported volumes template action error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("format template action '{{json .}}'; supported actions are field references like '{{.Name}}'"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            resourceManager: resourceManager
+        )
+        .volumes(project: project, options: ComposeVolumesOptions(format: "{{json .}}"))
 
         #expect(runner.commands.isEmpty)
-        #expect(await resourceManager.requests.isEmpty)
+        #expect(await resourceManager.requests == [.listVolumes])
+        let data = try Data(#require(emitted.messages.first).utf8)
+        let row = try #require(JSONSerialization.jsonObject(with: data) as? [String: String])
+        #expect(row["Name"] == "demo_cache")
+        #expect(row["Driver"] == "local")
     }
 
     @Test("stats targets project service containers")
@@ -12043,6 +12052,36 @@ struct ComposeOrchestratorTests {
             demo-worker-1  worker   stopped
             """,
         ])
+    }
+
+    @Test("ps format template renders documented Docker functions")
+    func psFormatTemplateRendersDocumentedDockerFunctions() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ],
+                image: .init(reference: "example/api:latest")
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.format = #"{{upper .Service}}\t{{truncate .Image 7}}\t{{json .Name}}\t{{join (split .Image ":") "/"}}"#
+            }
+        )
+
+        #expect(emitted.messages == ["API\texample\t\"demo-api-1\"\texample/api/latest"])
     }
 
     @Test("ps format template truncates IDs by default")
@@ -18178,6 +18217,38 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages[0].contains("25.00%"))
         #expect(emitted.messages[0].contains("1MiB / 2MiB"))
         #expect(emitted.messages[0].contains("50.00%"))
+    }
+
+    @Test("stats template keeps display identifier aliases")
+    func statsTemplateKeepsDisplayIdentifierAliases() async throws {
+        let emitted = MessageRecorder()
+        let identifier = "0123456789abcdef"
+        let client = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: identifier, status: "running")],
+            statsResponses: [
+                identifier: [
+                    containerStats(id: identifier, cpuUsageUsec: 1_000_000),
+                    containerStats(id: identifier, cpuUsageUsec: 1_250_000),
+                ],
+            ]
+        )
+        let manager = ContainerClientStatsManager(
+            client: client,
+            sampleInterval: .microseconds(1),
+            sampleIntervalMicroseconds: 1_000_000,
+            sleep: { _ in }
+        )
+
+        try await manager.stats(
+            ids: [identifier],
+            format: #"{{.Container}}\t{{.ID}}\t{{.Name}}"#,
+            noStream: true,
+            noTrunc: false,
+            includeStopped: false,
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages == ["0123456789ab\t0123456789ab\t0123456789ab"])
     }
 
     @Test("stats manager honors no trunc table output")

@@ -103,6 +103,7 @@ MARKDOWN_FILES := $(shell git ls-files '*.md')
 DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-cli-surface-parity \
 	docker-compose-environment-parity \
+	docker-compose-format-template-actions-parity \
 	docker-compose-bridge-parity \
 	docker-compose-compatibility-names-parity \
 	docker-compose-config-all-resources-parity \
@@ -152,6 +153,7 @@ endif
 
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: docker-compose-environment-parity
+.PHONY: docker-compose-format-template-actions-parity
 
 all: workflow
 
@@ -1209,6 +1211,9 @@ docker-compose-cli-surface-parity: build docker-compose-reference
 
 docker-compose-environment-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-environment.sh --strict
+
+docker-compose-format-template-actions-parity: build docker-compose-reference
+	$(PARITY_ENV) ./Tools/parity/check-compose-format-template-actions.sh --strict
 
 docker-compose-bridge-parity: build docker-compose-reference docker-compose-e2e-fixtures
 	$(PARITY_ENV) ./Tools/parity/check-compose-bridge.sh --strict

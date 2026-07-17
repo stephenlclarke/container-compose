@@ -113,7 +113,7 @@ enum ComposeCLIHelp {
                 + commandHelp.keys.map { [$0] }
                 + bridgeCommandHelp.keys.map(commandPath(from:))
                 + alphaCommandHelp.keys.map(commandPath(from:))
-        )
+            )
             .sorted { $0.lexicographicallyPrecedes($1) }
     }
 
@@ -320,7 +320,7 @@ enum ComposeCLIHelp {
         "ls": .supported,
         "pause": .supported,
         "port": .supported,
-        "ps": .supported,
+        "ps": .partiallySupported,
         "publish": .supported,
         "pull": .supported,
         "push": .supported,
@@ -329,13 +329,13 @@ enum ComposeCLIHelp {
         "run": .supported,
         "scale": .supported,
         "start": .supported,
-        "stats": .supported,
+        "stats": .partiallySupported,
         "stop": .supported,
         "top": .supported,
         "unpause": .supported,
         "up": .supported,
         "version": .supported,
-        "volumes": .supported,
+        "volumes": .partiallySupported,
         "wait": .supported,
         "watch": .supported,
     ]

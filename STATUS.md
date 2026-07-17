@@ -35,8 +35,8 @@ Surface names follow the current Docker Docs [Compose file reference](https://do
 | Project discovery and source loading | ✅ Yes | Default local discovery, stdin, environment files, Git resources, and `oci://` project artifacts are implemented. Runtime-backed Compose file attributes are tracked separately below. |
 | Service attributes and runtime behavior | ⚠️ Partial | The complete grouped service surface is in [Service Attribute Surface](#service-attribute-surface), including details for every runtime-limited group. |
 | Dockerfile and build behavior | ⚠️ Partial | The complete instruction and Build Specification surface is in [Dockerfile And Build Surface](#dockerfile-and-build-surface); build-secret source and metadata shapes remain limited. |
-| CLI commands | ✅ Yes | 46 commands are ✅, 0 are ⚠️, and 0 are ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
-| CLI long options | ✅ Yes | 262 documented long options are ✅, 1 are ⚠️, and 0 are ❌. Every option is listed in [CLI Option Surface](#cli-option-surface). |
+| CLI commands | ⚠️ Partial | 43 commands are ✅, 3 are ⚠️, and 0 are ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
+| CLI long options | ⚠️ Partial | 262 documented long options are ✅, 1 is ⚠️, and 0 are ❌. Every option is listed in [CLI Option Surface](#cli-option-surface). |
 
 ## Compose File Surface
 
@@ -147,7 +147,7 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `ls` | ✅ Yes | Project listing, filters, formats, quiet, and all modes are implemented. |
 | `pause` | ✅ Yes | Service pause is implemented. |
 | `port` | ✅ Yes | Published-port lookup by service, index, and protocol is implemented. |
-| `ps` | ✅ Yes | Container listing, filters, statuses, service selection, formats, and quiet/services output are implemented. |
+| `ps` | ⚠️ Partial | Container listing, filters, statuses, service selection, table/JSON output, field references, and Docker's row-formatting functions are implemented. Go-template control blocks and nested object paths are rejected before discovery; map/range traversal is not available for the flat command row; see [the Compose-owned template handoff](docs/upstream/container-compose/PR-compose-output-template-actions.md). |
 | `publish` | ✅ Yes | Service image push, OCI project artifact publishing, image digest override layers, and `--app` application image indexes are implemented for image-backed Compose projects. Supported publish behavior includes all-profile image selection, `--dry-run`, `--app`, `--oci-version`, `--resolve-image-digests`, `--with-env`, Docker-compatible interactive preflight prompts, and noninteractive `--yes` prompt acceptance. |
 | `pull` | ✅ Yes | Pull policy, dependency inclusion, quiet mode, and ignore-failure behavior are implemented. |
 | `push` | ✅ Yes | Dependency inclusion, quiet mode, and ignore-failure behavior are implemented. |
@@ -156,13 +156,13 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `run` | ✅ Yes | One-off containers and Docker Compose run options are implemented. |
 | `scale` | ✅ Yes | Service scaling and dependency control are implemented. |
 | `start` | ✅ Yes | Start, health-aware wait, and wait-timeout behavior are implemented. |
-| `stats` | ✅ Yes | Table/JSON formatting, stopped-container inclusion, no-stream, and no-trunc modes are implemented. |
+| `stats` | ⚠️ Partial | Table/JSON formatting, stopped-container inclusion, no-stream, no-trunc, field references, and Docker's row-formatting functions are implemented. Go-template control blocks and nested object paths are rejected before runtime sampling; map/range traversal is not available for the flat command row; see [the Compose-owned template handoff](docs/upstream/container-compose/PR-compose-output-template-actions.md). |
 | `stop` | ✅ Yes | Stop and timeout are implemented. |
 | `top` | ✅ Yes | Service selection and Docker-shaped per-container process tables are implemented through the matched runtime process-metadata API, including UID, PID, PPID, CPU, STIME, TTY, TIME, and CMD columns. |
 | `unpause` | ✅ Yes | Service unpause is implemented. |
 | `up` | ✅ Yes | Create/start/attach/watch/menu/build/pull/recreate/exit-control/log-output/scaling behavior and health-aware `--wait`/`--wait-timeout` are implemented. |
 | `version` | ✅ Yes | Pretty, short, and JSON version output are implemented. |
-| `volumes` | ✅ Yes | Volume listing, quiet, and formatting are implemented. |
+| `volumes` | ⚠️ Partial | Volume listing, quiet, table/JSON output, field references, and Docker's row-formatting functions are implemented. Go-template control blocks and nested object paths are rejected before volume discovery; map/range traversal is not available for the flat command row; see [the Compose-owned template handoff](docs/upstream/container-compose/PR-compose-output-template-actions.md). |
 | `wait` | ✅ Yes | Container exit waiting and `--down-project` cleanup are implemented. |
 | `watch` | ✅ Yes | Develop watch actions and options are implemented. |
 
@@ -202,7 +202,7 @@ A ✅ option means the flag itself is parsed and mapped for the current command 
 | `ls` options | ✅ Yes | ✅ `--all`, ✅ `--dry-run`, ✅ `--filter`, ✅ `--format`, ✅ `--quiet`. |
 | `pause` options | ✅ Yes | ✅ `--dry-run`. |
 | `port` options | ✅ Yes | ✅ `--dry-run`, ✅ `--index`, ✅ `--protocol`. |
-| `ps` options | ✅ Yes | ✅ `--all`, ✅ `--dry-run`, ✅ `--filter`, ✅ `--format`, ✅ `--no-trunc`, ✅ `--orphans`, ✅ `--quiet`, ✅ `--services`, ✅ `--status`. |
+| `ps` options | ✅ Yes | ✅ `--all`, ✅ `--dry-run`, ✅ `--filter`, ✅ `--format` (the option is fully parsed and mapped; its row-template language limit is tracked on the command row), ✅ `--no-trunc`, ✅ `--orphans`, ✅ `--quiet`, ✅ `--services`, ✅ `--status`. |
 | `publish` options | ✅ Yes | ✅ `--app`: publish an application image index linked to the Compose project artifact, ✅ `--dry-run`, ✅ `--oci-version`, ✅ `--resolve-image-digests`, ✅ `--with-env`, ✅ `--yes`. |
 | `pull` options | ✅ Yes | ✅ `--dry-run`, ✅ `--ignore-buildable`, ✅ `--ignore-pull-failures`, ✅ `--include-deps`, ✅ `--policy`, ✅ `--quiet`. |
 | `push` options | ✅ Yes | ✅ `--dry-run`, ✅ `--ignore-push-failures`, ✅ `--include-deps`, ✅ `--quiet`. |
@@ -211,13 +211,13 @@ A ✅ option means the flag itself is parsed and mapped for the current command 
 | `run` options | ⚠️ Partial | ✅ `--build`, ✅ `--cap-add`, ✅ `--cap-drop`, ✅ `--detach`, ✅ `--dry-run`, ✅ `--entrypoint`, ✅ `--env`, ✅ `--env-from-file`, ✅ `--interactive`, ✅ `--label`, ✅ `--name`, ✅ `--no-tty`, ✅ `--no-deps`, ✅ `--publish`, ✅ `--pull`, ✅ `--quiet`, ✅ `--quiet-build`, ✅ `--quiet-pull`, ✅ `--remove-orphans`, ✅ `--rm`, ✅ `--service-ports`, ⚠️ `--use-aliases` (requires container-facing DNS), ✅ `--user`, ✅ `--volume`, ✅ `--workdir`. |
 | `scale` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-deps`. |
 | `start` options | ✅ Yes | ✅ `--dry-run`, ✅ `--wait`, ✅ `--wait-timeout`. |
-| `stats` options | ✅ Yes | ✅ `--all`, ✅ `--dry-run`, ✅ `--format`, ✅ `--no-stream`, ✅ `--no-trunc`. |
+| `stats` options | ✅ Yes | ✅ `--all`, ✅ `--dry-run`, ✅ `--format` (the option is fully parsed and mapped; its row-template language limit is tracked on the command row), ✅ `--no-stream`, ✅ `--no-trunc`. |
 | `stop` options | ✅ Yes | ✅ `--dry-run`, ✅ `--timeout`. |
 | `top` options | ✅ Yes | ✅ `--dry-run`. |
 | `unpause` options | ✅ Yes | ✅ `--dry-run`. |
 | `up` options | ✅ Yes | ✅ `--abort-on-container-exit`, ✅ `--abort-on-container-failure`, ✅ `--always-recreate-deps`, ✅ `--attach`, ✅ `--attach-dependencies`, ✅ `--build`, ✅ `--detach`, ✅ `--dry-run`, ✅ `--exit-code-from`, ✅ `--force-recreate`, ✅ `--menu`, ✅ `--no-attach`, ✅ `--no-build`, ✅ `--no-color`, ✅ `--no-deps`, ✅ `--no-log-prefix`, ✅ `--no-recreate`, ✅ `--no-start`, ✅ `--pull`, ✅ `--quiet-build`, ✅ `--quiet-pull`, ✅ `--remove-orphans`, ✅ `--renew-anon-volumes`, ✅ `--scale`, ✅ `--timeout`, ✅ `--timestamps`, ✅ `--wait`, ✅ `--wait-timeout`, ✅ `--watch`, ✅ `--yes`. |
 | `version` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--short`. |
-| `volumes` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--quiet`. |
+| `volumes` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format` (the option is fully parsed and mapped; its row-template language limit is tracked on the command row), ✅ `--quiet`. |
 | `wait` options | ✅ Yes | ✅ `--down-project`, ✅ `--dry-run`. |
 | `watch` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-up`, ✅ `--prune`, ✅ `--quiet`. |
 

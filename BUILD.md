@@ -282,7 +282,7 @@ Run a focused target directly while iterating:
 
 | Area | Targets |
 | --- | --- |
-| CLI and project loading | `docker-compose-cli-surface-parity`, `docker-compose-compatibility-names-parity`, `docker-compose-config-all-resources-parity`, `docker-compose-env-file-parity`, `docker-compose-git-remote-parity` |
+| CLI and project loading | `docker-compose-cli-surface-parity`, `docker-compose-compatibility-names-parity`, `docker-compose-config-all-resources-parity`, `docker-compose-env-file-parity`, `docker-compose-format-template-actions-parity`, `docker-compose-git-remote-parity` |
 | Compose Bridge | `docker-compose-bridge-parity` |
 | Build | `docker-compose-build-builder-parity`, `docker-compose-build-check-parity`, `docker-compose-build-isolation-parity`, `docker-compose-build-secret-metadata-parity` |
 | Mounts and resources | `docker-compose-bind-create-host-path-parity`, `docker-compose-bind-propagation-parity`, `docker-compose-volume-labels-parity`, `docker-compose-deploy-endpoint-mode-parity`, `docker-compose-deploy-resource-reservations-parity`, `docker-compose-pids-limit-parity`, `docker-compose-device-cgroup-rules-parity`, `docker-compose-devices-parity`, `docker-compose-gpus-parity` |
