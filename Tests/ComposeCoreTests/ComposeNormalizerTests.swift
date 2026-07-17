@@ -95,6 +95,7 @@ struct ComposeNormalizerTests {
                 source: data
                 target: /data
                 volume:
+                  subpath: logs/app
                   labels:
                     com.example.mount: named
               - type: volume
@@ -202,7 +203,7 @@ struct ComposeNormalizerTests {
                 type: "volume",
                 source: "data",
                 target: "/data",
-                options: .init(volumeLabels: ["com.example.mount": "named"])
+                options: .init(volumeSubpath: "logs/app", volumeLabels: ["com.example.mount": "named"])
             ),
             ComposeMount(
                 type: "volume",

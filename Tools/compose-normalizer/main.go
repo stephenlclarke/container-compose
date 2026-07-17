@@ -359,6 +359,7 @@ type normalizedMount struct {
 	ReadOnly           bool              `json:"readOnly,omitempty"`
 	BindCreateHostPath *bool             `json:"bindCreateHostPath,omitempty"`
 	BindPropagation    string            `json:"bindPropagation,omitempty"`
+	VolumeSubpath      string            `json:"volumeSubpath,omitempty"`
 	VolumeLabels       map[string]string `json:"volumeLabels,omitempty"`
 	TmpfsSize          string            `json:"tmpfsSize,omitempty"`
 	TmpfsMode          string            `json:"tmpfsMode,omitempty"`
@@ -1381,6 +1382,7 @@ func mountValues(volumes []types.ServiceVolumeConfig) []normalizedMount {
 			ReadOnly:           volume.ReadOnly,
 			BindCreateHostPath: bindCreateHostPathValue(volume),
 			BindPropagation:    bindPropagationValue(volume),
+			VolumeSubpath:      volumeSubpathValue(volume),
 			VolumeLabels:       volumeLabelsValue(volume),
 			TmpfsSize:          tmpfsSizeValue(volume),
 			TmpfsMode:          tmpfsModeValue(volume),
@@ -1405,6 +1407,15 @@ func bindPropagationValue(volume types.ServiceVolumeConfig) string {
 		return ""
 	}
 	return volume.Bind.Propagation
+}
+
+// volumeSubpathValue preserves an existing volume directory for the runtime's
+// Docker-compatible volume-subpath mount option.
+func volumeSubpathValue(volume types.ServiceVolumeConfig) string {
+	if volume.Type != "volume" || volume.Volume == nil {
+		return ""
+	}
+	return volume.Volume.Subpath
 }
 
 // volumeLabelsValue preserves long-form service volume labels for config
@@ -1443,9 +1454,6 @@ func unsupportedMountFields(volume types.ServiceVolumeConfig) []string {
 	if volume.Bind != nil {
 		appendUnsupportedMountFieldWhen(&fields, "bind.selinux", volume.Bind.SELinux != "")
 		appendUnsupportedMountFieldWhen(&fields, "bind.recursive", volume.Bind.Recursive != "")
-	}
-	if volume.Volume != nil {
-		appendUnsupportedMountFieldWhen(&fields, "volume.subpath", volume.Volume.Subpath != "")
 	}
 	if volume.Image != nil {
 		appendUnsupportedMountFieldWhen(&fields, "image.subpath", volume.Image.SubPath != "")

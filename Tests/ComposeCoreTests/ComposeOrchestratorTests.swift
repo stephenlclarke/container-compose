@@ -8730,8 +8730,37 @@ struct ComposeOrchestratorTests {
         #expect(run.containsSequence(["--volume", "\(directory.path):/host:ro,rslave"]))
     }
 
-    @Test("up rejects volume subpath as apple/container mount gap")
-    func upRejectsVolumeSubpathAsAppleContainerMountGap() async throws {
+    @Test("up maps volume subpath to the typed container mount")
+    func upMapsVolumeSubpathToTypedContainerMount() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "volume",
+                            source: "cache",
+                            target: "/cache",
+                            volumeSubpath: "logs/app"
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(run.containsSequence(["--mount", "type=volume,source=demo_cache,destination=/cache,volume-subpath=logs/app"]))
+    }
+
+    @Test("up rejects a legacy unsupported volume subpath marker")
+    func upRejectsLegacyUnsupportedVolumeSubpathMarker() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -8753,9 +8782,9 @@ struct ComposeOrchestratorTests {
 
         do {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported volume subpath error")
+            Issue.record("Expected unsupported legacy volume subpath marker")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses volume.subpath; volume subpath mounts need an apple/container mount primitive gap PR"))
+            #expect(error == .unsupported("service 'api' uses unsupported volume fields volume.subpath; advanced service volume options need an apple/container mount primitive gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -8911,7 +8940,7 @@ struct ComposeOrchestratorTests {
                 id: "legacy",
                 status: "running",
                 mounts: [
-                    ComposeMount(type: "external-volume", source: "legacy_data", target: "/data"),
+                    ComposeMount(type: "external-volume", source: "legacy_data", target: "/data", volumeSubpath: "logs/app"),
                     ComposeMount(type: "bind", source: "/host/seed", target: "/seed", readOnly: true),
                     ComposeMount(type: "tmpfs", target: "/scratch"),
                 ]
@@ -8934,7 +8963,7 @@ struct ComposeOrchestratorTests {
 
         #expect(await discoveryManager.getRequests.contains("legacy"))
         let workerRun = try #require(runner.commands.map(\.arguments).first { $0.containsSequence(["--name", "demo-worker-1"]) })
-        #expect(workerRun.containsSequence(["--volume", "legacy_data:/data:ro"]))
+        #expect(workerRun.containsSequence(["--mount", "type=volume,source=legacy_data,destination=/data,volume-subpath=logs/app,readonly"]))
         #expect(workerRun.containsSequence(["--volume", "/host/seed:/seed:ro"]))
         #expect(workerRun.containsSequence(["--mount", "type=tmpfs,destination=/scratch,readonly"]))
         #expect(workerRun.containsSequence(["--volume", "demo_cache:/cache"]))
@@ -16278,7 +16307,14 @@ struct ComposeOrchestratorTests {
                     ),
                 ],
                 mounts: [
-                    Filesystem.volume(name: "legacy_data", format: "ext4", source: "/tmp/legacy-data", destination: "/data", options: ["ro"]),
+                    Filesystem.volume(
+                        name: "legacy_data",
+                        format: "ext4",
+                        source: "/tmp/legacy-data",
+                        destination: "/data",
+                        options: ["ro"],
+                        subpath: "logs/app"
+                    ),
                     Filesystem.virtiofs(source: "/tmp/seed", destination: "/seed", options: []),
                     Filesystem.tmpfs(destination: "/scratch", options: ["ro"]),
                 ],
@@ -16339,7 +16375,13 @@ struct ComposeOrchestratorTests {
                     ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 8080, containerPort: 80, protocolName: "tcp", count: 2),
                 ],
                 mounts: [
-                    ComposeMount(type: "external-volume", source: "legacy_data", target: "/data", readOnly: true),
+                    ComposeMount(
+                        type: "external-volume",
+                        source: "legacy_data",
+                        target: "/data",
+                        readOnly: true,
+                        volumeSubpath: "logs/app"
+                    ),
                     ComposeMount(type: "bind", source: "/tmp/seed", target: "/seed"),
                     ComposeMount(type: "tmpfs", target: "/scratch", readOnly: true),
                 ],
@@ -24631,7 +24673,7 @@ struct ComposeOrchestratorTests {
                             type: "volume",
                             source: "cache",
                             target: "/cache",
-                            unsupportedFields: ["volume.nocopy", "volume.subpath", "volume.nocopy"]
+                            unsupportedFields: ["volume.nocopy", "bind.recursive", "volume.nocopy"]
                         ),
                     ]
                 },
@@ -24644,7 +24686,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported service mount error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses volume.subpath; volume subpath mounts need an apple/container mount primitive gap PR"))
+            #expect(error == .unsupported("service 'job' uses unsupported volume fields bind.recursive; advanced service volume options need an apple/container mount primitive gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

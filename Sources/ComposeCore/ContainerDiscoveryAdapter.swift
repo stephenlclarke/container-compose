@@ -401,7 +401,13 @@ private extension ComposeContainerSummary {
         let fileOwnerGID = filesystem.fileOwnership?.gid
         switch filesystem.type {
         case .volume(let name, _, _, _):
-            return ComposeMount(type: "external-volume", source: name, target: filesystem.destination, readOnly: readOnly)
+            return ComposeMount(
+                type: "external-volume",
+                source: name,
+                target: filesystem.destination,
+                readOnly: readOnly,
+                volumeSubpath: filesystem.sourceSubpath
+            )
         case .virtiofs:
             return ComposeMount(
                 type: "bind",
