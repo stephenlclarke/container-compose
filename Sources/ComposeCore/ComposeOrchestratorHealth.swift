@@ -385,6 +385,7 @@ extension ComposeOrchestrator {
                 supplementalGroups: baseProcess.supplementalGroups,
                 supplementalGroupNames: baseProcess.supplementalGroupNames,
                 rlimits: baseProcess.rlimits,
+                oomScoreAdj: baseProcess.oomScoreAdj,
             ),
             intervalInNanoseconds: interval,
             timeoutInNanoseconds: timeout,
