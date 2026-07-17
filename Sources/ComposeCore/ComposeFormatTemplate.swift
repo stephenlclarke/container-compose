@@ -145,7 +145,7 @@ private enum DockerTemplateValue {
             withJSONObject: object,
             options: [.fragmentsAllowed, .sortedKeys]
         )
-        return String(decoding: data, as: UTF8.self)
+        return String(bytes: data, encoding: .utf8) ?? ""
     }
 }
 
@@ -237,33 +237,64 @@ private func dockerTemplateFieldsForValueToken(_ token: String) -> [String] {
     return dockerTemplateFields(in: "{{\(action)}}")
 }
 
+private struct DockerTemplateLexicalState {
+    private var quote: Character?
+    private var escaped = false
+    private var parentheses = 0
+
+    var isTopLevel: Bool {
+        quote == nil && parentheses == 0
+    }
+
+    var isBalanced: Bool {
+        isTopLevel && !escaped
+    }
+
+    mutating func consume(_ character: Character) -> Bool {
+        if let quote {
+            return consumeQuoted(character, quote: quote)
+        }
+        return consumeUnquoted(character)
+    }
+
+    private mutating func consumeQuoted(_ character: Character, quote: Character) -> Bool {
+        if escaped {
+            escaped = false
+            return true
+        }
+        if quote == "\"", character == "\\" {
+            escaped = true
+            return true
+        }
+        if character == quote {
+            self.quote = nil
+        }
+        return true
+    }
+
+    private mutating func consumeUnquoted(_ character: Character) -> Bool {
+        switch character {
+        case "\"", "`":
+            quote = character
+        case "(":
+            parentheses += 1
+        case ")":
+            guard parentheses > 0 else { return false }
+            parentheses -= 1
+        default:
+            break
+        }
+        return true
+    }
+}
+
 private func dockerTemplateTokens(_ value: String) -> [String]? {
     var tokens: [String] = []
     var token = ""
-    var parentheses = 0
-    var quote: Character?
-    var escaped = false
+    var lexicalState = DockerTemplateLexicalState()
     for character in value.trimmingCharacters(in: .whitespacesAndNewlines) {
-        if quote != nil, escaped {
-            token.append(character)
-            escaped = false
-        } else if quote == "\"", character == "\\" {
-            token.append(character)
-            escaped = true
-        } else if let activeQuote = quote, character == activeQuote {
-            token.append(character)
-            quote = nil
-        } else if quote == nil, character == "\"" || character == "`" {
-            quote = character
-            token.append(character)
-        } else if quote == nil, character == "(" {
-            parentheses += 1
-            token.append(character)
-        } else if quote == nil, character == ")" {
-            guard parentheses > 0 else { return nil }
-            parentheses -= 1
-            token.append(character)
-        } else if character.isWhitespace, quote == nil, parentheses == 0 {
+        guard lexicalState.consume(character) else { return nil }
+        if character.isWhitespace, lexicalState.isTopLevel {
             if !token.isEmpty {
                 tokens.append(token)
                 token = ""
@@ -272,7 +303,7 @@ private func dockerTemplateTokens(_ value: String) -> [String]? {
             token.append(character)
         }
     }
-    guard quote == nil, parentheses == 0, !escaped else {
+    guard lexicalState.isBalanced else {
         return nil
     }
     if !token.isEmpty {
@@ -284,30 +315,10 @@ private func dockerTemplateTokens(_ value: String) -> [String]? {
 private func dockerTemplatePipelineSegments(_ action: String) -> [String]? {
     var segments: [String] = []
     var segment = ""
-    var parentheses = 0
-    var quote: Character?
-    var escaped = false
+    var lexicalState = DockerTemplateLexicalState()
     for character in action {
-        if quote != nil, escaped {
-            segment.append(character)
-            escaped = false
-        } else if quote == "\"", character == "\\" {
-            segment.append(character)
-            escaped = true
-        } else if let activeQuote = quote, character == activeQuote {
-            segment.append(character)
-            quote = nil
-        } else if quote == nil, character == "\"" || character == "`" {
-            quote = character
-            segment.append(character)
-        } else if quote == nil, character == "(" {
-            parentheses += 1
-            segment.append(character)
-        } else if quote == nil, character == ")" {
-            guard parentheses > 0 else { return nil }
-            parentheses -= 1
-            segment.append(character)
-        } else if character == "|", quote == nil, parentheses == 0 {
+        guard lexicalState.consume(character) else { return nil }
+        if character == "|", lexicalState.isTopLevel {
             let trimmed = segment.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
                 return nil
@@ -319,7 +330,7 @@ private func dockerTemplatePipelineSegments(_ action: String) -> [String]? {
         }
     }
     let trimmed = segment.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard quote == nil, parentheses == 0, !escaped, !trimmed.isEmpty else {
+    guard lexicalState.isBalanced, !trimmed.isEmpty else {
         return nil
     }
     segments.append(trimmed)
@@ -383,6 +394,23 @@ private func applyDockerTemplateFunction(
     pipelineValue: DockerTemplateValue?
 ) throws -> DockerTemplateValue {
     switch function {
+    case "json", "len", "lower", "table", "title", "upper":
+        return try dockerTemplateSimpleFunction(function, arguments: arguments, pipelineValue: pipelineValue)
+    case "print", "printf", "println":
+        return try dockerTemplateOutputFunction(function, arguments: arguments, pipelineValue: pipelineValue)
+    case "index", "join", "pad", "slice", "split", "truncate":
+        return try dockerTemplateCollectionFunction(function, arguments: arguments, pipelineValue: pipelineValue)
+    default:
+        throw unsupportedDockerTemplateAction(function)
+    }
+}
+
+private func dockerTemplateSimpleFunction(
+    _ function: String,
+    arguments: [DockerTemplateValue],
+    pipelineValue: DockerTemplateValue?
+) throws -> DockerTemplateValue {
+    switch function {
     case "json":
         return try .string(dockerTemplateSingleInput(function, arguments, pipelineValue).json())
     case "lower":
@@ -391,44 +419,56 @@ private func applyDockerTemplateFunction(
         return try .string(dockerTemplateStringInput(function, arguments, pipelineValue).uppercased())
     case "title":
         return try .string(dockerTemplateStringInput(function, arguments, pipelineValue).capitalized)
-    case "print":
-        return .string((arguments + (pipelineValue.map { [$0] } ?? [])).map(\.display).joined())
-    case "println":
-        let inputs = arguments + (pipelineValue.map { [$0] } ?? [])
-        return .string(inputs.map(\.display).joined(separator: " ") + "\n")
     case "table":
         return try dockerTemplateSingleInput(function, arguments, pipelineValue)
+    case "len":
+        return try .integer(dockerTemplateLength(dockerTemplateSingleInput(function, arguments, pipelineValue)))
+    default:
+        throw unsupportedDockerTemplateAction(function)
+    }
+}
+
+private func dockerTemplateOutputFunction(
+    _ function: String,
+    arguments: [DockerTemplateValue],
+    pipelineValue: DockerTemplateValue?
+) throws -> DockerTemplateValue {
+    let inputs = arguments + (pipelineValue.map { [$0] } ?? [])
+    switch function {
+    case "print":
+        return .string(inputs.map(\.display).joined())
+    case "println":
+        return .string(inputs.map(\.display).joined(separator: " ") + "\n")
+    case "printf":
+        guard let format = inputs.first else { throw unsupportedDockerTemplateAction(function) }
+        return try .string(dockerTemplatePrintf(format.display, values: Array(inputs.dropFirst())))
+    default:
+        throw unsupportedDockerTemplateAction(function)
+    }
+}
+
+private func dockerTemplateCollectionFunction(
+    _ function: String,
+    arguments: [DockerTemplateValue],
+    pipelineValue: DockerTemplateValue?
+) throws -> DockerTemplateValue {
+    guard pipelineValue == nil else { throw unsupportedDockerTemplateAction(function) }
+    switch function {
     case "pad":
-        guard case .none = pipelineValue else { throw unsupportedDockerTemplateAction(function) }
-        let input = try dockerTemplatePadInput(arguments)
-        return .string(
-            String(repeating: " ", count: max(0, input.left)) + input.value
-                + String(repeating: " ", count: max(0, input.right))
-        )
+        return try .string(dockerTemplatePaddedValue(dockerTemplatePadInput(arguments)))
     case "truncate":
-        guard case .none = pipelineValue else { throw unsupportedDockerTemplateAction(function) }
         let input = try dockerTemplateTruncateInput(arguments)
         return .string(String(input.value.prefix(max(0, input.length))))
     case "split":
-        guard case .none = pipelineValue else { throw unsupportedDockerTemplateAction(function) }
         let input = try dockerTemplateSplitInput(arguments)
         return .strings(input.value.components(separatedBy: input.separator))
     case "join":
-        guard case .none = pipelineValue else { throw unsupportedDockerTemplateAction(function) }
         let input = try dockerTemplateJoinInput(arguments)
         return .string(input.values.joined(separator: input.separator))
-    case "len":
-        return try .integer(dockerTemplateLength(dockerTemplateSingleInput(function, arguments, pipelineValue)))
     case "index":
-        guard case .none = pipelineValue else { throw unsupportedDockerTemplateAction(function) }
         return try dockerTemplateIndex(arguments)
     case "slice":
-        guard case .none = pipelineValue else { throw unsupportedDockerTemplateAction(function) }
         return try dockerTemplateSlice(arguments)
-    case "printf":
-        let inputs = arguments + (pipelineValue.map { [$0] } ?? [])
-        guard let format = inputs.first else { throw unsupportedDockerTemplateAction(function) }
-        return try .string(dockerTemplatePrintf(format.display, values: Array(inputs.dropFirst())))
     default:
         throw unsupportedDockerTemplateAction(function)
     }
@@ -505,13 +545,24 @@ private func dockerTemplateInteger(_ value: DockerTemplateValue, function: Strin
     }
 }
 
-private func dockerTemplatePadInput(_ arguments: [DockerTemplateValue]) throws -> (value: String, left: Int, right: Int) {
+private struct DockerTemplatePadding {
+    var value: String
+    var left: Int
+    var right: Int
+}
+
+private func dockerTemplatePadInput(_ arguments: [DockerTemplateValue]) throws -> DockerTemplatePadding {
     guard arguments.count == 3, case let .string(string) = arguments[0] else {
         throw unsupportedDockerTemplateAction("pad")
     }
     let left = try dockerTemplateInteger(arguments[1], function: "pad")
     let right = try dockerTemplateInteger(arguments[2], function: "pad")
-    return (string, left, right)
+    return DockerTemplatePadding(value: string, left: left, right: right)
+}
+
+private func dockerTemplatePaddedValue(_ padding: DockerTemplatePadding) -> String {
+    String(repeating: " ", count: max(0, padding.left)) + padding.value
+        + String(repeating: " ", count: max(0, padding.right))
 }
 
 private func dockerTemplateTruncateInput(_ arguments: [DockerTemplateValue]) throws -> (value: String, length: Int) {
@@ -663,29 +714,21 @@ private func dockerTemplateActionMatches(in template: String) throws -> [DockerT
     while let openRange = template.range(of: "{{", range: cursor ..< template.endIndex) {
         let contentStart = openRange.upperBound
         var index = contentStart
-        var quote: Character?
-        var escaped = false
+        var lexicalState = DockerTemplateLexicalState()
         var closeRange: Range<String.Index>?
         while index < template.endIndex {
             let character = template[index]
-            if quote != nil, escaped {
-                escaped = false
-            } else if quote == "\"", character == "\\" {
-                escaped = true
-            } else if let activeQuote = quote, character == activeQuote {
-                quote = nil
-            } else if quote == nil, character == "\"" || character == "`" {
-                quote = character
-            } else if quote == nil, character == "}" {
+            if character == "}", lexicalState.isTopLevel {
                 let next = template.index(after: index)
                 if next < template.endIndex, template[next] == "}" {
                     closeRange = index ..< template.index(after: next)
                     break
                 }
             }
+            guard lexicalState.consume(character) else { break }
             index = template.index(after: index)
         }
-        guard let closeRange, quote == nil, !escaped else {
+        guard let closeRange, lexicalState.isBalanced else {
             throw unsupportedDockerTemplateAction("unclosed template action")
         }
         matches.append(

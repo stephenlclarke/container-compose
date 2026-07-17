@@ -31,7 +31,10 @@ struct ComposeFormatTemplateTests {
         #expect(try renderDockerTemplate("{{print .ID .Name}}", values: values) == "abcdefdemo-api")
         #expect(try renderDockerTemplate("{{printf \"%s-%q\" .ID .Name}}", values: values) == "abcdef-\"demo-api\"")
         #expect(try renderDockerTemplate("{{printf \"{{%s}}\" .Name}}", values: values) == "{{demo-api}}")
-        #expect(try renderDockerTemplate("{{join (split .Image \":\") \"/\"}}", values: values) == "registry.example/demo-api/latest")
+        #expect(
+            try renderDockerTemplate("{{join (split .Image \":\") \"/\"}}", values: values)
+                == "registry.example/demo-api/latest"
+        )
         #expect(try renderDockerTemplate("{{index .Name 5}}", values: values) == "a")
         #expect(try renderDockerTemplate("{{slice .Name 5}}", values: values) == "api")
         #expect(try renderDockerTemplate("{{len .Name}}", values: values) == "8")

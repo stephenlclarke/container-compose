@@ -60,7 +60,7 @@ func composePsFormat(_ value: String) throws -> ComposePsFormat {
             try validateDockerTemplateFields(
                 dockerTemplateFields(in: template),
                 command: "ps",
-                supported: composePsTemplateFields,
+                supported: composePsTemplateFields
             )
             return .template(template, table: true)
         }
@@ -68,7 +68,7 @@ func composePsFormat(_ value: String) throws -> ComposePsFormat {
         try validateDockerTemplateFields(
             dockerTemplateFields(in: normalized),
             command: "ps",
-            supported: composePsTemplateFields,
+            supported: composePsTemplateFields
         )
         return .template(normalized, table: false)
     }
@@ -84,7 +84,7 @@ enum ComposePsFormat {
 /// Renders project container rows as a compact Docker Compose-style table.
 func renderComposeContainerTable(
     _ containers: [ComposeContainerSummary],
-    noTrunc _: Bool,
+    noTrunc _: Bool
 ) -> String {
     let rows = [
         ["NAME", "IMAGE", "SERVICE", "STATUS", "PORTS"],
@@ -112,14 +112,14 @@ func renderComposeContainerTemplate(
     _ containers: [ComposeContainerSummary],
     template: String,
     table: Bool,
-    noTrunc: Bool,
+    noTrunc: Bool
 ) throws -> String {
     let fields = dockerTemplateFields(in: template)
     try validateDockerTemplateActions(in: template)
     try validateDockerTemplateFields(
         fields,
         command: "ps",
-        supported: composePsTemplateFields,
+        supported: composePsTemplateFields
     )
     let rows = try containers.map { container in
         try renderDockerTemplate(template, values: composeContainerTemplateValues(container, noTrunc: noTrunc))
@@ -180,7 +180,7 @@ func containerIdentifiers(_ containers: [ComposeContainerSummary]) -> [String] {
 func filterContainersByOrphanPolicy(
     _ containers: [ComposeContainerSummary],
     project: ComposeProject,
-    includeOrphans: Bool,
+    includeOrphans: Bool
 ) -> [ComposeContainerSummary] {
     guard !includeOrphans else {
         return containers
@@ -204,10 +204,9 @@ func containerServiceNames(_ containers: [ComposeContainerSummary]) -> [String] 
     }
     var seen: Set<String> = []
     var services: [String] = []
-    for entry in namesByContainer.sorted(by: { $0.identifier < $1.identifier }) {
-        if seen.insert(entry.service).inserted {
-            services.append(entry.service)
-        }
+    let sortedEntries = namesByContainer.sorted { $0.identifier < $1.identifier }
+    for entry in sortedEntries where seen.insert(entry.service).inserted {
+        services.append(entry.service)
     }
     return services
 }
@@ -224,7 +223,7 @@ func composeProjectRecords(containers: [ComposeContainerSummary], nameFilters: [
         return ComposeProjectRecord(
             name: projectName,
             status: combinedProjectStatus(projectContainers),
-            configFiles: combinedProjectConfigFiles(projectContainers),
+            configFiles: combinedProjectConfigFiles(projectContainers)
         )
     }
 }
@@ -278,7 +277,7 @@ func composeImageRecords(containers: [ComposeContainerSummary], selectedServices
             repository: reference.repository,
             tag: reference.tag,
             platform: container.platform,
-            imageID: shortImageID(container.imageDigest),
+            imageID: shortImageID(container.imageDigest)
         )
     }
     .sorted { lhs, rhs in
@@ -443,7 +442,7 @@ func renderComposeProjectJSON(_ records: [ComposeProjectRecord]) throws -> Strin
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let data = try encoder.encode(records)
-    return String(decoding: data, as: UTF8.self)
+    return String(bytes: data, encoding: .utf8) ?? ""
 }
 
 /// Validates the `compose images --format` value.
@@ -487,7 +486,7 @@ struct ComposeVolumeRecord: Encodable, Equatable {
             labels: summary.labels,
             mountpoint: summary.source,
             name: summary.name,
-            sizeInBytes: summary.sizeInBytes,
+            sizeInBytes: summary.sizeInBytes
         )
     }
 
@@ -497,7 +496,7 @@ struct ComposeVolumeRecord: Encodable, Equatable {
         mountpoint: String = "",
         name: String,
         scope: String = "local",
-        sizeInBytes: UInt64? = nil,
+        sizeInBytes: UInt64? = nil
     ) {
         availability = "N/A"
         self.driver = driver
@@ -533,7 +532,13 @@ func renderComposeImageTable(_ records: [ComposeImageRecord]) -> String {
     let rows = [
         ["CONTAINER", "REPOSITORY", "TAG", "IMAGE ID", "PLATFORM"],
     ] + records.map { record in
-        [record.container, record.repository, record.tag, record.imageID.isEmpty ? "<none>" : record.imageID, record.platform]
+        [
+            record.container,
+            record.repository,
+            record.tag,
+            record.imageID.isEmpty ? "<none>" : record.imageID,
+            record.platform,
+        ]
     }
     let widths = rows.reduce(Array(repeating: 0, count: rows[0].count)) { current, row in
         zip(current, row).map { max($0, $1.count) }
@@ -553,7 +558,7 @@ func renderComposeImageJSON(_ records: [ComposeImageRecord]) throws -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let data = try encoder.encode(records)
-    return String(decoding: data, as: UTF8.self)
+    return String(bytes: data, encoding: .utf8) ?? ""
 }
 
 /// Validates the `compose volumes --format` value.
@@ -569,11 +574,19 @@ func composeVolumesFormat(_ value: String) throws -> ComposeVolumesFormat {
         if normalized.lowercased().hasPrefix(tablePrefix) {
             let template = String(normalized.dropFirst(tablePrefix.count))
             try validateDockerTemplateActions(in: template)
-            try validateDockerTemplateFields(dockerTemplateFields(in: template), command: "volumes", supported: composeVolumesTemplateFields)
+            try validateDockerTemplateFields(
+                dockerTemplateFields(in: template),
+                command: "volumes",
+                supported: composeVolumesTemplateFields
+            )
             return .template(template, table: true)
         }
         try validateDockerTemplateActions(in: normalized)
-        try validateDockerTemplateFields(dockerTemplateFields(in: normalized), command: "volumes", supported: composeVolumesTemplateFields)
+        try validateDockerTemplateFields(
+            dockerTemplateFields(in: normalized),
+            command: "volumes",
+            supported: composeVolumesTemplateFields
+        )
         return .template(normalized, table: false)
     }
 }
@@ -643,13 +656,16 @@ func renderComposeVolumeJSON(_ records: [ComposeVolumeRecord]) throws -> String 
     encoder.outputFormatting = [.sortedKeys]
     return try records.map { record in
         let data = try encoder.encode(record)
-        return String(decoding: data, as: UTF8.self)
+        return String(bytes: data, encoding: .utf8) ?? ""
     }.joined(separator: "\n")
 }
 
 /// Splits a container image reference into repository and tag display fields.
 func splitImageReference(_ reference: String) -> (repository: String, tag: String) {
-    let withoutDigest = reference.split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? reference
+    let withoutDigest = reference
+        .split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false)
+        .first
+        .map(String.init) ?? reference
     guard let lastColon = withoutDigest.lastIndex(of: ":") else {
         return (withoutDigest, "<none>")
     }
