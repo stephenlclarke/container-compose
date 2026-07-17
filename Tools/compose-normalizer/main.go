@@ -368,17 +368,18 @@ type normalizedMount struct {
 
 // normalizedNetwork contains project-level network metadata.
 type normalizedNetwork struct {
-	Name                string            `json:"name"`
-	External            bool              `json:"external,omitempty"`
-	Driver              string            `json:"driver,omitempty"`
-	DriverOpts          map[string]string `json:"driverOpts,omitempty"`
-	Internal            bool              `json:"internal,omitempty"`
-	Labels              map[string]string `json:"labels,omitempty"`
-	IPv4Subnet          string            `json:"ipv4Subnet,omitempty"`
-	IPv4Gateway         string            `json:"ipv4Gateway,omitempty"`
-	IPv4AllocationRange string            `json:"ipv4AllocationRange,omitempty"`
-	IPv6Subnet          string            `json:"ipv6Subnet,omitempty"`
-	UnsupportedFields   []string          `json:"unsupportedFields,omitempty"`
+	Name                  string            `json:"name"`
+	External              bool              `json:"external,omitempty"`
+	Driver                string            `json:"driver,omitempty"`
+	DriverOpts            map[string]string `json:"driverOpts,omitempty"`
+	Internal              bool              `json:"internal,omitempty"`
+	Labels                map[string]string `json:"labels,omitempty"`
+	IPv4Subnet            string            `json:"ipv4Subnet,omitempty"`
+	IPv4Gateway           string            `json:"ipv4Gateway,omitempty"`
+	IPv4AllocationRange   string            `json:"ipv4AllocationRange,omitempty"`
+	IPv4ReservedAddresses []string          `json:"ipv4ReservedAddresses,omitempty"`
+	IPv6Subnet            string            `json:"ipv6Subnet,omitempty"`
+	UnsupportedFields     []string          `json:"unsupportedFields,omitempty"`
 }
 
 // normalizedNetworkOptions preserves per-service network attachment settings.
@@ -743,19 +744,20 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 		result.Services[service.Name] = normalizeService(service, project.Secrets)
 	}
 	for name, network := range project.Networks {
-		ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv6Subnet, unsupportedFields := projectNetworkValues(network)
+		ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, unsupportedFields := projectNetworkValues(network)
 		result.Networks[name] = normalizedNetwork{
-			Name:                firstNonEmpty(network.Name, name),
-			External:            bool(network.External),
-			Driver:              network.Driver,
-			DriverOpts:          mapOptions(network.DriverOpts),
-			Internal:            network.Internal,
-			Labels:              mapLabels(network.Labels),
-			IPv4Subnet:          ipv4Subnet,
-			IPv4Gateway:         ipv4Gateway,
-			IPv4AllocationRange: ipv4AllocationRange,
-			IPv6Subnet:          ipv6Subnet,
-			UnsupportedFields:   unsupportedFields,
+			Name:                  firstNonEmpty(network.Name, name),
+			External:              bool(network.External),
+			Driver:                network.Driver,
+			DriverOpts:            mapOptions(network.DriverOpts),
+			Internal:              network.Internal,
+			Labels:                mapLabels(network.Labels),
+			IPv4Subnet:            ipv4Subnet,
+			IPv4Gateway:           ipv4Gateway,
+			IPv4AllocationRange:   ipv4AllocationRange,
+			IPv4ReservedAddresses: ipv4ReservedAddresses,
+			IPv6Subnet:            ipv6Subnet,
+			UnsupportedFields:     unsupportedFields,
 		}
 	}
 	for name, volume := range project.Volumes {
@@ -785,8 +787,8 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 
 // projectNetworkValues returns mapped IPAM values and project network fields that
 // need runtime behavior beyond apple/container's current network API.
-func projectNetworkValues(network types.NetworkConfig) (string, string, string, string, []string) {
-	ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv6Subnet, ipamFields := networkIPAMValues(network.Ipam)
+func projectNetworkValues(network types.NetworkConfig) (string, string, string, []string, string, []string) {
+	ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipamFields := networkIPAMValues(network.Ipam)
 	fields := []string{}
 	driver := strings.TrimSpace(network.Driver)
 	appendUnsupportedNetworkField(&fields, "driver", driver != "" && driver != "bridge")
@@ -798,9 +800,9 @@ func projectNetworkValues(network types.NetworkConfig) (string, string, string, 
 	}
 	fields = append(fields, ipamFields...)
 	if len(fields) == 0 {
-		return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv6Subnet, nil
+		return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, nil
 	}
-	return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv6Subnet, fields
+	return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, fields
 }
 
 // normalizeService copies a compose-go service into the stable Swift model.
@@ -1485,31 +1487,34 @@ func networkValues(networks map[string]*types.ServiceNetworkConfig) []string {
 }
 
 // networkIPAMValues returns the one IPv4 subnet, IPv4 gateway, IPv4 allocation
-// range, and IPv6 subnet that the runtime can create.
-func networkIPAMValues(ipam types.IPAMConfig) (string, string, string, string, []string) {
+// range, IPv4 addresses reserved from allocation, and IPv6 subnet that the runtime can create.
+func networkIPAMValues(ipam types.IPAMConfig) (string, string, string, []string, string, []string) {
 	fields := []string{}
 	appendUnsupportedNetworkField(&fields, "ipam.driver", ipam.Driver != "")
 	appendUnsupportedNetworkField(&fields, "ipam.options", len(ipam.Options) > 0)
 	var ipv4Subnet string
 	var ipv4Gateway string
 	var ipv4AllocationRange string
+	var ipv4ReservedAddresses []string
 	var ipv6Subnet string
 	for _, pool := range ipam.Config {
 		if pool == nil {
 			continue
 		}
-		appendUnsupportedNetworkField(&fields, "ipam.config.aux_addresses", len(pool.AuxiliaryAddresses) > 0)
+		reservedAddresses := sortedMappingValues(pool.AuxiliaryAddresses)
 		subnet := strings.TrimSpace(pool.Subnet)
 		gateway := strings.TrimSpace(pool.Gateway)
 		allocationRange := strings.TrimSpace(pool.IPRange)
 		if subnet == "" {
 			appendUnsupportedNetworkField(&fields, "ipam.config.gateway", gateway != "")
 			appendUnsupportedNetworkField(&fields, "ipam.config.ip_range", allocationRange != "")
+			appendUnsupportedNetworkField(&fields, "ipam.config.aux_addresses", len(reservedAddresses) > 0)
 			continue
 		}
 		if strings.Contains(subnet, ":") {
 			appendUnsupportedNetworkField(&fields, "ipam.config.gateway", gateway != "")
 			appendUnsupportedNetworkField(&fields, "ipam.config.ip_range", allocationRange != "")
+			appendUnsupportedNetworkField(&fields, "ipam.config.aux_addresses", len(reservedAddresses) > 0)
 			if ipv6Subnet != "" {
 				appendUnsupportedNetworkField(&fields, "ipam.config.subnet", true)
 				continue
@@ -1521,6 +1526,7 @@ func networkIPAMValues(ipam types.IPAMConfig) (string, string, string, string, [
 			appendUnsupportedNetworkField(&fields, "ipam.config.subnet", true)
 			appendUnsupportedNetworkField(&fields, "ipam.config.gateway", gateway != "")
 			appendUnsupportedNetworkField(&fields, "ipam.config.ip_range", allocationRange != "")
+			appendUnsupportedNetworkField(&fields, "ipam.config.aux_addresses", len(reservedAddresses) > 0)
 			continue
 		}
 		if strings.Contains(gateway, ":") {
@@ -1530,11 +1536,29 @@ func networkIPAMValues(ipam types.IPAMConfig) (string, string, string, string, [
 		ipv4Subnet = subnet
 		ipv4Gateway = gateway
 		ipv4AllocationRange = allocationRange
+		ipv4ReservedAddresses = reservedAddresses
 	}
 	if len(fields) == 0 {
-		return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv6Subnet, nil
+		return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, nil
 	}
-	return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv6Subnet, fields
+	return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, fields
+}
+
+// sortedMappingValues returns trimmed mapping values in deterministic key order.
+func sortedMappingValues(mapping types.Mapping) []string {
+	if len(mapping) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(mapping))
+	for key := range mapping {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	values := make([]string, 0, len(keys))
+	for _, key := range keys {
+		values = append(values, strings.TrimSpace(mapping[key]))
+	}
+	return values
 }
 
 // appendUnsupportedNetworkField records unsupported network metadata once.

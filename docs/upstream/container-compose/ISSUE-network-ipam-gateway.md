@@ -25,4 +25,4 @@ The normalizer retained the field only as `ipam.config.gateway` in `unsupportedF
 - One IPv4 pool may declare an optional gateway together with its subnet.
 - The gateway must be a usable IPv4 host within that subnet.
 - Compose rejects an invalid gateway and an endpoint `ipv4_address` equal to the gateway before creating a network or container.
-- IPv6 gateways, IPAM driver/options, `aux_addresses`, and multiple pools of one address family remain unsupported. IPv4 `ip_range` is handled by the separate allocation-range slice.
+- IPv6 gateways, IPAM driver/options, and multiple pools of one address family remain unsupported. IPv4 `ip_range` and IPv4 `aux_addresses` reservations are handled by separate slices.

@@ -24,4 +24,4 @@ The normalizer retained every `ip_range` as `ipam.config.ip_range` in `unsupport
 - The range must be an IPv4 CIDR contained by the subnet and include an allocatable host address.
 - Dynamic attachment allocation uses the configured range.
 - Valid explicit `ipv4_address` values remain usable across the containing subnet, except the network and broadcast addresses and the configured gateway.
-- IPv6 allocation ranges, IPAM driver/options, `aux_addresses`, and multiple pools of one address family remain unsupported.
+- IPv6 allocation ranges, IPAM driver/options, and multiple pools of one address family remain unsupported. IPv4 `aux_addresses` reservations are handled by a separate slice.

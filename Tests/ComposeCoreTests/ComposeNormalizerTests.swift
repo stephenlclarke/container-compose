@@ -137,6 +137,9 @@ struct ComposeNormalizerTests {
                 - subnet: 10.10.0.0/24
                   gateway: 10.10.0.254
                   ip_range: 10.10.0.128/25
+                  aux_addresses:
+                    app: 10.10.0.10
+                    worker: 10.10.0.11
                 - subnet: fd00:10::/64
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
@@ -226,6 +229,7 @@ struct ComposeNormalizerTests {
                     ipv4Subnet: "10.10.0.0/24",
                     ipv4Gateway: "10.10.0.254",
                     ipv4AllocationRange: "10.10.0.128/25",
+                    ipv4ReservedAddresses: ["10.10.0.10", "10.10.0.11"],
                     ipv6Subnet: "fd00:10::/64"
                 )
             )
