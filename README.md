@@ -40,6 +40,8 @@ side effects with an explicit `unsupported compose feature` message.
 
 Network attachments support Compose `interface_name`, which assigns a stable interface name inside the Linux guest, operator-managed `link_local_ips`, and static `ipv4_address` or `ipv6_address`. A Compose-managed IPv4 network can also choose its IPAM gateway and `ip_range` for dynamic addresses, and reserve the values in one `ipam.config.aux_addresses` mapping from allocation. Static addresses on a Compose-managed network must belong to its declared matching IPAM subnet and cannot use its gateway or a reserved address; `ip_range` does not restrict valid explicit static addresses. The current default bridge backend treats `aux_addresses` names as driver metadata rather than container DNS entries. External networks are validated by the runtime. Each `link_local_ips` value becomes an additional guest address with Docker's `/16` IPv4 or `/64` IPv6 default address mask.
 
+Services can supply numeric supplemental group IDs through `group_add`. Image-defined group names remain unavailable because the runtime does not expose an image-aware group resolver.
+
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
 
