@@ -354,7 +354,7 @@ func serviceConfigSecretMounts(
 ) throws -> [ComposeMount] {
     try grants.map { value in
         let grant = try parseComposeFileGrant(value, kind: kind, service: service)
-        let source = try composeFileGrantSourcePath(
+        let resolvedSource = try composeFileGrantSource(
             grant: grant,
             definitions: definitions,
             project: project,
@@ -365,9 +365,11 @@ func serviceConfigSecretMounts(
         )
         return ComposeMount(
             type: "bind",
-            source: source,
+            source: resolvedSource.path,
             target: kind.targetPath(source: grant.source, target: grant.target),
             readOnly: true,
+            fileOwnerUID: resolvedSource.ownership?.uid,
+            fileOwnerGID: resolvedSource.ownership?.gid,
         )
     }
 }
@@ -402,7 +404,7 @@ func parseComposeFileGrant(
 }
 
 /// Resolves the top-level file source for one service config or secret grant.
-func composeFileGrantSourcePath(
+private func composeFileGrantSource(
     grant: ComposeFileGrant,
     definitions: [String: ComposeValue],
     project: ComposeProject,
@@ -410,14 +412,14 @@ func composeFileGrantSourcePath(
     kind: ComposeFileMountKind,
     materializedConfigSecretRoot: URL,
     materialize: Bool,
-) throws -> String {
+) throws -> ComposeFileGrantSource {
     guard let definition = definitions[grant.source] else {
         throw ComposeError.invalidProject("service '\(service.name)' references undefined \(kind.singularName) '\(grant.source)'")
     }
     guard case let .object(fields) = definition else {
         throw ComposeError.invalidProject("\(kind.singularName.capitalized) '\(grant.source)' definition must be an object")
     }
-    return try resolvedComposeFileGrantSourcePath(
+    return try resolvedComposeFileGrantSource(
         grant: grant,
         fields: fields,
         context: ComposeFileGrantSourceContext(
@@ -438,30 +440,43 @@ private struct ComposeFileGrantSourceContext {
     let materialize: Bool
 }
 
-private func resolvedComposeFileGrantSourcePath(
+private struct ComposeFileGrantSource {
+    let path: String
+    let ownership: ComposeFileGrantOwnership?
+}
+
+struct ComposeFileGrantOwnership {
+    let uid: UInt32?
+    let gid: UInt32?
+}
+
+private func resolvedComposeFileGrantSource(
     grant: ComposeFileGrant,
     fields: [String: ComposeValue],
     context: ComposeFileGrantSourceContext,
-) throws -> String {
+) throws -> ComposeFileGrantSource {
     if fields["external"]?.boolValue == true {
-        return try externalComposeFileGrantSourcePath(
+        return try externalComposeFileGrantSource(
             grant: grant,
             fields: fields,
             context: context,
         )
     }
     if let file = fields["file"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !file.isEmpty {
-        return resolvedProjectPath(file, project: context.project)
+        return ComposeFileGrantSource(
+            path: resolvedProjectPath(file, project: context.project),
+            ownership: nil,
+        )
     }
     if let environment = fields["environment"] {
-        return try environmentComposeFileGrantSourcePath(
+        return try environmentComposeFileGrantSource(
             environment,
             grant: grant,
             context: context,
         )
     }
     if let content = fields["content"] {
-        return try contentComposeFileGrantSourcePath(
+        return try contentComposeFileGrantSource(
             content,
             grant: grant,
             context: context,
@@ -470,12 +485,12 @@ private func resolvedComposeFileGrantSourcePath(
     throw ComposeError.invalidProject("\(context.kind.singularName.capitalized) '\(grant.source)' must define \(context.kind.supportedDefinitionFields) for runtime mounting")
 }
 
-private func environmentComposeFileGrantSourcePath(
+private func environmentComposeFileGrantSource(
     _ environment: ComposeValue,
     grant: ComposeFileGrant,
     context: ComposeFileGrantSourceContext,
-) throws -> String {
-    try validateMaterializedGrantOwnership(grant: grant, service: context.service, kind: context.kind)
+) throws -> ComposeFileGrantSource {
+    let ownership = try composeFileGrantOwnership(grant: grant, service: context.service, kind: context.kind)
     let name = try composeFileGrantEnvironmentVariable(
         environment,
         grant: grant,
@@ -485,37 +500,40 @@ private func environmentComposeFileGrantSourcePath(
     guard let contents = hostEnvironmentValue(name) else {
         throw ComposeError.invalidProject("service '\(context.service.name)' uses environment-backed \(context.kind.singularName) '\(grant.source)', but host environment variable '\(name)' is not set")
     }
-    return try materializedComposeFileGrantSourcePath(
+    return try materializedComposeFileGrantSource(
         grant: grant,
         contents: contents,
         context: context,
+        ownership: ownership,
     )
 }
 
-private func contentComposeFileGrantSourcePath(
+private func contentComposeFileGrantSource(
     _ content: ComposeValue,
     grant: ComposeFileGrant,
     context: ComposeFileGrantSourceContext,
-) throws -> String {
+) throws -> ComposeFileGrantSource {
     guard context.kind == .config else {
         throw ComposeError.unsupported("service '\(context.service.name)' uses content-backed secret '\(grant.source)'; Docker Compose secrets support file or environment sources")
     }
-    try validateMaterializedGrantOwnership(grant: grant, service: context.service, kind: context.kind)
+    let ownership = try composeFileGrantOwnership(grant: grant, service: context.service, kind: context.kind)
     guard let contents = content.stringValue else {
         throw ComposeError.invalidProject("config '\(grant.source)' content must be a string")
     }
-    return try materializedComposeFileGrantSourcePath(
+    return try materializedComposeFileGrantSource(
         grant: grant,
         contents: contents,
         context: context,
+        ownership: ownership,
     )
 }
 
-private func materializedComposeFileGrantSourcePath(
+private func materializedComposeFileGrantSource(
     grant: ComposeFileGrant,
     contents: String,
     context: ComposeFileGrantSourceContext,
-) throws -> String {
+    ownership: ComposeFileGrantOwnership?,
+) throws -> ComposeFileGrantSource {
     let materialized = try materializedComposeFile(
         project: context.project,
         grant: grant,
@@ -527,15 +545,15 @@ private func materializedComposeFileGrantSourcePath(
     if context.materialize {
         try materialized.write()
     }
-    return materialized.url.path
+    return ComposeFileGrantSource(path: materialized.url.path, ownership: ownership)
 }
 
-private func externalComposeFileGrantSourcePath(
+private func externalComposeFileGrantSource(
     grant: ComposeFileGrant,
     fields: [String: ComposeValue],
     context: ComposeFileGrantSourceContext,
-) throws -> String {
-    try validateMaterializedGrantOwnership(grant: grant, service: context.service, kind: context.kind)
+) throws -> ComposeFileGrantSource {
+    let ownership = try composeFileGrantOwnership(grant: grant, service: context.service, kind: context.kind)
     let name = try externalComposeFileRuntimeName(
         project: context.project,
         composeName: grant.source,
@@ -543,30 +561,59 @@ private func externalComposeFileGrantSourcePath(
         kind: context.kind,
     )
     let permissions = try composeFileGrantPermissions(grant: grant, kind: context.kind, service: context.service)
-    return materializedExternalComposeFileURL(
-        project: context.project,
-        grant: grant,
-        runtimeName: name,
-        permissions: permissions,
-        kind: context.kind,
-        root: context.materializedConfigSecretRoot,
-    ).path
+    return ComposeFileGrantSource(
+        path: materializedExternalComposeFileURL(
+            project: context.project,
+            grant: grant,
+            runtimeName: name,
+            permissions: permissions,
+            kind: context.kind,
+            root: context.materializedConfigSecretRoot,
+        ).path,
+        ownership: ownership,
+    )
 }
 
-/// Rejects generated grants that need an ownership-remapping runtime primitive.
-func validateMaterializedGrantOwnership(
+/// Validates generated grant ownership before it is sent to the runtime.
+func composeFileGrantOwnership(
     grant: ComposeFileGrant,
     service: ComposeService,
     kind: ComposeFileMountKind,
-) throws {
-    let fields = [
-        nonEmpty(grant.uid) == nil ? nil : "uid",
-        nonEmpty(grant.gid) == nil ? nil : "gid",
-    ].compactMap(\.self)
-    guard !fields.isEmpty else {
-        return
+) throws -> ComposeFileGrantOwnership? {
+    let uid = try composeFileGrantOwnershipValue(
+        grant.uid,
+        field: "uid",
+        grant: grant,
+        service: service,
+        kind: kind,
+    )
+    let gid = try composeFileGrantOwnershipValue(
+        grant.gid,
+        field: "gid",
+        grant: grant,
+        service: service,
+        kind: kind,
+    )
+    guard uid != nil || gid != nil else {
+        return nil
     }
-    throw ComposeError.unsupported("service '\(service.name)' uses \(fields.joined(separator: "/")) on generated \(kind.singularName) '\(grant.source)'; apple/container bind mounts do not expose config/secret ownership remapping")
+    return ComposeFileGrantOwnership(uid: uid, gid: gid)
+}
+
+private func composeFileGrantOwnershipValue(
+    _ rawValue: String?,
+    field: String,
+    grant: ComposeFileGrant,
+    service: ComposeService,
+    kind: ComposeFileMountKind,
+) throws -> UInt32? {
+    guard let rawValue = nonEmpty(rawValue?.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        return nil
+    }
+    guard let value = UInt32(rawValue) else {
+        throw ComposeError.invalidProject("service '\(service.name)' \(kind.singularName) '\(grant.source)' \(field) '\(rawValue)' must be an unsigned 32-bit integer")
+    }
+    return value
 }
 
 /// Returns the file permissions used for a generated config or secret grant.

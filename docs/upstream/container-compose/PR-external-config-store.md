@@ -35,9 +35,10 @@ handoff is [PR-config-store.md](../apple-container/PR-config-store.md).
 
 - Supported: external config grants for `up`, `run`, and `create`, including
   external `name:`, binary content, default targets, and Compose read-only mode.
-- Not supported by this config-store change: generated `uid`/`gid` and live
-  mutation of an already-consumed immutable config. External secrets are
-  supported by the separate secure-store follow-up.
+- Generated `uid`/`gid` ownership is supported by the separate owned-file
+  snapshot follow-up. Live mutation of an already-consumed immutable config is
+  still not supported. External secrets are supported by the secure-store
+  follow-up.
 - Config updates follow immutable-resource semantics: delete and create the
   config, then recreate the service to consume its replacement.
 

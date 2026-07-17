@@ -397,11 +397,20 @@ private extension ComposeContainerSummary {
     /// Projects an apple/container filesystem mount into a runtime-ready Compose mount.
     static func mount(from filesystem: Filesystem) -> ComposeMount {
         let readOnly = filesystem.options.readonly ? true : nil
+        let fileOwnerUID = filesystem.fileOwnership?.uid
+        let fileOwnerGID = filesystem.fileOwnership?.gid
         switch filesystem.type {
         case .volume(let name, _, _, _):
             return ComposeMount(type: "external-volume", source: name, target: filesystem.destination, readOnly: readOnly)
         case .virtiofs:
-            return ComposeMount(type: "bind", source: filesystem.source, target: filesystem.destination, readOnly: readOnly)
+            return ComposeMount(
+                type: "bind",
+                source: filesystem.source,
+                target: filesystem.destination,
+                readOnly: readOnly,
+                fileOwnerUID: fileOwnerUID,
+                fileOwnerGID: fileOwnerGID,
+            )
         case .tmpfs:
             return ComposeMount(type: "tmpfs", target: filesystem.destination, readOnly: readOnly)
         case .block:

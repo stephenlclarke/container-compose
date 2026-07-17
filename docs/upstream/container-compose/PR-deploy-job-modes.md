@@ -49,8 +49,8 @@ References:
 - Supported: non-zero job exits fail `up` before later services start.
 - Remaining Compose/runtime gap: restart-capable job policies need a restart-aware `apple/container` wait primitive before they can be enabled.
 - Remaining upstream gap: released apple/container still needs accepted stopped-container exit metadata before this can work without the fork.
-- Remaining Compose gap: generated config/secret ownership remapping remains
-  blocked separately; external config and secret stores are supported.
+- Generated config/secret ownership is supported separately through private
+  regular-file snapshots; external config and secret stores are supported.
 - Non-goal: Swarm scheduler placement, multi-node global behavior, and CLI-only job concurrency controls.
 
 ## Testing

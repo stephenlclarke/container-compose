@@ -42,7 +42,11 @@ With this change, `container-compose` materializes Docker Compose local file-lik
 
 ## Likely Owner
 
-`container-compose` owns this local-development behavior because the runtime already supports read-only file bind mounts. `apple/container` now owns the first-class non-secret external config store and a local Keychain-backed external secret store consumed by this plugin. Ownership remapping remains separate future runtime work.
+`container-compose` owns source selection and materialization. `apple/container`
+now owns the generic owned regular-file mount bridge, and `containerization`
+owns its private guest snapshot. Generated files can therefore honor `uid` and
+`gid` without mutating the host source; file-backed grants deliberately retain
+their live bind-mount behavior.
 
 ## Minimal Example
 
