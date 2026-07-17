@@ -559,6 +559,9 @@ extension ComposeOrchestrator {
         if let ipv4Subnet = network.ipv4Subnet, !ipv4Subnet.isEmpty {
             args.append(contentsOf: ["--subnet", ipv4Subnet])
         }
+        if let ipv4Gateway = network.ipv4Gateway, !ipv4Gateway.isEmpty {
+            args.append(contentsOf: ["--gateway", ipv4Gateway])
+        }
         if let ipv6Subnet = network.ipv6Subnet, !ipv6Subnet.isEmpty {
             args.append(contentsOf: ["--subnet-v6", ipv6Subnet])
         }
@@ -581,6 +584,7 @@ extension ComposeOrchestrator {
                 name: runtimeName,
                 isInternal: network.isInternal == true,
                 ipv4Subnet: network.ipv4Subnet,
+                ipv4Gateway: network.ipv4Gateway,
                 ipv6Subnet: network.ipv6Subnet,
                 driverOpts: driverOpts,
                 labels: resourceLabels(project: project, labels: network.labels),

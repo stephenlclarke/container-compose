@@ -982,6 +982,7 @@ struct ComposeOrchestratorTests {
             #expect(request.name == "demo_default")
             #expect(request.isInternal == false)
             #expect(request.ipv4Subnet == nil)
+            #expect(request.ipv4Gateway == nil)
             #expect(request.ipv6Subnet == nil)
             #expect(request.driverOpts == [:])
             #expect(request.labels["com.apple.container.compose.project.working-directory"] == "/tmp/demo")
@@ -1297,6 +1298,7 @@ struct ComposeOrchestratorTests {
                         labels: ["com.example.network": "backend"],
                         subnets: ComposeNetwork.Subnets(
                             ipv4Subnet: "10.77.0.0/24",
+                            ipv4Gateway: "10.77.0.254",
                             ipv6Subnet: "fd77::/64"
                         )
                     )
@@ -1316,6 +1318,7 @@ struct ComposeOrchestratorTests {
             #expect(request.name == "demo_backend")
             #expect(request.isInternal == true)
             #expect(request.ipv4Subnet == "10.77.0.0/24")
+            #expect(request.ipv4Gateway == "10.77.0.254")
             #expect(request.ipv6Subnet == "fd77::/64")
             #expect(request.driverOpts == [:])
             #expect(request.labels["com.apple.container.compose.project"] == "demo")
@@ -1393,6 +1396,7 @@ struct ComposeOrchestratorTests {
                         isInternal: true,
                         subnets: ComposeNetwork.Subnets(
                             ipv4Subnet: "10.77.0.0/24",
+                            ipv4Gateway: "10.77.0.254",
                             ipv6Subnet: "fd77::/64"
                         )
                     )
@@ -1404,7 +1408,7 @@ struct ComposeOrchestratorTests {
             .up(project: project, options: ComposeUpOptions())
 
         #expect(emitted.messages.contains { message in
-            message.contains("container network create --internal --subnet 10.77.0.0/24 --subnet-v6 fd77::/64")
+            message.contains("container network create --internal --subnet 10.77.0.0/24 --gateway 10.77.0.254 --subnet-v6 fd77::/64")
         })
     }
 
@@ -1456,7 +1460,7 @@ struct ComposeOrchestratorTests {
                 "backend": ComposeNetwork(
                     name: "backend",
                     options: ComposeNetwork.Options(
-                        unsupportedFields: ["driver", "attachable", "enable_ipv4", "enable_ipv6", "ipam.config.gateway"]
+                        unsupportedFields: ["driver", "attachable", "enable_ipv4", "enable_ipv6"]
                     )
                 ),
             ]
@@ -1467,7 +1471,88 @@ struct ComposeOrchestratorTests {
                 .up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported project network options error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, attachable, enable_ipv4, enable_ipv6, ipam.config.gateway; supported project network fields are name, external, internal, labels, driver_opts, the default bridge driver, and one IPv4/IPv6 IPAM subnet"))
+            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, attachable, enable_ipv4, enable_ipv6; supported project network fields are name, external, internal, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with an optional gateway plus one IPv6 IPAM subnet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up rejects invalid project network gateways before side effects")
+    func upRejectsInvalidProjectNetworkGatewaysBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: .init(subnets: .init(
+                        ipv4Subnet: "10.77.0.0/24",
+                        ipv4Gateway: "10.77.0.0"
+                    ))
+                ),
+            ]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid project network gateway error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject(
+                "network 'backend' IPv4 IPAM gateway '10.77.0.0' must be an allocatable host address in subnet '10.77.0.0/24'"
+            ))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up rejects static endpoint addresses that reuse a project network gateway")
+    func upRejectsStaticEndpointAddressMatchingNetworkGatewayBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(addressing: .init(ipv4Address: "10.77.0.20")),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: .init(subnets: .init(
+                        ipv4Subnet: "10.77.0.0/24",
+                        ipv4Gateway: "10.77.0.20"
+                    ))
+                ),
+            ]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected static address gateway collision error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject(
+                "service 'api' ipv4_address '10.77.0.20' is the gateway for network 'backend'"
+            ))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -18088,6 +18173,7 @@ struct ComposeOrchestratorTests {
             name: "demo_default",
             isInternal: true,
             ipv4Subnet: "10.10.0.0/24",
+            ipv4Gateway: "10.10.0.254",
             ipv6Subnet: "fd00:10::/64",
             driverOpts: ["variant": "vzNAT"],
             labels: labels
@@ -18109,6 +18195,7 @@ struct ComposeOrchestratorTests {
                 mode: .hostOnly,
                 plugin: "container-network-vmnet",
                 ipv4Subnet: "10.10.0.0/24",
+                ipv4Gateway: "10.10.0.254",
                 ipv6Subnet: "fd00:10::/64",
                 options: ["variant": "vzNAT"],
                 labels: labels
@@ -18224,6 +18311,7 @@ struct ComposeOrchestratorTests {
                 mode: .nat,
                 plugin: "container-network-vmnet",
                 ipv4Subnet: nil,
+                ipv4Gateway: nil,
                 ipv6Subnet: nil,
                 options: [:],
                 labels: [:]
@@ -18314,6 +18402,7 @@ struct ComposeOrchestratorTests {
                 mode: .nat,
                 plugin: "container-network-vmnet",
                 ipv4Subnet: nil,
+                ipv4Gateway: nil,
                 ipv6Subnet: nil,
                 options: [:],
                 labels: labels
@@ -27020,6 +27109,7 @@ private enum ContainerResourceAPIRequest: Equatable {
         mode: NetworkMode,
         plugin: String,
         ipv4Subnet: String?,
+        ipv4Gateway: String?,
         ipv6Subnet: String?,
         options: [String: String],
         labels: [String: String]
@@ -28494,6 +28584,7 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
             mode: configuration.mode,
             plugin: configuration.plugin,
             ipv4Subnet: configuration.ipv4Subnet?.description,
+            ipv4Gateway: configuration.ipv4Gateway?.description,
             ipv6Subnet: configuration.ipv6Subnet?.description,
             options: configuration.options,
             labels: configuration.labels.dictionary

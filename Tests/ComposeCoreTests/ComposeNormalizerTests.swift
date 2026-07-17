@@ -135,6 +135,7 @@ struct ComposeNormalizerTests {
             ipam:
               config:
                 - subnet: 10.10.0.0/24
+                  gateway: 10.10.0.254
                 - subnet: fd00:10::/64
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
@@ -222,6 +223,7 @@ struct ComposeNormalizerTests {
                 isInternal: true,
                 subnets: ComposeNetwork.Subnets(
                     ipv4Subnet: "10.10.0.0/24",
+                    ipv4Gateway: "10.10.0.254",
                     ipv6Subnet: "fd00:10::/64"
                 )
             )

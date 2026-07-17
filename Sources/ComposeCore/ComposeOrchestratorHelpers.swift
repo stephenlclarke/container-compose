@@ -475,6 +475,42 @@ private func validateStaticIPv4Address(
             "service '\(service.name)' ipv4_address '\(address)' is not an allocatable host address in network '\(network)'"
         )
     }
+    if let gatewayText = nonEmpty(configuration.ipv4Gateway) {
+        let gateway: IPv4Address
+        do {
+            gateway = try IPv4Address(gatewayText)
+        } catch {
+            throw ComposeError.invalidProject("network '\(network)' IPv4 IPAM gateway '\(gatewayText)' is invalid")
+        }
+        guard address != gateway else {
+            throw ComposeError.invalidProject(
+                "service '\(service.name)' ipv4_address '\(address)' is the gateway for network '\(network)'"
+            )
+        }
+    }
+}
+
+/// Validates the optional IPv4 IPAM gateway before creating any project resource.
+func validateNetworkIPv4Gateway(_ network: ComposeNetwork, name: String) throws {
+    guard let gatewayText = nonEmpty(network.ipv4Gateway) else {
+        return
+    }
+    guard let subnetText = nonEmpty(network.ipv4Subnet) else {
+        throw ComposeError.invalidProject("network '\(name)' IPv4 IPAM gateway requires an IPv4 IPAM subnet")
+    }
+    let subnet: CIDRv4
+    let gateway: IPv4Address
+    do {
+        subnet = try CIDRv4(subnetText)
+        gateway = try IPv4Address(gatewayText)
+    } catch {
+        throw ComposeError.invalidProject("network '\(name)' IPv4 IPAM gateway '\(gatewayText)' is invalid")
+    }
+    guard subnet.contains(gateway), gateway != subnet.lower, gateway != subnet.upper else {
+        throw ComposeError.invalidProject(
+            "network '\(name)' IPv4 IPAM gateway '\(gateway)' must be an allocatable host address in subnet '\(subnet)'"
+        )
+    }
 }
 
 private func validateStaticIPv6Address(
