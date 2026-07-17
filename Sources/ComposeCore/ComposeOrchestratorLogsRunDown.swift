@@ -701,14 +701,22 @@ public extension ComposeOrchestrator {
         requested: Bool,
         foregroundInteractive: Bool,
     ) async throws {
-        guard requested, foregroundInteractive else { return }
+        guard foregroundInteractive else { return }
         let declaredContainers = try declaredServiceContainerNames(project: project, scaleOverrides: [:])
         let preservedServices = orphanProtectedServiceNames(project: project, scaleOverrides: [:])
-        try await removeRemainingProjectContainers(
-            project: project,
-            excluding: declaredContainers,
-            preservingServices: preservedServices,
-        )
+        if requested || options.removeOrphans {
+            try await removeRemainingProjectContainers(
+                project: project,
+                excluding: declaredContainers,
+                preservingServices: preservedServices,
+            )
+        } else {
+            try await warnAboutRemainingProjectContainers(
+                project: project,
+                excluding: declaredContainers,
+                preservingServices: preservedServices,
+            )
+        }
     }
 
     /// Builds images and starts dependency services before the one-off container runs.

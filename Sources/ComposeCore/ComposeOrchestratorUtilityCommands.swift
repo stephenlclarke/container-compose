@@ -250,10 +250,16 @@ public extension ComposeOrchestrator {
             }
             try await lifecycleManager.killContainer(id: containerID, signal: signal ?? "KILL")
         }
-        if removeOrphans {
-            let declaredContainers = try declaredServiceContainerNames(project: project, scaleOverrides: [:])
-            let preservedServices = orphanProtectedServiceNames(project: project, scaleOverrides: [:])
+        let declaredContainers = try declaredServiceContainerNames(project: project, scaleOverrides: [:])
+        let preservedServices = orphanProtectedServiceNames(project: project, scaleOverrides: [:])
+        if removeOrphans || options.removeOrphans {
             try await removeRemainingProjectContainers(
+                project: project,
+                excluding: declaredContainers,
+                preservingServices: preservedServices,
+            )
+        } else {
+            try await warnAboutRemainingProjectContainers(
                 project: project,
                 excluding: declaredContainers,
                 preservingServices: preservedServices,

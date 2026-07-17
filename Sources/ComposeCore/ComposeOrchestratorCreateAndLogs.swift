@@ -116,15 +116,22 @@ public extension ComposeOrchestrator {
             }
         }
 
-        if create.removeOrphans {
-            let declaredContainers = try declaredServiceContainerNames(project: workingProject, scaleOverrides: scaleOverrides)
-            let preservedServices = orphanProtectedServiceNames(project: workingProject, scaleOverrides: scaleOverrides)
+        let removeOrphans = create.removeOrphans || options.removeOrphans
+        let declaredContainers = try declaredServiceContainerNames(project: workingProject, scaleOverrides: scaleOverrides)
+        let preservedServices = orphanProtectedServiceNames(project: workingProject, scaleOverrides: scaleOverrides)
+        if removeOrphans {
             try await removeRemainingProjectContainers(
                 project: workingProject,
                 excluding: declaredContainers,
                 preservingServices: preservedServices,
                 timeout: recreateTimeout,
                 confirmBeforeRemoval: !create.assumeYes,
+            )
+        } else {
+            try await warnAboutRemainingProjectContainers(
+                project: workingProject,
+                excluding: declaredContainers,
+                preservingServices: preservedServices,
             )
         }
     }
@@ -172,8 +179,10 @@ public extension ComposeOrchestrator {
                 }
             }
         }
-        if down.removeOrphans {
+        if down.removeOrphans || options.removeOrphans {
             try await removeRemainingProjectContainers(project: project, excluding: declaredContainers, timeout: down.timeout)
+        } else {
+            try await warnAboutRemainingProjectContainers(project: project, excluding: declaredContainers)
         }
 
         if projectWideCleanup, !options.dryRun {

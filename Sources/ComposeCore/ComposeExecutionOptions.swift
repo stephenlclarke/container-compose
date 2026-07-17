@@ -39,6 +39,7 @@ public struct ComposeExecutionOptions {
         /// Distinguishes the production clock from deterministic test hooks.
         var usesDefaultSleep = true
         public var confirm: @Sendable (_ prompt: String) async throws -> Bool = ComposeExecutionOptions.defaultConfirmation
+        public var emitStatus: @Sendable (String) -> Void = ComposeExecutionOptions.defaultStatusEmitter
         public var emit: @Sendable (String) -> Void = { print($0) }
         public var emitData: (@Sendable (Data) -> Void)?
         public var copyInputArchive: @Sendable () -> FileHandle = { .standardInput }
@@ -129,6 +130,9 @@ public struct ComposeExecutionOptions {
     public var dryRun: Bool
     public var maxParallelism: Int?
     public var serviceContainerNameSeparator: String
+    public var removeOrphans: Bool
+    public var ignoreOrphans: Bool
+    public var reportOrphans: Bool
     public var containerBinary: String
     public var initImage: String?
     public var environmentLauncher: String
@@ -146,6 +150,7 @@ public struct ComposeExecutionOptions {
     /// Distinguishes the production clock from deterministic test hooks.
     var usesDefaultSleep: Bool
     public var confirm: @Sendable (_ prompt: String) async throws -> Bool
+    public var emitStatus: @Sendable (String) -> Void
     public var emit: @Sendable (String) -> Void
     public var emitData: @Sendable (Data) -> Void
     public var copyInputArchive: @Sendable () -> FileHandle
@@ -156,6 +161,9 @@ public struct ComposeExecutionOptions {
         dryRun = false
         maxParallelism = nil
         serviceContainerNameSeparator = "-"
+        removeOrphans = false
+        ignoreOrphans = false
+        reportOrphans = false
         containerBinary = ComposeExecutionOptions.defaultContainerBinary()
         initImage = ComposeExecutionOptions.defaultInitImage()
         environmentLauncher = ComposeExecutionOptions.defaultEnvironmentLauncher
@@ -167,6 +175,7 @@ public struct ComposeExecutionOptions {
         sleep = { try await Task.sleep(for: $0) }
         usesDefaultSleep = true
         confirm = ComposeExecutionOptions.defaultConfirmation
+        emitStatus = ComposeExecutionOptions.defaultStatusEmitter
         emit = { print($0) }
         emitData = ComposeExecutionOptions.defaultLogDataEmitter
         copyInputArchive = { .standardInput }
@@ -340,6 +349,7 @@ public struct ComposeExecutionOptions {
         sleep = runtimeHooks.sleep
         usesDefaultSleep = runtimeHooks.usesDefaultSleep
         confirm = runtimeHooks.confirm
+        emitStatus = runtimeHooks.emitStatus
         emit = runtimeHooks.emit
         emitData = runtimeHooks.emitData ?? ComposeExecutionOptions.defaultLogDataEmitter
         copyInputArchive = runtimeHooks.copyInputArchive
@@ -384,6 +394,11 @@ public struct ComposeExecutionOptions {
         default:
             return false
         }
+    }
+
+    /// Writes Compose-owned status messages without mixing them with service output.
+    public static func defaultStatusEmitter(_ message: String) {
+        FileHandle.standardError.write(Data((message + "\n").utf8))
     }
 
     /// Returns the per-user root for local config and secret materialization.

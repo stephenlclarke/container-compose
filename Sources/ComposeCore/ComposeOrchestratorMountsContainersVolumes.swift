@@ -495,15 +495,11 @@ extension ComposeOrchestrator {
             return
         }
 
-        let remainingContainers = try await projectContainers(projectName: project.name, all: true)
-            .filter { container in
-                guard !declaredContainers.contains(container.id) else {
-                    return false
-                }
-                let isPreservedService = container.serviceName.map { serviceNames.contains($0) } ?? false
-                return container.isOneOff || !isPreservedService
-            }
-            .sorted { $0.id < $1.id }
+        let remainingContainers = try await remainingProjectContainers(
+            project: project,
+            excluding: declaredContainers,
+            preservingServices: serviceNames,
+        )
         if confirmBeforeRemoval, !remainingContainers.isEmpty {
             let names = remainingContainers.map(\.id).joined(separator: ", ")
             guard try await options.confirm("Going to remove orphan containers \(names)\nAre you sure? [yN] ") else {
@@ -518,6 +514,46 @@ extension ComposeOrchestrator {
                 try await deleteContainer(container.id)
             }
         }
+    }
+
+    /// Reports project containers that a Compose update no longer declares.
+    func warnAboutRemainingProjectContainers(
+        project: ComposeProject,
+        excluding declaredContainers: Set<String>,
+        preservingServices serviceNames: Set<String> = [],
+    ) async throws {
+        guard !options.dryRun, options.reportOrphans, !options.ignoreOrphans else {
+            return
+        }
+        let remainingContainers = try await remainingProjectContainers(
+            project: project,
+            excluding: declaredContainers,
+            preservingServices: serviceNames,
+        )
+        guard !remainingContainers.isEmpty else {
+            return
+        }
+        let names = remainingContainers.map(\.id).joined(separator: ", ")
+        options.emitStatus(
+            "warning: found orphan containers (\(names)) for this project; run with --remove-orphans to remove them",
+        )
+    }
+
+    /// Returns project-scoped one-off and undeclared service containers.
+    func remainingProjectContainers(
+        project: ComposeProject,
+        excluding declaredContainers: Set<String>,
+        preservingServices serviceNames: Set<String> = [],
+    ) async throws -> [ComposeContainerSummary] {
+        try await projectContainers(projectName: project.name, all: true)
+            .filter { container in
+                guard !declaredContainers.contains(container.id) else {
+                    return false
+                }
+                let isPreservedService = container.serviceName.map { serviceNames.contains($0) } ?? false
+                return container.isOneOff || !isPreservedService
+            }
+            .sorted { $0.id < $1.id }
     }
 
     /// Stops a project-scoped cleanup target with service hooks when its

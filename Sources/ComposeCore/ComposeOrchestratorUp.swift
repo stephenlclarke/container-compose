@@ -287,15 +287,22 @@ extension ComposeOrchestrator {
             }
         }
 
-        if up.removeOrphans {
-            let declaredContainers = try declaredServiceContainerNames(project: workingProject, scaleOverrides: scaleOverrides)
-            let preservedServices = orphanProtectedServiceNames(project: workingProject, scaleOverrides: scaleOverrides)
+        let removeOrphans = up.removeOrphans || options.removeOrphans
+        let declaredContainers = try declaredServiceContainerNames(project: workingProject, scaleOverrides: scaleOverrides)
+        let preservedServices = orphanProtectedServiceNames(project: workingProject, scaleOverrides: scaleOverrides)
+        if removeOrphans {
             try await removeRemainingProjectContainers(
                 project: workingProject,
                 excluding: declaredContainers,
                 preservingServices: preservedServices,
                 timeout: up.timeout,
                 confirmBeforeRemoval: !up.assumeYes,
+            )
+        } else {
+            try await warnAboutRemainingProjectContainers(
+                project: workingProject,
+                excluding: declaredContainers,
+                preservingServices: preservedServices,
             )
         }
         if up.wait {

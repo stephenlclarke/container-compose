@@ -1300,6 +1300,7 @@ struct ComposeNormalizerTests {
         #expect(command.arguments.starts(with: ["go", "run", "."]))
         #expect(command.arguments.containsSequence(["--file", "\(currentDirectory)/compose.yml"]))
         #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
+        #expect(command.environment?["CONTAINER_COMPOSE_NORMALIZER_CALLER_WORKING_DIRECTORY"] == currentDirectory)
     }
 
     @Test("normalizer decodes model variables")

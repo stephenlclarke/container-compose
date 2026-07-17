@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -580,6 +581,7 @@ func loadComposeProject(files, profiles, envFiles []string, projectName, project
 	var options []cli.ProjectOptionsFn
 	options = append(options, cli.WithWorkingDirectory(projectDirectory))
 	options = append(options, cli.WithOsEnv)
+	envFiles = configuredEnvFiles(envFiles)
 	if len(envFiles) > 0 {
 		options = append(options, cli.WithEnvFiles(envFiles...))
 	} else {
@@ -597,6 +599,8 @@ func loadComposeProject(files, profiles, envFiles []string, projectName, project
 	}
 	if len(profiles) > 0 {
 		options = append(options, cli.WithProfiles(profiles))
+	} else {
+		options = append(options, cli.WithDefaultProfiles())
 	}
 	options = appendProjectLoadOptions(options, loadOptions)
 
@@ -631,6 +635,7 @@ func loadVariables(files, profiles, envFiles []string, projectName, projectDirec
 
 	usesDefaultFiles := len(files) == 0
 	options := []cli.ProjectOptionsFn{cli.WithWorkingDirectory(projectDirectory), cli.WithOsEnv}
+	envFiles = configuredEnvFiles(envFiles)
 	if len(envFiles) > 0 {
 		options = append(options, cli.WithEnvFiles(envFiles...))
 	} else {
@@ -647,6 +652,8 @@ func loadVariables(files, profiles, envFiles []string, projectName, projectDirec
 	}
 	if len(profiles) > 0 {
 		options = append(options, cli.WithProfiles(profiles))
+	} else {
+		options = append(options, cli.WithDefaultProfiles())
 	}
 	options = appendProjectLoadOptions(options, loadOptions)
 	options = append(options, cli.WithInterpolation(false))
@@ -682,6 +689,39 @@ func loadVariables(files, profiles, envFiles []string, projectName, projectDirec
 		})
 	}
 	return variables, nil
+}
+
+// configuredEnvFiles gives explicit --env-file values precedence over Docker
+// Compose's comma-separated COMPOSE_ENV_FILES fallback. Source-checkout
+// invocations receive the original Compose process directory because the Go
+// helper itself runs from Tools/compose-normalizer.
+func configuredEnvFiles(envFiles []string) []string {
+	if len(envFiles) > 0 {
+		return envFiles
+	}
+	configured := strings.TrimSpace(os.Getenv("COMPOSE_ENV_FILES"))
+	if configured == "" {
+		return nil
+	}
+	workingDirectory := strings.TrimSpace(os.Getenv("CONTAINER_COMPOSE_NORMALIZER_CALLER_WORKING_DIRECTORY"))
+	if workingDirectory == "" {
+		var err error
+		workingDirectory, err = os.Getwd()
+		if err != nil {
+			workingDirectory = ""
+		}
+	}
+
+	values := make([]string, 0)
+	for _, value := range strings.Split(configured, ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			if workingDirectory != "" && !filepath.IsAbs(value) {
+				value = filepath.Join(workingDirectory, value)
+			}
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 func firstProjectLoadOptions(options []projectLoadOptions) projectLoadOptions {

@@ -493,10 +493,16 @@ struct GlobalOptions: ParsableArguments {
 
     /// Creates an orchestrator configured from global runtime flags.
     func orchestrator() -> ComposeOrchestrator {
+        let environment = ComposeEnvironment()
+        let statusOutput = statusOutput()
         let options = ComposeExecutionOptions {
             $0.dryRun = dryRun
             $0.maxParallelism = parallel
-            $0.serviceContainerNameSeparator = compatibility ? "_" : "-"
+            $0.serviceContainerNameSeparator = compatibility || environment.isEnabled("COMPOSE_COMPATIBILITY") ? "_" : "-"
+            $0.removeOrphans = environment.isEnabled("COMPOSE_REMOVE_ORPHANS")
+            $0.ignoreOrphans = environment.isEnabled("COMPOSE_IGNORE_ORPHANS")
+            $0.reportOrphans = true
+            $0.emitStatus = { statusOutput.write(Data(($0 + "\n").utf8)) }
             $0.progress = progressReporter()
         }
         return ComposeOrchestrator(
@@ -506,12 +512,12 @@ struct GlobalOptions: ParsableArguments {
     }
 
     /// Returns whether log prefix color should be enabled for this invocation.
-    func shouldColorLogs(noColor: Bool) -> Bool {
+    func shouldColorLogs(noColor: Bool, environment: ComposeEnvironment = ComposeEnvironment()) -> Bool {
         guard !noColor else {
             return false
         }
-        switch ansi?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "always":
+        switch effectiveANSI(environment: environment)?.lowercased() {
+        case "always", "0":
             return true
         case "never":
             return false
@@ -545,16 +551,29 @@ struct GlobalOptions: ParsableArguments {
 
     /// Creates the progress renderer selected by Docker Compose-compatible global flags.
     func progressReporter() -> ComposeProgressReporter {
-        ComposeProgressReporter(
+        let destination = statusOutput()
+        return ComposeProgressReporter(
             style: progressStyle(),
             colorEnabled: shouldColorProgress(),
-            emitData: { FileHandle.standardError.write($0) }
+            emitData: { destination.write($0) }
         )
     }
 
+    /// Returns the destination for Compose status and progress output.
+    func statusOutput(environment: ComposeEnvironment = ComposeEnvironment()) -> FileHandle {
+        statusOutputUsesStdout(environment: environment)
+            ? .standardOutput
+            : .standardError
+    }
+
+    /// Returns whether Compose status and progress should use standard output.
+    func statusOutputUsesStdout(environment: ComposeEnvironment = ComposeEnvironment()) -> Bool {
+        environment.isEnabled("COMPOSE_STATUS_STDOUT")
+    }
+
     /// Maps Docker Compose progress policy names onto local progress modes.
-    func progressStyle() -> ComposeProgressStyle {
-        switch progress?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    func progressStyle(environment: ComposeEnvironment = ComposeEnvironment()) -> ComposeProgressStyle {
+        switch effectiveProgress(environment: environment)?.lowercased() {
         case "quiet", "none":
             return .quiet
         case "plain":
@@ -571,9 +590,9 @@ struct GlobalOptions: ParsableArguments {
     }
 
     /// Returns whether progress rows should include ANSI color.
-    func shouldColorProgress() -> Bool {
-        switch ansi?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "always":
+    func shouldColorProgress(environment: ComposeEnvironment = ComposeEnvironment()) -> Bool {
+        switch effectiveANSI(environment: environment)?.lowercased() {
+        case "always", "0":
             return true
         case "never":
             return false
@@ -581,23 +600,36 @@ struct GlobalOptions: ParsableArguments {
             return stderrSupportsANSI()
         }
     }
-}
 
-/// Returns Docker Compose-compatible boolean parsing for environment flags.
-private func composeBooleanValue(_ value: String?) -> Bool? {
-    switch value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-    case "1", "true", "yes", "y", "on":
-        return true
-    case "0", "false", "no", "n", "off":
-        return false
-    default:
-        return nil
+    /// Returns the root ANSI setting after Docker's environment fallback.
+    func effectiveANSI(environment: ComposeEnvironment = ComposeEnvironment()) -> String? {
+        ansi ?? environment.value(named: "COMPOSE_ANSI")
+    }
+
+    /// Returns the root progress setting after Docker's environment fallback.
+    func effectiveProgress(environment: ComposeEnvironment = ComposeEnvironment()) -> String? {
+        progress ?? environment.value(named: "COMPOSE_PROGRESS")
+    }
+
+    /// Returns whether an operation should remove project orphans by default.
+    func effectiveRemoveOrphans(_ requested: Bool, environment: ComposeEnvironment = ComposeEnvironment()) -> Bool {
+        requested || environment.isEnabled("COMPOSE_REMOVE_ORPHANS")
+    }
+
+    /// Validates Docker Compose's root progress modes before command execution.
+    mutating func validate() throws {
+        guard let progress = effectiveProgress() else {
+            return
+        }
+        guard ["auto", "tty", "plain", "json", "quiet", "none"].contains(progress.lowercased()) else {
+            throw ValidationError("unsupported --progress value \"\(progress)\"")
+        }
     }
 }
 
 /// Returns whether COMPOSE_MENU requests the attached `up` shortcut menu.
 private func composeMenuEnvironmentEnabled() -> Bool {
-    composeBooleanValue(ProcessInfo.processInfo.environment["COMPOSE_MENU"]) ?? false
+    ComposeEnvironment().isEnabled("COMPOSE_MENU")
 }
 
 /// Returns whether stdin is an interactive terminal.
@@ -1084,7 +1116,7 @@ struct Create: AsyncParsableCommand, ComposeProjectCommand {
                 $0.noBuild = noBuild
                 $0.forceRecreate = forceRecreate
                 $0.noRecreate = noRecreate
-                $0.removeOrphans = removeOrphans
+                $0.removeOrphans = global.effectiveRemoveOrphans(removeOrphans)
                 $0.pullPolicy = pull
                 $0.scales = scales
                 $0.quietPull = quietPull
@@ -1199,7 +1231,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             $0.forceRecreate = forceRecreate
             $0.alwaysRecreateDeps = alwaysRecreateDeps
             $0.noRecreate = noRecreate
-            $0.removeOrphans = removeOrphans
+            $0.removeOrphans = global.effectiveRemoveOrphans(removeOrphans)
             $0.pullPolicy = pull
             $0.quietPull = quietPull
             $0.scales = scales
@@ -1256,7 +1288,7 @@ struct Down: AsyncParsableCommand, ComposeProjectCommand {
         let loadedProject = try await project()
         try await orchestrator().down(
             project: loadedProject,
-            options: ComposeDownOptions(services: services, volumes: volumes, removeOrphans: removeOrphans, timeout: timeout, rmi: rmi)
+            options: ComposeDownOptions(services: services, volumes: volumes, removeOrphans: global.effectiveRemoveOrphans(removeOrphans), timeout: timeout, rmi: rmi)
         )
     }
 }
@@ -1631,7 +1663,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 $0.quietBuild = quietBuild
                 $0.quietPull = quietPull
                 $0.quiet = quiet
-                $0.removeOrphans = removeOrphans
+                $0.removeOrphans = global.effectiveRemoveOrphans(removeOrphans)
                 $0.containerName = name
                 $0.entrypoint = entrypoint
                 $0.workingDirectory = workdir
@@ -1785,7 +1817,7 @@ struct Kill: AsyncParsableCommand, ComposeProjectCommand {
     /// Sends the requested signal to selected service containers.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().kill(project: loadedProject, services: services, signal: signal, removeOrphans: removeOrphans)
+        try await orchestrator().kill(project: loadedProject, services: services, signal: signal, removeOrphans: global.effectiveRemoveOrphans(removeOrphans))
     }
 }
 

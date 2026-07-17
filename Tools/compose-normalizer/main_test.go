@@ -2101,6 +2101,70 @@ services:
 	}
 }
 
+func TestLoadProjectUsesComposeEnvironmentProfilesAndEnvFiles(t *testing.T) {
+	dir := t.TempDir()
+	unsetEnv(t, "COMPOSE_ENV_FILES")
+	unsetEnv(t, "COMPOSE_PROFILES")
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+services:
+  base:
+    image: alpine
+  profiled:
+    image: "${PROFILE_IMAGE}"
+    profiles: ["dev"]
+`)
+	writeFile(t, filepath.Join(dir, "first.env"), "PROFILE_IMAGE=example/first:latest\n")
+	writeFile(t, filepath.Join(dir, "second.env"), "PROFILE_IMAGE=example/second:latest\n")
+	writeFile(t, filepath.Join(dir, "explicit.env"), "PROFILE_IMAGE=example/explicit:latest\n")
+	t.Setenv("CONTAINER_COMPOSE_NORMALIZER_CALLER_WORKING_DIRECTORY", dir)
+	t.Setenv("COMPOSE_PROFILES", "dev")
+	t.Setenv("COMPOSE_ENV_FILES", " first.env , second.env ")
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+	profiled, ok := project.Services["profiled"]
+	if !ok {
+		t.Fatal("profiled service is missing when COMPOSE_PROFILES selects dev")
+	}
+	if got, want := profiled.Image, "example/second:latest"; got != want {
+		t.Fatalf("profiled image = %q, want %q from the final COMPOSE_ENV_FILES entry", got, want)
+	}
+
+	explicit, err := loadProject(nil, nil, []string{"explicit.env"}, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject with explicit env file returned error: %v", err)
+	}
+	if got, want := explicit.Services["profiled"].Image, "example/explicit:latest"; got != want {
+		t.Fatalf("explicit env file image = %q, want %q", got, want)
+	}
+
+	variables, err := loadVariables(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadVariables returned error: %v", err)
+	}
+	if got, want := variables, []normalizedVariable{{Name: "PROFILE_IMAGE"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("variables = %#v, want %#v", got, want)
+	}
+}
+
+func TestConfiguredEnvFilesUseComposeCallerWorkingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CONTAINER_COMPOSE_NORMALIZER_CALLER_WORKING_DIRECTORY", dir)
+	t.Setenv("COMPOSE_ENV_FILES", " first.env , second.env ")
+
+	if got, want := configuredEnvFiles(nil), []string{
+		filepath.Join(dir, "first.env"),
+		filepath.Join(dir, "second.env"),
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("configuredEnvFiles() = %#v, want %#v", got, want)
+	}
+	if got, want := configuredEnvFiles([]string{"explicit.env"}), []string{"explicit.env"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("configuredEnvFiles() explicit values = %#v, want %#v", got, want)
+	}
+}
+
 func TestLoadProjectWithoutComposeFileReturnsError(t *testing.T) {
 	_, err := loadProject(nil, nil, nil, "", t.TempDir())
 	if err == nil {

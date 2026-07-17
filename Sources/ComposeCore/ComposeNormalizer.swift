@@ -40,7 +40,7 @@ public struct ComposeNormalizer: Sendable {
             invocation.executable,
             arguments,
             workingDirectory: invocation.workingDirectory,
-            environment: nil,
+            environment: invocation.environment,
             io: .captured(input: nil)
         )
         guard result.succeeded else {
@@ -68,7 +68,7 @@ public struct ComposeNormalizer: Sendable {
             invocation.executable,
             arguments,
             workingDirectory: invocation.workingDirectory,
-            environment: nil,
+            environment: invocation.environment,
             io: .captured(input: nil)
         )
         guard result.succeeded else {
@@ -96,7 +96,7 @@ public struct ComposeNormalizer: Sendable {
             invocation.executable,
             arguments,
             workingDirectory: invocation.workingDirectory,
-            environment: nil,
+            environment: invocation.environment,
             io: .captured(input: nil)
         )
         guard result.succeeded else {
@@ -124,7 +124,7 @@ public struct ComposeNormalizer: Sendable {
             invocation.executable,
             arguments,
             workingDirectory: invocation.workingDirectory,
-            environment: nil,
+            environment: invocation.environment,
             io: publish.assumeYes ? .captured(input: nil) : .capturedOutputInheritingInputAndError
         )
         guard result.succeeded else {
@@ -145,6 +145,7 @@ private struct NormalizerInvocation {
     var executable: String
     var prefixArguments: [String]
     var workingDirectory: URL?
+    var environment: [String: String]? = nil
 }
 
 private extension ComposeNormalizer {
@@ -250,6 +251,9 @@ private extension ComposeNormalizer {
                 executable: fallbackLauncher,
                 prefixArguments: ["go", "run", "."],
                 workingDirectory: sourceURL,
+                environment: [
+                    "CONTAINER_COMPOSE_NORMALIZER_CALLER_WORKING_DIRECTORY": FileManager.default.currentDirectoryPath,
+                ],
             )
         }
 

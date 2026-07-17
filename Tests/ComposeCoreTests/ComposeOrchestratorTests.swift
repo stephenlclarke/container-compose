@@ -4426,6 +4426,86 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("up warns about orphan containers unless ignored or removed")
+    func upWarnsAboutOrphanContainersUnlessIgnoredOrRemoved() async throws {
+        let statuses = MessageRecorder()
+        let runner = RecordingRunner(responses: [.success])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-worker-1",
+                status: "stopped",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "worker",
+                    composeConfigHashLabel: "worker-hash",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions {
+                $0.reportOrphans = true
+                $0.emitStatus = { statuses.append($0) }
+            },
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).up(project: project, options: ComposeUpOptions())
+
+        #expect(statuses.messages == [
+            "warning: found orphan containers (demo-worker-1) for this project; run with --remove-orphans to remove them",
+        ])
+        #expect(await lifecycleManager.requests.isEmpty)
+    }
+
+    @Test("up suppresses orphan warnings when execution options ignore them")
+    func upSuppressesOrphanWarningsWhenExecutionOptionsIgnoreThem() async throws {
+        let statuses = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-worker-1",
+                status: "stopped",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "worker",
+                    composeConfigHashLabel: "worker-hash",
+                ]
+            ),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(responses: [.success]),
+            options: ComposeExecutionOptions {
+                $0.ignoreOrphans = true
+                $0.reportOrphans = true
+                $0.emitStatus = { statuses.append($0) }
+            },
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).up(project: project, options: ComposeUpOptions())
+
+        #expect(statuses.messages.isEmpty)
+        #expect(await lifecycleManager.requests.isEmpty)
+    }
+
     @Test("up remove orphans cancellation leaves orphan containers")
     func upRemoveOrphansCancellationLeavesOrphanContainers() async throws {
         let prompts = MessageRecorder()
