@@ -360,6 +360,7 @@ type normalizedMount struct {
 	BindCreateHostPath *bool             `json:"bindCreateHostPath,omitempty"`
 	BindPropagation    string            `json:"bindPropagation,omitempty"`
 	VolumeSubpath      string            `json:"volumeSubpath,omitempty"`
+	ImageSubpath       string            `json:"imageSubpath,omitempty"`
 	VolumeLabels       map[string]string `json:"volumeLabels,omitempty"`
 	TmpfsSize          string            `json:"tmpfsSize,omitempty"`
 	TmpfsMode          string            `json:"tmpfsMode,omitempty"`
@@ -1383,6 +1384,7 @@ func mountValues(volumes []types.ServiceVolumeConfig) []normalizedMount {
 			BindCreateHostPath: bindCreateHostPathValue(volume),
 			BindPropagation:    bindPropagationValue(volume),
 			VolumeSubpath:      volumeSubpathValue(volume),
+			ImageSubpath:       imageSubpathValue(volume),
 			VolumeLabels:       volumeLabelsValue(volume),
 			TmpfsSize:          tmpfsSizeValue(volume),
 			TmpfsMode:          tmpfsModeValue(volume),
@@ -1418,6 +1420,15 @@ func volumeSubpathValue(volume types.ServiceVolumeConfig) string {
 	return volume.Volume.Subpath
 }
 
+// imageSubpathValue preserves an existing image directory for the runtime's
+// Docker-compatible image-subpath mount option.
+func imageSubpathValue(volume types.ServiceVolumeConfig) string {
+	if volume.Type != "image" || volume.Image == nil {
+		return ""
+	}
+	return volume.Image.SubPath
+}
+
 // volumeLabelsValue preserves long-form service volume labels for config
 // output and for anonymous volume creation parity.
 func volumeLabelsValue(volume types.ServiceVolumeConfig) map[string]string {
@@ -1447,16 +1458,13 @@ func tmpfsModeValue(volume types.ServiceVolumeConfig) string {
 // argument shape used by this plugin cannot preserve yet.
 func unsupportedMountFields(volume types.ServiceVolumeConfig) []string {
 	fields := []string{}
-	if volume.Type != "" && volume.Type != "bind" && volume.Type != "volume" && volume.Type != "tmpfs" {
+	if volume.Type != "" && volume.Type != "bind" && volume.Type != "volume" && volume.Type != "tmpfs" && volume.Type != "image" {
 		appendUnsupportedMountField(&fields, "type")
 	}
 	appendUnsupportedMountFieldWhen(&fields, "consistency", volume.Consistency != "")
 	if volume.Bind != nil {
 		appendUnsupportedMountFieldWhen(&fields, "bind.selinux", volume.Bind.SELinux != "")
 		appendUnsupportedMountFieldWhen(&fields, "bind.recursive", volume.Bind.Recursive != "")
-	}
-	if volume.Image != nil {
-		appendUnsupportedMountFieldWhen(&fields, "image.subpath", volume.Image.SubPath != "")
 	}
 	if len(fields) == 0 {
 		return nil

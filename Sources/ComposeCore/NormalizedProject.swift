@@ -716,6 +716,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         public var bindCreateHostPath: Bool?
         public var bindPropagation: String?
         public var volumeSubpath: String?
+        public var imageSubpath: String?
         public var fileOwnerUID: UInt32?
         public var fileOwnerGID: UInt32?
         public var volumeLabels: [String: String]?
@@ -726,6 +727,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
             bindCreateHostPath: Bool? = nil,
             bindPropagation: String? = nil,
             volumeSubpath: String? = nil,
+            imageSubpath: String? = nil,
             fileOwnerUID: UInt32? = nil,
             fileOwnerGID: UInt32? = nil,
             volumeLabels: [String: String]? = nil,
@@ -735,6 +737,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
             self.bindCreateHostPath = bindCreateHostPath
             self.bindPropagation = bindPropagation
             self.volumeSubpath = volumeSubpath
+            self.imageSubpath = imageSubpath
             self.fileOwnerUID = fileOwnerUID
             self.fileOwnerGID = fileOwnerGID
             self.volumeLabels = volumeLabels
@@ -749,6 +752,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
     public var bindCreateHostPath: Bool?
     public var bindPropagation: String?
     public var volumeSubpath: String?
+    public var imageSubpath: String?
     public var fileOwnerUID: UInt32?
     public var fileOwnerGID: UInt32?
     public var volumeLabels: [String: String]?
@@ -772,6 +776,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         bindCreateHostPath = options.bindCreateHostPath
         bindPropagation = options.bindPropagation
         volumeSubpath = options.volumeSubpath
+        imageSubpath = options.imageSubpath
         fileOwnerUID = options.fileOwnerUID
         fileOwnerGID = options.fileOwnerGID
         volumeLabels = options.volumeLabels
@@ -789,6 +794,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         bindCreateHostPath: Bool? = nil,
         bindPropagation: String? = nil,
         volumeSubpath: String? = nil,
+        imageSubpath: String? = nil,
         fileOwnerUID: UInt32? = nil,
         fileOwnerGID: UInt32? = nil,
         raw: String? = nil,
@@ -802,6 +808,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
                 bindCreateHostPath: bindCreateHostPath,
                 bindPropagation: bindPropagation,
                 volumeSubpath: volumeSubpath,
+                imageSubpath: imageSubpath,
                 fileOwnerUID: fileOwnerUID,
                 fileOwnerGID: fileOwnerGID,
             ),

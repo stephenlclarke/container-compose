@@ -103,6 +103,11 @@ struct ComposeNormalizerTests {
                 volume:
                   labels:
                     com.example.mount: anonymous
+              - type: image
+                source: alpine:3.20
+                target: /image
+                image:
+                  subpath: etc
             stop_signal: SIGUSR1
             stop_grace_period: 90s
             links:
@@ -209,6 +214,12 @@ struct ComposeNormalizerTests {
                 type: "volume",
                 target: "/scratch",
                 options: .init(volumeLabels: ["com.example.mount": "anonymous"])
+            ),
+            ComposeMount(
+                type: "image",
+                source: "alpine:3.20",
+                target: "/image",
+                options: .init(imageSubpath: "etc")
             ),
         ])
         #expect(project.services["api"]?.stopSignal == "SIGUSR1")

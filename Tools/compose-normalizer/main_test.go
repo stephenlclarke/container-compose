@@ -819,7 +819,7 @@ volumes:
 		"bindy":   {"consistency", "bind.selinux", "bind.recursive"},
 		"named":   nil,
 		"scratch": nil,
-		"imagey":  {"type", "image.subpath"},
+		"imagey":  nil,
 	}
 	for serviceName, want := range cases {
 		mounts := project.Services[serviceName].Volumes
@@ -835,6 +835,9 @@ volumes:
 	}
 	if got := project.Services["named"].Volumes[0].VolumeSubpath; got != "nested" {
 		t.Fatalf("named volume subpath = %q, want nested", got)
+	}
+	if got := project.Services["imagey"].Volumes[0].ImageSubpath; got != "etc" {
+		t.Fatalf("image mount subpath = %q, want etc", got)
 	}
 }
 
