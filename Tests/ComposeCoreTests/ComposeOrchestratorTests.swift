@@ -8759,6 +8759,69 @@ struct ComposeOrchestratorTests {
         #expect(run.containsSequence(["--mount", "type=volume,source=demo_cache,destination=/cache,volume-subpath=logs/app"]))
     }
 
+    @Test("up maps image mounts to the typed read-only container mount")
+    func upMapsImageMountToTypedContainerMount() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "image",
+                            source: "alpine:3.20",
+                            target: "/assets",
+                            imageSubpath: "etc"
+                        ),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: project, options: ComposeUpOptions())
+
+        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(run.containsSequence([
+            "--mount",
+            "type=image,source=alpine:3.20,destination=/assets,readonly,image-subpath=etc",
+        ]))
+    }
+
+    @Test("up rejects image subpaths on non-image mounts")
+    func upRejectsImageSubpathOnNonImageMount() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "volume",
+                            source: "cache",
+                            target: "/cache",
+                            imageSubpath: "etc"
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, discoveryManager: RecordingContainerDiscoveryManager())
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid image subpath error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("image subpath is only supported for image mounts"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects a legacy unsupported volume subpath marker")
     func upRejectsLegacyUnsupportedVolumeSubpathMarker() async throws {
         let runner = RecordingRunner()

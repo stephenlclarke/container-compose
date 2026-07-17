@@ -43,6 +43,25 @@ extension ComposeOrchestrator {
             throw ComposeError.invalidProject("volume mount is missing target")
         }
         let source = mount.source ?? ""
+        if nonEmpty(mount.imageSubpath) != nil, mount.type != "image" {
+            throw ComposeError.invalidProject("image subpath is only supported for image mounts")
+        }
+        if mount.type == "image" {
+            guard !source.isEmpty else {
+                throw ComposeError.invalidProject("image mount is missing source")
+            }
+            var fields = [
+                "type=image",
+                "source=\(source)",
+                "destination=\(target)",
+                "readonly",
+            ]
+            if let subpath = nonEmpty(mount.imageSubpath) {
+                fields.append("image-subpath=\(subpath)")
+            }
+            args.append(contentsOf: ["--mount", fields.joined(separator: ",")])
+            return
+        }
         let mappedSource: String = if mount.type == "volume", !source.isEmpty {
             volumeRuntimeName(project: context.project, composeName: source)
         } else if source.isEmpty {
