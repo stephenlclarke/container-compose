@@ -51,6 +51,7 @@ public struct ContainerServiceCreateRuntime: Sendable {
     public var hosts: [ContainerConfiguration.HostEntry]
     public var sysctls: [String: String]
     public var blockIO: LinuxBlockIO?
+    public var cpuShares: UInt64?
 
     public init() {
         initProcess = ComposeRuntimeDefaults.shellProcess()
@@ -62,6 +63,7 @@ public struct ContainerServiceCreateRuntime: Sendable {
         hosts = []
         sysctls = [:]
         blockIO = nil
+        cpuShares = nil
     }
 }
 
@@ -85,6 +87,7 @@ public struct ContainerServiceCreatePlan: Sendable {
     public var hosts: [ContainerConfiguration.HostEntry]
     public var sysctls: [String: String]
     public var blockIO: LinuxBlockIO?
+    public var cpuShares: UInt64?
 
     public init(
         identity: ContainerServiceCreateIdentity,
@@ -104,6 +107,7 @@ public struct ContainerServiceCreatePlan: Sendable {
         self.hosts = runtime.hosts
         self.sysctls = runtime.sysctls
         self.blockIO = runtime.blockIO
+        self.cpuShares = runtime.cpuShares
     }
 }
 

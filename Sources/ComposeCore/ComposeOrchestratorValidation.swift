@@ -83,6 +83,7 @@ extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
         _ = try runtimeOOMScoreAdj(service: service)
+        _ = try runtimeCPUShares(service: service)
         _ = try runtimeBlkioArguments(service: service)
         _ = try runtimeDeviceCgroupRuleArguments(service: service)
         _ = try runtimeDeviceArguments(service: service)

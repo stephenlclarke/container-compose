@@ -247,6 +247,9 @@ extension ComposeOrchestrator {
         if let pidsLimit = runtimePidsLimitArgument(service: service) {
             args.append(contentsOf: ["--pids-limit", pidsLimit])
         }
+        if let cpuShares = createPlan.cpuShares {
+            args.append(contentsOf: ["--cpu-shares", "\(cpuShares)"])
+        }
         if let memLimit = service.memLimit, !memLimit.isEmpty {
             args.append(contentsOf: ["--memory", memLimit])
         }
