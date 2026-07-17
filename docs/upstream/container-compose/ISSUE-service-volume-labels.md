@@ -50,4 +50,5 @@ This does not require a new Apple runtime primitive. The plugin can preserve the
 - `container compose up`, `create`, and `run` accept service volume labels.
 - Anonymous service volume labels are applied when the plugin creates the deterministic anonymous runtime volume.
 - Named service mount labels remain metadata; top-level named volume labels continue to drive named volume resource creation.
-- `volume.subpath` remains unsupported until Apple/container exposes compatible subpath mount semantics.
+- `volume.subpath` is handled by the separate fork-backed
+  `PR-volume-subpath.md` runtime handoff.

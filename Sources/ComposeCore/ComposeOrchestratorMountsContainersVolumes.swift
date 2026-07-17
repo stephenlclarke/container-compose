@@ -76,6 +76,23 @@ extension ComposeOrchestrator {
             return
         }
 
+        if let subpath = nonEmpty(mount.volumeSubpath) {
+            guard mount.type == "volume" || mount.type == "external-volume" else {
+                throw ComposeError.invalidProject("volume subpath is only supported for volume mounts")
+            }
+            var fields = [
+                "type=volume",
+                "source=\(mappedSource)",
+                "destination=\(target)",
+                "volume-subpath=\(subpath)",
+            ]
+            if mount.readOnly == true {
+                fields.append("readonly")
+            }
+            args.append(contentsOf: ["--mount", fields.joined(separator: ",")])
+            return
+        }
+
         var value = "\(mappedSource):\(target)"
         let options = try volumeMountOptions(mount)
         if !options.isEmpty {

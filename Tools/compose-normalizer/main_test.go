@@ -817,7 +817,7 @@ volumes:
 
 	cases := map[string][]string{
 		"bindy":   {"consistency", "bind.selinux", "bind.recursive"},
-		"named":   {"volume.subpath"},
+		"named":   nil,
 		"scratch": nil,
 		"imagey":  {"type", "image.subpath"},
 	}
@@ -832,6 +832,9 @@ volumes:
 	}
 	if got := project.Services["bindy"].Volumes[0].BindPropagation; got != "rshared" {
 		t.Fatalf("bindy bind propagation = %q, want rshared", got)
+	}
+	if got := project.Services["named"].Volumes[0].VolumeSubpath; got != "nested" {
+		t.Fatalf("named volume subpath = %q, want nested", got)
 	}
 }
 

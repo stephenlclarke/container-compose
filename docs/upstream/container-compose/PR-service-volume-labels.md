@@ -3,7 +3,8 @@
 ## Summary
 
 - Preserves service long-form `volume.labels` in the normalized mount model.
-- Stops treating `volume.labels` as an unsupported mount field while keeping `volume.subpath` blocked.
+- Stops treating `volume.labels` as an unsupported mount field; the later
+  `PR-volume-subpath.md` slice handles `volume.subpath`.
 - Creates deterministic labeled anonymous volumes before Apple runtime create/run handoff.
 - Keeps named service mount labels as config metadata, matching Docker Compose runtime behavior.
 - Adds focused Go normalizer and Swift orchestration coverage.
@@ -29,7 +30,8 @@ Upstream review found no direct Docker/Compose issues or PRs for service `volume
 
 - Added `volumeLabels` to the Go normalizer JSON and Swift `ComposeMount`.
 - Added `volumeLabelsValue` in the normalizer to preserve compose-go service volume labels.
-- Removed `volume.labels` from unsupported mount-field reporting while leaving `volume.subpath` unsupported.
+- Removed `volume.labels` from unsupported mount-field reporting. The later
+  `PR-volume-subpath.md` slice adds fork-backed `volume.subpath` support.
 - Added `ensureLabeledAnonymousVolumes` so `up`, `create`, and `run` create labeled anonymous volumes before rendering the container command.
 - Creates labeled anonymous volumes after `--renew-anon-volumes` cleanup so renewed containers do not lose labels.
 - Does not merge named service mount labels into named `volume create`; top-level volume labels remain the resource label source.
@@ -66,7 +68,8 @@ This change makes `container-compose` more Docker Compose compatible for service
 
 - Docker Compose may define additional runtime effects for named service mount labels. The current implementation follows behavior enforced by the Docker Compose v2 parity target.
 - The plugin uses deterministic anonymous volume names rather than Docker's random anonymous volume names, matching the existing `container-compose` cleanup model.
-- `volume.subpath` remains blocked until Apple/container exposes compatible subpath mount behavior.
+- `volume.subpath` is covered by the later fork-backed `PR-volume-subpath.md`
+  handoff.
 
 ## Commit Tracking
 
