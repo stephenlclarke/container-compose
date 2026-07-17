@@ -1303,6 +1303,7 @@ struct ComposeOrchestratorTests {
                             ipv4Subnet: "10.77.0.0/24",
                             ipv4Gateway: "10.77.0.254",
                             ipv4AllocationRange: "10.77.0.128/25",
+                            ipv4ReservedAddresses: ["10.77.0.10", "10.77.0.11"],
                             ipv6Subnet: "fd77::/64"
                         )
                     )
@@ -1324,6 +1325,7 @@ struct ComposeOrchestratorTests {
             #expect(request.ipv4Subnet == "10.77.0.0/24")
             #expect(request.ipv4Gateway == "10.77.0.254")
             #expect(request.ipv4AllocationRange == "10.77.0.128/25")
+            #expect(request.ipv4ReservedAddresses == ["10.77.0.10", "10.77.0.11"])
             #expect(request.ipv6Subnet == "fd77::/64")
             #expect(request.driverOpts == [:])
             #expect(request.labels["com.apple.container.compose.project"] == "demo")
@@ -1403,6 +1405,7 @@ struct ComposeOrchestratorTests {
                             ipv4Subnet: "10.77.0.0/24",
                             ipv4Gateway: "10.77.0.254",
                             ipv4AllocationRange: "10.77.0.128/25",
+                            ipv4ReservedAddresses: ["10.77.0.10", "10.77.0.11"],
                             ipv6Subnet: "fd77::/64"
                         )
                     )
@@ -1414,7 +1417,7 @@ struct ComposeOrchestratorTests {
             .up(project: project, options: ComposeUpOptions())
 
         #expect(emitted.messages.contains { message in
-            message.contains("container network create --internal --subnet 10.77.0.0/24 --gateway 10.77.0.254 --ip-range 10.77.0.128/25 --subnet-v6 fd77::/64")
+            message.contains("container network create --internal --subnet 10.77.0.0/24 --gateway 10.77.0.254 --ip-range 10.77.0.128/25 --reserve-ip 10.77.0.10 --reserve-ip 10.77.0.11 --subnet-v6 fd77::/64")
         })
     }
 
@@ -1477,7 +1480,7 @@ struct ComposeOrchestratorTests {
                 .up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported project network options error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, attachable, enable_ipv4, enable_ipv6; supported project network fields are name, external, internal, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway and allocation range plus one IPv6 IPAM subnet"))
+            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, attachable, enable_ipv4, enable_ipv6; supported project network fields are name, external, internal, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -1564,6 +1567,43 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("up rejects invalid project network reserved addresses before side effects")
+    func upRejectsInvalidProjectNetworkReservedAddressesBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: .init(subnets: .init(
+                        ipv4Subnet: "10.77.0.0/24",
+                        ipv4ReservedAddresses: ["10.77.0.10", "10.77.0.10"]
+                    ))
+                ),
+            ]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid project network reserved address error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("network 'backend' IPv4 IPAM reserved addresses must be unique"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("up rejects static endpoint addresses that reuse a project network gateway")
     func upRejectsStaticEndpointAddressMatchingNetworkGatewayBeforeSideEffects() async throws {
         let runner = RecordingRunner()
@@ -1597,6 +1637,48 @@ struct ComposeOrchestratorTests {
         } catch let error as ComposeError {
             #expect(error == .invalidProject(
                 "service 'api' ipv4_address '10.77.0.20' is the gateway for network 'backend'"
+            ))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up rejects static endpoint addresses that reuse a project network reserved address")
+    func upRejectsStaticEndpointAddressMatchingNetworkReservedAddressBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(addressing: .init(ipv4Address: "10.77.0.20")),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: .init(subnets: .init(
+                        ipv4Subnet: "10.77.0.0/24",
+                        ipv4ReservedAddresses: ["10.77.0.20"]
+                    ))
+                ),
+            ]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected static address reservation collision error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject(
+                "service 'api' ipv4_address '10.77.0.20' is reserved on network 'backend'"
             ))
         } catch {
             Issue.record("Unexpected error: \(error)")

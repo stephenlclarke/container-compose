@@ -488,6 +488,19 @@ private func validateStaticIPv4Address(
             )
         }
     }
+    for reservedAddressText in configuration.ipv4ReservedAddresses ?? [] {
+        let reservedAddress: IPv4Address
+        do {
+            reservedAddress = try IPv4Address(reservedAddressText)
+        } catch {
+            throw ComposeError.invalidProject("network '\(network)' IPv4 IPAM reserved address '\(reservedAddressText)' is invalid")
+        }
+        guard address != reservedAddress else {
+            throw ComposeError.invalidProject(
+                "service '\(service.name)' ipv4_address '\(address)' is reserved on network '\(network)'"
+            )
+        }
+    }
 }
 
 /// Validates the optional IPv4 IPAM gateway before creating any project resource.
@@ -547,6 +560,44 @@ func validateNetworkIPv4AllocationRange(_ network: ComposeNetwork, name: String)
         throw ComposeError.invalidProject(
             "network '\(name)' IPv4 IPAM allocation range '\(allocationRange)' contains no allocatable host addresses in subnet '\(subnet)'"
         )
+    }
+}
+
+/// Validates IPv4 addresses reserved from allocation before creating any project resource.
+func validateNetworkIPv4ReservedAddresses(_ network: ComposeNetwork, name: String) throws {
+    guard let reservedAddressTexts = network.ipv4ReservedAddresses, !reservedAddressTexts.isEmpty else {
+        return
+    }
+    guard let subnetText = nonEmpty(network.ipv4Subnet) else {
+        throw ComposeError.invalidProject("network '\(name)' IPv4 IPAM reserved addresses require an IPv4 IPAM subnet")
+    }
+    let subnet: CIDRv4
+    do {
+        subnet = try CIDRv4(subnetText)
+    } catch {
+        throw ComposeError.invalidProject("network '\(name)' IPv4 IPAM subnet '\(subnetText)' is invalid")
+    }
+    guard subnet.upper.value - subnet.lower.value >= 4 else {
+        throw ComposeError.invalidProject("network '\(name)' IPv4 IPAM subnet '\(subnet)' has no allocatable host addresses")
+    }
+    let allocationLower = subnet.lower.value + 2
+    let allocationUpper = subnet.upper.value - 2
+    var reservedAddresses = Set<IPv4Address>()
+    for addressText in reservedAddressTexts {
+        let address: IPv4Address
+        do {
+            address = try IPv4Address(addressText)
+        } catch {
+            throw ComposeError.invalidProject("network '\(name)' IPv4 IPAM reserved address '\(addressText)' is invalid")
+        }
+        guard address.value >= allocationLower, address.value <= allocationUpper else {
+            throw ComposeError.invalidProject(
+                "network '\(name)' IPv4 IPAM reserved address '\(address)' must be an allocatable host address in subnet '\(subnet)'"
+            )
+        }
+        guard reservedAddresses.insert(address).inserted else {
+            throw ComposeError.invalidProject("network '\(name)' IPv4 IPAM reserved addresses must be unique")
+        }
     }
 }
 

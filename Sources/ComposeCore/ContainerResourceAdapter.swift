@@ -60,6 +60,7 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
     public var ipv4Subnet: String?
     public var ipv4Gateway: String?
     public var ipv4AllocationRange: String?
+    public var ipv4ReservedAddresses: [String]
     public var ipv6Subnet: String?
     public var driverOpts: [String: String]
     public var labels: [String: String]
@@ -70,6 +71,7 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
         ipv4Subnet: String? = nil,
         ipv4Gateway: String? = nil,
         ipv4AllocationRange: String? = nil,
+        ipv4ReservedAddresses: [String] = [],
         ipv6Subnet: String? = nil,
         driverOpts: [String: String] = [:],
         labels: [String: String] = [:],
@@ -79,6 +81,7 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
         self.ipv4Subnet = ipv4Subnet
         self.ipv4Gateway = ipv4Gateway
         self.ipv4AllocationRange = ipv4AllocationRange
+        self.ipv4ReservedAddresses = ipv4ReservedAddresses
         self.ipv6Subnet = ipv6Subnet
         self.driverOpts = driverOpts
         self.labels = labels
@@ -262,6 +265,7 @@ public struct ContainerClientResourceManager: ContainerResourceManaging {
             ipv4Subnet: request.ipv4Subnet.map { try CIDRv4($0) },
             ipv4Gateway: request.ipv4Gateway.map { try IPv4Address($0) },
             ipv4AllocationRange: request.ipv4AllocationRange.map { try CIDRv4($0) },
+            ipv4ReservedAddresses: try request.ipv4ReservedAddresses.map { try IPv4Address($0) },
             ipv6Subnet: request.ipv6Subnet.map { try CIDRv6($0) },
             labels: ResourceLabels(request.labels),
             plugin: "container-network-vmnet",
