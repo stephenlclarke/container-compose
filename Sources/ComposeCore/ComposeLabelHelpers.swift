@@ -124,7 +124,11 @@ func labelKeyValue(_ raw: String) -> (key: String, value: String) {
 }
 
 /// Builds enough of the init process shape for typed create-time projections.
-func serviceCreateBaseProcess(service: ComposeService, supplementalGroups: [UInt32] = []) -> ProcessConfiguration {
+func serviceCreateBaseProcess(
+    service: ComposeService,
+    supplementalGroups: [UInt32] = [],
+    supplementalGroupNames: [String] = [],
+) -> ProcessConfiguration {
     let executable: String
     let arguments: [String]
     if let entrypoint = service.entrypoint, !entrypoint.isEmpty {
@@ -156,6 +160,7 @@ func serviceCreateBaseProcess(service: ComposeService, supplementalGroups: [UInt
         terminal: service.tty == true,
         user: user,
         supplementalGroups: supplementalGroups,
+        supplementalGroupNames: supplementalGroupNames,
         privileged: service.privileged == true,
     )
 }

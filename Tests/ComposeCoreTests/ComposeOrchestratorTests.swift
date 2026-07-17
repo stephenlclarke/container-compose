@@ -2393,7 +2393,7 @@ struct ComposeOrchestratorTests {
                     ]
                     $0.workingDir = "/work"
                     $0.user = "1000:1000"
-                    $0.groupAdd = ["1000", "1001", "1000"]
+                    $0.groupAdd = ["1000", "video", "1001", "staff", "1000", "video"]
                 },
             ]
         )
@@ -2406,6 +2406,7 @@ struct ComposeOrchestratorTests {
         #expect(plan.initProcess.workingDirectory == "/work")
         #expect(plan.initProcess.user.description == "1000:1000")
         #expect(plan.initProcess.supplementalGroups == [1000, 1001])
+        #expect(plan.initProcess.supplementalGroupNames == ["video", "staff"])
     }
 
     @Test("service create plan maps explicit healthcheck to typed policy")
@@ -2418,6 +2419,7 @@ struct ComposeOrchestratorTests {
                     $0.environment = ["LOG_LEVEL": "debug"]
                     $0.workingDir = "/srv"
                     $0.user = "1000:1000"
+                    $0.groupAdd = ["1000", "video"]
                     $0.healthcheck = .object([
                         "test": .array([.string("CMD-SHELL"), .string("test -f /tmp/ready")]),
                         "interval": .string("5s"),
@@ -2435,8 +2437,34 @@ struct ComposeOrchestratorTests {
         #expect(healthCheck.process.environment == ["LOG_LEVEL=debug"])
         #expect(healthCheck.process.workingDirectory == "/srv")
         #expect(healthCheck.process.user.description == "1000:1000")
+        #expect(healthCheck.process.supplementalGroups == [1000])
+        #expect(healthCheck.process.supplementalGroupNames == ["video"])
         #expect(healthCheck.intervalInNanoseconds == 5_000_000_000)
         #expect(healthCheck.retries == 2)
+    }
+
+    @Test("service create plan rejects malformed supplemental group IDs")
+    func serviceCreatePlanRejectsMalformedSupplementalGroupIDs() async throws {
+        for (group, expectedMessage) in [
+            ("", "service 'job' uses an empty group_add value"),
+            ("4294967296", "service 'job' uses group_add numeric ID '4294967296' outside the UInt32 range"),
+        ] {
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        $0.groupAdd = [group]
+                    },
+                ]
+            )
+
+            do {
+                _ = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "job")
+                Issue.record("Expected group_add validation failure for '\(group)'")
+            } catch let error as ComposeError {
+                #expect(error == .invalidProject(expectedMessage))
+            }
+        }
     }
 
     @Test("create surfaces network create failures before creating containers")
@@ -22645,7 +22673,7 @@ struct ComposeOrchestratorTests {
                     ]
                     $0.workingDir = "/work"
                     $0.user = "1000"
-                    $0.groupAdd = ["1000", "1001"]
+                    $0.groupAdd = ["1000", "video", "1001", "staff", "1000", "video"]
                     $0.tty = true
                     $0.stdinOpen = true
                     $0.readOnly = true
@@ -22686,7 +22714,9 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--user", "1000"]))
         #expect(command.containsSequence(["--group-add", "1000"]))
         #expect(command.containsSequence(["--group-add", "1001"]))
-        #expect(command.filter { $0 == "--group-add" }.count == 2)
+        #expect(command.containsSequence(["--group-add", "video"]))
+        #expect(command.containsSequence(["--group-add", "staff"]))
+        #expect(command.filter { $0 == "--group-add" }.count == 4)
         #expect(command.contains("--tty"))
         #expect(command.contains("--interactive"))
         #expect(command.containsSequence(["--platform", "linux/arm64"]))
@@ -22708,6 +22738,33 @@ struct ComposeOrchestratorTests {
         #expect(command.contains("--read-only"))
         #expect(command.contains("--init"))
         #expect(Array(command.suffix(4)) == ["alpine", "-c", "echo", "ok"])
+    }
+
+    @Test("run rejects malformed supplemental group IDs before invoking container")
+    func runRejectsMalformedSupplementalGroupIDsBeforeInvokingContainer() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.groupAdd = ["4294967296"]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(
+                project: project,
+                serviceName: "job",
+                command: ["true"],
+                remove: false,
+            )
+            Issue.record("Expected group_add validation failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'job' uses group_add numeric ID '4294967296' outside the UInt32 range"))
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("run applies one-off capability overrides")
@@ -26765,12 +26822,6 @@ private struct UnsupportedUserAndSecurityOptionFieldCase: Sendable {
 
 private func unsupportedUserAndSecurityOptionFieldCases() -> [UnsupportedUserAndSecurityOptionFieldCase] {
     [
-        UnsupportedUserAndSecurityOptionFieldCase(
-            composeName: "group_add",
-            value: "video",
-            reason: "named supplemental groups need an image-aware apple/container runtime primitive",
-            configure: { $0.groupAdd = ["video", "staff"] }
-        ),
         UnsupportedUserAndSecurityOptionFieldCase(
             composeName: "security_opt",
             value: "label:disable",
