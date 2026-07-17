@@ -179,11 +179,24 @@ def previous_stable_tag(repo: Path, release_tag: str, head_ref: str) -> str | No
     if tags is None:
         return None
 
+    release_version = stable_release_version(release_tag)
+    candidates: dict[str, tuple[int, int, int]] = {}
     for tag in tags.splitlines():
         if tag == release_tag:
             continue
-        if STABLE_RELEASE_PATTERN.fullmatch(tag):
-            return tag
+        version = stable_release_version(tag)
+        if version is None:
+            continue
+        if release_version is not None and version >= release_version:
+            continue
+        candidates[tag] = version
+
+    for tag, _version in sorted(
+        candidates.items(),
+        key=lambda item: item[1],
+        reverse=True,
+    ):
+        return tag
     return None
 
 

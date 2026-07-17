@@ -201,8 +201,7 @@ class ReleaseNotesTests(unittest.TestCase):
             self.git(repo, "tag", "--no-sign", "0.6.1")
             snapshot = """## Quality Snapshot
 
-![Quality Gate Status](https://img.shields.io/static/v1?label=Quality+Gate+Status&message=Passed&color=brightgreen)
-![CodeQL Results](https://img.shields.io/static/v1?label=CodeQL+Results&message=0&color=brightgreen)
+![Quality Gate Status](https://img.shields.io/static/v1?label=Quality+Gate+Status&message=Passed&color=brightgreen) ![CodeQL Results](https://img.shields.io/static/v1?label=CodeQL+Results&message=0&color=brightgreen)
 """
 
             notes = module.render_release_notes(
@@ -221,6 +220,43 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("![CodeQL Results]", notes)
             self.assertNotIn("[![", notes)
             self.assertLess(notes.index("## Quality Snapshot"), notes.index("## Summary"))
+            metric_rows = [line for line in notes.splitlines() if line.startswith("![")]
+            self.assertEqual(metric_rows, [snapshot.splitlines()[2]])
+
+    def test_stable_highlights_and_changes_exclude_the_previous_stable_build(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "feat(network): add obsolete release feature",
+                body="Release-Highlight: This must not appear in the next stable release notes.",
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+            self.commit(
+                repo,
+                "feat(network): add stable release feature",
+                body="Release-Highlight: Adds the feature delivered by this stable release.",
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.2")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.2",
+                release_label="stable release",
+                compose_version="0.6.2",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn("Commits since `0.6.1`", notes)
+            self.assertIn("feat(network): add stable release feature", notes)
+            self.assertIn("Adds the feature delivered by this stable release.", notes)
+            self.assertNotIn("feat(network): add obsolete release feature", notes)
+            self.assertNotIn("This must not appear in the next stable release notes.", notes)
 
     def test_current_release_renders_a_quality_snapshot_before_the_summary(self) -> None:
         module = load_module()

@@ -158,6 +158,51 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn("replaced when `current` moves", snapshot)
         self.assertNotIn("retained as historical evidence", snapshot)
 
+    def test_stable_and_current_snapshots_keep_the_same_horizontal_metric_row(self) -> None:
+        module = load_module()
+        measures = {
+            "alert_status": "OK",
+            "bugs": "0",
+            "code_smells": "15",
+            "coverage": "90.8",
+            "duplicated_lines_density": "0.7",
+            "ncloc": "26901",
+            "reliability_rating": "1.0",
+            "security_rating": "1.0",
+            "sqale_index": "199",
+            "sqale_rating": "1.0",
+            "vulnerabilities": "0",
+        }
+        analysis = {"date": "2026-07-14T00:00:00+0000"}
+        codeql = {
+            "results_count": 0,
+            "rules_count": 34,
+            "error": "",
+            "warning": "",
+        }
+
+        current = module.render_snapshot(
+            commit="0123456789abcdef",
+            sonar_analysis=analysis,
+            sonar_measures=measures,
+            codeql_analysis=codeql,
+            release_kind="current",
+        )
+        stable = module.render_snapshot(
+            commit="0123456789abcdef",
+            sonar_analysis=analysis,
+            sonar_measures=measures,
+            codeql_analysis=codeql,
+            release_kind="stable",
+        )
+
+        def metric_rows(snapshot: str) -> list[str]:
+            return [line for line in snapshot.splitlines() if line.startswith("![")]
+
+        self.assertEqual(metric_rows(current), metric_rows(stable))
+        self.assertEqual(len(metric_rows(stable)), 1)
+        self.assertEqual(metric_rows(stable)[0].count("!["), 14)
+
     def test_codeql_warning_is_rejected(self) -> None:
         module = load_module()
 
