@@ -1502,6 +1502,12 @@ func networkValues(networks map[string]*types.ServiceNetworkConfig) []string {
 	return result
 }
 
+const (
+	networkIPAMGatewayField      = "ipam.config.gateway"
+	networkIPAMAllocationField   = "ipam.config.ip_range"
+	networkIPAMReservedAddresses = "ipam.config.aux_addresses"
+)
+
 // networkIPAMValues returns the one IPv4 subnet, IPv4 gateway, IPv4 allocation
 // range, IPv4 addresses reserved from allocation, and IPv6 subnet that the runtime can create.
 func networkIPAMValues(ipam types.IPAMConfig) (string, string, string, []string, string, []string) {
@@ -1522,15 +1528,15 @@ func networkIPAMValues(ipam types.IPAMConfig) (string, string, string, []string,
 		gateway := strings.TrimSpace(pool.Gateway)
 		allocationRange := strings.TrimSpace(pool.IPRange)
 		if subnet == "" {
-			appendUnsupportedNetworkField(&fields, "ipam.config.gateway", gateway != "")
-			appendUnsupportedNetworkField(&fields, "ipam.config.ip_range", allocationRange != "")
-			appendUnsupportedNetworkField(&fields, "ipam.config.aux_addresses", len(reservedAddresses) > 0)
+			appendUnsupportedNetworkField(&fields, networkIPAMGatewayField, gateway != "")
+			appendUnsupportedNetworkField(&fields, networkIPAMAllocationField, allocationRange != "")
+			appendUnsupportedNetworkField(&fields, networkIPAMReservedAddresses, len(reservedAddresses) > 0)
 			continue
 		}
 		if strings.Contains(subnet, ":") {
-			appendUnsupportedNetworkField(&fields, "ipam.config.gateway", gateway != "")
-			appendUnsupportedNetworkField(&fields, "ipam.config.ip_range", allocationRange != "")
-			appendUnsupportedNetworkField(&fields, "ipam.config.aux_addresses", len(reservedAddresses) > 0)
+			appendUnsupportedNetworkField(&fields, networkIPAMGatewayField, gateway != "")
+			appendUnsupportedNetworkField(&fields, networkIPAMAllocationField, allocationRange != "")
+			appendUnsupportedNetworkField(&fields, networkIPAMReservedAddresses, len(reservedAddresses) > 0)
 			if ipv6Subnet != "" {
 				appendUnsupportedNetworkField(&fields, "ipam.config.subnet", true)
 				continue
@@ -1540,13 +1546,13 @@ func networkIPAMValues(ipam types.IPAMConfig) (string, string, string, []string,
 		}
 		if ipv4Subnet != "" {
 			appendUnsupportedNetworkField(&fields, "ipam.config.subnet", true)
-			appendUnsupportedNetworkField(&fields, "ipam.config.gateway", gateway != "")
-			appendUnsupportedNetworkField(&fields, "ipam.config.ip_range", allocationRange != "")
-			appendUnsupportedNetworkField(&fields, "ipam.config.aux_addresses", len(reservedAddresses) > 0)
+			appendUnsupportedNetworkField(&fields, networkIPAMGatewayField, gateway != "")
+			appendUnsupportedNetworkField(&fields, networkIPAMAllocationField, allocationRange != "")
+			appendUnsupportedNetworkField(&fields, networkIPAMReservedAddresses, len(reservedAddresses) > 0)
 			continue
 		}
 		if strings.Contains(gateway, ":") {
-			appendUnsupportedNetworkField(&fields, "ipam.config.gateway", true)
+			appendUnsupportedNetworkField(&fields, networkIPAMGatewayField, true)
 			gateway = ""
 		}
 		ipv4Subnet = subnet

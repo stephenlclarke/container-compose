@@ -14,20 +14,11 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerAPIClient
-import Foundation
-
-/// Reads immutable, non-secret configuration content from apple/container.
-public protocol ContainerConfigReading: Sendable {
-    /// Returns the stored bytes for a named external configuration.
-    func readConfig(name: String) async throws -> Data
-}
-
-/// `ClientConfig`-backed reader for Compose external configuration mounts.
-public struct ContainerClientConfigReader: ContainerConfigReading {
-    public init() {}
-
-    public func readConfig(name: String) async throws -> Data {
-        try await ClientConfig.read(name: name)
-    }
+/// Compose-owned labels shared by orchestration and runtime providers.
+public enum ComposeRuntimeLabels {
+    public static let project = "com.apple.container.compose.project"
+    public static let service = "com.apple.container.compose.service"
+    public static let oneOff = "com.apple.container.compose.oneoff"
+    public static let reservedPrefix = "com.apple.container.compose."
+    public static let reservedDockerComposePrefix = "com.docker.compose."
 }

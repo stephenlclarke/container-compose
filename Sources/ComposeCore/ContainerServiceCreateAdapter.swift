@@ -14,8 +14,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerResource
 import ContainerizationOCI
+import ContainerResource
 
 /// User-visible service identity fields for create planning.
 public struct ContainerServiceCreateIdentity: Sendable {
@@ -30,7 +30,7 @@ public struct ContainerServiceCreateIdentity: Sendable {
         imageReference: String,
         oneOff: Bool = false,
         autoRemove: Bool = false,
-        labels: [String: String] = [:]
+        labels: [String: String] = [:],
     ) {
         self.name = name
         self.imageReference = imageReference
@@ -94,24 +94,24 @@ public struct ContainerServiceCreatePlan: Sendable {
 
     public init(
         identity: ContainerServiceCreateIdentity,
-        runtime: ContainerServiceCreateRuntime = ContainerServiceCreateRuntime()
+        runtime: ContainerServiceCreateRuntime = ContainerServiceCreateRuntime(),
     ) {
-        self.name = identity.name
-        self.imageReference = identity.imageReference
-        self.oneOff = identity.oneOff
-        self.autoRemove = identity.autoRemove
-        self.labels = identity.labels
-        self.initProcess = runtime.initProcess
-        self.logging = runtime.logging
-        self.healthCheck = runtime.healthCheck
-        self.restartPolicy = runtime.restartPolicy
-        self.hostname = runtime.hostname
-        self.domainname = runtime.domainname
-        self.hosts = runtime.hosts
-        self.sysctls = runtime.sysctls
-        self.blockIO = runtime.blockIO
-        self.cpuShares = runtime.cpuShares
-        self.memoryReservationInBytes = runtime.memoryReservationInBytes
+        name = identity.name
+        imageReference = identity.imageReference
+        oneOff = identity.oneOff
+        autoRemove = identity.autoRemove
+        labels = identity.labels
+        initProcess = runtime.initProcess
+        logging = runtime.logging
+        healthCheck = runtime.healthCheck
+        restartPolicy = runtime.restartPolicy
+        hostname = runtime.hostname
+        domainname = runtime.domainname
+        hosts = runtime.hosts
+        sysctls = runtime.sysctls
+        blockIO = runtime.blockIO
+        cpuShares = runtime.cpuShares
+        memoryReservationInBytes = runtime.memoryReservationInBytes
     }
 }
 
@@ -128,7 +128,7 @@ public struct ContainerServiceCreatePlanOptions: Sendable {
         oneOff: Bool = false,
         autoRemove: Bool = false,
         includeRestartPolicy: Bool = true,
-        resolveHealthCheck: Bool = true
+        resolveHealthCheck: Bool = true,
     ) {
         self.name = name
         self.oneOff = oneOff

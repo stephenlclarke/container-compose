@@ -14,20 +14,5 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerAPIClient
-import Foundation
-
-/// Reads opaque secret content from the local `container` secret store.
-public protocol ContainerSecretReading: Sendable {
-    /// Returns the stored bytes for a named external secret.
-    func readSecret(name: String) async throws -> Data
-}
-
-/// `ClientSecret`-backed reader for Compose external secret mounts.
-public struct ContainerClientSecretReader: ContainerSecretReading {
-    public init() {}
-
-    public func readSecret(name: String) async throws -> Data {
-        try ClientSecret.read(name: name)
-    }
-}
+// Re-exports the runtime contracts used by the ComposeCore public API.
+@_exported import ComposeRuntimeSPI

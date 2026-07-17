@@ -797,7 +797,12 @@ extension ComposeOrchestrator {
             }
             let readOnly = try parseRunVolumeMode(parts.count == 3 ? parts[2] : nil)
             if isBindVolumeSource(source) {
-                return (ComposeMount(type: "bind", source: source, target: target, readOnly: readOnly, bindCreateHostPath: true), nil)
+                return (ComposeMount(
+                    type: "bind",
+                    source: source,
+                    target: target,
+                    options: .init(readOnly: readOnly, bind: .init(createHostPath: true)),
+                ), nil)
             }
             return (ComposeMount(type: "volume", source: source, target: target, readOnly: readOnly), source)
         default:

@@ -119,8 +119,7 @@ public extension ComposeOrchestrator {
             output: archive,
             service: service,
             options: commit,
-            baseImageMetadata: baseImageMetadata,
-            healthCheck: healthCheck,
+            metadata: .init(baseImage: baseImageMetadata, healthCheck: healthCheck),
         )
         try await imageManager.loadImageArchive(archive.path, emit: options.emit)
     }

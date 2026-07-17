@@ -5,11 +5,12 @@
 supported release lane uses the matched stephenlclarke runtime stack while
 Apple-facing runtime additions are prepared as small generic handoffs.
 
-The design has three boundaries: `compose-go` owns Compose project semantics,
-Swift owns orchestration and user-visible compatibility, and the runtime stack
-owns container, image, network, volume, process, and virtual-machine
-primitives. [STATUS.md](STATUS.md) is the authoritative feature ledger; this
-file records only the architecture that should remain stable as parity grows.
+The design is layered: `compose-go` owns Compose project semantics, Swift owns
+normalization bridging and user-visible orchestration policy,
+`ComposeRuntimeSPI` owns runtime-neutral contracts, and concrete providers own
+the translation to the matched runtime stack. [STATUS.md](STATUS.md) is the
+authoritative feature ledger; this file records only the architecture that
+should remain stable as parity grows.
 
 ## Goals
 
@@ -61,11 +62,21 @@ generic runtime behavior. Direct adapters cover typed APIs exposed by the
 runtime. Command adapters cover remaining stable CLI surfaces, including the
 build boundary and create-time values not yet available through a focused API.
 
+`ComposeRuntimeSPI` is the Compose-owned boundary between orchestration and
+those adapters. It contains stable, runtime-neutral requests, summaries, and
+provider contracts; it has no dependency on the Apple runtime packages. The
+complete contract surface covers discovery, lifecycle, execution, copy/export,
+logs/events, stats/top, configs/secrets, images, and project resources. The
+Compose-facing value types and provider protocols live in that target, while
+the `ContainerClient`- and CLI-backed managers are the current Apple-backed
+providers. Future providers can use the same contracts without making the
+orchestrator import their package types.
+
 Docker and Compose syntax is normalized into typed Compose-owned plans before
 runtime projection. For example, `ContainerServiceCreatePlan` keeps service
 identity, process configuration, logging, health, restart, hostname, hosts,
-sysctls, and block-I/O values typed even while part of execution still renders
-`container` command arguments.
+sysctls, block-I/O, and resource values typed even while part of execution
+still renders `container` command arguments.
 
 Missing runtime capabilities belong in Apple-shaped issue and pull request
 drafts under [`docs/upstream/`](docs/upstream/). Those drafts request reusable
@@ -73,27 +84,102 @@ runtime primitives, not Compose service selection or Docker output policy.
 
 ## Architecture
 
+### Layer Responsibilities
+
+| Layer | Owned responsibility | Must not own |
+| --- | --- | --- |
+| Entry points | Plugin discovery, command parsing, and user invocation | Compose parsing or runtime calls |
+| Compose normalization | Compose-file loading, interpolation, merge, and canonical JSON | Runtime work or policy decisions |
+| Compose orchestration | Selection, plans, reconciliation, Docker-compatible behavior, and output | Apple package types in policy code |
+| `ComposeRuntimeSPI` | Runtime-neutral requests, summaries, and capability contracts | Apple runtime dependencies or broad interception |
+| `ComposeContainerRuntime` | Typed `ContainerClient`, explicit CLI translations, and Compose-owned external-resource defaults | Compose service selection or output policy |
+| Matched runtime stack | Containers, images, networks, volumes, processes, VMs, and builds | Docker/Compose compatibility policy |
+
+`ComposeContainerRuntime` is the Apple-backed composition root. It also owns
+the local Compose default adapters: filesystem-backed external configs and
+caller-Keychain external secrets. The plugin passes its dependencies into
+`ComposeCore`, whose orchestrator references only `ComposeRuntimeSPI`
+contracts. A focused compatibility decorator or another runtime provider can
+therefore be introduced at that seam without importing its types into Compose
+policy. Standalone `ComposeCore` defaults intentionally report an
+unsupported-runtime error until a library client selects a provider.
+
 ```mermaid
 flowchart TD
-    User["User"] --> ContainerCLI["container compose ..."]
-    ContainerCLI --> Plugin["compose executable (Swift)"]
-    Plugin --> Normalizer["compose-normalizer (Go)"]
-    Normalizer --> ComposeGo["compose-go"]
-    ComposeGo --> Canonical["Canonical project JSON"]
-    Canonical --> Model["ComposeProject (Swift)"]
-    Model --> Orchestrator["ComposeOrchestrator"]
-    Orchestrator --> Planner["Selection, dependencies, labels, hashes"]
-    Orchestrator --> Direct["Typed runtime adapters"]
-    Orchestrator --> Command["Explicit container CLI adapters"]
-    Direct --> Runtime["Matched container runtime stack"]
-    Command --> Runtime
-    Orchestrator --> Output["Compose-compatible output"]
-    Runtime --> Output
+    subgraph Entry["1. Entry points"]
+        direction TB
+        User["User"] --> ContainerCLI["container compose ..."]
+        ContainerCLI --> Plugin["ComposePlugin executable"]
+    end
+
+    subgraph Normalization["2. Compose normalization"]
+        direction TB
+        Bridge["Compose bridge"] --> Normalizer["compose-normalizer (Go)"]
+        Normalizer --> ComposeGo["compose-go"]
+        ComposeGo --> Canonical["Canonical project JSON"]
+    end
+
+    subgraph Policy["3. Compose orchestration policy (ComposeCore)"]
+        direction TB
+        Model["ComposeProject"] --> Orchestrator["ComposeOrchestrator"]
+        Orchestrator --> Planner["Selection, dependencies, labels, hashes"]
+        Planner --> CreatePlan["Typed service-create plan"]
+        Orchestrator --> Output["Compose-compatible output"]
+    end
+
+    subgraph Boundary["4. Runtime boundary (ComposeRuntimeSPI)"]
+        SPI["Requests, summaries, and provider contracts"]
+    end
+
+    subgraph Providers["5. Provider implementation (ComposeContainerRuntime)"]
+        direction TB
+        Composition["Runtime composition root (called by plugin)"]
+        Direct["Typed ContainerClient adapters"]
+        Command["Explicit container CLI adapters"]
+        LocalStores["Compose-owned external config and secret providers"]
+        Decorator["Optional focused compatibility decorator"]
+        Composition --> Direct
+        Composition --> Command
+        Composition --> LocalStores
+    end
+
+    subgraph Runtime["6. Matched runtime stack"]
+        direction TB
+        Container["container"] --> Containerization["containerization"]
+        Container --> Builder["container-builder-shim"]
+    end
+
+    Plugin --> Bridge
+    Plugin --> Composition
+    Canonical --> Model
+    Orchestrator --> SPI
+    SPI -. "implemented by" .-> Direct
+    SPI -. "implemented by" .-> Command
+    SPI -. "implemented by" .-> LocalStores
+    SPI -. "can be decorated by" .-> Decorator
+    Decorator -. "wraps" .-> Direct
+    CreatePlan --> Command
+    Direct --> Container
+    Command --> Container
+    Decorator --> Container
 ```
 
-The runtime adapter choice is an implementation detail below the orchestration
-boundary. Moving a capability from a command adapter to a direct API must not
-change Compose-visible behavior.
+Solid arrows show data or execution flow. Dashed arrows show a provider's
+relationship to the SPI contract. The runtime adapter choice remains an
+implementation detail below the orchestration boundary: moving a capability
+from a command adapter to a direct API must not change Compose-visible behavior.
+
+### Source Layout
+
+```text
+Sources/ComposePlugin/        Plugin command entry point and ArgumentParser surface
+Sources/ComposeCore/          Normalization bridge and orchestration policy
+Sources/ComposeContainerRuntime/ Apple ContainerClient and CLI providers plus composition root
+Sources/ComposeRuntimeSPI/    Runtime-neutral value types and provider contracts
+Tools/compose-normalizer/     Compose-go-backed canonical JSON normalizer
+Tests/ComposeCoreTests/       Orchestration and adapter behavior
+Tests/ComposeRuntimeSPITests/ Runtime-boundary contract behavior
+```
 
 ## Package Layout
 

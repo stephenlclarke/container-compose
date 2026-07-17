@@ -14,59 +14,16 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
+import ComposeRuntimeSPI
 import ContainerAPIClient
 import ContainerResource
 import Foundation
-
-/// Event output formats supported by `compose events`.
-public enum ComposeEventsOutputFormat: Sendable, Equatable {
-    case text
-    case json
-}
-
-/// One Docker Compose-style event rendered by `compose events --json`.
-public struct ComposeEventRecord: Sendable, Equatable, Codable {
-    public var time: Date
-    public var type: String
-    public var service: String
-    public var id: String
-    public var action: String
-    public var attributes: [String: String]
-
-    public init(
-        time: Date,
-        type: String,
-        service: String,
-        id: String,
-        action: String,
-        attributes: [String: String]
-    ) {
-        self.time = time
-        self.type = type
-        self.service = service
-        self.id = id
-        self.action = action
-        self.attributes = attributes
-    }
-}
 
 /// Low-level apple/container event stream used by `ContainerClientEventsManager`.
 public protocol ContainerEventsAPIClienting: Sendable {
     /// Returns the newline-delimited `ContainerEvent` stream.
     func events(options: ContainerEventOptions) async throws -> FileHandle
-}
-
-/// Direct apple/container API used for Compose project events.
-public protocol ContainerEventsManaging: Sendable {
-    /// Emits Docker Compose-style event records for selected services.
-    func events(
-        projectName: String,
-        services: [String],
-        format: ComposeEventsOutputFormat,
-        since: Date?,
-        until: Date?,
-        emit: @escaping @Sendable (String) -> Void
-    ) async throws
 }
 
 /// Thin apple/container client wrapper around the event stream API.
@@ -76,7 +33,7 @@ public struct ContainerEventsAPIClient: ContainerEventsAPIClienting {
     private let eventsOperation: Events
 
     public init(events: @escaping Events = { try await ContainerClient().events(options: $0) }) {
-        self.eventsOperation = events
+        eventsOperation = events
     }
 
     /// Opens the runtime event stream through `ContainerClient`.
@@ -86,13 +43,14 @@ public struct ContainerEventsAPIClient: ContainerEventsAPIClienting {
 }
 
 /// `ContainerClient`-backed event manager for Compose project events.
-public struct ContainerClientEventsManager: ContainerEventsManaging {
+public struct ContainerClientEventsManager: ComposeRuntimeEventsManaging {
     private let client: ContainerEventsAPIClienting
 
     public init(client: ContainerEventsAPIClienting = ContainerEventsAPIClient()) {
         self.client = client
     }
 
+    // swiftlint:disable function_parameter_count
     /// Filters runtime lifecycle events to the current Compose project and renders JSON Lines.
     public func events(
         projectName: String,
@@ -100,10 +58,10 @@ public struct ContainerClientEventsManager: ContainerEventsManaging {
         format: ComposeEventsOutputFormat,
         since: Date?,
         until: Date?,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (String) -> Void,
     ) async throws {
         let eventStream = try await client.events(
-            options: ContainerEventOptions(since: since, until: until)
+            options: ContainerEventOptions(since: since, until: until),
         )
         defer {
             try? eventStream.close()
@@ -125,6 +83,8 @@ public struct ContainerClientEventsManager: ContainerEventsManaging {
             }
         }
     }
+
+    // swiftlint:enable function_parameter_count
 
     /// Converts the runtime event file handle into async data chunks.
     private func eventChunks(_ eventStream: FileHandle) -> AsyncThrowingStream<Data, any Error> {
@@ -154,7 +114,7 @@ private struct ComposeEventRenderer {
 
     init(projectName: String, services: [String], format: ComposeEventsOutputFormat) {
         self.projectName = projectName
-        self.selectedServices = Set(services)
+        selectedServices = Set(services)
         self.format = format
     }
 
@@ -163,13 +123,13 @@ private struct ComposeEventRenderer {
         guard event.type == "container" else {
             return nil
         }
-        guard event.attributes[projectLabel] == projectName else {
+        guard event.attributes[ComposeRuntimeLabels.project] == projectName else {
             return nil
         }
-        guard event.attributes[oneOffLabel]?.lowercased() != "true" else {
+        guard event.attributes[ComposeRuntimeLabels.oneOff]?.lowercased() != "true" else {
             return nil
         }
-        guard let service = event.attributes[serviceLabel], !service.isEmpty else {
+        guard let service = event.attributes[ComposeRuntimeLabels.service], !service.isEmpty else {
             return nil
         }
         guard selectedServices.isEmpty || selectedServices.contains(service) else {
@@ -182,7 +142,7 @@ private struct ComposeEventRenderer {
             service: service,
             id: event.id,
             action: event.action,
-            attributes: publicAttributes(event.attributes)
+            attributes: publicAttributes(event.attributes),
         )
         switch format {
         case .json:
@@ -195,8 +155,8 @@ private struct ComposeEventRenderer {
     /// Removes Compose-private tracking labels from the public event payload.
     private func publicAttributes(_ attributes: [String: String]) -> [String: String] {
         attributes.filter { key, _ in
-            !key.hasPrefix(reservedComposeLabelPrefix) &&
-                !key.hasPrefix(reservedDockerComposeLabelPrefix)
+            !key.hasPrefix(ComposeRuntimeLabels.reservedPrefix) &&
+                !key.hasPrefix(ComposeRuntimeLabels.reservedDockerComposePrefix)
         }
     }
 
@@ -205,7 +165,11 @@ private struct ComposeEventRenderer {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
-        return String(decoding: try encoder.encode(record), as: UTF8.self)
+        let data = try encoder.encode(record)
+        guard let output = String(data: data, encoding: .utf8) else {
+            throw ComposeError.invalidProject("failed to encode Compose event JSON")
+        }
+        return output
     }
 
     /// Renders Docker Compose's default text event shape without embedding a trailing newline.
@@ -223,9 +187,9 @@ private struct ComposeEventRenderer {
         calendar.timeZone = .current
         let components = calendar.dateComponents(
             [.year, .month, .day, .hour, .minute, .second, .nanosecond],
-            from: date
+            from: date,
         )
-        let microseconds = (components.nanosecond ?? 0) / 1_000
+        let microseconds = (components.nanosecond ?? 0) / 1000
         return String(
             format: "%04d-%02d-%02d %02d:%02d:%02d.%06d",
             components.year ?? 0,
@@ -234,7 +198,7 @@ private struct ComposeEventRenderer {
             components.hour ?? 0,
             components.minute ?? 0,
             components.second ?? 0,
-            microseconds
+            microseconds,
         )
     }
 }
@@ -262,12 +226,12 @@ private final class ContainerEventJSONLDecoder: @unchecked Sendable {
         var events: [ContainerEvent] = []
         var recordStart = buffer.startIndex
         while let newline = buffer[recordStart...].firstIndex(of: UInt8(ascii: "\n")) {
-            let line = buffer[recordStart..<newline]
+            let line = buffer[recordStart ..< newline]
             recordStart = buffer.index(after: newline)
             guard !line.isEmpty else {
                 continue
             }
-            events.append(try decoder.decode(ContainerEvent.self, from: Data(line)))
+            try events.append(decoder.decode(ContainerEvent.self, from: Data(line)))
         }
         if recordStart > buffer.startIndex {
             buffer.removeSubrange(..<recordStart)
@@ -287,6 +251,6 @@ private final class ContainerEventJSONLDecoder: @unchecked Sendable {
         }
         let data = buffer
         buffer.removeAll()
-        return [try decoder.decode(ContainerEvent.self, from: data)]
+        return try [decoder.decode(ContainerEvent.self, from: data)]
     }
 }

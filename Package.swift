@@ -23,6 +23,8 @@ let package = Package(
     products: [
         .executable(name: "compose", targets: ["ComposePlugin"]),
         .library(name: "ComposeCore", targets: ["ComposeCore"]),
+        .library(name: "ComposeContainerRuntime", targets: ["ComposeContainerRuntime"]),
+        .library(name: "ComposeRuntimeSPI", targets: ["ComposeRuntimeSPI"]),
     ],
     dependencies: [
         .package(
@@ -48,27 +50,54 @@ let package = Package(
                 .product(name: "ContainerLog", package: "container"),
                 .product(name: "ContainerResource", package: "container"),
                 "ComposeCore",
+                "ComposeContainerRuntime",
             ],
             path: "Sources/ComposePlugin",
         ),
         .target(
+            name: "ComposeRuntimeSPI",
+            path: "Sources/ComposeRuntimeSPI",
+        ),
+        .target(
             name: "ComposeCore",
             dependencies: [
+                "ComposeRuntimeSPI",
                 .product(name: "ContainerAPIClient", package: "container"),
-                .product(name: "ContainerPersistence", package: "container"),
                 .product(name: "ContainerResource", package: "container"),
                 .product(name: "ContainerizationArchive", package: "containerization"),
                 .product(name: "Containerization", package: "containerization"),
                 .product(name: "ContainerizationExtras", package: "containerization"),
                 .product(name: "ContainerizationOCI", package: "containerization"),
-                .product(name: "Logging", package: "swift-log"),
             ],
             path: "Sources/ComposeCore",
+        ),
+        .target(
+            name: "ComposeContainerRuntime",
+            dependencies: [
+                "ComposeCore",
+                "ComposeRuntimeSPI",
+                .product(name: "ContainerAPIClient", package: "container"),
+                .product(name: "ContainerPersistence", package: "container"),
+                .product(name: "ContainerResource", package: "container"),
+                .product(name: "Containerization", package: "containerization"),
+                .product(name: "ContainerizationExtras", package: "containerization"),
+                .product(name: "ContainerizationOCI", package: "containerization"),
+                .product(name: "Logging", package: "swift-log"),
+            ],
+            path: "Sources/ComposeContainerRuntime",
+        ),
+        .testTarget(
+            name: "ComposeRuntimeSPITests",
+            dependencies: [
+                "ComposeRuntimeSPI",
+            ],
+            path: "Tests/ComposeRuntimeSPITests",
         ),
         .testTarget(
             name: "ComposeCoreTests",
             dependencies: [
                 "ComposeCore",
+                "ComposeContainerRuntime",
                 .product(name: "ContainerResource", package: "container"),
                 .product(name: "ContainerizationArchive", package: "containerization"),
                 .product(name: "ContainerizationExtras", package: "containerization"),

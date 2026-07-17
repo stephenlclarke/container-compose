@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 import ComposeCore
+import ComposeContainerRuntime
 import ContainerResource
 import ContainerizationArchive
 import ContainerizationError
@@ -774,12 +775,16 @@ struct ComposeOrchestratorTests {
                 upMenuController: upMenuController
             ),
             runtime: ComposeOrchestratorRuntimeDependencies(
+                services: .init(
+                    eventsManager: eventsManager,
+                    lifecycleManager: lifecycleManager,
+                    resourceManager: resourceManager,
+                ),
                 discoveryManager: discoveryManager,
-                eventsManager: eventsManager,
-                lifecycleManager: lifecycleManager,
-                resourceManager: resourceManager,
-                statsManager: statsManager,
-                topManager: topManager
+                inspection: .init(
+                    statsManager: statsManager,
+                    topManager: topManager,
+                )
             ),
             imageManager: imageManager
         )
@@ -1083,7 +1088,7 @@ struct ComposeOrchestratorTests {
                             type: "volume",
                             source: "cache",
                             target: "/cache",
-                            options: .init(volumeLabels: ["com.example.mount": "service"])
+                            options: .init(volume: .init(labels: ["com.example.mount": "service"]))
                         ),
                     ]
                 },
@@ -1125,7 +1130,7 @@ struct ComposeOrchestratorTests {
                         ComposeMount(
                             type: "volume",
                             target: "/scratch",
-                            options: .init(volumeLabels: ["com.example.mount": "anonymous"])
+                            options: .init(volume: .init(labels: ["com.example.mount": "anonymous"]))
                         ),
                     ]
                 },
@@ -1162,7 +1167,7 @@ struct ComposeOrchestratorTests {
                         ComposeMount(
                             type: "volume",
                             target: "/scratch",
-                            options: .init(volumeLabels: ["com.example.mount": "anonymous"])
+                            options: .init(volume: .init(labels: ["com.example.mount": "anonymous"]))
                         ),
                     ]
                 },
@@ -1191,7 +1196,7 @@ struct ComposeOrchestratorTests {
                         ComposeMount(
                             type: "volume",
                             target: "/scratch",
-                            options: .init(volumeLabels: ["com.example.mount": "run"])
+                            options: .init(volume: .init(labels: ["com.example.mount": "run"]))
                         ),
                     ]
                 },
@@ -2301,8 +2306,7 @@ struct ComposeOrchestratorTests {
                             type: "bind",
                             source: directory.path,
                             target: "/host",
-                            readOnly: true,
-                            bindPropagation: "rshared"
+                            options: .init(readOnly: true, bind: .init(propagation: "rshared"))
                         ),
                     ]
                 },
@@ -8928,7 +8932,7 @@ struct ComposeOrchestratorTests {
                         type: "bind",
                         source: source.path,
                         target: "/data",
-                        bindCreateHostPath: true
+                        options: .init(bind: .init(createHostPath: true))
                     )]
                 },
             ]
@@ -8964,7 +8968,7 @@ struct ComposeOrchestratorTests {
                         type: "bind",
                         source: source.path,
                         target: "/data",
-                        bindCreateHostPath: false
+                        options: .init(bind: .init(createHostPath: false))
                     )]
                 },
             ]
@@ -9008,8 +9012,7 @@ struct ComposeOrchestratorTests {
                             type: "bind",
                             source: directory.path,
                             target: "/host",
-                            readOnly: true,
-                            bindPropagation: "rslave"
+                            options: .init(readOnly: true, bind: .init(propagation: "rslave"))
                         ),
                     ]
                 },
@@ -9036,7 +9039,7 @@ struct ComposeOrchestratorTests {
                             type: "volume",
                             source: "cache",
                             target: "/cache",
-                            volumeSubpath: "logs/app"
+                            options: .init(volume: .init(subpath: "logs/app"))
                         ),
                     ]
                 },
@@ -9064,7 +9067,7 @@ struct ComposeOrchestratorTests {
                             type: "image",
                             source: "alpine:3.20",
                             target: "/assets",
-                            imageSubpath: "etc"
+                            options: .init(imageSubpath: "etc")
                         ),
                     ]
                 },
@@ -9093,7 +9096,7 @@ struct ComposeOrchestratorTests {
                             type: "volume",
                             source: "cache",
                             target: "/cache",
-                            imageSubpath: "etc"
+                            options: .init(imageSubpath: "etc")
                         ),
                     ]
                 },
@@ -9296,7 +9299,12 @@ struct ComposeOrchestratorTests {
                 id: "legacy",
                 status: "running",
                 mounts: [
-                    ComposeMount(type: "external-volume", source: "legacy_data", target: "/data", volumeSubpath: "logs/app"),
+                    ComposeMount(
+                        type: "external-volume",
+                        source: "legacy_data",
+                        target: "/data",
+                        options: .init(volume: .init(subpath: "logs/app")),
+                    ),
                     ComposeMount(type: "bind", source: "/host/seed", target: "/seed", readOnly: true),
                     ComposeMount(type: "tmpfs", target: "/scratch"),
                 ]
@@ -11583,13 +11591,15 @@ struct ComposeOrchestratorTests {
         let runner = RecordingRunner(responses: [
             CommandResult(status: 0, stdout: "[]", stderr: ""),
         ])
+        let options = ComposeExecutionOptions(
+            containerBinary: "custom-container",
+            environmentLauncher: "custom-env",
+            runtimeHooks: .init(emit: { emitted.append($0) })
+        )
         let orchestrator = ComposeOrchestrator(
             runner: runner,
-            options: ComposeExecutionOptions(
-                containerBinary: "custom-container",
-                environmentLauncher: "custom-env",
-                runtimeHooks: .init(emit: { emitted.append($0) })
-            )
+            options: options,
+            dependencies: ComposeContainerRuntime.dependencies(runner: runner, options: options),
         )
 
         try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]))
@@ -16735,8 +16745,7 @@ struct ComposeOrchestratorTests {
                         type: "external-volume",
                         source: "legacy_data",
                         target: "/data",
-                        readOnly: true,
-                        volumeSubpath: "logs/app"
+                        options: .init(readOnly: true, volume: .init(subpath: "logs/app"))
                     ),
                     ComposeMount(type: "bind", source: "/tmp/seed", target: "/seed"),
                     ComposeMount(type: "tmpfs", target: "/scratch", readOnly: true),
@@ -18745,10 +18754,12 @@ struct ComposeOrchestratorTests {
         try await manager.createNetwork(ComposeNetworkCreateRequest(
             name: "demo_default",
             isInternal: true,
-            ipv4Subnet: "10.10.0.0/24",
-            ipv4Gateway: "10.10.0.254",
-            ipv4AllocationRange: "10.10.0.128/25",
-            ipv6Subnet: "fd00:10::/64",
+            addressing: .init(
+                ipv4Subnet: "10.10.0.0/24",
+                ipv4Gateway: "10.10.0.254",
+                ipv4AllocationRange: "10.10.0.128/25",
+                ipv6Subnet: "fd00:10::/64",
+            ),
             driverOpts: ["variant": "vzNAT"],
             labels: labels
         ))
@@ -18917,7 +18928,7 @@ struct ComposeOrchestratorTests {
         do {
             try await manager.createNetwork(ComposeNetworkCreateRequest(
                 name: "demo_default",
-                ipv4Subnet: "not-a-cidr"
+                addressing: .init(ipv4Subnet: "not-a-cidr")
             ))
             Issue.record("Expected invalid subnet error")
         } catch CIDR.Error.invalidCIDR(let cidr) {
@@ -22579,28 +22590,30 @@ struct ComposeOrchestratorTests {
                 ]
                 $0.message = "snapshot"
             },
-            baseImageMetadata: ComposeImageMetadata(reference: "example/base:latest") {
-                $0.user = "base-user"
-                $0.environment = ["BASE_ONLY=1", "EMPTY=base", "LOG_LEVEL=info"]
-                $0.entrypoint = ["/base-entrypoint"]
-                $0.command = ["base-command"]
-                $0.workingDir = "/base"
-                $0.labels = [
-                    "com.example.base": "image",
-                    "com.example.image": "true",
-                ]
-                $0.exposedPorts = ["9090/tcp"]
-                $0.stopSignal = "SIGINT"
-                $0.healthCheck = ComposeImageHealthCheck(
-                    test: ["CMD-SHELL", "curl --fail http://localhost/health"],
-                    intervalInNanoseconds: 15_000_000_000,
-                    timeoutInNanoseconds: 5_000_000_000,
-                    startPeriodInNanoseconds: 2_000_000_000,
-                    startIntervalInNanoseconds: 1_000_000_000,
-                    retries: 4,
-                )
-            },
-            createdAt: date("2026-07-12T09:00:00Z")
+            metadata: .init(
+                baseImage: ComposeImageMetadata(reference: "example/base:latest") {
+                    $0.user = "base-user"
+                    $0.environment = ["BASE_ONLY=1", "EMPTY=base", "LOG_LEVEL=info"]
+                    $0.entrypoint = ["/base-entrypoint"]
+                    $0.command = ["base-command"]
+                    $0.workingDir = "/base"
+                    $0.labels = [
+                        "com.example.base": "image",
+                        "com.example.image": "true",
+                    ]
+                    $0.exposedPorts = ["9090/tcp"]
+                    $0.stopSignal = "SIGINT"
+                    $0.healthCheck = ComposeImageHealthCheck(
+                        test: ["CMD-SHELL", "curl --fail http://localhost/health"],
+                        intervalInNanoseconds: 15_000_000_000,
+                        timeoutInNanoseconds: 5_000_000_000,
+                        startPeriodInNanoseconds: 2_000_000_000,
+                        startIntervalInNanoseconds: 1_000_000_000,
+                        retries: 4,
+                    )
+                },
+                createdAt: date("2026-07-12T09:00:00Z"),
+            )
         )
 
         let config = try commitArchiveConfig(from: imageArchive)
@@ -22674,7 +22687,7 @@ struct ComposeOrchestratorTests {
             options: ComposeCommitOptions {
                 $0.changes = ["CMD echo hello"]
             },
-            shellPath: "/custom/bin/sh",
+            metadata: .init(shellPath: "/custom/bin/sh"),
         )
 
         let config = try commitArchiveConfig(from: imageArchive)
@@ -22932,7 +22945,12 @@ struct ComposeOrchestratorTests {
                     $0.envFiles = [".env"]
                     $0.ports = ["8080:80"]
                     $0.volumes = [
-                        ComposeMount(type: "bind", source: hostSource, target: "/container", readOnly: true, bindCreateHostPath: true),
+                        ComposeMount(
+                            type: "bind",
+                            source: hostSource,
+                            target: "/container",
+                            options: .init(readOnly: true, bind: .init(createHostPath: true)),
+                        ),
                         ComposeMount(type: "tmpfs", target: "/tmp"),
                         ComposeMount(type: "volume", target: "/anon"),
                     ]
@@ -25189,8 +25207,7 @@ struct ComposeOrchestratorTests {
                                 type: "bind",
                                 source: directory.path,
                                 target: "/host",
-                                readOnly: true,
-                                bindPropagation: propagation
+                                options: .init(readOnly: true, bind: .init(propagation: propagation))
                             ),
                         ]
                     },
@@ -25228,7 +25245,7 @@ struct ComposeOrchestratorTests {
                             type: "bind",
                             source: directory.path,
                             target: "/host",
-                            bindPropagation: "recursive-shared"
+                            options: .init(bind: .init(propagation: "recursive-shared"))
                         ),
                     ]
                 },
@@ -25302,7 +25319,7 @@ struct ComposeOrchestratorTests {
                         type: "bind",
                         source: source.path,
                         target: "/data",
-                        bindCreateHostPath: false
+                        options: .init(bind: .init(createHostPath: false))
                     )]
                 },
             ]
@@ -26353,7 +26370,12 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.volumes = [ComposeMount(type: "bind", source: defaultSource, target: "/default", bindCreateHostPath: true)]
+                    $0.volumes = [ComposeMount(
+                        type: "bind",
+                        source: defaultSource,
+                        target: "/default",
+                        options: .init(bind: .init(createHostPath: true)),
+                    )]
                 },
             ]
         )
@@ -27101,8 +27123,8 @@ private func unsupportedMemoryAndProcessResourceFieldCases() -> [UnsupportedMemo
     [
         UnsupportedMemoryAndProcessResourceFieldCase(
             composeName: "memswap_limit",
-            value: "268435456",
-            configure: { $0.memSwapLimit = "268435456" }
+            value: "256m",
+            configure: { $0.memSwapLimit = "256m" }
         ),
         UnsupportedMemoryAndProcessResourceFieldCase(
             composeName: "mem_swappiness",

@@ -14,6 +14,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
+import ComposeRuntimeSPI
 import ContainerAPIClient
 import ContainerResource
 import Foundation
@@ -30,22 +32,6 @@ private let composeStatsTemplateFields: Set<String> = [
     "PIDs",
 ]
 
-/// Validates the `compose stats --format` value.
-func validateComposeStatsFormat(_ value: String) throws {
-    _ = try composeStatsFormat(value)
-}
-
-/// Container identity and status needed before collecting direct API stats.
-public struct ComposeStatsTarget: Sendable, Equatable {
-    public var id: String
-    public var status: String
-
-    public init(id: String, status: String) {
-        self.id = id
-        self.status = status
-    }
-}
-
 /// Low-level apple/container stats calls used by `ContainerClientStatsManager`.
 public protocol ContainerStatsAPIClienting: Sendable {
     /// Lists the requested containers before stats collection.
@@ -53,19 +39,6 @@ public protocol ContainerStatsAPIClienting: Sendable {
 
     /// Returns one statistics snapshot for container `id`.
     func stats(id: String) async throws -> ContainerStats
-}
-
-/// Direct apple/container API used for service container stats.
-public protocol ContainerStatsManaging: Sendable {
-    /// Emits stats for the requested service container ids.
-    func stats(
-        ids: [String],
-        format: String,
-        noStream: Bool,
-        noTrunc: Bool,
-        includeStopped: Bool,
-        emit: @escaping @Sendable (String) -> Void
-    ) async throws
 }
 
 /// Thin apple/container client wrapper around stats API calls.
@@ -81,10 +54,10 @@ public struct ContainerStatsAPIClient: ContainerStatsAPIClienting {
             try await ContainerClient().list(filters: ContainerListFilters(ids: $0).withoutMachines())
                 .map { ComposeStatsTarget(id: $0.id, status: $0.status.rawValue) }
         },
-        stats: @escaping Stats = { try await ContainerClient().stats(id: $0) }
+        stats: @escaping Stats = { try await ContainerClient().stats(id: $0) },
     ) {
-        self.listOperation = list
-        self.statsOperation = stats
+        listOperation = list
+        statsOperation = stats
     }
 
     /// Lists stat targets through `ContainerClient`.
@@ -99,7 +72,7 @@ public struct ContainerStatsAPIClient: ContainerStatsAPIClienting {
 }
 
 /// `ContainerClient`-backed stats manager for service containers.
-public struct ContainerClientStatsManager: ContainerStatsManaging {
+public struct ContainerClientStatsManager: ComposeRuntimeStatsManaging {
     public typealias Sleeper = @Sendable (Duration) async throws -> Void
 
     private let client: ContainerStatsAPIClienting
@@ -111,7 +84,7 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         client: ContainerStatsAPIClienting = ContainerStatsAPIClient(),
         sampleInterval: Duration = .seconds(2),
         sampleIntervalMicroseconds: UInt64 = 2_000_000,
-        sleep: @escaping Sleeper = { try await Task.sleep(for: $0) }
+        sleep: @escaping Sleeper = { try await Task.sleep(for: $0) },
     ) {
         self.client = client
         self.sampleInterval = sampleInterval
@@ -119,6 +92,7 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         self.sleep = sleep
     }
 
+    // swiftlint:disable function_parameter_count
     /// Emits direct API stats, streaming table output unless static output is requested.
     public func stats(
         ids: [String],
@@ -126,12 +100,12 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         noStream: Bool,
         noTrunc: Bool,
         includeStopped: Bool,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (String) -> Void,
     ) async throws {
         let parsedFormat = try composeStatsFormat(format)
         if !parsedFormat.isStreamingTable || noStream {
             let records = try await collectStats(ids: ids, includeStopped: includeStopped)
-            emit(try renderStats(records, format: parsedFormat, noTrunc: noTrunc))
+            try emit(renderStats(records, format: parsedFormat, noTrunc: noTrunc))
             return
         }
 
@@ -147,6 +121,8 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
             try await sleep(sampleInterval)
         }
     }
+
+    // swiftlint:enable function_parameter_count
 
     /// Collects two samples for running containers so CPU percentages are meaningful.
     private func collectStats(ids: [String], includeStopped: Bool) async throws -> [StatsSnapshot] {
@@ -167,10 +143,8 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
 
         if snapshots.contains(where: \.refresh) {
             try await sleep(sampleInterval)
-            for index in snapshots.indices {
-                if snapshots[index].refresh {
-                    snapshots[index].second = try await client.stats(id: snapshots[index].second.id)
-                }
+            for index in snapshots.indices where snapshots[index].refresh {
+                snapshots[index].second = try await client.stats(id: snapshots[index].second.id)
             }
         }
 
@@ -188,7 +162,7 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
             networkTxBytes: nil,
             blockReadBytes: nil,
             blockWriteBytes: nil,
-            numProcesses: nil
+            numProcesses: nil,
         )
     }
 
@@ -210,11 +184,14 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
             encoder.outputFormatting = [.sortedKeys]
             return try records.map { snapshot in
                 let data = try encoder.encode(statsJSONObject(snapshot, noTrunc: noTrunc))
-                return String(decoding: data, as: UTF8.self)
+                guard let output = String(data: data, encoding: .utf8) else {
+                    throw ComposeError.invalidProject("failed to encode Compose stats JSON")
+                }
+                return output
             }.joined(separator: "\n")
         case .table:
             return renderStatsTable(records, noTrunc: noTrunc)
-        case .template(let template, let table):
+        case let .template(template, table):
             return try renderStatsTemplate(records, template: template, table: table, noTrunc: noTrunc)
         }
     }
@@ -303,7 +280,7 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
             networkTx: networkTx,
             blockRead: blockRead,
             blockWrite: blockWrite,
-            pids: pids
+            pids: pids,
         )
     }
 
@@ -362,7 +339,7 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
     private func formatDockerBytes(_ bytes: UInt64, base: Double, units: [String]) -> String {
         var value = Double(bytes)
         var index = 0
-        while value >= base && index < units.count - 1 {
+        while value >= base, index < units.count - 1 {
             value /= base
             index += 1
         }
@@ -415,11 +392,19 @@ private func composeStatsFormat(_ value: String) throws -> ComposeStatsFormat {
         if normalized.lowercased().hasPrefix(tablePrefix) {
             let template = String(normalized.dropFirst(tablePrefix.count))
             try validateDockerTemplateActions(in: template)
-            try validateDockerTemplateFields(dockerTemplateFields(in: template), command: "stats", supported: composeStatsTemplateFields)
+            try validateDockerTemplateFields(
+                dockerTemplateFields(in: template),
+                command: "stats",
+                supported: composeStatsTemplateFields,
+            )
             return .template(template, table: true)
         }
         try validateDockerTemplateActions(in: normalized)
-        try validateDockerTemplateFields(dockerTemplateFields(in: normalized), command: "stats", supported: composeStatsTemplateFields)
+        try validateDockerTemplateFields(
+            dockerTemplateFields(in: normalized),
+            command: "stats",
+            supported: composeStatsTemplateFields,
+        )
         return .template(normalized, table: false)
     }
 }

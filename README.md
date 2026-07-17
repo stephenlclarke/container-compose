@@ -29,6 +29,31 @@ images and publish Compose YAML, env-file layers, and optional image digest
 override layers or application image indexes as OCI project artifacts. Swift owns
 orchestration and maps supported Compose behavior to the matched runtime stack.
 
+> [!WARNING]
+> 🤬 **This project is a maintenance nightmare.** 🤬
+>
+> What started as a 'fun' implementation due to a real need for compose functionality on apple/container has turned into a beast! `container-compose` cannot be maintained in isolation. Compose depends on runtime and build capabilities that Apple has not yet merged, released or more likely not even considered for development, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 17 July 2026 baseline, the three support forks are **274 commits ahead of Apple upstream**:
+>
+> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 78 ahead** at [`c5ca0366d88c`](https://github.com/stephenlclarke/containerization/commit/c5ca0366d88c).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 165 ahead** at [`d5774583697d`](https://github.com/stephenlclarke/container/commit/d5774583697d).
+> - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 31 ahead** at [`5939a91ec0dd`](https://github.com/stephenlclarke/container-builder-shim/commit/5939a91ec0dd).
+> - [`container-compose`](https://github.com/stephenlclarke/container-compose): its own integration repository at [`7948b0ae23d3`](https://github.com/stephenlclarke/container-compose/commit/7948b0ae23d3), with no Apple repository to compare against.
+>
+> What looks like a local Compose change can therefore require coordinated conflict resolution, pin updates, builds, tests, packaging, and release validation across the entire stack. These revisions must move together.
+>
+> Apple's [#1769 proposal](https://github.com/apple/container/pull/1769) and [stated direction](https://github.com/apple/container/pull/1769#issuecomment-4781645360) are that Docker CLI compatibility is **NOT** a project objective, because of UX, naming, and maintenance trade-offs; its preferred route is Docker CLI access through [Socktainer](https://github.com/socktainer/socktainer) and a separate API bridge or service plugin. The missing primitives and fixes may therefore remain long-lived fork responsibilities rather than work Apple adopts upstream.
+
+<!-- Separate GitHub callouts. -->
+
+> [!NOTE]
+> **Runtime abstraction refactor in progress**
+>
+> `ComposeRuntimeSPI` is now the Compose-owned, runtime-neutral contract layer. It defines requests, summaries, and provider contracts for discovery, lifecycle, execution, copy/export, logs/events, stats/top, images, configs/secrets, and project resources, without importing Apple runtime packages.
+>
+> `ComposeCore` orchestrates against those contracts. The plugin installs `ComposeContainerRuntime`, the current Apple-backed composition root: it wires typed `ContainerClient` providers, explicit CLI bridges, and Compose-owned filesystem external-config and Keychain external-secret defaults. Standalone `ComposeCore` requires a provider rather than constructing an Apple client.
+>
+> Docker and Compose policy stays above this seam. The pending `memswap_limit` support remains a separate, narrow lower-runtime handoff rather than part of this refactor commit. This is not a general AOP framework: focused decorators can negotiate declared capabilities, while VM, guest, cgroup, mount, archive, device, and builder primitives remain small Apple-shaped runtime slices. The refactor continues in tested vertical slices so the runtime boundary becomes maintainable without changing Compose-visible behavior.
+
 Help color-codes command, subcommand, and option support: green for supported,
 orange for partially supported, and red for unsupported. Command support and
 option support are separate signals: a command can still be partially supported
@@ -37,10 +62,6 @@ to operands, output shape, or a runtime primitive instead of a flag. Partially
 supported commands include a `Limitations` line that names the remaining gap.
 Use `--ansi never` for plain output. Unsupported runtime behavior fails before
 side effects with an explicit `unsupported compose feature` message.
-
-Network attachments support Compose `interface_name`, which assigns a stable interface name inside the Linux guest, operator-managed `link_local_ips`, and static `ipv4_address` or `ipv6_address`. A Compose-managed IPv4 network can also choose its IPAM gateway and `ip_range` for dynamic addresses, and reserve the values in one `ipam.config.aux_addresses` mapping from allocation. Static addresses on a Compose-managed network must belong to its declared matching IPAM subnet and cannot use its gateway or a reserved address; `ip_range` does not restrict valid explicit static addresses. The current default bridge backend treats `aux_addresses` names as driver metadata rather than container DNS entries. External networks are validated by the runtime. Each `link_local_ips` value becomes an additional guest address with Docker's `/16` IPv4 or `/64` IPv6 default address mask.
-
-Services can supply numeric supplemental group IDs through `group_add`. Image-defined group names remain unavailable because the runtime does not expose an image-aware group resolver.
 
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
@@ -83,6 +104,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [BUILD.md](BUILD.md): build, test, package, validate parity, and promote the current build to a stable release, including the weekly minor-release scheduler and manual major-release dispatch.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](STATUS.md): get the current parity surfaces, blockers, active gaps, and validation handoff.
+- [docs/external-resources.md](docs/external-resources.md): provision Compose-owned external config files and Keychain secrets.
 - [CONTRIBUTING.md](CONTRIBUTING.md): prepare reviewable changes.
 - [docs/parity/compose-cli-surface.md](docs/parity/compose-cli-surface.md): review local Docker Compose CLI surface parity and documented differences.
 - [SUPPORT.md](SUPPORT.md): ask for help or report non-security issues.

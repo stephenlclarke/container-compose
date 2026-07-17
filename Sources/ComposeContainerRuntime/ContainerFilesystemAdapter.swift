@@ -14,194 +14,13 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
+import ComposeRuntimeSPI
 import ContainerAPIClient
-import ContainerizationArchive
 import Foundation
 
-/// Runtime copy options that apply to one source-to-destination transfer.
-public struct ContainerCopyTransferOptions: Equatable, Sendable {
-    public var followSymlink = false
-    public var preserveOwnership = false
-
-    public init(followSymlink: Bool = false, preserveOwnership: Bool = false) {
-        self.followSymlink = followSymlink
-        self.preserveOwnership = preserveOwnership
-    }
-}
-
-/// Direct apple/container API used for copying files between service
-/// containers and the local filesystem.
-public protocol ContainerCopying: Sendable {
-    /// Copies `source` from the local filesystem into `destination` inside
-    /// container `id`.
-    func copyIntoContainer(id: String, source: String, destination: String, options: ContainerCopyTransferOptions) async throws
-
-    /// Copies `source` from container `id` to `destination` on the local
-    /// filesystem.
-    func copyFromContainer(id: String, source: String, destination: String, options: ContainerCopyTransferOptions) async throws
-
-    /// Copies `source` from one container to `destination` inside another
-    /// container.
-    func copyBetweenContainers(
-        sourceID: String,
-        source: String,
-        destinationID: String,
-        destination: String,
-        options: ContainerCopyTransferOptions,
-    ) async throws
-}
-
-extension ContainerCopying {
-    /// Extracts a caller-provided tar stream and copies each top-level member
-    /// into `destination` inside container `id`.
-    public func copyArchiveIntoContainer(
-        id: String,
-        archive: FileHandle,
-        destination: String,
-        options: ContainerCopyTransferOptions,
-    ) async throws {
-        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
-            UUID().uuidString,
-            isDirectory: true,
-        )
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        defer {
-            try? FileManager.default.removeItem(at: tempDirectory)
-        }
-
-        let archiveFile = tempDirectory.appendingPathComponent("stdin.tar")
-        try Self.copyStream(archive, to: archiveFile)
-        try await copyArchiveFileIntoContainer(id: id, archive: archiveFile, destination: destination, options: options)
-    }
-
-    /// Extracts a tar archive file and copies each top-level member into
-    /// `destination` inside container `id`.
-    public func copyArchiveFileIntoContainer(
-        id: String,
-        archive archiveFile: URL,
-        destination: String,
-        options: ContainerCopyTransferOptions,
-    ) async throws {
-        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
-            UUID().uuidString,
-            isDirectory: true,
-        )
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        defer {
-            try? FileManager.default.removeItem(at: tempDirectory)
-        }
-
-        let extractedRoot = tempDirectory.appendingPathComponent("root", isDirectory: true)
-        try FileManager.default.createDirectory(at: extractedRoot, withIntermediateDirectories: true)
-
-        let reader = try ArchiveReader(file: archiveFile)
-        let rejectedPaths = try reader.extractContents(to: extractedRoot)
-        if !rejectedPaths.isEmpty {
-            throw ComposeError.invalidProject("cp '-': archive contains unsafe paths: \(rejectedPaths.sorted().joined(separator: ", "))")
-        }
-
-        let members = try Self.topLevelArchiveMembers(in: extractedRoot)
-        guard !members.isEmpty else {
-            throw ComposeError.invalidProject("cp '-': archive contains no copyable entries")
-        }
-
-        for member in members {
-            try await copyIntoContainer(id: id, source: member.path, destination: destination, options: options)
-        }
-    }
-
-    /// Stages `source` from container `id` and writes it as a tar archive to
-    /// the caller-provided output stream.
-    public func copyFromContainerAsArchive(
-        id: String,
-        source: String,
-        archive: FileHandle,
-        options: ContainerCopyTransferOptions,
-    ) async throws {
-        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
-            UUID().uuidString,
-            isDirectory: true,
-        )
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        defer {
-            try? FileManager.default.removeItem(at: tempDirectory)
-        }
-
-        let root = tempDirectory.appendingPathComponent("root", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try await copyFromContainer(id: id, source: source, destination: root.path, options: options)
-
-        let members = try Self.topLevelArchiveMembers(in: root)
-        guard !members.isEmpty else {
-            throw ComposeError.invalidProject("cp '-': source produced no copyable entries")
-        }
-
-        let output = tempDirectory.appendingPathComponent("stdout.tar")
-        let writer = try ArchiveWriter(format: .pax, filter: .none, file: output)
-        try writer.archiveDirectory(root)
-        try writer.finishEncoding()
-        try Self.copyFile(output, to: archive)
-    }
-
-    private static func topLevelArchiveMembers(in directory: URL) throws -> [URL] {
-        try FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil,
-            options: [],
-        )
-        .sorted { $0.lastPathComponent < $1.lastPathComponent }
-    }
-
-    private static func copyStream(_ input: FileHandle, to destination: URL) throws {
-        FileManager.default.createFile(atPath: destination.path, contents: nil)
-        let output = try FileHandle(forWritingTo: destination)
-        defer {
-            try? output.close()
-        }
-        let bufferSize = 1024 * 1024
-        while true {
-            let chunk = input.readData(ofLength: bufferSize)
-            if chunk.isEmpty {
-                break
-            }
-            output.write(chunk)
-        }
-    }
-
-    private static func copyFile(_ source: URL, to output: FileHandle) throws {
-        let input = try FileHandle(forReadingFrom: source)
-        defer {
-            try? input.close()
-        }
-        let bufferSize = 1024 * 1024
-        while true {
-            let chunk = input.readData(ofLength: bufferSize)
-            if chunk.isEmpty {
-                break
-            }
-            output.write(chunk)
-        }
-    }
-}
-
-/// Direct apple/container API used for service container filesystem exports.
-public protocol ContainerExporting: Sendable {
-    /// Exports `id` as a tar archive to `output`, or streams the archive to
-    /// stdout when `output` is nil. `live` asks the runtime to take a snapshot
-    /// of a running container. `noFreeze` opts into a best-effort snapshot that
-    /// leaves the guest filesystem writable.
-    func exportContainer(id: String, output: String?, live: Bool, noFreeze: Bool) async throws
-}
-
-public extension ContainerExporting {
-    /// Exports a container with the runtime's default snapshot behavior.
-    func exportContainer(id: String, output: String?, live: Bool) async throws {
-        try await exportContainer(id: id, output: output, live: live, noFreeze: false)
-    }
-}
-
 /// `ContainerClient`-backed copier for real service container file copies.
-public struct ContainerClientCopier: ContainerCopying {
+public struct ContainerClientCopier: ComposeRuntimeCopying {
     public typealias CopyInto = @Sendable (String, String, String, ContainerCopyTransferOptions) async throws -> Void
     public typealias CopyFrom = @Sendable (String, String, String, ContainerCopyTransferOptions) async throws -> Void
 
@@ -304,7 +123,7 @@ public struct ContainerClientCopier: ContainerCopying {
 }
 
 /// `ContainerClient`-backed exporter for real service container exports.
-public struct ContainerClientExporter: ContainerExporting {
+public struct ContainerClientExporter: ComposeRuntimeExporting {
     private static let isStateless = true
 
     public init() {

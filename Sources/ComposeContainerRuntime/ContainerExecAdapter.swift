@@ -14,81 +14,12 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
+import ComposeRuntimeSPI
 import ContainerAPIClient
 import ContainerResource
 import Foundation
 import Logging
-
-/// Compose exec request that can run without attached terminal IO.
-public struct ContainerDetachedExecRequest: Sendable, Equatable {
-    public var id: String
-    public var command: [String]
-    public var environment: [String]
-    public var user: String?
-    public var workingDirectory: String?
-    public var privileged: Bool
-
-    public init(
-        id: String,
-        command: [String],
-        environment: [String] = [],
-        user: String? = nil,
-        workingDirectory: String? = nil,
-        privileged: Bool = false
-    ) {
-        self.id = id
-        self.command = command
-        self.environment = environment
-        self.user = user
-        self.workingDirectory = workingDirectory
-        self.privileged = privileged
-    }
-}
-
-/// Terminal attachment mode for a Compose exec process.
-public struct ContainerAttachedExecTerminal: Sendable, Equatable {
-    public var interactive: Bool
-    public var tty: Bool
-
-    public init(interactive: Bool = true, tty: Bool = true) {
-        self.interactive = interactive
-        self.tty = tty
-    }
-}
-
-/// Compose exec request that attaches local terminal IO to the process.
-public struct ContainerAttachedExecRequest: Sendable, Equatable {
-    public var id: String
-    public var command: [String]
-    public var environment: [String]
-    public var user: String?
-    public var workingDirectory: String?
-    public var privileged: Bool
-    public var interactive: Bool
-    public var tty: Bool
-    public var terminal: ContainerAttachedExecTerminal {
-        ContainerAttachedExecTerminal(interactive: interactive, tty: tty)
-    }
-
-    public init(
-        id: String,
-        command: [String],
-        environment: [String] = [],
-        user: String? = nil,
-        workingDirectory: String? = nil,
-        privileged: Bool = false,
-        terminal: ContainerAttachedExecTerminal = ContainerAttachedExecTerminal()
-    ) {
-        self.id = id
-        self.command = command
-        self.environment = environment
-        self.user = user
-        self.workingDirectory = workingDirectory
-        self.privileged = privileged
-        self.interactive = terminal.interactive
-        self.tty = terminal.tty
-    }
-}
 
 /// Low-level apple/container process calls used by `ContainerClientExecManager`.
 public protocol ContainerExecAPIClienting: Sendable {
@@ -100,7 +31,7 @@ public protocol ContainerExecAPIClienting: Sendable {
         containerId: String,
         processId: String,
         configuration: ProcessConfiguration,
-        stdio: [FileHandle?]
+        stdio: [FileHandle?],
     ) async throws
 
     /// Creates an attached process and returns its exit status.
@@ -109,26 +40,19 @@ public protocol ContainerExecAPIClienting: Sendable {
         processId: String,
         configuration: ProcessConfiguration,
         interactive: Bool,
-        tty: Bool
+        tty: Bool,
     ) async throws -> Int32
-}
-
-/// Direct apple/container APIs used for detached Compose exec.
-public protocol ContainerExecManaging: Sendable {
-    /// Runs an attached process inside a service container and returns its status.
-    func execAttached(request: ContainerAttachedExecRequest) async throws -> Int32
-
-    /// Runs a detached process inside a service container and emits its container id.
-    func execDetached(
-        request: ContainerDetachedExecRequest,
-        emit: @escaping @Sendable (String) -> Void
-    ) async throws
 }
 
 /// Thin apple/container client wrapper around process APIs.
 public struct ContainerExecAPIClient: ContainerExecAPIClienting {
     public typealias Get = @Sendable (String) async throws -> ContainerSnapshot
-    public typealias CreateAndStart = @Sendable (String, String, ProcessConfiguration, [FileHandle?]) async throws -> Void
+    public typealias CreateAndStart = @Sendable (
+        String,
+        String,
+        ProcessConfiguration,
+        [FileHandle?],
+    ) async throws -> Void
     public typealias RunAttached = @Sendable (String, String, ProcessConfiguration, Bool, Bool) async throws -> Int32
 
     private let getOperation: Get
@@ -138,11 +62,11 @@ public struct ContainerExecAPIClient: ContainerExecAPIClienting {
     public init(
         get: @escaping Get = { try await ContainerClient().get(id: $0) },
         createAndStart: @escaping CreateAndStart = ContainerExecLiveAdapter.createAndStartProcess,
-        runAttached: @escaping RunAttached = ContainerExecLiveAdapter.runAttachedProcess
+        runAttached: @escaping RunAttached = ContainerExecLiveAdapter.runAttachedProcess,
     ) {
-        self.getOperation = get
-        self.createAndStartOperation = createAndStart
-        self.runAttachedOperation = runAttached
+        getOperation = get
+        createAndStartOperation = createAndStart
+        runAttachedOperation = runAttached
     }
 
     /// Returns the container snapshot through `ContainerClient`.
@@ -155,7 +79,7 @@ public struct ContainerExecAPIClient: ContainerExecAPIClienting {
         containerId: String,
         processId: String,
         configuration: ProcessConfiguration,
-        stdio: [FileHandle?]
+        stdio: [FileHandle?],
     ) async throws {
         try await createAndStartOperation(containerId, processId, configuration, stdio)
     }
@@ -166,20 +90,20 @@ public struct ContainerExecAPIClient: ContainerExecAPIClienting {
         processId: String,
         configuration: ProcessConfiguration,
         interactive: Bool,
-        tty: Bool
+        tty: Bool,
     ) async throws -> Int32 {
         try await runAttachedOperation(containerId, processId, configuration, interactive, tty)
     }
 }
 
 /// `ContainerClient`-backed manager for detached service-container exec.
-public struct ContainerClientExecManager: ContainerExecManaging {
+public struct ContainerClientExecManager: ComposeRuntimeExecManaging {
     private let client: ContainerExecAPIClienting
     private let processIdentifier: @Sendable () -> String
 
     public init(
         client: ContainerExecAPIClienting = ContainerExecAPIClient(),
-        processIdentifier: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() }
+        processIdentifier: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
     ) {
         self.client = client
         self.processIdentifier = processIdentifier
@@ -194,7 +118,7 @@ public struct ContainerClientExecManager: ContainerExecManaging {
             user: request.user,
             workingDirectory: request.workingDirectory,
             privileged: request.privileged,
-            terminal: request.tty
+            terminal: request.tty,
         )
 
         return try await client.runAttachedProcess(
@@ -202,14 +126,14 @@ public struct ContainerClientExecManager: ContainerExecManaging {
             processId: processIdentifier(),
             configuration: configuration,
             interactive: request.interactive,
-            tty: request.tty
+            tty: request.tty,
         )
     }
 
     /// Creates and starts a detached process with apple/container process APIs.
     public func execDetached(
         request: ContainerDetachedExecRequest,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (String) -> Void,
     ) async throws {
         let (container, configuration) = try await processConfiguration(
             id: request.id,
@@ -218,18 +142,20 @@ public struct ContainerClientExecManager: ContainerExecManaging {
             user: request.user,
             workingDirectory: request.workingDirectory,
             privileged: request.privileged,
-            terminal: false
+            terminal: false,
         )
 
         try await client.createAndStartProcess(
             containerId: container.id,
             processId: processIdentifier(),
             configuration: configuration,
-            stdio: []
+            stdio: [],
         )
         emit(container.id)
     }
 
+    // The runtime client needs these resolved fields independently to create its native process request.
+    // swiftlint:disable:next function_parameter_count
     private func processConfiguration(
         id: String,
         command: [String],
@@ -237,7 +163,7 @@ public struct ContainerClientExecManager: ContainerExecManaging {
         user: String?,
         workingDirectory: String?,
         privileged: Bool,
-        terminal: Bool
+        terminal: Bool,
     ) async throws -> (ContainerSnapshot, ProcessConfiguration) {
         guard let executable = command.first else {
             throw ComposeError.invalidProject("exec requires a command")
@@ -253,12 +179,12 @@ public struct ContainerClientExecManager: ContainerExecManaging {
         configuration.arguments = Array(command.dropFirst())
         configuration.terminal = terminal
         configuration.privileged = privileged
-        configuration.environment.append(
-            contentsOf: try Parser.allEnv(
+        try configuration.environment.append(
+            contentsOf: Parser.allEnv(
                 imageEnvs: [],
                 envFiles: [],
-                envs: environment
-            )
+                envs: environment,
+            ),
         )
         if let workingDirectory {
             configuration.workingDirectory = workingDirectory
@@ -267,7 +193,7 @@ public struct ContainerClientExecManager: ContainerExecManaging {
             user: user,
             uid: nil,
             gid: nil,
-            defaultUser: configuration.user
+            defaultUser: configuration.user,
         )
         configuration.user = parsedUser
         configuration.supplementalGroups.append(contentsOf: additionalGroups)

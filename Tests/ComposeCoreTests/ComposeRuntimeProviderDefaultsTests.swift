@@ -14,21 +14,20 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-/// Renders rows as a padded table.
-public func renderTable(_ rows: [[String]]) -> String {
-    guard let firstRow = rows.first else {
-        return ""
-    }
-    let widths = rows.reduce(Array(repeating: 0, count: firstRow.count)) { current, row in
-        zip(current, row).map { max($0, $1.count) }
-    }
-    return rows.map { row in
-        var line = row.enumerated().map { index, value in
-            index == row.count - 1 ? value : value.padding(toLength: widths[index], withPad: " ", startingAt: 0)
-        }.joined(separator: "  ")
-        while line.last == " " {
-            line.removeLast()
+import ComposeCore
+import Testing
+
+@Suite("Compose runtime provider defaults")
+struct ComposeRuntimeProviderDefaultsTests {
+    @Test
+    func `library defaults report a missing runtime provider`() async {
+        do {
+            _ = try await ComposeRuntimeProviderDefaults.images().imageExists("example/api:latest")
+            Issue.record("Expected unconfigured runtime failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("image lookup requires an installed Compose runtime provider"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
         }
-        return line
-    }.joined(separator: "\n")
+    }
 }

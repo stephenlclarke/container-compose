@@ -24,16 +24,33 @@ private let defaultComposeCommitShellPath = NSString.path(
 
 /// Builds a single-layer OCI image archive for `compose commit`.
 package enum ComposeCommitImageArchive {
+    /// Optional source metadata used to build an OCI commit archive.
+    package struct Metadata {
+        let baseImage: ComposeImageMetadata?
+        let healthCheck: ComposeImageHealthCheck?
+        let createdAt: Date
+        let shellPath: String
+
+        package init(
+            baseImage: ComposeImageMetadata? = nil,
+            healthCheck: ComposeImageHealthCheck? = nil,
+            createdAt: Date = Date(),
+            shellPath: String = defaultComposeCommitShellPath,
+        ) {
+            self.baseImage = baseImage
+            self.healthCheck = healthCheck
+            self.createdAt = createdAt
+            self.shellPath = shellPath
+        }
+    }
+
     /// Writes an OCI layout tar archive whose layer is the exported container root filesystem.
     package static func write(
         rootfsArchive: URL,
         output: URL,
         service: ComposeService,
         options: ComposeCommitOptions,
-        baseImageMetadata: ComposeImageMetadata? = nil,
-        healthCheck: ComposeImageHealthCheck? = nil,
-        createdAt: Date = Date(),
-        shellPath: String = defaultComposeCommitShellPath,
+        metadata: Metadata = Metadata(),
     ) throws {
         let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -48,16 +65,16 @@ package enum ComposeCommitImageArchive {
         let writer = try ContentWriter(for: blobsDirectory)
         let layer = try writer.create(from: rootfsArchive)
         var config = try CommitImageConfig(
-            baseImageMetadata: baseImageMetadata,
+            baseImageMetadata: metadata.baseImage,
             service: service,
-            healthCheck: healthCheck,
-            shellPath: shellPath,
+            healthCheck: metadata.healthCheck,
+            shellPath: metadata.shellPath,
         )
         try config.apply(changes: options.changes)
 
         let platform = try service.platform.map(ContainerizationOCI.Platform.init(from:)) ?? .current
         let image = CommitImage(
-            created: iso8601String(createdAt),
+            created: iso8601String(metadata.createdAt),
             author: normalizedOptional(options.author),
             architecture: platform.architecture,
             os: platform.os,
@@ -68,7 +85,7 @@ package enum ComposeCommitImageArchive {
             rootfs: Rootfs(type: "layers", diffIDs: [layer.digest.digestString]),
             history: [
                 History(
-                    created: iso8601String(createdAt),
+                    created: iso8601String(metadata.createdAt),
                     createdBy: "container compose commit \(service.name)",
                     author: normalizedOptional(options.author),
                     comment: normalizedOptional(options.message),

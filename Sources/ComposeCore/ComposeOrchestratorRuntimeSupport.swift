@@ -14,16 +14,27 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#if canImport(Darwin)
-    import Darwin
-#elseif canImport(Glibc)
-    import Glibc
-#endif
 import ContainerAPIClient
 import ContainerizationExtras
-import ContainerizationOCI
 import ContainerResource
 import Foundation
+
+struct ComposeRuntimeUnsupportedValue {
+    let composeName: String
+    let value: String
+    let reason: String
+}
+
+struct ComposeRuntimeUnsupportedField {
+    let composeName: String
+    let reason: String
+}
+
+private struct ComposeRuntimeUnsupportedOptionalValue {
+    let composeName: String
+    let value: String?
+    let reason: String
+}
 
 extension ComposeOrchestrator {
     /// Validates all selected services before any runtime side effects occur.
@@ -38,19 +49,47 @@ extension ComposeOrchestrator {
     }
 
     /// Returns unsupported string-valued fields that need missing runtime primitives.
-    func unsupportedRuntimeStringFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
+    func unsupportedRuntimeStringFields(service: ComposeService) -> [ComposeRuntimeUnsupportedValue] {
         [
-            ("cgroup", service.cgroup, "cgroup namespace support needs an apple/container runtime gap PR"),
-            ("cgroup_parent", service.cgroupParent, "cgroup parent support needs an apple/container runtime gap PR"),
-            ("ipc", service.ipc, "IPC namespace support needs an apple/container runtime gap PR"),
-            ("isolation", service.isolation, "isolation support needs an apple/container runtime gap PR"),
-            ("userns_mode", service.usernsMode, "user namespace support needs an apple/container runtime gap PR"),
-            ("uts", service.uts, "UTS namespace support needs an apple/container runtime gap PR"),
-        ].compactMap { composeName, value, reason in
-            guard let value, !value.isEmpty else {
+            ComposeRuntimeUnsupportedOptionalValue(
+                composeName: "cgroup",
+                value: service.cgroup,
+                reason: "cgroup namespace support needs an apple/container runtime gap PR",
+            ),
+            ComposeRuntimeUnsupportedOptionalValue(
+                composeName: "cgroup_parent",
+                value: service.cgroupParent,
+                reason: "cgroup parent support needs an apple/container runtime gap PR",
+            ),
+            ComposeRuntimeUnsupportedOptionalValue(
+                composeName: "ipc",
+                value: service.ipc,
+                reason: "IPC namespace support needs an apple/container runtime gap PR",
+            ),
+            ComposeRuntimeUnsupportedOptionalValue(
+                composeName: "isolation",
+                value: service.isolation,
+                reason: "isolation support needs an apple/container runtime gap PR",
+            ),
+            ComposeRuntimeUnsupportedOptionalValue(
+                composeName: "userns_mode",
+                value: service.usernsMode,
+                reason: "user namespace support needs an apple/container runtime gap PR",
+            ),
+            ComposeRuntimeUnsupportedOptionalValue(
+                composeName: "uts",
+                value: service.uts,
+                reason: "UTS namespace support needs an apple/container runtime gap PR",
+            ),
+        ].compactMap { candidate in
+            guard let value = candidate.value, !value.isEmpty else {
                 return nil
             }
-            return (composeName, value, reason)
+            return ComposeRuntimeUnsupportedValue(
+                composeName: candidate.composeName,
+                value: value,
+                reason: candidate.reason,
+            )
         }
     }
 
@@ -67,9 +106,9 @@ extension ComposeOrchestrator {
 
     /// Returns unsupported CPU scheduler fields beyond the supported `cpus` and
     /// relative `cpu_shares` controls.
-    func unsupportedCPUResourceFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
+    func unsupportedCPUResourceFields(service: ComposeService) -> [ComposeRuntimeUnsupportedValue] {
         let reason = "advanced CPU resource support needs an apple/container runtime gap PR"
-        var fields: [(composeName: String, value: String, reason: String)] = []
+        var fields: [ComposeRuntimeUnsupportedValue] = []
         appendUnsupportedIntegerField("cpu_count", value: service.cpuCount, reason: reason, to: &fields)
         appendUnsupportedFloatingPointField("cpu_percent", value: service.cpuPercent, reason: reason, to: &fields)
         appendUnsupportedIntegerField("cpu_period", value: service.cpuPeriod, reason: reason, to: &fields)
@@ -77,20 +116,20 @@ extension ComposeOrchestrator {
         appendUnsupportedIntegerField("cpu_rt_period", value: service.cpuRealtimePeriod, reason: reason, to: &fields)
         appendUnsupportedIntegerField("cpu_rt_runtime", value: service.cpuRealtimeRuntime, reason: reason, to: &fields)
         if let cpuset = service.cpuset, !cpuset.isEmpty {
-            fields.append(("cpuset", cpuset, reason))
+            fields.append(.init(composeName: "cpuset", value: cpuset, reason: reason))
         }
         return fields
     }
 
     /// Returns unsupported memory, OOM, and process resource controls beyond
     /// `mem_limit`, `mem_reservation`, and `oom_score_adj`.
-    func unsupportedMemoryAndProcessResourceFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
+    func unsupportedMemoryAndProcessResourceFields(service: ComposeService) -> [ComposeRuntimeUnsupportedValue] {
         let reason = "memory, OOM, and process resource support needs an apple/container runtime gap PR"
-        var fields: [(composeName: String, value: String, reason: String)] = []
+        var fields: [ComposeRuntimeUnsupportedValue] = []
         appendUnsupportedStringField("memswap_limit", value: service.memSwapLimit, reason: reason, to: &fields)
         appendUnsupportedStringField("mem_swappiness", value: service.memSwappiness, reason: reason, to: &fields)
         if service.oomKillDisable == true {
-            fields.append(("oom_kill_disable", "true", reason))
+            fields.append(.init(composeName: "oom_kill_disable", value: "true", reason: reason))
         }
         return fields
     }
@@ -100,9 +139,9 @@ extension ComposeOrchestrator {
         guard let oomScoreAdj = service.oomScoreAdj else {
             return nil
         }
-        guard (-1000...1000).contains(oomScoreAdj) else {
+        guard (-1000 ... 1000).contains(oomScoreAdj) else {
             throw ComposeError.invalidProject(
-                "service '\(service.name)' uses oom_score_adj '\(oomScoreAdj)' outside the supported range -1000...1000"
+                "service '\(service.name)' uses oom_score_adj '\(oomScoreAdj)' outside the supported range -1000...1000",
             )
         }
         return oomScoreAdj
@@ -116,7 +155,7 @@ extension ComposeOrchestrator {
         }
         guard cpuShares >= 2 else {
             throw ComposeError.invalidProject(
-                "service '\(service.name)' uses cpu_shares '\(cpuShares)'; cpu_shares must be 0 or at least 2"
+                "service '\(service.name)' uses cpu_shares '\(cpuShares)'; cpu_shares must be 0 or at least 2",
             )
         }
         return UInt64(cpuShares)
@@ -131,7 +170,7 @@ extension ComposeOrchestrator {
         }
         guard let reservationInBytes = Int64(reservation), reservationInBytes >= 0 else {
             throw ComposeError.invalidProject(
-                "service '\(service.name)' uses invalid mem_reservation '\(reservation)'; expected a non-negative byte value"
+                "service '\(service.name)' uses invalid mem_reservation '\(reservation)'; expected a non-negative byte value",
             )
         }
         guard reservationInBytes != 0 else {
@@ -141,7 +180,7 @@ extension ComposeOrchestrator {
            let memoryLimitInBytes = Int64(memoryLimit), reservationInBytes >= memoryLimitInBytes
         {
             throw ComposeError.invalidProject(
-                "service '\(service.name)' uses mem_reservation '\(reservation)'; mem_reservation must be lower than mem_limit '\(memoryLimit)'"
+                "service '\(service.name)' uses mem_reservation '\(reservation)'; mem_reservation must be lower than mem_limit '\(memoryLimit)'",
             )
         }
         return reservationInBytes
@@ -178,19 +217,26 @@ extension ComposeOrchestrator {
     }
 
     /// Returns unsupported user and security option fields.
-    func unsupportedUserAndSecurityOptionFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
-        var fields: [(composeName: String, value: String, reason: String)] = []
+    func unsupportedUserAndSecurityOptionFields(service: ComposeService) -> [ComposeRuntimeUnsupportedValue] {
+        var fields: [ComposeRuntimeUnsupportedValue] = []
         if let securityOption = service.securityOpt?.first(where: { !$0.isEmpty }) {
-            fields.append(("security_opt", securityOption, "security option support needs an apple/container runtime gap PR"))
+            fields.append(.init(
+                composeName: "security_opt",
+                value: securityOption,
+                reason: "security option support needs an apple/container runtime gap PR",
+            ))
         }
         return fields
     }
 
     /// Returns unsupported credential access fields.
-    func unsupportedDeviceAccessFields(service: ComposeService) -> [(composeName: String, reason: String)] {
-        var fields: [(composeName: String, reason: String)] = []
+    func unsupportedDeviceAccessFields(service: ComposeService) -> [ComposeRuntimeUnsupportedField] {
+        var fields: [ComposeRuntimeUnsupportedField] = []
         if service.credentialSpec != nil {
-            fields.append(("credential_spec", "credential spec support needs an apple/container runtime gap PR"))
+            fields.append(.init(
+                composeName: "credential_spec",
+                reason: "credential spec support needs an apple/container runtime gap PR",
+            ))
         }
         return fields
     }
@@ -208,23 +254,26 @@ extension ComposeOrchestrator {
     }
 
     /// Returns logging and storage fields that need apple/container runtime primitives.
-    func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [(composeName: String, reason: String)] {
-        var fields: [(composeName: String, reason: String)] = []
+    func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [ComposeRuntimeUnsupportedField] {
+        var fields: [ComposeRuntimeUnsupportedField] = []
         let loggingReason = "service logging driver/options need an apple/container runtime gap PR"
         if !isSupportedRuntimeLogging(service.logging) {
-            fields.append(("logging", loggingReason))
+            fields.append(.init(composeName: "logging", reason: loggingReason))
         }
         if let logDriver = service.logDriver,
            !logDriver.isEmpty,
            !isSupportedRuntimeLogDriver(logDriver)
         {
-            fields.append(("log_driver", loggingReason))
+            fields.append(.init(composeName: "log_driver", reason: loggingReason))
         }
         if !isSupportedLegacyRuntimeLogOptions(service: service) {
-            fields.append(("log_opt", loggingReason))
+            fields.append(.init(composeName: "log_opt", reason: loggingReason))
         }
         if let storageOptions = service.storageOptions, !storageOptions.isEmpty {
-            fields.append(("storage_opt", "per-container storage options need an apple/container rootfs storage runtime gap PR"))
+            fields.append(.init(
+                composeName: "storage_opt",
+                reason: "per-container storage options need an apple/container rootfs storage runtime gap PR",
+            ))
         }
         return fields
     }
@@ -402,7 +451,10 @@ extension ComposeOrchestrator {
 
     /// Returns the runtime NIS domain-name argument for Compose `domainname`.
     func runtimeDomainnameArgument(service: ComposeService) throws -> String? {
-        guard let domainName = service.domainName?.trimmingCharacters(in: .whitespacesAndNewlines), !domainName.isEmpty else {
+        let domainName = service.domainName?.trimmingCharacters(
+            in: .whitespacesAndNewlines,
+        )
+        guard let domainName, !domainName.isEmpty else {
             return nil
         }
         return try validatedRFC1123Hostname(domainName, field: "domainname", service: service)
@@ -477,14 +529,46 @@ extension ComposeOrchestrator {
             result.append("weight=\(weight)")
         }
         for device in blkio.weightDevice ?? [] {
-            try validateBlockIODevicePath(device.path, serviceName: service.name, field: "blkio_config.weight_device.path")
-            try validateBlockIOWeight(device.weight, serviceName: service.name, field: "blkio_config.weight_device.weight")
+            try validateBlockIODevicePath(
+                device.path,
+                serviceName: service.name,
+                field: "blkio_config.weight_device.path",
+            )
+            try validateBlockIOWeight(
+                device.weight,
+                serviceName: service.name,
+                field: "blkio_config.weight_device.weight",
+            )
             result.append("device=\(device.path),weight=\(device.weight)")
         }
-        try appendThrottleArguments(blkio.deviceReadBps, key: "read-bps", field: "blkio_config.device_read_bps", serviceName: service.name, to: &result)
-        try appendThrottleArguments(blkio.deviceWriteBps, key: "write-bps", field: "blkio_config.device_write_bps", serviceName: service.name, to: &result)
-        try appendThrottleArguments(blkio.deviceReadIOps, key: "read-iops", field: "blkio_config.device_read_iops", serviceName: service.name, to: &result)
-        try appendThrottleArguments(blkio.deviceWriteIOps, key: "write-iops", field: "blkio_config.device_write_iops", serviceName: service.name, to: &result)
+        try appendThrottleArguments(
+            blkio.deviceReadBps,
+            key: "read-bps",
+            field: "blkio_config.device_read_bps",
+            serviceName: service.name,
+            to: &result,
+        )
+        try appendThrottleArguments(
+            blkio.deviceWriteBps,
+            key: "write-bps",
+            field: "blkio_config.device_write_bps",
+            serviceName: service.name,
+            to: &result,
+        )
+        try appendThrottleArguments(
+            blkio.deviceReadIOps,
+            key: "read-iops",
+            field: "blkio_config.device_read_iops",
+            serviceName: service.name,
+            to: &result,
+        )
+        try appendThrottleArguments(
+            blkio.deviceWriteIOps,
+            key: "write-iops",
+            field: "blkio_config.device_write_iops",
+            serviceName: service.name,
+            to: &result,
+        )
         return result
     }
 
@@ -541,9 +625,9 @@ extension ComposeOrchestrator {
 
     private func runtimeGPUArgument(_ value: ComposeValue) throws -> String {
         switch value {
-        case .string(let spec):
+        case let .string(spec):
             return spec
-        case .object(let object):
+        case let .object(object):
             return try runtimeGPUArgument(object)
         default:
             throw ComposeError.invalidProject("GPU request must be a string or object")
@@ -557,7 +641,7 @@ extension ComposeOrchestrator {
         let capabilities = try optionalGPUStringArrayField("capabilities", in: object)
         let options = try optionalGPUStringMapField("options", in: object)
 
-        if count != nil && !(deviceIDs ?? []).isEmpty {
+        if count != nil, !(deviceIDs ?? []).isEmpty {
             throw ComposeError.invalidProject("GPU request count and device_ids are mutually exclusive")
         }
         let onlyGenericGPU = driver == nil
@@ -627,7 +711,7 @@ extension ComposeOrchestrator {
         guard let value = object[name] else {
             return nil
         }
-        guard case .string(let string) = value else {
+        guard case let .string(string) = value else {
             throw ComposeError.invalidProject("GPU request \(name) must be a string")
         }
         return string
@@ -638,13 +722,13 @@ extension ComposeOrchestrator {
             return nil
         }
         switch value {
-        case .number(let number):
+        case let .number(number):
             let decimal = NSDecimalNumber(decimal: number)
             guard decimal.doubleValue.rounded() == decimal.doubleValue else {
                 throw ComposeError.invalidProject("GPU request \(name) must be 'all' or an integer")
             }
             return decimal.stringValue
-        case .string(let string):
+        case let .string(string):
             guard string == "all" || Int(string) != nil else {
                 throw ComposeError.invalidProject("GPU request \(name) must be 'all' or an integer")
             }
@@ -658,11 +742,11 @@ extension ComposeOrchestrator {
         guard let value = object[name] else {
             return nil
         }
-        guard case .array(let values) = value else {
+        guard case let .array(values) = value else {
             throw ComposeError.invalidProject("GPU request \(name) must be a list")
         }
         return try values.map {
-            guard case .string(let string) = $0 else {
+            guard case let .string(string) = $0 else {
                 throw ComposeError.invalidProject("GPU request \(name) entries must be strings")
             }
             return string
@@ -673,11 +757,11 @@ extension ComposeOrchestrator {
         guard let value = object[name] else {
             return nil
         }
-        guard case .object(let values) = value else {
+        guard case let .object(values) = value else {
             throw ComposeError.invalidProject("GPU request \(name) must be a mapping")
         }
         return try values.mapValues {
-            guard case .string(let string) = $0 else {
+            guard case let .string(string) = $0 else {
                 throw ComposeError.invalidProject("GPU request \(name) values must be strings")
             }
             return string
@@ -693,10 +777,10 @@ extension ComposeOrchestrator {
 
     private func runtimeDeviceArgument(_ value: ComposeValue) throws -> String {
         switch value {
-        case .string(let spec):
+        case let .string(spec):
             return try runtimeDeviceArgument(spec)
-        case .object(let object):
-            guard case .string(let source)? = object["source"] else {
+        case let .object(object):
+            guard case let .string(source)? = object["source"] else {
                 throw ComposeError.invalidProject("missing device source")
             }
             let target = try optionalStringField("target", in: object)
@@ -731,15 +815,14 @@ extension ComposeOrchestrator {
             throw ComposeError.invalidProject("invalid device permissions")
         }
 
-        let spec: String
-        if let target, let permissions {
-            spec = "\(source):\(target):\(permissions)"
+        let spec: String = if let target, let permissions {
+            "\(source):\(target):\(permissions)"
         } else if let target {
-            spec = "\(source):\(target)"
+            "\(source):\(target)"
         } else if let permissions {
-            spec = "\(source):\(permissions)"
+            "\(source):\(permissions)"
         } else {
-            spec = source
+            source
         }
         _ = try Parser.devices([spec])
         return spec
@@ -749,7 +832,7 @@ extension ComposeOrchestrator {
         guard let value = object[name] else {
             return nil
         }
-        guard case .string(let rawValue) = value else {
+        guard case let .string(rawValue) = value else {
             throw ComposeError.invalidProject("device \(name) must be a string")
         }
         return rawValue
@@ -762,117 +845,6 @@ extension ComposeOrchestrator {
     private func isDevicePermissions(_ value: String) -> Bool {
         let allowed = Set("rwm")
         return !value.isEmpty && value.allSatisfy { allowed.contains($0) }
-    }
-
-    /// Converts Compose `blkio_config` into typed OCI block I/O runtime data.
-    func runtimeBlockIO(service: ComposeService) throws -> LinuxBlockIO? {
-        guard let blkio = service.blkioConfig else {
-            return nil
-        }
-        var weight: UInt16?
-        if let rawWeight = blkio.weight {
-            try validateBlockIOWeight(rawWeight, serviceName: service.name, field: "blkio_config.weight")
-            weight = UInt16(rawWeight)
-        }
-
-        let weightDevices = try (blkio.weightDevice ?? []).map { device in
-            try validateBlockIODevicePath(device.path, serviceName: service.name, field: "blkio_config.weight_device.path")
-            try validateBlockIOWeight(device.weight, serviceName: service.name, field: "blkio_config.weight_device.weight")
-            let id = try blockIODeviceID(device.path, serviceName: service.name)
-            return LinuxWeightDevice(major: id.major, minor: id.minor, weight: UInt16(device.weight), leafWeight: nil)
-        }
-
-        return try LinuxBlockIO(
-            weight: weight,
-            leafWeight: nil,
-            weightDevice: weightDevices,
-            throttleReadBpsDevice: blockIOThrottleDevices(blkio.deviceReadBps, field: "blkio_config.device_read_bps", serviceName: service.name, parseRate: blockIOByteRate),
-            throttleWriteBpsDevice: blockIOThrottleDevices(blkio.deviceWriteBps, field: "blkio_config.device_write_bps", serviceName: service.name, parseRate: blockIOByteRate),
-            throttleReadIOPSDevice: blockIOThrottleDevices(blkio.deviceReadIOps, field: "blkio_config.device_read_iops", serviceName: service.name, parseRate: blockIOIntegerRate),
-            throttleWriteIOPSDevice: blockIOThrottleDevices(blkio.deviceWriteIOps, field: "blkio_config.device_write_iops", serviceName: service.name, parseRate: blockIOIntegerRate),
-        )
-    }
-
-    func blockIOThrottleDevices(
-        _ devices: [ComposeBlkioThrottleDevice]?,
-        field: String,
-        serviceName: String,
-        parseRate: (String, String, String) throws -> UInt64,
-    ) throws -> [LinuxThrottleDevice] {
-        try (devices ?? []).map { device in
-            try validateBlockIODevicePath(device.path, serviceName: serviceName, field: "\(field).path")
-            let id = try blockIODeviceID(device.path, serviceName: serviceName)
-            let rate = try parseRate(device.rate, "\(field).rate", serviceName)
-            return LinuxThrottleDevice(major: id.major, minor: id.minor, rate: rate)
-        }
-    }
-
-    func blockIODeviceID(_ value: String, serviceName: String) throws -> (major: Int64, minor: Int64) {
-        if value.hasPrefix("/") {
-            var info = stat()
-            guard stat(value, &info) == 0 else {
-                throw ComposeError.invalidProject("service '\(serviceName)' uses blkio_config device path '\(value)', but the path could not be statted")
-            }
-            let rawDevice = UInt32(bitPattern: info.st_rdev)
-            return (Int64((rawDevice >> 24) & 0xFF), Int64(rawDevice & 0x00FF_FFFF))
-        }
-
-        let parts = value.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-        guard parts.count == 2, let major = Int64(parts[0]), let minor = Int64(parts[1]) else {
-            throw ComposeError.invalidProject("service '\(serviceName)' uses blkio_config device '\(value)'; device must be an absolute path or '<major>:<minor>'")
-        }
-        return (major, minor)
-    }
-
-    func blockIOByteRate(_ value: String, field: String, serviceName: String) throws -> UInt64 {
-        let bytes: Double
-        do {
-            bytes = try Measurement<UnitInformationStorage>.parse(parsing: value).converted(to: .bytes).value
-        } catch {
-            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) '\(value)'; block I/O byte rates must be sizes")
-        }
-        guard bytes.isFinite, bytes >= 0, bytes <= Double(UInt64.max) else {
-            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) '\(value)'; block I/O byte rate is outside the supported range")
-        }
-        return UInt64(bytes)
-    }
-
-    func blockIOIntegerRate(_ value: String, field: String, serviceName: String) throws -> UInt64 {
-        guard let rate = UInt64(value) else {
-            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) '\(value)'; block I/O throttle rates must be non-negative integers")
-        }
-        return rate
-    }
-
-    func appendThrottleArguments(
-        _ devices: [ComposeBlkioThrottleDevice]?,
-        key: String,
-        field: String,
-        serviceName: String,
-        to result: inout [String],
-    ) throws {
-        for device in devices ?? [] {
-            try validateBlockIODevicePath(device.path, serviceName: serviceName, field: "\(field).path")
-            guard UInt64(device.rate) != nil else {
-                throw ComposeError.invalidProject("service '\(serviceName)' uses \(field).rate '\(device.rate)'; block I/O throttle rates must be non-negative integers")
-            }
-            result.append("device=\(device.path),\(key)=\(device.rate)")
-        }
-    }
-
-    func validateBlockIOWeight(_ weight: Int, serviceName: String, field: String) throws {
-        guard (10 ... 1000).contains(weight) else {
-            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) \(weight); block I/O weight must be between 10 and 1000")
-        }
-    }
-
-    func validateBlockIODevicePath(_ path: String, serviceName: String, field: String) throws {
-        guard !path.isEmpty else {
-            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) with an empty device path")
-        }
-        if path.contains(",") {
-            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) '\(path)'; block I/O device paths must not contain commas")
-        }
     }
 
     /// Canonicalizes one Compose host entry into the typed runtime hosts entry.
@@ -892,7 +864,10 @@ extension ComposeOrchestrator {
         }
 
         if rawAddress == ContainerConfiguration.HostEntry.hostGatewayAddress {
-            return ContainerConfiguration.HostEntry(ipAddress: ContainerConfiguration.HostEntry.hostGatewayAddress, hostnames: [hostname])
+            return ContainerConfiguration.HostEntry(
+                ipAddress: ContainerConfiguration.HostEntry.hostGatewayAddress,
+                hostnames: [hostname],
+            )
         }
 
         let ipAddress = unbracketedIPAddress(rawAddress)

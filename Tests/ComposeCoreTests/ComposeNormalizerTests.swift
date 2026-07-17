@@ -208,12 +208,15 @@ struct ComposeNormalizerTests {
                 type: "volume",
                 source: "data",
                 target: "/data",
-                options: .init(volumeSubpath: "logs/app", volumeLabels: ["com.example.mount": "named"])
+                options: .init(volume: .init(
+                    subpath: "logs/app",
+                    labels: ["com.example.mount": "named"],
+                ))
             ),
             ComposeMount(
                 type: "volume",
                 target: "/scratch",
-                options: .init(volumeLabels: ["com.example.mount": "anonymous"])
+                options: .init(volume: .init(labels: ["com.example.mount": "anonymous"]))
             ),
             ComposeMount(
                 type: "image",

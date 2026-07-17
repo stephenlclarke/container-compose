@@ -17,14 +17,14 @@
 import Foundation
 
 /// Returns field references from a Docker-style template in encounter order.
-func dockerTemplateFields(in template: String) -> [String] {
+public func dockerTemplateFields(in template: String) -> [String] {
     dockerTemplateFieldMatches(in: template).map(\.field)
 }
 
 /// Renders the field-reference subset of Docker's output template language.
-func renderDockerTemplate(
+public func renderDockerTemplate(
     _ template: String,
-    valueForField: (String) throws -> String
+    valueForField: (String) throws -> String,
 ) throws -> String {
     try validateDockerTemplateActions(in: template)
     let fieldMatches = dockerTemplateFieldMatches(in: template)
@@ -39,7 +39,7 @@ func renderDockerTemplate(
 }
 
 /// Renders table template rows with Docker-style headers from referenced fields.
-func renderDockerTemplateTable(fields: [String], rows: [String]) -> String {
+public func renderDockerTemplateTable(fields: [String], rows: [String]) -> String {
     guard !rows.isEmpty else {
         return ""
     }
@@ -54,7 +54,7 @@ func renderDockerTemplateTable(fields: [String], rows: [String]) -> String {
 }
 
 /// Rejects template actions outside the supported field-reference subset.
-func validateDockerTemplateActions(in template: String) throws {
+public func validateDockerTemplateActions(in template: String) throws {
     let actionMatches = dockerTemplateActionMatches(in: template)
     let fieldMatches = dockerTemplateFieldMatches(in: template)
     guard actionMatches.count == fieldMatches.count else {
@@ -65,14 +65,14 @@ func validateDockerTemplateActions(in template: String) throws {
 }
 
 /// Rejects fields that the current command cannot project.
-func validateDockerTemplateFields(_ fields: [String], command: String, supported: Set<String>) throws {
+public func validateDockerTemplateFields(_ fields: [String], command: String, supported: Set<String>) throws {
     for field in fields where !supported.contains(field) {
         throw unsupportedDockerTemplateField(field, command: command, supported: supported)
     }
 }
 
 /// Formats the shared unsupported field error for early validation and defensive render checks.
-func unsupportedDockerTemplateField(_ field: String, command: String, supported: Set<String>) -> ComposeError {
+public func unsupportedDockerTemplateField(_ field: String, command: String, supported: Set<String>) -> ComposeError {
     let supportedFields = supported.sorted().joined(separator: ", ")
     return ComposeError.unsupported("\(command) --format field '.\(field)'; supported fields are \(supportedFields)")
 }
@@ -92,7 +92,7 @@ private func dockerTemplateFieldMatches(in template: String) -> [DockerTemplateF
     guard let regex = try? NSRegularExpression(pattern: pattern) else {
         return []
     }
-    let range = NSRange(template.startIndex..<template.endIndex, in: template)
+    let range = NSRange(template.startIndex ..< template.endIndex, in: template)
     return regex.matches(in: template, range: range).compactMap { match in
         guard
             let fullRange = Range(match.range(at: 0), in: template),
@@ -109,7 +109,7 @@ private func dockerTemplateActionMatches(in template: String) -> [DockerTemplate
     guard let regex = try? NSRegularExpression(pattern: pattern) else {
         return []
     }
-    let range = NSRange(template.startIndex..<template.endIndex, in: template)
+    let range = NSRange(template.startIndex ..< template.endIndex, in: template)
     return regex.matches(in: template, range: range).compactMap { match in
         guard
             let fullRange = Range(match.range(at: 0), in: template),
@@ -117,6 +117,9 @@ private func dockerTemplateActionMatches(in template: String) -> [DockerTemplate
         else {
             return nil
         }
-        return DockerTemplateActionMatch(action: String(template[actionRange]).trimmingCharacters(in: .whitespacesAndNewlines), range: fullRange)
+        return DockerTemplateActionMatch(
+            action: String(template[actionRange]).trimmingCharacters(in: .whitespacesAndNewlines),
+            range: fullRange,
+        )
     }
 }

@@ -19,10 +19,6 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
-import ContainerizationError
-import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 import Foundation
 
 /// Converts a normalized Compose project into deterministic `container`
@@ -30,22 +26,22 @@ import Foundation
 public final class ComposeOrchestrator: @unchecked Sendable {
     let runner: CommandRunning
     let options: ComposeExecutionOptions
-    let copier: ContainerCopying
-    let configReader: ContainerConfigReading
-    let discoveryManager: ContainerDiscoveryManaging
-    let eventsManager: ContainerEventsManaging
-    let execManager: ContainerExecManaging
-    let exporter: ContainerExporting
-    let imageManager: ContainerImageManaging
-    let lifecycleManager: ContainerLifecycleManaging
-    let logManager: ContainerLogManaging
+    let copier: ComposeRuntimeCopying
+    let configReader: ComposeRuntimeConfigReading
+    let discoveryManager: ComposeRuntimeDiscoveryManaging
+    let eventsManager: ComposeRuntimeEventsManaging
+    let execManager: ComposeRuntimeExecManaging
+    let exporter: ComposeRuntimeExporting
+    let imageManager: ComposeRuntimeImageManaging
+    let lifecycleManager: ComposeRuntimeLifecycleManaging
+    let logManager: ComposeRuntimeLogManaging
     let upMenuController: ComposeUpMenuControlling
     let pullMetadataStore: ComposePullMetadataStoring
-    let resourceManager: ContainerResourceManaging
-    let secretReader: ContainerSecretReading
+    let resourceManager: ComposeRuntimeResourceManaging
+    let secretReader: ComposeRuntimeSecretReading
     let signalProxy: ComposeSignalProxying
-    let statsManager: ContainerStatsManaging
-    let topManager: ContainerTopManaging
+    let statsManager: ComposeRuntimeStatsManaging
+    let topManager: ComposeRuntimeTopManaging
 
     public init(
         runner: CommandRunning = ProcessRunner(),

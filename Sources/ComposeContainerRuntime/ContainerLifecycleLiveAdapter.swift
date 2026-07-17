@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
 import ContainerAPIClient
 import ContainerResource
 import Foundation

@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
 import ContainerAPIClient
 import ContainerResource
 import Foundation
@@ -26,13 +27,13 @@ public enum ContainerExecLiveAdapter {
         containerId: String,
         processId: String,
         configuration: ProcessConfiguration,
-        stdio: [FileHandle?]
+        stdio: [FileHandle?],
     ) async throws {
         let process = try await ContainerClient().createProcess(
             containerId: containerId,
             processId: processId,
             configuration: configuration,
-            stdio: stdio
+            stdio: stdio,
         )
         try await process.start()
     }
@@ -43,22 +44,22 @@ public enum ContainerExecLiveAdapter {
         processId: String,
         configuration: ProcessConfiguration,
         interactive: Bool,
-        tty: Bool
+        tty: Bool,
     ) async throws -> Int32 {
         let client = ContainerClient()
-        let io = try ProcessIO.create(tty: tty, interactive: interactive, detach: false)
+        let processIO = try ProcessIO.create(tty: tty, interactive: interactive, detach: false)
         defer {
-            try? io.close()
+            try? processIO.close()
         }
         let process = try await client.createProcess(
             containerId: containerId,
             processId: processId,
             configuration: configuration,
-            stdio: io.stdio
+            stdio: processIO.stdio,
         )
-        return try await io.handleProcess(
+        return try await processIO.handleProcess(
             process: process,
-            log: Logger(label: "container-compose.exec")
+            log: Logger(label: "container-compose.exec"),
         )
     }
 }

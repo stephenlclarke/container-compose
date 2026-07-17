@@ -14,19 +14,10 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
+import ComposeRuntimeSPI
 import ContainerAPIClient
 import ContainerResource
-
-/// Service container selected for Compose process listing.
-public struct ComposeTopTarget: Sendable, Equatable {
-    public var service: String
-    public var containerID: String
-
-    public init(service: String, containerID: String) {
-        self.service = service
-        self.containerID = containerID
-    }
-}
 
 /// One process identifier row for the fallback `compose top` table.
 public struct ComposeTopRecord: Sendable, Equatable, Codable {
@@ -60,12 +51,6 @@ public protocol ContainerTopAPIClienting: Sendable {
     func processes(id: String) async throws -> ContainerProcesses
 }
 
-/// Direct apple/container API used for service container process listing.
-public protocol ContainerTopManaging: Sendable {
-    /// Emits process information for the selected service containers.
-    func top(targets: [ComposeTopTarget], emit: @escaping @Sendable (String) -> Void) async throws
-}
-
 /// Thin apple/container client wrapper around process-listing API calls.
 public struct ContainerTopAPIClient: ContainerTopAPIClienting {
     public typealias Processes = @Sendable (String) async throws -> ContainerProcesses
@@ -73,7 +58,7 @@ public struct ContainerTopAPIClient: ContainerTopAPIClienting {
     private let processesOperation: Processes
 
     public init(processes: @escaping Processes = { try await ContainerClient().processes(id: $0) }) {
-        self.processesOperation = processes
+        processesOperation = processes
     }
 
     /// Reads process information through `ContainerClient`.
@@ -83,7 +68,7 @@ public struct ContainerTopAPIClient: ContainerTopAPIClienting {
 }
 
 /// `ContainerClient`-backed process-listing manager for service containers.
-public struct ContainerClientTopManager: ContainerTopManaging {
+public struct ContainerClientTopManager: ComposeRuntimeTopManaging {
     private let client: ContainerTopAPIClienting
 
     public init(client: ContainerTopAPIClienting = ContainerTopAPIClient()) {
@@ -104,7 +89,7 @@ public struct ContainerClientTopManager: ContainerTopManaging {
             containers.append(ComposeTopContainerProcesses(
                 service: target.service,
                 containerID: target.containerID,
-                processes: processes
+                processes: processes,
             ))
         }
         return containers
@@ -116,7 +101,7 @@ public struct ContainerClientTopManager: ContainerTopManaging {
         let hasIdentifierOnlyContainer = containers.contains {
             $0.processes.processes.isEmpty && !$0.processes.processIdentifiers.isEmpty
         }
-        if hasProcessMetadata && !hasIdentifierOnlyContainer {
+        if hasProcessMetadata, !hasIdentifierOnlyContainer {
             return renderProcessInfoSections(containers)
         }
         return renderIdentifierFallbackTable(containers)
@@ -127,7 +112,8 @@ public struct ContainerClientTopManager: ContainerTopManaging {
         var sections: [String] = []
         for container in containers {
             sections.append(container.containerID)
-            let rows = [["UID", "PID", "PPID", "C", "STIME", "TTY", "TIME", "CMD"]] + container.processes.processes.map { process in
+            let header = ["UID", "PID", "PPID", "C", "STIME", "TTY", "TIME", "CMD"]
+            let rows = [header] + container.processes.processes.map { process in
                 [
                     process.uid,
                     String(process.pid),
@@ -153,7 +139,7 @@ public struct ContainerClientTopManager: ContainerTopManaging {
                 records.append(ComposeTopRecord(
                     service: container.service,
                     containerID: processes.id,
-                    processIdentifier: processIdentifier
+                    processIdentifier: processIdentifier,
                 ))
             }
         }

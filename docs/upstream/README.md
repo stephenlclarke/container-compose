@@ -17,6 +17,7 @@ build instructions live at the repository root.
 - Keep the draft files in this repository even when the code lives in sibling forks. That makes `container-compose` the single project handoff for runtime gaps, upstream links, and commit IDs.
 - Treat this `container-compose` tree as the only home for handoff documentation. Do not keep `ISSUE-*.md` or `PR-*.md` draft files in the sibling `container`, `containerization`, or `container-builder-shim` fork worktrees; if one is created there while shaping code, move it into the matching `docs/upstream/` folder here and remove the fork copy.
 - Keep drafts current. Remove obsolete branch names, completed migration notes, dated snapshots, and superseded implementation procedures instead of preserving project history here. Current branch and release rules live in [BUILD.md](../../BUILD.md).
+- Remove an Apple handoff only after its entire capability has moved behind a Compose-owned provider and focused tests prove that the default Compose path no longer uses the fork-only API. Keep handoffs for reusable runtime primitives and independent bug fixes.
 - Every open Apple pull request with code we may need to recover must also have
   an immutable, stephenlclarke-owned `upstream-pr-NUMBER-SHORTSHA` branch recorded in
   [PR-ARCHIVE.json](PR-ARCHIVE.json). Never force-push, delete, or retarget an
@@ -40,6 +41,7 @@ The review must cover every potential PR independently:
 | Area | Paths | Notes |
 | --- | --- | --- |
 | Current Apple review | `docs/upstream/APPLE-UPSTREAM-REVIEW.md` | Live disposition of affected bugs, approved open pull requests, local ports, and unresolved follow-up work. |
+| Runtime-coupling audit | `docs/upstream/COMPOSE-COUPLING-AUDIT.md` | July 2026 classification of every fork-ahead commit, clean Apple baselines, and the Compose-owned slices removed from the required runtime delta. |
 | Immutable PR code archive | `docs/upstream/PR-ARCHIVE.json` | Full-SHA, stephenlclarke-owned snapshots of every open upstream proposal that the stack depends on. [Verify Upstream PR Archives](../../.github/workflows/upstream-pr-archive.yml) checks them daily. |
 | Compose-owned compatibility slices | `docs/upstream/container-compose/` | Plugin-owned issue/PR drafts with commit tracking. These drafts may describe Docker/Compose compatibility and the temporary command-vector bridge while the typed service-create adapter is still being wired. |
 | Copy slices | `docs/upstream/copy/` | Compose-facing copy follow-link and archive drafts with commit tracking. Runtime copy primitives live under the Apple folders. |

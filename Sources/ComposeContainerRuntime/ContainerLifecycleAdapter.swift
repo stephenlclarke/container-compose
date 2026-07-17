@@ -14,6 +14,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
+import ComposeRuntimeSPI
 import ContainerAPIClient
 import ContainerResource
 
@@ -40,31 +42,6 @@ public protocol ContainerLifecycleAPIClienting: Sendable {
 
     /// Returns the current container snapshot for `id`.
     func getContainer(id: String) async throws -> ContainerSnapshot
-
-    /// Deletes container `id`, forcing removal when requested.
-    func deleteContainer(id: String, force: Bool) async throws
-}
-
-/// Direct apple/container APIs used for service container lifecycle
-/// operations.
-public protocol ContainerLifecycleManaging: Sendable {
-    /// Starts container `id`.
-    func startContainer(id: String) async throws
-
-    /// Sends `signal` to container `id`.
-    func killContainer(id: String, signal: String) async throws
-
-    /// Stops container `id` with the supplied signal and timeout.
-    func stopContainer(id: String, signal: String?, timeoutInSeconds: Int?) async throws
-
-    /// Pauses container `id`.
-    func pauseContainer(id: String) async throws
-
-    /// Resumes paused container `id`.
-    func unpauseContainer(id: String) async throws
-
-    /// Waits for container `id`'s init process and returns its exit code.
-    func waitContainer(id: String) async throws -> Int32
 
     /// Deletes container `id`, forcing removal when requested.
     func deleteContainer(id: String, force: Bool) async throws
@@ -202,7 +179,7 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
 }
 
 /// `ContainerClient`-backed lifecycle manager for real service containers.
-public struct ContainerClientLifecycleManager: ContainerLifecycleManaging {
+public struct ContainerClientLifecycleManager: ComposeRuntimeLifecycleManaging {
     private let client: ContainerLifecycleAPIClienting
 
     public init(client: ContainerLifecycleAPIClienting = ContainerLifecycleAPIClient()) {

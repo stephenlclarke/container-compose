@@ -27,10 +27,13 @@ import Foundation
 
 extension ComposeOrchestrator {
     /// Returns unsupported service-level volume driver fields.
-    func unsupportedServiceVolumeShortcutFields(service: ComposeService) -> [(composeName: String, reason: String)] {
-        var fields: [(composeName: String, reason: String)] = []
+    func unsupportedServiceVolumeShortcutFields(service: ComposeService) -> [ComposeRuntimeUnsupportedField] {
+        var fields: [ComposeRuntimeUnsupportedField] = []
         if let volumeDriver = service.volumeDriver, !volumeDriver.isEmpty, volumeDriver.lowercased() != "local" {
-            fields.append(("volume_driver", "non-local service volume drivers need an apple/container volume driver runtime gap PR"))
+            fields.append(.init(
+                composeName: "volume_driver",
+                reason: "non-local service volume drivers need an apple/container volume driver runtime gap PR",
+            ))
         }
         return fields
     }
@@ -42,12 +45,20 @@ extension ComposeOrchestrator {
 
     /// Resolves external `volumes_from` references through direct container
     /// inspection before any runtime resources are created.
-    func resolveExternalVolumeMounts(project: ComposeProject, services: [ComposeService]) async throws -> ExternalVolumeMounts {
+    func resolveExternalVolumeMounts(
+        project: ComposeProject,
+        services: [ComposeService],
+    ) async throws -> ExternalVolumeMounts {
         var resolved: ExternalVolumeMounts = [:]
         let references = try externalVolumesFromReferences(project: project, services: services)
-        for reference in references.sorted(by: { $0.containerName < $1.containerName }) where resolved[reference.containerName] == nil {
+        for reference in references.sorted(by: { $0.containerName < $1.containerName })
+            where resolved[reference.containerName] == nil
+        {
             guard let container = try await discoveryManager.getContainer(id: reference.containerName) else {
-                throw ComposeError.invalidProject("service '\(reference.serviceName)' volumes_from '\(reference.rawValue)' references missing external container '\(reference.containerName)'")
+                throw ComposeError.invalidProject(
+                    "service '\(reference.serviceName)' volumes_from '\(reference.rawValue)' "
+                        + "references missing external container '\(reference.containerName)'",
+                )
             }
             try validateExternalVolumeMounts(container, reference: reference)
             resolved[reference.containerName] = container.mounts
@@ -57,12 +68,18 @@ extension ComposeOrchestrator {
 
     /// Rejects external mounts that cannot be represented by apple/container
     /// create/run volume arguments.
-    func validateExternalVolumeMounts(_ container: ComposeContainerSummary, reference: ExternalVolumesFromReference) throws {
+    func validateExternalVolumeMounts(
+        _ container: ComposeContainerSummary,
+        reference: ExternalVolumesFromReference,
+    ) throws {
         for mount in container.mounts {
             let fields = (mount.unsupportedFields ?? []).filter { $0 != "volume.nocopy" }
             guard fields.isEmpty else {
                 let fieldList = fields.joined(separator: ", ")
-                throw ComposeError.unsupported("service '\(reference.serviceName)' uses volumes_from '\(reference.rawValue)'; external container '\(reference.containerName)' has unsupported mount fields \(fieldList)")
+                throw ComposeError.unsupported(
+                    "service '\(reference.serviceName)' uses volumes_from '\(reference.rawValue)'; "
+                        + "external container '\(reference.containerName)' has unsupported mount fields \(fieldList)",
+                )
             }
         }
     }
@@ -85,12 +102,12 @@ extension ComposeOrchestrator {
         _ composeName: String,
         value: String?,
         reason: String,
-        to fields: inout [(composeName: String, value: String, reason: String)],
+        to fields: inout [ComposeRuntimeUnsupportedValue],
     ) {
         guard let value, !value.isEmpty else {
             return
         }
-        fields.append((composeName, value, reason))
+        fields.append(.init(composeName: composeName, value: value, reason: reason))
     }
 
     /// Appends an unsupported integer field only when Compose supplied a non-zero value.
@@ -98,12 +115,12 @@ extension ComposeOrchestrator {
         _ composeName: String,
         value: Int?,
         reason: String,
-        to fields: inout [(composeName: String, value: String, reason: String)],
+        to fields: inout [ComposeRuntimeUnsupportedValue],
     ) {
         guard let value, value != 0 else {
             return
         }
-        fields.append((composeName, String(value), reason))
+        fields.append(.init(composeName: composeName, value: String(value), reason: reason))
     }
 
     /// Appends an unsupported floating-point field only when Compose supplied a non-zero value.
@@ -111,13 +128,13 @@ extension ComposeOrchestrator {
         _ composeName: String,
         value: Double?,
         reason: String,
-        to fields: inout [(composeName: String, value: String, reason: String)],
+        to fields: inout [ComposeRuntimeUnsupportedValue],
     ) {
         guard let value, value != 0 else {
             return
         }
         let displayValue = value.rounded() == value ? String(Int(value)) : String(value)
-        fields.append((composeName, displayValue, reason))
+        fields.append(.init(composeName: composeName, value: displayValue, reason: reason))
     }
 
     /// Validates the global `up --pull` policy before resources are created.
@@ -144,12 +161,22 @@ extension ComposeOrchestrator {
     func validateUpOptions(_ options: ComposeUpOptions) throws {
         try validateTimeoutSeconds(options.timeout, command: "up")
         try validateTimeoutSeconds(options.waitTimeout, command: "up", option: "--wait-timeout")
+        try validateUpBuildAndWaitOptions(options)
+        try validateUpExitControlOptions(options)
+        try validateUpRecreationOptions(options)
+        try validateUpMenuWatchOptions(options)
+    }
+
+    private func validateUpBuildAndWaitOptions(_ options: ComposeUpOptions) throws {
         if options.build, options.noBuild {
             throw ComposeError.invalidProject("--build and --no-build are incompatible")
         }
         if options.wait, options.noStart {
             throw ComposeError.invalidProject("--wait and --no-start are incompatible")
         }
+    }
+
+    private func validateUpExitControlOptions(_ options: ComposeUpOptions) throws {
         if options.detach, options.abortOnContainerExit {
             throw ComposeError.invalidProject("--abort-on-container-exit and --detach are incompatible")
         }
@@ -159,12 +186,19 @@ extension ComposeOrchestrator {
         if options.detach, options.exitCodeFrom != nil {
             throw ComposeError.invalidProject("--exit-code-from and --detach are incompatible")
         }
-        if options.wait, options.abortOnContainerExit || options.abortOnContainerFailure || options.exitCodeFrom != nil {
+        if options.wait,
+           options.abortOnContainerExit || options.abortOnContainerFailure || options.exitCodeFrom != nil
+        {
             throw ComposeError.invalidProject("--wait cannot be combined with exit-control options")
         }
-        if options.noStart, options.abortOnContainerExit || options.abortOnContainerFailure || options.exitCodeFrom != nil {
+        if options.noStart,
+           options.abortOnContainerExit || options.abortOnContainerFailure || options.exitCodeFrom != nil
+        {
             throw ComposeError.invalidProject("--no-start cannot be combined with exit-control options")
         }
+    }
+
+    private func validateUpRecreationOptions(_ options: ComposeUpOptions) throws {
         if options.noRecreate, options.renewAnonymousVolumes {
             throw ComposeError.invalidProject("--no-recreate and --renew-anon-volumes are incompatible")
         }
@@ -174,6 +208,9 @@ extension ComposeOrchestrator {
         if options.alwaysRecreateDeps, options.noRecreate {
             throw ComposeError.invalidProject("--always-recreate-deps and --no-recreate are incompatible")
         }
+    }
+
+    private func validateUpMenuWatchOptions(_ options: ComposeUpOptions) throws {
         if options.menuWatch, !options.menu {
             throw ComposeError.invalidProject("up --watch requires --menu in menu watch mode")
         }
@@ -186,7 +223,9 @@ extension ComposeOrchestrator {
         if options.menuWatch, options.wait {
             throw ComposeError.invalidProject("up --watch cannot be combined with --wait")
         }
-        if options.menuWatch, options.abortOnContainerExit || options.abortOnContainerFailure || options.exitCodeFrom != nil {
+        if options.menuWatch,
+           options.abortOnContainerExit || options.abortOnContainerFailure || options.exitCodeFrom != nil
+        {
             throw ComposeError.invalidProject("up --watch cannot be combined with exit-control options")
         }
     }
@@ -589,11 +628,13 @@ extension ComposeOrchestrator {
             try await resourceManager.createNetwork(ComposeNetworkCreateRequest(
                 name: runtimeName,
                 isInternal: network.isInternal == true,
-                ipv4Subnet: network.ipv4Subnet,
-                ipv4Gateway: network.ipv4Gateway,
-                ipv4AllocationRange: network.ipv4AllocationRange,
-                ipv4ReservedAddresses: network.ipv4ReservedAddresses ?? [],
-                ipv6Subnet: network.ipv6Subnet,
+                addressing: .init(
+                    ipv4Subnet: network.ipv4Subnet,
+                    ipv4Gateway: network.ipv4Gateway,
+                    ipv4AllocationRange: network.ipv4AllocationRange,
+                    ipv4ReservedAddresses: network.ipv4ReservedAddresses ?? [],
+                    ipv6Subnet: network.ipv6Subnet,
+                ),
                 driverOpts: driverOpts,
                 labels: resourceLabels(project: project, labels: network.labels),
             ))

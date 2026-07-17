@@ -14,8 +14,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerResource
 import ContainerizationExtras
+import ContainerResource
 import CryptoKit
 import Foundation
 
@@ -81,15 +81,15 @@ struct ComposeLabelOverride {
     }
 }
 
-let projectLabel = "com.apple.container.compose.project"
-let serviceLabel = "com.apple.container.compose.service"
-let oneOffLabel = "com.apple.container.compose.oneoff"
+let projectLabel = ComposeRuntimeLabels.project
+let serviceLabel = ComposeRuntimeLabels.service
+let oneOffLabel = ComposeRuntimeLabels.oneOff
 let configHashLabel = "com.apple.container.compose.config-hash"
 let workingDirectoryLabel = "com.apple.container.compose.project.working-directory"
 let configFilesLabel = "com.apple.container.compose.project.config-files"
 let configFilesHashLabel = "com.apple.container.compose.project.config-files-hash"
-let reservedComposeLabelPrefix = "com.apple.container.compose."
-let reservedDockerComposeLabelPrefix = "com.docker.compose."
+let reservedComposeLabelPrefix = ComposeRuntimeLabels.reservedPrefix
+let reservedDockerComposeLabelPrefix = ComposeRuntimeLabels.reservedDockerComposePrefix
 let reservedComposeLabelPrefixes = [reservedComposeLabelPrefix, reservedDockerComposeLabelPrefix]
 let supportedHealthCheckKeys = Set([
     "disable",
@@ -292,7 +292,7 @@ func networkAttachmentArgument(project: ComposeProject, service: ComposeService,
     if let interfaceName = try networkGuestInterfaceName(service: service, network: network) {
         options.append("interface=\(interfaceName)")
     }
-    options.append(contentsOf: try networkStaticAddressOptions(project: project, service: service, network: network))
+    try options.append(contentsOf: networkStaticAddressOptions(project: project, service: service, network: network))
     for address in try networkLinkLocalIPValues(service: service, network: network) {
         options.append("address=\(address)")
     }
@@ -345,7 +345,7 @@ func networkGuestInterfaceName(service: ComposeService, network: String) throws 
     }
     guard !interfaceName.contains(",") else {
         throw ComposeError.invalidProject(
-            "service '\(service.name)' interface_name '\(interfaceName)' cannot contain ','"
+            "service '\(service.name)' interface_name '\(interfaceName)' cannot contain ','",
         )
     }
     return interfaceName
@@ -357,21 +357,21 @@ func networkLinkLocalIPValues(service: ComposeService, network: String) throws -
     for address in addresses {
         guard !address.contains(",") else {
             throw ComposeError.invalidProject(
-                "service '\(service.name)' link_local_ips value '\(address)' cannot contain ','"
+                "service '\(service.name)' link_local_ips value '\(address)' cannot contain ','",
             )
         }
         do {
             let parsed = try IPAddress(address)
             guard !parsed.isUnspecified else {
                 throw ComposeError.invalidProject(
-                    "service '\(service.name)' link_local_ips value '\(address)' must not be unspecified"
+                    "service '\(service.name)' link_local_ips value '\(address)' must not be unspecified",
                 )
             }
         } catch let error as ComposeError {
             throw error
         } catch {
             throw ComposeError.invalidProject(
-                "service '\(service.name)' link_local_ips value '\(address)' must be a valid IPv4 or IPv6 address"
+                "service '\(service.name)' link_local_ips value '\(address)' must be a valid IPv4 or IPv6 address",
             )
         }
     }
@@ -392,89 +392,129 @@ func networkStaticAddressOptions(project: ComposeProject, service: ComposeServic
 
     var runtimeOptions: [String] = []
     if let rawIPv4Address = nonEmpty(options.ipv4Address) {
-        guard !rawIPv4Address.contains(",") else {
-            throw ComposeError.invalidProject(
-                "service '\(service.name)' ipv4_address '\(rawIPv4Address)' cannot contain ','"
-            )
-        }
-        let ipv4Address: IPv4Address
-        do {
-            ipv4Address = try IPv4Address(rawIPv4Address)
-        } catch {
-            throw ComposeError.invalidProject(
-                "service '\(service.name)' ipv4_address '\(rawIPv4Address)' must be a valid IPv4 address"
-            )
-        }
-        guard !ipv4Address.isUnspecified else {
-            throw ComposeError.invalidProject(
-                "service '\(service.name)' ipv4_address '\(rawIPv4Address)' must not be unspecified"
-            )
-        }
-        try validateStaticIPv4Address(ipv4Address, project: project, service: service, network: network)
-        runtimeOptions.append("ip=\(ipv4Address)")
+        try runtimeOptions.append(staticIPv4AddressOption(
+            rawIPv4Address,
+            project: project,
+            service: service,
+            network: network,
+        ))
     }
     if let rawIPv6Address = nonEmpty(options.ipv6Address) {
-        guard !rawIPv6Address.contains(",") else {
-            throw ComposeError.invalidProject(
-                "service '\(service.name)' ipv6_address '\(rawIPv6Address)' cannot contain ','"
-            )
-        }
-        let ipv6Address: IPv6Address
-        do {
-            ipv6Address = try IPv6Address(rawIPv6Address)
-        } catch {
-            throw ComposeError.invalidProject(
-                "service '\(service.name)' ipv6_address '\(rawIPv6Address)' must be a valid IPv6 address"
-            )
-        }
-        guard ipv6Address.zone == nil else {
-            throw ComposeError.invalidProject(
-                "service '\(service.name)' ipv6_address '\(rawIPv6Address)' must not include a zone identifier"
-            )
-        }
-        guard !ipv6Address.isUnspecified else {
-            throw ComposeError.invalidProject(
-                "service '\(service.name)' ipv6_address '\(rawIPv6Address)' must not be unspecified"
-            )
-        }
-        try validateStaticIPv6Address(ipv6Address, project: project, service: service, network: network)
-        runtimeOptions.append("ip6=\(ipv6Address)")
+        try runtimeOptions.append(staticIPv6AddressOption(
+            rawIPv6Address,
+            project: project,
+            service: service,
+            network: network,
+        ))
     }
     return runtimeOptions
+}
+
+private func staticIPv4AddressOption(
+    _ rawAddress: String,
+    project: ComposeProject,
+    service: ComposeService,
+    network: String,
+) throws -> String {
+    guard !rawAddress.contains(",") else {
+        throw ComposeError.invalidProject("service '\(service.name)' ipv4_address '\(rawAddress)' cannot contain ','")
+    }
+    let address: IPv4Address
+    do {
+        address = try IPv4Address(rawAddress)
+    } catch {
+        throw ComposeError.invalidProject("service '\(service.name)' ipv4_address '\(rawAddress)' must be a valid IPv4 address")
+    }
+    guard !address.isUnspecified else {
+        throw ComposeError.invalidProject("service '\(service.name)' ipv4_address '\(rawAddress)' must not be unspecified")
+    }
+    try validateStaticIPv4Address(address, project: project, service: service, network: network)
+    return "ip=\(address)"
+}
+
+private func staticIPv6AddressOption(
+    _ rawAddress: String,
+    project: ComposeProject,
+    service: ComposeService,
+    network: String,
+) throws -> String {
+    guard !rawAddress.contains(",") else {
+        throw ComposeError.invalidProject("service '\(service.name)' ipv6_address '\(rawAddress)' cannot contain ','")
+    }
+    let address: IPv6Address
+    do {
+        address = try IPv6Address(rawAddress)
+    } catch {
+        throw ComposeError.invalidProject("service '\(service.name)' ipv6_address '\(rawAddress)' must be a valid IPv6 address")
+    }
+    guard address.zone == nil else {
+        throw ComposeError.invalidProject("service '\(service.name)' ipv6_address '\(rawAddress)' must not include a zone identifier")
+    }
+    guard !address.isUnspecified else {
+        throw ComposeError.invalidProject("service '\(service.name)' ipv6_address '\(rawAddress)' must not be unspecified")
+    }
+    try validateStaticIPv6Address(address, project: project, service: service, network: network)
+    return "ip6=\(address)"
 }
 
 private func validateStaticIPv4Address(
     _ address: IPv4Address,
     project: ComposeProject,
     service: ComposeService,
-    network: String
+    network: String,
 ) throws {
     guard let configuration = project.networks[network] else {
         throw ComposeError.invalidProject(
-            "service '\(service.name)' ipv4_address on network '\(network)' requires a declared network"
+            "service '\(service.name)' ipv4_address on network '\(network)' requires a declared network",
         )
     }
     guard configuration.external != true else {
         return
     }
+    let subnet = try staticIPv4Subnet(configuration, service: service, network: network)
+    try validateStaticIPv4AddressRange(address, subnet: subnet, service: service, network: network)
+    try validateStaticIPv4Gateway(address, configuration: configuration, service: service, network: network)
+    try validateStaticIPv4ReservedAddresses(address, configuration: configuration, service: service, network: network)
+}
+
+private func staticIPv4Subnet(
+    _ configuration: ComposeNetwork,
+    service: ComposeService,
+    network: String,
+) throws -> CIDRv4 {
     guard let subnetText = nonEmpty(configuration.ipv4Subnet) else {
         throw ComposeError.invalidProject(
-            "service '\(service.name)' ipv4_address on network '\(network)' requires an IPv4 IPAM subnet"
+            "service '\(service.name)' ipv4_address on network '\(network)' requires an IPv4 IPAM subnet",
         )
     }
-    let subnet: CIDRv4
     do {
-        subnet = try CIDRv4(subnetText)
+        return try CIDRv4(subnetText)
     } catch {
         throw ComposeError.invalidProject("network '\(network)' IPv4 IPAM subnet '\(subnetText)' is invalid")
     }
+}
+
+private func validateStaticIPv4AddressRange(
+    _ address: IPv4Address,
+    subnet: CIDRv4,
+    service: ComposeService,
+    network: String,
+) throws {
     let lower = UInt64(subnet.lower.value) + 2
     let upper = UInt64(subnet.upper.value)
     guard upper >= 4, UInt64(address.value) >= lower, UInt64(address.value) <= upper - 2 else {
         throw ComposeError.invalidProject(
-            "service '\(service.name)' ipv4_address '\(address)' is not an allocatable host address in network '\(network)'"
+            "service '\(service.name)' ipv4_address '\(address)' is not an allocatable host address in network '\(network)'",
         )
     }
+}
+
+private func validateStaticIPv4Gateway(
+    _ address: IPv4Address,
+    configuration: ComposeNetwork,
+    service: ComposeService,
+    network: String,
+) throws {
     if let gatewayText = nonEmpty(configuration.ipv4Gateway) {
         let gateway: IPv4Address
         do {
@@ -484,10 +524,18 @@ private func validateStaticIPv4Address(
         }
         guard address != gateway else {
             throw ComposeError.invalidProject(
-                "service '\(service.name)' ipv4_address '\(address)' is the gateway for network '\(network)'"
+                "service '\(service.name)' ipv4_address '\(address)' is the gateway for network '\(network)'",
             )
         }
     }
+}
+
+private func validateStaticIPv4ReservedAddresses(
+    _ address: IPv4Address,
+    configuration: ComposeNetwork,
+    service: ComposeService,
+    network: String,
+) throws {
     for reservedAddressText in configuration.ipv4ReservedAddresses ?? [] {
         let reservedAddress: IPv4Address
         do {
@@ -497,7 +545,7 @@ private func validateStaticIPv4Address(
         }
         guard address != reservedAddress else {
             throw ComposeError.invalidProject(
-                "service '\(service.name)' ipv4_address '\(address)' is reserved on network '\(network)'"
+                "service '\(service.name)' ipv4_address '\(address)' is reserved on network '\(network)'",
             )
         }
     }
@@ -521,7 +569,7 @@ func validateNetworkIPv4Gateway(_ network: ComposeNetwork, name: String) throws 
     }
     guard subnet.contains(gateway), gateway != subnet.lower, gateway != subnet.upper else {
         throw ComposeError.invalidProject(
-            "network '\(name)' IPv4 IPAM gateway '\(gateway)' must be an allocatable host address in subnet '\(subnet)'"
+            "network '\(name)' IPv4 IPAM gateway '\(gateway)' must be an allocatable host address in subnet '\(subnet)'",
         )
     }
 }
@@ -548,7 +596,7 @@ func validateNetworkIPv4AllocationRange(_ network: ComposeNetwork, name: String)
     }
     guard subnet.contains(allocationRange.lower), subnet.contains(allocationRange.upper) else {
         throw ComposeError.invalidProject(
-            "network '\(name)' IPv4 IPAM allocation range '\(allocationRange)' must be contained in subnet '\(subnet)'"
+            "network '\(name)' IPv4 IPAM allocation range '\(allocationRange)' must be contained in subnet '\(subnet)'",
         )
     }
     guard subnet.upper.value - subnet.lower.value >= 4 else {
@@ -558,7 +606,7 @@ func validateNetworkIPv4AllocationRange(_ network: ComposeNetwork, name: String)
     let allocationUpper = min(subnet.upper.value - 2, allocationRange.upper.value)
     guard allocationLower <= allocationUpper else {
         throw ComposeError.invalidProject(
-            "network '\(name)' IPv4 IPAM allocation range '\(allocationRange)' contains no allocatable host addresses in subnet '\(subnet)'"
+            "network '\(name)' IPv4 IPAM allocation range '\(allocationRange)' contains no allocatable host addresses in subnet '\(subnet)'",
         )
     }
 }
@@ -592,7 +640,7 @@ func validateNetworkIPv4ReservedAddresses(_ network: ComposeNetwork, name: Strin
         }
         guard address.value >= allocationLower, address.value <= allocationUpper else {
             throw ComposeError.invalidProject(
-                "network '\(name)' IPv4 IPAM reserved address '\(address)' must be an allocatable host address in subnet '\(subnet)'"
+                "network '\(name)' IPv4 IPAM reserved address '\(address)' must be an allocatable host address in subnet '\(subnet)'",
             )
         }
         guard reservedAddresses.insert(address).inserted else {
@@ -605,11 +653,11 @@ private func validateStaticIPv6Address(
     _ address: IPv6Address,
     project: ComposeProject,
     service: ComposeService,
-    network: String
+    network: String,
 ) throws {
     guard let configuration = project.networks[network] else {
         throw ComposeError.invalidProject(
-            "service '\(service.name)' ipv6_address on network '\(network)' requires a declared network"
+            "service '\(service.name)' ipv6_address on network '\(network)' requires a declared network",
         )
     }
     guard configuration.external != true else {
@@ -617,7 +665,7 @@ private func validateStaticIPv6Address(
     }
     guard let subnetText = nonEmpty(configuration.ipv6Subnet) else {
         throw ComposeError.invalidProject(
-            "service '\(service.name)' ipv6_address on network '\(network)' requires an IPv6 IPAM subnet"
+            "service '\(service.name)' ipv6_address on network '\(network)' requires an IPv6 IPAM subnet",
         )
     }
     let subnet: CIDRv6
@@ -628,7 +676,7 @@ private func validateStaticIPv6Address(
     }
     guard subnet.contains(address) else {
         throw ComposeError.invalidProject(
-            "service '\(service.name)' ipv6_address '\(address)' is not in network '\(network)' IPv6 IPAM subnet"
+            "service '\(service.name)' ipv6_address '\(address)' is not in network '\(network)' IPv6 IPAM subnet",
         )
     }
 }

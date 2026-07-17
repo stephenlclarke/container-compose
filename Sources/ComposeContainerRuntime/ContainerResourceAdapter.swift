@@ -14,107 +14,12 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
+import ComposeRuntimeSPI
 import ContainerAPIClient
 import ContainerizationError
 import ContainerizationExtras
 import ContainerResource
-
-/// Runtime volume metadata needed by Compose project commands.
-public struct ComposeVolumeSummary: Codable, Equatable, Sendable {
-    public var name: String
-    public var driver: String
-    public var source: String
-    public var labels: [String: String]
-    public var sizeInBytes: UInt64?
-
-    public init(
-        name: String,
-        driver: String = "local",
-        source: String = "",
-        labels: [String: String] = [:],
-        sizeInBytes: UInt64? = nil,
-    ) {
-        self.name = name
-        self.driver = driver
-        self.source = source
-        self.labels = labels
-        self.sizeInBytes = sizeInBytes
-    }
-
-    /// Creates a Compose-facing summary from an apple/container volume.
-    public init(configuration: VolumeConfiguration) {
-        self.init(
-            name: configuration.name,
-            driver: configuration.driver,
-            source: configuration.source,
-            labels: configuration.labels,
-            sizeInBytes: configuration.sizeInBytes,
-        )
-    }
-}
-
-/// Fully resolved Compose network creation request.
-public struct ComposeNetworkCreateRequest: Equatable, Sendable {
-    public var name: String
-    public var isInternal: Bool
-    public var ipv4Subnet: String?
-    public var ipv4Gateway: String?
-    public var ipv4AllocationRange: String?
-    public var ipv4ReservedAddresses: [String]
-    public var ipv6Subnet: String?
-    public var driverOpts: [String: String]
-    public var labels: [String: String]
-
-    public init(
-        name: String,
-        isInternal: Bool = false,
-        ipv4Subnet: String? = nil,
-        ipv4Gateway: String? = nil,
-        ipv4AllocationRange: String? = nil,
-        ipv4ReservedAddresses: [String] = [],
-        ipv6Subnet: String? = nil,
-        driverOpts: [String: String] = [:],
-        labels: [String: String] = [:],
-    ) {
-        self.name = name
-        self.isInternal = isInternal
-        self.ipv4Subnet = ipv4Subnet
-        self.ipv4Gateway = ipv4Gateway
-        self.ipv4AllocationRange = ipv4AllocationRange
-        self.ipv4ReservedAddresses = ipv4ReservedAddresses
-        self.ipv6Subnet = ipv6Subnet
-        self.driverOpts = driverOpts
-        self.labels = labels
-    }
-}
-
-/// Fully resolved Compose volume creation request.
-public struct ComposeVolumeCreateRequest: Equatable, Sendable {
-    public var name: String
-    public var driver: String?
-    public var driverOpts: [String: String]
-    public var labels: [String: String]
-
-    public init(
-        name: String,
-        driver: String? = nil,
-        driverOpts: [String: String] = [:],
-        labels: [String: String] = [:],
-    ) {
-        self.name = name
-        self.driver = driver
-        self.driverOpts = driverOpts
-        self.labels = labels
-    }
-
-    /// Returns the apple/container volume driver for direct API calls.
-    public var resolvedDriver: String {
-        guard let driver, !driver.isEmpty else {
-            return "local"
-        }
-        return driver
-    }
-}
 
 /// Low-level apple/container resource calls used by
 /// `ContainerClientResourceManager`.
@@ -138,33 +43,7 @@ public protocol ContainerResourceAPIClienting: Sendable {
     func deleteVolume(name: String) async throws
 }
 
-/// Direct apple/container APIs used for Compose-scoped network and volume
-/// resources.
-public protocol ContainerResourceManaging: Sendable {
-    /// Creates a project network with resolved apple/container runtime metadata.
-    func createNetwork(_ request: ComposeNetworkCreateRequest) async throws
-
-    /// Deletes the runtime network named by `id`.
-    func deleteNetwork(id: String) async throws
-
-    /// Creates a volume with resolved apple/container runtime metadata.
-    func createVolume(_ request: ComposeVolumeCreateRequest) async throws
-
-    /// Lists local volumes available to Compose project commands.
-    func listVolumes() async throws -> [ComposeVolumeSummary]
-
-    /// Deletes the runtime volume named by `name`.
-    func deleteVolume(name: String) async throws
-}
-
 public extension ContainerResourceAPIClienting {
-    /// Creates a default local volume with labels.
-    func createVolume(name: String, labels: [String: String]) async throws {
-        try await createVolume(ComposeVolumeCreateRequest(name: name, labels: labels))
-    }
-}
-
-public extension ContainerResourceManaging {
     /// Creates a default local volume with labels.
     func createVolume(name: String, labels: [String: String]) async throws {
         try await createVolume(ComposeVolumeCreateRequest(name: name, labels: labels))
@@ -206,14 +85,24 @@ public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
                 labels: $0.labels,
             )
         },
-        listVolumes: @escaping ListVolumes = { try await ClientVolume.list().map(ComposeVolumeSummary.init(configuration:)) },
+        listVolumes: ListVolumes? = nil,
         deleteVolume: @escaping DeleteVolume = { try await ClientVolume.delete(name: $0) },
     ) {
         createNetworkOperation = createNetwork
         networkExistsOperation = networkExists
         deleteNetworkOperation = deleteNetwork
         createVolumeOperation = createVolume
-        listVolumesOperation = listVolumes
+        listVolumesOperation = listVolumes ?? {
+            try await ClientVolume.list().map { configuration in
+                ComposeVolumeSummary(
+                    name: configuration.name,
+                    driver: configuration.driver,
+                    source: configuration.source,
+                    labels: configuration.labels,
+                    sizeInBytes: configuration.sizeInBytes,
+                )
+            }
+        }
         deleteVolumeOperation = deleteVolume
     }
 
@@ -250,7 +139,7 @@ public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
 
 /// apple/container client-backed resource manager for Compose project
 /// networks and volumes.
-public struct ContainerClientResourceManager: ContainerResourceManaging {
+public struct ContainerClientResourceManager: ComposeRuntimeResourceManaging {
     private let client: ContainerResourceAPIClienting
 
     public init(client: ContainerResourceAPIClienting = ContainerResourceAPIClient()) {
@@ -265,7 +154,7 @@ public struct ContainerClientResourceManager: ContainerResourceManaging {
             ipv4Subnet: request.ipv4Subnet.map { try CIDRv4($0) },
             ipv4Gateway: request.ipv4Gateway.map { try IPv4Address($0) },
             ipv4AllocationRange: request.ipv4AllocationRange.map { try CIDRv4($0) },
-            ipv4ReservedAddresses: try request.ipv4ReservedAddresses.map { try IPv4Address($0) },
+            ipv4ReservedAddresses: request.ipv4ReservedAddresses.map { try IPv4Address($0) },
             ipv6Subnet: request.ipv6Subnet.map { try CIDRv6($0) },
             labels: ResourceLabels(request.labels),
             plugin: "container-network-vmnet",

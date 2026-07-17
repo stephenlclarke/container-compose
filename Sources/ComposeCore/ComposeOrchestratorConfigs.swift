@@ -16,10 +16,19 @@
 
 import Foundation
 
+private struct ExternalComposeFileGrantContext {
+    let project: ComposeProject
+    let service: ComposeService
+    let kind: ComposeFileMountKind
+    let grants: [ComposeValue]
+    let definitions: [String: ComposeValue]
+    let read: @Sendable (String) async throws -> Data
+}
+
 extension ComposeOrchestrator {
     /// Stages external Compose configs and secrets as private read-only files.
     func materializeExternalConfigSecrets(project: ComposeProject, service: ComposeService) async throws {
-        try await materializeExternalComposeFileGrants(
+        try await materializeExternalComposeFileGrants(context: .init(
             project: project,
             service: service,
             kind: .config,
@@ -28,8 +37,8 @@ extension ComposeOrchestrator {
             read: { [configReader] name in
                 try await configReader.readConfig(name: name)
             },
-        )
-        try await materializeExternalComposeFileGrants(
+        ))
+        try await materializeExternalComposeFileGrants(context: .init(
             project: project,
             service: service,
             kind: .secret,
@@ -38,57 +47,85 @@ extension ComposeOrchestrator {
             read: { [secretReader] name in
                 try await secretReader.readSecret(name: name)
             },
-        )
+        ))
     }
 
     private func materializeExternalComposeFileGrants(
-        project: ComposeProject,
-        service: ComposeService,
-        kind: ComposeFileMountKind,
-        grants: [ComposeValue],
-        definitions: [String: ComposeValue],
-        read: @Sendable (String) async throws -> Data,
+        context: ExternalComposeFileGrantContext,
     ) async throws {
-        for value in grants {
-            let grant = try parseComposeFileGrant(value, kind: kind, service: service)
-            guard let definition = definitions[grant.source] else {
-                throw ComposeError.invalidProject("service '\(service.name)' references undefined \(kind.singularName) '\(grant.source)'")
-            }
-            guard case let .object(fields) = definition else {
-                throw ComposeError.invalidProject("\(kind.singularName.capitalized) '\(grant.source)' definition must be an object")
-            }
-            guard fields["external"]?.boolValue == true else {
-                continue
-            }
-
-            _ = try composeFileGrantOwnership(grant: grant, service: service, kind: kind)
-            let runtimeName = try externalComposeFileRuntimeName(
-                project: project,
-                composeName: grant.source,
-                fields: fields,
-                kind: kind,
-            )
-            let contents: Data
-            do {
-                contents = try await read(runtimeName)
-            } catch {
-                throw ComposeError.invalidProject("service '\(service.name)' could not read external \(kind.singularName) '\(grant.source)' as '\(runtimeName)': \(error.localizedDescription)")
-            }
-
-            let permissions = try composeFileGrantPermissions(grant: grant, kind: kind, service: service)
-            let materialized = ComposeMaterializedFile(
-                url: materializedExternalComposeFileURL(
-                    project: project,
-                    grant: grant,
-                    runtimeName: runtimeName,
-                    permissions: permissions,
-                    kind: kind,
-                    root: options.materializedConfigSecretDirectory,
-                ),
-                contents: contents,
-                permissions: permissions,
-            )
-            try materialized.write()
+        for value in context.grants {
+            try await materializeExternalComposeFileGrant(value, context: context)
         }
+    }
+
+    private func materializeExternalComposeFileGrant(
+        _ value: ComposeValue,
+        context: ExternalComposeFileGrantContext,
+    ) async throws {
+        let grant = try parseComposeFileGrant(value, kind: context.kind, service: context.service)
+        guard let definition = context.definitions[grant.source] else {
+            throw ComposeError.invalidProject(
+                "service '\(context.service.name)' references undefined \(context.kind.singularName) '\(grant.source)'",
+            )
+        }
+        guard case let .object(fields) = definition else {
+            throw ComposeError.invalidProject(
+                "\(context.kind.singularName.capitalized) '\(grant.source)' definition must be an object",
+            )
+        }
+        guard fields["external"]?.boolValue == true else {
+            return
+        }
+        try await materializeExternalComposeFileGrant(
+            grant,
+            fields: fields,
+            context: context,
+        )
+    }
+
+    private func materializeExternalComposeFileGrant(
+        _ grant: ComposeFileGrant,
+        fields: [String: ComposeValue],
+        context: ExternalComposeFileGrantContext,
+    ) async throws {
+        _ = try composeFileGrantOwnership(grant: grant, service: context.service, kind: context.kind)
+        let runtimeName = try externalComposeFileRuntimeName(
+            project: context.project,
+            composeName: grant.source,
+            fields: fields,
+            kind: context.kind,
+        )
+        let contents: Data
+        do {
+            contents = try await context.read(runtimeName)
+        } catch {
+            throw ComposeError.invalidProject(
+                "service '\(context.service.name)' could not read external \(context.kind.singularName) "
+                    + "'\(grant.source)' as '\(runtimeName)': \(error.localizedDescription)",
+            )
+        }
+
+        let permissions = try composeFileGrantPermissions(
+            grant: grant,
+            kind: context.kind,
+            service: context.service,
+        )
+        let materialized = ComposeMaterializedFile(
+            url: materializedExternalComposeFileURL(
+                grant: grant,
+                runtimeName: runtimeName,
+                permissions: permissions,
+                context: ComposeFileGrantSourceContext(
+                    project: context.project,
+                    service: context.service,
+                    kind: context.kind,
+                    materializedConfigSecretRoot: options.materializedConfigSecretDirectory,
+                    materialize: true,
+                ),
+            ),
+            contents: contents,
+            permissions: permissions,
+        )
+        try materialized.write()
     }
 }

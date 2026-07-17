@@ -204,6 +204,21 @@ extension ComposeOrchestrator {
                 labelOverrides: request.labelOverrides,
             ),
         )
+        let runtime = try serviceCreateRuntime(
+            service: service,
+            baseProcess: baseProcess,
+            healthCheck: healthCheck,
+            restartPolicy: restartPolicy,
+        )
+        return ContainerServiceCreatePlan(identity: identity, runtime: runtime)
+    }
+
+    private func serviceCreateRuntime(
+        service: ComposeService,
+        baseProcess: ProcessConfiguration,
+        healthCheck: ContainerHealthCheck?,
+        restartPolicy: ContainerRestartPolicy,
+    ) throws -> ContainerServiceCreateRuntime {
         var runtime = ContainerServiceCreateRuntime()
         runtime.initProcess = baseProcess
         runtime.logging = try runtimeLogConfiguration(service: service)
@@ -216,7 +231,7 @@ extension ComposeOrchestrator {
         runtime.blockIO = try runtimeBlockIO(service: service)
         runtime.cpuShares = try runtimeCPUShares(service: service)
         runtime.memoryReservationInBytes = try runtimeMemoryReservationInBytes(service: service)
-        return ContainerServiceCreatePlan(identity: identity, runtime: runtime)
+        return runtime
     }
 
     /// Resolves an optional service selection into deterministic services.

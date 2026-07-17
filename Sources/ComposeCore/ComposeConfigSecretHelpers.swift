@@ -253,25 +253,51 @@ func effectiveServiceVolumes(
     try effectiveServiceVolumes(
         project: project,
         service: service,
-        externalVolumeMounts: externalVolumeMounts,
-        materializedConfigSecretRoot: materializedConfigSecretRoot,
-        materializeConfigSecrets: materializeConfigSecrets,
-        stack: [],
+        context: ServiceVolumeResolutionContext(
+            externalVolumeMounts: externalVolumeMounts,
+            materializedConfigSecretRoot: materializedConfigSecretRoot,
+            materializeConfigSecrets: materializeConfigSecrets,
+        ),
     )
+}
+
+private struct ServiceVolumeResolutionContext {
+    let externalVolumeMounts: ExternalVolumeMounts?
+    let materializedConfigSecretRoot: URL
+    let materializeConfigSecrets: Bool
+    let stack: [String]
+
+    init(
+        externalVolumeMounts: ExternalVolumeMounts?,
+        materializedConfigSecretRoot: URL,
+        materializeConfigSecrets: Bool,
+        stack: [String] = [],
+    ) {
+        self.externalVolumeMounts = externalVolumeMounts
+        self.materializedConfigSecretRoot = materializedConfigSecretRoot
+        self.materializeConfigSecrets = materializeConfigSecrets
+        self.stack = stack
+    }
+
+    func descending(from service: ComposeService) -> Self {
+        Self(
+            externalVolumeMounts: externalVolumeMounts,
+            materializedConfigSecretRoot: materializedConfigSecretRoot,
+            materializeConfigSecrets: materializeConfigSecrets,
+            stack: stack + [service.name],
+        )
+    }
 }
 
 /// Recursively resolves inherited service mounts while detecting cycles in
 /// hand-built test models that did not pass through Compose-go validation.
-func effectiveServiceVolumes(
+private func effectiveServiceVolumes(
     project: ComposeProject,
     service: ComposeService,
-    externalVolumeMounts: ExternalVolumeMounts?,
-    materializedConfigSecretRoot: URL,
-    materializeConfigSecrets: Bool,
-    stack: [String],
+    context: ServiceVolumeResolutionContext,
 ) throws -> [ComposeMount] {
-    if stack.contains(service.name) {
-        let cycle = (stack + [service.name]).joined(separator: " -> ")
+    if context.stack.contains(service.name) {
+        let cycle = (context.stack + [service.name]).joined(separator: " -> ")
         throw ComposeError.invalidProject("volume inheritance cycle involving \(cycle)")
     }
 
@@ -285,16 +311,13 @@ func effectiveServiceVolumes(
             let inherited = try effectiveServiceVolumes(
                 project: project,
                 service: sourceService,
-                externalVolumeMounts: externalVolumeMounts,
-                materializedConfigSecretRoot: materializedConfigSecretRoot,
-                materializeConfigSecrets: materializeConfigSecrets,
-                stack: stack + [service.name],
+                context: context.descending(from: service),
             )
             volumes.append(contentsOf: inherited.map {
                 mount($0, applyingVolumesFromReadOnly: reference.readOnly)
             })
         case let .externalContainer(containerName):
-            guard let externalVolumeMounts else {
+            guard let externalVolumeMounts = context.externalVolumeMounts else {
                 continue
             }
             guard let inherited = externalVolumeMounts[containerName] else {
@@ -309,8 +332,8 @@ func effectiveServiceVolumes(
     try volumes.append(contentsOf: serviceConfigSecretMounts(
         project: project,
         service: service,
-        materializedConfigSecretRoot: materializedConfigSecretRoot,
-        materialize: materializeConfigSecrets,
+        materializedConfigSecretRoot: context.materializedConfigSecretRoot,
+        materialize: context.materializeConfigSecrets,
     ))
     return volumes
 }
@@ -323,7 +346,7 @@ func serviceConfigSecretMounts(
     materializedConfigSecretRoot: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory(),
     materialize: Bool = false,
 ) throws -> [ComposeMount] {
-    try serviceConfigSecretMounts(
+    try serviceConfigSecretMounts(context: ComposeFileMountResolutionContext(
         project: project,
         service: service,
         kind: .config,
@@ -331,7 +354,7 @@ func serviceConfigSecretMounts(
         definitions: project.configs ?? [:],
         materializedConfigSecretRoot: materializedConfigSecretRoot,
         materialize: materialize,
-    ) + serviceConfigSecretMounts(
+    )) + serviceConfigSecretMounts(context: ComposeFileMountResolutionContext(
         project: project,
         service: service,
         kind: .secret,
@@ -339,37 +362,47 @@ func serviceConfigSecretMounts(
         definitions: project.secrets ?? [:],
         materializedConfigSecretRoot: materializedConfigSecretRoot,
         materialize: materialize,
-    )
+    ))
 }
 
-/// Converts one config or secret grant list into bind mounts.
-func serviceConfigSecretMounts(
-    project: ComposeProject,
-    service: ComposeService,
-    kind: ComposeFileMountKind,
-    grants: [ComposeValue],
-    definitions: [String: ComposeValue],
-    materializedConfigSecretRoot: URL,
-    materialize: Bool,
-) throws -> [ComposeMount] {
-    try grants.map { value in
-        let grant = try parseComposeFileGrant(value, kind: kind, service: service)
-        let resolvedSource = try composeFileGrantSource(
-            grant: grant,
-            definitions: definitions,
+private struct ComposeFileMountResolutionContext {
+    let project: ComposeProject
+    let service: ComposeService
+    let kind: ComposeFileMountKind
+    let grants: [ComposeValue]
+    let definitions: [String: ComposeValue]
+    let materializedConfigSecretRoot: URL
+    let materialize: Bool
+
+    var sourceContext: ComposeFileGrantSourceContext {
+        ComposeFileGrantSourceContext(
             project: project,
             service: service,
             kind: kind,
             materializedConfigSecretRoot: materializedConfigSecretRoot,
             materialize: materialize,
         )
+    }
+}
+
+/// Converts one config or secret grant list into bind mounts.
+private func serviceConfigSecretMounts(
+    context: ComposeFileMountResolutionContext,
+) throws -> [ComposeMount] {
+    try context.grants.map { value in
+        let grant = try parseComposeFileGrant(value, kind: context.kind, service: context.service)
+        let resolvedSource = try composeFileGrantSource(grant: grant, context: context)
         return ComposeMount(
             type: "bind",
             source: resolvedSource.path,
-            target: kind.targetPath(source: grant.source, target: grant.target),
-            readOnly: true,
-            fileOwnerUID: resolvedSource.ownership?.uid,
-            fileOwnerGID: resolvedSource.ownership?.gid,
+            target: context.kind.targetPath(source: grant.source, target: grant.target),
+            options: .init(
+                readOnly: true,
+                volume: .init(fileOwnership: .init(
+                    uid: resolvedSource.ownership?.uid,
+                    gid: resolvedSource.ownership?.gid,
+                )),
+            ),
         )
     }
 }
@@ -388,7 +421,10 @@ func parseComposeFileGrant(
         }
         return ComposeFileGrant(source: source)
     case let .object(fields):
-        guard let source = fields["source"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !source.isEmpty else {
+        let source = fields["source"]?.stringValue?.trimmingCharacters(
+            in: .whitespacesAndNewlines,
+        )
+        guard let source, !source.isEmpty else {
             throw ComposeError.invalidProject("service '\(service.name)' \(kind.singularName) reference is missing source")
         }
         return ComposeFileGrant(
@@ -406,33 +442,26 @@ func parseComposeFileGrant(
 /// Resolves the top-level file source for one service config or secret grant.
 private func composeFileGrantSource(
     grant: ComposeFileGrant,
-    definitions: [String: ComposeValue],
-    project: ComposeProject,
-    service: ComposeService,
-    kind: ComposeFileMountKind,
-    materializedConfigSecretRoot: URL,
-    materialize: Bool,
+    context: ComposeFileMountResolutionContext,
 ) throws -> ComposeFileGrantSource {
-    guard let definition = definitions[grant.source] else {
-        throw ComposeError.invalidProject("service '\(service.name)' references undefined \(kind.singularName) '\(grant.source)'")
+    guard let definition = context.definitions[grant.source] else {
+        throw ComposeError.invalidProject(
+            "service '\(context.service.name)' references undefined \(context.kind.singularName) '\(grant.source)'",
+        )
     }
     guard case let .object(fields) = definition else {
-        throw ComposeError.invalidProject("\(kind.singularName.capitalized) '\(grant.source)' definition must be an object")
+        throw ComposeError.invalidProject(
+            "\(context.kind.singularName.capitalized) '\(grant.source)' definition must be an object",
+        )
     }
     return try resolvedComposeFileGrantSource(
         grant: grant,
         fields: fields,
-        context: ComposeFileGrantSourceContext(
-            project: project,
-            service: service,
-            kind: kind,
-            materializedConfigSecretRoot: materializedConfigSecretRoot,
-            materialize: materialize,
-        ),
+        context: context.sourceContext,
     )
 }
 
-private struct ComposeFileGrantSourceContext {
+struct ComposeFileGrantSourceContext {
     let project: ComposeProject
     let service: ComposeService
     let kind: ComposeFileMountKind
@@ -535,12 +564,10 @@ private func materializedComposeFileGrantSource(
     ownership: ComposeFileGrantOwnership?,
 ) throws -> ComposeFileGrantSource {
     let materialized = try materializedComposeFile(
-        project: context.project,
-        grant: grant,
-        kind: context.kind,
         contents: contents,
         permissions: composeFileGrantPermissions(grant: grant, kind: context.kind, service: context.service),
-        root: context.materializedConfigSecretRoot,
+        grant: grant,
+        context: context,
     )
     if context.materialize {
         try materialized.write()
@@ -563,12 +590,10 @@ private func externalComposeFileGrantSource(
     let permissions = try composeFileGrantPermissions(grant: grant, kind: context.kind, service: context.service)
     return ComposeFileGrantSource(
         path: materializedExternalComposeFileURL(
-            project: context.project,
             grant: grant,
             runtimeName: name,
             permissions: permissions,
-            kind: context.kind,
-            root: context.materializedConfigSecretRoot,
+            context: context,
         ).path,
         ownership: ownership,
     )
@@ -668,17 +693,17 @@ func composeFileGrantEnvironmentVariable(
 }
 
 /// Builds a deterministic materialized file path for a config or secret value.
-func materializedComposeFile(
-    project: ComposeProject,
-    grant: ComposeFileGrant,
-    kind: ComposeFileMountKind,
+private func materializedComposeFile(
     contents: String,
     permissions: Int,
-    root: URL,
+    grant: ComposeFileGrant,
+    context: ComposeFileGrantSourceContext,
 ) -> ComposeMaterializedFile {
     let digest = stableHash("\(String(permissions, radix: 8))\n\(contents)")
-    let directory = materializedProjectDirectory(project: project, root: root)
-        .appendingPathComponent(kind.pluralName, isDirectory: true)
+    let directory = materializedProjectDirectory(
+        project: context.project,
+        root: context.materializedConfigSecretRoot,
+    ).appendingPathComponent(context.kind.pluralName, isDirectory: true)
     let filename = "\(slug(grant.source))-\(digest.prefix(16))"
     return ComposeMaterializedFile(
         url: directory.appendingPathComponent(filename, isDirectory: false),
@@ -708,16 +733,16 @@ func externalComposeFileRuntimeName(
 
 /// Returns the stable project-private file location for an external config or secret.
 func materializedExternalComposeFileURL(
-    project: ComposeProject,
     grant: ComposeFileGrant,
     runtimeName: String,
     permissions: Int,
-    kind: ComposeFileMountKind,
-    root: URL,
+    context: ComposeFileGrantSourceContext,
 ) -> URL {
     let digest = stableHash("\(String(permissions, radix: 8))\n\(runtimeName)")
-    let directory = materializedProjectDirectory(project: project, root: root)
-        .appendingPathComponent(kind.pluralName, isDirectory: true)
+    let directory = materializedProjectDirectory(
+        project: context.project,
+        root: context.materializedConfigSecretRoot,
+    ).appendingPathComponent(context.kind.pluralName, isDirectory: true)
     let filename = "\(slug(grant.source))-external-\(digest.prefix(16))"
     return directory.appendingPathComponent(filename, isDirectory: false)
 }
@@ -750,7 +775,12 @@ func parseVolumesFromReference(
         guard parts.count <= 2 else {
             throw ComposeError.invalidProject("service '\(service.name)' volumes_from '\(rawValue)' must use SERVICE[:ro|rw] or container:NAME[:ro|rw]")
         }
-        let readOnly = try volumesFromReadOnlyMode(parts.count == 2 ? parts[1] : nil, rawValue: rawValue, service: service)
+        let mode = parts.count == 2 ? parts[1] : nil
+        let readOnly = try volumesFromReadOnlyMode(
+            mode,
+            rawValue: rawValue,
+            service: service,
+        )
         guard !containerName.isEmpty else {
             throw ComposeError.invalidProject("service '\(service.name)' volumes_from '\(rawValue)' is missing an external container name")
         }

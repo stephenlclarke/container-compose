@@ -14,6 +14,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
+import ComposeRuntimeSPI
 import ContainerAPIClient
 import ContainerResource
 import Foundation
@@ -78,83 +80,18 @@ public struct ContainerClientLogFollowStateProvider: ContainerLogFollowStateProv
     }
 }
 
-/// Direct apple/container API used for service container logs.
-public protocol ContainerLogManaging: Sendable {
-    /// Emits logs for container `id`, optionally following appended lines.
-    func logs(
-        id: String,
-        tail: Int?,
-        follow: Bool,
-        since: Date?,
-        until: Date?,
-        timestamps: Bool,
-        emit: @escaping @Sendable (Data) -> Void
-    ) async throws
-}
-
-public extension ContainerLogManaging {
-    /// Emits logs through a string callback for tests and non-binary consumers.
-    func logs(
-        id: String,
-        tail: Int?,
-        follow: Bool,
-        since: Date?,
-        until: Date?,
-        timestamps: Bool,
-        emit: @escaping @Sendable (String) -> Void
-    ) async throws {
-        try await logs(
-            id: id,
-            tail: tail,
-            follow: follow,
-            since: since,
-            until: until,
-            timestamps: timestamps,
-            emit: { emit(String(decoding: $0, as: UTF8.self)) }
-        )
-    }
-
-    /// Emits logs without timestamp filters.
-    func logs(
-        id: String,
-        tail: Int?,
-        follow: Bool,
-        emit: @escaping @Sendable (String) -> Void
-    ) async throws {
-        try await logs(
-            id: id,
-            tail: tail,
-            follow: follow,
-            since: nil,
-            until: nil,
-            timestamps: false,
-            emit: emit
-        )
-    }
-
-    /// Emits logs without timestamp filters through a byte callback.
-    func logs(
-        id: String,
-        tail: Int?,
-        follow: Bool,
-        emit: @escaping @Sendable (Data) -> Void
-    ) async throws {
-        try await logs(
-            id: id,
-            tail: tail,
-            follow: follow,
-            since: nil,
-            until: nil,
-            timestamps: false,
-            emit: emit
-        )
-    }
-}
-
 /// Thin apple/container client wrapper around log API calls.
 public struct ContainerLogAPIClient: ContainerLogAPIClienting {
-    public typealias Logs = @Sendable (String, ContainerLogOptions, ContainerLogReplayOptions) async throws -> [FileHandle]
-    public typealias LogRecords = @Sendable (String, ContainerLogOptions, ContainerLogReplayOptions) async throws -> [ContainerLogRecord]
+    public typealias Logs = @Sendable (
+        String,
+        ContainerLogOptions,
+        ContainerLogReplayOptions,
+    ) async throws -> [FileHandle]
+    public typealias LogRecords = @Sendable (
+        String,
+        ContainerLogOptions,
+        ContainerLogReplayOptions,
+    ) async throws -> [ContainerLogRecord]
     public typealias FollowLogs = @Sendable (String, ContainerLogOptions) async throws -> FileHandle
     public typealias FollowLogRecords = @Sendable (String, ContainerLogOptions) async throws -> FileHandle
 
@@ -167,12 +104,12 @@ public struct ContainerLogAPIClient: ContainerLogAPIClienting {
         logs: @escaping Logs = { try await ContainerClient().logs(id: $0, options: $1, replay: $2) },
         logRecords: @escaping LogRecords = { try await ContainerClient().logRecords(id: $0, options: $1, replay: $2) },
         followLogs: @escaping FollowLogs = { try await ContainerClient().followLogs(id: $0, options: $1) },
-        followLogRecords: @escaping FollowLogRecords = { try await ContainerClient().followLogRecords(id: $0, options: $1) }
+        followLogRecords: @escaping FollowLogRecords = { try await ContainerClient().followLogRecords(id: $0, options: $1) },
     ) {
-        self.logsOperation = logs
-        self.logRecordsOperation = logRecords
-        self.followLogsOperation = followLogs
-        self.followLogRecordsOperation = followLogRecords
+        logsOperation = logs
+        logRecordsOperation = logRecords
+        followLogsOperation = followLogs
+        followLogRecordsOperation = followLogRecords
     }
 
     /// Fetches log file handles through `ContainerClient`.
@@ -196,19 +133,22 @@ public struct ContainerLogAPIClient: ContainerLogAPIClienting {
     }
 }
 
+// The direct adapter intentionally groups all log stream variants in one provider.
+// swiftlint:disable type_body_length
 /// `ContainerClient`-backed log manager for service containers.
-public struct ContainerClientLogManager: ContainerLogManaging {
+public struct ContainerClientLogManager: ComposeRuntimeLogManaging {
     private let client: ContainerLogAPIClienting
     private let followStateProvider: ContainerLogFollowStateProviding
 
     public init(
         client: ContainerLogAPIClienting = ContainerLogAPIClient(),
-        followStateProvider: ContainerLogFollowStateProviding = ContainerClientLogFollowStateProvider()
+        followStateProvider: ContainerLogFollowStateProviding = ContainerClientLogFollowStateProvider(),
     ) {
         self.client = client
         self.followStateProvider = followStateProvider
     }
 
+    // swiftlint:disable function_parameter_count
     /// Emits stdio logs through `ContainerClient.logs(id:)`.
     public func logs(
         id: String,
@@ -217,7 +157,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         since: Date?,
         until: Date?,
         timestamps: Bool,
-        emit: @escaping @Sendable (Data) -> Void
+        emit: @escaping @Sendable (Data) -> Void,
     ) async throws {
         if timestamps || since != nil || until != nil {
             if follow {
@@ -227,7 +167,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
                     since: since,
                     until: until,
                     timestamps: timestamps,
-                    emit: emit
+                    emit: emit,
                 )
             } else {
                 try await emitStructuredLogs(
@@ -236,7 +176,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
                     since: since,
                     until: until,
                     timestamps: timestamps,
-                    emit: emit
+                    emit: emit,
                 )
             }
             return
@@ -262,6 +202,9 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         try emitExistingLogs(from: fileHandle, tail: follow ? tail : nil, emit: emit)
     }
 
+    // swiftlint:enable function_parameter_count
+
+    // swiftlint:disable function_parameter_count
     /// Emits followed structured records when Compose needs runtime timestamps.
     private func emitStructuredFollowLogs(
         id: String,
@@ -269,11 +212,11 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         since: Date?,
         until: Date?,
         timestamps: Bool,
-        emit: @escaping @Sendable (Data) -> Void
+        emit: @escaping @Sendable (Data) -> Void,
     ) async throws {
         let recordStream = try await client.followLogRecords(
             id: id,
-            options: ContainerLogOptions(tail: tail, since: since, until: until)
+            options: ContainerLogOptions(tail: tail, since: since, until: until),
         )
         defer {
             try? recordStream.close()
@@ -281,15 +224,17 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         try await followStructuredRecordStream(
             recordStream: recordStream,
             renderer: StructuredLogRecordRenderer(since: nil, until: nil, timestamps: timestamps),
-            emit: emit
+            emit: emit,
         )
     }
+
+    // swiftlint:enable function_parameter_count
 
     /// Emits followed structured records from the runtime-owned stream.
     private func followStructuredRecordStream(
         recordStream: FileHandle,
         renderer: StructuredLogRecordRenderer,
-        emit: @escaping @Sendable (Data) -> Void
+        emit: @escaping @Sendable (Data) -> Void,
     ) async throws {
         let decoder = StructuredLogRecordJSONLDecoder()
         let termination = FollowedRawLogTermination()
@@ -299,7 +244,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
                     guard !data.isEmpty else {
                         continue
                     }
-                    let result = renderer.append(try decoder.append(data))
+                    let result = try renderer.append(decoder.append(data))
                     let lines = result.shouldFinish ? result.lines + renderer.flush() : result.lines
                     emitEachLogLine(lines, emit: emit)
                     if result.shouldFinish {
@@ -343,6 +288,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         }
     }
 
+    // swiftlint:disable function_parameter_count
     /// Emits structured log records exposed by the direct log API.
     private func emitStructuredLogs(
         id: String,
@@ -350,25 +296,27 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         since: Date?,
         until: Date?,
         timestamps: Bool,
-        emit: @escaping @Sendable (Data) -> Void
+        emit: @escaping @Sendable (Data) -> Void,
     ) async throws {
         let options = ContainerLogOptions(tail: tail, since: since, until: until)
         let records = try await client.logRecords(
             id: id,
             options: options,
-            replay: ContainerLogReplayOptions(includeRotated: true)
+            replay: ContainerLogReplayOptions(includeRotated: true),
         )
         emitLogLines(
             structuredLogLines(records: records, since: nil, until: nil, timestamps: timestamps),
-            emit: emit
+            emit: emit,
         )
     }
+
+    // swiftlint:enable function_parameter_count
 
     /// Emits and follows raw logs through the runtime-owned follow stream.
     private func emitFollowedRawLogStream(
         id: String,
         tail: Int?,
-        emit: @escaping @Sendable (Data) -> Void
+        emit: @escaping @Sendable (Data) -> Void,
     ) async throws {
         let fileHandle = try await client.followLogs(id: id, options: ContainerLogOptions(tail: tail))
         defer {
@@ -399,7 +347,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
 
     /// Converts a followed runtime file handle into chunks and ends when the container stops.
     private func followedRawLogChunks(id: String, fileHandle: FileHandle) -> AsyncThrowingStream<Data, any Error> {
-        let followStateProvider = self.followStateProvider
+        let followStateProvider = followStateProvider
         return AsyncThrowingStream { continuation in
             let stopTask = Task {
                 while !Task.isCancelled {
@@ -441,7 +389,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         records: [ContainerLogRecord],
         since: Date?,
         until: Date?,
-        timestamps: Bool
+        timestamps: Bool,
     ) -> [Data] {
         let renderer = StructuredLogRecordRenderer(since: since, until: until, timestamps: timestamps)
         let result = renderer.append(records)
@@ -453,7 +401,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         _ records: [ContainerLogRecord],
         tail: Int?,
         renderer: StructuredLogRecordRenderer,
-        emit: @escaping @Sendable (Data) -> Void
+        emit: @escaping @Sendable (Data) -> Void,
     ) -> Bool {
         guard tail != 0 else {
             return false
@@ -470,7 +418,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
     private func emitExistingLogs(
         from fileHandle: FileHandle,
         tail: Int?,
-        emit: @escaping @Sendable (Data) -> Void
+        emit: @escaping @Sendable (Data) -> Void,
     ) throws {
         if let tail {
             try emitTail(from: fileHandle, count: tail, emit: emit)
@@ -482,7 +430,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
     /// Emits all log contents currently available from the file handle.
     private func emitAll(
         from fileHandle: FileHandle,
-        emit: @escaping @Sendable (Data) -> Void
+        emit: @escaping @Sendable (Data) -> Void,
     ) throws {
         guard let data = try fileHandle.readToEnd() else {
             return
@@ -494,7 +442,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
     private func emitTail(
         from fileHandle: FileHandle,
         count: Int,
-        emit: @escaping @Sendable (Data) -> Void
+        emit: @escaping @Sendable (Data) -> Void,
     ) throws {
         guard count > 0 else {
             _ = try? fileHandle.seekToEnd()
@@ -522,7 +470,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
     private func emitExistingLogs(
         from data: Data,
         tail: Int?,
-        emit: @escaping @Sendable (Data) -> Void
+        emit: @escaping @Sendable (Data) -> Void,
     ) {
         let lines = recordsForCompleteLogData(data)
         emitLogLines(tail.map { Array(lines.suffix($0)) } ?? lines, emit: emit)
@@ -563,13 +511,15 @@ public struct ContainerClientLogManager: ContainerLogManaging {
     }
 }
 
+// swiftlint:enable type_body_length
+
 /// Incrementally splits followed log data into complete log records.
 private final class LogLineAccumulator: @unchecked Sendable {
     private let lock = NSLock()
     private var pending = Data()
 
     init(initial: Data = Data()) {
-        self.pending = initial
+        pending = initial
     }
 
     /// Appends a chunk and returns the complete log records it contains.
@@ -654,8 +604,8 @@ private final class StructuredLogRecordRenderer: @unchecked Sendable {
         self.since = since
         self.until = until
         self.timestamps = timestamps
-        self.formatter = ISO8601DateFormatter()
-        self.formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     }
 
     /// Appends records and returns complete lines plus whether an `until` bound ended the stream.
@@ -732,12 +682,12 @@ private final class StructuredLogRecordJSONLDecoder: @unchecked Sendable {
         var records: [ContainerLogRecord] = []
         var recordStart = buffer.startIndex
         while let newline = buffer[recordStart...].firstIndex(of: UInt8(ascii: "\n")) {
-            let line = buffer[recordStart..<newline]
+            let line = buffer[recordStart ..< newline]
             recordStart = buffer.index(after: newline)
             guard !line.isEmpty else {
                 continue
             }
-            records.append(try decoder.decode(ContainerLogRecord.self, from: Data(line)))
+            try records.append(decoder.decode(ContainerLogRecord.self, from: Data(line)))
         }
         if recordStart > buffer.startIndex {
             buffer.removeSubrange(..<recordStart)
@@ -757,7 +707,7 @@ private final class StructuredLogRecordJSONLDecoder: @unchecked Sendable {
         }
         let data = buffer
         buffer.removeAll()
-        return [try decoder.decode(ContainerLogRecord.self, from: data)]
+        return try [decoder.decode(ContainerLogRecord.self, from: data)]
     }
 }
 

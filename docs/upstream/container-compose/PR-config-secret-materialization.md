@@ -16,13 +16,13 @@
 
 ## Motivation and Context
 
-Docker Compose supports file-like runtime config and secret sources that can be represented locally without a first-class runtime store. Configs support `file`, `environment`, `content`, and `external`; secrets support `file` and `environment`, with external secrets supplied by the separate secure-store follow-up.
+Docker Compose supports file-like runtime config and secret sources that can be represented locally without a first-class runtime store. Configs support `file`, `environment`, `content`, and `external`; secrets support `file`, `environment`, and `external`.
 
 `apple/container` already exposes the runtime primitive needed for local file-like grants: read-only bind mounts. This plugin can therefore support inline config content and environment-backed config/secret values without adding Compose-specific policy to `apple/container`.
 
-External configs are now served by the config-store follow-up, external secrets
-by the secure-store follow-up, and generated `uid`/`gid` ownership by the
-owned-file snapshot follow-up.
+External configs and secrets use the Compose-owned readers documented in
+[External Compose Resources](../../external-resources.md). Generated `uid`/`gid`
+ownership uses the owned-file snapshot follow-up.
 
 ## Commit Tracking
 
@@ -48,9 +48,8 @@ owned-file snapshot follow-up.
 
 - Supported: runtime service grants for file-backed configs/secrets, `configs.content`, `configs.environment`, and `secrets.environment`.
 - Supported: Docker Compose default mount targets, including `/<config-name>` for configs and `/run/secrets/<secret-name>` for secrets.
-- Supported by the config-store follow-up: `external: true` configs, including external `name` lookup.
-- Supported by the secure-store follow-up: `external: true` secrets, including
-  external `name` lookup.
+- Supported: `external: true` configs and secrets, including external `name`
+  lookup through the Compose-owned providers.
 - Remaining gap: strict service-level `uid` and `gid` materialization needs runtime ownership support beyond bind-mounting a host file.
 
 ## Testing

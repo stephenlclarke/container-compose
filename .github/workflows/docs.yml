@@ -21,6 +21,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/docs.yml
+      - DESIGN.md
       - Makefile
       - Package.resolved
       - Package.swift
@@ -31,6 +32,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/docs.yml
+      - DESIGN.md
       - Makefile
       - Package.resolved
       - Package.swift
