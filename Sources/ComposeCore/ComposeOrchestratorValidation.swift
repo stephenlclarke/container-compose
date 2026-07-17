@@ -38,7 +38,7 @@ extension ComposeOrchestrator {
         try validateDeploySupport(service: service)
         try validateProviderAndModelSupport(service: service)
         try validateLifecycleHookSupport(service: service)
-        let networks = try validateRuntimeNetworkSupport(service: service)
+        let networks = try validateRuntimeNetworkSupport(service: service, project: project)
         try validateRuntimeResourceSupport(service: service)
         try validateRuntimeMountSupport(service: service, project: project)
         try validateNetworkMACAddressSupport(service: service, networks: networks)
@@ -49,7 +49,7 @@ extension ComposeOrchestrator {
     }
 
     /// Validates network modes and attachment metadata, returning selected networks.
-    func validateRuntimeNetworkSupport(service: ComposeService) throws -> [String] {
+    func validateRuntimeNetworkSupport(service: ComposeService, project: ComposeProject) throws -> [String] {
         let networks = service.networks ?? []
         try validateNetworkAliasSupport(service: service, networks: networks)
         if let networkOptions = service.networkOptions {
@@ -61,6 +61,7 @@ extension ComposeOrchestrator {
                 }
                 _ = try networkGuestInterfaceName(service: service, network: network)
                 _ = try networkLinkLocalIPValues(service: service, network: network)
+                _ = try networkStaticAddressOptions(project: project, service: service, network: network)
             }
         }
         if let networkMode = service.networkMode, !networkMode.isEmpty, !isSupportedNetworkMode(networkMode) {
