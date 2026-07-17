@@ -22,10 +22,10 @@ recreation. To consume a changed file in an existing container, recreate it.
 ## Dependency handoff
 
 - `stephenlclarke/containerization` main:
-  `86593b23c77d03d7d170631bc2bfe4dd114fc6c1`
+  `4257e1d3d85638d6dbd133678b58efc0ceedfa2b`
   ([PR #8](https://github.com/stephenlclarke/containerization/pull/8))
 - `stephenlclarke/container` main:
-  `568097c88366e55ed3ee36847ca2b4e879a5f867`
+  `486287adaf39fb5fe3e01508c6317f3da645089f`
   ([PR #20](https://github.com/stephenlclarke/container/pull/20))
 - Apple-shaped handoff docs:
   [containerization](../apple-containerization/PR-file-mount-ownership.md)
