@@ -2394,6 +2394,7 @@ struct ComposeOrchestratorTests {
                     $0.workingDir = "/work"
                     $0.user = "1000:1000"
                     $0.groupAdd = ["1000", "video", "1001", "staff", "1000", "video"]
+                    $0.oomScoreAdj = -250
                 },
             ]
         )
@@ -2407,6 +2408,7 @@ struct ComposeOrchestratorTests {
         #expect(plan.initProcess.user.description == "1000:1000")
         #expect(plan.initProcess.supplementalGroups == [1000, 1001])
         #expect(plan.initProcess.supplementalGroupNames == ["video", "staff"])
+        #expect(plan.initProcess.oomScoreAdj == -250)
     }
 
     @Test("service create plan maps explicit healthcheck to typed policy")
@@ -2420,6 +2422,7 @@ struct ComposeOrchestratorTests {
                     $0.workingDir = "/srv"
                     $0.user = "1000:1000"
                     $0.groupAdd = ["1000", "video"]
+                    $0.oomScoreAdj = -250
                     $0.healthcheck = .object([
                         "test": .array([.string("CMD-SHELL"), .string("test -f /tmp/ready")]),
                         "interval": .string("5s"),
@@ -2439,6 +2442,7 @@ struct ComposeOrchestratorTests {
         #expect(healthCheck.process.user.description == "1000:1000")
         #expect(healthCheck.process.supplementalGroups == [1000])
         #expect(healthCheck.process.supplementalGroupNames == ["video"])
+        #expect(healthCheck.process.oomScoreAdj == -250)
         #expect(healthCheck.intervalInNanoseconds == 5_000_000_000)
         #expect(healthCheck.retries == 2)
     }
@@ -2464,6 +2468,22 @@ struct ComposeOrchestratorTests {
             } catch let error as ComposeError {
                 #expect(error == .invalidProject(expectedMessage))
             }
+        }
+    }
+
+    @Test("service create plan rejects out-of-range OOM score adjustments")
+    func serviceCreatePlanRejectsOutOfRangeOOMScoreAdjustment() async throws {
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.oomScoreAdj = 1001
+                },
+            ]
+        )
+
+        await #expect(throws: ComposeError.invalidProject("service 'job' uses oom_score_adj '1001' outside the supported range -1000...1000")) {
+            _ = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "job")
         }
     }
 
@@ -22689,6 +22709,7 @@ struct ComposeOrchestratorTests {
                     $0.capAdd = ["NET_ADMIN"]
                     $0.capDrop = ["MKNOD"]
                     $0.privileged = true
+                    $0.oomScoreAdj = -250
                     $0.memLimit = "1024"
                     $0.cpus = "2"
                     $0.shmSize = "67108864"
@@ -22724,6 +22745,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--cap-add", "NET_ADMIN"]))
         #expect(command.containsSequence(["--cap-drop", "MKNOD"]))
         #expect(command.contains("--privileged"))
+        #expect(command.containsSequence(["--oom-score-adj", "-250"]))
         #expect(command.containsSequence(["--dns", "1.1.1.1"]))
         #expect(command.containsSequence(["--dns-search", "local"]))
         #expect(command.containsSequence(["--dns-option", "use-vc"]))
@@ -26800,11 +26822,6 @@ private func unsupportedMemoryAndProcessResourceFieldCases() -> [UnsupportedMemo
             composeName: "oom_kill_disable",
             value: "true",
             configure: { $0.oomKillDisable = true }
-        ),
-        UnsupportedMemoryAndProcessResourceFieldCase(
-            composeName: "oom_score_adj",
-            value: "-500",
-            configure: { $0.oomScoreAdj = -500 }
         ),
     ]
 }

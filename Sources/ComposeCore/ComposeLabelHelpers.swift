@@ -128,6 +128,7 @@ func serviceCreateBaseProcess(
     service: ComposeService,
     supplementalGroups: [UInt32] = [],
     supplementalGroupNames: [String] = [],
+    oomScoreAdj: Int? = nil,
 ) -> ProcessConfiguration {
     let executable: String
     let arguments: [String]
@@ -161,6 +162,7 @@ func serviceCreateBaseProcess(
         user: user,
         supplementalGroups: supplementalGroups,
         supplementalGroupNames: supplementalGroupNames,
+        oomScoreAdj: oomScoreAdj,
         privileged: service.privileged == true,
     )
 }

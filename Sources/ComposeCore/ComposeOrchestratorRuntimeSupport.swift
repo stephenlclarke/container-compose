@@ -82,7 +82,7 @@ extension ComposeOrchestrator {
         return fields
     }
 
-    /// Returns unsupported memory, OOM, and process resource controls beyond `mem_limit`.
+    /// Returns unsupported memory, OOM, and process resource controls beyond `mem_limit` and `oom_score_adj`.
     func unsupportedMemoryAndProcessResourceFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
         let reason = "memory, OOM, and process resource support needs an apple/container runtime gap PR"
         var fields: [(composeName: String, value: String, reason: String)] = []
@@ -92,8 +92,20 @@ extension ComposeOrchestrator {
         if service.oomKillDisable == true {
             fields.append(("oom_kill_disable", "true", reason))
         }
-        appendUnsupportedIntegerField("oom_score_adj", value: service.oomScoreAdj, reason: reason, to: &fields)
         return fields
+    }
+
+    /// Returns a Linux-compatible OOM score adjustment for the service process.
+    func runtimeOOMScoreAdj(service: ComposeService) throws -> Int? {
+        guard let oomScoreAdj = service.oomScoreAdj else {
+            return nil
+        }
+        guard (-1000...1000).contains(oomScoreAdj) else {
+            throw ComposeError.invalidProject(
+                "service '\(service.name)' uses oom_score_adj '\(oomScoreAdj)' outside the supported range -1000...1000"
+            )
+        }
+        return oomScoreAdj
     }
 
     /// Splits Compose supplemental groups into numeric IDs and guest-image group names.

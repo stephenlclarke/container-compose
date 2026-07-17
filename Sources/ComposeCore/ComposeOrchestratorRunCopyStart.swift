@@ -193,6 +193,9 @@ extension ComposeOrchestrator {
         for group in try runtimeSupplementalGroupArguments(service: service) {
             args.append(contentsOf: ["--group-add", group])
         }
+        if let oomScoreAdj = try runtimeOOMScoreAdj(service: service) {
+            args.append(contentsOf: ["--oom-score-adj", "\(oomScoreAdj)"])
+        }
         if service.tty == true {
             args.append("--tty")
         }
