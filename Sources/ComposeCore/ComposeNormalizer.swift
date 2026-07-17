@@ -41,7 +41,7 @@ public struct ComposeNormalizer: Sendable {
             arguments,
             workingDirectory: invocation.workingDirectory,
             environment: invocation.environment,
-            io: .captured(input: nil)
+            io: .captured(input: nil),
         )
         guard result.succeeded else {
             throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
@@ -69,7 +69,7 @@ public struct ComposeNormalizer: Sendable {
             arguments,
             workingDirectory: invocation.workingDirectory,
             environment: invocation.environment,
-            io: .captured(input: nil)
+            io: .captured(input: nil),
         )
         guard result.succeeded else {
             throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
@@ -97,7 +97,7 @@ public struct ComposeNormalizer: Sendable {
             arguments,
             workingDirectory: invocation.workingDirectory,
             environment: invocation.environment,
-            io: .captured(input: nil)
+            io: .captured(input: nil),
         )
         guard result.succeeded else {
             throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
@@ -125,7 +125,7 @@ public struct ComposeNormalizer: Sendable {
             arguments,
             workingDirectory: invocation.workingDirectory,
             environment: invocation.environment,
-            io: publish.assumeYes ? .captured(input: nil) : .capturedOutputInheritingInputAndError
+            io: publish.assumeYes ? .captured(input: nil) : .capturedOutputInheritingInputAndError,
         )
         guard result.succeeded else {
             throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
@@ -145,7 +145,7 @@ private struct NormalizerInvocation {
     var executable: String
     var prefixArguments: [String]
     var workingDirectory: URL?
-    var environment: [String: String]? = nil
+    var environment: [String: String]?
 }
 
 private extension ComposeNormalizer {
