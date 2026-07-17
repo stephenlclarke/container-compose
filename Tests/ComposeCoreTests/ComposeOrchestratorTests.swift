@@ -6896,6 +6896,76 @@ struct ComposeOrchestratorTests {
         ]))
     }
 
+    @Test("up maps static IPv4 and IPv6 addresses to runtime network attachments")
+    func upMapsStaticNetworkAddressesToRuntimeNetworkAttachments() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(
+                            addressing: .init(
+                                ipv4Address: "172.28.0.10",
+                                ipv6Address: "2001:db8:7::10"
+                            )
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: .init(
+                        subnets: .init(
+                            ipv4Subnet: "172.28.0.0/16",
+                            ipv6Subnet: "2001:db8:7::/64"
+                        )
+                    )
+                ),
+            ]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence([
+            "--network", "demo_backend,ip=172.28.0.10,ip6=2001:db8:7::10",
+        ]))
+    }
+
+    @Test("up maps static addresses on external networks without local IPAM")
+    func upMapsStaticAddressesOnExternalNetworks() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["shared"]
+                    $0.networkOptions = [
+                        "shared": ComposeNetworkOptions(addressing: .init(ipv4Address: "192.0.2.10")),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "shared": ComposeNetwork(name: "shared", options: .init(external: true)),
+            ]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "shared,ip=192.0.2.10"]))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("up selects default route and service MAC networks by their independent priorities")
     func upMapsNetworkGatewayAndConnectionPriorities() async throws {
         let runner = RecordingRunner()
@@ -6988,7 +7058,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported network option error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses network attachment options driver_opts, ipv4_address on network 'backend'; network attachment options need an apple/container runtime gap PR"))
+            #expect(error == .unsupported("service 'api' uses network attachment options driver_opts on network 'backend'; network attachment options need an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -8980,6 +9050,86 @@ struct ComposeOrchestratorTests {
         } catch let error as ComposeError {
             #expect(error == .invalidProject(
                 "service 'api' link_local_ips value '::' must not be unspecified"
+            ))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up rejects static IPv4 addresses outside IPAM before creating resources")
+    func upRejectsStaticIPv4OutsideIPAMBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(addressing: .init(ipv4Address: "172.29.0.10")),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: .init(subnets: .init(ipv4Subnet: "172.28.0.0/16"))
+                ),
+            ]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid ipv4_address error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject(
+                "service 'api' ipv4_address '172.29.0.10' is not an allocatable host address in network 'backend'"
+            ))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up rejects delimited static IPv4 addresses before creating resources")
+    func upRejectsDelimitedStaticIPv4BeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(
+                            addressing: .init(ipv4Address: "172.28.0.10,address=unexpected")
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: .init(subnets: .init(ipv4Subnet: "172.28.0.0/16"))
+                ),
+            ]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid ipv4_address error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject(
+                "service 'api' ipv4_address '172.28.0.10,address=unexpected' cannot contain ','"
             ))
         } catch {
             Issue.record("Unexpected error: \(error)")
@@ -23374,6 +23524,47 @@ struct ComposeOrchestratorTests {
             "--network", "demo_backend,address=169.254.1.5,address=fe80::5",
         ]))
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+    }
+
+    @Test("run maps static network addresses to runtime network attachments")
+    func runMapsStaticNetworkAddressesToRuntimeNetworkAttachments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(
+                            addressing: .init(ipv4Address: "172.28.0.10", ipv6Address: "2001:db8:7::10")
+                        ),
+                    ]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: .init(
+                        subnets: .init(
+                            ipv4Subnet: "172.28.0.0/16",
+                            ipv6Subnet: "2001:db8:7::/64"
+                        )
+                    )
+                ),
+            ]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence([
+            "--network", "demo_backend,ip=172.28.0.10,ip6=2001:db8:7::10",
+        ]))
     }
 
     @Test("run maps network mode host to runtime host networking")
