@@ -875,6 +875,7 @@ struct ComposeNormalizerTests {
         let api = try #require(project.services["api"])
         #expect(api.cpus == "1.5")
         #expect(api.memLimit?.isEmpty == false)
+        #expect(api.memReservation == "134217728")
         #expect(api.pidsLimit == 64)
         #expect(api.unsupportedDeployFields ?? [] == [])
         #expect(api.deployGPURequests?.count == 1)

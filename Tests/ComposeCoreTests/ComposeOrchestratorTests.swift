@@ -4118,8 +4118,8 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
-    @Test("up accepts deploy CPU and memory reservations as local metadata")
-    func upAcceptsDeployCPUAndMemoryReservationsAsLocalMetadata() async throws {
+    @Test("up projects deploy memory reservations while retaining CPU reservation metadata")
+    func upProjectsDeployMemoryReservationsWhileRetainingCPUReservationMetadata() async throws {
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
@@ -4147,6 +4147,7 @@ struct ComposeOrchestratorTests {
         ))
         let api = try #require(project.services["api"])
         #expect(api.unsupportedDeployFields == nil)
+        #expect(api.memReservation == "33554432")
 
         let runner = RecordingRunner()
         let discoveryManager = RecordingContainerDiscoveryManager()
@@ -4157,8 +4158,9 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        let commands = runner.commands.map(\.arguments)
-        #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-api-1"]) })
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--memory-reservation", "33554432"]))
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 

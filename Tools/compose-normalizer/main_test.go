@@ -1587,6 +1587,8 @@ services:
         limits:
           cpus: "1.5"
           memory: 256m
+        reservations:
+          memory: 128m
 `)
 
 	project, err := loadProject(nil, nil, nil, "", dir)
@@ -1601,8 +1603,44 @@ services:
 	if api.MemLimit == "" {
 		t.Fatal("api.MemLimit is empty")
 	}
+	if got, want := api.MemReservation, "134217728"; got != want {
+		t.Fatalf("api.MemReservation = %q, want %q", got, want)
+	}
 	if len(api.UnsupportedDeployFields) != 0 {
 		t.Fatalf("api.UnsupportedDeployFields = %#v, want empty", api.UnsupportedDeployFields)
+	}
+}
+
+func TestDeployReservationMemory(t *testing.T) {
+	cases := []struct {
+		name   string
+		deploy *types.DeployConfig
+		want   string
+	}{
+		{name: "nil deploy", deploy: nil, want: ""},
+		{name: "no reservation", deploy: &types.DeployConfig{}, want: ""},
+		{
+			name: "zero reservation",
+			deploy: &types.DeployConfig{Resources: types.Resources{
+				Reservations: &types.Resource{},
+			}},
+			want: "",
+		},
+		{
+			name: "memory reservation",
+			deploy: &types.DeployConfig{Resources: types.Resources{
+				Reservations: &types.Resource{MemoryBytes: types.UnitBytes(134217728)},
+			}},
+			want: "134217728",
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := deployReservationMemory(testCase.deploy); got != testCase.want {
+				t.Fatalf("deployReservationMemory() = %q, want %q", got, testCase.want)
+			}
+		})
 	}
 }
 

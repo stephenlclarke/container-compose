@@ -86,7 +86,7 @@ enum ComposeCLIHelp {
                     commandPath: commandPath(from: key),
                     support: support.label,
                     color: support.color,
-                    detail: nil
+                    detail: supportDetails[key]
                 )
             }
             .sorted { $0.commandPath.lexicographicallyPrecedes($1.commandPath) }
@@ -303,15 +303,15 @@ enum ComposeCLIHelp {
         "bridge transformations create": .supported,
         "bridge transformations list": .supported,
         "bridge transformations ls": .supported,
-        "build": .supported,
+        "build": .partiallySupported,
         "commit": .supported,
-        "config": .supported,
+        "config": .partiallySupported,
         "convert": .supported,
         "cp": .supported,
         "create": .supported,
         "down": .supported,
-        "events": .supported,
-        "exec": .supported,
+        "events": .partiallySupported,
+        "exec": .partiallySupported,
         "export": .supported,
         "help": .supported,
         "images": .supported,
@@ -326,18 +326,30 @@ enum ComposeCLIHelp {
         "push": .supported,
         "restart": .supported,
         "rm": .supported,
-        "run": .supported,
+        "run": .partiallySupported,
         "scale": .supported,
         "start": .supported,
         "stats": .partiallySupported,
         "stop": .supported,
         "top": .supported,
         "unpause": .supported,
-        "up": .supported,
+        "up": .partiallySupported,
         "version": .supported,
         "volumes": .partiallySupported,
         "wait": .supported,
         "watch": .supported,
+    ]
+
+    private static let supportDetails: [String: String] = [
+        "build": "build.no_cache_filter and non-file/environment build-secret source forms are unavailable.",
+        "config": "Normalized output omits build.no_cache_filter.",
+        "events": "The Docker event-action vocabulary is incomplete.",
+        "exec": "Docker-complete privileged execution is unavailable.",
+        "ps": "Go-template control blocks and nested object paths are unavailable.",
+        "run": "Container-facing DNS aliases and interactive lifecycle hooks are incomplete.",
+        "stats": "Go-template control blocks and nested object paths are unavailable.",
+        "up": "pre_start and container-facing DNS aliases are unavailable.",
+        "volumes": "Go-template control blocks and nested object paths are unavailable.",
     ]
 
     private static let supportByOption: [String: [String: SupportLevel]] = [
@@ -502,7 +514,7 @@ enum ComposeCLIHelp {
             "--env": .supported,
             "--index": .supported,
             "--no-tty": .supported,
-            "--privileged": .supported,
+            "--privileged": .partiallySupported,
             "--user": .supported,
             "--workdir": .supported,
         ],
@@ -722,7 +734,7 @@ enum ComposeCLIHelp {
             rendered = insertSupportLine(
                 into: rendered,
                 support: support,
-                detail: nil,
+                detail: supportDetails[commandPath.joined(separator: " ")],
                 useANSI: useANSI
             )
         }

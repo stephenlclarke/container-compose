@@ -2,7 +2,9 @@
 
 ## Summary
 
-- Remove `mem_reservation` from the unsupported-runtime ledger.
+- Remove `mem_reservation` from the unsupported-runtime ledger and normalize
+  its Docker Compose local-mode Deploy alias,
+  `deploy.resources.reservations.memory`, through the same path.
 - Validate non-negative byte values, zero-as-default, and the required
   reservation-below-explicit-hard-limit relationship before side effects.
 - Carry the typed value in the service-create plan.
@@ -18,8 +20,10 @@
 - Container runtime: `089f55dbc3b85e814fc81464854852d887de86b9` merged as
   `d5774583697dc239b140ae38cc79fa9259753061` in
   `stephenlclarke/container`.
-- Compose mapping: `feat/memory-reservation` until this pull request is
-  merged.
+- Service-form Compose mapping: `feat/memory-reservation` until this pull
+  request is merged.
+- Deploy-alias Compose mapping: tracked in
+  [PR-deploy-memory-reservation-projection.md](PR-deploy-memory-reservation-projection.md).
 
 ## Reference
 

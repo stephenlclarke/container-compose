@@ -43,7 +43,7 @@ struct ComposeCLIHelpTests {
         #expect(!help.contains("\u{001B}["))
     }
 
-    @Test("root help lists help command")
+    @Test("root help lists the Compose-layer help command")
     func rootHelpListsHelpCommand() {
         let plain = ComposeCLIHelp.rootHelpText(arguments: ["--ansi", "never"])
         let coloured = ComposeCLIHelp.rootHelpText(arguments: [])
@@ -95,14 +95,14 @@ struct ComposeCLIHelpTests {
         }
     }
 
-    @Test("command support entries classify the remaining template-language gaps")
-    func commandSupportEntriesClassifyTheRemainingTemplateLanguageGaps() throws {
+    @Test("command support entries classify all known command-level gaps")
+    func commandSupportEntriesClassifyKnownGaps() throws {
         let partialCommands = ComposeCLIHelp.commandSupportSnapshots
             .filter { $0.support == "partially supported" }
             .map(\.commandPath)
         let commitHelp = try #require(ComposeCLIHelp.commandHelpText(command: "commit"))
 
-        #expect(partialCommands == [["ps"], ["stats"], ["volumes"]])
+        #expect(partialCommands == [["build"], ["config"], ["events"], ["exec"], ["ps"], ["run"], ["stats"], ["up"], ["volumes"]])
         #expect(commitHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(commitHelp.contains("best-effort snapshot"))
         #expect(commitHelp.contains("\u{001B}[32m--pause\u{001B}[0m"))
@@ -377,11 +377,12 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--scale\u{001B}[0m"))
     }
 
-    @Test("config command and digest options are shown as supported")
-    func configCommandAndDigestOptionsAreShownAsSupported() throws {
+    @Test("config command reports its normalized-output limitation")
+    func configCommandReportsNormalizedOutputLimitation() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "config"))
 
-        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("Normalized output omits build.no_cache_filter."))
         #expect(help.contains("\u{001B}[32m--lock-image-digests\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--resolve-image-digests\u{001B}[0m"))
     }
@@ -422,7 +423,8 @@ struct ComposeCLIHelpTests {
     func runCommandAndOptionsAccuratelyReportSupport() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "run"))
 
-        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("Container-facing DNS aliases and interactive lifecycle hooks are incomplete."))
         #expect(help.contains("\u{001B}[32m--build\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--no-deps\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--service-ports\u{001B}[0m"))
@@ -430,19 +432,21 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("requires container-facing DNS"))
     }
 
-    @Test("exec command and privileged option are shown as supported")
-    func execCommandAndPrivilegedOptionAreShownAsSupported() throws {
+    @Test("exec command discloses the privileged-mode limitation")
+    func execCommandDisclosesPrivilegedModeLimitation() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "exec"))
 
-        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
-        #expect(help.contains("\u{001B}[32m--privileged\u{001B}[0m"))
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("Docker-complete privileged execution is unavailable."))
+        #expect(help.contains("\u{001B}[38;5;208m--privileged\u{001B}[0m"))
     }
 
-    @Test("build command and options are shown as supported")
-    func buildCommandAndOptionsAreShownAsSupported() throws {
+    @Test("build command reports its current build-surface limitations")
+    func buildCommandReportsBuildSurfaceLimitations() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "build"))
 
-        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("build.no_cache_filter and non-file/environment build-secret source forms are unavailable."))
         #expect(help.contains("\u{001B}[32m--print\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--check\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--ssh\u{001B}[0m"))
@@ -504,11 +508,12 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("Use --menu=false to explicitly disable the helper menu."))
     }
 
-    @Test("up wait options show full health support")
-    func upWaitOptionsShowFullHealthSupport() throws {
+    @Test("up wait options remain supported while command gaps are disclosed")
+    func upWaitOptionsRemainSupportedWhileCommandGapsAreDisclosed() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
 
-        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("pre_start and container-facing DNS aliases are unavailable."))
         #expect(help.contains("\u{001B}[32m--wait\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--wait-timeout\u{001B}[0m"))
     }
@@ -1001,7 +1006,7 @@ struct ComposeCLIHelpTests {
 
     private static let currentBuildAttributes = """
     additional_contexts args cache_from cache_to context dockerfile dockerfile_inline entitlements
-    extra_hosts isolation labels network no_cache platforms privileged provenance pull sbom secrets
+    extra_hosts isolation labels network no_cache no_cache_filter platforms privileged provenance pull sbom secrets
     ssh shm_size tags target ulimits
     """.split(whereSeparator: \.isWhitespace).map(String.init)
 

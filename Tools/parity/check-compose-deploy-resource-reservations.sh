@@ -21,6 +21,8 @@
 #
 # OPTIONS:
 #   --strict    Fail when Docker Compose V2 or container-compose is unavailable.
+#               Docker Engine dry-run confirmation is performed when a daemon
+#               is available; Compose config parity is always required.
 #   -h, --help  Show this help.
 #
 # ENVIRONMENT:
@@ -31,9 +33,10 @@
 #
 # This script is intentionally local-only and is not part of CI. It verifies
 # Docker Compose V2 preserves deploy CPU/memory reservations in config output
-# while local dry-run orchestration accepts the service, then verifies
-# container-compose mirrors that local-mode behavior without treating those
-# scheduler hints as unsupported deploy fields.
+# and accepts the service in local dry-run orchestration. It then verifies
+# container-compose mirrors Docker's local-mode projection: CPU reservations
+# remain scheduler metadata while memory reservations use the generic
+# --memory-reservation runtime primitive.
 
 set -euo pipefail
 
@@ -46,6 +49,7 @@ readonly REPO_ROOT
 STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 DOCKER_COMPOSE_COMMAND=()
+DOCKER_DAEMON_AVAILABLE=0
 FIXTURE_DIR=""
 PROJECT_NAME="cc-reservations-$RANDOM"
 
@@ -127,6 +131,19 @@ check_tools() {
     fi
 }
 
+# Docker Compose config rendering is independent of an Engine daemon. Its
+# --dry-run up output, however, still queries the daemon. Keep the local check
+# deterministic on developer Macs without Docker Desktop/Colima while using the
+# stronger Engine-backed assertion whenever one is running.
+detect_docker_daemon() {
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+        DOCKER_DAEMON_AVAILABLE=1
+        return
+    fi
+
+    info 'Docker daemon unavailable; checking Docker Compose config parity without Engine dry-run output.'
+}
+
 # Create a minimal Compose fixture with CPU/memory reservation metadata.
 create_fixture() {
     FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/compose-deploy-reservations.XXXXXX")"
@@ -167,8 +184,9 @@ if reservations.get("memory") != "33554432":
 PY
 }
 
-# Assert container-compose config does not reject CPU/memory reservations.
-assert_container_config_accepts_reservations() {
+# Assert container-compose config accepts both reservations and normalizes the
+# Docker-compatible memory reservation runtime value.
+assert_container_config_projects_memory_reservation() {
     local path="$1"
 
     python3 - "$path" <<'PY'
@@ -182,7 +200,22 @@ fields = service.get("unsupportedDeployFields") or []
 unexpected = [field for field in fields if field in {"resources.reservations.cpus", "resources.reservations.memory"}]
 if unexpected:
     raise SystemExit(f"container-compose still reports CPU/memory reservations as unsupported: {fields!r}")
+if service.get("memReservation") != "33554432":
+    raise SystemExit(
+        "container-compose memReservation = "
+        f"{service.get('memReservation')!r}, want '33554432'"
+    )
 PY
+}
+
+# Return failure unless a dry-run container command contains the expected
+# generic memory-reservation argument. Both quoted and plain command renderings
+# are accepted so the assertion remains independent of the reporter formatter.
+dry_run_projects_memory_reservation() {
+    local output_path="$1"
+
+    grep -F -- "--memory-reservation '33554432'" "$output_path" >/dev/null \
+        || grep -F -- "--memory-reservation 33554432" "$output_path" >/dev/null
 }
 
 # Exercise Docker Compose as the local-mode parity baseline.
@@ -195,6 +228,10 @@ expect_docker_behavior() {
         -f "$FIXTURE_DIR/compose.yml" \
         config --format json >"$config_output"
     assert_docker_config_preserves_reservations "$config_output"
+
+    if ((DOCKER_DAEMON_AVAILABLE == 0)); then
+        return
+    fi
 
     "${DOCKER_COMPOSE_COMMAND[@]}" \
         --ansi never \
@@ -221,7 +258,7 @@ expect_container_behavior() {
         -p "$PROJECT_NAME" \
         -f "$FIXTURE_DIR/compose.yml" \
         config --format json >"$config_output"
-    assert_container_config_accepts_reservations "$config_output"
+    assert_container_config_projects_memory_reservation "$config_output"
 
     "$CONTAINER_COMPOSE" \
         --ansi never \
@@ -235,6 +272,11 @@ expect_container_behavior() {
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
+    if ! dry_run_projects_memory_reservation "$dry_run_output"; then
+        error 'container-compose did not project deploy memory reservations to --memory-reservation in local dry-run up'
+        sed -n '1,120p' "$dry_run_output" >&2
+        return 1
+    fi
 }
 
 # Run the parity check.
@@ -242,13 +284,14 @@ main() {
     parse_args "$@"
     detect_docker_compose
     check_tools
+    detect_docker_daemon
     create_fixture
     trap cleanup EXIT
 
     expect_docker_behavior
     expect_container_behavior
 
-    info 'Docker Compose deploy CPU/memory reservation parity passed.'
+    info 'Docker Compose config and container-compose deploy reservation parity passed.'
 }
 
 main "$@"

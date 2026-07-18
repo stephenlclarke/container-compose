@@ -389,12 +389,16 @@ cli-smoke-built:
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mversion$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mup$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[38;5;208mcommit$${ansi_escape}[0m"* ]]; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[32mhelp$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mpause$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32m--file$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32m--parallel$${ansi_escape}[0m"* ]]; \
 	plain_help_output="$$(".build/debug/compose" --ansi never --help)"; \
 	[[ "$$plain_help_output" == *"Support: supported | partially supported | not supported"* ]]; \
 	[[ "$$plain_help_output" != *"$${ansi_escape}["* ]]; \
+	compose_help_output="$$(".build/debug/compose" help)"; \
+	[[ "$$compose_help_output" == *"Usage:  container compose [OPTIONS] COMMAND"* ]]; \
+	[[ "$$compose_help_output" == *"$${ansi_escape}[32mhelp$${ansi_escape}[0m"* ]]; \
 	alpha_output="$$(".build/debug/compose" alpha)"; \
 	[[ "$$alpha_output" == *"Usage:  container compose alpha [OPTIONS] COMMAND"* ]]; \
 	alpha_help_output="$$(".build/debug/compose" alpha --help)"; \
@@ -416,7 +420,8 @@ cli-smoke-built:
 	[[ "$$commit_help_output" == *"$${ansi_escape}[32m--author$${ansi_escape}[0m"* ]]; \
 	[[ "$$commit_help_output" == *"$${ansi_escape}[32m--pause$${ansi_escape}[0m"* ]]; \
 	config_help_output="$$(".build/debug/compose" config --help)"; \
-	[[ "$$config_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"Normalized output omits build.no_cache_filter."* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--services$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--images$${ansi_escape}[0m"* ]]; \
@@ -432,7 +437,8 @@ cli-smoke-built:
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--no-normalize$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--no-path-resolution$${ansi_escape}[0m"* ]]; \
 	build_help_output="$$(".build/debug/compose" build --help)"; \
-	[[ "$$build_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"build.no_cache_filter and non-file/environment build-secret source forms are unavailable."* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--build-arg$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--memory$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--no-cache$${ansi_escape}[0m"* ]]; \
@@ -450,7 +456,8 @@ cli-smoke-built:
 	[[ "$$attach_help_output" == *"$${ansi_escape}[32m--sig-proxy$${ansi_escape}[0m"* ]]; \
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
 	[[ "$$stats_help_output" == *"Usage:  container compose stats [OPTIONS] [SERVICE]"* ]]; \
-	[[ "$$stats_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$stats_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$stats_help_output" == *"Go-template control blocks and nested object paths are unavailable."* ]]; \
 	[[ "$$stats_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	ls_help_output="$$(".build/debug/compose" ls --help)"; \
 	[[ "$$ls_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
@@ -458,6 +465,8 @@ cli-smoke-built:
 	[[ "$$ls_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$ls_help_output" == *"Format the output. Values: [table | json]"* ]]; \
 	ps_help_output="$$(".build/debug/compose" ps --help)"; \
+	[[ "$$ps_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$ps_help_output" == *"Go-template control blocks and nested object paths are unavailable."* ]]; \
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--filter$${ansi_escape}[0m"* ]]; \
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--no-trunc$${ansi_escape}[0m"* ]]; \
@@ -485,6 +494,8 @@ cli-smoke-built:
 	[[ "$$logs_plain_misordered_help_output" == *"Usage:  container compose logs [OPTIONS] [SERVICE...]"* ]]; \
 	[[ "$$logs_plain_misordered_help_output" != *"$${ansi_escape}["* ]]; \
 	run_help_output="$$(".build/debug/compose" run --help)"; \
+	[[ "$$run_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$run_help_output" == *"Container-facing DNS aliases and interactive lifecycle hooks are incomplete."* ]]; \
 	[[ "$$run_help_output" == *"-p, --publish stringArray"* ]]; \
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--build$${ansi_escape}[0m"* ]]; \
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--interactive$${ansi_escape}[0m"* ]]; \
@@ -495,6 +506,8 @@ cli-smoke-built:
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--publish$${ansi_escape}[0m"* ]]; \
 	[[ "$$run_help_output" == *"$${ansi_escape}[38;5;208m--use-aliases$${ansi_escape}[0m"* ]]; \
 	up_help_output="$$(".build/debug/compose" up --help)"; \
+	[[ "$$up_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"pre_start and container-facing DNS aliases are unavailable."* ]]; \
 	up_wait_support="$${ansi_escape}[38;5;208m--wait$${ansi_escape}[0m"; \
 	up_wait_timeout_support="$${ansi_escape}[38;5;208m--wait-timeout$${ansi_escape}[0m"; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--abort-on-container-exit$${ansi_escape}[0m"* ]]; \
@@ -1005,6 +1018,10 @@ cli-smoke-built:
 	[[ "$$exec_detach_output" != *"--tty"* ]]; \
 	exec_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --index 2 api true)"; \
 	[[ "$$exec_index_output" == *"container exec --interactive --tty demo-api-2 true"* ]]; \
+	exec_help_output="$$(".build/debug/compose" exec --help)"; \
+	[[ "$$exec_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$exec_help_output" == *"Docker-complete privileged execution is unavailable."* ]]; \
+	[[ "$$exec_help_output" == *"$${ansi_escape}[38;5;208m--privileged$${ansi_escape}[0m"* ]]; \
 	exec_privileged_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --privileged api true)"; \
 	[[ "$$exec_privileged_output" == *"container exec --privileged --interactive --tty demo-api-1 true"* ]]; \
 	cp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file .)"; \
@@ -1089,7 +1106,8 @@ cli-smoke-built:
 	images_bad_format_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images --format '{{.Size}}' api 2>&1 || true)"; \
 	[[ "$$images_bad_format_output" == *"unsupported compose feature: images --format '{{.Size}}'; supported formats are table and json"* ]]; \
 	volumes_help_output="$$(".build/debug/compose" volumes --help)"; \
-	[[ "$$volumes_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$volumes_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$volumes_help_output" == *"Go-template control blocks and nested object paths are unavailable."* ]]; \
 	[[ "$$volumes_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	volumes_json_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo volumes --format json api)"; \
 	[[ "$$volumes_json_output" == *"container volume list --format json"* ]]; \
@@ -1112,6 +1130,9 @@ cli-smoke-built:
 	[[ "$$ls_all_output" == *"container list --format json --all"* ]]; \
 	top_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" top api)"; \
 	[[ "$$top_output" == *"+ compose-runtime top demo-api-1"* ]]; \
+	events_help_output="$$(".build/debug/compose" events --help)"; \
+	[[ "$$events_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$events_help_output" == *"The Docker event-action vocabulary is incomplete."* ]]; \
 	events_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" events --json)"; \
 	[[ "$$events_output" == *"+ container events"* ]]; \
 	port_help_output="$$(".build/debug/compose" port --help)"; \

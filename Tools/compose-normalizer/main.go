@@ -929,25 +929,29 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		CapDrop:                 append([]string(nil), service.CapDrop...),
 		SecurityOpt:             append([]string(nil), service.SecurityOpt...),
 		MemLimit:                firstNonEmpty(unitBytesValue(service.MemLimit), deployLimitMemory(service.Deploy)),
-		MemReservation:          unitBytesValue(service.MemReservation),
-		MemSwapLimit:            unitBytesValue(service.MemSwapLimit),
-		MemSwappiness:           unitBytesValue(service.MemSwappiness),
-		Models:                  serviceModelValues(service.Models),
-		OomKillDisable:          service.OomKillDisable,
-		OomScoreAdj:             service.OomScoreAdj,
-		PidsLimit:               firstNonZero(service.PidsLimit, deployLimitPids(service.Deploy)),
-		CPUS:                    firstNonEmpty(cpusValue(service.CPUS), deployLimitCPUS(service.Deploy)),
-		ShmSize:                 unitBytesValue(service.ShmSize),
-		Ulimits:                 ulimitValues(service.Ulimits),
-		Pid:                     service.Pid,
-		Sysctls:                 mapMapping(service.Sysctls),
-		StopSignal:              service.StopSignal,
-		StopGracePeriodSeconds:  durationSeconds(service.StopGracePeriod),
-		PreStart:                serviceHookValues(service.PreStart),
-		PostStart:               serviceHookValues(service.PostStart),
-		PreStop:                 serviceHookValues(service.PreStop),
-		UserNSMode:              service.UserNSMode,
-		Uts:                     service.Uts,
+		// Docker Compose local mode projects deploy reservation memory to the
+		// Engine soft-memory reservation. compose-go rejects distinct service and
+		// Deploy values, so this selects the Deploy form when it is present while
+		// retaining the existing service-level mapping as the fallback.
+		MemReservation:         firstNonEmpty(deployReservationMemory(service.Deploy), unitBytesValue(service.MemReservation)),
+		MemSwapLimit:           unitBytesValue(service.MemSwapLimit),
+		MemSwappiness:          unitBytesValue(service.MemSwappiness),
+		Models:                 serviceModelValues(service.Models),
+		OomKillDisable:         service.OomKillDisable,
+		OomScoreAdj:            service.OomScoreAdj,
+		PidsLimit:              firstNonZero(service.PidsLimit, deployLimitPids(service.Deploy)),
+		CPUS:                   firstNonEmpty(cpusValue(service.CPUS), deployLimitCPUS(service.Deploy)),
+		ShmSize:                unitBytesValue(service.ShmSize),
+		Ulimits:                ulimitValues(service.Ulimits),
+		Pid:                    service.Pid,
+		Sysctls:                mapMapping(service.Sysctls),
+		StopSignal:             service.StopSignal,
+		StopGracePeriodSeconds: durationSeconds(service.StopGracePeriod),
+		PreStart:               serviceHookValues(service.PreStart),
+		PostStart:              serviceHookValues(service.PostStart),
+		PreStop:                serviceHookValues(service.PreStop),
+		UserNSMode:             service.UserNSMode,
+		Uts:                    service.Uts,
 	}
 	if service.Build != nil {
 		buildSecrets, unsupportedSecrets := buildSecretValues(service.Build, secrets)
@@ -1971,6 +1975,17 @@ func deployLimitMemory(deploy *types.DeployConfig) string {
 		return ""
 	}
 	return unitBytesValue(deploy.Resources.Limits.MemoryBytes)
+}
+
+// deployReservationMemory returns the Docker Compose local-mode soft-memory
+// reservation from deploy.resources.reservations.memory. CPU reservations stay
+// as scheduler metadata: Docker Compose itself does not project them to an
+// Engine CPU reservation field for local containers.
+func deployReservationMemory(deploy *types.DeployConfig) string {
+	if deploy == nil || deploy.Resources.Reservations == nil {
+		return ""
+	}
+	return unitBytesValue(deploy.Resources.Reservations.MemoryBytes)
 }
 
 // deployLimitPids returns the local pids cgroup limit from

@@ -3,7 +3,7 @@
 ## Summary
 
 - Stops reporting `deploy.resources.reservations.cpus` and `deploy.resources.reservations.memory` as unsupported deploy fields.
-- Keeps local orchestration behavior unchanged: the fields are accepted as scheduler metadata, not projected to Apple runtime hard-limit flags.
+- Keeps CPU reservation as scheduler metadata. The later Deploy-memory projection reuses the existing generic soft-memory runtime flag; it is not a new hard-limit or scheduler primitive.
 - Keeps pids, device, and generic-resource reservations rejected as separate scheduler/runtime gaps.
 - Adds focused Go and Swift normalizer/orchestration coverage.
 - Adds a local-only Docker Compose parity target for config and dry-run `up --no-start`.
@@ -20,11 +20,12 @@
 
 Docker Compose V2 accepts CPU and memory Deploy reservations in local mode, preserves them in config output, and still proceeds with ordinary local service creation. `container-compose` previously treated those scheduler hints as Apple runtime gaps and rejected otherwise Docker-compatible Compose files before any local orchestration could run.
 
-The upstream review did not find Compose-side guidance to reject these fields in local mode. This slice treats CPU and memory reservations like local-mode Deploy metadata: accepted to avoid false unsupported-feature failures, without claiming hard reservation or scheduler semantics.
+The upstream review did not find Compose-side guidance to reject these fields in local mode. This initial slice accepts CPU and memory reservations as local-mode Deploy metadata to avoid false unsupported-feature failures. The later narrow memory projection is tracked in [PR-deploy-memory-reservation-projection.md](PR-deploy-memory-reservation-projection.md): Docker Compose V2 maps Deploy memory reservation to the same soft-memory Engine field as `mem_reservation`, while CPU remains metadata.
 
 ## Implementation Details
 
 - Removed CPU and memory reservations from the normalizer's unsupported deploy field list.
+- The later Compose-only memory follow-up normalizes Deploy memory reservation into the existing `memReservation` runtime adapter; CPU remains unprojected metadata.
 - Kept pids, device, and generic-resource reservations in the unsupported list.
 - Updated Go unsupported-deploy tests and Swift compose-go normalization coverage.
 - Added Swift orchestration acceptance coverage for normalized CPU/memory reservations.

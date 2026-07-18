@@ -2,8 +2,10 @@
 
 ## Compose surface
 
-`services.<name>.mem_reservation` defines a service container's soft memory
-reservation.
+`services.<name>.mem_reservation` and
+`services.<name>.deploy.resources.reservations.memory` define the same local
+container soft-memory reservation. Compose-go rejects distinct values when both
+forms are set.
 
 ## Docker Compose V2 behavior
 
@@ -17,11 +19,11 @@ Reference:
 
 ## Implemented behavior
 
-`container-compose` accepts `mem_reservation`, validates the normalized byte
-count before any runtime side effects, and carries it in the typed
-service-create plan. Zero leaves the runtime default unchanged. When a service
-also supplies `mem_limit`, the reservation must be strictly lower. `up`,
-`create`, and one-off `run` containers render the generic
+`container-compose` accepts both forms, normalizes their byte count into the
+same typed service-create plan, and validates it before any runtime side
+effects. Zero leaves the runtime default unchanged. When a service also
+supplies `mem_limit`, the reservation must be strictly lower. `up`, `create`,
+and one-off `run` containers render the generic
 `container run --memory-reservation VALUE` bridge until direct typed creation
 replaces the command vector.
 

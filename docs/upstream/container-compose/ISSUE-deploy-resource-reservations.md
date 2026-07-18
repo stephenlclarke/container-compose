@@ -36,10 +36,21 @@ services:
 
 container-compose design gap.
 
-This does not require a new Apple runtime primitive for the local Compose path because Docker Compose local mode treats these fields as scheduler metadata rather than hard runtime limits. Deploy reservation pids, non-GPU devices, and generic resources remain separate gaps because they may imply scheduler or device-resource behavior that is not covered by this local metadata slice. Generic GPU device reservations are handled by the service GPU runtime slice.
+The initial acceptance slice did not require a new Apple runtime primitive.
+Its CPU conclusion remains correct: Docker Compose local mode treats Deploy CPU
+reservation as scheduler metadata. Deploy memory reservation is a narrower
+exception: Docker Compose also maps it to the Engine soft-memory reservation,
+and container-compose now maps it through the pre-existing generic runtime
+primitive. The follow-up is tracked in
+[ISSUE-deploy-memory-reservation-projection.md](ISSUE-deploy-memory-reservation-projection.md).
+
+Deploy reservation pids, non-GPU devices, and generic resources remain
+separate gaps because they may imply scheduler or device-resource behavior that
+is not covered by this local metadata slice. Generic GPU device reservations
+are handled by the service GPU runtime slice.
 
 ## Expected behavior
 
 - `container compose config --format json` no longer reports `resources.reservations.cpus` or `resources.reservations.memory` in `unsupportedDeployFields`.
-- `container compose up --no-start api` accepts the service and plans ordinary local container creation.
+- `container compose up --no-start api` accepts the service. CPU reservation stays metadata, while a non-zero memory reservation renders the existing generic `--memory-reservation` runtime argument.
 - `deploy.resources.reservations.pids`, non-GPU `deploy.resources.reservations.devices`, and `deploy.resources.reservations.generic_resources` remain rejected until there is a Docker-compatible local runtime or scheduler mapping.
