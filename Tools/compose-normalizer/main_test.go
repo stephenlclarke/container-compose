@@ -85,6 +85,32 @@ services:
 	}
 }
 
+func TestRunPreservesNoNewPrivilegesSecurityOption(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+services:
+  api:
+    image: nginx:alpine
+    security_opt:
+      - no-new-privileges:true
+`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	status := run([]string{"--project-directory", dir}, &stdout, &stderr)
+	if status != 0 {
+		t.Fatalf("run status = %d, stderr = %s", status, stderr.String())
+	}
+
+	var project normalizedProject
+	if err := json.Unmarshal(stdout.Bytes(), &project); err != nil {
+		t.Fatalf("decode normalized JSON: %v", err)
+	}
+	if got, want := project.Services["api"].SecurityOpt, []string{"no-new-privileges:true"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.SecurityOpt = %#v, want %#v", got, want)
+	}
+}
+
 func TestRunWritesBridgeRuntimeAndPublicModel(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "compose.yaml"), `

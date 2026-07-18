@@ -217,6 +217,9 @@ extension ComposeOrchestrator {
         for cap in service.capDrop ?? [] {
             args.append(contentsOf: ["--cap-drop", cap])
         }
+        for securityOption in try runtimeSecurityOptionArguments(service: service) {
+            args.append(contentsOf: ["--security-opt", securityOption])
+        }
         for dns in service.dns ?? [] {
             args.append(contentsOf: ["--dns", dns])
         }

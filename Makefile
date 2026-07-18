@@ -120,6 +120,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-volume-labels-parity \
 	docker-compose-deploy-endpoint-mode-parity \
 	docker-compose-deploy-resource-reservations-parity \
+	docker-compose-security-opt-parity \
 	docker-compose-deploy-scheduler-metadata-parity \
 	docker-compose-memory-swap-limit-parity \
 	docker-compose-pids-limit-parity \
@@ -1283,6 +1284,9 @@ docker-compose-deploy-endpoint-mode-parity: build docker-compose-reference
 
 docker-compose-deploy-resource-reservations-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-deploy-resource-reservations.sh --strict
+
+docker-compose-security-opt-parity: build docker-compose-reference
+	$(PARITY_ENV) ./Tools/parity/check-compose-security-opt.sh --strict
 
 docker-compose-deploy-scheduler-metadata-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-deploy-scheduler-metadata.sh --strict

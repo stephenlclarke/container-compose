@@ -267,17 +267,26 @@ extension ComposeOrchestrator {
         return groups.ids.map(String.init) + groups.names
     }
 
-    /// Returns unsupported user and security option fields.
-    func unsupportedUserAndSecurityOptionFields(service: ComposeService) -> [ComposeRuntimeUnsupportedValue] {
-        var fields: [ComposeRuntimeUnsupportedValue] = []
-        if let securityOption = service.securityOpt?.first(where: { !$0.isEmpty }) {
-            fields.append(.init(
-                composeName: "security_opt",
-                value: securityOption,
-                reason: "security option support needs an apple/container runtime gap PR",
-            ))
+    /// Returns Docker-compatible security options backed by generic runtime
+    /// primitives. The runtime deliberately supports this narrow option rather
+    /// than accepting arbitrary security options it cannot enforce.
+    func runtimeSecurityOptionArguments(service: ComposeService) throws -> [String] {
+        let options = service.securityOpt ?? []
+        let supported: Set<String> = [
+            "no-new-privileges:true",
+            "no-new-privileges:false",
+            "no-new-privileges=true",
+            "no-new-privileges=false",
+        ]
+
+        for option in options where !option.isEmpty {
+            guard supported.contains(option) else {
+                throw ComposeError.unsupported(
+                    "service '\(service.name)' uses security_opt '\(option)'; only no-new-privileges:true|false or no-new-privileges=true|false is supported",
+                )
+            }
         }
-        return fields
+        return options.filter { !$0.isEmpty }
     }
 
     /// Returns unsupported credential access fields.

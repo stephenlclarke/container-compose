@@ -7261,6 +7261,27 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--sysctl", "net.ipv4.ip_forward=1"]))
     }
 
+    @Test("up maps no-new-privileges security_opt to runtime arguments")
+    func upMapsNoNewPrivilegesSecurityOptionToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.securityOpt = ["no-new-privileges:true"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--security-opt", "no-new-privileges:true"]))
+    }
+
     @Test("up rejects network aliases until the runtime exposes container-facing DNS")
     func upRejectsNetworkAliasesUntilRuntimeExposesContainerFacingDNS() async throws {
         let runner = RecordingRunner()
@@ -24388,6 +24409,29 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--sysctl", "net.core.somaxconn=1024"]))
     }
 
+    @Test("run maps no-new-privileges security_opt to runtime arguments")
+    func runMapsNoNewPrivilegesSecurityOptionToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.securityOpt = ["no-new-privileges=true"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            command: ["true"],
+            remove: true
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--security-opt", "no-new-privileges=true"]))
+    }
+
     @Test("run rejects invalid sysctl names before runtime commands")
     func runRejectsInvalidSysctlNamesBeforeRuntimeCommands() async throws {
         let runner = RecordingRunner()
@@ -27436,7 +27480,7 @@ private func unsupportedUserAndSecurityOptionFieldCases() -> [UnsupportedUserAnd
         UnsupportedUserAndSecurityOptionFieldCase(
             composeName: "security_opt",
             value: "label:disable",
-            reason: "security option support needs an apple/container runtime gap PR",
+            reason: "only no-new-privileges:true|false or no-new-privileges=true|false is supported",
             configure: { $0.securityOpt = ["label:disable"] }
         ),
     ]
