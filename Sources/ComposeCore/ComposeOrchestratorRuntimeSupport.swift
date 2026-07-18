@@ -272,12 +272,12 @@ extension ComposeOrchestrator {
     /// than accepting arbitrary security options it cannot enforce.
     func runtimeSecurityOptionArguments(service: ComposeService) throws -> [String] {
         let options = service.securityOpt ?? []
-        let supported: Set<String> = [
+        let supported = Set([
             "no-new-privileges:true",
             "no-new-privileges:false",
             "no-new-privileges=true",
             "no-new-privileges=false",
-        ]
+        ])
 
         for option in options where !option.isEmpty {
             guard supported.contains(option) else {
