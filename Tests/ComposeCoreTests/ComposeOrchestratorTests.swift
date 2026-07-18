@@ -1823,6 +1823,7 @@ struct ComposeOrchestratorTests {
     @Test("up accepts explicit private PID mode without a redundant runtime argument")
     func upAcceptsPrivatePIDModeWithoutRuntimeArgument() async throws {
         let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -1832,7 +1833,8 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions())
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(!command.contains("--pid"))
@@ -1841,6 +1843,7 @@ struct ComposeOrchestratorTests {
     @Test("up maps cgroup host to container cgroup namespace argument")
     func upMapsCgroupHostToContainerCgroupNamespaceArgument() async throws {
         let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -1850,7 +1853,8 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions())
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--cgroupns", "host"]))
@@ -1859,6 +1863,7 @@ struct ComposeOrchestratorTests {
     @Test("up accepts explicit private cgroup mode without redundant runtime argument")
     func upAcceptsPrivateCgroupModeWithoutRuntimeArgument() async throws {
         let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -1868,7 +1873,8 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions())
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(!command.contains("--cgroupns"))
@@ -1877,6 +1883,7 @@ struct ComposeOrchestratorTests {
     @Test("up maps IPC and UTS host to container namespace arguments")
     func upMapsIPCAndUTSHostToContainerNamespaceArguments() async throws {
         let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -1887,7 +1894,8 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions())
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--ipc", "host"]))
@@ -1897,6 +1905,7 @@ struct ComposeOrchestratorTests {
     @Test("up accepts explicit private IPC and UTS modes without redundant runtime arguments")
     func upAcceptsPrivateIPCAndUTSModesWithoutRuntimeArguments() async throws {
         let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -1907,7 +1916,8 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions())
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(!command.contains("--ipc"))
@@ -2994,6 +3004,7 @@ struct ComposeOrchestratorTests {
     @Test("create maps cgroup host to container cgroup namespace argument")
     func createMapsCgroupHostToContainerCgroupNamespaceArgument() async throws {
         let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -3003,7 +3014,8 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).create(project: project, options: ComposeCreateOptions())
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .create(project: project, options: ComposeCreateOptions())
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
@@ -3013,6 +3025,7 @@ struct ComposeOrchestratorTests {
     @Test("create maps IPC and UTS host to container namespace arguments")
     func createMapsIPCAndUTSHostToContainerNamespaceArguments() async throws {
         let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -3023,7 +3036,8 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).create(project: project, options: ComposeCreateOptions())
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .create(project: project, options: ComposeCreateOptions())
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
@@ -7943,7 +7957,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported PID mode error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses pid 'service:db'; only pid: host is supported"))
+            #expect(error == .unsupported("service 'api' uses pid 'service:db'; supported values are host and private"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
