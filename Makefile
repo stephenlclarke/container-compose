@@ -124,6 +124,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-cpu-cfs-parity \
 	docker-compose-cpu-shares-parity \
 	docker-compose-cpuset-parity \
+	docker-compose-pid-namespace-parity \
 	docker-compose-cgroup-namespace-parity \
 	docker-compose-ipc-uts-namespace-parity \
 	docker-compose-security-opt-parity \
@@ -163,7 +164,7 @@ endif
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: docker-compose-environment-parity
 .PHONY: docker-compose-format-template-actions-parity
-.PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-cgroup-namespace-parity docker-compose-ipc-uts-namespace-parity
+.PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-ipc-uts-namespace-parity
 
 all: workflow
 
@@ -1305,6 +1306,9 @@ docker-compose-cpu-shares-parity: build docker-compose-reference
 
 docker-compose-cpuset-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-cpuset.sh --strict
+
+docker-compose-pid-namespace-parity: build docker-compose-reference
+	$(PARITY_ENV) ./Tools/parity/check-compose-pid-namespace.sh --strict
 
 docker-compose-cgroup-namespace-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-cgroup-namespace.sh --strict

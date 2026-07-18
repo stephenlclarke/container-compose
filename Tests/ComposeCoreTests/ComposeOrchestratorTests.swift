@@ -1820,6 +1820,24 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.map(\.name) == ["demo_default"])
     }
 
+    @Test("up accepts explicit private PID mode without a redundant runtime argument")
+    func upAcceptsPrivatePIDModeWithoutRuntimeArgument() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.pid = "private"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(!command.contains("--pid"))
+    }
+
     @Test("up maps cgroup host to container cgroup namespace argument")
     func upMapsCgroupHostToContainerCgroupNamespaceArgument() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -25030,7 +25048,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported PID mode error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses pid 'container:legacy'; only pid: host is supported"))
+            #expect(error == .unsupported("service 'job' uses pid 'container:legacy'; supported values are host and private"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

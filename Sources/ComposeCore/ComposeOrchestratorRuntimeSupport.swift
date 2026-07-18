@@ -78,15 +78,11 @@ extension ComposeOrchestrator {
         }
     }
 
-    /// Returns the apple/container PID namespace argument for Docker-compatible Compose PID modes.
+    /// Returns the apple/container PID namespace argument for Docker-compatible
+    /// Compose PID modes. The runtime already creates a private PID namespace by
+    /// default, so only the explicit host mode needs an argument.
     func runtimePIDArgument(service: ComposeService) throws -> String? {
-        guard let pid = service.pid, !pid.isEmpty else {
-            return nil
-        }
-        guard pid == "host" else {
-            throw ComposeError.unsupported("service '\(service.name)' uses pid '\(pid)'; only pid: host is supported")
-        }
-        return "host"
+        try runtimeHostPrivateNamespaceArgument(service: service, value: service.pid, composeName: "pid")
     }
 
     /// Returns the apple/container cgroup namespace argument for Docker-compatible
