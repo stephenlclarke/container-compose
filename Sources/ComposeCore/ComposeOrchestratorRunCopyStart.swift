@@ -259,6 +259,9 @@ extension ComposeOrchestrator {
         if let cpuShares = createPlan.cpuShares {
             args.append(contentsOf: ["--cpu-shares", "\(cpuShares)"])
         }
+        if let cpuSet = service.cpuset, !cpuSet.isEmpty {
+            args.append(contentsOf: ["--cpuset-cpus", cpuSet])
+        }
         if let cpuPeriod = service.cpuPeriod, cpuPeriod != 0 {
             args.append(contentsOf: ["--cpu-period", "\(cpuPeriod)"])
         }

@@ -104,8 +104,8 @@ extension ComposeOrchestrator {
         return "host"
     }
 
-    /// Returns unsupported CPU scheduler fields beyond the supported `cpus` and
-    /// relative `cpu_shares` controls.
+    /// Returns unsupported CPU scheduler fields beyond the supported `cpus`,
+    /// `cpuset`, and relative `cpu_shares` controls.
     func unsupportedCPUResourceFields(service: ComposeService) -> [ComposeRuntimeUnsupportedValue] {
         let reason = "advanced CPU resource support needs an apple/container runtime gap PR"
         var fields: [ComposeRuntimeUnsupportedValue] = []
@@ -113,9 +113,6 @@ extension ComposeOrchestrator {
         appendUnsupportedFloatingPointField("cpu_percent", value: service.cpuPercent, reason: reason, to: &fields)
         appendUnsupportedIntegerField("cpu_rt_period", value: service.cpuRealtimePeriod, reason: reason, to: &fields)
         appendUnsupportedIntegerField("cpu_rt_runtime", value: service.cpuRealtimeRuntime, reason: reason, to: &fields)
-        if let cpuset = service.cpuset, !cpuset.isEmpty {
-            fields.append(.init(composeName: "cpuset", value: cpuset, reason: reason))
-        }
         return fields
     }
 

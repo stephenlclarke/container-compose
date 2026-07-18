@@ -2267,6 +2267,46 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--cpu-shares", "512"]))
     }
 
+    @Test("create maps cpuset to runtime arguments")
+    func createMapsCPUSetToRuntimeArguments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.cpuset = "0-1,3"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--cpuset-cpus", "0-1,3"]))
+    }
+
+    @Test("create omits an empty cpuset")
+    func createOmitsEmptyCPUSetRuntimeArgument() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.cpuset = ""
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(!command.contains("--cpuset-cpus"))
+    }
+
     @Test("create maps fractional cpus to runtime arguments")
     func createMapsFractionalCPUsToRuntimeArguments() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -27520,11 +27560,6 @@ private func unsupportedCPUResourceFieldCases() -> [UnsupportedCPUResourceFieldC
             composeName: "cpu_rt_runtime",
             value: "900000",
             configure: { $0.cpuRealtimeRuntime = 900_000 }
-        ),
-        UnsupportedCPUResourceFieldCase(
-            composeName: "cpuset",
-            value: "0-1",
-            configure: { $0.cpuset = "0-1" }
         ),
     ]
 }
