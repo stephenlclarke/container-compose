@@ -89,7 +89,8 @@ git diff --check
 
 ## Commit tracking
 
-The implementation commit is recorded in this document by the immediately
-following handoff-linkage commit after this slice is validated. The linked
-commit carries the exact `container-compose` code and tests above; no Apple
-fork commit is required for this change.
+- `container-compose` code and tests:
+  `a591e1bc257ee83b68b7da25400365cd5a931a4e`
+  (`fix(phase1): align resource and help parity`).
+- No Apple fork commit is required: the code uses only the existing generic
+  runtime primitive documented above.
