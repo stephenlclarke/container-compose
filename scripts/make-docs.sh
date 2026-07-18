@@ -53,11 +53,11 @@ cat > "$output_path/index.html" <<'EOF'
 <html lang="en-US">
   <head>
     <meta charset="utf-8">
-    <title>Redirecting...</title>
-    <meta http-equiv="refresh" content="0; url=./documentation/">
+    <title>Container Documentation</title>
+    <meta http-equiv="refresh" content="0; url=./documentation/composecore/containerprojects/">
   </head>
   <body>
-    <p>If you are not redirected automatically, <a href="./documentation/">click here</a>.</p>
+    <p>If you are not redirected automatically, <a href="./documentation/composecore/containerprojects/">open the Container documentation portal</a>.</p>
   </body>
 </html>
 EOF

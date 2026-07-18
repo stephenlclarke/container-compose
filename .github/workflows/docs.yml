@@ -17,6 +17,8 @@
 name: Documentation
 
 on:
+  schedule:
+    - cron: '17 3 * * *'
   push:
     branches: [main]
     paths:
@@ -52,13 +54,40 @@ jobs:
   build:
     name: Build DocC Site
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      - name: Checkout container
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/container
+          ref: main
+          path: upstreams/container
+
+      - name: Checkout containerization
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/containerization
+          ref: main
+          path: upstreams/containerization
+
+      - name: Checkout container-k8s
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/container-k8s
+          ref: main
+          path: upstreams/container-k8s
+
       - name: Build static API documentation
-        run: make docs
+        run: |
+          make docs
+          scripts/add-upstream-docc-sites.sh \
+            _site \
+            "$GITHUB_WORKSPACE/upstreams/container" \
+            "$GITHUB_WORKSPACE/upstreams/containerization" \
+            "$GITHUB_WORKSPACE/upstreams/container-k8s"
 
       # upload-pages-artifact requires GNU tar, which is unavailable on the
       # macOS runner used to build this Swift package. Transfer the DocC

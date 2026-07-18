@@ -99,7 +99,8 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 
 ## Documentation
 
-- [DocC API reference](https://stephenlclarke.github.io/container-compose/documentation/): browse the JavaScript API reference generated from the Swift source and published automatically from `main`.
+- [Container documentation portal](https://stephenlclarke.github.io/container-compose/): browse the unified DocC portal for `container-compose`, `container`, `containerization`, and `container-k8s`, plus the builder shim's project documentation.
+- [container-compose API reference](https://stephenlclarke.github.io/container-compose/documentation/composecore/): browse the Compose plugin API reference generated from the Swift source and published automatically from `main`.
 - [INSTALL.md](INSTALL.md): install, upgrade, verify, uninstall, recover bad installs, and diagnose runtime issues.
 - [BUILD.md](BUILD.md): build, test, package, validate parity, and promote the current build to a stable release, including the weekly minor-release scheduler and manual major-release dispatch.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
