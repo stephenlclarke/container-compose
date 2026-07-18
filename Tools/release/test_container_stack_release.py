@@ -291,6 +291,15 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('curl --location --silent --show-error --connect-timeout 3 --max-time 5', workflow)
         self.assertIn('SonarQube was unavailable during promotion', workflow)
         self.assertIn('python3 Tools/release/release-notes.py "${release_notes_args[@]}"', workflow)
+        self.assertIn(
+            "--component-repo container-builder-shim=../container-builder-shim",
+            workflow,
+        )
+        self.assertIn(
+            "--component-repo containerization=../containerization",
+            workflow,
+        )
+        self.assertIn("--component-repo container=../container", workflow)
         self.assertNotIn("quality_snapshot_args", workflow)
 
     def test_current_package_skips_only_when_the_pointer_already_matches_main(self) -> None:

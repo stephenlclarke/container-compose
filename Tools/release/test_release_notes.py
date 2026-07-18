@@ -778,15 +778,86 @@ class ReleaseNotesTests(unittest.TestCase):
                 "apple/container#1926, apple/container#1916.",
                 notes,
             )
-            self.assertIn("## Component Changes", notes)
+            self.assertIn("## Pinned Upstream Changes", notes)
             self.assertIn(
-                f"- `container` `{previous_component_ref[:12]}` -> `{current_component_ref[:12]}`",
+                "Compared every pinned upstream with stable release `0.6.0`.",
+                notes,
+            )
+            self.assertIn(
+                f"- `container` (`stephenlclarke/container`): "
+                f"[`{previous_component_ref[:12]}` -> "
+                f"`{current_component_ref[:12]}`]",
+                notes,
+            )
+            self.assertIn(
+                "- `container-builder-shim` "
+                "(`stephenlclarke/container-builder-shim`): unchanged at "
+                f"`{'b' * 12}`.",
+                notes,
+            )
+            self.assertIn(
+                "- `containerization` (`stephenlclarke/containerization`): "
+                f"unchanged at `{'c' * 12}`.",
                 notes,
             )
             self.assertIn(
                 "fix(runtime): clean up attached exec on disconnect",
                 notes,
             )
+
+    def test_changed_pinned_upstream_requires_resolvable_history(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            component = root / "container"
+            compose = root / "compose"
+
+            self.init_repo(component)
+            previous_component_ref = self.git(component, "rev-parse", "HEAD")
+            self.commit(component, "feat(runtime): expose pinned behavior")
+            current_component_ref = self.git(component, "rev-parse", "HEAD")
+
+            self.init_repo(compose)
+            self.write_stack_refs(compose, previous_component_ref)
+            self.git(compose, "add", "Tools/release/stack-refs.json")
+            self.git(
+                compose,
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-m",
+                "chore(release): record stack refs",
+            )
+            self.git(compose, "tag", "--no-sign", "0.6.0")
+            self.write_stack_refs(compose, current_component_ref)
+            self.git(compose, "add", "Tools/release/stack-refs.json")
+            self.git(
+                compose,
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-m",
+                "chore(release): prepare 0.6.1",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "component repository checkout is required for changed pinned "
+                "upstream: container",
+            ):
+                module.render_release_notes(
+                    repo=compose,
+                    release_tag="0.6.1",
+                    release_label="stable release",
+                    compose_version="0.6.1",
+                    asset="container-compose-plugin-release-arm64.tar.gz",
+                    asset_sha="abc123",
+                    head_ref="HEAD",
+                )
 
     def test_first_release_lists_current_commit(self) -> None:
         module = load_module()
@@ -825,7 +896,15 @@ class ReleaseNotesTests(unittest.TestCase):
                         "container": {
                             "repository": "stephenlclarke/container",
                             "ref": container_ref,
-                        }
+                        },
+                        "container-builder-shim": {
+                            "repository": "stephenlclarke/container-builder-shim",
+                            "ref": "b" * 40,
+                        },
+                        "containerization": {
+                            "repository": "stephenlclarke/containerization",
+                            "ref": "c" * 40,
+                        },
                     },
                 },
                 indent=2,

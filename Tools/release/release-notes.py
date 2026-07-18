@@ -76,6 +76,14 @@ class ComponentChange:
     commits: tuple[CommitSummary, ...]
 
 
+@dataclass(frozen=True)
+class ComponentPinComparison:
+    name: str
+    repository: str
+    previous_ref: str | None
+    current_ref: str | None
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", default=".")
@@ -613,37 +621,79 @@ def has_commit(repo: Path, ref: str) -> bool:
     return commit_for_ref(repo, ref) is not None
 
 
+def component_pin_comparisons(
+    *,
+    repo: Path,
+    selected_range: ReleaseRange,
+) -> list[ComponentPinComparison]:
+    current_refs = stack_refs_for_ref(repo, selected_range.head_ref)
+    previous_refs = stack_refs_for_ref(repo, selected_range.base_ref)
+    comparisons: list[ComponentPinComparison] = []
+
+    for name in sorted(current_refs.keys() | previous_refs.keys()):
+        current = current_refs.get(name)
+        previous = previous_refs.get(name)
+        repository = (current or previous or {}).get("repository")
+        if repository is None:
+            continue
+        comparisons.append(
+            ComponentPinComparison(
+                name=name,
+                repository=repository,
+                previous_ref=previous.get("ref") if previous is not None else None,
+                current_ref=current.get("ref") if current is not None else None,
+            )
+        )
+
+    return comparisons
+
+
 def component_changes(
     *,
     repo: Path,
     selected_range: ReleaseRange,
     component_repos: dict[str, Path],
 ) -> list[ComponentChange]:
-    current_refs = stack_refs_for_ref(repo, selected_range.head_ref)
-    previous_refs = stack_refs_for_ref(repo, selected_range.base_ref)
     changes: list[ComponentChange] = []
 
-    for name, current in current_refs.items():
-        current_ref = current["ref"]
-        previous_ref = previous_refs.get(name, {}).get("ref")
-        if previous_ref is None or previous_ref == current_ref:
+    for comparison in component_pin_comparisons(
+        repo=repo,
+        selected_range=selected_range,
+    ):
+        previous_ref = comparison.previous_ref
+        current_ref = comparison.current_ref
+        if (
+            previous_ref is None
+            or current_ref is None
+            or previous_ref == current_ref
+        ):
             continue
 
-        commits: tuple[CommitSummary, ...] = ()
-        component_repo = component_repos.get(name)
-        if (
-            component_repo is not None
-            and has_commit(component_repo, previous_ref)
-            and has_commit(component_repo, current_ref)
-        ):
-            commits = tuple(
-                commits_for_revision(component_repo, f"{previous_ref}..{current_ref}")
+        component_repo = component_repos.get(comparison.name)
+        if component_repo is None:
+            raise ValueError(
+                "component repository checkout is required for changed pinned "
+                f"upstream: {comparison.name}"
             )
+        missing_refs = [
+            ref
+            for ref in (previous_ref, current_ref)
+            if not has_commit(component_repo, ref)
+        ]
+        if missing_refs:
+            raise ValueError(
+                f"component repository checkout for {comparison.name} is missing "
+                f"pinned revision(s): {', '.join(missing_refs)}"
+            )
+
+        commits = tuple(
+            commits_for_revision(component_repo, f"{previous_ref}..{current_ref}")
+        )
 
         changes.append(
             ComponentChange(
-                name=name,
-                repository=current["repository"],
+                name=comparison.name,
+                repository=comparison.repository,
                 previous_ref=previous_ref,
                 current_ref=current_ref,
                 commits=commits,
@@ -776,11 +826,52 @@ def render_release_notes(
     else:
         lines.append("- No source commits changed since the previous package for this lane.")
 
-    if component_deltas:
-        lines.extend(["", "## Component Changes", ""])
-        for change in component_deltas:
+    component_comparisons = component_pin_comparisons(
+        repo=repo,
+        selected_range=selected_range,
+    )
+    if component_comparisons:
+        lines.extend(["", "## Pinned Upstream Changes", ""])
+        if selected_range.base_label is None:
+            lines.append("- No previous stable release is available for comparison.")
+        else:
             lines.append(
-                f"- `{change.name}` `{short_ref(change.previous_ref)}` -> `{short_ref(change.current_ref)}`"
+                "- Compared every pinned upstream with stable release "
+                f"`{selected_range.base_label}`."
+            )
+
+        changes_by_name = {change.name: change for change in component_deltas}
+        for comparison in component_comparisons:
+            previous_ref = comparison.previous_ref
+            current_ref = comparison.current_ref
+            if previous_ref is None and current_ref is not None:
+                lines.append(
+                    f"- `{comparison.name}` (`{comparison.repository}`): newly pinned "
+                    f"at `{short_ref(current_ref)}`."
+                )
+                continue
+            if current_ref is None and previous_ref is not None:
+                lines.append(
+                    f"- `{comparison.name}` (`{comparison.repository}`): pin removed "
+                    f"from `{short_ref(previous_ref)}`."
+                )
+                continue
+            if previous_ref == current_ref and current_ref is not None:
+                lines.append(
+                    f"- `{comparison.name}` (`{comparison.repository}`): unchanged at "
+                    f"`{short_ref(current_ref)}`."
+                )
+                continue
+
+            change = changes_by_name[comparison.name]
+            compare_url = (
+                f"https://github.com/{change.repository}/compare/"
+                f"{change.previous_ref}...{change.current_ref}"
+            )
+            lines.append(
+                f"- `{change.name}` (`{change.repository}`): "
+                f"[`{short_ref(change.previous_ref)}` -> "
+                f"`{short_ref(change.current_ref)}`]({compare_url})"
             )
             if change.commits:
                 lines.extend(
@@ -788,7 +879,7 @@ def render_release_notes(
                     for commit in change.commits
                 )
             else:
-                lines.append("  - Commit details unavailable in this workflow checkout.")
+                lines.append("  - No commits are reachable between the pinned revisions.")
 
     lines.extend(
         [
