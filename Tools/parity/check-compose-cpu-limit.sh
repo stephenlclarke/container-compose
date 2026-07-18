@@ -31,11 +31,11 @@
 #   DOCKER_COMPOSE     Docker Compose command to compare with. Defaults to
 #                      "docker compose" when available, otherwise docker-compose.
 #
-# This script verifies that Docker Compose V2 accepts a fractional `cpus`
-# limit, then checks that container-compose carries the same value into the
-# generic runtime `--cpus` argument. The guest-runtime integration test in the
-# Container fork verifies that the argument produces the expected cgroup v2
-# CPU quota on macOS.
+# This script verifies that Docker Compose V2 accepts fractional and zero
+# (unlimited) `cpus` values. V2 normalizes zero to an omitted CPU field; this
+# script checks that container-compose emits the same configuration and does
+# not add a runtime `--cpus` limit for that service. The Container fork also
+# supports an explicit generic `--cpus 0` request through cgroup v2 `cpu.max`.
 
 set -euo pipefail
 
@@ -112,6 +112,9 @@ services:
   api:
     image: alpine:3.20
     cpus: 0.25
+  unlimited:
+    image: alpine:3.20
+    cpus: 0
 YAML
 }
 
@@ -130,6 +133,9 @@ import sys
 service = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).get("services", {}).get("api", {})
 if service.get("cpus") != 0.25:
     raise SystemExit(f"Docker Compose cpus = {service.get('cpus')!r}, want 0.25")
+unlimited = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).get("services", {}).get("unlimited", {})
+if "cpus" in unlimited:
+    raise SystemExit(f"Docker Compose retained unlimited cpus = {unlimited.get('cpus')!r}, want omission")
 PY
 }
 
@@ -142,13 +148,17 @@ import sys
 service = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).get("services", {}).get("api", {})
 if service.get("cpus") != "0.25":
     raise SystemExit(f"container-compose cpus = {service.get('cpus')!r}, want '0.25'")
+unlimited = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).get("services", {}).get("unlimited", {})
+if "cpus" in unlimited:
+    raise SystemExit(f"container-compose retained unlimited cpus = {unlimited.get('cpus')!r}, want omission")
 PY
 }
 
 dry_run_projects_cpu_limit() {
     local output_path="$1"
-    grep -F -- "--cpus 0.25" "$output_path" >/dev/null \
-        || grep -F -- "--cpus '0.25'" "$output_path" >/dev/null
+    (grep -F -- "--cpus 0.25" "$output_path" >/dev/null \
+        || grep -F -- "--cpus '0.25'" "$output_path" >/dev/null) \
+        && ! grep -F -- "container create --name $PROJECT_NAME-unlimited-1" "$output_path" | grep -F -- "--cpus" >/dev/null
 }
 
 expect_docker_behavior() {
@@ -157,9 +167,10 @@ expect_docker_behavior() {
     "${DOCKER_COMPOSE_COMMAND[@]}" --project-directory "$FIXTURE_DIR" -f "$FIXTURE_DIR/compose.yml" config --format json >"$config_output"
     assert_docker_config_preserves_cpu_limit "$config_output"
     if ((DOCKER_DAEMON_AVAILABLE == 0)); then return; fi
-    "${DOCKER_COMPOSE_COMMAND[@]}" --ansi never --dry-run --project-directory "$FIXTURE_DIR" -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up --no-start api >"$dry_run_output" 2>&1
-    if ! grep -F "Container $PROJECT_NAME-api-1 Created" "$dry_run_output" >/dev/null; then
-        error 'Docker Compose did not accept the fractional CPU limit in local dry-run up'
+    "${DOCKER_COMPOSE_COMMAND[@]}" --ansi never --dry-run --project-directory "$FIXTURE_DIR" -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up --no-start >"$dry_run_output" 2>&1
+    if ! grep -F "Container $PROJECT_NAME-api-1 Created" "$dry_run_output" >/dev/null \
+        || ! grep -F "Container $PROJECT_NAME-unlimited-1 Created" "$dry_run_output" >/dev/null; then
+        error 'Docker Compose did not accept the fractional and unlimited CPU limits in local dry-run up'
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
@@ -170,14 +181,15 @@ expect_container_behavior() {
     local dry_run_output="$FIXTURE_DIR/container-compose-dry-run.txt"
     "$CONTAINER_COMPOSE" --ansi never --project-directory "$FIXTURE_DIR" -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" config --format json >"$config_output"
     assert_container_config_preserves_cpu_limit "$config_output"
-    "$CONTAINER_COMPOSE" --ansi never --dry-run --project-directory "$FIXTURE_DIR" -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up --no-start api >"$dry_run_output" 2>&1
-    if ! grep -F "container create --name $PROJECT_NAME-api-1" "$dry_run_output" >/dev/null; then
-        error 'container-compose did not accept the fractional CPU limit in local dry-run up'
+    "$CONTAINER_COMPOSE" --ansi never --dry-run --project-directory "$FIXTURE_DIR" -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up --no-start >"$dry_run_output" 2>&1
+    if ! grep -F "container create --name $PROJECT_NAME-api-1" "$dry_run_output" >/dev/null \
+        || ! grep -F "container create --name $PROJECT_NAME-unlimited-1" "$dry_run_output" >/dev/null; then
+        error 'container-compose did not accept the fractional and unlimited CPU limits in local dry-run up'
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
     if ! dry_run_projects_cpu_limit "$dry_run_output"; then
-        error 'container-compose did not project the fractional CPU limit to --cpus in local dry-run up'
+        error 'container-compose did not project the fractional and unlimited CPU limits to --cpus in local dry-run up'
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
@@ -192,7 +204,7 @@ main() {
     trap cleanup EXIT
     expect_docker_behavior
     expect_container_behavior
-    info 'Docker Compose config and container-compose fractional CPU-limit parity passed.'
+    info 'Docker Compose config and container-compose fractional/unlimited CPU-limit parity passed.'
 }
 
 main "$@"

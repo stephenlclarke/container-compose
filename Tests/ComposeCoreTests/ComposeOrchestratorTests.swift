@@ -2288,6 +2288,27 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--cpus", "0.25"]))
     }
 
+    @Test("create maps zero cpus to an unlimited runtime argument")
+    func createMapsUnlimitedCPUsToRuntimeArguments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.cpus = "0"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--cpus", "0"]))
+    }
+
     @Test("create maps cpu_period and cpu_quota to runtime arguments")
     func createMapsCPUQuotaAndPeriodToRuntimeArguments() async throws {
         let runner = RecordingRunner(responses: [.success])
