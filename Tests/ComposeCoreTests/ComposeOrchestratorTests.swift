@@ -1820,6 +1820,42 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.map(\.name) == ["demo_default"])
     }
 
+    @Test("up maps cgroup host to container cgroup namespace argument")
+    func upMapsCgroupHostToContainerCgroupNamespaceArgument() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.cgroup = "host"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--cgroupns", "host"]))
+    }
+
+    @Test("up accepts explicit private cgroup mode without redundant runtime argument")
+    func upAcceptsPrivateCgroupModeWithoutRuntimeArgument() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.cgroup = "private"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(!command.contains("--cgroupns"))
+    }
+
     @Test("up starts present optional dependencies in dependency order")
     func upStartsPresentOptionalDependenciesInDependencyOrder() async throws {
         let runner = RecordingRunner(responses: [
@@ -2895,6 +2931,25 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--network", "demo_default"]))
         #expect(command.containsSequence(["--pid", "host"]))
         #expect(await resourceManager.requests.map(\.name) == ["demo_default"])
+    }
+
+    @Test("create maps cgroup host to container cgroup namespace argument")
+    func createMapsCgroupHostToContainerCgroupNamespaceArgument() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.cgroup = "host"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--cgroupns", "host"]))
     }
 
     @Test("create skips missing optional dependencies")
@@ -24835,6 +24890,26 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("run rejects an unsupported cgroup namespace mode before creating resources")
+    func runRejectsUnsupportedCgroupNamespaceModeBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.cgroup = "container:db"
+                },
+            ]
+        )
+
+        await #expect(throws: ComposeError.unsupported(
+            "service 'job' uses cgroup 'container:db'; supported values are host and private"
+        )) {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+        }
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run rejects unsupported pid mode before creating resources")
     func runRejectsUnsupportedPIDModeBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -27490,12 +27565,6 @@ private struct UnsupportedRuntimeStringFieldCase: Sendable {
 
 private func unsupportedRuntimeStringFieldCases() -> [UnsupportedRuntimeStringFieldCase] {
     [
-        UnsupportedRuntimeStringFieldCase(
-            composeName: "cgroup",
-            value: "host",
-            reason: "cgroup namespace support needs an apple/container runtime gap PR",
-            configure: { $0.cgroup = "host" }
-        ),
         UnsupportedRuntimeStringFieldCase(
             composeName: "cgroup_parent",
             value: "m-executor-abcd",

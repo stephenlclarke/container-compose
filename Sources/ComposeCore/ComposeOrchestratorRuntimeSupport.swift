@@ -52,11 +52,6 @@ extension ComposeOrchestrator {
     func unsupportedRuntimeStringFields(service: ComposeService) -> [ComposeRuntimeUnsupportedValue] {
         [
             ComposeRuntimeUnsupportedOptionalValue(
-                composeName: "cgroup",
-                value: service.cgroup,
-                reason: "cgroup namespace support needs an apple/container runtime gap PR",
-            ),
-            ComposeRuntimeUnsupportedOptionalValue(
                 composeName: "cgroup_parent",
                 value: service.cgroupParent,
                 reason: "cgroup parent support needs an apple/container runtime gap PR",
@@ -102,6 +97,25 @@ extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses pid '\(pid)'; only pid: host is supported")
         }
         return "host"
+    }
+
+    /// Returns the apple/container cgroup namespace argument for Docker-compatible
+    /// Compose cgroup modes. The runtime already creates a private cgroup namespace
+    /// by default, so only the explicit host mode needs an argument.
+    func runtimeCgroupNamespaceArgument(service: ComposeService) throws -> String? {
+        guard let cgroup = service.cgroup, !cgroup.isEmpty else {
+            return nil
+        }
+        switch cgroup {
+        case "host":
+            return "host"
+        case "private":
+            return nil
+        default:
+            throw ComposeError.unsupported(
+                "service '\(service.name)' uses cgroup '\(cgroup)'; supported values are host and private"
+            )
+        }
     }
 
     /// Returns unsupported CPU scheduler fields beyond the supported `cpus`,

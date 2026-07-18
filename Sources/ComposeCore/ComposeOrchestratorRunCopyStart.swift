@@ -178,6 +178,9 @@ extension ComposeOrchestrator {
         if let pid = try runtimePIDArgument(service: service) {
             args.append(contentsOf: ["--pid", pid])
         }
+        if let cgroupNamespace = try runtimeCgroupNamespaceArgument(service: service) {
+            args.append(contentsOf: ["--cgroupns", cgroupNamespace])
+        }
         if let platform = service.platform, !platform.isEmpty {
             args.append(contentsOf: ["--platform", platform])
         }
