@@ -1427,13 +1427,13 @@ volumes:
 	}
 }
 
-func TestLoadProjectNormalizesUnlimitedMemorySwapLimit(t *testing.T) {
+func TestLoadProjectNormalizesBytePreciseMemoryAndUnlimitedMemorySwapLimit(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "compose.yaml"), `
 services:
   api:
     image: alpine:3.20
-    mem_limit: 64m
+    mem_limit: 67108865b
     memswap_limit: -1
 `)
 
@@ -1442,7 +1442,7 @@ services:
 		t.Fatalf("loadProject returned error: %v", err)
 	}
 
-	if got, want := project.Services["api"].MemLimit, "67108864"; got != want {
+	if got, want := project.Services["api"].MemLimit, "67108865"; got != want {
 		t.Fatalf("api.MemLimit = %q, want %q", got, want)
 	}
 	if got, want := project.Services["api"].MemSwapLimit, "-1"; got != want {

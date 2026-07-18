@@ -122,6 +122,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-deploy-resource-reservations-parity \
 	docker-compose-security-opt-parity \
 	docker-compose-deploy-scheduler-metadata-parity \
+	docker-compose-memory-byte-precision-parity \
 	docker-compose-memory-swap-limit-parity \
 	docker-compose-pids-limit-parity \
 	docker-compose-device-cgroup-rules-parity \
@@ -150,7 +151,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci ci-fast release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci ci-fast release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: docker-compose-environment-parity
@@ -1290,6 +1291,9 @@ docker-compose-security-opt-parity: build docker-compose-reference
 
 docker-compose-deploy-scheduler-metadata-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-deploy-scheduler-metadata.sh --strict
+
+docker-compose-memory-byte-precision-parity: build docker-compose-reference
+	$(PARITY_ENV) ./Tools/parity/check-compose-memory-byte-precision.sh --strict
 
 docker-compose-memory-swap-limit-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-memory-swap-limit.sh --strict
