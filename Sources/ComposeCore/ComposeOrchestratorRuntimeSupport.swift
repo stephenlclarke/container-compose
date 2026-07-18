@@ -57,11 +57,6 @@ extension ComposeOrchestrator {
                 reason: "cgroup parent support needs an apple/container runtime gap PR",
             ),
             ComposeRuntimeUnsupportedOptionalValue(
-                composeName: "ipc",
-                value: service.ipc,
-                reason: "IPC namespace support needs an apple/container runtime gap PR",
-            ),
-            ComposeRuntimeUnsupportedOptionalValue(
                 composeName: "isolation",
                 value: service.isolation,
                 reason: "isolation support needs an apple/container runtime gap PR",
@@ -70,11 +65,6 @@ extension ComposeOrchestrator {
                 composeName: "userns_mode",
                 value: service.usernsMode,
                 reason: "user namespace support needs an apple/container runtime gap PR",
-            ),
-            ComposeRuntimeUnsupportedOptionalValue(
-                composeName: "uts",
-                value: service.uts,
-                reason: "UTS namespace support needs an apple/container runtime gap PR",
             ),
         ].compactMap { candidate in
             guard let value = candidate.value, !value.isEmpty else {
@@ -103,17 +93,40 @@ extension ComposeOrchestrator {
     /// Compose cgroup modes. The runtime already creates a private cgroup namespace
     /// by default, so only the explicit host mode needs an argument.
     func runtimeCgroupNamespaceArgument(service: ComposeService) throws -> String? {
-        guard let cgroup = service.cgroup, !cgroup.isEmpty else {
+        try runtimeHostPrivateNamespaceArgument(service: service, value: service.cgroup, composeName: "cgroup")
+    }
+
+    /// Returns the apple/container IPC namespace argument for Docker-compatible
+    /// Compose IPC modes. The runtime already creates a private namespace by
+    /// default, so only the explicit host mode needs an argument. Namespace
+    /// sharing (`shareable` and `service:NAME`) remains unsupported.
+    func runtimeIPCNamespaceArgument(service: ComposeService) throws -> String? {
+        try runtimeHostPrivateNamespaceArgument(service: service, value: service.ipc, composeName: "ipc")
+    }
+
+    /// Returns the apple/container UTS namespace argument for Docker-compatible
+    /// Compose UTS modes. The runtime already creates a private namespace by
+    /// default, so only the explicit host mode needs an argument.
+    func runtimeUTSNamespaceArgument(service: ComposeService) throws -> String? {
+        try runtimeHostPrivateNamespaceArgument(service: service, value: service.uts, composeName: "uts")
+    }
+
+    private func runtimeHostPrivateNamespaceArgument(
+        service: ComposeService,
+        value: String?,
+        composeName: String,
+    ) throws -> String? {
+        guard let value, !value.isEmpty else {
             return nil
         }
-        switch cgroup {
+        switch value {
         case "host":
             return "host"
         case "private":
             return nil
         default:
             throw ComposeError.unsupported(
-                "service '\(service.name)' uses cgroup '\(cgroup)'; supported values are host and private"
+                "service '\(service.name)' uses \(composeName) '\(value)'; supported values are host and private"
             )
         }
     }

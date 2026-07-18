@@ -74,6 +74,8 @@ extension ComposeOrchestrator {
     func validateRuntimeResourceSupport(service: ComposeService) throws {
         _ = try runtimePIDArgument(service: service)
         _ = try runtimeCgroupNamespaceArgument(service: service)
+        _ = try runtimeIPCNamespaceArgument(service: service)
+        _ = try runtimeUTSNamespaceArgument(service: service)
         if let gap = unsupportedRuntimeStringFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }

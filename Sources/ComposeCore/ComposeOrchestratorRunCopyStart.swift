@@ -181,6 +181,12 @@ extension ComposeOrchestrator {
         if let cgroupNamespace = try runtimeCgroupNamespaceArgument(service: service) {
             args.append(contentsOf: ["--cgroupns", cgroupNamespace])
         }
+        if let ipcNamespace = try runtimeIPCNamespaceArgument(service: service) {
+            args.append(contentsOf: ["--ipc", ipcNamespace])
+        }
+        if let utsNamespace = try runtimeUTSNamespaceArgument(service: service) {
+            args.append(contentsOf: ["--uts", utsNamespace])
+        }
         if let platform = service.platform, !platform.isEmpty {
             args.append(contentsOf: ["--platform", platform])
         }

@@ -1856,6 +1856,46 @@ struct ComposeOrchestratorTests {
         #expect(!command.contains("--cgroupns"))
     }
 
+    @Test("up maps IPC and UTS host to container namespace arguments")
+    func upMapsIPCAndUTSHostToContainerNamespaceArguments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.ipc = "host"
+                    $0.uts = "host"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--ipc", "host"]))
+        #expect(command.containsSequence(["--uts", "host"]))
+    }
+
+    @Test("up accepts explicit private IPC and UTS modes without redundant runtime arguments")
+    func upAcceptsPrivateIPCAndUTSModesWithoutRuntimeArguments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.ipc = "private"
+                    $0.uts = "private"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(!command.contains("--ipc"))
+        #expect(!command.contains("--uts"))
+    }
+
     @Test("up starts present optional dependencies in dependency order")
     func upStartsPresentOptionalDependenciesInDependencyOrder() async throws {
         let runner = RecordingRunner(responses: [
@@ -2950,6 +2990,27 @@ struct ComposeOrchestratorTests {
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(command.containsSequence(["--cgroupns", "host"]))
+    }
+
+    @Test("create maps IPC and UTS host to container namespace arguments")
+    func createMapsIPCAndUTSHostToContainerNamespaceArguments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.ipc = "host"
+                    $0.uts = "host"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--ipc", "host"]))
+        #expect(command.containsSequence(["--uts", "host"]))
     }
 
     @Test("create skips missing optional dependencies")
@@ -24910,6 +24971,46 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("run rejects IPC namespace sharing modes before creating resources")
+    func runRejectsIPCNamespaceSharingModesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.ipc = "service:db"
+                },
+            ]
+        )
+
+        await #expect(throws: ComposeError.unsupported(
+            "service 'job' uses ipc 'service:db'; supported values are host and private"
+        )) {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+        }
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects unsupported UTS namespace modes before creating resources")
+    func runRejectsUnsupportedUTSNamespaceModesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.uts = "container:db"
+                },
+            ]
+        )
+
+        await #expect(throws: ComposeError.unsupported(
+            "service 'job' uses uts 'container:db'; supported values are host and private"
+        )) {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+        }
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run rejects unsupported pid mode before creating resources")
     func runRejectsUnsupportedPIDModeBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -27572,12 +27673,6 @@ private func unsupportedRuntimeStringFieldCases() -> [UnsupportedRuntimeStringFi
             configure: { $0.cgroupParent = "m-executor-abcd" }
         ),
         UnsupportedRuntimeStringFieldCase(
-            composeName: "ipc",
-            value: "host",
-            reason: "IPC namespace support needs an apple/container runtime gap PR",
-            configure: { $0.ipc = "host" }
-        ),
-        UnsupportedRuntimeStringFieldCase(
             composeName: "isolation",
             value: "default",
             reason: "isolation support needs an apple/container runtime gap PR",
@@ -27588,12 +27683,6 @@ private func unsupportedRuntimeStringFieldCases() -> [UnsupportedRuntimeStringFi
             value: "host",
             reason: "user namespace support needs an apple/container runtime gap PR",
             configure: { $0.usernsMode = "host" }
-        ),
-        UnsupportedRuntimeStringFieldCase(
-            composeName: "uts",
-            value: "host",
-            reason: "UTS namespace support needs an apple/container runtime gap PR",
-            configure: { $0.uts = "host" }
         ),
     ]
 }
