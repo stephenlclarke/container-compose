@@ -31,7 +31,7 @@ extension ComposeOrchestrator {
         _ message: String,
         quiet: Bool,
         emitsExternalOutput: Bool = false,
-        operation: () async throws -> T,
+        operation: () async throws -> T
     ) async throws -> T {
         if quiet || options.dryRun {
             return try await operation()
@@ -48,7 +48,7 @@ extension ComposeOrchestrator {
         service: ComposeService,
         options run: RunArgumentOptions = RunArgumentOptions(),
         externalVolumeMounts: ExternalVolumeMounts = [:],
-        imageHealthCheckCache: ComposeImageHealthCheckCache? = nil,
+        imageHealthCheckCache: ComposeImageHealthCheckCache? = nil
     ) async throws -> [String] {
         var args = [run.command]
         let runtimeName: String = if let containerNameOverride = run.containerNameOverride {
@@ -67,11 +67,11 @@ extension ComposeOrchestrator {
                 oneOff: run.oneOff,
                 autoRemove: run.remove,
                 includeRestartPolicy: !run.oneOff,
-                resolveHealthCheck: !options.dryRun,
+                resolveHealthCheck: !options.dryRun
             ),
             externalVolumeMounts: externalVolumeMounts,
             labelOverrides: run.labelOverrides,
-            imageHealthCheckCache: imageHealthCheckCache,
+            imageHealthCheckCache: imageHealthCheckCache
         ))
         args.append(contentsOf: ["--name", runtimeName])
         if run.detach {
@@ -86,7 +86,7 @@ extension ComposeOrchestrator {
             service: service,
             oneOff: run.oneOff,
             externalVolumeMounts: externalVolumeMounts,
-            materializedConfigSecretRoot: options.materializedConfigSecretDirectory,
+            materializedConfigSecretRoot: options.materializedConfigSecretDirectory
         ) {
             args.append(contentsOf: ["--label", label])
         }
@@ -95,7 +95,7 @@ extension ComposeOrchestrator {
         let effectiveAnnotations = try effectiveServiceAnnotations(
             service: service,
             conflictingLabelKeys: Set(effectiveLabels.keys),
-            conflictingOverrideKeys: overriddenLabelKeys,
+            conflictingOverrideKeys: overriddenLabelKeys
         )
         for (key, value) in effectiveLabels.sorted(by: { $0.key < $1.key }) where !overriddenLabelKeys.contains(key) {
             args.append(contentsOf: ["--label", "\(key)=\(value)"])
@@ -113,7 +113,7 @@ extension ComposeOrchestrator {
         try await args.append(contentsOf: runtimeHealthCheckArguments(
             project: project,
             service: service,
-            cache: imageHealthCheckCache,
+            cache: imageHealthCheckCache
         ))
         if !run.oneOff, let restartPolicy = try runtimeRestartPolicyArguments(service: service) {
             args.append(contentsOf: restartPolicy.arguments)
@@ -132,7 +132,7 @@ extension ComposeOrchestrator {
             ports: run.publishedPorts ?? service.ports ?? [],
             serviceName: service.name,
             replicaIndex: run.containerIndex,
-            replicaCount: run.replicaCount,
+            replicaCount: run.replicaCount
         )
         for port in publishedPorts {
             args.append(contentsOf: ["--publish", port])
@@ -141,7 +141,7 @@ extension ComposeOrchestrator {
             project: project,
             service: service,
             containerIndex: run.containerIndex,
-            replicaCount: run.replicaCount,
+            replicaCount: run.replicaCount
         )
         if !options.dryRun {
             try await materializeExternalConfigSecrets(project: project, service: service)
@@ -151,12 +151,12 @@ extension ComposeOrchestrator {
             service: service,
             externalVolumeMounts: externalVolumeMounts,
             materializedConfigSecretRoot: options.materializedConfigSecretDirectory,
-            materializeConfigSecrets: !options.dryRun,
+            materializeConfigSecrets: !options.dryRun
         )
         let composeDeclaredMounts = try effectiveServiceVolumes(
             project: project,
             service: service,
-            materializedConfigSecretRoot: options.materializedConfigSecretDirectory,
+            materializedConfigSecretRoot: options.materializedConfigSecretDirectory
         )
         try prepareBindMountSources(project: project, service: service, mounts: composeDeclaredMounts)
         for mount in mounts {
@@ -220,6 +220,12 @@ extension ComposeOrchestrator {
         for securityOption in try runtimeSecurityOptionArguments(service: service) {
             args.append(contentsOf: ["--security-opt", securityOption])
         }
+        if let stopSignal = service.stopSignal, !stopSignal.isEmpty {
+            args.append(contentsOf: ["--stop-signal", stopSignal])
+        }
+        if let stopTimeout = service.stopGracePeriodSeconds {
+            args.append(contentsOf: ["--stop-timeout", "\(stopTimeout)"])
+        }
         for dns in service.dns ?? [] {
             args.append(contentsOf: ["--dns", dns])
         }
@@ -252,6 +258,12 @@ extension ComposeOrchestrator {
         }
         if let cpuShares = createPlan.cpuShares {
             args.append(contentsOf: ["--cpu-shares", "\(cpuShares)"])
+        }
+        if let cpuPeriod = service.cpuPeriod, cpuPeriod != 0 {
+            args.append(contentsOf: ["--cpu-period", "\(cpuPeriod)"])
+        }
+        if let cpuQuota = service.cpuQuota, cpuQuota != 0 {
+            args.append(contentsOf: ["--cpu-quota", "\(cpuQuota)"])
         }
         if let memLimit = service.memLimit, !memLimit.isEmpty {
             args.append(contentsOf: ["--memory", memLimit])
@@ -300,7 +312,7 @@ extension ComposeOrchestrator {
         _ argument: String,
         project: ComposeProject,
         index: Int,
-        includeOneOff: Bool,
+        includeOneOff: Bool
     ) async throws -> ComposeCopyEndpoint {
         guard let delimiter = argument.firstIndex(of: ":") else {
             return .local(argument)
@@ -361,7 +373,7 @@ extension ComposeOrchestrator {
         project: ComposeProject,
         services: [ComposeService],
         externalVolumeMounts: ExternalVolumeMounts = [:],
-        imageHealthCheckCache: ComposeImageHealthCheckCache = ComposeImageHealthCheckCache(),
+        imageHealthCheckCache: ComposeImageHealthCheckCache = ComposeImageHealthCheckCache()
     ) async throws -> ComposeProject {
         var workingProject = project
         try await applyServicePullPolicies(project: workingProject, services: services)
@@ -373,7 +385,7 @@ extension ComposeOrchestrator {
                     workingProject = projectByInjectingProviderEnvironment(
                         project: workingProject,
                         providerServiceName: service.name,
-                        variables: variables,
+                        variables: variables
                     )
                 }
                 continue
@@ -386,7 +398,7 @@ extension ComposeOrchestrator {
             service = try await serviceByResolvingLinkHosts(
                 project: workingProject,
                 service: service,
-                scaleOverrides: [:],
+                scaleOverrides: [:]
             )
             workingProject.services[service.name] = service
 
@@ -396,7 +408,7 @@ extension ComposeOrchestrator {
                 project: workingProject,
                 service: service,
                 externalVolumeMounts: externalVolumeMounts,
-                materializedConfigSecretRoot: options.materializedConfigSecretDirectory,
+                materializedConfigSecretRoot: options.materializedConfigSecretDirectory
             ) {
                 options.emit("compose: reusing existing container \(name)")
                 continue
@@ -414,8 +426,8 @@ extension ComposeOrchestrator {
                         $0.detach = true
                     },
                     externalVolumeMounts: externalVolumeMounts,
-                    imageHealthCheckCache: imageHealthCheckCache,
-                ),
+                    imageHealthCheckCache: imageHealthCheckCache
+                )
             )
             try await runPostStartHooks(service: service, containerID: name)
         }

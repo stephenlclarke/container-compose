@@ -226,10 +226,13 @@ public struct ContainerClientLifecycleManager: ComposeRuntimeLifecycleManaging {
         try await client.deleteContainer(id: id, force: force)
     }
 
-    /// Converts Compose timeout values to the apple/container API type.
-    private func stopTimeout(_ timeoutInSeconds: Int?) throws -> Int32 {
+    /// Converts an explicit Compose timeout to the apple/container API type.
+    ///
+    /// An omitted value stays omitted so the runtime can use the container's
+    /// persisted stop default.
+    private func stopTimeout(_ timeoutInSeconds: Int?) throws -> Int32? {
         guard let timeoutInSeconds else {
-            return ContainerStopOptions.default.timeoutInSeconds
+            return nil
         }
         guard timeoutInSeconds >= 0, timeoutInSeconds <= Int(Int32.max) else {
             throw ComposeError.invalidProject("stop timeout must be between 0 and \(Int32.max) seconds")

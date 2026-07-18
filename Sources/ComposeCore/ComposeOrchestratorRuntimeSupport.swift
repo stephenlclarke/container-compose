@@ -111,8 +111,6 @@ extension ComposeOrchestrator {
         var fields: [ComposeRuntimeUnsupportedValue] = []
         appendUnsupportedIntegerField("cpu_count", value: service.cpuCount, reason: reason, to: &fields)
         appendUnsupportedFloatingPointField("cpu_percent", value: service.cpuPercent, reason: reason, to: &fields)
-        appendUnsupportedIntegerField("cpu_period", value: service.cpuPeriod, reason: reason, to: &fields)
-        appendUnsupportedIntegerField("cpu_quota", value: service.cpuQuota, reason: reason, to: &fields)
         appendUnsupportedIntegerField("cpu_rt_period", value: service.cpuRealtimePeriod, reason: reason, to: &fields)
         appendUnsupportedIntegerField("cpu_rt_runtime", value: service.cpuRealtimeRuntime, reason: reason, to: &fields)
         if let cpuset = service.cpuset, !cpuset.isEmpty {
