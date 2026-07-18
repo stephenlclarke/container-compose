@@ -21,14 +21,14 @@ is consumed by the Linux guest process configuration.
 | Repository | Commit and responsibility |
 | --- | --- |
 | `stephenlclarke/containerization` | No source change. The existing Linux process configuration provides `noNewPrivileges`. |
-| `stephenlclarke/container` | `22a65657d411a7103b438bd552f091805246d909`: parse the generic `--security-opt` option, persist it, and project it to the Linux runtime process configuration. |
+| `stephenlclarke/container` | `8fe41fb32adcdad3520aa38ce1e9befda155bfec`: parse the generic `--security-opt` option, persist it, and project it to the Linux runtime process configuration. |
 | `stephenlclarke/container-compose` | `99225d76440fa1852facbf7895cb0900498069d0`: validate Compose values and render the generic runtime option in `up` and `run`. |
+| `stephenlclarke/container-compose` | `da649c62b8e086bdb2356c2cadecbcf7df1a894c`: pin the replayed Container commit in the tested release stack. |
 
-The `container` commit must be rebased or replayed onto current upstream before
-submission because its local branch is behind `fork/main`. Keep the resulting
-PR restricted to the generic option, model persistence, parser coverage, and
-runtime configuration projection; do not add a Compose-aware API to either
-fork.
+The `container` commit has been replayed onto the current `fork/main` base.
+Keep the resulting PR restricted to the generic option, model persistence,
+parser coverage, and runtime configuration projection; do not add a
+Compose-aware API to either fork.
 
 ## Implementation details
 

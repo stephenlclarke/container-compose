@@ -17,13 +17,13 @@ resource model.
 | Repository | Commit and responsibility |
 | --- | --- |
 | `stephenlclarke/containerization` | No source change. Existing resource configuration uses bytes. |
-| `stephenlclarke/container` | `75753499d74a66da9c3aaeea8be7f0a05e413464`: retain generic memory values in bytes in parsing, defaults, help, and unit tests. |
+| `stephenlclarke/container` | `e2ac60b4d8c14813abc8779ee9d1246078c8040e`: retain generic memory values in bytes in parsing, defaults, help, and unit tests. |
 | `stephenlclarke/container-compose` | `c94dc4f42cd6377af2ed01ae3312a77962661447`: add exact-byte normalizer and Docker Compose V2 parity coverage and update the gap register. |
+| `stephenlclarke/container-compose` | `da649c62b8e086bdb2356c2cadecbcf7df1a894c`: pin the replayed Container commit in the tested release stack. |
 
-The `container` commit must be rebased or replayed onto current upstream before
-submission because its local branch is behind `fork/main`. Keep that PR limited
-to the generic resource parser, model projection, command reference, and unit
-coverage; do not add a Compose-aware API to the fork.
+The `container` commit has been replayed onto the current `fork/main` base.
+Keep that PR limited to the generic resource parser, model projection, command
+reference, and unit coverage; do not add a Compose-aware API to the fork.
 
 ## Implementation details
 

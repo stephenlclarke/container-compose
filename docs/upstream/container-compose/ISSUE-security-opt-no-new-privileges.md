@@ -34,7 +34,7 @@ Apple-shaped `container` fork and a small Compose adapter. It does not create a
 Compose-specific fork API.
 
 - `stephenlclarke/container` commit
-  `22a65657d411a7103b438bd552f091805246d909` adds repeatable
+  `8fe41fb32adcdad3520aa38ce1e9befda155bfec` adds repeatable
   `container run/create --security-opt` parsing for no-new-privileges and
   projects it to the existing process configuration.
 - The existing `containerization` process model already exposes
@@ -44,6 +44,9 @@ Compose-specific fork API.
   `99225d76440fa1852facbf7895cb0900498069d0` validates the narrow supported
   set and appends the existing generic `--security-opt` argument in both
   service and one-off command vectors.
+- `container-compose` commit
+  `da649c62b8e086bdb2356c2cadecbcf7df1a894c` pins the replayed Container
+  commit for the tested release stack.
 
 The fork change is limited to a generic runtime option and its existing process
 configuration projection. The Compose repository owns Compose-file parsing,
@@ -73,7 +76,7 @@ validation, error wording, and command-vector rendering.
 
 ## Upstream handoff condition
 
-The `container` implementation is currently an unpushed local, Apple-shaped
-commit. Before an upstream PR is opened, rebase or replay that one commit onto
-the then-current `fork/main`, rerun its focused parser/resource/runtime tests
-and `make check`, and update the commit reference in the associated PR handoff.
+The `container` implementation is a pushed, Apple-shaped fork commit replayed
+onto the current `fork/main` base. Before an upstream PR is opened, rerun its
+focused parser/resource/runtime tests and `make check` on the final base; if
+the fork advanced, replay only this code commit and refresh the reference.

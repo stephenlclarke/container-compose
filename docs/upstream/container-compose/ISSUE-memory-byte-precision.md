@@ -33,13 +33,16 @@ This is a generic parser precision correction in the Apple-shaped `container`
 fork plus a small Compose parity fixture. It creates no Compose-specific API.
 
 - `stephenlclarke/container` commit
-  `75753499d74a66da9c3aaeea8be7f0a05e413464` keeps explicit and default
+  `e2ac60b4d8c14813abc8779ee9d1246078c8040e` keeps explicit and default
   `--memory` values in bytes through configuration projection.
 - `containerization` already models memory as bytes, so no source or pin
   change is needed there.
 - `container-compose` commit
   `c94dc4f42cd6377af2ed01ae3312a77962661447` adds byte-precise normalizer and
   Docker Compose V2 parity coverage and records the corrected support status.
+- `container-compose` commit
+  `da649c62b8e086bdb2356c2cadecbcf7df1a894c` pins the replayed Container
+  commit for the tested release stack.
 
 The fork delta is limited to generic CLI parsing and its existing resource
 configuration projection. The Compose repository owns the Compose-file
@@ -64,8 +67,7 @@ contract, status register, and parity fixture.
 
 ## Upstream handoff condition
 
-The `container` implementation is currently an unpushed local, Apple-shaped
-commit on a branch behind `fork/main`. Before opening an upstream PR, rebase or
-replay that code commit onto the then-current fork base, rerun its focused
-parser/resource/runtime tests and `make check`, and update this reference and
-the PR handoff with the resulting commit.
+The `container` implementation is a pushed, Apple-shaped fork commit replayed
+onto the current `fork/main` base. Before opening an upstream PR, rerun its
+focused parser/resource/runtime tests and `make check` on the final base; if
+the fork advanced, replay only this code commit and refresh this handoff.
