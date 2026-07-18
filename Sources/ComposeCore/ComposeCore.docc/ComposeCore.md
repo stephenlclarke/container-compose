@@ -2,7 +2,7 @@
 
 @Metadata {
   @PageImage(purpose: icon, source: "container-compose-icon-octopus.png", alt: "The container-compose application icon: a light-blue octopus in front of a container service panel.")
-  @PageImage(purpose: card, source: "container-compose-icon-octopus.png", alt: "The container-compose application icon: a light-blue octopus in front of a container service panel.")
+  @PageImage(purpose: card, source: "container-compose-docc-card.png", alt: "The container-compose DocC card illustration: a light-blue octopus beside a frosted three-row container service panel.")
 }
 
 Parse, normalize, and execute Compose projects with the `container` runtime.
