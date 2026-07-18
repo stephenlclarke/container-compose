@@ -20,3 +20,7 @@ The generated reference covers the public configuration models and adapter proto
 ### Runtime Architecture
 
 - <doc:Architecture>
+
+### Container Ecosystem
+
+- <doc:ContainerProjects>
