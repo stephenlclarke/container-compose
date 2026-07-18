@@ -122,7 +122,7 @@ extension ComposeOrchestrator {
             return nil
         default:
             throw ComposeError.unsupported(
-                "service '\(service.name)' uses \(composeName) '\(value)'; supported values are host and private"
+                "service '\(service.name)' uses \(composeName) '\(value)'; supported values are host and private",
             )
         }
     }
