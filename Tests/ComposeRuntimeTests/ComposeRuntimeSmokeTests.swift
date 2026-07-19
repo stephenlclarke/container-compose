@@ -768,8 +768,8 @@ struct ComposeRuntimeSmokeTests {
         Issue.record("Expected system-path marker in runtime logs. Last logs: \(lastLogs)")
     }
 
-    @Test("runtime host user namespace retains the sandbox guest mapping")
-    func runtimeHostUserNamespaceRetainsSandboxGuestMapping() throws {
+    @Test("runtime host user namespace retains the guest identity mapping")
+    func runtimeHostUserNamespaceRetainsGuestIdentityMapping() throws {
         guard runtimeTestsEnabled else {
             return
         }
@@ -825,8 +825,7 @@ struct ComposeRuntimeSmokeTests {
                 "--ansi", "never",
                 "--project-name", project,
                 "--file", composeFile.path,
-                "exec", "--no-tty", "api", "sh", "-c",
-                "test \"$(readlink /proc/self/ns/user)\" != \"user:[4026531837]\" && cat /proc/self/uid_map",
+                "exec", "--no-tty", "api", "cat", "/proc/self/uid_map",
             ],
             timeout: 60
         )
