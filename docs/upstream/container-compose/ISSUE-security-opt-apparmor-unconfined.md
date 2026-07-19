@@ -2,7 +2,8 @@
 
 ## Problem
 
-Docker Compose V2 preserves and accepts `apparmor=unconfined`, while the
+Docker Compose V2 preserves and accepts `apparmor=unconfined` and
+`apparmor:unconfined`, while the
 adapter rejected it with all unsupported profile names. The matched macOS Linux
 guest has no usable AppArmor confinement interface for workload processes
 (`/proc/self/attr/current` returns `EINVAL`), so an unconfined request is
@@ -10,7 +11,7 @@ truthful without adding a Docker-specific runtime no-op.
 
 ## Acceptance criteria
 
-- Preserve `apparmor=unconfined` in canonical config output.
+- Preserve both unconfined AppArmor spellings in canonical config output.
 - Accept it for service `up` and one-off `run` before resources are created.
 - Consume it in the Compose adapter rather than emitting a synthetic generic
   runtime flag.

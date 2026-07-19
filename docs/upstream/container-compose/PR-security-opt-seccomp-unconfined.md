@@ -3,7 +3,7 @@
 ## Summary
 
 Adds Docker Compose V2-compatible handling for
-`security_opt: seccomp=unconfined`. The Compose adapter preserves the value in
+`security_opt: seccomp=unconfined` and `security_opt: seccomp:unconfined`. The Compose adapter preserves each value in
 configuration and consumes it before command rendering because the macOS Linux
 guest already runs workload processes without a seccomp filter.
 
@@ -11,6 +11,8 @@ guest already runs workload processes without a seccomp filter.
 
 - `4124fd494b5ed5e61e55c730e1f8326fc168b05e`
   `feat(security): accept unconfined seccomp option`
+- `62a6d20e153ea2a4f4bee6e864771a15245d3ed7`
+  `feat(security): accept portable no-op option forms`
 
 ## Apple-shaped boundary
 
@@ -21,9 +23,9 @@ emulated by the Compose adapter.
 
 ## Implementation
 
-- `ComposeOrchestratorRuntimeSupport.swift` accepts only the exact
-  `seccomp=unconfined` spelling, filters it from runtime arguments, and retains
-  existing no-new-privileges forwarding.
+- `ComposeOrchestratorRuntimeSupport.swift` accepts both documented unconfined
+  seccomp spellings, filters them from runtime arguments, and retains existing
+  no-new-privileges forwarding.
 - Orchestrator tests cover managed `up`, one-off `run`, combined options, and
   early rejection of unsupported options.
 - Swift and Go normalizer tests prove the config model retains the value.
@@ -64,8 +66,8 @@ dry-run assertion.
 
 ## Compatibility and non-goals
 
-Existing no-new-privileges behavior is unchanged. The accepted spelling is
-limited to `seccomp=unconfined`; seccomp profile paths, AppArmor, SELinux, and
-all other unsupported security options remain pre-side-effect errors. This
+Existing no-new-privileges behavior is unchanged. Both Compose-documented
+unconfined seccomp spellings are accepted; seccomp profile paths, AppArmor,
+SELinux, and all other unsupported security options remain pre-side-effect errors. This
 does not imply macOS host isolation, a default Docker seccomp profile, or
 Windows security-option support.

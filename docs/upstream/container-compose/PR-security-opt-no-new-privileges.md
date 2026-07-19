@@ -3,7 +3,8 @@
 ## Summary
 
 - Accept Compose `security_opt` values `no-new-privileges:true` and
-  `no-new-privileges:false`, plus their equals-sign spellings.
+  `no-new-privileges:false`, their equals-sign spellings, and bare enabled
+  `no-new-privileges`.
 - Validate unsupported security options before Compose creates resources.
 - Reuse generic `container --security-opt` rendering for both managed service
   containers and one-off `compose run` containers.
@@ -24,6 +25,7 @@ is consumed by the Linux guest process configuration.
 | `stephenlclarke/container` | `8fe41fb32adcdad3520aa38ce1e9befda155bfec`: parse the generic `--security-opt` option, persist it, and project it to the Linux runtime process configuration. |
 | `stephenlclarke/container-compose` | `99225d76440fa1852facbf7895cb0900498069d0`: validate Compose values and render the generic runtime option in `up` and `run`. |
 | `stephenlclarke/container-compose` | `da649c62b8e086bdb2356c2cadecbcf7df1a894c`: pin the replayed Container commit in the tested release stack. |
+| `stephenlclarke/container-compose` | `62a6d20e153ea2a4f4bee6e864771a15245d3ed7`: normalize the documented bare enabled spelling to the generic explicit true form. |
 
 The `container` commit has been replayed onto the current `fork/main` base.
 Keep the resulting PR restricted to the generic option, model persistence,

@@ -3,7 +3,7 @@
 ## Summary
 
 Adds Docker Compose V2-compatible handling for
-`security_opt: apparmor=unconfined`. It is an intentional Compose-layer no-op:
+`security_opt: apparmor=unconfined` and `security_opt: apparmor:unconfined`. It is an intentional Compose-layer no-op:
 the matched macOS Linux guest has no usable workload AppArmor confinement
 interface, so forwarding the Docker-shaped value would not change enforcement.
 
@@ -11,6 +11,8 @@ interface, so forwarding the Docker-shaped value would not change enforcement.
 
 - `ee216c3beebeeb6b0ecc7df959a3fa8b2d5d4600`
   `feat(security): accept unconfined apparmor option`
+- `62a6d20e153ea2a4f4bee6e864771a15245d3ed7`
+  `feat(security): accept portable no-op option forms`
 
 ## Apple-shaped boundary
 
@@ -21,8 +23,8 @@ Docker-profile-specific change.
 
 ## Implementation
 
-- The security-option adapter recognizes `apparmor=unconfined` alongside the
-  existing `seccomp=unconfined` compatibility path.
+- The security-option adapter recognizes both AppArmor and seccomp unconfined
+  spellings alongside the existing compatibility path.
 - Both values remain in normalized config but are omitted from the generic
   runtime command; no-new-privileges remains a real forwarded primitive.
 - Unit tests cover `up`, `run`, combined options, normalization, and
@@ -51,8 +53,9 @@ has no AppArmor profile interface to relax.
 
 ## Compatibility and non-goals
 
-Only the exact `apparmor=unconfined` spelling is accepted. Named/default
-AppArmor policies, seccomp profiles, SELinux labels, and arbitrary
+Both Compose-documented `apparmor=unconfined` and `apparmor:unconfined`
+spellings are accepted. Named/default AppArmor policies, seccomp profiles,
+SELinux labels, and arbitrary
 security-option values remain explicit errors before resources are created.
 This does not claim macOS host confinement, Docker's default profile, or
 Windows security-option support.

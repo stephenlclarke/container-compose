@@ -2,15 +2,16 @@
 
 ## Problem
 
-Docker Compose V2 retains and accepts `seccomp=unconfined`, but the adapter
+Docker Compose V2 retains and accepts `seccomp=unconfined` and
+`seccomp:unconfined`, but the adapter
 previously rejected every `security_opt` value other than the generic
 no-new-privileges forms. The macOS guest workload baseline already runs
-without a seccomp filter, so this exact option has a truthful local behavior
+without a seccomp filter, so these equivalent options have a truthful local behavior
 without requiring a Docker-shaped runtime no-op.
 
 ## Acceptance criteria
 
-- Preserve `seccomp=unconfined` in canonical config output.
+- Preserve both unconfined seccomp spellings in canonical config output.
 - Accept it for managed services and one-off `compose run` before resources
   are created.
 - Do not emit a synthetic `container --security-opt` argument for it.

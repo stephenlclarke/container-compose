@@ -3,7 +3,9 @@
 ## Compose surface
 
 `services.<name>.security_opt` with either `no-new-privileges:true` or
-`no-new-privileges:false`. The equivalent `=` spellings are accepted too.
+`no-new-privileges:false`. The equivalent `=` spellings are accepted too; the
+bare `no-new-privileges` spelling means enabled and is normalized to explicit
+true before it reaches the generic runtime.
 
 ## Docker Compose V2 behavior
 
