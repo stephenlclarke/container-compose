@@ -7539,17 +7539,18 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--security-opt", "no-new-privileges:true"]))
     }
 
-    @Test("up consumes unconfined security profiles at the Compose boundary")
-    func upConsumesUnconfinedSecurityProfileOptions() async throws {
+    @Test("up maps standard security_opt spellings at the Compose boundary")
+    func upMapsStandardSecurityOptionSpellings() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
                     $0.securityOpt = [
-                        "no-new-privileges:true",
-                        "seccomp=unconfined",
+                        "no-new-privileges",
+                        "seccomp:unconfined",
                         "apparmor=unconfined",
+                        "label:disable",
                     ]
                 },
             ]
@@ -7562,8 +7563,9 @@ struct ComposeOrchestratorTests {
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--security-opt", "no-new-privileges:true"]))
-        #expect(!command.contains("seccomp=unconfined"))
+        #expect(!command.contains("seccomp:unconfined"))
         #expect(!command.contains("apparmor=unconfined"))
+        #expect(!command.contains("label:disable"))
     }
 
     @Test("up accepts host user namespace as the sandbox guest default")
@@ -24807,14 +24809,14 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--security-opt", "no-new-privileges=true"]))
     }
 
-    @Test("run consumes unconfined security profiles at the Compose boundary")
-    func runConsumesUnconfinedSecurityProfileOptions() async throws {
+    @Test("run consumes standard security_opt no-ops at the Compose boundary")
+    func runConsumesStandardSecurityOptionNoOps() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.securityOpt = ["seccomp=unconfined", "apparmor=unconfined"]
+                    $0.securityOpt = ["seccomp=unconfined", "apparmor:unconfined", "label=disable"]
                 },
             ]
         )
@@ -27922,9 +27924,9 @@ private func unsupportedUserAndSecurityOptionFieldCases() -> [UnsupportedUserAnd
     [
         UnsupportedUserAndSecurityOptionFieldCase(
             composeName: "security_opt",
-            value: "label:disable",
-            reason: "only no-new-privileges:true|false, no-new-privileges=true|false, seccomp=unconfined, or apparmor=unconfined is supported",
-            configure: { $0.securityOpt = ["label:disable"] }
+            value: "label=type:container_t",
+            reason: "only no-new-privileges (with optional :true|false or =true|false), seccomp=unconfined|seccomp:unconfined, apparmor=unconfined|apparmor:unconfined, or label=disable|label:disable is supported",
+            configure: { $0.securityOpt = ["label=type:container_t"] }
         ),
     ]
 }

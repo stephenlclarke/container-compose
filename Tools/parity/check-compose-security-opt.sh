@@ -32,10 +32,10 @@
 #                      "docker compose" when available, otherwise docker-compose.
 #
 # This script is intentionally local-only and is not part of CI. It verifies
-# Docker Compose V2 preserves no-new-privileges plus unconfined seccomp and
-# AppArmor values in config output and accepts them for local orchestration.
-# It then verifies container-compose projects no-new-privileges through the
-# generic runtime bridge while consuming the guest's unconfined profile defaults.
+# Docker Compose V2 preserves portable security-option spellings in config
+# output and accepts them for local orchestration. It then verifies
+# container-compose projects bare no-new-privileges through the generic runtime
+# bridge while consuming the guest's unconfined/disabled-label defaults.
 
 set -euo pipefail
 
@@ -144,7 +144,7 @@ detect_docker_daemon() {
 }
 
 # Create a minimal Compose fixture for the generic Linux no-new-privileges
-# process primitive and the guest's unconfined profile baselines.
+# process primitive and guest security values that are already no-ops.
 create_fixture() {
     FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/compose-security-opt.XXXXXX")"
     cat >"$FIXTURE_DIR/compose.yml" <<'YAML'
@@ -152,9 +152,10 @@ services:
   api:
     image: alpine:3.20
     security_opt:
-      - no-new-privileges:true
-      - seccomp=unconfined
+      - no-new-privileges
+      - seccomp:unconfined
       - apparmor=unconfined
+      - label:disable
 YAML
 }
 
@@ -177,10 +178,10 @@ import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 options = doc.get("services", {}).get("api", {}).get("security_opt")
-if options != ["no-new-privileges:true", "seccomp=unconfined", "apparmor=unconfined"]:
+if options != ["no-new-privileges", "seccomp:unconfined", "apparmor=unconfined", "label:disable"]:
     raise SystemExit(
         "security_opt = "
-        f"{options!r}, want ['no-new-privileges:true', 'seccomp=unconfined', 'apparmor=unconfined']"
+        f"{options!r}, want ['no-new-privileges', 'seccomp:unconfined', 'apparmor=unconfined', 'label:disable']"
     )
 PY
 }
@@ -197,10 +198,10 @@ import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 options = doc.get("services", {}).get("api", {}).get("securityOpt")
-if options != ["no-new-privileges:true", "seccomp=unconfined", "apparmor=unconfined"]:
+if options != ["no-new-privileges", "seccomp:unconfined", "apparmor=unconfined", "label:disable"]:
     raise SystemExit(
         "securityOpt = "
-        f"{options!r}, want ['no-new-privileges:true', 'seccomp=unconfined', 'apparmor=unconfined']"
+        f"{options!r}, want ['no-new-privileges', 'seccomp:unconfined', 'apparmor=unconfined', 'label:disable']"
     )
 PY
 }
@@ -215,14 +216,15 @@ dry_run_projects_security_option() {
         || grep -F -- "--security-opt no-new-privileges:true" "$output_path" >/dev/null
 }
 
-# The unconfined profile values are guest workload defaults. They must be
+# The profile and label values are guest workload defaults. They must be
 # accepted by the Compose adapter but not forwarded as synthetic runtime flags
 # that the generic Container API does not need.
-dry_run_omits_unconfined_profile_options() {
+dry_run_omits_security_option_no_ops() {
     local output_path="$1"
 
-    ! grep -F -- 'seccomp=unconfined' "$output_path" >/dev/null \
-        && ! grep -F -- 'apparmor=unconfined' "$output_path" >/dev/null
+    ! grep -F -- 'seccomp:unconfined' "$output_path" >/dev/null \
+        && ! grep -F -- 'apparmor=unconfined' "$output_path" >/dev/null \
+        && ! grep -F -- 'label:disable' "$output_path" >/dev/null
 }
 
 # Exercise Docker Compose as the local-mode parity baseline.
@@ -284,8 +286,8 @@ expect_container_behavior() {
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
-    if ! dry_run_omits_unconfined_profile_options "$dry_run_output"; then
-        error 'container-compose forwarded an unconfined profile option instead of consuming the guest default'
+    if ! dry_run_omits_security_option_no_ops "$dry_run_output"; then
+        error 'container-compose forwarded a security-option no-op instead of consuming the guest default'
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
