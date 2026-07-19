@@ -112,6 +112,56 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("Release-Note: none", pin_commit)
         self.assertNotIn("Release-Highlight:", pin_commit)
 
+    def test_release_helper_publishes_a_validated_container_pin_before_compose_resolves_it(self) -> None:
+        candidate = self.script[
+            self.script.index("publish_container_dependency_candidate() {") : self.script.index(
+                "# Update Compose's remote runtime dependency"
+            )
+        ]
+        sync = self.script[
+            self.script.index("sync_containerization_package_pins() {") : self.script.index(
+                "# Keep Compose's direct runtime dependencies aligned as one resolvable stack."
+            )
+        ]
+        release = self.script[self.script.index("release_current_stack() {") :]
+
+        self.assertIn('candidate_parent="$(git -C "${repo_dir}" rev-parse "${local_head}^")"', candidate)
+        self.assertIn('candidate_subject="$(git -C "${repo_dir}" show -s --format=%s "${local_head}")"', candidate)
+        self.assertIn('candidate_files="$(git -C "${repo_dir}" diff-tree --no-commit-id --name-only -r "${local_head}" | sort | paste -sd, -)"', candidate)
+        self.assertIn('^chore\\(deps\\):\\ pin\\ containerization\\ [0-9a-f]{12}$', candidate)
+        self.assertIn('"${candidate_files}" != "Package.resolved,Package.swift"', candidate)
+        self.assertIn('make -C "${repo_dir}" check test', candidate)
+        self.assertIn('git -C "${repo_dir}" push "${remote}" refs/heads/main', candidate)
+        self.assertIn('remote_head="$(remote_main_commit "${CONTAINER_REPO}")"', candidate)
+        self.assertIn("publish_container_dependency_candidate", sync)
+        self.assertLess(
+            sync.index('commit_containerization_package_pin "${CONTAINER_REPO}" "${ref}"'),
+            sync.index("publish_container_dependency_candidate"),
+        )
+        self.assertLess(
+            release.index("sync_containerization_package_pins"),
+            release.index("sync_container_package_pin"),
+        )
+
+    def test_release_helper_signs_release_authored_commits(self) -> None:
+        container_pin = self.script[
+            self.script.index("commit_containerization_package_pin() {") : self.script.index(
+                "publish_container_dependency_candidate() {"
+            )
+        ]
+        compose_pin = self.script[
+            self.script.index("commit_compose_stack_package_pins() {") : self.script.index(
+                "# Keep the container and compose manifests aligned"
+            )
+        ]
+        release = self.script[self.script.index("release_current_stack() {") :]
+
+        self.assertIn("commit \\", container_pin)
+        self.assertIn("    -S", container_pin)
+        self.assertIn("commit \\", compose_pin)
+        self.assertIn("    -S", compose_pin)
+        self.assertIn('commit -S -m "chore(release): prepare ${version}"', release)
+
     def test_release_helper_pins_compose_to_the_exact_runtime_revision(self) -> None:
         runtime_pin = self.script[
             self.script.index("update_container_package_pin() {") : self.script.index(

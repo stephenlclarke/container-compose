@@ -965,8 +965,53 @@ commit_containerization_package_pin() {
   fi
 
   run git -C "${path}" commit \
+    -S \
     -m "chore(deps): pin containerization ${short_ref}" \
     -m "Release-Note: none"
+}
+
+# A freshly committed container pin cannot be resolved by Compose until its
+# immutable revision is available from the stephenlclarke remote.  Validate and
+# publish that metadata-only, fork-owned candidate before asking SwiftPM to
+# assemble the composed stack; the full local release gate still validates the
+# exact assembled revisions before Compose itself is promoted or tagged.
+publish_container_dependency_candidate() {
+  local repo_dir remote local_head remote_head candidate_parent candidate_subject candidate_files
+  repo_dir="$(repo_path "${CONTAINER_REPO}")"
+  remote="$(push_remote "${CONTAINER_REPO}")"
+  local_head="$(git -C "${repo_dir}" rev-parse main)"
+  remote_head="$(remote_main_commit "${CONTAINER_REPO}")"
+
+  if [[ "${local_head}" == "${remote_head}" ]]; then
+    printf '%s dependency pin is already published at %s\n' "${CONTAINER_REPO}" "${local_head}"
+    return 0
+  fi
+
+  candidate_parent="$(git -C "${repo_dir}" rev-parse "${local_head}^")"
+  candidate_subject="$(git -C "${repo_dir}" show -s --format=%s "${local_head}")"
+  candidate_files="$(git -C "${repo_dir}" diff-tree --no-commit-id --name-only -r "${local_head}" | sort | paste -sd, -)"
+  if [[ -z "${remote_head}" ]] || [[ "${candidate_parent}" != "${remote_head}" ]] || \
+    [[ ! "${candidate_subject}" =~ ^chore\(deps\):\ pin\ containerization\ [0-9a-f]{12}$ ]] || \
+    [[ "${candidate_files}" != "Package.resolved,Package.swift" ]]; then
+    printf '%s candidate is not the single release-generated package-pin commit on reviewed main\n' \
+      "${CONTAINER_REPO}" >&2
+    exit 1
+  fi
+
+  print_header "validate and publish container dependency candidate"
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would run container package-pin checks before publishing %s\n' "${local_head}"
+    printf 'would push %s main to %s after those checks\n' "${CONTAINER_REPO}" "${remote}"
+    return 0
+  fi
+
+  run make -C "${repo_dir}" check test
+  run git -C "${repo_dir}" push "${remote}" refs/heads/main
+  remote_head="$(remote_main_commit "${CONTAINER_REPO}")"
+  if [[ "${remote_head}" != "${local_head}" ]]; then
+    printf '%s main did not publish the validated dependency candidate\n' "${CONTAINER_REPO}" >&2
+    exit 1
+  fi
 }
 
 # Update Compose's remote runtime dependency to the current container stack revision.
@@ -1026,6 +1071,7 @@ commit_compose_stack_package_pins() {
   fi
 
   run git -C "${path}" commit \
+    -S \
     -m "chore(deps): pin container stack ${container_short_ref} ${containerization_short_ref}" \
     -m "Release-Note: none"
 }
@@ -1037,6 +1083,7 @@ sync_containerization_package_pins() {
   print_header "sync exact containerization SwiftPM pins"
   update_containerization_package_pin "${CONTAINER_REPO}" "${ref}"
   commit_containerization_package_pin "${CONTAINER_REPO}" "${ref}"
+  publish_container_dependency_candidate
 }
 
 # Keep Compose's direct runtime dependencies aligned as one resolvable stack.
@@ -1901,13 +1948,13 @@ release_current_stack() {
   if [[ "${EXECUTE}" == "1" ]]; then
     git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json
     if ! git -C "${path}" diff --cached --quiet -- Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json; then
-      run git -C "${path}" commit -m "chore(release): prepare ${version}"
+      run git -C "${path}" commit -S -m "chore(release): prepare ${version}"
     else
       printf 'release prep files already match %s\n' "${version}"
     fi
   else
     run git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json
-    run git -C "${path}" commit -m "chore(release): prepare ${version}"
+    run git -C "${path}" commit -S -m "chore(release): prepare ${version}"
   fi
 
   ensure_clean "${COMPOSE_REPO}"
