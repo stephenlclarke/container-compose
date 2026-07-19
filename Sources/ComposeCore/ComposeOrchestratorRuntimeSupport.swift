@@ -61,11 +61,6 @@ extension ComposeOrchestrator {
                 value: service.isolation,
                 reason: "isolation support needs an apple/container runtime gap PR",
             ),
-            ComposeRuntimeUnsupportedOptionalValue(
-                composeName: "userns_mode",
-                value: service.usernsMode,
-                reason: "user namespace support needs an apple/container runtime gap PR",
-            ),
         ].compactMap { candidate in
             guard let value = candidate.value, !value.isEmpty else {
                 return nil
@@ -105,6 +100,24 @@ extension ComposeOrchestrator {
     /// default, so only the explicit host mode needs an argument.
     func runtimeUTSNamespaceArgument(service: ComposeService) throws -> String? {
         try runtimeHostPrivateNamespaceArgument(service: service, value: service.uts, composeName: "uts")
+    }
+
+    /// Validates Docker Compose's user namespace mode for the sandbox guest.
+    ///
+    /// The generic runtime does not add an OCI user namespace, so `host`
+    /// accurately preserves the sandbox VM's existing user namespace. Creating
+    /// a private namespace needs a UID/GID mapping lifecycle that is not yet
+    /// exposed by the runtime.
+    func runtimeUserNamespaceArgument(service: ComposeService) throws -> String? {
+        guard let value = service.usernsMode, !value.isEmpty else {
+            return nil
+        }
+        guard value == "host" else {
+            throw ComposeError.unsupported(
+                "service '\(service.name)' uses userns_mode '\(value)'; only host is supported because the local runtime has no OCI user namespace",
+            )
+        }
+        return nil
     }
 
     private func runtimeHostPrivateNamespaceArgument(

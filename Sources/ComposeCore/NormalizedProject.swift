@@ -461,7 +461,7 @@ public struct ComposeService: Codable, Equatable {
         case preStart
         case postStart
         case preStop
-        case usernsMode
+        case usernsMode = "userns_mode"
         case uts
         case healthcheck
         case configs

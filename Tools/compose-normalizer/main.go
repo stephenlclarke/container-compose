@@ -224,7 +224,7 @@ type normalizedService struct {
 	PreStart                []normalizedServiceHook             `json:"preStart,omitempty"`
 	PostStart               []normalizedServiceHook             `json:"postStart,omitempty"`
 	PreStop                 []normalizedServiceHook             `json:"preStop,omitempty"`
-	UserNSMode              string                              `json:"usernsMode,omitempty"`
+	UserNSMode              string                              `json:"userns_mode,omitempty"`
 	Uts                     string                              `json:"uts,omitempty"`
 	Healthcheck             any                                 `json:"healthcheck,omitempty"`
 	Configs                 any                                 `json:"configs,omitempty"`

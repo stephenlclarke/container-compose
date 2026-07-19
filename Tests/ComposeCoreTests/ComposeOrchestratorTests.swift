@@ -7539,6 +7539,50 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--security-opt", "no-new-privileges:true"]))
     }
 
+    @Test("up accepts host user namespace as the sandbox guest default")
+    func upAcceptsHostUserNamespaceAsSandboxGuestDefault() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.usernsMode = "host"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(!command.contains("--userns"))
+    }
+
+    @Test("up rejects private user namespace mode before creating resources")
+    func upRejectsPrivateUserNamespaceModeBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.usernsMode = "private"
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected private user namespace error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses userns_mode 'private'; only host is supported because the local runtime has no OCI user namespace"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects network aliases until the runtime exposes container-facing DNS")
     func upRejectsNetworkAliasesUntilRuntimeExposesContainerFacingDNS() async throws {
         let runner = RecordingRunner()
@@ -12716,6 +12760,26 @@ struct ComposeOrchestratorTests {
 
         #expect(json.contains(#""name" : "demo""#))
         #expect(json.contains(#""web" : {"#))
+    }
+
+    @Test("config preserves userns_mode using the Compose field spelling")
+    func configPreservesHostUserNamespaceMode() throws {
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.usernsMode = "host"
+                },
+            ]
+        )
+
+        let output = try ComposeOrchestrator().config(project: project)
+        let document = try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
+        let services = try #require(document["services"] as? [String: Any])
+        let api = try #require(services["api"] as? [String: Any])
+
+        #expect(api["userns_mode"] as? String == "host")
+        #expect(api["usernsMode"] == nil)
     }
 
     @Test("config renders canonical YAML")
@@ -27709,12 +27773,6 @@ private func unsupportedRuntimeStringFieldCases() -> [UnsupportedRuntimeStringFi
             value: "default",
             reason: "isolation support needs an apple/container runtime gap PR",
             configure: { $0.isolation = "default" }
-        ),
-        UnsupportedRuntimeStringFieldCase(
-            composeName: "userns_mode",
-            value: "host",
-            reason: "user namespace support needs an apple/container runtime gap PR",
-            configure: { $0.usernsMode = "host" }
         ),
     ]
 }
