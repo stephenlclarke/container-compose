@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import html
+from html.parser import HTMLParser
 import json
 from pathlib import Path
 import subprocess
@@ -30,6 +31,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ElementTree
 from collections.abc import Iterable
 from typing import Any
 
@@ -43,6 +45,9 @@ POLL_INTERVAL_SECONDS = 10
 # publication may start before CodeQL completes, so a 30-minute window prevents
 # a valid slower analysis from producing a release without its quality snapshot.
 POLL_TIMEOUT_SECONDS = 1800
+SHIELDS_STATIC_BADGE_URL = "https://img.shields.io/static/v1"
+BADGE_CACHE_SECONDS = "300"
+BADGE_DELIVERY_ATTEMPTS = 3
 
 BADGE_COLORS = {
     "blue": "#007ec6",
@@ -105,6 +110,21 @@ def parse_args() -> argparse.Namespace:
         help="GitHub release-asset URL used by the rendered Markdown snapshot",
     )
     parser.add_argument(
+        "--badge-snapshot-id",
+        help=(
+            "Unique static-badge delivery key; defaults to --commit and keeps "
+            "GitHub's image proxy cache isolated to this publication"
+        ),
+    )
+    parser.add_argument(
+        "--verify-static-badges",
+        action="store_true",
+        help=(
+            "Render every static badge through GitHub Markdown and require "
+            "each exact proxied image to be valid SVG before printing notes"
+        ),
+    )
+    parser.add_argument(
         "--allow-missing-sonarqube",
         action="store_true",
         help=(
@@ -153,6 +173,21 @@ def gh_json(gh: str, *arguments: str) -> Any:
         return json.loads(result.stdout)
     except json.JSONDecodeError as error:
         raise ValueError("GitHub API returned invalid JSON") from error
+
+
+def gh_text(gh: str, *arguments: str) -> str:
+    """Return text from a GitHub CLI API call with an actionable failure."""
+
+    result = subprocess.run(
+        [gh, "api", *arguments],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "unknown error"
+        raise ValueError(f"GitHub API request failed: {message}")
+    return result.stdout
 
 
 def find_sonarqube_analysis(
@@ -432,16 +467,135 @@ def render_badges_svg(badges: Iterable[SnapshotBadge]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_metric_rows(badges: Iterable[SnapshotBadge]) -> list[str]:
-    """Render metric evidence using GitHub's native Markdown primitives.
+def static_badge_url(*, badge: SnapshotBadge, snapshot_id: str) -> str:
+    """Build a release-specific static Shields-compatible badge URL."""
 
-    GitHub release pages do not reliably render an SVG release asset when it is
-    embedded as a Markdown image.  Native list items always render, and keep
-    every metric visible even if the optional archival SVG cannot be displayed
-    by a particular release-page renderer.
-    """
+    if not snapshot_id:
+        raise ValueError("static quality badge snapshot ID must not be empty")
+    parameters = urllib.parse.urlencode(
+        {
+            "label": badge.label,
+            "message": badge.message,
+            "color": badge.color,
+            "style": "flat",
+            "cacheSeconds": BADGE_CACHE_SECONDS,
+            "snapshot": snapshot_id,
+        }
+    )
+    return f"{SHIELDS_STATIC_BADGE_URL}?{parameters}"
 
-    return [f"- **{badge.label}:** {badge.message}" for badge in badges]
+
+def render_static_badges(
+    badges: Iterable[SnapshotBadge], *, snapshot_id: str
+) -> str:
+    """Render individual static quality badges in the release-note body."""
+
+    return " ".join(
+        f"![{badge.label}]({static_badge_url(badge=badge, snapshot_id=snapshot_id)})"
+        for badge in badges
+    )
+
+
+class RenderedBadgeParser(HTMLParser):
+    """Collect GitHub-rendered static badge source pairs from release Markdown."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.badges: list[tuple[str, str]] = []
+
+    def handle_starttag(
+        self, tag: str, attributes: list[tuple[str, str | None]]
+    ) -> None:
+        if tag != "img":
+            return
+        values = dict(attributes)
+        canonical_source = values.get("data-canonical-src")
+        proxied_source = values.get("src")
+        if canonical_source and canonical_source.startswith(SHIELDS_STATIC_BADGE_URL):
+            if proxied_source is None:
+                raise ValueError("GitHub rendered a static quality badge without a source")
+            self.badges.append((canonical_source, proxied_source))
+
+
+def rendered_static_badges(markdown: str) -> list[tuple[str, str]]:
+    """Return the canonical and GitHub-proxied URLs emitted for static badges."""
+
+    parser = RenderedBadgeParser()
+    parser.feed(markdown)
+    parser.close()
+    return parser.badges
+
+
+def fetch_badge_svg(url: str) -> str:
+    """Fetch one GitHub-proxied badge and return its SVG payload."""
+
+    request = urllib.request.Request(url, headers={"Accept": "image/svg+xml"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            content_type = response.headers.get_content_type()
+            payload = response.read().decode("utf-8")
+    except urllib.error.URLError as error:
+        raise ValueError(f"GitHub could not deliver static quality badge {url}: {error}") from error
+    if content_type != "image/svg+xml":
+        raise ValueError(
+            f"GitHub delivered static quality badge {url} as {content_type}, not image/svg+xml"
+        )
+    return payload
+
+
+def validate_badge_svg(*, url: str, payload: str) -> None:
+    """Require the exact image response to be a parseable SVG document."""
+
+    try:
+        root = ElementTree.fromstring(payload)
+    except ElementTree.ParseError as error:
+        raise ValueError(f"GitHub delivered invalid static quality badge SVG {url}") from error
+    if root.tag != "{http://www.w3.org/2000/svg}svg":
+        raise ValueError(f"GitHub delivered non-SVG static quality badge payload {url}")
+
+
+def validate_static_badge_delivery(
+    *, gh: str, repository: str, badges: list[SnapshotBadge], snapshot_id: str
+) -> None:
+    """Fail publication unless GitHub can render every exact static badge image."""
+
+    canonical_sources = [
+        static_badge_url(badge=badge, snapshot_id=snapshot_id) for badge in badges
+    ]
+    markdown = render_static_badges(badges, snapshot_id=snapshot_id)
+    rendered = gh_text(
+        gh,
+        "markdown",
+        "--method",
+        "POST",
+        "-f",
+        f"text={markdown}",
+        "-f",
+        "mode=gfm",
+        "-f",
+        f"context={repository}",
+    )
+    delivered_badges = rendered_static_badges(rendered)
+    if [canonical for canonical, _ in delivered_badges] != canonical_sources:
+        raise ValueError(
+            "GitHub did not render every expected static quality badge through its image proxy"
+        )
+
+    for _, proxied_source in delivered_badges:
+        last_error: ValueError | None = None
+        for attempt in range(BADGE_DELIVERY_ATTEMPTS):
+            try:
+                validate_badge_svg(
+                    url=proxied_source, payload=fetch_badge_svg(proxied_source)
+                )
+                break
+            except ValueError as error:
+                last_error = error
+                if attempt + 1 < BADGE_DELIVERY_ATTEMPTS:
+                    time.sleep(attempt + 1)
+        else:
+            assert last_error is not None
+            raise last_error
 
 
 def resolved_badges(
@@ -462,13 +616,14 @@ def render_snapshot(
     codeql_analysis: dict[str, Any],
     release_kind: str = "stable",
     asset_url: str = "quality-snapshot.svg",
+    badge_snapshot_id: str | None = None,
 ) -> str:
     if not asset_url:
         raise ValueError("quality snapshot asset URL must not be empty")
     if release_kind == "current":
-        retention = "These static metrics describe this mutable Current build and are replaced when `current` moves."
+        retention = "These static badges describe this mutable Current build and are replaced when `current` moves."
     else:
-        retention = "These static metrics are retained as historical evidence; they do not update."
+        retention = "These static badges are retained as historical evidence; they do not update."
     if sonar_analysis is None or sonar_measures is None:
         analysis_summary = (
             f"- CodeQL analysis covers `{commit}`. SonarQube metrics are omitted "
@@ -479,6 +634,10 @@ def render_snapshot(
             f"- SonarQube `main` analysis `{sonar_analysis['date']}` and CodeQL "
             f"analysis both cover `{commit}`."
         )
+    badges = resolved_badges(
+        sonar_measures=sonar_measures,
+        codeql_analysis=codeql_analysis,
+    )
     return "\n".join(
         [
             "## Quality Snapshot",
@@ -486,12 +645,9 @@ def render_snapshot(
             retention,
             analysis_summary,
             "",
-            "### Validated metrics",
-            *render_metric_rows(
-                resolved_badges(
-                    sonar_measures=sonar_measures,
-                    codeql_analysis=codeql_analysis,
-                )
+            render_static_badges(
+                badges,
+                snapshot_id=badge_snapshot_id or commit,
             ),
             "",
             f"[Download the self-contained SVG evidence]({asset_url}).",
@@ -527,17 +683,21 @@ def main() -> None:
                 branch=args.sonarqube_branch,
                 analysis=sonar_analysis,
             )
+        badges = resolved_badges(
+            sonar_measures=sonar_measures,
+            codeql_analysis=codeql_analysis,
+        )
+        badge_snapshot_id = args.badge_snapshot_id or args.commit
+        if args.verify_static_badges:
+            validate_static_badge_delivery(
+                gh=args.gh,
+                repository=args.repo,
+                badges=badges,
+                snapshot_id=badge_snapshot_id,
+            )
         if args.svg_output is not None:
             args.svg_output.parent.mkdir(parents=True, exist_ok=True)
-            args.svg_output.write_text(
-                render_badges_svg(
-                    resolved_badges(
-                        sonar_measures=sonar_measures,
-                        codeql_analysis=codeql_analysis,
-                    )
-                ),
-                encoding="utf-8",
-            )
+            args.svg_output.write_text(render_badges_svg(badges), encoding="utf-8")
         print(
             render_snapshot(
                 commit=args.commit,
@@ -546,6 +706,7 @@ def main() -> None:
                 codeql_analysis=codeql_analysis,
                 release_kind=args.release_kind,
                 asset_url=args.asset_url or "quality-snapshot.svg",
+                badge_snapshot_id=badge_snapshot_id,
             ),
             end="",
         )

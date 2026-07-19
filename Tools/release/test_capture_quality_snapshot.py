@@ -41,7 +41,7 @@ def load_module():
 class CaptureQualitySnapshotTests(unittest.TestCase):
     """The release block is static and contains every required quality measure."""
 
-    def test_render_snapshot_uses_native_metric_rows_and_links_owned_evidence(self) -> None:
+    def test_render_snapshot_uses_all_static_badges_and_links_owned_evidence(self) -> None:
         module = load_module()
         measures = {
             "alert_status": "OK",
@@ -70,7 +70,7 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         )
 
         self.assertIn("## Quality Snapshot", snapshot)
-        self.assertIn("static metrics", snapshot)
+        self.assertIn("static badges", snapshot)
         self.assertIn("`0123456789abcdef`", snapshot)
         for label in (
             "Quality Gate Status",
@@ -86,35 +86,26 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             "Vulnerabilities",
         ):
             self.assertIn(label, snapshot)
-        self.assertIn("**Quality Gate Status:** Passed", snapshot)
-        self.assertIn("**Coverage:** 90.8%", snapshot)
-        self.assertIn("**CodeQL Analysis:** Completed", snapshot)
-        self.assertIn("**CodeQL Results:** 0", snapshot)
-        self.assertIn("**CodeQL Rules:** 34", snapshot)
-        self.assertIn("### Validated metrics", snapshot)
-        metric_rows = [line for line in snapshot.splitlines() if line.startswith("- **")]
-        self.assertEqual(
-            metric_rows,
-            [
-                "- **Quality Gate Status:** Passed",
-                "- **Bugs:** 0",
-                "- **Code Smells:** 15",
-                "- **Coverage:** 90.8%",
-                "- **Duplicated Lines (%):** 0.7%",
-                "- **Lines of Code:** 26,901",
-                "- **Reliability Rating:** A",
-                "- **Security Rating:** A",
-                "- **Technical Debt:** 3h 19m",
-                "- **Maintainability Rating:** A",
-                "- **Vulnerabilities:** 0",
-                "- **CodeQL Analysis:** Completed",
-                "- **CodeQL Results:** 0",
-                "- **CodeQL Rules:** 34",
-            ],
+        expected_badges = module.render_static_badges(
+            module.resolved_badges(
+                sonar_measures=measures,
+                codeql_analysis={
+                    "results_count": 0,
+                    "rules_count": 34,
+                    "error": "",
+                    "warning": "",
+                },
+            ),
+            snapshot_id="0123456789abcdef",
         )
+        self.assertIn(expected_badges, snapshot)
+        self.assertEqual(snapshot.count("!["), 14)
+        self.assertIn("img.shields.io/static/v1?", snapshot)
+        self.assertIn("cacheSeconds=300", snapshot)
+        self.assertIn("snapshot=0123456789abcdef", snapshot)
         self.assertIn("[Download the self-contained SVG evidence](quality-snapshot.svg)", snapshot)
-        self.assertNotIn("![", snapshot)
-        self.assertNotIn("img.shields.io", snapshot)
+        self.assertNotIn("### Validated metrics", snapshot)
+        self.assertNotIn("- **", snapshot)
         self.assertNotIn("sonarcloud.io", snapshot)
         self.assertNotIn("Release", snapshot)
         self.assertNotIn("Visitor", snapshot)
@@ -141,9 +132,10 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
 
         self.assertIn("CodeQL analysis covers `0123456789abcdef`", snapshot)
         self.assertIn("did not produce a SonarQube scan", snapshot)
-        self.assertIn("**CodeQL Analysis:** Completed", snapshot)
-        self.assertIn("**CodeQL Results:** 0", snapshot)
-        self.assertIn("**CodeQL Rules:** 34", snapshot)
+        self.assertIn("![CodeQL Analysis]", snapshot)
+        self.assertIn("![CodeQL Results]", snapshot)
+        self.assertIn("![CodeQL Rules]", snapshot)
+        self.assertEqual(snapshot.count("!["), 3)
         self.assertNotIn("Quality Gate Status", snapshot)
         self.assertNotIn("SonarQube `main` analysis", snapshot)
 
@@ -186,6 +178,9 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn("quality_snapshot_asset", workflow)
         self.assertIn("--svg-output", workflow)
         self.assertIn("--asset-url", workflow)
+        self.assertIn("--badge-snapshot-id", workflow)
+        self.assertIn("--verify-static-badges", workflow)
+        self.assertIn("${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}", workflow)
         retention_step = workflow.split(
             "- name: Retain only current release assets", 1
         )[1].split("\n\n  repair-stable-tap:", 1)[0]
@@ -250,7 +245,7 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn("replaced when `current` moves", snapshot)
         self.assertNotIn("retained as historical evidence", snapshot)
 
-    def test_stable_and_current_snapshots_keep_the_same_native_metrics_and_evidence_link(self) -> None:
+    def test_stable_and_current_snapshots_keep_the_same_static_badges_and_evidence_link(self) -> None:
         module = load_module()
         measures = {
             "alert_status": "OK",
@@ -288,14 +283,73 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             release_kind="stable",
         )
 
-        def metric_rows(snapshot: str) -> list[str]:
-            return [line for line in snapshot.splitlines() if line.startswith("- **")]
+        def badge_rows(snapshot: str) -> list[str]:
+            return [line for line in snapshot.splitlines() if line.startswith("![")]
 
-        self.assertEqual(metric_rows(current), metric_rows(stable))
-        self.assertEqual(len(metric_rows(stable)), 14)
-        self.assertNotIn("![", current)
-        self.assertNotIn("![", stable)
+        self.assertEqual(badge_rows(current), badge_rows(stable))
+        self.assertEqual(len(badge_rows(stable)), 1)
+        self.assertEqual(badge_rows(stable)[0].count("!["), 14)
+        self.assertIn("img.shields.io/static/v1", current)
+        self.assertIn("img.shields.io/static/v1", stable)
         self.assertIn("(quality-snapshot.svg)", stable)
+
+    def test_static_badge_delivery_requires_every_github_proxied_svg(self) -> None:
+        module = load_module()
+        badges = [
+            module.snapshot_badge("Code Smells", "1", "blue"),
+            module.snapshot_badge("Coverage", "80.8%", "orange"),
+        ]
+        snapshot_id = "0123456789abcdef-run-1"
+        canonical_sources = [
+            module.static_badge_url(badge=badge, snapshot_id=snapshot_id)
+            for badge in badges
+        ]
+        rendered = "".join(
+            '<img src="https://camo.githubusercontent.com/example/'
+            f'{index}" data-canonical-src="{source.replace("&", "&amp;")}">'
+            for index, source in enumerate(canonical_sources)
+        )
+        module.gh_text = lambda *_args: rendered
+        module.fetch_badge_svg = lambda _url: (
+            '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+        )
+
+        module.validate_static_badge_delivery(
+            gh="gh",
+            repository="example/repo",
+            badges=badges,
+            snapshot_id=snapshot_id,
+        )
+
+    def test_static_badge_delivery_rejects_missing_or_malformed_images(self) -> None:
+        module = load_module()
+        badges = [module.snapshot_badge("Code Smells", "1", "blue")]
+        snapshot_id = "0123456789abcdef-run-1"
+        module.gh_text = lambda *_args: '<img src="https://camo.githubusercontent.com/example/0">'
+
+        with self.assertRaisesRegex(ValueError, "did not render every expected"):
+            module.validate_static_badge_delivery(
+                gh="gh",
+                repository="example/repo",
+                badges=badges,
+                snapshot_id=snapshot_id,
+            )
+
+        source = module.static_badge_url(badge=badges[0], snapshot_id=snapshot_id)
+        module.gh_text = lambda *_args: (
+            '<img src="https://camo.githubusercontent.com/example/0" '
+            f'data-canonical-src="{source.replace("&", "&amp;")}">'
+        )
+        module.fetch_badge_svg = lambda _url: "not svg"
+        module.BADGE_DELIVERY_ATTEMPTS = 1
+
+        with self.assertRaisesRegex(ValueError, "invalid static quality badge SVG"):
+            module.validate_static_badge_delivery(
+                gh="gh",
+                repository="example/repo",
+                badges=badges,
+                snapshot_id=snapshot_id,
+            )
 
     def test_render_badges_svg_is_self_contained_and_escapes_metric_text(self) -> None:
         module = load_module()
@@ -340,7 +394,7 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "supplied together"):
                 module.main()
 
-    def test_cli_writes_self_contained_svg_and_native_evidence_link(self) -> None:
+    def test_cli_writes_self_contained_svg_and_verified_static_badges(self) -> None:
         module = load_module()
         measures = {
             "alert_status": "OK",
@@ -360,6 +414,8 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             {"results_count": 0, "rules_count": 34, "error": "", "warning": ""},
         )
         module.sonar_measures_for_analysis = lambda **_kwargs: measures
+        verified: list[dict[str, object]] = []
+        module.validate_static_badge_delivery = lambda **kwargs: verified.append(kwargs)
 
         with tempfile.TemporaryDirectory() as directory:
             asset_path = Path(directory) / "quality-snapshot.svg"
@@ -377,6 +433,9 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
                     str(asset_path),
                     "--asset-url",
                     "https://github.com/example/repo/releases/download/current/quality-snapshot.svg",
+                    "--badge-snapshot-id",
+                    "0123456789abcdef-run-1",
+                    "--verify-static-badges",
                 ],
             ), redirect_stdout(output):
                 module.main()
@@ -386,8 +445,10 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             self.assertIn("30,546", svg)
             self.assertNotIn("https://", svg)
             self.assertIn("https://github.com/example/repo/releases/download/current/quality-snapshot.svg", output.getvalue())
-            self.assertNotIn("![", output.getvalue())
-            self.assertNotIn("img.shields.io", output.getvalue())
+            self.assertIn("![Quality Gate Status]", output.getvalue())
+            self.assertIn("snapshot=0123456789abcdef-run-1", output.getvalue())
+            self.assertEqual(len(verified), 1)
+            self.assertEqual(verified[0]["snapshot_id"], "0123456789abcdef-run-1")
 
     def test_codeql_warning_is_rejected(self) -> None:
         module = load_module()

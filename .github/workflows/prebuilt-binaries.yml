@@ -808,6 +808,8 @@ jobs:
             --repo "${GITHUB_REPOSITORY}"
             --commit "${PUBLISH_SHA}"
             --release-kind "${quality_release_kind}"
+            --badge-snapshot-id "${PUBLISH_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            --verify-static-badges
           )
           if [[ "${SONARQUBE_SNAPSHOT_REQUIRED}" != "true" ]]; then
             quality_snapshot_args+=(--allow-missing-sonarqube)
