@@ -75,15 +75,9 @@ Use `container system version` to see the running `container` runtime source, br
 
 ## See It Work
 
-![Terminal recording: inspecting the current stack, using Compose help, and planning the monitoring stack](https://github.com/stephenlclarke/container-compose/releases/download/current/container-compose-demo-current.gif)
+![Terminal recording: starting, inspecting, and tearing down the monitoring stack](https://github.com/stephenlclarke/container-compose/releases/download/current/container-compose-demo-current.gif)
 
-The recording inspects the installed stack, exercises support-aware `up` help,
-and renders the real [`examples/monitoring-stack/docker-compose.yaml`](examples/monitoring-stack/docker-compose.yaml)
-creation, readiness, status, and teardown plans with `--dry-run`. Its reproducible
-[VHS tape](docs/container-compose-demo.tape) is kept alongside the generated
-recording. Every successful Current build regenerates the recording with the
-matching packaged runtime and Compose plugin, then publishes it with the
-mutable `current` release.
+The recording starts the matched `container` system service, inspects the installed stack, exercises support-aware `up` help, and runs the portable services in the real [`examples/monitoring-stack/docker-compose.yaml`](examples/monitoring-stack/docker-compose.yaml). It visibly creates and starts the services, waits for them to be running, shows `stats --no-stream` and `ps`, reaches the nginx `/healthz` endpoint, and then removes the project with `down --volumes --remove-orphans`. Its reproducible [VHS tape](docs/container-compose-demo.tape) is kept alongside the generated recording. Every successful Current build regenerates the recording with the matching packaged runtime and Compose plugin, then publishes it with the mutable `current` release.
 
 ## Install And Project Map
 

@@ -665,8 +665,17 @@ jobs:
         run: |
           set -euo pipefail
           demo_root="${RUNNER_TEMP}/current-build-demo"
+          demo_app_root="${demo_root}/app"
           demo_output=".build/current-demo/${DEMO_ASSET}"
           tape="${RUNNER_TEMP}/container-compose-current-demo.tape"
+          demo_system_started=0
+
+          cleanup() {
+            if [[ "${demo_system_started}" == "1" ]]; then
+              "${container_binary}" system stop || true
+            fi
+          }
+          trap cleanup EXIT
 
           mkdir -p "${demo_root}/libexec/container-plugins"
           mkdir -p "$(dirname "${demo_output}")"
@@ -678,9 +687,19 @@ jobs:
           test -x "${demo_root}/libexec/container-plugins/compose/bin/compose"
 
           export CONTAINER_INSTALL_ROOT="${demo_root}"
+          export CONTAINER_APP_ROOT="${demo_app_root}"
           export PATH="${demo_root}/bin:${PATH}"
 
+          "${container_binary}" system start \
+            --app-root "${demo_app_root}" \
+            --install-root "${demo_root}" \
+            --enable-kernel-install \
+            --timeout 60
+          demo_system_started=1
+          "${container_binary}" system status
+
           sed "1s#^Output .*#Output ${demo_output}#" docs/container-compose-demo.tape > "${tape}"
+          rm -f "${demo_output}"
           vhs "${tape}"
           test -s "${demo_output}"
           cp "${demo_output}" "${RUNNER_TEMP}/${DEMO_ASSET}"

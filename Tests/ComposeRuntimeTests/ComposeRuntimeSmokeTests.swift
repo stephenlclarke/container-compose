@@ -177,6 +177,59 @@ struct ComposeRuntimeSmokeTests {
         Issue.record("Expected entrypoint-command output in runtime logs. Last logs: \(lastLogs)")
     }
 
+    @Test("runtime up reuses an existing named volume")
+    func runtimeUpReusesExistingNamedVolume() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = try copyRuntimeFixture(named: "volume-reuse")
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+
+        let project = runtimeProjectName()
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
+        _ = try runProcess(containerBinary, ["system", "status"], timeout: 15)
+        defer {
+            _ = try? runProcess(
+                composeBinary,
+                [
+                    "--ansi", "never",
+                    "--project-name", project,
+                    "--file", composeFile.path,
+                    "down", "--volumes", "--remove-orphans",
+                ],
+                timeout: 60
+            )
+        }
+
+        let upArguments = [
+            "--ansi", "never",
+            "--project-name", project,
+            "--file", composeFile.path,
+            "up", "--detach", "--wait", "--wait-timeout", "60",
+        ]
+        _ = try runProcess(composeBinary, upArguments, timeout: 180)
+        _ = try runProcess(composeBinary, upArguments, timeout: 180)
+
+        let marker = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "exec", "--no-tty", "writer", "cat", "/data/marker",
+            ],
+            timeout: 30
+        )
+        #expect(marker.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "volume-reuse-ok")
+    }
+
     @Test("runtime up assigns IPv6 for an automatic IPv6 Compose network")
     func runtimeUpAssignsAutomaticIPv6Network() throws {
         guard runtimeTestsEnabled else {

@@ -19623,6 +19623,40 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("resource manager reuses volumes reported as existing by container")
+    func resourceManagerReusesVolumesReportedAsExistingByContainer() async throws {
+        let client = RecordingContainerResourceAPIClient(
+            volumeCreateError: ContainerizationError(
+                .exists,
+                message: "volume 'demo_cache' already exists"
+            )
+        )
+        let manager = ContainerClientResourceManager(client: client)
+
+        try await manager.createVolume(ComposeVolumeCreateRequest(name: "demo_cache"))
+
+        #expect(await client.requests == [
+            .createVolume(ComposeVolumeCreateRequest(name: "demo_cache")),
+        ])
+    }
+
+    @Test("resource manager reuses volumes reported as existing through XPC")
+    func resourceManagerReusesVolumesReportedAsExistingThroughXPC() async throws {
+        let client = RecordingContainerResourceAPIClient(
+            volumeCreateError: ContainerizationError(
+                .internalError,
+                message: "volume 'demo_cache' already exists"
+            )
+        )
+        let manager = ContainerClientResourceManager(client: client)
+
+        try await manager.createVolume(ComposeVolumeCreateRequest(name: "demo_cache"))
+
+        #expect(await client.requests == [
+            .createVolume(ComposeVolumeCreateRequest(name: "demo_cache")),
+        ])
+    }
+
     @Test("resource manager rejects invalid network subnet before API create")
     func resourceManagerRejectsInvalidNetworkSubnetBeforeAPICreate() async throws {
         let client = RecordingContainerResourceAPIClient()

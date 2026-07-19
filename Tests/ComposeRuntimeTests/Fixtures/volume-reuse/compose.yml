@@ -1,0 +1,8 @@
+services:
+  writer:
+    image: alpine:3.20
+    command: ["sh", "-c", "printf volume-reuse-ok > /data/marker; sleep 300"]
+    volumes:
+      - cache:/data
+volumes:
+  cache:

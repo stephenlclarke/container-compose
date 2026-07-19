@@ -258,16 +258,29 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn('export CONTAINER_INSTALL_ROOT="${demo_root}"', workflow)
+        self.assertIn('export CONTAINER_APP_ROOT="${demo_app_root}"', workflow)
+        self.assertIn('"${container_binary}" system start', workflow)
+        self.assertIn('--app-root "${demo_app_root}"', workflow)
+        self.assertIn('--install-root "${demo_root}"', workflow)
+        self.assertIn('--enable-kernel-install', workflow)
+        self.assertIn('--timeout 60', workflow)
+        self.assertIn('"${container_binary}" system status', workflow)
+        self.assertIn('trap cleanup EXIT', workflow)
+        self.assertIn('"${container_binary}" system stop || true', workflow)
         self.assertIn("docs/container-compose-demo.tape", workflow)
+        self.assertIn('rm -f "${demo_output}"', workflow)
         self.assertIn('vhs "${tape}"', workflow)
-        self.assertNotIn('"${container_binary}" system start', workflow)
         self.assertIn("Current build VHS recording is missing", workflow)
         self.assertIn('--current-asset "${{ steps.lane.outputs.demo_asset }}"', workflow)
         tape = (ROOT / "docs" / "container-compose-demo.tape").read_text(encoding="utf-8")
-        self.assertIn("up --wait", tape)
+        self.assertIn('Set TypingSpeed 48ms', tape)
+        self.assertIn('container system status', tape)
+        self.assertIn('up --detach --wait --wait-timeout 120', tape)
         self.assertIn("stats --no-stream", tape)
         self.assertIn("ps", tape)
+        self.assertIn('curl --fail --silent http://localhost:8080/healthz', tape)
         self.assertIn("down --volumes --remove-orphans", tape)
+        self.assertIn("ps --all", tape)
         self.assertNotIn("--dry-run", tape)
         self.assertIn(
             "releases/download/current/container-compose-demo-current.gif",
@@ -430,6 +443,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn("CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1", makefile)
         self.assertIn("docker-compose-devices-parity", makefile)
+        self.assertIn("docker-compose-named-volume-reuse-parity", makefile)
         self.assertIn(
             "release-gate: container-stack-release-validation ci swift-runtime-test docker-compose-parity",
             makefile,

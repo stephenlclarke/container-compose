@@ -183,12 +183,24 @@ public struct ContainerClientResourceManager: ComposeRuntimeResourceManaging {
     public func createVolume(_ request: ComposeVolumeCreateRequest) async throws {
         do {
             try await client.createVolume(request)
+        } catch let error as ContainerizationError where error.code == .exists {
+            return
+        } catch let error as ContainerizationError where isExistingVolumeError(error) {
+            // Older container API-server releases serialize VolumeError across
+            // XPC as a generic ContainerizationError. Keep `up` idempotent
+            // while the runtime service is upgraded independently.
+            return
         } catch let error as VolumeError {
             if case .volumeAlreadyExists = error {
                 return
             }
             throw error
         }
+    }
+
+    private func isExistingVolumeError(_ error: ContainerizationError) -> Bool {
+        let message = error.message.lowercased()
+        return message.contains("volume") && message.contains("already exists")
     }
 
     /// Lists local volumes through `ClientVolume`.
