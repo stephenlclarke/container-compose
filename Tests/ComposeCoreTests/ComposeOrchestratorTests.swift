@@ -7559,9 +7559,10 @@ struct ComposeOrchestratorTests {
         #expect(!command.contains("--userns"))
     }
 
-    @Test("up rejects private user namespace mode before creating resources")
-    func upRejectsPrivateUserNamespaceModeBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
+    @Test("up maps private user namespace mode to the guest runtime")
+    func upMapsPrivateUserNamespaceModeToGuestRuntime() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -7571,16 +7572,11 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected private user namespace error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses userns_mode 'private'; only host is supported because the local runtime has no OCI user namespace"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--userns", "private"]))
     }
 
     @Test("up rejects network aliases until the runtime exposes container-facing DNS")
@@ -12763,12 +12759,12 @@ struct ComposeOrchestratorTests {
     }
 
     @Test("config preserves userns_mode using the Compose field spelling")
-    func configPreservesHostUserNamespaceMode() throws {
+    func configPreservesPrivateUserNamespaceMode() throws {
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.usernsMode = "host"
+                    $0.usernsMode = "private"
                 },
             ]
         )
@@ -12778,7 +12774,7 @@ struct ComposeOrchestratorTests {
         let services = try #require(document["services"] as? [String: Any])
         let api = try #require(services["api"] as? [String: Any])
 
-        #expect(api["userns_mode"] as? String == "host")
+        #expect(api["userns_mode"] as? String == "private")
         #expect(api["usernsMode"] == nil)
     }
 

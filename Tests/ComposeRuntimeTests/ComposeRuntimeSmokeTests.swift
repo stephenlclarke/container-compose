@@ -672,6 +672,71 @@ struct ComposeRuntimeSmokeTests {
                 "--ansi", "never",
                 "--project-name", project,
                 "--file", composeFile.path,
+                "exec", "--no-tty", "api", "sh", "-c",
+                "test \"$(readlink /proc/self/ns/user)\" != \"user:[4026531837]\" && cat /proc/self/uid_map",
+            ],
+            timeout: 60
+        )
+        #expect(result.stdout.split(whereSeparator: \.isWhitespace) == ["0", "0", "4294967295"])
+    }
+
+    @Test("runtime private user namespace has an identity-mapped guest namespace")
+    func runtimePrivateUserNamespaceHasIdentityMappedGuestNamespace() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            userns_mode: private
+            command: ["sleep", "infinity"]
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = runtimeProjectName()
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
+        _ = try runProcess(containerBinary, ["system", "status"], timeout: 15)
+        defer {
+            _ = try? runProcess(
+                composeBinary,
+                [
+                    "--ansi", "never",
+                    "--project-name", project,
+                    "--file", composeFile.path,
+                    "down", "--volumes", "--remove-orphans",
+                ],
+                timeout: 60
+            )
+        }
+
+        _ = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "up", "--detach", "api",
+            ],
+            timeout: 180
+        )
+
+        let result = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
                 "exec", "--no-tty", "api", "cat", "/proc/self/uid_map",
             ],
             timeout: 60

@@ -187,6 +187,9 @@ extension ComposeOrchestrator {
         if let utsNamespace = try runtimeUTSNamespaceArgument(service: service) {
             args.append(contentsOf: ["--uts", utsNamespace])
         }
+        if let userNamespace = try runtimeUserNamespaceArgument(service: service) {
+            args.append(contentsOf: ["--userns", userNamespace])
+        }
         if let platform = service.platform, !platform.isEmpty {
             args.append(contentsOf: ["--platform", platform])
         }
