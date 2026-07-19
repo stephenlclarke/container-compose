@@ -92,6 +92,7 @@ struct ComposeNormalizerTests {
               net.core.somaxconn: "1024"
             security_opt:
               - no-new-privileges:true
+              - seccomp=unconfined
             volumes:
               - type: volume
                 source: data
@@ -205,7 +206,7 @@ struct ComposeNormalizerTests {
         #expect(project.services["api"]?.shmSize == "67108864")
         #expect(project.services["api"]?.ulimits == ["nofile=1024:2048", "nproc=512"])
         #expect(project.services["api"]?.sysctls == ["net.core.somaxconn": "1024"])
-        #expect(project.services["api"]?.securityOpt == ["no-new-privileges:true"])
+        #expect(project.services["api"]?.securityOpt == ["no-new-privileges:true", "seccomp=unconfined"])
         #expect(project.services["api"]?.volumes == [
             ComposeMount(
                 type: "volume",

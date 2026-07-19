@@ -85,7 +85,7 @@ services:
 	}
 }
 
-func TestRunPreservesNoNewPrivilegesSecurityOption(t *testing.T) {
+func TestRunPreservesSupportedSecurityOptions(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "compose.yaml"), `
 services:
@@ -93,6 +93,7 @@ services:
     image: nginx:alpine
     security_opt:
       - no-new-privileges:true
+      - seccomp=unconfined
 `)
 
 	var stdout bytes.Buffer
@@ -106,7 +107,7 @@ services:
 	if err := json.Unmarshal(stdout.Bytes(), &project); err != nil {
 		t.Fatalf("decode normalized JSON: %v", err)
 	}
-	if got, want := project.Services["api"].SecurityOpt, []string{"no-new-privileges:true"}; !reflect.DeepEqual(got, want) {
+	if got, want := project.Services["api"].SecurityOpt, []string{"no-new-privileges:true", "seccomp=unconfined"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.SecurityOpt = %#v, want %#v", got, want)
 	}
 }

@@ -7539,6 +7539,28 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--security-opt", "no-new-privileges:true"]))
     }
 
+    @Test("up consumes unconfined seccomp security_opt at the Compose boundary")
+    func upConsumesUnconfinedSeccompSecurityOption() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.securityOpt = ["no-new-privileges:true", "seccomp=unconfined"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--security-opt", "no-new-privileges:true"]))
+        #expect(!command.contains("seccomp=unconfined"))
+    }
+
     @Test("up accepts host user namespace as the sandbox guest default")
     func upAcceptsHostUserNamespaceAsSandboxGuestDefault() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -24780,6 +24802,29 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--security-opt", "no-new-privileges=true"]))
     }
 
+    @Test("run consumes unconfined seccomp security_opt at the Compose boundary")
+    func runConsumesUnconfinedSeccompSecurityOption() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.securityOpt = ["seccomp=unconfined"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            command: ["true"],
+            remove: true
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(!command.contains("--security-opt"))
+    }
+
     @Test("run persists service stop defaults in runtime arguments")
     func runPersistsServiceStopDefaultsInRuntimeArguments() async throws {
         let runner = RecordingRunner()
@@ -27873,7 +27918,7 @@ private func unsupportedUserAndSecurityOptionFieldCases() -> [UnsupportedUserAnd
         UnsupportedUserAndSecurityOptionFieldCase(
             composeName: "security_opt",
             value: "label:disable",
-            reason: "only no-new-privileges:true|false or no-new-privileges=true|false is supported",
+            reason: "only no-new-privileges:true|false, no-new-privileges=true|false, or seccomp=unconfined is supported",
             configure: { $0.securityOpt = ["label:disable"] }
         ),
     ]

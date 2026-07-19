@@ -302,25 +302,32 @@ extension ComposeOrchestrator {
     }
 
     /// Returns Docker-compatible security options backed by generic runtime
-    /// primitives. The runtime deliberately supports this narrow option rather
-    /// than accepting arbitrary security options it cannot enforce.
+    /// primitives. `seccomp=unconfined` is intentionally consumed here: guest
+    /// workloads already run without a seccomp filter, so forwarding a
+    /// Docker-shaped no-op to the generic runtime would add no enforcement.
+    /// Other profiles remain rejected until the runtime can enforce them.
     func runtimeSecurityOptionArguments(service: ComposeService) throws -> [String] {
         let options = service.securityOpt ?? []
-        let supported = Set([
+        let noNewPrivilegesOptions = Set([
             "no-new-privileges:true",
             "no-new-privileges:false",
             "no-new-privileges=true",
             "no-new-privileges=false",
         ])
+        var runtimeOptions: [String] = []
 
         for option in options where !option.isEmpty {
-            guard supported.contains(option) else {
+            if noNewPrivilegesOptions.contains(option) {
+                runtimeOptions.append(option)
+            } else if option == "seccomp=unconfined" {
+                continue
+            } else {
                 throw ComposeError.unsupported(
-                    "service '\(service.name)' uses security_opt '\(option)'; only no-new-privileges:true|false or no-new-privileges=true|false is supported",
+                    "service '\(service.name)' uses security_opt '\(option)'; only no-new-privileges:true|false, no-new-privileges=true|false, or seccomp=unconfined is supported",
                 )
             }
         }
-        return options.filter { !$0.isEmpty }
+        return runtimeOptions
     }
 
     /// Returns unsupported credential access fields.
