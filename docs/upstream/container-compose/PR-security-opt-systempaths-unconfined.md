@@ -13,8 +13,12 @@ runtime argument understood by the Apple-shaped `container` fork.
   `feat(security): support unconfined guest system paths`
 - `container` handoff: `25fe60c`
   `docs(security): add guest system path handoff`
+- `container` resolved release revision: `25fe60c240daebdb893a8396f6168e272f8a3709`
+  (the published `main` head containing the generic primitive)
 - `container-compose`: `c0331abed938051b1941e78dece6395e1238cb14`
   `feat(security): map unconfined guest system paths`
+- `container-compose` dependency resolution: `5fab82bd`
+  `chore(deps): pin guest system path runtime`
 - `containerization`: no source change. Its existing
   `LinuxContainer.Configuration.maskedPaths` and `.readonlyPaths` fields are
   the generic primitive used by the fork.
@@ -61,7 +65,9 @@ make coverage-check
 All listed checks passed locally. Coverage was 91.38% for Swift and 85.50% for
 Go. Docker Compose V2 5.3.1 config parity passed for both spellings. Docker
 Engine was unavailable, so the script skipped only its optional Engine dry-run
-assertion; the direct matched-guest Compose runtime test passed separately.
+assertion; the direct matched-guest Compose runtime test passed separately. The
+same guest test was rerun after resolving Compose to the published `25fe60c`
+runtime revision and rebuilding/restarting the local API service.
 
 ## Compatibility and non-goals
 
