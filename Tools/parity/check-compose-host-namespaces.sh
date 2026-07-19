@@ -20,7 +20,7 @@
 #   check-compose-host-namespaces.sh [options]
 #
 # OPTIONS:
-#   --strict    Fail when Docker Compose V2, the Docker daemon, or container-compose is unavailable.
+#   --strict    Fail when Docker Compose V2 or container-compose is unavailable.
 #   -h, --help  Show this help.
 #
 # ENVIRONMENT:
@@ -33,9 +33,12 @@
 # This script is intentionally local-only and is not part of CI. It validates
 # Docker Compose V2 host namespace behavior for service `network_mode: host`
 # and `pid: host`, then checks the same Compose file through container-compose
-# dry-run output. The stephenlclarke runtime path maps `network_mode: host` to
-# `container --network host`. Service/container namespace sharing remains a
-# later parity slice and is checked here as an explicit documented difference.
+# dry-run output. It also compares Docker Compose V2 and container-compose
+# configuration for accepted PID and IPC sharing spellings, then verifies that
+# container-compose refuses those runtime modes before side effects. The
+# stephenlclarke runtime path maps `network_mode: host` to `container --network
+# host`; Docker's service/container namespace sharing remains a later parity
+# slice.
 
 set -euo pipefail
 
@@ -49,11 +52,13 @@ STRICT=0
 TMPDIR=""
 COMPOSE_FILE=""
 UNSUPPORTED_PID_FILE=""
+UNSUPPORTED_IPC_FILE=""
 UNSUPPORTED_NETWORK_FILE=""
 DOCKER_PROJECT_NAME="container-compose-host-docker-$RANDOM-$$"
 CONTAINER_PROJECT_NAME="container-compose-host-runtime-$RANDOM-$$"
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 DOCKER_COMPOSE_COMMAND=()
+DOCKER_DAEMON_AVAILABLE=0
 
 # Print a warning message to stderr.
 warning() {
@@ -117,11 +122,13 @@ detect_docker_compose() {
     fi
 }
 
-# Check Docker Compose V2 and daemon availability.
+# Check Docker Compose V2 and record whether the optional daemon is available.
 check_docker() {
     detect_docker_compose
-    if ! docker info >/dev/null 2>&1; then
-        skip_or_fail 'Docker daemon is not available'
+    if docker info >/dev/null 2>&1; then
+        DOCKER_DAEMON_AVAILABLE=1
+    else
+        printf 'Docker daemon unavailable; checking configuration and container-compose dry-run parity only.\n'
     fi
 }
 
@@ -142,6 +149,7 @@ create_fixture() {
     TMPDIR="$(mktemp -d "$REPO_ROOT/.build/parity/host-namespaces.XXXXXX")"
     COMPOSE_FILE="$TMPDIR/compose.yml"
     UNSUPPORTED_PID_FILE="$TMPDIR/pid-service.yml"
+    UNSUPPORTED_IPC_FILE="$TMPDIR/ipc-sharing.yml"
     UNSUPPORTED_NETWORK_FILE="$TMPDIR/network-service.yml"
 
     cat >"$COMPOSE_FILE" <<'YAML'
@@ -167,6 +175,25 @@ services:
     pid: service:db
 YAML
 
+    cat >"$UNSUPPORTED_IPC_FILE" <<'YAML'
+services:
+  db:
+    image: alpine:3.20
+    command: ["sh", "-c", "sleep 60"]
+  shareable:
+    image: alpine:3.20
+    command: ["true"]
+    ipc: shareable
+  service:
+    image: alpine:3.20
+    command: ["true"]
+    ipc: service:db
+  container:
+    image: alpine:3.20
+    command: ["true"]
+    ipc: container:legacy
+YAML
+
     cat >"$UNSUPPORTED_NETWORK_FILE" <<'YAML'
 services:
   db:
@@ -181,7 +208,7 @@ YAML
 
 # Clean up the temporary Docker Compose project and local files.
 cleanup() {
-    if [[ -n "$COMPOSE_FILE" ]]; then
+    if [[ -n "$COMPOSE_FILE" && "$DOCKER_DAEMON_AVAILABLE" == 1 ]]; then
         "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
     fi
     if [[ -n "$TMPDIR" ]]; then
@@ -189,36 +216,72 @@ cleanup() {
     fi
 }
 
-# Validate Docker Compose's normalized config for host namespace modes.
-validate_docker_config() {
-    local config_json
+# Validate a tool's normalized config for host and blocked namespace modes.
+validate_config() {
+    local tool="$1"
+    local config_json="$2"
+    local sharing_config_json="$3"
+    local network_mode_field="$4"
 
-    config_json="$("${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" config --format json)"
-    python3 - "$config_json" <<'PY'
+    python3 - "$tool" "$config_json" "$sharing_config_json" "$network_mode_field" <<'PY'
 import json
 import sys
 
-config = json.loads(sys.argv[1])
+tool, config_json, sharing_config_json, network_mode_field = sys.argv[1:]
+config = json.loads(config_json)
 services = config["services"]
 net = services["net"]
 pid = services["pid"]
 
-if net.get("network_mode") != "host":
-    raise SystemExit(f"net network_mode={net.get('network_mode')!r}, want 'host'")
+if net.get(network_mode_field) != "host":
+    raise SystemExit(f"{tool} net {network_mode_field}={net.get(network_mode_field)!r}, want 'host'")
 if "networks" in net:
-    raise SystemExit("network_mode: host service should not retain service networks")
+    raise SystemExit(f"{tool} network_mode: host service should not retain service networks")
 if pid.get("pid") != "host":
-    raise SystemExit(f"pid mode={pid.get('pid')!r}, want 'host'")
+    raise SystemExit(f"{tool} pid mode={pid.get('pid')!r}, want 'host'")
 if "default" not in (pid.get("networks") or {}):
-    raise SystemExit("pid: host service should retain the default service network")
+    raise SystemExit(f"{tool} pid: host service should retain the default service network")
+
+sharing_services = json.loads(sharing_config_json)["services"]
+expected = {
+    "shareable": "shareable",
+    "service": "service:db",
+    "container": "container:legacy",
+}
+for name, wanted in expected.items():
+    actual = sharing_services[name].get("ipc")
+    if actual != wanted:
+        raise SystemExit(f"{tool} {name} ipc={actual!r}, want {wanted!r}")
 PY
+}
+
+# Validate Docker Compose V2 and container-compose normalized configuration.
+validate_config_parity() {
+    local docker_config_json
+    local docker_sharing_config_json
+    local container_config_json
+    local container_sharing_config_json
+
+    docker_config_json="$("${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" config --format json)"
+    docker_sharing_config_json="$("${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$UNSUPPORTED_IPC_FILE" config --format json)"
+    validate_config 'Docker Compose' "$docker_config_json" "$docker_sharing_config_json" 'network_mode'
+
+    container_config_json="$("$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" config --format json)"
+    container_sharing_config_json="$("$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$UNSUPPORTED_IPC_FILE" config --format json)"
+    validate_config 'container-compose' "$container_config_json" "$container_sharing_config_json" 'networkMode'
 
     "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$UNSUPPORTED_PID_FILE" config --format json >/dev/null
+    "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$UNSUPPORTED_PID_FILE" config --format json >/dev/null
     "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$UNSUPPORTED_NETWORK_FILE" config --format json >/dev/null
+    "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$UNSUPPORTED_NETWORK_FILE" config --format json >/dev/null
 }
 
 # Validate Docker Compose's runtime HostConfig for host namespace modes.
 validate_docker_host_config() {
+    if ((DOCKER_DAEMON_AVAILABLE == 0)); then
+        return
+    fi
+
     "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" up -d --quiet-pull >/dev/null
 
     python3 - "$DOCKER_PROJECT_NAME" "$COMPOSE_FILE" "${DOCKER_COMPOSE_COMMAND[@]}" <<'PY'
@@ -293,10 +356,23 @@ validate_container_compose_dry_run() {
     [[ "$run_pid_line" == *" --pid host "* ]] || { error "one-off pid: host service did not emit --pid host: $run_pid_line"; return 1; }
 
     unsupported_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$UNSUPPORTED_PID_FILE" up joiner 2>&1 || true)"
-    [[ "$unsupported_output" == *"service 'joiner' uses pid 'service:db'; only pid: host is supported"* ]] || {
+    [[ "$unsupported_output" == *"service 'joiner' uses pid 'service:db'; supported values are host and private"* ]] || {
         error "pid service-sharing blocker changed: $unsupported_output"
         return 1
     }
+
+    for service in shareable service container; do
+        unsupported_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$UNSUPPORTED_IPC_FILE" up "$service" 2>&1 || true)"
+        case "$service" in
+            shareable) expected_ipc='shareable' ;;
+            service) expected_ipc='service:db' ;;
+            container) expected_ipc='container:legacy' ;;
+        esac
+        [[ "$unsupported_output" == *"service '$service' uses ipc '$expected_ipc'; supported values are host and private"* ]] || {
+            error "IPC namespace-sharing blocker changed for $service: $unsupported_output"
+            return 1
+        }
+    done
 
     unsupported_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$UNSUPPORTED_NETWORK_FILE" up joiner 2>&1 || true)"
     [[ "$unsupported_output" == *"service 'joiner' uses network_mode 'service:db'; network mode support needs an apple/container runtime gap PR"* ]] || {
@@ -313,7 +389,7 @@ main() {
     create_fixture
     trap cleanup EXIT
 
-    validate_docker_config
+    validate_config_parity
     validate_docker_host_config
     validate_container_compose_dry_run
     printf 'Docker Compose host namespace parity check passed for project %s\n' "$DOCKER_PROJECT_NAME"
