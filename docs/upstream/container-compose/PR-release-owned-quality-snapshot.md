@@ -11,6 +11,8 @@ SonarQube and CodeQL evidence, metric colours, and accessible text.
 
 - `2101ad08bc9ccb7d8d09d7f8998d7301093be324`
   `fix(release): own quality snapshot assets`
+- `fcfb52d28438e1992dd379a35f7e339f166ea5ea`
+  `fix(release): retain current quality snapshot asset`
 
 ## Implementation
 
@@ -19,7 +21,9 @@ SonarQube and CodeQL evidence, metric colours, and accessible text.
   release-owned asset.
 - `.github/workflows/prebuilt-binaries.yml` supplies distinct Current and
   stable asset names, stages the SVG with the package assets, and retains the
-  Current SVG after release finalization.
+  Current SVG after release finalization. The retention step declares the
+  snapshot asset name in its own environment, so `set -u` cannot fail after a
+  successful Current release publication.
 - `BUILD.md` documents the owned-asset evidence contract.
 - Unit tests cover metric escaping, image self-containment, CLI asset output,
   and the workflow/retention contract.
@@ -28,8 +32,7 @@ SonarQube and CodeQL evidence, metric colours, and accessible text.
 
 ```sh
 python3 -m unittest Tools/release/test_capture_quality_snapshot.py
-python3 -m unittest Tools/release/test_release_notes.py
-python3 -m unittest Tools/release/test_container_stack_release.py
+python3 -m unittest discover -s Tools/release -p 'test_*.py'
 make check
 git diff --check
 ```

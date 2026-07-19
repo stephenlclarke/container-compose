@@ -17,6 +17,8 @@ even though the generated URLs and metric encoding were valid.
   release-asset URL.
 - Keep the mutable Current asset during retention and give stable releases their
   own immutable asset.
+- Declare the Current snapshot asset in the retention step itself, so strict
+  shell execution cannot fail after publication.
 - Preserve accessible metric names and values in the Markdown alternative text.
 - Cover SVG generation, XML escaping, CLI asset wiring, and workflow retention
   with unit and workflow-contract tests.
