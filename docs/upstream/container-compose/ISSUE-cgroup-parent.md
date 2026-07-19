@@ -12,7 +12,7 @@ configuration. The Engine applies the setting to its Linux cgroup hierarchy.
 
 References:
 
-- <https://compose-spec.io/05-services.html#cgroup_parent>
+- <https://compose-spec.github.io/compose-spec/05-services.html#cgroup_parent>
 - <https://docs.docker.com/reference/compose-file/services/#cgroup_parent>
 
 ## Implemented behavior
