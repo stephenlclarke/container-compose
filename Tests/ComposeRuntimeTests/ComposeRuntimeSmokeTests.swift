@@ -615,6 +615,94 @@ struct ComposeRuntimeSmokeTests {
         #expect(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "compose-privileged")
     }
 
+    @Test("runtime service clears guest system-path overrides without adding capabilities")
+    func runtimeServiceClearsGuestSystemPathOverridesWithoutAddingCapabilities() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            cap_drop:
+              - ALL
+            security_opt:
+              - systempaths:unconfined
+            command:
+              - sh
+              - -c
+              - |
+                printf 'compose-systempaths:'
+                awk '$5 == "/proc/sys" { print $6 }' /proc/self/mountinfo
+                echo
+                exec sleep infinity
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = runtimeProjectName()
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
+        _ = try runProcess(containerBinary, ["system", "status"], timeout: 15)
+        defer {
+            _ = try? runProcess(
+                composeBinary,
+                [
+                    "--ansi", "never",
+                    "--project-name", project,
+                    "--file", composeFile.path,
+                    "down", "--volumes", "--remove-orphans",
+                ],
+                timeout: 60
+            )
+        }
+
+        _ = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "up", "--detach", "api",
+            ],
+            timeout: 180
+        )
+
+        let inspect = try runProcess(containerBinary, ["inspect", "\(project)-api-1"], timeout: 30)
+        #expect(inspect.stdout.contains("\"unconfinedSystemPaths\" : true"))
+        #expect(inspect.stdout.contains("\"capDrop\" : [\n        \"ALL\""))
+
+        var lastLogs = ""
+        for _ in 0..<20 {
+            let logs = try runProcess(
+                composeBinary,
+                [
+                    "--ansi", "never",
+                    "--project-name", project,
+                    "--file", composeFile.path,
+                    "logs", "api",
+                ],
+                timeout: 30
+            )
+            lastLogs = logs.stdout + logs.stderr
+            if lastLogs.contains("compose-systempaths:") {
+                #expect(!lastLogs.contains("compose-systempaths:ro"))
+                return
+            }
+            Thread.sleep(forTimeInterval: 1)
+        }
+
+        Issue.record("Expected system-path marker in runtime logs. Last logs: \(lastLogs)")
+    }
+
     @Test("runtime host user namespace retains the sandbox guest mapping")
     func runtimeHostUserNamespaceRetainsSandboxGuestMapping() throws {
         guard runtimeTestsEnabled else {

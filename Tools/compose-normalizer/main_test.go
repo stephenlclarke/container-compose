@@ -93,6 +93,7 @@ services:
     image: nginx:alpine
     security_opt:
       - no-new-privileges
+      - systempaths:unconfined
       - seccomp:unconfined
       - apparmor=unconfined
       - label:disable
@@ -109,7 +110,7 @@ services:
 	if err := json.Unmarshal(stdout.Bytes(), &project); err != nil {
 		t.Fatalf("decode normalized JSON: %v", err)
 	}
-	if got, want := project.Services["api"].SecurityOpt, []string{"no-new-privileges", "seccomp:unconfined", "apparmor=unconfined", "label:disable"}; !reflect.DeepEqual(got, want) {
+	if got, want := project.Services["api"].SecurityOpt, []string{"no-new-privileges", "systempaths:unconfined", "seccomp:unconfined", "apparmor=unconfined", "label:disable"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.SecurityOpt = %#v, want %#v", got, want)
 	}
 }

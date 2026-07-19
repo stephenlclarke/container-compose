@@ -34,8 +34,9 @@
 # This script is intentionally local-only and is not part of CI. It verifies
 # Docker Compose V2 preserves portable security-option spellings in config
 # output and accepts them for local orchestration. It then verifies
-# container-compose projects bare no-new-privileges through the generic runtime
-# bridge while consuming the guest's unconfined/disabled-label defaults.
+# container-compose projects bare no-new-privileges and unconfined guest system
+# paths through generic runtime controls while consuming the guest's
+# unconfined-profile/disabled-label defaults.
 
 set -euo pipefail
 
@@ -143,8 +144,8 @@ detect_docker_daemon() {
     info 'Docker daemon unavailable; checking Docker Compose config parity without Engine dry-run output.'
 }
 
-# Create a minimal Compose fixture for the generic Linux no-new-privileges
-# process primitive and guest security values that are already no-ops.
+# Create a minimal Compose fixture for generic Linux process and guest-path
+# primitives plus guest security values that are already no-ops.
 create_fixture() {
     FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/compose-security-opt.XXXXXX")"
     cat >"$FIXTURE_DIR/compose.yml" <<'YAML'
@@ -153,6 +154,8 @@ services:
     image: alpine:3.20
     security_opt:
       - no-new-privileges
+      - systempaths:unconfined
+      - systempaths=unconfined
       - seccomp:unconfined
       - apparmor=unconfined
       - label:disable
@@ -178,10 +181,10 @@ import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 options = doc.get("services", {}).get("api", {}).get("security_opt")
-if options != ["no-new-privileges", "seccomp:unconfined", "apparmor=unconfined", "label:disable"]:
+if options != ["no-new-privileges", "systempaths:unconfined", "systempaths=unconfined", "seccomp:unconfined", "apparmor=unconfined", "label:disable"]:
     raise SystemExit(
         "security_opt = "
-        f"{options!r}, want ['no-new-privileges', 'seccomp:unconfined', 'apparmor=unconfined', 'label:disable']"
+        f"{options!r}, want ['no-new-privileges', 'systempaths:unconfined', 'systempaths=unconfined', 'seccomp:unconfined', 'apparmor=unconfined', 'label:disable']"
     )
 PY
 }
@@ -198,10 +201,10 @@ import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 options = doc.get("services", {}).get("api", {}).get("securityOpt")
-if options != ["no-new-privileges", "seccomp:unconfined", "apparmor=unconfined", "label:disable"]:
+if options != ["no-new-privileges", "systempaths:unconfined", "systempaths=unconfined", "seccomp:unconfined", "apparmor=unconfined", "label:disable"]:
     raise SystemExit(
         "securityOpt = "
-        f"{options!r}, want ['no-new-privileges', 'seccomp:unconfined', 'apparmor=unconfined', 'label:disable']"
+        f"{options!r}, want ['no-new-privileges', 'systempaths:unconfined', 'systempaths=unconfined', 'seccomp:unconfined', 'apparmor=unconfined', 'label:disable']"
     )
 PY
 }
@@ -209,11 +212,20 @@ PY
 # Return failure unless a dry-run container command contains the expected
 # generic security-option argument. Both quoted and plain command renderings
 # are accepted so the assertion remains independent of the reporter formatter.
-dry_run_projects_security_option() {
+dry_run_projects_no_new_privileges_option() {
     local output_path="$1"
 
     grep -F -- "--security-opt 'no-new-privileges:true'" "$output_path" >/dev/null \
         || grep -F -- "--security-opt no-new-privileges:true" "$output_path" >/dev/null
+}
+
+# Return failure unless a dry-run container command includes the canonical
+# generic guest system-path argument for either accepted Compose spelling.
+dry_run_projects_systempaths_option() {
+    local output_path="$1"
+
+    grep -F -- "--security-opt 'systempaths=unconfined'" "$output_path" >/dev/null \
+        || grep -F -- "--security-opt systempaths=unconfined" "$output_path" >/dev/null
 }
 
 # The profile and label values are guest workload defaults. They must be
@@ -250,7 +262,7 @@ expect_docker_behavior() {
         -f "$FIXTURE_DIR/compose.yml" \
         up --no-start api >"$dry_run_output" 2>&1
     if ! grep -F "Container $PROJECT_NAME-api-1 Created" "$dry_run_output" >/dev/null; then
-        error 'Docker Compose did not accept no-new-privileges in local dry-run up'
+        error 'Docker Compose did not accept the supported security options in local dry-run up'
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
@@ -277,12 +289,17 @@ expect_container_behavior() {
         -f "$FIXTURE_DIR/compose.yml" \
         up --no-start api >"$dry_run_output" 2>&1
     if ! grep -F "container create --name $PROJECT_NAME-api-1" "$dry_run_output" >/dev/null; then
-        error 'container-compose did not accept no-new-privileges in local dry-run up'
+        error 'container-compose did not accept the supported security options in local dry-run up'
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
-    if ! dry_run_projects_security_option "$dry_run_output"; then
+    if ! dry_run_projects_no_new_privileges_option "$dry_run_output"; then
         error 'container-compose did not project no-new-privileges to --security-opt in local dry-run up'
+        sed -n '1,120p' "$dry_run_output" >&2
+        return 1
+    fi
+    if ! dry_run_projects_systempaths_option "$dry_run_output"; then
+        error 'container-compose did not project systempaths=unconfined to --security-opt in local dry-run up'
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi

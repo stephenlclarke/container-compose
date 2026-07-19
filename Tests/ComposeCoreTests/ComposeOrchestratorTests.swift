@@ -7539,6 +7539,27 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--security-opt", "no-new-privileges:true"]))
     }
 
+    @Test("up maps unconfined systempaths security_opt to the generic runtime argument")
+    func upMapsUnconfinedSystemPathsSecurityOptionToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.securityOpt = ["systempaths:unconfined"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--security-opt", "systempaths=unconfined"]))
+    }
+
     @Test("up maps standard security_opt spellings at the Compose boundary")
     func upMapsStandardSecurityOptionSpellings() async throws {
         let runner = RecordingRunner()
@@ -24809,6 +24830,29 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--security-opt", "no-new-privileges=true"]))
     }
 
+    @Test("run maps unconfined systempaths security_opt to the generic runtime argument")
+    func runMapsUnconfinedSystemPathsSecurityOptionToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.securityOpt = ["systempaths=unconfined"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            command: ["true"],
+            remove: true
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--security-opt", "systempaths=unconfined"]))
+    }
+
     @Test("run consumes standard security_opt no-ops at the Compose boundary")
     func runConsumesStandardSecurityOptionNoOps() async throws {
         let runner = RecordingRunner()
@@ -27925,7 +27969,7 @@ private func unsupportedUserAndSecurityOptionFieldCases() -> [UnsupportedUserAnd
         UnsupportedUserAndSecurityOptionFieldCase(
             composeName: "security_opt",
             value: "label=type:container_t",
-            reason: "only no-new-privileges (with optional :true|false or =true|false), seccomp=unconfined|seccomp:unconfined, apparmor=unconfined|apparmor:unconfined, or label=disable|label:disable is supported",
+            reason: "only no-new-privileges (with optional :true|false or =true|false), systempaths=unconfined|systempaths:unconfined, seccomp=unconfined|seccomp:unconfined, apparmor=unconfined|apparmor:unconfined, or label=disable|label:disable is supported",
             configure: { $0.securityOpt = ["label=type:container_t"] }
         ),
     ]
