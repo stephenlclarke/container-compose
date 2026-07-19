@@ -174,7 +174,14 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn("quality_snapshot_asset", workflow)
         self.assertIn("--svg-output", workflow)
         self.assertIn("--asset-url", workflow)
-        self.assertIn('--current-asset "${QUALITY_SNAPSHOT_ASSET}"', workflow)
+        retention_step = workflow.split(
+            "- name: Retain only current release assets", 1
+        )[1].split("\n\n  repair-stable-tap:", 1)[0]
+        self.assertIn(
+            "QUALITY_SNAPSHOT_ASSET: ${{ steps.lane.outputs.quality_snapshot_asset }}",
+            retention_step,
+        )
+        self.assertIn('--current-asset "${QUALITY_SNAPSHOT_ASSET}"', retention_step)
 
     def test_missing_sonarqube_metric_is_rejected(self) -> None:
         module = load_module()

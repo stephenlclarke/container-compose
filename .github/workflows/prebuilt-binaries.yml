@@ -1011,6 +1011,7 @@ jobs:
           ASSET: ${{ steps.lane.outputs.asset }}
           RUNTIME_ASSET: ${{ steps.runtime-package.outputs.asset }}
           HIGHLIGHTS_ASSET: ${{ steps.lane.outputs.highlights_asset }}
+          QUALITY_SNAPSHOT_ASSET: ${{ steps.lane.outputs.quality_snapshot_asset }}
         shell: bash
         working-directory: container-compose
         run: |
