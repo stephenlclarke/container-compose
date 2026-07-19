@@ -8,7 +8,7 @@ and the deterministic release procedure. Target-machine installation lives in
 
 `container-compose` coordinates releases for the matched `stephenlclarke` stack. `container` supplies the runtime and CLI, `containerization` supplies its Swift runtime package, `container-builder-shim` supplies the pinned builder image, and `homebrew-tap` publishes the paired formulae.
 
-`main` is the releasable integration branch in each repository. Use short-lived review branches for all changes and land the sibling repositories through their own pull requests before promoting Compose. The release helper only promotes `container-compose`; it never pushes sibling source branches. Do not create long-lived integration or packaging branches.
+`main` is the releasable integration branch in each repository. Use short-lived review branches for all changes and land the sibling repositories through their own pull requests before promoting Compose. The release helper promotes `container-compose`; it can additionally publish only a fast-forwarded, release-generated `container` package-pin commit after that repository's `make check test` preflight, because Compose cannot resolve an unpublished immutable runtime revision. No feature or hand-written sibling source branch is promoted by the helper. Do not create long-lived integration or packaging branches.
 
 ## Requirements
 
@@ -154,11 +154,15 @@ nested Virtualization.framework guests, so the post-tag Stable Release Gate runs
 the `make release-gate-hosted` equivalent from its immutable release-control
 checkout against immutable source, runtime, and tap checkouts instead. It
 validates the non-virtualized stack and Compose CI; the local full gate remains
-mandatory for runtime integration and Docker Compose parity. The helper promotes
-`container-compose` through an automated pull request by default, verifies the
-promoted main tree still matches the locally gated candidate before it tags, and
-refuses to push sibling source mains: those must already be merged through their
-own reviewable pull requests. A
+mandatory for runtime integration and Docker Compose parity. When release
+preparation changes `container`'s exact `containerization` package pin, the
+helper first runs `make check test` there and publishes that fast-forwarded,
+release-generated metadata commit so Compose SwiftPM can resolve the exact
+remote revision. It then runs the complete assembled-stack local gate before
+it promotes `container-compose` through an automated pull request by default,
+verifies the promoted main tree still matches the locally gated candidate before
+it tags, and refuses to promote any other sibling source main: feature changes
+must already be merged through their own reviewable pull requests. A
 successful hosted gate records a candidate-bound GitHub Actions release-authority
 check on that tag commit; the package workflow requires that check, then repeats
 `make ci` before it publishes assets or updates the tap.
