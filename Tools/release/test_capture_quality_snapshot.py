@@ -114,36 +114,9 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         module = load_module()
         self.assertEqual(module.POLL_TIMEOUT_SECONDS, 1800)
 
-    def test_current_snapshot_can_omit_sonarqube_after_a_lightweight_ci_run(self) -> None:
+    def test_wait_for_analyses_rejects_missing_sonarqube(self) -> None:
         module = load_module()
-
-        snapshot = module.render_snapshot(
-            commit="0123456789abcdef",
-            sonar_analysis=None,
-            sonar_measures=None,
-            codeql_analysis={
-                "results_count": 0,
-                "rules_count": 34,
-                "error": "",
-                "warning": "",
-            },
-            release_kind="current",
-        )
-
-        self.assertIn("CodeQL analysis covers `0123456789abcdef`", snapshot)
-        self.assertIn("did not produce a SonarQube scan", snapshot)
-        self.assertIn("![CodeQL Analysis]", snapshot)
-        self.assertIn("![CodeQL Results]", snapshot)
-        self.assertIn("![CodeQL Rules]", snapshot)
-        self.assertEqual(snapshot.count("!["), 3)
-        self.assertNotIn("Quality Gate Status", snapshot)
-        self.assertNotIn("SonarQube `main` analysis", snapshot)
-
-    def test_optional_sonarqube_waits_only_for_codeql(self) -> None:
-        module = load_module()
-        module.find_sonarqube_analysis = lambda **_kwargs: self.fail(
-            "optional SonarQube snapshots must not query SonarQube"
-        )
+        module.find_sonarqube_analysis = lambda **_kwargs: None
         module.find_codeql_analysis = lambda **_kwargs: {
             "results_count": 0,
             "rules_count": 34,
@@ -151,30 +124,38 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             "warning": "",
         }
 
-        sonar_analysis, codeql_analysis = module.wait_for_analyses(
-            host="https://example.invalid",
-            project="example",
-            branch="main",
-            gh="gh",
-            repository="example/repo",
-            codeql_ref="refs/heads/main",
-            commit="0123456789abcdef",
-            poll_interval=1,
-            poll_timeout=1,
-            require_sonarqube=False,
-        )
+        with (
+            mock.patch.object(module.time, "monotonic", side_effect=(0, 1)),
+            mock.patch.object(module.time, "sleep"),
+            self.assertRaisesRegex(ValueError, "timed out waiting for SonarQube"),
+        ):
+            module.wait_for_analyses(
+                host="https://example.invalid",
+                project="example",
+                branch="main",
+                gh="gh",
+                repository="example/repo",
+                codeql_ref="refs/heads/main",
+                commit="0123456789abcdef",
+                poll_interval=1,
+                poll_timeout=1,
+            )
 
-        self.assertIsNone(sonar_analysis)
-        self.assertEqual(codeql_analysis["rules_count"], 34)
-
-    def test_prebuilt_workflow_derives_the_sonarqube_requirement_from_ci(self) -> None:
+    def test_prebuilt_workflow_requires_exact_main_sonarqube_evidence(self) -> None:
         workflow = (
             Path(__file__).parents[2] / ".github/workflows/prebuilt-binaries.yml"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("sonarqube_snapshot_required", workflow)
+        self.assertIn("main_ci_has_successful_sonarqube_scan", workflow)
+        self.assertIn('--workflow ci.yml', workflow)
+        self.assertIn('.event == "workflow_dispatch"', workflow)
+        self.assertIn('select(.name == "Validate" or .name == "Validate Runtime")', workflow)
         self.assertIn('select(.name == "SonarQube scan")', workflow)
-        self.assertIn("--allow-missing-sonarqube", workflow)
+        self.assertIn('Skipping current package for %s until successful exact-main CI includes a SonarQube scan.', workflow)
+        self.assertIn('Refusing Current package for %s without successful exact-main CI including a SonarQube scan.', workflow)
+        self.assertNotIn("--allow-missing-sonarqube", workflow)
+        self.assertNotIn("sonar_snapshot_available", workflow)
+        self.assertNotIn("SonarQube unavailable", workflow)
         self.assertIn("quality_snapshot_asset", workflow)
         self.assertIn("--svg-output", workflow)
         self.assertIn("--asset-url", workflow)

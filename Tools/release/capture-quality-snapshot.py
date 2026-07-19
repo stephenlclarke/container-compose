@@ -124,15 +124,6 @@ def parse_args() -> argparse.Namespace:
             "each exact proxied image to be valid SVG before printing notes"
         ),
     )
-    parser.add_argument(
-        "--allow-missing-sonarqube",
-        action="store_true",
-        help=(
-            "Allow a current-build snapshot with exact CodeQL evidence but no "
-            "SonarQube metrics when the validated CI run did not produce a "
-            "SonarQube scan"
-        ),
-    )
     parser.add_argument("--poll-interval", type=int, default=POLL_INTERVAL_SECONDS)
     parser.add_argument("--poll-timeout", type=int, default=POLL_TIMEOUT_SECONDS)
     parser.add_argument("--gh", default="gh", help="GitHub CLI executable")
@@ -240,31 +231,26 @@ def wait_for_analyses(
     commit: str,
     poll_interval: int,
     poll_timeout: int,
-    require_sonarqube: bool = True,
-) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     if poll_interval <= 0 or poll_timeout <= 0:
         raise ValueError("poll interval and timeout must be positive")
 
     deadline = time.monotonic() + poll_timeout
     while True:
-        sonar_analysis = None
-        if require_sonarqube:
-            sonar_analysis = find_sonarqube_analysis(
-                host=host, project=project, branch=branch, commit=commit
-            )
+        sonar_analysis = find_sonarqube_analysis(
+            host=host, project=project, branch=branch, commit=commit
+        )
         codeql_analysis = find_codeql_analysis(
             gh=gh,
             repository=repository,
             ref=codeql_ref,
             commit=commit,
         )
-        if codeql_analysis is not None and (
-            not require_sonarqube or sonar_analysis is not None
-        ):
+        if codeql_analysis is not None and sonar_analysis is not None:
             return sonar_analysis, codeql_analysis
         if time.monotonic() >= deadline:
             waiting_for = []
-            if require_sonarqube and sonar_analysis is None:
+            if sonar_analysis is None:
                 waiting_for.append("SonarQube")
             if codeql_analysis is None:
                 waiting_for.append("CodeQL")
@@ -600,19 +586,17 @@ def validate_static_badge_delivery(
 
 def resolved_badges(
     *,
-    sonar_measures: dict[str, str] | None,
+    sonar_measures: dict[str, str],
     codeql_analysis: dict[str, Any],
 ) -> list[SnapshotBadge]:
-    if sonar_measures is None:
-        return list(codeql_badges(analysis=codeql_analysis))
     return list(snapshot_badges(sonar_measures=sonar_measures, codeql_analysis=codeql_analysis))
 
 
 def render_snapshot(
     *,
     commit: str,
-    sonar_analysis: dict[str, Any] | None,
-    sonar_measures: dict[str, str] | None,
+    sonar_analysis: dict[str, Any],
+    sonar_measures: dict[str, str],
     codeql_analysis: dict[str, Any],
     release_kind: str = "stable",
     asset_url: str = "quality-snapshot.svg",
@@ -624,16 +608,10 @@ def render_snapshot(
         retention = "These static badges describe this mutable Current build and are replaced when `current` moves."
     else:
         retention = "These static badges are retained as historical evidence; they do not update."
-    if sonar_analysis is None or sonar_measures is None:
-        analysis_summary = (
-            f"- CodeQL analysis covers `{commit}`. SonarQube metrics are omitted "
-            "because the validated CI run did not produce a SonarQube scan."
-        )
-    else:
-        analysis_summary = (
-            f"- SonarQube `main` analysis `{sonar_analysis['date']}` and CodeQL "
-            f"analysis both cover `{commit}`."
-        )
+    analysis_summary = (
+        f"- SonarQube `main` analysis `{sonar_analysis['date']}` and CodeQL "
+        f"analysis both cover `{commit}`."
+    )
     badges = resolved_badges(
         sonar_measures=sonar_measures,
         codeql_analysis=codeql_analysis,
@@ -661,8 +639,6 @@ def main() -> None:
     try:
         if (args.svg_output is None) != (args.asset_url is None):
             raise ValueError("--svg-output and --asset-url must be supplied together")
-        if args.allow_missing_sonarqube and args.release_kind != "current":
-            raise ValueError("only current snapshots may omit SonarQube metrics")
         sonar_analysis, codeql_analysis = wait_for_analyses(
             host=args.sonarqube_url,
             project=args.sonarqube_project,
@@ -673,16 +649,13 @@ def main() -> None:
             commit=args.commit,
             poll_interval=args.poll_interval,
             poll_timeout=args.poll_timeout,
-            require_sonarqube=not args.allow_missing_sonarqube,
         )
-        sonar_measures = None
-        if sonar_analysis is not None:
-            sonar_measures = sonar_measures_for_analysis(
-                host=args.sonarqube_url,
-                project=args.sonarqube_project,
-                branch=args.sonarqube_branch,
-                analysis=sonar_analysis,
-            )
+        sonar_measures = sonar_measures_for_analysis(
+            host=args.sonarqube_url,
+            project=args.sonarqube_project,
+            branch=args.sonarqube_branch,
+            analysis=sonar_analysis,
+        )
         badges = resolved_badges(
             sonar_measures=sonar_measures,
             codeql_analysis=codeql_analysis,

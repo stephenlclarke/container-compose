@@ -287,23 +287,23 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             readme,
         )
 
-    def test_package_gate_aggregates_paginated_validate_jobs(self) -> None:
+    def test_package_gate_requires_full_quality_evidence(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         start = workflow.index("CI intentionally has an active Validate job")
         end = workflow.index("elif [[ \"${WORKFLOW_RUN_HEAD_BRANCH}\" == \"main\" ]];", start)
         gate = workflow[start:end]
 
         self.assertIn("gh api --paginate --slurp", gate)
-        self.assertIn('[.[] | .jobs[] | select(.name == "Validate") | .conclusion]', gate)
+        self.assertIn(
+            '[.[] | .jobs[] | select(.name == "Validate" or .name == "Validate Runtime") | .conclusion]',
+            gate,
+        )
         self.assertIn('any(.[]; . == "success")', gate)
         self.assertIn('all(.[]; . == "success" or . == "skipped")', gate)
         self.assertIn('if length == 0 then "missing" else join(",") end', gate)
         self.assertIn('quality_release_kind="current"', workflow)
         self.assertIn('quality_release_kind="stable"', workflow)
         self.assertIn('--release-kind "${quality_release_kind}"', workflow)
-        self.assertIn('nc -z -w 5 sonarcloud.io 443', workflow)
-        self.assertIn('curl --location --silent --show-error --connect-timeout 3 --max-time 5', workflow)
-        self.assertIn('SonarQube was unavailable during promotion', workflow)
         self.assertIn('python3 Tools/release/release-notes.py "${release_notes_args[@]}"', workflow)
         self.assertIn(
             "--component-repo container-builder-shim=../container-builder-shim",
@@ -314,10 +314,15 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("--component-repo container=../container", workflow)
-        self.assertIn('SONARQUBE_SNAPSHOT_REQUIRED', workflow)
-        self.assertIn('sonarqube_snapshot_required="false"', workflow)
-        self.assertIn('--allow-missing-sonarqube', workflow)
         self.assertIn('quality_snapshot_args=(', workflow)
+        self.assertIn(
+            'main_ci_has_successful_sonarqube_scan "${WORKFLOW_RUN_HEAD_SHA}"',
+            workflow,
+        )
+        self.assertNotIn('nc -z -w 5 sonarcloud.io 443', workflow)
+        self.assertNotIn('SonarQube was unavailable during promotion', workflow)
+        self.assertNotIn('SONARQUBE_SNAPSHOT_REQUIRED', workflow)
+        self.assertNotIn('--allow-missing-sonarqube', workflow)
 
     def test_current_package_skips_only_when_the_pointer_already_matches_main(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
@@ -345,8 +350,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("workflow_run:", workflow)
         self.assertIn("branches:\n      - main", workflow)
         self.assertIn("github.event.workflow_run.conclusion == 'success'", workflow)
-        self.assertIn('if [[ "${WORKFLOW_RUN_EVENT}" != "push" ]]', workflow)
+        self.assertIn(
+            'if [[ "${WORKFLOW_RUN_EVENT}" != "push" && "${WORKFLOW_RUN_EVENT}" != "workflow_dispatch" ]]',
+            workflow,
+        )
         self.assertIn('elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == "main" ]]', workflow)
+        self.assertIn("main_ci_has_successful_sonarqube_scan()", workflow)
+        self.assertIn('.event == "workflow_dispatch"', workflow)
+        self.assertIn("Skipping current package for %s until successful exact-main CI", workflow)
         self.assertIn("timeout-minutes: 120", workflow)
         self.assertIn("name: Cache SwiftPM build artifacts", workflow)
         self.assertIn("container-compose/.build", workflow)
