@@ -302,10 +302,11 @@ extension ComposeOrchestrator {
     }
 
     /// Returns Docker-compatible security options backed by generic runtime
-    /// primitives. `seccomp=unconfined` is intentionally consumed here: guest
-    /// workloads already run without a seccomp filter, so forwarding a
-    /// Docker-shaped no-op to the generic runtime would add no enforcement.
-    /// Other profiles remain rejected until the runtime can enforce them.
+    /// primitives. The `seccomp=unconfined` and `apparmor=unconfined` values
+    /// are intentionally consumed here: guest workloads already run without
+    /// either profile, so forwarding Docker-shaped no-ops to the generic
+    /// runtime would add no enforcement. Other profiles remain rejected until
+    /// the runtime can enforce them.
     func runtimeSecurityOptionArguments(service: ComposeService) throws -> [String] {
         let options = service.securityOpt ?? []
         let noNewPrivilegesOptions = Set([
@@ -314,16 +315,20 @@ extension ComposeOrchestrator {
             "no-new-privileges=true",
             "no-new-privileges=false",
         ])
+        let unconfinedProfileOptions = Set([
+            "seccomp=unconfined",
+            "apparmor=unconfined",
+        ])
         var runtimeOptions: [String] = []
 
         for option in options where !option.isEmpty {
             if noNewPrivilegesOptions.contains(option) {
                 runtimeOptions.append(option)
-            } else if option == "seccomp=unconfined" {
+            } else if unconfinedProfileOptions.contains(option) {
                 continue
             } else {
                 throw ComposeError.unsupported(
-                    "service '\(service.name)' uses security_opt '\(option)'; only no-new-privileges:true|false, no-new-privileges=true|false, or seccomp=unconfined is supported",
+                    "service '\(service.name)' uses security_opt '\(option)'; only no-new-privileges:true|false, no-new-privileges=true|false, seccomp=unconfined, or apparmor=unconfined is supported",
                 )
             }
         }

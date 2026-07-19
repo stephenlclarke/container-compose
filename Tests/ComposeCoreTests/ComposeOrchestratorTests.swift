@@ -7539,14 +7539,18 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--security-opt", "no-new-privileges:true"]))
     }
 
-    @Test("up consumes unconfined seccomp security_opt at the Compose boundary")
-    func upConsumesUnconfinedSeccompSecurityOption() async throws {
+    @Test("up consumes unconfined security profiles at the Compose boundary")
+    func upConsumesUnconfinedSecurityProfileOptions() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.securityOpt = ["no-new-privileges:true", "seccomp=unconfined"]
+                    $0.securityOpt = [
+                        "no-new-privileges:true",
+                        "seccomp=unconfined",
+                        "apparmor=unconfined",
+                    ]
                 },
             ]
         )
@@ -7559,6 +7563,7 @@ struct ComposeOrchestratorTests {
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--security-opt", "no-new-privileges:true"]))
         #expect(!command.contains("seccomp=unconfined"))
+        #expect(!command.contains("apparmor=unconfined"))
     }
 
     @Test("up accepts host user namespace as the sandbox guest default")
@@ -24802,14 +24807,14 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--security-opt", "no-new-privileges=true"]))
     }
 
-    @Test("run consumes unconfined seccomp security_opt at the Compose boundary")
-    func runConsumesUnconfinedSeccompSecurityOption() async throws {
+    @Test("run consumes unconfined security profiles at the Compose boundary")
+    func runConsumesUnconfinedSecurityProfileOptions() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.securityOpt = ["seccomp=unconfined"]
+                    $0.securityOpt = ["seccomp=unconfined", "apparmor=unconfined"]
                 },
             ]
         )
@@ -27918,7 +27923,7 @@ private func unsupportedUserAndSecurityOptionFieldCases() -> [UnsupportedUserAnd
         UnsupportedUserAndSecurityOptionFieldCase(
             composeName: "security_opt",
             value: "label:disable",
-            reason: "only no-new-privileges:true|false, no-new-privileges=true|false, or seccomp=unconfined is supported",
+            reason: "only no-new-privileges:true|false, no-new-privileges=true|false, seccomp=unconfined, or apparmor=unconfined is supported",
             configure: { $0.securityOpt = ["label:disable"] }
         ),
     ]

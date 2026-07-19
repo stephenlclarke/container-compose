@@ -32,10 +32,10 @@
 #                      "docker compose" when available, otherwise docker-compose.
 #
 # This script is intentionally local-only and is not part of CI. It verifies
-# Docker Compose V2 preserves no-new-privileges and seccomp=unconfined in
-# config output and accepts them for local orchestration. It then verifies
-# container-compose projects no-new-privileges through the generic runtime
-# bridge while intentionally consuming the guest's unconfined seccomp default.
+# Docker Compose V2 preserves no-new-privileges plus unconfined seccomp and
+# AppArmor values in config output and accepts them for local orchestration.
+# It then verifies container-compose projects no-new-privileges through the
+# generic runtime bridge while consuming the guest's unconfined profile defaults.
 
 set -euo pipefail
 
@@ -144,7 +144,7 @@ detect_docker_daemon() {
 }
 
 # Create a minimal Compose fixture for the generic Linux no-new-privileges
-# process primitive and the guest's unconfined seccomp baseline.
+# process primitive and the guest's unconfined profile baselines.
 create_fixture() {
     FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/compose-security-opt.XXXXXX")"
     cat >"$FIXTURE_DIR/compose.yml" <<'YAML'
@@ -154,6 +154,7 @@ services:
     security_opt:
       - no-new-privileges:true
       - seccomp=unconfined
+      - apparmor=unconfined
 YAML
 }
 
@@ -176,10 +177,10 @@ import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 options = doc.get("services", {}).get("api", {}).get("security_opt")
-if options != ["no-new-privileges:true", "seccomp=unconfined"]:
+if options != ["no-new-privileges:true", "seccomp=unconfined", "apparmor=unconfined"]:
     raise SystemExit(
         "security_opt = "
-        f"{options!r}, want ['no-new-privileges:true', 'seccomp=unconfined']"
+        f"{options!r}, want ['no-new-privileges:true', 'seccomp=unconfined', 'apparmor=unconfined']"
     )
 PY
 }
@@ -196,10 +197,10 @@ import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 options = doc.get("services", {}).get("api", {}).get("securityOpt")
-if options != ["no-new-privileges:true", "seccomp=unconfined"]:
+if options != ["no-new-privileges:true", "seccomp=unconfined", "apparmor=unconfined"]:
     raise SystemExit(
         "securityOpt = "
-        f"{options!r}, want ['no-new-privileges:true', 'seccomp=unconfined']"
+        f"{options!r}, want ['no-new-privileges:true', 'seccomp=unconfined', 'apparmor=unconfined']"
     )
 PY
 }
@@ -214,13 +215,14 @@ dry_run_projects_security_option() {
         || grep -F -- "--security-opt no-new-privileges:true" "$output_path" >/dev/null
 }
 
-# seccomp=unconfined is the guest workload default. It must be accepted by the
-# Compose adapter but is intentionally not forwarded as a synthetic runtime
-# flag that the generic Container API does not need.
-dry_run_omits_unconfined_seccomp_option() {
+# The unconfined profile values are guest workload defaults. They must be
+# accepted by the Compose adapter but not forwarded as synthetic runtime flags
+# that the generic Container API does not need.
+dry_run_omits_unconfined_profile_options() {
     local output_path="$1"
 
-    ! grep -F -- 'seccomp=unconfined' "$output_path" >/dev/null
+    ! grep -F -- 'seccomp=unconfined' "$output_path" >/dev/null \
+        && ! grep -F -- 'apparmor=unconfined' "$output_path" >/dev/null
 }
 
 # Exercise Docker Compose as the local-mode parity baseline.
@@ -282,8 +284,8 @@ expect_container_behavior() {
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
-    if ! dry_run_omits_unconfined_seccomp_option "$dry_run_output"; then
-        error 'container-compose forwarded seccomp=unconfined instead of consuming the guest default'
+    if ! dry_run_omits_unconfined_profile_options "$dry_run_output"; then
+        error 'container-compose forwarded an unconfined profile option instead of consuming the guest default'
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
