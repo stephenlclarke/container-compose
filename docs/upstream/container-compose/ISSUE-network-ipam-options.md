@@ -4,8 +4,8 @@
 
 - `networks.<name>.driver`
 - `networks.<name>.attachable`
-- `networks.<name>.enable_ipv4`
-- `networks.<name>.enable_ipv6`
+- `networks.<name>.enable_ipv4: false`
+- `networks.<name>.enable_ipv6: false`
 - `networks.<name>.ipam.options`
 
 ## Docker Compose v2 behavior
@@ -27,7 +27,7 @@ networks:
     driver: overlay
     attachable: true
     enable_ipv4: false
-    enable_ipv6: true
+    enable_ipv6: false
     ipam:
       options:
         com.example.ipam: enabled
@@ -42,10 +42,11 @@ References:
 
 ## Current container-compose behavior
 
-The pinned `compose-go` dependency exposes all five fields. The normalizer now
-maps the default bridge driver, ordinary IPv4 behavior, and IPv6 backed by an
-explicit mapped subnet. It records unsupported custom drivers,
-`attachable: true`, `enable_ipv4: false`, automatic `enable_ipv6`, and
+The pinned `compose-go` dependency exposes all five fields. The normalizer maps
+the default bridge driver, ordinary IPv4 behavior, an explicit IPv6 subnet, and
+`enable_ipv6: true` with or without a subnet. vmnet assigns an IPv6 prefix when
+the generic network-create path has no explicit IPv6 subnet. It records custom
+drivers, `attachable: true`, `enable_ipv4: false`, `enable_ipv6: false`, and
 `ipam.options` in the normalized network `unsupportedFields` list.
 
 Runtime-backed commands reject those markers before creating networks or
@@ -54,8 +55,10 @@ service containers instead of silently ignoring them.
 ## Likely owner
 
 `container-compose` owns the no-side-effects rejection. Future Apple runtime
-changes would be needed to select custom drivers, disable IPv4, allocate an
-automatic IPv6 subnet, or pass IPAM options instead of rejecting them.
+changes would be needed to select custom drivers, disable IPv4 or IPv6, or pass
+IPAM options instead of rejecting them. Automatic IPv6 allocation is already a
+generic vmnet behavior; [the dedicated IPv6 handoff](ISSUE-network-ipv6-auto.md)
+records the Compose mapping and the remaining disablement gap.
 
 ## Minimal example
 
@@ -71,7 +74,7 @@ networks:
     driver: overlay
     attachable: true
     enable_ipv4: false
-    enable_ipv6: true
+    enable_ipv6: false
     ipam:
       options:
         com.example.ipam: enabled

@@ -2,8 +2,8 @@
 
 ## Summary
 
-- Preserve unsupported project network `driver`, `attachable`, `enable_ipv4`,
-  `enable_ipv6`, and `ipam.options` markers across the compose-go to Swift
+- Preserve unsupported project network `driver`, `attachable`, `enable_ipv4: false`,
+  `enable_ipv6: false`, and `ipam.options` markers across the compose-go to Swift
   handoff.
 - Reject those semantics before runtime side effects while retaining mapped
   bridge/default behavior and IPv6 subnets.
@@ -22,9 +22,10 @@ Compose-go v2.12.1 exposes the current project network fields, and the approved
 compose-go PR #870 confirms `IPAMConfig.Options` belongs in that typed model.
 Docker Compose preserves all five fields in `config` and tracks
 docker/compose#13785 for passing IPAM options through to Docker Engine network
-creation. Apple network creation cannot currently represent each requested
-semantic, so `container-compose` must reject the unsupported subset instead of
-silently dropping it.
+creation. The generic vmnet path automatically allocates IPv6, so Compose now
+accepts `enable_ipv6: true` with or without an explicit subnet. It cannot
+disable that allocation, so `container-compose` must reject `enable_ipv6: false`
+and the other unsupported subset instead of silently dropping them.
 
 References:
 
@@ -36,13 +37,15 @@ References:
 ## Commit Tracking
 
 - Compose rejection code is the current `fix(networks): reject unsupported project network options` slice in `stephenlclarke/container-compose`.
+- Automatic IPv6 enablement is superseded by [`55d00074864d21c70c9b03995886fbc9cf9e57de`](https://github.com/stephenlclarke/container-compose/commit/55d00074864d21c70c9b03995886fbc9cf9e57de) and [the dedicated handoff](PR-network-ipv6-auto.md).
 - No Apple fork change is included in this slice. Mapping support needs future
   Apple-shaped network configuration primitives.
 
 ## Implementation Details
 
-- `projectNetworkValues` separates mapped bridge/default and explicit-subnet
-  behavior from custom driver, attachment, IP-family, and IPAM gaps.
+- `projectNetworkValues` separates mapped bridge/default, explicit-subnet, and
+  automatic IPv6-enable behavior from custom driver, attachment, IP-family
+  disablement, and IPAM gaps.
 - Go normalizer tests cover both mapped defaults and the complete unsupported
   field list alongside existing IPAM checks.
 - Swift orchestration tests prove rejection happens before command or resource
@@ -55,16 +58,16 @@ References:
 
 Supported:
 
-- Default bridge behavior, ordinary IPv4, and one explicitly mapped IPv6 subnet
-  remain supported.
+- Default bridge behavior, ordinary IPv4, one explicitly mapped IPv6 subnet,
+  and `enable_ipv6: true` with automatic vmnet allocation remain supported.
 - Unsupported project network semantics are recognized and rejected before
   side effects instead of being silently ignored.
 
 Remaining gap:
 
-- Custom drivers, `attachable: true`, IPv4 disabling, automatic IPv6 allocation,
-  and IPAM driver options remain blocked until Apple exposes matching network
-  creation primitives.
+- Custom drivers, `attachable: true`, IPv4 or IPv6 disabling, and IPAM driver
+  options remain blocked until Apple exposes matching network creation
+  primitives.
 
 ## Testing
 
