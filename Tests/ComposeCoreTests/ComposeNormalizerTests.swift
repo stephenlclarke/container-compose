@@ -304,6 +304,65 @@ struct ComposeNormalizerTests {
         #expect(project.networks["backend"]?.unsupportedFields == ["ipam.options"])
     }
 
+    @Test("normalizer maps automatic IPv6 enablement to VMnet allocation")
+    func normalizerMapsAutomaticIPv6Enablement() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: directory) }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            networks:
+              - backend
+        networks:
+          backend:
+            enable_ipv6: true
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        #expect(project.networks["backend"]?.unsupportedFields == nil)
+        #expect(project.networks["backend"]?.ipv6Subnet == nil)
+    }
+
+    @Test("normalizer rejects IPv6 disablement before runtime side effects")
+    func normalizerMarksIPv6DisablementUnsupported() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: directory) }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            networks:
+              - backend
+        networks:
+          backend:
+            enable_ipv6: false
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        #expect(project.networks["backend"]?.unsupportedFields == ["enable_ipv6"])
+    }
+
     @Test("normalizer preserves entrypoint command and environment forms")
     func normalizerPreservesEntrypointCommandAndEnvironmentForms() async throws {
         let fileManager = FileManager.default

@@ -139,6 +139,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-devices-parity \
 	docker-compose-gpus-parity \
 	docker-compose-network-driver-opts-parity \
+	docker-compose-network-ipv6-parity \
 	docker-compose-network-ipam-options-parity \
 	docker-compose-up-menu-parity \
 	docker-compose-host-namespaces-parity \
@@ -166,7 +167,7 @@ endif
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: docker-compose-environment-parity
 .PHONY: docker-compose-format-template-actions-parity
-.PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity
+.PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-ipv6-parity
 
 all: workflow
 
@@ -1353,6 +1354,9 @@ docker-compose-gpus-parity: build docker-compose-reference
 
 docker-compose-network-driver-opts-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-network-driver-opts.sh --strict
+
+docker-compose-network-ipv6-parity: build docker-compose-reference
+	$(PARITY_ENV) ./Tools/parity/check-compose-network-ipv6.sh --strict
 
 docker-compose-network-ipam-options-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-network-ipam-options.sh --strict

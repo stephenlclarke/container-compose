@@ -177,6 +177,71 @@ struct ComposeRuntimeSmokeTests {
         Issue.record("Expected entrypoint-command output in runtime logs. Last logs: \(lastLogs)")
     }
 
+    @Test("runtime up assigns IPv6 for an automatic IPv6 Compose network")
+    func runtimeUpAssignsAutomaticIPv6Network() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            command: ["sh", "-c", "sleep 60"]
+            networks:
+              - ipv6
+        networks:
+          ipv6:
+            enable_ipv6: true
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = runtimeProjectName()
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
+        _ = try runProcess(containerBinary, ["system", "status"], timeout: 15)
+        defer {
+            _ = try? runProcess(
+                composeBinary,
+                [
+                    "--ansi", "never",
+                    "--project-name", project,
+                    "--file", composeFile.path,
+                    "down", "--volumes", "--remove-orphans",
+                ],
+                timeout: 60
+            )
+        }
+
+        _ = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "up", "--detach", "api",
+            ],
+            timeout: 180
+        )
+
+        let inspect = try runProcess(containerBinary, ["network", "inspect", "\(project)_ipv6"], timeout: 30)
+        let data = Data(inspect.stdout.utf8)
+        let networks = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        let network = try #require(networks.first)
+        let status = try #require(network["status"] as? [String: Any])
+        let ipv6Subnet = try #require(status["ipv6Subnet"] as? String)
+
+        #expect(!ipv6Subnet.isEmpty)
+    }
+
     @Test("runtime ps and top inspect built compose service")
     func runtimePsAndTopInspectBuiltComposeService() throws {
         guard runtimeTestsEnabled else {

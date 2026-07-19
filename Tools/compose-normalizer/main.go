@@ -836,10 +836,11 @@ func projectNetworkValues(network types.NetworkConfig) (string, string, string, 
 	appendUnsupportedNetworkField(&fields, "driver", driver != "" && driver != "bridge")
 	appendUnsupportedNetworkField(&fields, "attachable", network.Attachable)
 	appendUnsupportedNetworkField(&fields, "enable_ipv4", network.EnableIPv4 != nil && !*network.EnableIPv4)
-	if network.EnableIPv6 != nil {
-		enableIPv6DoesNotMatchSubnet := (*network.EnableIPv6 && ipv6Subnet == "") || (!*network.EnableIPv6 && ipv6Subnet != "")
-		appendUnsupportedNetworkField(&fields, "enable_ipv6", enableIPv6DoesNotMatchSubnet)
-	}
+	// VMnet allocates an IPv6 prefix when the caller does not supply one, so
+	// `enable_ipv6: true` is already represented by the generic network create
+	// path. It has no corresponding supported control to suppress that automatic
+	// allocation, so only an explicit disable request remains a runtime gap.
+	appendUnsupportedNetworkField(&fields, "enable_ipv6", network.EnableIPv6 != nil && !*network.EnableIPv6)
 	fields = append(fields, ipamFields...)
 	if len(fields) == 0 {
 		return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, nil
