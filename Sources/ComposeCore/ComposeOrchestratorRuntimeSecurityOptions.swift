@@ -54,9 +54,7 @@ extension ComposeOrchestrator {
                 runtimeOptions.append("no-new-privileges:true")
             } else if unconfinedSystemPathOptions.contains(option) {
                 runtimeOptions.append("systempaths=unconfined")
-            } else if unconfinedProfileOptions.contains(option) || disabledSELinuxLabelOptions.contains(option) {
-                continue
-            } else {
+            } else if !(unconfinedProfileOptions.contains(option) || disabledSELinuxLabelOptions.contains(option)) {
                 throw ComposeError.unsupported(
                     "service '\(service.name)' uses security_opt '\(option)'; only no-new-privileges (with optional :true|false or =true|false), systempaths=unconfined|systempaths:unconfined, seccomp=unconfined|seccomp:unconfined, apparmor=unconfined|apparmor:unconfined, or label=disable|label:disable is supported",
                 )
