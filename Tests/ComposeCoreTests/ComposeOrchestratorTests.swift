@@ -2036,6 +2036,32 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("up maps network mode bridge to the built-in runtime network")
+    func upMapsNetworkModeBridgeToBuiltinRuntimeNetwork() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.networkMode = "bridge"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "default"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("up maps pid host to container pid argument")
     func upMapsPIDHostToContainerPIDArgument() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -3347,6 +3373,33 @@ struct ComposeOrchestratorTests {
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(command.containsSequence(["--network", "host"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("create maps network mode bridge to the built-in runtime network")
+    func createMapsNetworkModeBridgeToBuiltinRuntimeNetwork() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.networkMode = "bridge"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--network", "default"]))
         #expect(!command.contains("demo_default"))
         #expect(await resourceManager.requests.isEmpty)
     }
@@ -28101,6 +28154,29 @@ struct ComposeOrchestratorTests {
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--network", "host"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("run maps network mode bridge to the built-in runtime network")
+    func runMapsNetworkModeBridgeToBuiltinRuntimeNetwork() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.networkMode = "bridge"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "run", "--name"]))
+        #expect(command.containsSequence(["--network", "default"]))
         #expect(!command.contains("demo_default"))
         #expect(await resourceManager.requests.isEmpty)
     }

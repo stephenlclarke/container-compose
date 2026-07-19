@@ -175,6 +175,8 @@ extension ComposeOrchestrator {
             args.append(contentsOf: ["--network", "none"])
         } else if isHostNetworkMode(service.networkMode) {
             args.append(contentsOf: ["--network", "host"])
+        } else if isBridgeNetworkMode(service.networkMode) {
+            args.append(contentsOf: ["--network", "default"])
         } else {
             for network in orderedNetworkAttachments(service: service) {
                 let networkArgument = try networkAttachmentArgument(project: project, service: service, network: network)

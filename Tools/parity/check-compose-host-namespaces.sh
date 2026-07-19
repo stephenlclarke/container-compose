@@ -31,14 +31,15 @@
 #                      otherwise docker-compose.
 #
 # This script is intentionally local-only and is not part of CI. It validates
-# Docker Compose V2 host namespace behavior for service `network_mode: host`
-# and `pid: host`, then checks the same Compose file through container-compose
-# dry-run output. It also compares Docker Compose V2 and container-compose
-# configuration for accepted PID and IPC sharing spellings, then verifies that
-# container-compose refuses those runtime modes before side effects. The
-# stephenlclarke runtime path maps `network_mode: host` to `container --network
-# host`; Docker's service/container namespace sharing remains a later parity
-# slice.
+# Docker Compose V2 network namespace behavior for service `network_mode:
+# host`/`bridge` and `pid: host`, then checks the same Compose file through
+# container-compose dry-run output. It also compares Docker Compose V2 and
+# container-compose configuration for accepted PID and IPC sharing spellings,
+# then verifies that container-compose refuses those runtime modes before side
+# effects. The stephenlclarke runtime path maps `network_mode: host` to
+# `container --network host` and `network_mode: bridge` to the built-in
+# `container --network default`; Docker's service/container namespace sharing
+# remains a later parity slice.
 
 set -euo pipefail
 
@@ -143,7 +144,7 @@ check_container_compose() {
     fi
 }
 
-# Create minimal Compose fixtures for host namespace and blocked sharing modes.
+# Create minimal Compose fixtures for supported namespace modes and blocked sharing modes.
 create_fixture() {
     mkdir -p "$REPO_ROOT/.build/parity"
     TMPDIR="$(mktemp -d "$REPO_ROOT/.build/parity/host-namespaces.XXXXXX")"
@@ -158,6 +159,10 @@ services:
     image: alpine:3.20
     command: ["sh", "-c", "sleep 60"]
     network_mode: host
+  bridge:
+    image: alpine:3.20
+    command: ["sh", "-c", "sleep 60"]
+    network_mode: bridge
   pid:
     image: alpine:3.20
     command: ["sh", "-c", "sleep 60"]
@@ -216,7 +221,7 @@ cleanup() {
     fi
 }
 
-# Validate a tool's normalized config for host and blocked namespace modes.
+# Validate a tool's normalized config for supported and blocked namespace modes.
 validate_config() {
     local tool="$1"
     local config_json="$2"
@@ -231,12 +236,17 @@ tool, config_json, sharing_config_json, network_mode_field = sys.argv[1:]
 config = json.loads(config_json)
 services = config["services"]
 net = services["net"]
+bridge = services["bridge"]
 pid = services["pid"]
 
 if net.get(network_mode_field) != "host":
     raise SystemExit(f"{tool} net {network_mode_field}={net.get(network_mode_field)!r}, want 'host'")
 if "networks" in net:
     raise SystemExit(f"{tool} network_mode: host service should not retain service networks")
+if bridge.get(network_mode_field) != "bridge":
+    raise SystemExit(f"{tool} bridge {network_mode_field}={bridge.get(network_mode_field)!r}, want 'bridge'")
+if "networks" in bridge:
+    raise SystemExit(f"{tool} network_mode: bridge service should not retain service networks")
 if pid.get("pid") != "host":
     raise SystemExit(f"{tool} pid mode={pid.get('pid')!r}, want 'host'")
 if "default" not in (pid.get("networks") or {}):
@@ -276,7 +286,7 @@ validate_config_parity() {
     "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$UNSUPPORTED_NETWORK_FILE" config --format json >/dev/null
 }
 
-# Validate Docker Compose's runtime HostConfig for host namespace modes.
+# Validate Docker Compose's runtime HostConfig for supported namespace modes.
 validate_docker_host_config() {
     if ((DOCKER_DAEMON_AVAILABLE == 0)); then
         return
@@ -293,6 +303,7 @@ project, compose_file = sys.argv[1], sys.argv[2]
 compose_command = sys.argv[3:]
 expected = {
     "net": ("host", ""),
+    "bridge": ("bridge", ""),
     "pid": (f"{project}_default", "host"),
 }
 
@@ -325,33 +336,45 @@ dry_run_line_for_service() {
 validate_container_compose_dry_run() {
     local up_output
     local run_net_output
+    local run_bridge_output
     local run_pid_output
     local net_line
+    local bridge_line
     local pid_line
     local run_net_line
+    local run_bridge_line
     local run_pid_line
     local unsupported_output
 
-    up_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" up net pid)"
+    up_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" up net bridge pid)"
     net_line="$(dry_run_line_for_service "$up_output" net)"
+    bridge_line="$(dry_run_line_for_service "$up_output" bridge)"
     pid_line="$(dry_run_line_for_service "$up_output" pid)"
 
     [[ -n "$net_line" ]] || { error 'missing dry-run command for network_mode: host service'; return 1; }
+    [[ -n "$bridge_line" ]] || { error 'missing dry-run command for network_mode: bridge service'; return 1; }
     [[ -n "$pid_line" ]] || { error 'missing dry-run command for pid: host service'; return 1; }
     [[ "$net_line" == *" --network host "* ]] || { error "network_mode: host did not emit --network host: $net_line"; return 1; }
     [[ "$net_line" != *" --network ${CONTAINER_PROJECT_NAME}_default "* ]] || { error "network_mode: host also attached the default network: $net_line"; return 1; }
+    [[ "$bridge_line" == *" --network default "* ]] || { error "network_mode: bridge did not emit --network default: $bridge_line"; return 1; }
+    [[ "$bridge_line" != *" --network ${CONTAINER_PROJECT_NAME}_default "* ]] || { error "network_mode: bridge also attached the project default network: $bridge_line"; return 1; }
     [[ "$pid_line" == *" --network ${CONTAINER_PROJECT_NAME}_default "* ]] || { error "pid: host service did not retain default network: $pid_line"; return 1; }
     [[ "$pid_line" == *" --pid host "* ]] || { error "pid: host service did not emit --pid host: $pid_line"; return 1; }
 
     run_net_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" run net true)"
+    run_bridge_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" run bridge true)"
     run_pid_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" run pid true)"
     run_net_line="$(dry_run_line_for_service "$run_net_output" net)"
+    run_bridge_line="$(dry_run_line_for_service "$run_bridge_output" bridge)"
     run_pid_line="$(dry_run_line_for_service "$run_pid_output" pid)"
 
     [[ -n "$run_net_line" ]] || { error 'missing dry-run command for one-off network_mode: host service'; return 1; }
+    [[ -n "$run_bridge_line" ]] || { error 'missing dry-run command for one-off network_mode: bridge service'; return 1; }
     [[ -n "$run_pid_line" ]] || { error 'missing dry-run command for one-off pid: host service'; return 1; }
     [[ "$run_net_line" == *" --network host "* ]] || { error "one-off network_mode: host did not emit --network host: $run_net_line"; return 1; }
     [[ "$run_net_line" != *" --network ${CONTAINER_PROJECT_NAME}_default "* ]] || { error "one-off network_mode: host also attached the default network: $run_net_line"; return 1; }
+    [[ "$run_bridge_line" == *" --network default "* ]] || { error "one-off network_mode: bridge did not emit --network default: $run_bridge_line"; return 1; }
+    [[ "$run_bridge_line" != *" --network ${CONTAINER_PROJECT_NAME}_default "* ]] || { error "one-off network_mode: bridge also attached the project default network: $run_bridge_line"; return 1; }
     [[ "$run_pid_line" == *" --network ${CONTAINER_PROJECT_NAME}_default "* ]] || { error "one-off pid: host service did not retain default network: $run_pid_line"; return 1; }
     [[ "$run_pid_line" == *" --pid host "* ]] || { error "one-off pid: host service did not emit --pid host: $run_pid_line"; return 1; }
 
@@ -392,7 +415,7 @@ main() {
     validate_config_parity
     validate_docker_host_config
     validate_container_compose_dry_run
-    printf 'Docker Compose host namespace parity check passed for project %s\n' "$DOCKER_PROJECT_NAME"
+    printf 'Docker Compose supported namespace-mode parity check passed for project %s\n' "$DOCKER_PROJECT_NAME"
 }
 
 main "$@"
