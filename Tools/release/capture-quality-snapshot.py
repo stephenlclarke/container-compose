@@ -20,7 +20,10 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
+import html
 import json
+from pathlib import Path
 import subprocess
 import sys
 import time
@@ -41,6 +44,17 @@ POLL_INTERVAL_SECONDS = 10
 # a valid slower analysis from producing a release without its quality snapshot.
 POLL_TIMEOUT_SECONDS = 1800
 
+BADGE_COLORS = {
+    "blue": "#007ec6",
+    "brightgreen": "#4c1",
+    "orange": "#fe7d37",
+    "red": "#e05d44",
+}
+BADGE_HEIGHT = 20
+BADGE_GAP = 8
+BADGE_MARGIN = 8
+BADGE_MAX_ROW_WIDTH = 1200
+
 SONARQUBE_METRICS = (
     "alert_status",
     "bugs",
@@ -54,6 +68,15 @@ SONARQUBE_METRICS = (
     "sqale_rating",
     "vulnerabilities",
 )
+
+
+@dataclass(frozen=True)
+class SnapshotBadge:
+    """One quality metric rendered into the release-owned SVG."""
+
+    label: str
+    message: str
+    color: str
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,6 +95,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sonarqube-project", default=SONARQUBE_PROJECT)
     parser.add_argument("--sonarqube-branch", default=SONARQUBE_BRANCH)
     parser.add_argument("--codeql-ref", default=CODEQL_REF)
+    parser.add_argument(
+        "--svg-output",
+        type=Path,
+        help="Write the release-owned SVG snapshot to this path",
+    )
+    parser.add_argument(
+        "--asset-url",
+        help="GitHub release-asset URL used by the rendered Markdown snapshot",
+    )
     parser.add_argument(
         "--allow-missing-sonarqube",
         action="store_true",
@@ -275,11 +307,10 @@ def minutes(value: str) -> str:
     return f"{remainder}m"
 
 
-def static_badge(label: str, message: str, color: str) -> str:
-    query = urllib.parse.urlencode(
-        {"label": label, "message": message, "color": color, "style": "flat"}
-    )
-    return f"![{label}](https://img.shields.io/static/v1?{query})"
+def snapshot_badge(label: str, message: str, color: str) -> SnapshotBadge:
+    if color not in BADGE_COLORS:
+        raise ValueError(f"unsupported quality badge color: {color}")
+    return SnapshotBadge(label=label, message=message, color=color)
 
 
 def zero_color(value: int) -> str:
@@ -290,7 +321,7 @@ def metric_color(*, good_when: bool) -> str:
     return "brightgreen" if good_when else "orange"
 
 
-def codeql_badges(*, analysis: dict[str, Any]) -> Iterable[str]:
+def codeql_badges(*, analysis: dict[str, Any]) -> Iterable[SnapshotBadge]:
     codeql_results = analysis.get("results_count")
     codeql_rules = analysis.get("rules_count")
     codeql_error = analysis.get("error")
@@ -300,44 +331,121 @@ def codeql_badges(*, analysis: dict[str, Any]) -> Iterable[str]:
     if codeql_error or codeql_warning:
         raise ValueError("CodeQL analysis completed with an error or warning")
 
-    yield static_badge("CodeQL Analysis", "Completed", "brightgreen")
-    yield static_badge("CodeQL Results", str(codeql_results), zero_color(codeql_results))
-    yield static_badge("CodeQL Rules", str(codeql_rules), "blue")
+    yield snapshot_badge("CodeQL Analysis", "Completed", "brightgreen")
+    yield snapshot_badge("CodeQL Results", str(codeql_results), zero_color(codeql_results))
+    yield snapshot_badge("CodeQL Rules", str(codeql_rules), "blue")
 
 
 def snapshot_badges(
     *, sonar_measures: dict[str, str], codeql_analysis: dict[str, Any]
-) -> Iterable[str]:
+) -> Iterable[SnapshotBadge]:
     quality_gate = sonar_measures["alert_status"]
     bugs = int(float(sonar_measures["bugs"]))
     vulnerabilities = int(float(sonar_measures["vulnerabilities"]))
     coverage = float(sonar_measures["coverage"])
     duplication = float(sonar_measures["duplicated_lines_density"])
     ncloc = int(float(sonar_measures["ncloc"]))
-    yield static_badge(
+    yield snapshot_badge(
         "Quality Gate Status",
         "Passed" if quality_gate == "OK" else quality_gate,
         "brightgreen" if quality_gate == "OK" else "red",
     )
-    yield static_badge("Bugs", str(bugs), zero_color(bugs))
-    yield static_badge("Code Smells", sonar_measures["code_smells"], "blue")
-    yield static_badge(
+    yield snapshot_badge("Bugs", str(bugs), zero_color(bugs))
+    yield snapshot_badge("Code Smells", sonar_measures["code_smells"], "blue")
+    yield snapshot_badge(
         "Coverage",
         f"{sonar_measures['coverage']}%",
         metric_color(good_when=coverage >= 90),
     )
-    yield static_badge(
+    yield snapshot_badge(
         "Duplicated Lines (%)",
         f"{sonar_measures['duplicated_lines_density']}%",
         metric_color(good_when=duplication <= 3),
     )
-    yield static_badge("Lines of Code", f"{ncloc:,}", "blue")
-    yield static_badge("Reliability Rating", rating(sonar_measures["reliability_rating"]), "brightgreen")
-    yield static_badge("Security Rating", rating(sonar_measures["security_rating"]), "brightgreen")
-    yield static_badge("Technical Debt", minutes(sonar_measures["sqale_index"]), "blue")
-    yield static_badge("Maintainability Rating", rating(sonar_measures["sqale_rating"]), "brightgreen")
-    yield static_badge("Vulnerabilities", str(vulnerabilities), zero_color(vulnerabilities))
+    yield snapshot_badge("Lines of Code", f"{ncloc:,}", "blue")
+    yield snapshot_badge(
+        "Reliability Rating", rating(sonar_measures["reliability_rating"]), "brightgreen"
+    )
+    yield snapshot_badge(
+        "Security Rating", rating(sonar_measures["security_rating"]), "brightgreen"
+    )
+    yield snapshot_badge("Technical Debt", minutes(sonar_measures["sqale_index"]), "blue")
+    yield snapshot_badge(
+        "Maintainability Rating", rating(sonar_measures["sqale_rating"]), "brightgreen"
+    )
+    yield snapshot_badge("Vulnerabilities", str(vulnerabilities), zero_color(vulnerabilities))
     yield from codeql_badges(analysis=codeql_analysis)
+
+
+def badge_text_width(value: str) -> int:
+    """Estimate Verdana's compact 11px metric width without a browser dependency."""
+
+    return 10 + sum(4 if character == " " else 7 for character in value)
+
+
+def badge_width(badge: SnapshotBadge) -> int:
+    return badge_text_width(badge.label) + badge_text_width(badge.message)
+
+
+def render_badges_svg(badges: Iterable[SnapshotBadge]) -> str:
+    """Render one deterministic, self-contained SVG for the quality evidence."""
+
+    positions: list[tuple[SnapshotBadge, int, int, int]] = []
+    x = BADGE_MARGIN
+    y = BADGE_MARGIN
+    widest = 0
+    for badge in badges:
+        width = badge_width(badge)
+        if x > BADGE_MARGIN and x + width > BADGE_MAX_ROW_WIDTH:
+            widest = max(widest, x - BADGE_GAP + BADGE_MARGIN)
+            x = BADGE_MARGIN
+            y += BADGE_HEIGHT + BADGE_GAP
+        positions.append((badge, x, y, width))
+        x += width + BADGE_GAP
+    widest = max(widest, x - BADGE_GAP + BADGE_MARGIN)
+    height = y + BADGE_HEIGHT + BADGE_MARGIN
+    description = "; ".join(f"{badge.label}: {badge.message}" for badge, *_ in positions)
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{widest}" height="{height}" viewBox="0 0 {widest} {height}" role="img" aria-labelledby="title description">',
+        "  <title id=\"title\">Quality snapshot</title>",
+        f"  <desc id=\"description\">{html.escape(description)}</desc>",
+    ]
+    for badge, x, y, width in positions:
+        label_width = badge_text_width(badge.label)
+        label = html.escape(badge.label)
+        message = html.escape(badge.message)
+        color = BADGE_COLORS[badge.color]
+        lines.extend(
+            [
+                f'  <g transform="translate({x} {y})">',
+                f'    <rect width="{width}" height="{BADGE_HEIGHT}" rx="3" fill="#555"/>',
+                f'    <rect x="{label_width}" width="{width - label_width}" height="{BADGE_HEIGHT}" rx="3" fill="{color}"/>',
+                f'    <rect x="{label_width}" width="3" height="{BADGE_HEIGHT}" fill="{color}"/>',
+                f'    <text x="5" y="14" fill="#fff" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">{label}</text>',
+                f'    <text x="{label_width + 5}" y="14" fill="#fff" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">{message}</text>',
+                "  </g>",
+            ]
+        )
+    lines.append("</svg>")
+    return "\n".join(lines) + "\n"
+
+
+def snapshot_alt_text(badges: Iterable[SnapshotBadge]) -> str:
+    return "Quality snapshot: " + ", ".join(
+        f"{badge.label} {badge.message}" for badge in badges
+    )
+
+
+def resolved_badges(
+    *,
+    sonar_measures: dict[str, str] | None,
+    codeql_analysis: dict[str, Any],
+) -> list[SnapshotBadge]:
+    if sonar_measures is None:
+        return list(codeql_badges(analysis=codeql_analysis))
+    return list(snapshot_badges(sonar_measures=sonar_measures, codeql_analysis=codeql_analysis))
 
 
 def render_snapshot(
@@ -347,21 +455,20 @@ def render_snapshot(
     sonar_measures: dict[str, str] | None,
     codeql_analysis: dict[str, Any],
     release_kind: str = "stable",
+    asset_url: str = "quality-snapshot.svg",
 ) -> str:
+    if not asset_url:
+        raise ValueError("quality snapshot asset URL must not be empty")
     if release_kind == "current":
         retention = "These static, non-clickable badges describe this mutable Current build and are replaced when `current` moves."
     else:
         retention = "These static, non-clickable badges are retained as historical evidence; they do not update."
     if sonar_analysis is None or sonar_measures is None:
-        badges = " ".join(codeql_badges(analysis=codeql_analysis))
         analysis_summary = (
             f"- CodeQL analysis covers `{commit}`. SonarQube metrics are omitted "
             "because the validated CI run did not produce a SonarQube scan."
         )
     else:
-        badges = " ".join(
-            snapshot_badges(sonar_measures=sonar_measures, codeql_analysis=codeql_analysis)
-        )
         analysis_summary = (
             f"- SonarQube `main` analysis `{sonar_analysis['date']}` and CodeQL "
             f"analysis both cover `{commit}`."
@@ -373,7 +480,7 @@ def render_snapshot(
             retention,
             analysis_summary,
             "",
-            badges,
+            f"![{snapshot_alt_text(resolved_badges(sonar_measures=sonar_measures, codeql_analysis=codeql_analysis))}]({asset_url})",
             "",
         ]
     )
@@ -382,6 +489,8 @@ def render_snapshot(
 def main() -> None:
     args = parse_args()
     try:
+        if (args.svg_output is None) != (args.asset_url is None):
+            raise ValueError("--svg-output and --asset-url must be supplied together")
         if args.allow_missing_sonarqube and args.release_kind != "current":
             raise ValueError("only current snapshots may omit SonarQube metrics")
         sonar_analysis, codeql_analysis = wait_for_analyses(
@@ -404,6 +513,17 @@ def main() -> None:
                 branch=args.sonarqube_branch,
                 analysis=sonar_analysis,
             )
+        if args.svg_output is not None:
+            args.svg_output.parent.mkdir(parents=True, exist_ok=True)
+            args.svg_output.write_text(
+                render_badges_svg(
+                    resolved_badges(
+                        sonar_measures=sonar_measures,
+                        codeql_analysis=codeql_analysis,
+                    )
+                ),
+                encoding="utf-8",
+            )
         print(
             render_snapshot(
                 commit=args.commit,
@@ -411,6 +531,7 @@ def main() -> None:
                 sonar_measures=sonar_measures,
                 codeql_analysis=codeql_analysis,
                 release_kind=args.release_kind,
+                asset_url=args.asset_url or "quality-snapshot.svg",
             ),
             end="",
         )

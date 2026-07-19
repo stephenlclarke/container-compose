@@ -311,6 +311,7 @@ jobs:
               # The README points to this mutable asset so it always renders
               # the recording made with the matching Current build artifacts.
               demo_asset="container-compose-demo-current.gif"
+              quality_snapshot_asset="quality-snapshot-current.svg"
               formula="container-compose-current.rb"
               formula_class="ContainerComposeCurrent"
               runtime_formula="container-current"
@@ -338,6 +339,7 @@ jobs:
               asset="container-compose-plugin-release-arm64.tar.gz"
               highlights_asset="release-highlights.json"
               demo_asset=""
+              quality_snapshot_asset="quality-snapshot.svg"
               formula="container-compose.rb"
               formula_class="ContainerCompose"
               runtime_formula="container"
@@ -364,6 +366,7 @@ jobs:
             printf 'asset=%s\n' "${asset}"
             printf 'highlights_asset=%s\n' "${highlights_asset}"
             printf 'demo_asset=%s\n' "${demo_asset}"
+            printf 'quality_snapshot_asset=%s\n' "${quality_snapshot_asset}"
             printf 'formula=%s\n' "${formula}"
             printf 'formula_class=%s\n' "${formula_class}"
             printf 'runtime_formula=%s\n' "${runtime_formula}"
@@ -743,6 +746,7 @@ jobs:
           RELEASE_LATEST: ${{ steps.lane.outputs.release_latest }}
           RELEASE_PRERELEASE: ${{ steps.lane.outputs.release_prerelease }}
           HIGHLIGHTS_ASSET: ${{ steps.lane.outputs.highlights_asset }}
+          QUALITY_SNAPSHOT_ASSET: ${{ steps.lane.outputs.quality_snapshot_asset }}
           PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
           PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
           SONARQUBE_SNAPSHOT_REQUIRED: ${{ needs.resolve-publish-context.outputs.sonarqube_snapshot_required }}
@@ -787,6 +791,8 @@ jobs:
             quality_release_kind="current"
           fi
           quality_snapshot="${RUNNER_TEMP}/quality-snapshot.md"
+          quality_snapshot_svg="${RUNNER_TEMP}/${QUALITY_SNAPSHOT_ASSET}"
+          quality_snapshot_asset_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${QUALITY_SNAPSHOT_ASSET}"
           sonar_snapshot_available=false
           if nc -z -w 5 sonarcloud.io 443; then
             set +e
@@ -807,7 +813,11 @@ jobs:
             quality_snapshot_args+=(--allow-missing-sonarqube)
           fi
           if [[ "${sonar_snapshot_available}" == "true" || "${SONARQUBE_SNAPSHOT_REQUIRED}" != "true" ]]; then
-            python3 Tools/release/capture-quality-snapshot.py "${quality_snapshot_args[@]}" > "${quality_snapshot}"
+            python3 Tools/release/capture-quality-snapshot.py \
+              "${quality_snapshot_args[@]}" \
+              --svg-output "${quality_snapshot_svg}" \
+              --asset-url "${quality_snapshot_asset_url}" > "${quality_snapshot}"
+            printf '%s\n' "${quality_snapshot_svg}" >> "${extra_assets}"
           else
             printf '::warning title=SonarQube unavailable::The release quality snapshot omits SonarQube-derived metrics because the API preflight did not succeed within five seconds.\n'
             cat > "${quality_snapshot}" <<'EOF'
@@ -956,6 +966,7 @@ jobs:
           PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
           PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
           HIGHLIGHTS_ASSET: ${{ steps.lane.outputs.highlights_asset }}
+          QUALITY_SNAPSHOT_ASSET: ${{ steps.lane.outputs.quality_snapshot_asset }}
         shell: bash
         working-directory: container-compose
         run: |
@@ -1022,6 +1033,7 @@ jobs:
               --current-asset "${RUNTIME_ASSET}" \
               --current-asset "${RUNTIME_ASSET}.sha256" \
               --current-asset "${HIGHLIGHTS_ASSET}" \
+              --current-asset "${QUALITY_SNAPSHOT_ASSET}" \
               --current-asset "${{ steps.lane.outputs.demo_asset }}"
             )
           fi
