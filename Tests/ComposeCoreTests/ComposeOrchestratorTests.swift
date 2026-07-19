@@ -7579,6 +7579,30 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--userns", "private"]))
     }
 
+    @Test("up rejects unsupported user namespace modes before creating resources")
+    func upRejectsUnsupportedUserNamespaceModeBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.usernsMode = "container:db"
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported user namespace mode error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses userns_mode 'container:db'; only host and private are supported by the local runtime"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects network aliases until the runtime exposes container-facing DNS")
     func upRejectsNetworkAliasesUntilRuntimeExposesContainerFacingDNS() async throws {
         let runner = RecordingRunner()
