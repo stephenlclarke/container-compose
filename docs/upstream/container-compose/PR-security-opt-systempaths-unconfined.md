@@ -19,6 +19,8 @@ runtime argument understood by the Apple-shaped `container` fork.
   `feat(security): map unconfined guest system paths`
 - `container-compose` dependency resolution: `5fab82bd`
   `chore(deps): pin guest system path runtime`
+- `container-compose` stack release alignment: `1f497f94`
+  `chore(release): align guest system path stack`
 - `containerization`: no source change. Its existing
   `LinuxContainer.Configuration.maskedPaths` and `.readonlyPaths` fields are
   the generic primitive used by the fork.
