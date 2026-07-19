@@ -19,6 +19,7 @@
   <img alt="Repo Visitors" src="https://visitor-badge.laobi.icu/badge?page_id=stephenlclarke.container-compose" />
 </p>
 <br clear="left" />
+<br>
 <!-- markdownlint-enable MD033 -->
 
 `container-compose` is a standalone plugin that provides Docker Compose v2
