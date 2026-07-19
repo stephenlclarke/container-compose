@@ -37,8 +37,8 @@ SONARQUBE_BRANCH = "main"
 CODEQL_REF = "refs/heads/main"
 POLL_INTERVAL_SECONDS = 10
 # A main CodeQL analysis is allowed to use its full workflow timeout. Package
-# publication starts after CI/Sonar finishes, so a 30-minute window prevents a
-# valid slower CodeQL run from producing a release without its quality snapshot.
+# publication may start before CodeQL completes, so a 30-minute window prevents
+# a valid slower analysis from producing a release without its quality snapshot.
 POLL_TIMEOUT_SECONDS = 1800
 
 SONARQUBE_METRICS = (
@@ -72,6 +72,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sonarqube-project", default=SONARQUBE_PROJECT)
     parser.add_argument("--sonarqube-branch", default=SONARQUBE_BRANCH)
     parser.add_argument("--codeql-ref", default=CODEQL_REF)
+    parser.add_argument(
+        "--allow-missing-sonarqube",
+        action="store_true",
+        help=(
+            "Allow a current-build snapshot with exact CodeQL evidence but no "
+            "SonarQube metrics when the validated CI run did not produce a "
+            "SonarQube scan"
+        ),
+    )
     parser.add_argument("--poll-interval", type=int, default=POLL_INTERVAL_SECONDS)
     parser.add_argument("--poll-timeout", type=int, default=POLL_TIMEOUT_SECONDS)
     parser.add_argument("--gh", default="gh", help="GitHub CLI executable")
@@ -164,26 +173,31 @@ def wait_for_analyses(
     commit: str,
     poll_interval: int,
     poll_timeout: int,
-) -> tuple[dict[str, Any], dict[str, Any]]:
+    require_sonarqube: bool = True,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     if poll_interval <= 0 or poll_timeout <= 0:
         raise ValueError("poll interval and timeout must be positive")
 
     deadline = time.monotonic() + poll_timeout
     while True:
-        sonar_analysis = find_sonarqube_analysis(
-            host=host, project=project, branch=branch, commit=commit
-        )
+        sonar_analysis = None
+        if require_sonarqube:
+            sonar_analysis = find_sonarqube_analysis(
+                host=host, project=project, branch=branch, commit=commit
+            )
         codeql_analysis = find_codeql_analysis(
             gh=gh,
             repository=repository,
             ref=codeql_ref,
             commit=commit,
         )
-        if sonar_analysis is not None and codeql_analysis is not None:
+        if codeql_analysis is not None and (
+            not require_sonarqube or sonar_analysis is not None
+        ):
             return sonar_analysis, codeql_analysis
         if time.monotonic() >= deadline:
             waiting_for = []
-            if sonar_analysis is None:
+            if require_sonarqube and sonar_analysis is None:
                 waiting_for.append("SonarQube")
             if codeql_analysis is None:
                 waiting_for.append("CodeQL")
@@ -276,6 +290,21 @@ def metric_color(*, good_when: bool) -> str:
     return "brightgreen" if good_when else "orange"
 
 
+def codeql_badges(*, analysis: dict[str, Any]) -> Iterable[str]:
+    codeql_results = analysis.get("results_count")
+    codeql_rules = analysis.get("rules_count")
+    codeql_error = analysis.get("error")
+    codeql_warning = analysis.get("warning")
+    if not isinstance(codeql_results, int) or not isinstance(codeql_rules, int):
+        raise ValueError("CodeQL analysis did not include result and rule counts")
+    if codeql_error or codeql_warning:
+        raise ValueError("CodeQL analysis completed with an error or warning")
+
+    yield static_badge("CodeQL Analysis", "Completed", "brightgreen")
+    yield static_badge("CodeQL Results", str(codeql_results), zero_color(codeql_results))
+    yield static_badge("CodeQL Rules", str(codeql_rules), "blue")
+
+
 def snapshot_badges(
     *, sonar_measures: dict[str, str], codeql_analysis: dict[str, Any]
 ) -> Iterable[str]:
@@ -285,15 +314,6 @@ def snapshot_badges(
     coverage = float(sonar_measures["coverage"])
     duplication = float(sonar_measures["duplicated_lines_density"])
     ncloc = int(float(sonar_measures["ncloc"]))
-    codeql_results = codeql_analysis.get("results_count")
-    codeql_rules = codeql_analysis.get("rules_count")
-    codeql_error = codeql_analysis.get("error")
-    codeql_warning = codeql_analysis.get("warning")
-    if not isinstance(codeql_results, int) or not isinstance(codeql_rules, int):
-        raise ValueError("CodeQL analysis did not include result and rule counts")
-    if codeql_error or codeql_warning:
-        raise ValueError("CodeQL analysis completed with an error or warning")
-
     yield static_badge(
         "Quality Gate Status",
         "Passed" if quality_gate == "OK" else quality_gate,
@@ -317,33 +337,41 @@ def snapshot_badges(
     yield static_badge("Technical Debt", minutes(sonar_measures["sqale_index"]), "blue")
     yield static_badge("Maintainability Rating", rating(sonar_measures["sqale_rating"]), "brightgreen")
     yield static_badge("Vulnerabilities", str(vulnerabilities), zero_color(vulnerabilities))
-    yield static_badge("CodeQL Analysis", "Completed", "brightgreen")
-    yield static_badge("CodeQL Results", str(codeql_results), zero_color(codeql_results))
-    yield static_badge("CodeQL Rules", str(codeql_rules), "blue")
+    yield from codeql_badges(analysis=codeql_analysis)
 
 
 def render_snapshot(
     *,
     commit: str,
-    sonar_analysis: dict[str, Any],
-    sonar_measures: dict[str, str],
+    sonar_analysis: dict[str, Any] | None,
+    sonar_measures: dict[str, str] | None,
     codeql_analysis: dict[str, Any],
     release_kind: str = "stable",
 ) -> str:
-    analysis_date = sonar_analysis["date"]
-    badges = " ".join(
-        snapshot_badges(sonar_measures=sonar_measures, codeql_analysis=codeql_analysis)
-    )
     if release_kind == "current":
         retention = "These static, non-clickable badges describe this mutable Current build and are replaced when `current` moves."
     else:
         retention = "These static, non-clickable badges are retained as historical evidence; they do not update."
+    if sonar_analysis is None or sonar_measures is None:
+        badges = " ".join(codeql_badges(analysis=codeql_analysis))
+        analysis_summary = (
+            f"- CodeQL analysis covers `{commit}`. SonarQube metrics are omitted "
+            "because the validated CI run did not produce a SonarQube scan."
+        )
+    else:
+        badges = " ".join(
+            snapshot_badges(sonar_measures=sonar_measures, codeql_analysis=codeql_analysis)
+        )
+        analysis_summary = (
+            f"- SonarQube `main` analysis `{sonar_analysis['date']}` and CodeQL "
+            f"analysis both cover `{commit}`."
+        )
     return "\n".join(
         [
             "## Quality Snapshot",
             "",
             retention,
-            f"- SonarQube `main` analysis `{analysis_date}` and CodeQL analysis both cover `{commit}`.",
+            analysis_summary,
             "",
             badges,
             "",
@@ -354,6 +382,8 @@ def render_snapshot(
 def main() -> None:
     args = parse_args()
     try:
+        if args.allow_missing_sonarqube and args.release_kind != "current":
+            raise ValueError("only current snapshots may omit SonarQube metrics")
         sonar_analysis, codeql_analysis = wait_for_analyses(
             host=args.sonarqube_url,
             project=args.sonarqube_project,
@@ -364,13 +394,16 @@ def main() -> None:
             commit=args.commit,
             poll_interval=args.poll_interval,
             poll_timeout=args.poll_timeout,
+            require_sonarqube=not args.allow_missing_sonarqube,
         )
-        sonar_measures = sonar_measures_for_analysis(
-            host=args.sonarqube_url,
-            project=args.sonarqube_project,
-            branch=args.sonarqube_branch,
-            analysis=sonar_analysis,
-        )
+        sonar_measures = None
+        if sonar_analysis is not None:
+            sonar_measures = sonar_measures_for_analysis(
+                host=args.sonarqube_url,
+                project=args.sonarqube_project,
+                branch=args.sonarqube_branch,
+                analysis=sonar_analysis,
+            )
         print(
             render_snapshot(
                 commit=args.commit,

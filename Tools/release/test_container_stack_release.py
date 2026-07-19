@@ -300,7 +300,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("--component-repo container=../container", workflow)
-        self.assertNotIn("quality_snapshot_args", workflow)
+        self.assertIn('SONARQUBE_SNAPSHOT_REQUIRED', workflow)
+        self.assertIn('sonarqube_snapshot_required="false"', workflow)
+        self.assertIn('--allow-missing-sonarqube', workflow)
+        self.assertIn('quality_snapshot_args=(', workflow)
 
     def test_current_package_skips_only_when_the_pointer_already_matches_main(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")

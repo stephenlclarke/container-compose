@@ -64,6 +64,7 @@ jobs:
       ref_name: ${{ steps.publish.outputs.ref_name }}
       checkout_ref: ${{ steps.publish.outputs.checkout_ref }}
       sha: ${{ steps.publish.outputs.sha }}
+      sonarqube_snapshot_required: ${{ steps.publish.outputs.sonarqube_snapshot_required }}
       repair_tap: ${{ steps.publish.outputs.repair_tap }}
     steps:
       - name: Resolve publish context
@@ -85,6 +86,7 @@ jobs:
           ref_name=""
           checkout_ref=""
           sha=""
+          sonarqube_snapshot_required="true"
           repair_tap="false"
 
           remote="https://github.com/${GITHUB_REPOSITORY}.git"
@@ -141,10 +143,13 @@ jobs:
               # companion for the opposite change set. The package authority
               # is satisfied when at least one Validate succeeds and every
               # matching job is either successful or intentionally skipped.
-              validate_conclusions="$(
+              workflow_jobs="$(
                 gh api --paginate --slurp \
-                  "repos/${GITHUB_REPOSITORY}/actions/runs/${WORKFLOW_RUN_ID}/jobs?per_page=100" \
-                  | jq -c '[.[] | .jobs[] | select(.name == "Validate") | .conclusion]'
+                  "repos/${GITHUB_REPOSITORY}/actions/runs/${WORKFLOW_RUN_ID}/jobs?per_page=100"
+              )"
+              validate_conclusions="$(
+                jq -c '[.[] | .jobs[] | select(.name == "Validate") | .conclusion]' \
+                  <<<"${workflow_jobs}"
               )"
               if ! jq -e \
                 'length > 0 and any(.[]; . == "success") and all(.[]; . == "success" or . == "skipped")' \
@@ -152,6 +157,20 @@ jobs:
                 printf 'Skipping package publish because CI Validate results were %s.\n' \
                   "$(jq -r 'if length == 0 then "missing" else join(",") end' <<<"${validate_conclusions}")"
               elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == "main" ]]; then
+                sonarqube_scan_conclusions="$(
+                  jq -c '[.[] | .jobs[] | select(.name == "Validate Runtime") | .steps[]? | select(.name == "SonarQube scan") | .conclusion]' \
+                    <<<"${workflow_jobs}"
+                )"
+                if jq -e 'length == 1 and .[0] == "success"' \
+                  <<<"${sonarqube_scan_conclusions}" >/dev/null; then
+                  sonarqube_snapshot_required="true"
+                else
+                  # CI may omit the scan for the lightweight documentation/formula
+                  # lane or after an external SonarQube-service defer. The current
+                  # release still records exact CodeQL evidence, but must not wait
+                  # for a SonarQube analysis that the validated CI run did not create.
+                  sonarqube_snapshot_required="false"
+                fi
                 current_main="$(git ls-remote --heads "${remote}" refs/heads/main | awk "{ print \$1 }" | tail -n 1)"
                 if [[ "${current_main}" != "${WORKFLOW_RUN_HEAD_SHA}" ]]; then
                   printf 'Skipping superseded main CI at %s; main is now %s.\n' \
@@ -241,6 +260,7 @@ jobs:
             printf 'ref_name=%s\n' "${ref_name}"
             printf 'checkout_ref=%s\n' "${checkout_ref}"
             printf 'sha=%s\n' "${sha}"
+            printf 'sonarqube_snapshot_required=%s\n' "${sonarqube_snapshot_required}"
             printf 'repair_tap=%s\n' "${repair_tap}"
           } >> "$GITHUB_OUTPUT"
 
@@ -725,6 +745,7 @@ jobs:
           HIGHLIGHTS_ASSET: ${{ steps.lane.outputs.highlights_asset }}
           PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
           PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+          SONARQUBE_SNAPSHOT_REQUIRED: ${{ needs.resolve-publish-context.outputs.sonarqube_snapshot_required }}
         shell: bash
         working-directory: container-compose
         run: |
@@ -777,11 +798,16 @@ jobs:
               sonar_snapshot_available=true
             fi
           fi
-          if [[ "${sonar_snapshot_available}" == "true" ]]; then
-            python3 Tools/release/capture-quality-snapshot.py \
-              --repo "${GITHUB_REPOSITORY}" \
-              --commit "${PUBLISH_SHA}" \
-              --release-kind "${quality_release_kind}" > "${quality_snapshot}"
+          quality_snapshot_args=(
+            --repo "${GITHUB_REPOSITORY}"
+            --commit "${PUBLISH_SHA}"
+            --release-kind "${quality_release_kind}"
+          )
+          if [[ "${SONARQUBE_SNAPSHOT_REQUIRED}" != "true" ]]; then
+            quality_snapshot_args+=(--allow-missing-sonarqube)
+          fi
+          if [[ "${sonar_snapshot_available}" == "true" || "${SONARQUBE_SNAPSHOT_REQUIRED}" != "true" ]]; then
+            python3 Tools/release/capture-quality-snapshot.py "${quality_snapshot_args[@]}" > "${quality_snapshot}"
           else
             printf '::warning title=SonarQube unavailable::The release quality snapshot omits SonarQube-derived metrics because the API preflight did not succeed within five seconds.\n'
             cat > "${quality_snapshot}" <<'EOF'
