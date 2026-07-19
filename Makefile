@@ -95,7 +95,11 @@ CONTAINER_RUNTIME_STOP_HELPER ?= $(abspath $(CONTAINER_STACK_REPO)/scripts/ensur
 CONTAINER_RUNTIME_APP_ROOT ?= $(abspath .build/container-runtime)
 CONTAINER_RUNTIME_INIT_BLOCK_REPO ?= $(if $(wildcard $(CONTAINER_STACK_REPO)/Makefile),$(CONTAINER_STACK_REPO),)
 CONTAINERIZATION_INIT_SOURCE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_REPO)/Package.swift),$(CONTAINERIZATION_STACK_REPO),)
-DOCKER_COMPOSE_REFERENCE ?= docker compose
+# Prefer Docker's plugin form, while accepting the standalone Docker Compose V2
+# executable that Homebrew installs on macOS.  Parity targets pass this value to
+# their scripts verbatim, so selecting it here keeps every documented `make
+# docker-compose-…-parity` invocation runnable on either installation layout.
+DOCKER_COMPOSE_REFERENCE ?= $(shell if docker compose version >/dev/null 2>&1; then printf '%s' 'docker compose'; elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then printf '%s' docker-compose; else printf '%s' 'docker compose'; fi)
 DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.3.1
 DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff
 PARITY_ENV = CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" DOCKER_COMPOSE="$(DOCKER_COMPOSE_REFERENCE)" DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)"
@@ -127,6 +131,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-cpuset-parity \
 	docker-compose-pid-namespace-parity \
 	docker-compose-cgroup-namespace-parity \
+	docker-compose-cgroup-parent-parity \
 	docker-compose-ipc-uts-namespace-parity \
 	docker-compose-userns-mode-parity \
 	docker-compose-privileged-parity \
@@ -168,7 +173,7 @@ endif
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: docker-compose-environment-parity docker-compose-named-volume-reuse-parity
 .PHONY: docker-compose-format-template-actions-parity
-.PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-ipv6-parity
+.PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-ipv6-parity
 
 all: workflow
 
@@ -1320,6 +1325,9 @@ docker-compose-pid-namespace-parity: build docker-compose-reference
 
 docker-compose-cgroup-namespace-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-cgroup-namespace.sh --strict
+
+docker-compose-cgroup-parent-parity: build docker-compose-reference
+	$(PARITY_ENV) ./Tools/parity/check-compose-cgroup-parent.sh --strict
 
 docker-compose-ipc-uts-namespace-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-ipc-uts-namespace.sh --strict

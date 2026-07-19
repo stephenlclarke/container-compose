@@ -230,6 +230,7 @@ extension ComposeOrchestrator {
         runtime.sysctls = try runtimeSysctls(service: service)
         runtime.blockIO = try runtimeBlockIO(service: service)
         runtime.cpuShares = try runtimeCPUShares(service: service)
+        runtime.cgroupParent = try runtimeCgroupParentArgument(service: service)
         runtime.memoryReservationInBytes = try runtimeMemoryReservationInBytes(service: service)
         runtime.memorySwapLimitInBytes = try runtimeMemorySwapLimitInBytes(service: service)
         return runtime

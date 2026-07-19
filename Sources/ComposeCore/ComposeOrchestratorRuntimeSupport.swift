@@ -52,11 +52,6 @@ extension ComposeOrchestrator {
     func unsupportedRuntimeStringFields(service: ComposeService) -> [ComposeRuntimeUnsupportedValue] {
         [
             ComposeRuntimeUnsupportedOptionalValue(
-                composeName: "cgroup_parent",
-                value: service.cgroupParent,
-                reason: "cgroup parent support needs an apple/container runtime gap PR",
-            ),
-            ComposeRuntimeUnsupportedOptionalValue(
                 composeName: "isolation",
                 value: service.isolation,
                 reason: "isolation support needs an apple/container runtime gap PR",
@@ -85,6 +80,26 @@ extension ComposeOrchestrator {
     /// by default, so only the explicit host mode needs an argument.
     func runtimeCgroupNamespaceArgument(service: ComposeService) throws -> String? {
         try runtimeHostPrivateNamespaceArgument(service: service, value: service.cgroup, composeName: "cgroup")
+    }
+
+    /// Returns a safe relative cgroup parent for the generic Linux guest
+    /// runtime. The runtime owns `/container` and creates each service as a
+    /// leaf below that guest-only hierarchy.
+    func runtimeCgroupParentArgument(service: ComposeService) throws -> String? {
+        guard let parent = service.cgroupParent, !parent.isEmpty else {
+            return nil
+        }
+
+        let components = parent.split(separator: "/", omittingEmptySubsequences: false)
+        guard
+            !parent.hasPrefix("/"),
+            components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." })
+        else {
+            throw ComposeError.invalidProject(
+                "service '\(service.name)' uses invalid cgroup_parent '\(parent)'; expected a non-empty relative path without empty, '.' or '..' components",
+            )
+        }
+        return parent
     }
 
     /// Returns the apple/container IPC namespace argument for Docker-compatible

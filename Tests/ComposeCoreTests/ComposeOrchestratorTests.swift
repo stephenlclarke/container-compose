@@ -2371,6 +2371,26 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--cpu-shares", "512"]))
     }
 
+    @Test("create maps cgroup_parent to runtime arguments")
+    func createMapsCgroupParentToRuntimeArguments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.cgroupParent = "workloads/build"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--cgroup-parent", "workloads/build"]))
+    }
+
     @Test("create maps cpuset to runtime arguments")
     func createMapsCPUSetToRuntimeArguments() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -2795,6 +2815,34 @@ struct ComposeOrchestratorTests {
             } else {
                 let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "job")
                 #expect(plan.cpuShares == (cpuShares == 0 ? nil : UInt64(cpuShares)))
+            }
+        }
+    }
+
+    @Test("service create plan maps and validates cgroup_parent")
+    func serviceCreatePlanMapsAndValidatesCgroupParent() async throws {
+        let validProject = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.cgroupParent = "workloads/build"
+                },
+            ]
+        )
+        let plan = try await ComposeOrchestrator().serviceCreatePlan(project: validProject, serviceName: "job")
+        #expect(plan.cgroupParent == "workloads/build")
+
+        for parent in ["/root", ".", "..", "workloads/../escape", "workloads//build", "workloads/"] {
+            let invalidProject = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        $0.cgroupParent = parent
+                    },
+                ]
+            )
+            await #expect(throws: ComposeError.invalidProject("service 'job' uses invalid cgroup_parent '\(parent)'; expected a non-empty relative path without empty, '.' or '..' components")) {
+                _ = try await ComposeOrchestrator().serviceCreatePlan(project: invalidProject, serviceName: "job")
             }
         }
     }
@@ -8279,6 +8327,27 @@ struct ComposeOrchestratorTests {
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--cpu-shares", "512"]))
+    }
+
+    @Test("up maps cgroup_parent to runtime arguments")
+    func upMapsCgroupParentToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.cgroupParent = "workloads/build"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--cgroup-parent", "workloads/build"]))
     }
 
     @Test("up maps mem_reservation to runtime arguments")
@@ -25408,6 +25477,24 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--cpu-shares", "512"]))
     }
 
+    @Test("run maps cgroup_parent to runtime arguments")
+    func runMapsCgroupParentToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.cgroupParent = "workloads/build"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--cgroup-parent", "workloads/build"]))
+    }
+
     @Test("run maps mem_reservation to runtime arguments")
     func runMapsMemoryReservationToRuntimeArguments() async throws {
         let runner = RecordingRunner()
@@ -27912,12 +27999,6 @@ private struct UnsupportedRuntimeStringFieldCase: Sendable {
 
 private func unsupportedRuntimeStringFieldCases() -> [UnsupportedRuntimeStringFieldCase] {
     [
-        UnsupportedRuntimeStringFieldCase(
-            composeName: "cgroup_parent",
-            value: "m-executor-abcd",
-            reason: "cgroup parent support needs an apple/container runtime gap PR",
-            configure: { $0.cgroupParent = "m-executor-abcd" }
-        ),
         UnsupportedRuntimeStringFieldCase(
             composeName: "isolation",
             value: "default",

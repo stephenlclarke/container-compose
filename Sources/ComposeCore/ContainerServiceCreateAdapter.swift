@@ -52,6 +52,7 @@ public struct ContainerServiceCreateRuntime: Sendable {
     public var sysctls: [String: String]
     public var blockIO: LinuxBlockIO?
     public var cpuShares: UInt64?
+    public var cgroupParent: String?
     public var memoryReservationInBytes: Int64?
     public var memorySwapLimitInBytes: Int64?
 
@@ -66,6 +67,7 @@ public struct ContainerServiceCreateRuntime: Sendable {
         sysctls = [:]
         blockIO = nil
         cpuShares = nil
+        cgroupParent = nil
         memoryReservationInBytes = nil
         memorySwapLimitInBytes = nil
     }
@@ -92,6 +94,7 @@ public struct ContainerServiceCreatePlan: Sendable {
     public var sysctls: [String: String]
     public var blockIO: LinuxBlockIO?
     public var cpuShares: UInt64?
+    public var cgroupParent: String?
     public var memoryReservationInBytes: Int64?
     public var memorySwapLimitInBytes: Int64?
 
@@ -114,6 +117,7 @@ public struct ContainerServiceCreatePlan: Sendable {
         sysctls = runtime.sysctls
         blockIO = runtime.blockIO
         cpuShares = runtime.cpuShares
+        cgroupParent = runtime.cgroupParent
         memoryReservationInBytes = runtime.memoryReservationInBytes
         memorySwapLimitInBytes = runtime.memorySwapLimitInBytes
     }
