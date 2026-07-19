@@ -97,9 +97,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             release.index("ensure_current_build_release_readiness"),
         )
 
-    def test_release_plan_describes_the_maintenance_promotion_lane(self) -> None:
+    def test_release_plan_describes_the_stable_promotion_lanes(self) -> None:
         plan = self.script[self.script.index("\nplan() {") : self.script.index("\nmain() {")]
-        self.assertIn("RELEASE_INTENT=maintenance with --+", plan)
+        self.assertIn("documented milestone soak override", plan)
+        self.assertIn("maintenance with --+", plan)
         self.assertIn("documented operational", plan)
 
     def test_internal_dependency_pins_do_not_become_release_highlights(self) -> None:
@@ -608,6 +609,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("CONTAINER_STACK_MAINTENANCE_REASON is required", self.script)
         self.assertIn("maintenance releases must use the --+ patch selector", self.script)
         self.assertIn("CONTAINER_STACK_SECURITY_REASON is required", self.script)
+        self.assertIn("CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON supports only milestone", self.script)
         self.assertIn("STABLE_CURRENT_SOAK_SECONDS=604800", self.script)
         self.assertIn("upstream-divergence-release-check", self.script)
         self.assertIn("land it through its own PR before releasing", promotion)
@@ -624,6 +626,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("container-compose-plugin-current-[0-9a-f]{12}-arm64", readiness)
         self.assertIn(".updated_at", readiness)
         self.assertNotIn("publishedAt", readiness)
+
+    def test_documented_milestone_override_bypasses_only_the_soak_timer(self) -> None:
+        readiness = self.script[
+            self.script.index("ensure_current_build_release_readiness() {") : self.script.index(
+                "# Print and optionally execute a command."
+            )
+        ]
+        self.assertIn('"${RELEASE_INTENT}" == "milestone" && -z "${MILESTONE_SOAK_OVERRIDE_REASON}"', readiness)
+        self.assertIn('milestone Current soak override accepted:', readiness)
+        self.assertLess(readiness.index('current tag targets'), readiness.index('MILESTONE_SOAK_OVERRIDE_REASON'))
+        self.assertLess(readiness.index('current GitHub prerelease or package asset is missing'), readiness.index('MILESTONE_SOAK_OVERRIDE_REASON'))
+        build_doc = (ROOT / "BUILD.md").read_text(encoding="utf-8")
+        self.assertIn("CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON", build_doc)
+        self.assertIn("Current source and package", build_doc)
 
     def test_weekly_stable_scheduler_uses_the_same_fresh_current_package_policy(self) -> None:
         workflow = SCHEDULED_STABLE_RELEASE_WORKFLOW.read_text(encoding="utf-8")

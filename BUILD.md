@@ -236,14 +236,22 @@ CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=--+   # p
 CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=-+-   # minor: X.Y.Z -> X.(Y+1).0
 CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=+--   # major: X.Y.Z -> (X+1).0.0
 CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=0.7.0 # exact next semantic version
+CONTAINER_STACK_RELEASE_INTENT=milestone \\
+  CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON='explicit maintainer authorization: promote Current as 0.7.0' \\
+  make release VERSION_SELECTOR=0.7.0
 CONTAINER_STACK_RELEASE_INTENT=security CONTAINER_STACK_SECURITY_REASON='CVE-2026-12345' make release VERSION_SELECTOR=--+
 ```
 
 Before source promotion, the helper requires the mutable `current` tag to point
 at the validated `main` head. Milestones also require that Current build's
-seven-day soak. It then blocks if a sibling fork is behind Apple upstream,
-requires `kern.hv_support=1`, bootstraps the matched stack tools, fetches the required `containerization` integration kernel
-when it is absent, and runs the full local `make release-gate`. The hosted gate
+seven-day soak. An exceptional milestone promotion may bypass only that timer
+with a non-empty `CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON` recording the
+explicit maintainer authorization and rationale; it still requires the exact
+Current source and package, every local and hosted release gate, a signed tag,
+and the paired Homebrew verification. It then blocks if a sibling fork is
+behind Apple upstream, requires `kern.hv_support=1`, bootstraps the matched
+stack tools, fetches the required `containerization` integration kernel when it
+is absent, and runs the full local `make release-gate`. The hosted gate
 then runs the `make release-gate-hosted` equivalent from its immutable
 release-control checkout against the immutable source, runtime, and tap
 checkouts before package publication. The helper waits up to three hours for

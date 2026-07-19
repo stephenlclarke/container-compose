@@ -108,6 +108,12 @@ Environment:
       that soak after CONTAINER_STACK_SECURITY_REASON records the advisory or
       incident.
 
+  CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON
+      Exceptional milestone-only override for the seven-day Current soak. It
+      must record the explicit maintainer authorization and rationale. It does
+      not bypass Current source identity, package provenance, local or hosted
+      release gates, signed-tag verification, or paired Homebrew verification.
+
   CONTAINER_STACK_MAINTENANCE_REASON
       Required when CONTAINER_STACK_RELEASE_INTENT=maintenance. Record the
       operational fix or explicit baseline-promotion rationale.
@@ -196,6 +202,7 @@ COMPOSE_MAIN_MERGE_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE:-chec
 RELEASE_INTENT="${CONTAINER_STACK_RELEASE_INTENT:-}"
 SECURITY_REASON="${CONTAINER_STACK_SECURITY_REASON:-}"
 MAINTENANCE_REASON="${CONTAINER_STACK_MAINTENANCE_REASON:-}"
+MILESTONE_SOAK_OVERRIDE_REASON="${CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON:-}"
 readonly STABLE_CURRENT_SOAK_SECONDS=604800
 HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"
 REPOS=(
@@ -276,12 +283,17 @@ ensure_release_intent() {
       exit 2
       ;;
   esac
+
+  if [[ -n "${MILESTONE_SOAK_OVERRIDE_REASON}" && "${RELEASE_INTENT}" != "milestone" ]]; then
+    printf 'CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON supports only milestone releases\n' >&2
+    exit 2
+  fi
 }
 
 # Require the mutable Current build to identify the same source as local main.
-# Milestone releases additionally require a seven-day soak; explicit
-# maintenance and security releases retain the source-identity check but may
-# bypass that waiting period.
+# Milestone releases additionally require a seven-day soak unless an explicit,
+# documented milestone-only override is supplied. Maintenance and security
+# releases retain the source-identity check but may bypass that waiting period.
 ensure_current_build_release_readiness() {
   local path main_commit current_commit current_is_prerelease current_built_at
   path="$(repo_path "${COMPOSE_REPO}")"
@@ -311,7 +323,7 @@ ensure_current_build_release_readiness() {
     exit 1
   fi
 
-  if [[ "${RELEASE_INTENT}" == "milestone" ]]; then
+  if [[ "${RELEASE_INTENT}" == "milestone" && -z "${MILESTONE_SOAK_OVERRIDE_REASON}" ]]; then
     python3 - "${current_built_at}" "${STABLE_CURRENT_SOAK_SECONDS}" <<'PY'
 from datetime import datetime, timezone
 import sys
@@ -326,6 +338,8 @@ if age < minimum:
         f"({remaining}s remaining). Use a documented security release only for an advisory or incident."
     )
 PY
+  elif [[ "${RELEASE_INTENT}" == "milestone" ]]; then
+    printf 'milestone Current soak override accepted: %s\n' "${MILESTONE_SOAK_OVERRIDE_REASON}"
   fi
 }
 
@@ -1966,8 +1980,9 @@ Process:
   1. Keep main as the releasable integration branch.
   2. Current builds publish from every green main commit.
   3. For a stable release, use RELEASE_INTENT=milestone after a seven-day current
-     soak, RELEASE_INTENT=maintenance with --+ and a documented operational
-     reason, or RELEASE_INTENT=security with an advisory or incident reference.
+     soak (or an explicit documented milestone soak override), RELEASE_INTENT=
+     maintenance with --+ and a documented operational reason, or RELEASE_INTENT=
+     security with an advisory or incident reference.
   4. The release mode resolves VERSION_SELECTOR from the latest semantic tag,
      requires reviewed sibling mains and Apple-upstream alignment, bumps
      container-compose on main when needed, promotes container-compose through
