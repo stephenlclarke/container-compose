@@ -432,10 +432,16 @@ def render_badges_svg(badges: Iterable[SnapshotBadge]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def snapshot_alt_text(badges: Iterable[SnapshotBadge]) -> str:
-    return "Quality snapshot: " + ", ".join(
-        f"{badge.label} {badge.message}" for badge in badges
-    )
+def render_metric_rows(badges: Iterable[SnapshotBadge]) -> list[str]:
+    """Render metric evidence using GitHub's native Markdown primitives.
+
+    GitHub release pages do not reliably render an SVG release asset when it is
+    embedded as a Markdown image.  Native list items always render, and keep
+    every metric visible even if the optional archival SVG cannot be displayed
+    by a particular release-page renderer.
+    """
+
+    return [f"- **{badge.label}:** {badge.message}" for badge in badges]
 
 
 def resolved_badges(
@@ -460,9 +466,9 @@ def render_snapshot(
     if not asset_url:
         raise ValueError("quality snapshot asset URL must not be empty")
     if release_kind == "current":
-        retention = "These static, non-clickable badges describe this mutable Current build and are replaced when `current` moves."
+        retention = "These static metrics describe this mutable Current build and are replaced when `current` moves."
     else:
-        retention = "These static, non-clickable badges are retained as historical evidence; they do not update."
+        retention = "These static metrics are retained as historical evidence; they do not update."
     if sonar_analysis is None or sonar_measures is None:
         analysis_summary = (
             f"- CodeQL analysis covers `{commit}`. SonarQube metrics are omitted "
@@ -480,7 +486,15 @@ def render_snapshot(
             retention,
             analysis_summary,
             "",
-            f"![{snapshot_alt_text(resolved_badges(sonar_measures=sonar_measures, codeql_analysis=codeql_analysis))}]({asset_url})",
+            "### Validated metrics",
+            *render_metric_rows(
+                resolved_badges(
+                    sonar_measures=sonar_measures,
+                    codeql_analysis=codeql_analysis,
+                )
+            ),
+            "",
+            f"[Download the self-contained SVG evidence]({asset_url}).",
             "",
         ]
     )

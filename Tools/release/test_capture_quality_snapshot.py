@@ -41,7 +41,7 @@ def load_module():
 class CaptureQualitySnapshotTests(unittest.TestCase):
     """The release block is static and contains every required quality measure."""
 
-    def test_render_snapshot_references_one_release_owned_quality_asset(self) -> None:
+    def test_render_snapshot_uses_native_metric_rows_and_links_owned_evidence(self) -> None:
         module = load_module()
         measures = {
             "alert_status": "OK",
@@ -70,7 +70,7 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         )
 
         self.assertIn("## Quality Snapshot", snapshot)
-        self.assertIn("non-clickable badges", snapshot)
+        self.assertIn("static metrics", snapshot)
         self.assertIn("`0123456789abcdef`", snapshot)
         for label in (
             "Quality Gate Status",
@@ -86,22 +86,34 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             "Vulnerabilities",
         ):
             self.assertIn(label, snapshot)
-        self.assertIn("Quality Gate Status Passed", snapshot)
-        self.assertIn("Coverage 90.8%", snapshot)
-        self.assertIn("CodeQL Analysis Completed", snapshot)
-        self.assertIn("CodeQL Results 0", snapshot)
-        self.assertIn("CodeQL Rules 34", snapshot)
-        self.assertEqual(snapshot.count("![]"), 0)
-        self.assertEqual(snapshot.count("!["), 1)
-        badge_lines = [line for line in snapshot.splitlines() if line.startswith("![")]
-        self.assertEqual(len(badge_lines), 1)
+        self.assertIn("**Quality Gate Status:** Passed", snapshot)
+        self.assertIn("**Coverage:** 90.8%", snapshot)
+        self.assertIn("**CodeQL Analysis:** Completed", snapshot)
+        self.assertIn("**CodeQL Results:** 0", snapshot)
+        self.assertIn("**CodeQL Rules:** 34", snapshot)
+        self.assertIn("### Validated metrics", snapshot)
+        metric_rows = [line for line in snapshot.splitlines() if line.startswith("- **")]
         self.assertEqual(
-            badge_lines,
+            metric_rows,
             [
-                "![Quality snapshot: Quality Gate Status Passed, Bugs 0, Code Smells 15, Coverage 90.8%, Duplicated Lines (%) 0.7%, Lines of Code 26,901, Reliability Rating A, Security Rating A, Technical Debt 3h 19m, Maintainability Rating A, Vulnerabilities 0, CodeQL Analysis Completed, CodeQL Results 0, CodeQL Rules 34](quality-snapshot.svg)"
+                "- **Quality Gate Status:** Passed",
+                "- **Bugs:** 0",
+                "- **Code Smells:** 15",
+                "- **Coverage:** 90.8%",
+                "- **Duplicated Lines (%):** 0.7%",
+                "- **Lines of Code:** 26,901",
+                "- **Reliability Rating:** A",
+                "- **Security Rating:** A",
+                "- **Technical Debt:** 3h 19m",
+                "- **Maintainability Rating:** A",
+                "- **Vulnerabilities:** 0",
+                "- **CodeQL Analysis:** Completed",
+                "- **CodeQL Results:** 0",
+                "- **CodeQL Rules:** 34",
             ],
         )
-        self.assertNotIn("[![", snapshot)
+        self.assertIn("[Download the self-contained SVG evidence](quality-snapshot.svg)", snapshot)
+        self.assertNotIn("![", snapshot)
         self.assertNotIn("img.shields.io", snapshot)
         self.assertNotIn("sonarcloud.io", snapshot)
         self.assertNotIn("Release", snapshot)
@@ -129,9 +141,9 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
 
         self.assertIn("CodeQL analysis covers `0123456789abcdef`", snapshot)
         self.assertIn("did not produce a SonarQube scan", snapshot)
-        self.assertIn("CodeQL Analysis Completed", snapshot)
-        self.assertIn("CodeQL Results 0", snapshot)
-        self.assertIn("CodeQL Rules 34", snapshot)
+        self.assertIn("**CodeQL Analysis:** Completed", snapshot)
+        self.assertIn("**CodeQL Results:** 0", snapshot)
+        self.assertIn("**CodeQL Rules:** 34", snapshot)
         self.assertNotIn("Quality Gate Status", snapshot)
         self.assertNotIn("SonarQube `main` analysis", snapshot)
 
@@ -238,7 +250,7 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn("replaced when `current` moves", snapshot)
         self.assertNotIn("retained as historical evidence", snapshot)
 
-    def test_stable_and_current_snapshots_keep_the_same_release_owned_asset_reference(self) -> None:
+    def test_stable_and_current_snapshots_keep_the_same_native_metrics_and_evidence_link(self) -> None:
         module = load_module()
         measures = {
             "alert_status": "OK",
@@ -277,11 +289,13 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         )
 
         def metric_rows(snapshot: str) -> list[str]:
-            return [line for line in snapshot.splitlines() if line.startswith("![")]
+            return [line for line in snapshot.splitlines() if line.startswith("- **")]
 
         self.assertEqual(metric_rows(current), metric_rows(stable))
-        self.assertEqual(len(metric_rows(stable)), 1)
-        self.assertEqual(metric_rows(stable)[0].count("!["), 1)
+        self.assertEqual(len(metric_rows(stable)), 14)
+        self.assertNotIn("![", current)
+        self.assertNotIn("![", stable)
+        self.assertIn("(quality-snapshot.svg)", stable)
 
     def test_render_badges_svg_is_self_contained_and_escapes_metric_text(self) -> None:
         module = load_module()
@@ -326,7 +340,7 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "supplied together"):
                 module.main()
 
-    def test_cli_writes_self_contained_svg_and_release_asset_reference(self) -> None:
+    def test_cli_writes_self_contained_svg_and_native_evidence_link(self) -> None:
         module = load_module()
         measures = {
             "alert_status": "OK",
@@ -372,6 +386,7 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             self.assertIn("30,546", svg)
             self.assertNotIn("https://", svg)
             self.assertIn("https://github.com/example/repo/releases/download/current/quality-snapshot.svg", output.getvalue())
+            self.assertNotIn("![", output.getvalue())
             self.assertNotIn("img.shields.io", output.getvalue())
 
     def test_codeql_warning_is_rejected(self) -> None:
