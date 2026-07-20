@@ -357,7 +357,10 @@ jobs:
     if: >
       needs.resolve-publish-context.outputs.publish == 'true' &&
       needs.resolve-publish-context.outputs.repair_tap != 'true'
-    runs-on: macos-26
+    # The packaged Container runtime starts Linux guests for the Current
+    # recording. GitHub-hosted macOS workers do not expose nested
+    # virtualization, so a hosted runner can only publish a broken transcript.
+    runs-on: [self-hosted, macOS, ARM64, container-compose-release]
     timeout-minutes: 120
     steps:
       - name: Checkout container-compose
@@ -753,6 +756,7 @@ jobs:
           set -euo pipefail
           demo_root="${RUNNER_TEMP}/current-build-demo"
           demo_app_root="${demo_root}/app"
+          demo_transcript="${RUNNER_TEMP}/current-build-demo-transcript"
           demo_output=".build/current-demo/${DEMO_ASSET}"
           tape="${RUNNER_TEMP}/container-compose-current-demo.tape"
           demo_system_started=0
@@ -785,8 +789,26 @@ jobs:
           demo_system_started=1
           "${container_binary}" system status
 
+          # Execute every lifecycle operation outside VHS first. The virtual
+          # terminal cannot reliably host nested virtualization processes, so
+          # the tape replays this just-created, failure-gated transcript.
+          # This makes every shown command/output pair real while retaining a
+          # readable, deterministic recording.
+          export CONTAINER_COMPOSE_DEMO_ROOT="${PWD}"
+          export CONTAINER_COMPOSE_DEMO_TRANSCRIPT="${demo_transcript}"
+          python3 Tools/release/record_monitoring_stack_transcript.py \
+            --container "${container_binary}" \
+            --compose-file examples/monitoring-stack/docker-compose.yaml \
+            --working-directory "${PWD}" \
+            --output-directory "${demo_transcript}"
+          for transcript in "${demo_transcript}"/*.log; do
+            test -s "${transcript}"
+          done
+          test "$(find "${demo_transcript}" -maxdepth 1 -name '*.log' -type f | wc -l | tr -d ' ')" -eq 13
+
           sed "1s#^Output .*#Output ${demo_output}#" docs/container-compose-demo.tape > "${tape}"
           rm -f "${demo_output}"
+          vhs validate "${tape}"
           vhs "${tape}"
           test -s "${demo_output}"
           cp "${demo_output}" "${RUNNER_TEMP}/${DEMO_ASSET}"

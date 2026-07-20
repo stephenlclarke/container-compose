@@ -300,6 +300,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         self.assertIn('demo_asset="container-compose-demo-current.gif"', workflow)
+        package = workflow[workflow.index("  package:") : workflow.index("  repair-stable-tap:")]
+        self.assertIn(
+            "runs-on: [self-hosted, macOS, ARM64, container-compose-release]",
+            package,
+        )
         self.assertIn("Install VHS", workflow)
         self.assertIn("Generate Current build VHS recording", workflow)
         self.assertIn('tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"', workflow)
@@ -318,24 +323,46 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('trap cleanup EXIT', workflow)
         self.assertIn('"${container_binary}" system stop || true', workflow)
         self.assertIn("docs/container-compose-demo.tape", workflow)
+        self.assertIn("Tools/release/record_monitoring_stack_transcript.py", workflow)
+        self.assertIn('export CONTAINER_COMPOSE_DEMO_TRANSCRIPT="${demo_transcript}"', workflow)
+        self.assertIn('--output-directory "${demo_transcript}"', workflow)
+        self.assertIn("current-build-demo-transcript", workflow)
+        self.assertIn(" -eq 13", workflow)
         self.assertIn('rm -f "${demo_output}"', workflow)
+        self.assertIn('vhs validate "${tape}"', workflow)
         self.assertIn('vhs "${tape}"', workflow)
         self.assertIn("Current build VHS recording is missing", workflow)
         self.assertIn('--current-asset "${{ steps.lane.outputs.demo_asset }}"', workflow)
         tape = (ROOT / "docs" / "container-compose-demo.tape").read_text(encoding="utf-8")
         self.assertIn('Set TypingSpeed 48ms', tape)
-        self.assertIn('container system status', tape)
-        self.assertIn('up --detach --wait --wait-timeout 120', tape)
-        self.assertIn("stats --no-stream", tape)
-        self.assertIn("ps", tape)
-        self.assertIn('curl --fail --silent http://localhost:8080/healthz', tape)
-        self.assertIn("down --volumes --remove-orphans", tape)
-        self.assertIn("ps --all", tape)
+        self.assertIn('$CONTAINER_COMPOSE_DEMO_ROOT', tape)
+        self.assertIn("$CONTAINER_COMPOSE_DEMO_TRANSCRIPT", tape)
+        self.assertIn('replay() { cat $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }', tape)
+        self.assertIn('marker() { tail -n 1 $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }', tape)
+        self.assertIn("Set TypingSpeed 1ms", tape)
+        self.assertIn("headlog 02-first-up.log", tape)
+        self.assertIn("taillog 02-first-up.log", tape)
+        self.assertIn("marker 02-first-up.log", tape)
+        self.assertIn("replay 07-retained-volumes.log", tape)
+        self.assertIn("headlog 08-second-up.log", tape)
+        self.assertIn("taillog 08-second-up.log", tape)
+        self.assertIn("replay 12-final-down.log", tape)
+        self.assertIn("TAPE_TRANSCRIPT_FIRST_UP_OK", tape)
+        self.assertIn("TAPE_TRANSCRIPT_VOLUMES_RETAINED_OK", tape)
+        self.assertIn("TAPE_TRANSCRIPT_SECOND_UP_OK", tape)
+        self.assertIn("TAPE_TRANSCRIPT_FINAL_DOWN_OK", tape)
+        self.assertIn("Ctrl+L", tape)
+        self.assertNotIn("Sleep 6s", tape)
         self.assertNotIn("--dry-run", tape)
         self.assertIn(
             "releases/download/current/container-compose-demo-current.gif",
             readme,
         )
+        monitoring_stack = (ROOT / "examples" / "monitoring-stack" / "docker-compose.yaml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("nginx_cache:/var/cache/nginx", monitoring_stack)
+        self.assertIn("nginx_cache: {}", monitoring_stack)
 
     def test_package_gate_requires_full_quality_evidence(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")

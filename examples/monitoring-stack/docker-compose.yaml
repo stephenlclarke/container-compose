@@ -21,6 +21,10 @@ services:
       - logging=promtail
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # This project-scoped volume makes the repeated-up demonstration prove
+      # that Compose retains and reuses runtime resources across a down that
+      # intentionally omits --volumes.
+      - nginx_cache:/var/cache/nginx
     extra_hosts: ["host.docker.internal:host-gateway"]
     networks: [monitoring]
     restart: unless-stopped
@@ -185,4 +189,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  nginx_cache: {}
   promtail_positions: {}
