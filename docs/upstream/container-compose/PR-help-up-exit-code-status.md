@@ -96,8 +96,10 @@ swift test --disable-automatic-resolution --skip-build \
 runtimePrivilegedServiceRestoresGuestReadonlyPaths --no-parallel
 ```
 
-The selected-service status test is intentionally red and documented as the
-remaining Phase 4 gap; it is not represented as passing validation.
+The selected-service status regression asserts the documented current status
+`5`, so the release gate stays green without claiming Docker Compose V2
+parity. Phase 4 acceptance must update that assertion to status `7` together
+with the implementation, help text, and `STATUS.md` ledger.
 
 ## container-compose Checks
 

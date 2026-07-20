@@ -51,7 +51,18 @@ esac
 # direct file destination or on repeated exports. The only sanctioned
 # pre-Phase-5 release exception is the documented 0.7.0 promotion. It retains
 # every other integration suite and cannot be used by the hosted gate.
-container_make_args=()
+# Container integration is VM-backed and the CLI otherwise defaults to the
+# developer's persistent Application Support directory.  A stable-release gate
+# must never inherit stale machines, images, or networks from an earlier local
+# run, nor leave its own state behind for the next gate.  Keep the state under
+# Container's already-ignored test scratch directory so it is isolated without
+# making the sibling checkout dirty.
+container_app_root="${container_repo}/.test-scratch/stack-release-app-root"
+container_log_root="${container_repo}/.test-scratch/stack-release-log-root"
+container_make_args=(
+  "APP_ROOT=${container_app_root}"
+  "LOG_ROOT=${container_log_root}"
+)
 phase5_exception_reason="${CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON:-}"
 if [[ -n "${phase5_exception_reason}" ]]; then
   if [[ "${mode}" != "full" ]]; then
@@ -60,6 +71,7 @@ if [[ -n "${phase5_exception_reason}" ]]; then
   fi
   phase5_excluded_serial_suites=(
     TestCLIBuilderSerial.swift
+    TestCLIBuilderLocalOutputSerial.swift
     TestCLIBuilderTarExportSerial.swift
   )
   for suite in "${phase5_excluded_serial_suites[@]}"; do
@@ -70,6 +82,7 @@ if [[ -n "${phase5_exception_reason}" ]]; then
   done
   serial_test_suites="$(find "${container_repo}/Tests/IntegrationTests" -name 'Test*Serial.swift' \
     ! -name 'TestCLIBuilderSerial.swift' \
+    ! -name 'TestCLIBuilderLocalOutputSerial.swift' \
     ! -name 'TestCLIBuilderTarExportSerial.swift' \
     -exec basename {} .swift \; | sort | sed 's|$|/|' | paste -sd' ' -)"
   if [[ -z "${serial_test_suites}" ]]; then
@@ -77,7 +90,7 @@ if [[ -n "${phase5_exception_reason}" ]]; then
     exit 2
   fi
   container_make_args+=("SERIAL_TEST_SUITES=${serial_test_suites}")
-  printf 'Phase 5 Builder-gap exception: excluding TestCLIBuilderSerial and TestCLIBuilderTarExportSerial only; reason: %s\n' \
+  printf 'Phase 5 Builder-gap exception: excluding TestCLIBuilderSerial, TestCLIBuilderLocalOutputSerial, and TestCLIBuilderTarExportSerial only; reason: %s\n' \
     "${phase5_exception_reason}"
 fi
 

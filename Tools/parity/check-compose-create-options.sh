@@ -31,6 +31,10 @@
 #   DOCKER_COMPOSE_E2E_DIR
 #                      Sparse checkout path for docker/compose e2e fixtures.
 #                      Defaults to .build/parity/docker-compose-e2e.
+#   CONTAINER_COMPOSE_DOCKER_SHARED_TMP_ROOT
+#                      Directory shared with Docker Desktop for temporary
+#                      bind-mounted fixtures. On macOS, defaults to
+#                      ~/Library/Caches/container-compose-parity.
 #
 # This script is intentionally local-only and is not part of CI. It first
 # validates Docker Compose V2's rendered create-time container configuration,
@@ -47,7 +51,7 @@ REPO_ROOT="$(cd "$(dirname "$SELF_PATH")/../.." && pwd)"
 readonly REPO_ROOT
 
 STRICT=0
-TMPDIR=""
+FIXTURE_DIR=""
 COMPOSE_FILE=""
 DOCKER_PROJECT_NAME="container-compose-create-docker-$RANDOM-$$"
 CONTAINER_PROJECT_NAME="container-compose-create-runtime-$RANDOM-$$"
@@ -164,14 +168,29 @@ sync_docker_compose_e2e_fixtures() {
     DOCKER_COMPOSE_E2E_COMMIT="$(printf '%s\n' "$sync_output" | tail -n 1)"
 }
 
+# Select a temporary-fixture root that Docker can bind-mount. Docker Desktop
+# only shares user directories by default, while isolated stack checkouts live
+# under /private/tmp and are not available to the Docker daemon.
+docker_shared_fixture_root() {
+    if [[ -n "${CONTAINER_COMPOSE_DOCKER_SHARED_TMP_ROOT:-}" ]]; then
+        printf '%s\n' "$CONTAINER_COMPOSE_DOCKER_SHARED_TMP_ROOT"
+    elif [[ "$(uname -s)" == "Darwin" ]]; then
+        printf '%s\n' "$(cd ~ && pwd)/Library/Caches/container-compose-parity"
+    else
+        printf '%s\n' "$REPO_ROOT/.build/parity"
+    fi
+}
+
 # Create a Compose fixture covering create-time options mapped by this repo.
 create_fixture() {
+    local fixture_root
     local upstream_dockerfile
     local build_image_name
 
-    mkdir -p "$REPO_ROOT/.build/parity"
-    TMPDIR="$(mktemp -d "$REPO_ROOT/.build/parity/create-options.XXXXXX")"
-    COMPOSE_FILE="$TMPDIR/compose.yml"
+    fixture_root="$(docker_shared_fixture_root)"
+    mkdir -p "$fixture_root"
+    FIXTURE_DIR="$(mktemp -d "$fixture_root/create-options.XXXXXX")"
+    COMPOSE_FILE="$FIXTURE_DIR/compose.yml"
     upstream_dockerfile="$DOCKER_COMPOSE_E2E_FIXTURES/build-test/minimal/Dockerfile"
     build_image_name="$CONTAINER_PROJECT_NAME-built:latest"
 
@@ -179,10 +198,10 @@ create_fixture() {
         skip_or_fail "Docker Compose e2e Dockerfile is missing: $upstream_dockerfile"
     fi
 
-    printf 'enabled=true\n' >"$TMPDIR/api.conf"
-    printf 'secret\n' >"$TMPDIR/api-token.txt"
-    printf 'copied from docker/compose e2e commit %s\n' "$DOCKER_COMPOSE_E2E_COMMIT" >"$TMPDIR/source.txt"
-    cp "$upstream_dockerfile" "$TMPDIR/Dockerfile"
+    printf 'enabled=true\n' >"$FIXTURE_DIR/api.conf"
+    printf 'secret\n' >"$FIXTURE_DIR/api-token.txt"
+    printf 'copied from docker/compose e2e commit %s\n' "$DOCKER_COMPOSE_E2E_COMMIT" >"$FIXTURE_DIR/source.txt"
+    cp "$upstream_dockerfile" "$FIXTURE_DIR/Dockerfile"
     cat >"$COMPOSE_FILE" <<YAML
 services:
   built:
@@ -257,14 +276,14 @@ cleanup() {
             with_timeout 30 "$CONTAINER_COMPOSE" -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
         fi
     fi
-    if [[ -n "$TMPDIR" ]]; then
-        rm -rf "$TMPDIR"
+    if [[ -n "$FIXTURE_DIR" ]]; then
+        rm -rf "$FIXTURE_DIR"
     fi
 }
 
 # Validate Docker Compose's rendered create-time container configuration.
 validate_docker_create() {
-    python3 - "$DOCKER_PROJECT_NAME" "$COMPOSE_FILE" "$TMPDIR" "${DOCKER_COMPOSE_COMMAND[@]}" <<'PY'
+    python3 - "$DOCKER_PROJECT_NAME" "$COMPOSE_FILE" "$FIXTURE_DIR" "${DOCKER_COMPOSE_COMMAND[@]}" <<'PY'
 import json
 import subprocess
 import sys
@@ -346,7 +365,7 @@ validate_container_compose_dry_run() {
     dry_run_output="$("$CONTAINER_COMPOSE" --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" create --build --force-recreate)"
 
     [[ "$dry_run_output" == *"container build --tag $CONTAINER_PROJECT_NAME-built:latest"* ]]
-    [[ "$dry_run_output" == *"--file $TMPDIR/Dockerfile $TMPDIR"* ]]
+    [[ "$dry_run_output" == *"--file $FIXTURE_DIR/Dockerfile $FIXTURE_DIR"* ]]
     [[ "$dry_run_output" == *"container create --name $CONTAINER_PROJECT_NAME-built-1"* ]]
     [[ "$dry_run_output" == *"container create --name $CONTAINER_PROJECT_NAME-api-1"* ]]
     [[ "$dry_run_output" == *"--log-opt max-file=3"* ]]
@@ -359,8 +378,8 @@ validate_container_compose_dry_run() {
     [[ "$dry_run_output" == *"--health-retries 2"* ]]
     [[ "$dry_run_output" == *"--restart unless-stopped"* ]]
     [[ "$dry_run_output" == *"--publish 127.0.0.1:18080:8080"* ]]
-    [[ "$dry_run_output" == *"--volume $TMPDIR/api.conf:/etc/api.conf:ro"* ]]
-    [[ "$dry_run_output" == *"--volume $TMPDIR/api-token.txt:/run/secrets/api_token:ro"* ]]
+    [[ "$dry_run_output" == *"--volume $FIXTURE_DIR/api.conf:/etc/api.conf:ro"* ]]
+    [[ "$dry_run_output" == *"--volume $FIXTURE_DIR/api-token.txt:/run/secrets/api_token:ro"* ]]
     [[ "$dry_run_output" == *"--workdir /srv/app"* ]]
     [[ "$dry_run_output" == *"--user 1000:1000"* ]]
     [[ "$dry_run_output" == *"--hostname api-host"* ]]

@@ -147,7 +147,7 @@ networks:
     driver: overlay
     attachable: true
     enable_ipv4: false
-    enable_ipv6: true
+    enable_ipv6: false
     ipam:
       options:
         com.example.ipam: enabled
@@ -180,7 +180,7 @@ expected_fields = {
     "driver": "overlay",
     "attachable": True,
     "enable_ipv4": False,
-    "enable_ipv6": True,
+    "enable_ipv6": False,
 }
 for field, expected_value in expected_fields.items():
     if network.get(field) != expected_value:

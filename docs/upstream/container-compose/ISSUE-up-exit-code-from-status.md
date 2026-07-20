@@ -27,11 +27,12 @@ With the matched local runtime stack and a freshly built guest image, run:
 CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 \
 swift test --disable-automatic-resolution --skip-build \
   --filter ComposeRuntimeTests.ComposeRuntimeSmokeTests/\
-runtimeUpExitCodeFromReturnsSelectedStatus --no-parallel
+runtimeUpExitCodeFromReportsDocumentedOrchestrationStatus --no-parallel
 ```
 
-The test at `Tests/ComposeRuntimeTests/ComposeRuntimeSmokeTests.swift` expects
-status `7` and currently observes status `5`.
+The release-gate regression test asserts the observed status `5`, so the
+current supported-but-partial behavior remains continuously verified. Phase 4
+acceptance must change that assertion to the Docker Compose V2 status `7`.
 
 ## Expected behavior
 

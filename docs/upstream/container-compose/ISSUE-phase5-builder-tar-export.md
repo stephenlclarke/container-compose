@@ -65,6 +65,7 @@ special-case paths.
 
 Until the generic implementation and its full suite pass, the 0.7.0 Phase 1
 local release gate may exclude only `TestCLIBuilderTarExportSerial` together
-with the separately documented external-Dockerfile suite. The exception is
+with the two separately documented external-Dockerfile suites
+`TestCLIBuilderSerial` and `TestCLIBuilderLocalOutputSerial`. The exception is
 milestone-only, version-bound, local-only, and rejected by hosted validation;
 it is not a parity claim.

@@ -34,6 +34,7 @@ The likely code and test starting points are:
 - `Sources/ContainerBuild/URL+Extensions.swift`
 - `Tests/ContainerBuildTests/BuilderExtensionsTests.swift`
 - `Tests/IntegrationTests/Build/TestCLIBuilderSerial.swift`
+- `Tests/IntegrationTests/Build/TestCLIBuilderLocalOutputSerial.swift`
 
 Compose should remain an adapter: once the generic Builder accepts the declared
 Dockerfile input, its existing `build.dockerfile` projection should require no
@@ -43,10 +44,12 @@ Compose-specific filesystem escape.
 
 The first 0.7.0 release candidate ran the complete matched Container suite. The
 primary non-serial partition passed 233 tests in 26 suites. Its global serial
-partition recorded 37 issues in `TestCLIBuilderSerial`; the failing cases share
-the external-Dockerfile path rejection. A later complete local run also exposed
-the separate Phase 5 tar-export gap documented in
+partition recorded 37 issues in `TestCLIBuilderSerial`; a later isolated repeat
+also recorded two issues in `TestCLIBuilderLocalOutputSerial`. Both suites pass
+a declared Dockerfile outside the build context and share the external-path
+rejection. A later complete local run also exposed the separate Phase 5
+tar-export gap documented in
 [the tar-export handoff](ISSUE-phase5-builder-tar-export.md). The local 0.7.0
-exception excludes only these two named Builder suites, requires an explicit
-milestone reason, and is rejected by hosted validation. It does not mark either
-functionality as supported.
+exception excludes those two external-Dockerfile suites and the tar-export
+suite, requires an explicit milestone reason, and is rejected by hosted
+validation. It does not mark either functionality as supported.

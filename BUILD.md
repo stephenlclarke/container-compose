@@ -149,7 +149,10 @@ stable release helper runs `make release-gate` locally against the candidate
 tree before source promotion. That gate runs builder-shim coverage, containerization
 coverage plus integration, container coverage plus integration, Compose CI, tap
 formula syntax, the isolated Swift runtime suite, and the pinned Compose comparison
-suite, including live `build --check` against the matched container backend. GitHub-hosted macOS runners cannot launch
+suite, including live `build --check` against the matched container backend.
+The Container integration segment uses a per-candidate ignored test app/log root,
+so it cannot inherit or leave persistent macOS runtime state between release-gate
+runs. GitHub-hosted macOS runners cannot launch
 nested Virtualization.framework guests, so the post-tag Stable Release Gate runs
 the `make release-gate-hosted` equivalent from its immutable release-control
 checkout against immutable source, runtime, and tap checkouts instead. It
@@ -175,10 +178,12 @@ are tracked as Phase 5 work and are not Docker Compose parity. Only this exact
 semantic release may set
 `CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON`; the helper
 rejects the variable for every other version and the local gate then excludes
-only `TestCLIBuilderSerial` and `TestCLIBuilderTarExportSerial` while retaining
-all other Container integration suites. The hosted gate is unchanged. The
-release notes and status must state that both Phase 5 Builder gaps remain
-unavailable.
+only `TestCLIBuilderSerial`, `TestCLIBuilderLocalOutputSerial`, and
+`TestCLIBuilderTarExportSerial`: the first two exercise the same external
+Dockerfile context-boundary gap, while the third exercises tar export delivery.
+All other Container integration suites remain required. The hosted gate is
+unchanged. The release notes and status must state that both Phase 5 Builder
+gaps remain unavailable.
 
 ## Promote `main` To A Stable Release
 

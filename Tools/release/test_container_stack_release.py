@@ -524,6 +524,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('"${version}" != "0.7.0"', self.script)
         self.assertIn('"${RELEASE_INTENT}" != "milestone"', self.script)
         self.assertIn("TestCLIBuilderSerial.swift", validation)
+        self.assertIn("TestCLIBuilderLocalOutputSerial.swift", validation)
         self.assertIn("TestCLIBuilderTarExportSerial.swift", validation)
         self.assertIn("phase5_excluded_serial_suites", validation)
         self.assertIn('"${mode}" != "full"', validation)
@@ -543,6 +544,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             serial_tests = container / "Tests" / "IntegrationTests" / "Build"
             serial_tests.mkdir(parents=True)
             (serial_tests / "TestCLIBuilderSerial.swift").touch()
+            (serial_tests / "TestCLIBuilderLocalOutputSerial.swift").touch()
             (serial_tests / "TestCLIBuilderTarExportSerial.swift").touch()
             (serial_tests / "TestCLIOtherSerial.swift").touch()
             (tap / "Formula").mkdir(parents=True)
@@ -561,6 +563,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 tool.chmod(0o755)
 
             environment = os.environ.copy()
+            environment.pop(
+                "CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON",
+                None,
+            )
             environment["PATH"] = f"{tools}{os.pathsep}{environment['PATH']}"
             environment["STACK_VALIDATION_LOG"] = str(log)
             validation_paths = [
@@ -584,7 +590,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 f"make:-C {containerization} check containerization examples docs coverage integration",
                 full_commands,
             )
-            self.assertIn(f"make:-C {container} check container dsym docs coverage", full_commands)
+            self.assertIn(
+                "make:-C "
+                f"{container} "
+                f"APP_ROOT={container}/.test-scratch/stack-release-app-root "
+                f"LOG_ROOT={container}/.test-scratch/stack-release-log-root "
+                "check container dsym docs coverage",
+                full_commands,
+            )
 
             log.unlink()
             exception_environment = environment.copy()
@@ -601,7 +614,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertEqual(exception.returncode, 0, exception.stderr)
             exception_commands = log.read_text(encoding="utf-8")
             self.assertIn(
-                f"make:-C {container} SERIAL_TEST_SUITES=TestCLIOtherSerial/ check container dsym docs coverage",
+                "make:-C "
+                f"{container} "
+                f"APP_ROOT={container}/.test-scratch/stack-release-app-root "
+                f"LOG_ROOT={container}/.test-scratch/stack-release-log-root "
+                "SERIAL_TEST_SUITES=TestCLIOtherSerial/ check container dsym docs coverage",
                 exception_commands,
             )
 
@@ -634,7 +651,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 hosted_commands,
             )
             self.assertIn(
-                f"make:-C {container} check container dsym docs coverage-unit",
+                "make:-C "
+                f"{container} "
+                f"APP_ROOT={container}/.test-scratch/stack-release-app-root "
+                f"LOG_ROOT={container}/.test-scratch/stack-release-log-root "
+                "check container dsym docs coverage-unit",
                 hosted_commands,
             )
             self.assertNotIn(" integration", hosted_commands)

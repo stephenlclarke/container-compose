@@ -5,9 +5,9 @@
 - Keep the ordinary stack release gate unchanged: it runs all Container
   integration suites.
 - Add one explicit, local-only exception for the 0.7.0 milestone promotion.
-- Exclude only `TestCLIBuilderSerial` and `TestCLIBuilderTarExportSerial`, the
-  suites exposing the tracked Phase 5 external-Dockerfile and tar-export
-  Builder gaps.
+- Exclude only `TestCLIBuilderSerial`, `TestCLIBuilderLocalOutputSerial`, and
+  `TestCLIBuilderTarExportSerial`: the first two expose the same tracked
+  external-Dockerfile path gap and the third exposes tar-export delivery.
 - Require an explicit maintainer reason, require milestone intent, reject any
   version other than `0.7.0`, and reject the exception in hosted validation.
 - Update the current parity ledger so `build.dockerfile` is correctly marked
@@ -33,9 +33,9 @@ releases. This change creates a narrow, self-expiring release control instead.
 
 - `scripts/CONTAINER_STACK_RELEASE.sh` accepts and bounds the exception.
 - `Tools/ci/run-stack-release-validation.sh` derives every serial suite from
-  the checked-out Container source except the two exact tracked Builder suites
-  when, and only when, the local exception is set. It fails closed if either
-  suite is renamed or removed.
+  the checked-out Container source except the three exact tracked Builder
+  suites when, and only when, the local exception is set. It fails closed if
+  any suite is renamed or removed.
 - `Tools/release/test_container_stack_release.py` proves normal validation,
   the exact filtered invocation, and hosted rejection.
 - `STATUS.md` and [the external-Dockerfile handoff](ISSUE-phase5-external-dockerfile-paths.md)
@@ -54,8 +54,8 @@ git diff --check
 The release gate itself retains Container unit coverage, Containerization
 coverage/integration, Compose CI, runtime smoke, and Docker Compose parity. In
 the explicit 0.7.0 local exception lane it also runs every Container integration
-suite except the two named failing Phase 5 Builder suites; the upstream handoffs
-preserve the required future full-suite test coverage.
+suite except the three named failing Phase 5 Builder suites; the upstream
+handoffs preserve the required future full-suite test coverage.
 
 ## Commit tracking
 
