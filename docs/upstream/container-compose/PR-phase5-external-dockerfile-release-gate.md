@@ -60,7 +60,8 @@ preserve the required future full-suite test coverage.
 ## Commit tracking
 
 Compose implementation commit:
-pending `fix(release): bound phase five builder gaps`.
+[`92d524db2cb1a5dc9ae7900b9e3971ba2faf9edf`](https://github.com/stephenlclarke/container-compose/commit/92d524db2cb1a5dc9ae7900b9e3971ba2faf9edf)
+(`fix(release): bound phase five builder gaps`).
 
 ## Upstream handoff
 
