@@ -114,6 +114,12 @@ Environment:
       not bypass Current source identity, package provenance, local or hosted
       release gates, signed-tag verification, or paired Homebrew verification.
 
+  CONTAINER_STACK_RELEASE_PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON
+      One-time, 0.7.0-only release-gate exception for the documented Phase 5
+      external-Dockerfile path gap. It requires a non-empty maintainer reason,
+      runs every other Container integration suite, and is rejected for every
+      other version. It never changes the hosted gate or claims Phase 5 parity.
+
   CONTAINER_STACK_MAINTENANCE_REASON
       Required when CONTAINER_STACK_RELEASE_INTENT=maintenance. Record the
       operational fix or explicit baseline-promotion rationale.
@@ -203,6 +209,7 @@ RELEASE_INTENT="${CONTAINER_STACK_RELEASE_INTENT:-}"
 SECURITY_REASON="${CONTAINER_STACK_SECURITY_REASON:-}"
 MAINTENANCE_REASON="${CONTAINER_STACK_MAINTENANCE_REASON:-}"
 MILESTONE_SOAK_OVERRIDE_REASON="${CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON:-}"
+PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON="${CONTAINER_STACK_RELEASE_PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON:-}"
 readonly STABLE_CURRENT_SOAK_SECONDS=604800
 HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"
 REPOS=(
@@ -566,8 +573,14 @@ run_local_release_gate() {
     )
   done
   run make -C "$(repo_path "containerization")" fetch-default-kernel
-  run env HAWKEYE_AUTO_INSTALL=1 \
-    make -C "${path}" release-gate "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}"
+  if [[ -n "${PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON}" ]]; then
+    run env HAWKEYE_AUTO_INSTALL=1 \
+      "CONTAINER_STACK_RELEASE_PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON=${PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON}" \
+      make -C "${path}" release-gate "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}"
+  else
+    run env HAWKEYE_AUTO_INSTALL=1 \
+      make -C "${path}" release-gate "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}"
+  fi
 }
 
 # Verify that Apple remotes cannot be pushed and stephenlclarke remotes are the target.
@@ -1905,6 +1918,26 @@ require_release_upstream_alignment() {
   run make -C "$(repo_path "${COMPOSE_REPO}")" upstream-divergence-release-check
 }
 
+# The temporary 0.7.0 exception cannot silently broaden a later release. The
+# omitted suite is a real Phase 5 functionality gap; the local gate records it
+# explicitly while the completed Phase 1 promotion validates every other suite.
+ensure_phase5_external_dockerfile_exception() {
+  local version="$1"
+  if [[ -z "${PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON}" ]]; then
+    return 0
+  fi
+  if [[ "${version}" != "0.7.0" ]]; then
+    printf 'CONTAINER_STACK_RELEASE_PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON is permitted only for 0.7.0, not %s\n' "${version}" >&2
+    exit 2
+  fi
+  if [[ "${RELEASE_INTENT}" != "milestone" ]]; then
+    printf 'the 0.7.0 Phase 5 external-Dockerfile exception requires CONTAINER_STACK_RELEASE_INTENT=milestone\n' >&2
+    exit 2
+  fi
+  printf '0.7.0 Phase 5 external-Dockerfile exception accepted: %s\n' \
+    "${PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON}"
+}
+
 release_current_stack() {
   local latest current version path
   latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
@@ -1921,6 +1954,7 @@ release_current_stack() {
   ensure_release_version_is_valid "${latest}" "${current}" "${version}"
   ensure_new_stable_release "${version}"
   ensure_release_intent
+  ensure_phase5_external_dockerfile_exception "${version}"
   recover_unpublished_release_candidate "${version}"
   ensure_current_build_release_readiness
   require_release_upstream_alignment

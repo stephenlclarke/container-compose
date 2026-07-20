@@ -167,6 +167,16 @@ successful hosted gate records a candidate-bound GitHub Actions release-authorit
 check on that tag commit; the package workflow requires that check, then repeats
 `make ci` before it publishes assets or updates the tap.
 
+The 0.7.0 Phase 1 promotion has one explicitly bounded local-gate exception:
+the current macOS Builder bridge rejects external Dockerfile paths when macOS
+canonicalises `/tmp` to `/private/tmp`. That is tracked as Phase 5 work and is
+not Docker Compose parity. Only this exact semantic release may set
+`CONTAINER_STACK_RELEASE_PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON`; the
+helper rejects the variable for every other version and the local gate then
+excludes only `TestCLIBuilderSerial` while retaining all other Container
+integration suites. The hosted gate is unchanged. The release notes and status
+must state that Phase 5 external-Dockerfile support remains unavailable.
+
 ## Promote `main` To A Stable Release
 
 There are two package lanes, with no manual asset copying:

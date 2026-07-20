@@ -515,6 +515,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff", makefile)
         self.assertNotIn("repackage-release", makefile)
 
+    def test_phase5_external_dockerfile_exception_is_local_and_0_7_0_only(self) -> None:
+        validation = STACK_RELEASE_VALIDATION.read_text(encoding="utf-8")
+        self.assertIn(
+            "CONTAINER_STACK_RELEASE_PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON",
+            self.script,
+        )
+        self.assertIn('"${version}" != "0.7.0"', self.script)
+        self.assertIn('"${RELEASE_INTENT}" != "milestone"', self.script)
+        self.assertIn("TestCLIBuilderSerial.swift", validation)
+        self.assertIn('"${mode}" != "full"', validation)
+        self.assertIn("SERIAL_TEST_SUITES=${serial_test_suites}", validation)
+
     def test_hosted_stack_validation_excludes_virtualization_commands(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -526,6 +538,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             for checkout in (compose, builder, containerization, container):
                 checkout.mkdir()
                 (checkout / "Makefile").touch()
+            serial_tests = container / "Tests" / "IntegrationTests" / "Build"
+            serial_tests.mkdir(parents=True)
+            (serial_tests / "TestCLIBuilderSerial.swift").touch()
+            (serial_tests / "TestCLIOtherSerial.swift").touch()
             (tap / "Formula").mkdir(parents=True)
             (tap / "Formula" / "container-compose.rb").touch()
 
@@ -568,6 +584,25 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(f"make:-C {container} check container dsym docs coverage", full_commands)
 
             log.unlink()
+            exception_environment = environment.copy()
+            exception_environment[
+                "CONTAINER_STACK_RELEASE_PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON"
+            ] = "Promote completed Phase 1 while Phase 5 external Dockerfile support is tracked."
+            exception = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=exception_environment,
+                text=True,
+            )
+            self.assertEqual(exception.returncode, 0, exception.stderr)
+            exception_commands = log.read_text(encoding="utf-8")
+            self.assertIn(
+                f"make:-C {container} SERIAL_TEST_SUITES=TestCLIOtherSerial/ check container dsym docs coverage",
+                exception_commands,
+            )
+
+            log.unlink()
             hosted = subprocess.run(
                 [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
                 check=False,
@@ -586,6 +621,16 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 hosted_commands,
             )
             self.assertNotIn(" integration", hosted_commands)
+
+            rejected = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=exception_environment,
+                text=True,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("permitted only for full local validation", rejected.stderr)
 
     def test_hosted_release_gate_uses_an_unpublished_verified_tag_and_immutable_tap_snapshot(
         self,
