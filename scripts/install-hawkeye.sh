@@ -20,8 +20,13 @@ set -euo pipefail
 HAWKEYE_VERSION="${HAWKEYE_VERSION:-v6.5.1}"
 HAWKEYE_BIN=".local/bin/hawkeye"
 
+if command -v hawkeye >/dev/null 2>&1; then
+    printf 'system-wide hawkeye already installed at %s\n' "$(command -v hawkeye)"
+    exit 0
+fi
+
 if command -v "${HAWKEYE_BIN}" >/dev/null 2>&1; then
-    printf 'hawkeye already installed at %s\n' "${HAWKEYE_BIN}"
+    printf 'repository-local hawkeye already installed at %s\n' "${HAWKEYE_BIN}"
     exit 0
 fi
 

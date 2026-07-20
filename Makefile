@@ -32,6 +32,7 @@ GO_RELEASE_BUILD_FLAGS ?= -trimpath
 GO_RELEASE_LDFLAGS ?= -s -w
 PYTHON ?= python3
 MARKDOWNLINT ?= markdownlint
+HAWKEYE ?= $(shell command -v hawkeye 2>/dev/null || printf '%s' .local/bin/hawkeye)
 SWIFT_COVERAGE_MIN ?= 90
 GO_COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
@@ -1543,11 +1544,11 @@ format: update-licenses
 
 check-licenses:
 	@./scripts/ensure-hawkeye-exists.sh
-	@.local/bin/hawkeye check --fail-if-unknown
+	@$(HAWKEYE) check --fail-if-unknown
 
 update-licenses:
 	@./scripts/ensure-hawkeye-exists.sh
-	@.local/bin/hawkeye format --fail-if-unknown --fail-if-updated false
+	@$(HAWKEYE) format --fail-if-unknown --fail-if-updated false
 
 pre-commit:
 	$(eval HOOKS_DIR := $(shell git rev-parse --git-path hooks))

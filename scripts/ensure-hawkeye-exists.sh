@@ -28,8 +28,9 @@ for arg in "$@"; do
             cat <<EOF
 Usage: $(basename "$0") [--auto-install|-y]
 
-Checks for a working hawkeye installation under .local/bin/.
-If hawkeye is missing, prompts before running scripts/install-hawkeye.sh.
+Checks first for a working system-wide hawkeye installation, then for the
+repository-local .local/bin fallback. If hawkeye is missing, prompts before
+running scripts/install-hawkeye.sh.
 
 Skip the prompt non-interactively in either of two ways:
   --auto-install, -y      pass on the command line
@@ -49,16 +50,21 @@ if [[ "${HAWKEYE_AUTO_INSTALL:-}" == "1" ]]; then
     auto_install=1
 fi
 
+if command -v hawkeye >/dev/null 2>&1; then
+    printf 'hawkeye found at %s\n' "$(command -v hawkeye)"
+    exit 0
+fi
+
 if command -v .local/bin/hawkeye >/dev/null 2>&1; then
-    printf 'hawkeye found!\n'
+    printf 'repository-local hawkeye found at .local/bin/hawkeye\n'
     exit 0
 fi
 
 cat <<EOF
 
-hawkeye is not installed.
+hawkeye is not installed system-wide or in this checkout.
 
-scripts/install-hawkeye.sh will install it by running:
+scripts/install-hawkeye.sh will install a repository-local fallback by running:
 
     curl -LsSf https://github.com/korandoru/hawkeye/releases/download/<version>/hawkeye-installer.sh | sh
 

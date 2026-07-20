@@ -419,7 +419,9 @@ make pre-commit
 
 The hook runs `make check`. Set `PRECOMMIT_NOFMT=1` only for a deliberate local
 bypass. Hawkeye installation remains opt-in locally unless
-`HAWKEYE_AUTO_INSTALL=1` is set.
+`HAWKEYE_AUTO_INSTALL=1` is set. Local checks prefer a system-wide `hawkeye`
+on `PATH` (the shared developer installation); `.local/bin/hawkeye` remains a
+repository-local fallback for hermetic CI bootstrap.
 
 Remove build products, coverage data, package archives, and generated helpers
 with:
