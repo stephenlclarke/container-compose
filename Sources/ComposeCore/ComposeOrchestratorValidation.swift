@@ -155,7 +155,7 @@ extension ComposeOrchestrator {
         _ = try runtimeRestartPolicyArguments(service: service)
     }
 
-    /// Rejects project network fields that are not mapped to apple/container network creation.
+    /// Rejects project network fields that are not represented by the macOS local-network path.
     func validateProjectNetworks(_ project: ComposeProject) throws {
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) {
             guard let fields = network.unsupportedFields, !fields.isEmpty else {
@@ -165,7 +165,7 @@ extension ComposeOrchestrator {
                 continue
             }
             let fieldList = fields.joined(separator: ", ")
-            throw ComposeError.unsupported("network '\(name)' uses unsupported fields \(fieldList); supported project network fields are name, external, internal, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet")
+            throw ComposeError.unsupported("network '\(name)' uses unsupported fields \(fieldList); supported project network fields are name, external, internal, attachable, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet")
         }
     }
 

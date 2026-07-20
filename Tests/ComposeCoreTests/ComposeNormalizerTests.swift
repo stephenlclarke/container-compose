@@ -141,6 +141,7 @@ struct ComposeNormalizerTests {
         networks:
           default:
             internal: true
+            attachable: true
             driver_opts:
               com.docker.network.bridge.host_binding_ipv4: 127.0.0.1
               com.docker.network.driver.mtu: "1450"
@@ -253,6 +254,7 @@ struct ComposeNormalizerTests {
                     "com.docker.network.driver.mtu": "1450",
                 ],
                 isInternal: true,
+                isAttachable: true,
                 subnets: ComposeNetwork.Subnets(
                     ipv4Subnet: "10.10.0.0/24",
                     ipv4Gateway: "10.10.0.254",

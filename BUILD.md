@@ -316,7 +316,7 @@ Run a focused target directly while iterating:
 | Compose Bridge | `docker-compose-bridge-parity` |
 | Build | `docker-compose-build-builder-parity`, `docker-compose-build-check-parity`, `docker-compose-build-isolation-parity`, `docker-compose-build-secret-metadata-parity` |
 | Mounts and resources | `docker-compose-bind-create-host-path-parity`, `docker-compose-bind-propagation-parity`, `docker-compose-volume-labels-parity`, `docker-compose-deploy-endpoint-mode-parity`, `docker-compose-deploy-resource-reservations-parity`, `docker-compose-pids-limit-parity`, `docker-compose-device-cgroup-rules-parity`, `docker-compose-devices-parity`, `docker-compose-gpus-parity` |
-| Networking | `docker-compose-network-driver-opts-parity`, `docker-compose-network-ipam-options-parity`, `docker-compose-host-namespaces-parity` |
+| Networking | `docker-compose-network-driver-opts-parity`, `docker-compose-network-attachable-parity`, `docker-compose-network-ipam-options-parity`, `docker-compose-host-namespaces-parity` |
 | Lifecycle and observability | `docker-compose-up-menu-parity`, `docker-compose-health-wait-parity`, `docker-compose-create-options-parity`, `docker-compose-events-parity`, `docker-compose-rm-parity`, `docker-compose-restart-policy-parity` |
 
 The CLI surface target writes the exact compared versions and differences to

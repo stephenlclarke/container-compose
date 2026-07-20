@@ -103,7 +103,8 @@ CONTAINERIZATION_INIT_SOURCE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_RE
 DOCKER_COMPOSE_REFERENCE ?= $(shell if docker compose version >/dev/null 2>&1; then printf '%s' 'docker compose'; elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then printf '%s' docker-compose; else printf '%s' 'docker compose'; fi)
 DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.3.1
 DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff
-PARITY_ENV = CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" DOCKER_COMPOSE="$(DOCKER_COMPOSE_REFERENCE)" DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)"
+CONTAINER_COMPOSE_LIVE ?= 0
+PARITY_ENV = CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" CONTAINER_COMPOSE_LIVE="$(CONTAINER_COMPOSE_LIVE)" DOCKER_COMPOSE="$(DOCKER_COMPOSE_REFERENCE)" DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)"
 MARKDOWN_FILES := $(shell git ls-files '*.md')
 DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-cli-surface-parity \
@@ -146,6 +147,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-devices-parity \
 	docker-compose-gpus-parity \
 	docker-compose-network-driver-opts-parity \
+	docker-compose-network-attachable-parity \
 	docker-compose-network-ipv6-parity \
 	docker-compose-network-ipam-options-parity \
 	docker-compose-up-menu-parity \
@@ -174,7 +176,7 @@ endif
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: docker-compose-environment-parity docker-compose-named-volume-reuse-parity
 .PHONY: docker-compose-format-template-actions-parity
-.PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-ipv6-parity
+.PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity
 
 all: workflow
 
@@ -1245,6 +1247,7 @@ docker-compose-parity: container-stack-build docker-compose-reference
 			DOCKER_COMPOSE_REFERENCE="$(DOCKER_COMPOSE_REFERENCE)" \
 			DOCKER_COMPOSE_REFERENCE_VERSION="$(DOCKER_COMPOSE_REFERENCE_VERSION)" \
 			DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)" \
+			CONTAINER_COMPOSE_LIVE=1 \
 			CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1 \
 			$(DOCKER_COMPOSE_PARITY_TARGETS)
 
@@ -1368,6 +1371,9 @@ docker-compose-gpus-parity: build docker-compose-reference
 
 docker-compose-network-driver-opts-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-network-driver-opts.sh --strict
+
+docker-compose-network-attachable-parity: build docker-compose-reference
+	$(PARITY_ENV) ./Tools/parity/check-compose-network-attachable.sh --strict
 
 docker-compose-network-ipv6-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-network-ipv6.sh --strict

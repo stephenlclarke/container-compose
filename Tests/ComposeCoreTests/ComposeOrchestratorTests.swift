@@ -1460,8 +1460,47 @@ struct ComposeOrchestratorTests {
         })
     }
 
-    @Test("up rejects unsupported project network options before side effects")
-    func upRejectsUnsupportedProjectNetworkOptionsBeforeSideEffects() async throws {
+    @Test("up accepts attachable project network metadata")
+    func upAcceptsAttachableProjectNetworkMetadata() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: ComposeNetwork.Options(isAttachable: true)
+                ),
+            ]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let resources = await resourceManager.requests
+        #expect(resources.count == 1)
+        if case let .createNetwork(request) = resources[0] {
+            #expect(request.name == "demo_backend")
+        } else {
+            Issue.record("Expected network creation through direct API")
+        }
+        #expect(runner.commands.map(\.arguments)[0].containsSequence(["--network", "demo_backend"]))
+    }
+
+    @Test("up accepts attachable project networks and rejects the remaining unsupported options before side effects")
+    func upAcceptsAttachableProjectNetworksAndRejectsRemainingUnsupportedOptionsBeforeSideEffects() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
@@ -1476,7 +1515,8 @@ struct ComposeOrchestratorTests {
                 "backend": ComposeNetwork(
                     name: "backend",
                     options: ComposeNetwork.Options(
-                        unsupportedFields: ["driver", "attachable", "enable_ipv4", "enable_ipv6"]
+                        isAttachable: true,
+                        unsupportedFields: ["driver", "enable_ipv4", "enable_ipv6"]
                     )
                 ),
             ]
@@ -1487,7 +1527,7 @@ struct ComposeOrchestratorTests {
                 .up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported project network options error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, attachable, enable_ipv4, enable_ipv6; supported project network fields are name, external, internal, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet"))
+            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, enable_ipv4, enable_ipv6; supported project network fields are name, external, internal, attachable, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

@@ -376,6 +376,7 @@ type normalizedNetwork struct {
 	Driver                string            `json:"driver,omitempty"`
 	DriverOpts            map[string]string `json:"driverOpts,omitempty"`
 	Internal              bool              `json:"internal,omitempty"`
+	Attachable            bool              `json:"attachable,omitempty"`
 	Labels                map[string]string `json:"labels,omitempty"`
 	IPv4Subnet            string            `json:"ipv4Subnet,omitempty"`
 	IPv4Gateway           string            `json:"ipv4Gateway,omitempty"`
@@ -793,6 +794,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 			Driver:                network.Driver,
 			DriverOpts:            mapOptions(network.DriverOpts),
 			Internal:              network.Internal,
+			Attachable:            network.Attachable,
 			Labels:                mapLabels(network.Labels),
 			IPv4Subnet:            ipv4Subnet,
 			IPv4Gateway:           ipv4Gateway,
@@ -834,7 +836,6 @@ func projectNetworkValues(network types.NetworkConfig) (string, string, string, 
 	fields := []string{}
 	driver := strings.TrimSpace(network.Driver)
 	appendUnsupportedNetworkField(&fields, "driver", driver != "" && driver != "bridge")
-	appendUnsupportedNetworkField(&fields, "attachable", network.Attachable)
 	appendUnsupportedNetworkField(&fields, "enable_ipv4", network.EnableIPv4 != nil && !*network.EnableIPv4)
 	// VMnet allocates an IPv6 prefix when the caller does not supply one, so
 	// `enable_ipv6: true` is already represented by the generic network create

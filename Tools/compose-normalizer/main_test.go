@@ -2601,14 +2601,13 @@ func TestProjectNetworkValuesReportsOnlyUnmappedNetworkOptions(t *testing.T) {
 	disabled := false
 	gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotUnsupported := projectNetworkValues(types.NetworkConfig{
 		Driver:     "overlay",
-		Attachable: true,
 		EnableIPv4: &disabled,
 		EnableIPv6: &enabled,
 		Ipam: types.IPAMConfig{
 			Options: types.Options{"com.example.ipam": "enabled"},
 		},
 	})
-	wantUnsupported := []string{"driver", "attachable", "enable_ipv4", "ipam.options"}
+	wantUnsupported := []string{"driver", "enable_ipv4", "ipam.options"}
 	if gotIPv4 != "" || gotGateway != "" || gotAllocationRange != "" || gotReservedAddresses != nil || gotIPv6 != "" || !reflect.DeepEqual(gotUnsupported, wantUnsupported) {
 		t.Fatalf("projectNetworkValues unsupported = %q, %q, %q, %#v, %q, %#v; want %#v", gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotUnsupported, wantUnsupported)
 	}
@@ -2641,6 +2640,21 @@ func TestProjectNetworkValuesReportsOnlyUnmappedNetworkOptions(t *testing.T) {
 	})
 	if gotIPv4 != "" || gotGateway != "" || gotAllocationRange != "" || gotReservedAddresses != nil || gotIPv6 != "fd77::/64" || !reflect.DeepEqual(gotUnsupported, []string{"enable_ipv6"}) {
 		t.Fatalf("projectNetworkValues disabled IPv6 = %q, %q, %q, %#v, %q, %#v", gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotUnsupported)
+	}
+}
+
+func TestNormalizeRetainsAttachableNetworkMetadata(t *testing.T) {
+	project := &types.Project{
+		Networks: types.Networks{
+			"backend": {
+				Attachable: true,
+			},
+		},
+	}
+
+	normalized := normalize(project, ".")
+	if !normalized.Networks["backend"].Attachable {
+		t.Fatal("normalize did not retain networks.backend.attachable")
 	}
 }
 

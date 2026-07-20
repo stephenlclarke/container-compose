@@ -728,6 +728,7 @@ public struct ComposeNetwork: Codable, Equatable {
         public var driver: String?
         public var driverOpts: [String: String]?
         public var isInternal: Bool?
+        public var isAttachable: Bool?
         public var labels: [String: String]?
         public var subnets: Subnets
         public var unsupportedFields: [String]?
@@ -737,6 +738,7 @@ public struct ComposeNetwork: Codable, Equatable {
             driver: String? = nil,
             driverOpts: [String: String]? = nil,
             isInternal: Bool? = nil,
+            isAttachable: Bool? = nil,
             labels: [String: String]? = nil,
             subnets: Subnets = Subnets(),
             unsupportedFields: [String]? = nil,
@@ -745,6 +747,7 @@ public struct ComposeNetwork: Codable, Equatable {
             self.driver = driver
             self.driverOpts = driverOpts
             self.isInternal = isInternal
+            self.isAttachable = isAttachable
             self.labels = labels
             self.subnets = subnets
             self.unsupportedFields = unsupportedFields
@@ -756,6 +759,7 @@ public struct ComposeNetwork: Codable, Equatable {
     public var driver: String?
     public var driverOpts: [String: String]?
     public var isInternal: Bool?
+    public var isAttachable: Bool?
     public var labels: [String: String]?
     public var ipv4Subnet: String?
     public var ipv4Gateway: String?
@@ -773,6 +777,7 @@ public struct ComposeNetwork: Codable, Equatable {
         driver = options.driver
         driverOpts = options.driverOpts
         isInternal = options.isInternal
+        isAttachable = options.isAttachable
         labels = options.labels
         ipv4Subnet = options.subnets.ipv4Subnet
         ipv4Gateway = options.subnets.ipv4Gateway
@@ -788,6 +793,7 @@ public struct ComposeNetwork: Codable, Equatable {
         case driver
         case driverOpts
         case isInternal = "internal"
+        case isAttachable = "attachable"
         case labels
         case ipv4Subnet
         case ipv4Gateway
