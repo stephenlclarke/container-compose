@@ -201,6 +201,12 @@ extension ComposeOrchestrator {
         }
 
         try await validateRuntimeHealthChecks(project: workingProject, services: services, cache: imageHealthCheckCache)
+        try await validateRuntimeImageVolumes(
+            project: workingProject,
+            services: services,
+            externalVolumeMounts: externalVolumeMounts,
+            pullPolicy: up.pullPolicy,
+        )
         try await ensureResources(project: workingProject)
 
         var changedServices = Set<String>()

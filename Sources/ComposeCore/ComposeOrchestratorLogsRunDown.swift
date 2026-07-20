@@ -747,6 +747,12 @@ public extension ComposeOrchestrator {
             quietBuild: run.quietBuild,
         )
         try await validateRuntimeHealthChecks(project: project, services: services, cache: cache)
+        try await validateRuntimeImageVolumes(
+            project: project,
+            services: services,
+            externalVolumeMounts: externalVolumeMounts,
+            pullPolicy: run.pullPolicy,
+        )
         try await ensureResources(
             project: projectBySelectingResources(project: project, services: services),
         )

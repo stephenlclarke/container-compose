@@ -70,6 +70,12 @@ public extension ComposeOrchestrator {
 
         try await applyCreateImagePolicy(create, project: workingProject, services: services)
         try await validateRuntimeHealthChecks(project: workingProject, services: services, cache: imageHealthCheckCache)
+        try await validateRuntimeImageVolumes(
+            project: workingProject,
+            services: services,
+            externalVolumeMounts: externalVolumeMounts,
+            pullPolicy: create.pullPolicy,
+        )
 
         try await ensureResources(project: workingProject)
 

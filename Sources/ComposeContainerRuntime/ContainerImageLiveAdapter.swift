@@ -80,7 +80,18 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
             $0.exposedPorts = variant?.exposedPorts ?? []
             $0.stopSignal = imageConfig?.stopSignal
             $0.healthCheck = variant?.healthCheck.map(ComposeImageHealthCheck.init)
+            $0.declaredVolumeTargets = imageConfig?.volumes?.keys.sorted() ?? []
         }
+    }
+
+    /// Resolves Docker image config `VOLUME` destinations for the requested platform.
+    public func imageDeclaredVolumeTargets(reference: String, platform: String?) async throws -> [String] {
+        let config = try await ConfigurationLoader.load()
+        let image = try await ClientImage.get(reference: reference, containerSystemConfig: config)
+        let resource = try await image.toImageResource(containerSystemConfig: config)
+        let requestedPlatform = try Self.requestedPlatform(platform)
+        let variant = Self.variant(in: resource, matching: requestedPlatform, allowFallback: platform == nil)
+        return variant?.config.config?.volumes?.keys.sorted() ?? []
     }
 
     /// Lists local images labelled as Compose Bridge transformers.

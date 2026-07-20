@@ -70,6 +70,8 @@ public struct ComposeImageMetadata: Sendable, Equatable {
     public var stopSignal: String?
     /// Docker image config healthcheck.
     public var healthCheck: ComposeImageHealthCheck?
+    /// Docker image config `VOLUME` destinations.
+    public var declaredVolumeTargets: [String]
 
     public init(reference: String) {
         self.reference = reference
@@ -83,6 +85,7 @@ public struct ComposeImageMetadata: Sendable, Equatable {
         exposedPorts = []
         stopSignal = nil
         healthCheck = nil
+        declaredVolumeTargets = []
     }
 
     public init(reference: String, _ configure: (inout ComposeImageMetadata) -> Void) {
@@ -199,6 +202,16 @@ public protocol ComposeRuntimeImageManaging: Sendable {
     /// Returns image config metadata for `reference`.
     func imageMetadata(_ reference: String) async throws -> ComposeImageMetadata
 
+    /// Returns Docker image config `VOLUME` destinations for `reference` and `platform`.
+    func imageDeclaredVolumeTargets(_ reference: String, platform: String?) async throws -> [String]
+
+    /// Makes image configuration metadata available before a Compose safety preflight.
+    ///
+    /// A backend may use this opportunity to pull a missing image when the active
+    /// Compose pull policy permits it. Returning `false` tells the caller to defer
+    /// metadata-dependent validation to the runtime's normal missing-image path.
+    func prepareImageVolumeMetadata(_ reference: String, pullIfMissing: Bool) async throws -> Bool
+
     /// Lists local Compose Bridge transformer images.
     func bridgeTransformers() async throws -> [ComposeBridgeTransformer]
 
@@ -224,6 +237,11 @@ public protocol ComposeRuntimeImageManaging: Sendable {
 }
 
 public extension ComposeRuntimeImageManaging {
+    /// Treats image configuration metadata as available unless a backend has a local-image boundary.
+    func prepareImageVolumeMetadata(_: String, pullIfMissing _: Bool) async throws -> Bool {
+        true
+    }
+
     /// Pulls `reference` only when it is missing from the local image store.
     func pullMissingImage(_ reference: String) async throws {
         let exists = try await imageExists(reference)
@@ -231,5 +249,10 @@ public extension ComposeRuntimeImageManaging {
             return
         }
         try await pullImage(reference)
+    }
+
+    /// Falls back to the runtime's general image metadata when it does not expose a narrower volume query.
+    func imageDeclaredVolumeTargets(_ reference: String, platform _: String?) async throws -> [String] {
+        try await imageMetadata(reference).declaredVolumeTargets
     }
 }

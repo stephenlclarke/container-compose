@@ -160,6 +160,11 @@ struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExportin
         throw unavailable("image metadata lookup")
     }
 
+    /// Leaves image-volume enforcement to a configured runtime that can inspect OCI image metadata.
+    func imageDeclaredVolumeTargets(_: String, platform _: String?) async throws -> [String] {
+        []
+    }
+
     func bridgeTransformers() async throws -> [ComposeBridgeTransformer] {
         throw unavailable("bridge transformer lookup")
     }

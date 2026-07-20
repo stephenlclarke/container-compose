@@ -2336,6 +2336,54 @@ struct ComposeOrchestratorTests {
         #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
     }
 
+    @Test("create rejects image volumes requiring Docker copy-up before creating resources")
+    func createRejectsImageVolumesRequiringCopyUpBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager(imageVolumeTargets: [
+            "example/api": ["/image-data"],
+        ])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                imageManager: imageManager,
+                resourceManager: resourceManager,
+            ).create(project: project, options: ComposeCreateOptions())
+            Issue.record("Expected image volume copy-up error")
+        } catch let error as ComposeError {
+            #expect(
+                error
+                    == .unsupported(
+                        "service 'api' image 'example/api' declares VOLUME '/image-data'; "
+                            + "Docker copy-up requires an apple/container image-to-volume initialization primitive. "
+                            + "Use a bind, tmpfs, or image mount to mask the target, or set volume.nocopy: true to opt out of copy-up"
+                    )
+            )
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(
+            await imageManager.requests == [
+                .healthCheck(reference: "example/api", platform: nil),
+                .volumeTargets(reference: "example/api", platform: nil),
+            ]
+        )
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("create maps legacy links to static host entries after creating dependencies")
     func createMapsLegacyLinksToStaticHostEntriesAfterCreatingDependencies() async throws {
         let runner = RecordingRunner(responses: [.success, .success])
@@ -10636,6 +10684,136 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--health-start-period", "10s"]))
         #expect(command.containsSequence(["--health-start-interval", "1.5s"]))
         #expect(command.containsSequence(["--health-retries", "4"]))
+    }
+
+    @Test("up rejects image volumes requiring Docker copy-up before creating resources")
+    func upRejectsImageVolumesRequiringCopyUpBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager(imageVolumeTargets: [
+            "example/api": ["/image-data"],
+        ])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                imageManager: imageManager,
+                resourceManager: resourceManager,
+            ).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected image volume copy-up error")
+        } catch let error as ComposeError {
+            #expect(
+                error
+                    == .unsupported(
+                        "service 'api' image 'example/api' declares VOLUME '/image-data'; "
+                            + "Docker copy-up requires an apple/container image-to-volume initialization primitive. "
+                            + "Use a bind, tmpfs, or image mount to mask the target, or set volume.nocopy: true to opt out of copy-up"
+                    )
+            )
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(
+            await imageManager.requests == [
+                .healthCheck(reference: "example/api", platform: nil),
+                .volumeTargets(reference: "example/api", platform: nil),
+            ]
+        )
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up accepts no-copy volumes that mask image volume targets")
+    func upAcceptsNoCopyVolumesThatMaskImageVolumeTargets() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager(imageVolumeTargets: [
+            "example/api": ["/image-data"],
+        ])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "volume",
+                            source: "cache",
+                            target: "/image-data",
+                            unsupportedFields: ["volume.nocopy"],
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            imageManager: imageManager,
+            resourceManager: resourceManager,
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(
+            await imageManager.requests == [
+                .healthCheck(reference: "example/api", platform: nil),
+                .volumeTargets(reference: "example/api", platform: nil),
+            ]
+        )
+        #expect(await resourceManager.requests.map(\.name) == ["demo_cache"])
+        #expect(command.containsSequence(["--volume", "demo_cache:/image-data"]))
+    }
+
+    @Test("up accepts bind tmpfs and image masks for image volume targets")
+    func upAcceptsNonCopyUpMasksForImageVolumeTargets() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager(imageVolumeTargets: [
+            "example/api": ["/bind/cache", "/tmpfs/cache", "/image/cache"],
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [
+                        ComposeMount(type: "bind", source: directory.path, target: "/bind"),
+                        ComposeMount(type: "tmpfs", target: "/tmpfs"),
+                        ComposeMount(type: "image", source: "alpine:3.22", target: "/image"),
+                    ]
+                },
+            ],
+        )
+
+        try await ComposeOrchestrator(runner: runner, imageManager: imageManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(
+            await imageManager.requests == [
+                .healthCheck(reference: "example/api", platform: nil),
+                .volumeTargets(reference: "example/api", platform: nil),
+            ]
+        )
+        #expect(command.containsSequence(["--volume", "\(directory.path):/bind"]))
+        #expect(command.containsSequence(["--tmpfs", "/tmpfs"]))
+        #expect(
+            command.containsSequence([
+                "--mount", "type=image,source=alpine:3.22,destination=/image,readonly",
+            ])
+        )
     }
 
     @Test("up merges timing-only healthcheck overrides with image metadata")
@@ -19525,6 +19703,59 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("image manager returns platform image volume targets through direct API")
+    func imageManagerReturnsPlatformImageVolumeTargetsThroughDirectAPI() async throws {
+        let client = RecordingContainerImageAPIClient(platformImageVolumeTargets: [
+            ImageVolumeTargetRequestKey(reference: "example/api", platform: "linux/arm64"): [
+                "/image-data", "/cache",
+            ],
+        ])
+        let manager = ContainerClientImageManager(client: client)
+
+        let targets = try await manager.imageDeclaredVolumeTargets(
+            "example/api", platform: "linux/arm64",
+        )
+
+        #expect(targets == ["/image-data", "/cache"])
+        #expect(
+            await client.requests == [
+                .volumeTargets(reference: "example/api", platform: "linux/arm64"),
+            ]
+        )
+    }
+
+    @Test("image manager prepares missing image volume metadata through direct API")
+    func imageManagerPreparesMissingImageVolumeMetadataThroughDirectAPI() async throws {
+        let client = RecordingContainerImageAPIClient()
+        let manager = ContainerClientImageManager(client: client)
+
+        let prepared = try await manager.prepareImageVolumeMetadata("example/api", pullIfMissing: true)
+
+        #expect(prepared)
+        #expect(await client.requests == [
+            .exists("example/api"),
+            .pull("example/api"),
+        ])
+
+        let neverClient = RecordingContainerImageAPIClient()
+        let neverManager = ContainerClientImageManager(client: neverClient)
+        let unavailable = try await neverManager.prepareImageVolumeMetadata("example/api", pullIfMissing: false)
+
+        #expect(!unavailable)
+        #expect(await neverClient.requests == [
+            .exists("example/api"),
+        ])
+
+        let availableClient = RecordingContainerImageAPIClient(existingReferences: ["example/api"])
+        let availableManager = ContainerClientImageManager(client: availableClient)
+        let available = try await availableManager.prepareImageVolumeMetadata("example/api", pullIfMissing: true)
+
+        #expect(available)
+        #expect(await availableClient.requests == [
+            .exists("example/api"),
+        ])
+    }
+
     @Test("image manager resolves image digests through direct API")
     func imageManagerResolvesImageDigestsThroughDirectAPI() async throws {
         let client = RecordingContainerImageAPIClient(digests: [
@@ -24297,6 +24528,54 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("run rejects image volumes requiring Docker copy-up before creating resources")
+    func runRejectsImageVolumesRequiringCopyUpBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager(imageVolumeTargets: [
+            "alpine": ["/image-data"],
+        ])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                imageManager: imageManager,
+                resourceManager: resourceManager,
+            ).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected image volume copy-up error")
+        } catch let error as ComposeError {
+            #expect(
+                error
+                    == .unsupported(
+                        "service 'job' image 'alpine' declares VOLUME '/image-data'; "
+                            + "Docker copy-up requires an apple/container image-to-volume initialization primitive. "
+                            + "Use a bind, tmpfs, or image mount to mask the target, or set volume.nocopy: true to opt out of copy-up"
+                    )
+            )
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(
+            await imageManager.requests == [
+                .healthCheck(reference: "alpine", platform: nil),
+                .volumeTargets(reference: "alpine", platform: nil),
+            ]
+        )
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("run starts dependencies before one-off container")
     func runStartsDependenciesBeforeOneOffContainer() async throws {
         let runner = RecordingRunner(responses: [
@@ -28794,6 +29073,7 @@ private enum ContainerImageRequest: Equatable {
     case exists(String)
     case digest(String)
     case healthCheck(reference: String, platform: String?)
+    case volumeTargets(reference: String, platform: String?)
     case metadata(String)
     case bridgeTransformers
     case pull(String)
@@ -28804,6 +29084,11 @@ private enum ContainerImageRequest: Equatable {
 }
 
 private struct ImageHealthCheckRequestKey: Hashable {
+    var reference: String
+    var platform: String?
+}
+
+private struct ImageVolumeTargetRequestKey: Hashable {
     var reference: String
     var platform: String?
 }
@@ -29895,6 +30180,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
     private var existingReferences: Set<String>
     private var digests: [String: String]
     private var healthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck]
+    private var imageVolumeTargets: [ImageVolumeTargetRequestKey: [String]]
     private var imageMetadata: [String: ComposeImageMetadata]
     private var transformers: [ComposeBridgeTransformer]
     private let pullFailures: Set<String>
@@ -29912,6 +30198,8 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         digests: [String: String] = [:],
         healthChecks: [String: ComposeImageHealthCheck] = [:],
         platformHealthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck] = [:],
+        imageVolumeTargets: [String: [String]] = [:],
+        platformImageVolumeTargets: [ImageVolumeTargetRequestKey: [String]] = [:],
         imageMetadata: [String: ComposeImageMetadata] = [:],
         transformers: [ComposeBridgeTransformer] = [],
         pullFailures: Set<String> = [],
@@ -29931,6 +30219,11 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
             mappedHealthChecks[ImageHealthCheckRequestKey(reference: reference, platform: nil)] = healthCheck
         }
         self.healthChecks = mappedHealthChecks
+        var mappedImageVolumeTargets = platformImageVolumeTargets
+        for (reference, targets) in imageVolumeTargets {
+            mappedImageVolumeTargets[ImageVolumeTargetRequestKey(reference: reference, platform: nil)] = targets
+        }
+        self.imageVolumeTargets = mappedImageVolumeTargets
         self.imageMetadata = imageMetadata
         self.transformers = transformers
         self.pullFailures = pullFailures
@@ -29977,6 +30270,18 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         }
         storage.append(.healthCheck(reference: reference, platform: platform))
         return healthChecks[ImageHealthCheckRequestKey(reference: reference, platform: platform)]
+    }
+
+    func imageDeclaredVolumeTargets(_ reference: String, platform: String?) async throws -> [String] {
+        if let failure {
+            throw failure
+        }
+        let key = ImageVolumeTargetRequestKey(reference: reference, platform: platform)
+        guard let targets = imageVolumeTargets[key] else {
+            return []
+        }
+        storage.append(.volumeTargets(reference: reference, platform: platform))
+        return targets
     }
 
     func imageMetadata(_ reference: String) async throws -> ComposeImageMetadata {
@@ -30064,6 +30369,7 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
     private var existingReferences: Set<String>
     private var digests: [String: String]
     private var healthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck]
+    private var imageVolumeTargets: [ImageVolumeTargetRequestKey: [String]]
     private var imageMetadata: [String: ComposeImageMetadata]
     private var transformers: [ComposeBridgeTransformer]
     private var pushOutputs: [String: String]
@@ -30076,6 +30382,8 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
         digests: [String: String] = [:],
         healthChecks: [String: ComposeImageHealthCheck] = [:],
         platformHealthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck] = [:],
+        imageVolumeTargets: [String: [String]] = [:],
+        platformImageVolumeTargets: [ImageVolumeTargetRequestKey: [String]] = [:],
         imageMetadata: [String: ComposeImageMetadata] = [:],
         transformers: [ComposeBridgeTransformer] = [],
         pushOutputs: [String: String] = [:],
@@ -30089,6 +30397,11 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
             mappedHealthChecks[ImageHealthCheckRequestKey(reference: reference, platform: nil)] = healthCheck
         }
         self.healthChecks = mappedHealthChecks
+        var mappedImageVolumeTargets = platformImageVolumeTargets
+        for (reference, targets) in imageVolumeTargets {
+            mappedImageVolumeTargets[ImageVolumeTargetRequestKey(reference: reference, platform: nil)] = targets
+        }
+        self.imageVolumeTargets = mappedImageVolumeTargets
         self.imageMetadata = imageMetadata
         self.transformers = transformers
         self.pushOutputs = pushOutputs
@@ -30116,6 +30429,15 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
     func imageHealthCheck(reference: String, platform: String?) async throws -> ComposeImageHealthCheck? {
         storage.append(.healthCheck(reference: reference, platform: platform))
         return healthChecks[ImageHealthCheckRequestKey(reference: reference, platform: platform)]
+    }
+
+    func imageDeclaredVolumeTargets(reference: String, platform: String?) async throws -> [String] {
+        let key = ImageVolumeTargetRequestKey(reference: reference, platform: platform)
+        guard let targets = imageVolumeTargets[key] else {
+            return []
+        }
+        storage.append(.volumeTargets(reference: reference, platform: platform))
+        return targets
     }
 
     func imageMetadata(reference: String) async throws -> ComposeImageMetadata {

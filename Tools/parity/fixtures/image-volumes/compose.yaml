@@ -1,0 +1,15 @@
+services:
+  implicit:
+    build:
+      context: .
+
+  overridden:
+    build:
+      context: .
+    volumes:
+      - type: volume
+        source: override-data
+        target: /image-data
+
+volumes:
+  override-data: {}
