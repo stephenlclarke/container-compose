@@ -1503,6 +1503,8 @@ struct ComposeOrchestratorTests {
     func upAcceptsAttachableProjectNetworksAndRejectsRemainingUnsupportedOptionsBeforeSideEffects() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
+        var networkOptions = ComposeNetwork.Options(isAttachable: true)
+        networkOptions.unsupportedFields = ["driver", "enable_ipv4", "enable_ipv6"]
         let project = composeProject(
             name: "demo",
             services: [
@@ -1514,10 +1516,7 @@ struct ComposeOrchestratorTests {
             $0.networks = [
                 "backend": ComposeNetwork(
                     name: "backend",
-                    options: ComposeNetwork.Options(
-                        isAttachable: true,
-                        unsupportedFields: ["driver", "enable_ipv4", "enable_ipv6"]
-                    )
+                    options: networkOptions
                 ),
             ]
         }
@@ -12943,6 +12942,8 @@ struct ComposeOrchestratorTests {
 
     @Test("config preserves inspection-only IPAM options")
     func configPreservesInspectionOnlyIPAMOptions() throws {
+        var networkOptions = ComposeNetwork.Options()
+        networkOptions.ipamOptions = ["com.example.ipam": "enabled"]
         let project = composeProject(
             name: "demo",
             services: ["api": composeService(name: "api", image: "example/api")]
@@ -12950,7 +12951,7 @@ struct ComposeOrchestratorTests {
             $0.networks = [
                 "backend": ComposeNetwork(
                     name: "demo_backend",
-                    options: .init(ipamOptions: ["com.example.ipam": "enabled"])
+                    options: networkOptions
                 ),
             ]
         }

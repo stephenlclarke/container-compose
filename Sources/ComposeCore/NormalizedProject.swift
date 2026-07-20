@@ -738,22 +738,18 @@ public struct ComposeNetwork: Codable, Equatable {
             external: Bool? = nil,
             driver: String? = nil,
             driverOpts: [String: String]? = nil,
-            ipamOptions: [String: String]? = nil,
             isInternal: Bool? = nil,
             isAttachable: Bool? = nil,
             labels: [String: String]? = nil,
             subnets: Subnets = Subnets(),
-            unsupportedFields: [String]? = nil,
         ) {
             self.external = external
             self.driver = driver
             self.driverOpts = driverOpts
-            self.ipamOptions = ipamOptions
             self.isInternal = isInternal
             self.isAttachable = isAttachable
             self.labels = labels
             self.subnets = subnets
-            self.unsupportedFields = unsupportedFields
         }
     }
 
