@@ -56,7 +56,7 @@ required future full-suite test coverage.
 ## Commit tracking
 
 Compose implementation commit:
-`8be4ce2bfaba4ee4917d33ec13e604320cc0cb48`
+`4c7beb0e3e52ea5b0dd5e151be6b4af82b546bb5`
 (`fix(release): bound phase five gate exception`).
 
 ## Upstream handoff
