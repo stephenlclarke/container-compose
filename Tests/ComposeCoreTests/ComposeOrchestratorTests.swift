@@ -12941,6 +12941,29 @@ struct ComposeOrchestratorTests {
         #expect(json.contains(#""web" : {"#))
     }
 
+    @Test("config preserves inspection-only IPAM options")
+    func configPreservesInspectionOnlyIPAMOptions() throws {
+        let project = composeProject(
+            name: "demo",
+            services: ["api": composeService(name: "api", image: "example/api")]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "demo_backend",
+                    options: .init(ipamOptions: ["com.example.ipam": "enabled"])
+                ),
+            ]
+        }
+
+        let output = try ComposeOrchestrator().config(project: project)
+        let document = try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
+        let networks = try #require(document["networks"] as? [String: Any])
+        let backend = try #require(networks["backend"] as? [String: Any])
+
+        #expect(backend["ipamOptions"] as? [String: String] == ["com.example.ipam": "enabled"])
+        #expect(backend["unsupportedFields"] == nil)
+    }
+
     @Test("config preserves userns_mode using the Compose field spelling")
     func configPreservesPrivateUserNamespaceMode() throws {
         let project = composeProject(

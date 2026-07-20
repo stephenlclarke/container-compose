@@ -275,8 +275,8 @@ struct ComposeNormalizerTests {
         ))
     }
 
-    @Test("normalizer marks IPAM options unsupported")
-    func normalizerMarksIPAMOptionsUnsupported() async throws {
+    @Test("normalizer preserves inspection-only IPAM options")
+    func normalizerPreservesInspectionOnlyIPAMOptions() async throws {
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
@@ -303,7 +303,8 @@ struct ComposeNormalizerTests {
             projectDirectory: directory.path
         ))
 
-        #expect(project.networks["backend"]?.unsupportedFields == ["ipam.options"])
+        #expect(project.networks["backend"]?.ipamOptions == ["com.example.ipam": "enabled"])
+        #expect(project.networks["backend"]?.unsupportedFields == nil)
     }
 
     @Test("normalizer maps automatic IPv6 enablement to VMnet allocation")

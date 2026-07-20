@@ -727,6 +727,7 @@ public struct ComposeNetwork: Codable, Equatable {
         public var external: Bool?
         public var driver: String?
         public var driverOpts: [String: String]?
+        public var ipamOptions: [String: String]?
         public var isInternal: Bool?
         public var isAttachable: Bool?
         public var labels: [String: String]?
@@ -737,6 +738,7 @@ public struct ComposeNetwork: Codable, Equatable {
             external: Bool? = nil,
             driver: String? = nil,
             driverOpts: [String: String]? = nil,
+            ipamOptions: [String: String]? = nil,
             isInternal: Bool? = nil,
             isAttachable: Bool? = nil,
             labels: [String: String]? = nil,
@@ -746,6 +748,7 @@ public struct ComposeNetwork: Codable, Equatable {
             self.external = external
             self.driver = driver
             self.driverOpts = driverOpts
+            self.ipamOptions = ipamOptions
             self.isInternal = isInternal
             self.isAttachable = isAttachable
             self.labels = labels
@@ -758,6 +761,7 @@ public struct ComposeNetwork: Codable, Equatable {
     public var external: Bool?
     public var driver: String?
     public var driverOpts: [String: String]?
+    public var ipamOptions: [String: String]?
     public var isInternal: Bool?
     public var isAttachable: Bool?
     public var labels: [String: String]?
@@ -776,6 +780,7 @@ public struct ComposeNetwork: Codable, Equatable {
         external = options.external
         driver = options.driver
         driverOpts = options.driverOpts
+        ipamOptions = options.ipamOptions
         isInternal = options.isInternal
         isAttachable = options.isAttachable
         labels = options.labels
@@ -792,6 +797,7 @@ public struct ComposeNetwork: Codable, Equatable {
         case external
         case driver
         case driverOpts
+        case ipamOptions
         case isInternal = "internal"
         case isAttachable = "attachable"
         case labels

@@ -31,9 +31,9 @@
 #                      otherwise docker-compose.
 #
 # This script is intentionally local-only and is not part of CI. It validates
-# that Docker Compose V2 parses top-level network driver, attachment, IP-family,
-# and `ipam.options` fields, then checks that container-compose preserves their
-# unsupported markers and rejects them before resource creation.
+# that Docker Compose V2 accepts and preserves top-level network `ipam.options`,
+# then checks that container-compose keeps the same inspection metadata while
+# using the ordinary local VMnet creation path.
 
 set -euo pipefail
 
@@ -130,7 +130,7 @@ check_tools() {
     fi
 }
 
-# Create a minimal Compose fixture with unsupported project network metadata.
+# Create a minimal Compose fixture with inspection-only IPAM metadata.
 create_fixture() {
     FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/compose-network-ipam-options.XXXXXX")"
     COMPOSE_FILE="$FIXTURE_DIR/compose.yml"
@@ -144,10 +144,6 @@ services:
       - backend
 networks:
   backend:
-    driver: overlay
-    attachable: true
-    enable_ipv4: false
-    enable_ipv6: false
     ipam:
       options:
         com.example.ipam: enabled
@@ -161,8 +157,8 @@ cleanup() {
     fi
 }
 
-# Assert Docker Compose preserves project network metadata in config output.
-assert_docker_config_network_metadata() {
+# Assert Docker Compose preserves IPAM options in config output.
+assert_docker_config_ipam_options() {
     local path="$1"
 
     python3 - "$path" <<'PY'
@@ -176,20 +172,11 @@ options = network.get("ipam", {}).get("options")
 expected = {"com.example.ipam": "enabled"}
 if options != expected:
     raise SystemExit(f"Docker Compose networks.backend.ipam.options = {options!r}, want {expected!r}")
-expected_fields = {
-    "driver": "overlay",
-    "attachable": True,
-    "enable_ipv4": False,
-    "enable_ipv6": False,
-}
-for field, expected_value in expected_fields.items():
-    if network.get(field) != expected_value:
-        raise SystemExit(f"Docker Compose networks.backend.{field} = {network.get(field)!r}, want {expected_value!r}")
 PY
 }
 
-# Assert container-compose preserves every unsupported project network marker.
-assert_container_config_unsupported_network_metadata() {
+# Assert container-compose preserves IPAM options without reporting an unsupported field.
+assert_container_config_ipam_options() {
     local path="$1"
 
     python3 - "$path" <<'PY'
@@ -198,10 +185,13 @@ import pathlib
 import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-fields = doc.get("networks", {}).get("backend", {}).get("unsupportedFields")
-expected = ["driver", "attachable", "enable_ipv4", "enable_ipv6", "ipam.options"]
-if fields != expected:
-    raise SystemExit(f"container-compose networks.backend.unsupportedFields = {fields!r}, want {expected!r}")
+network = doc.get("networks", {}).get("backend", {})
+options = network.get("ipamOptions")
+expected = {"com.example.ipam": "enabled"}
+if options != expected:
+    raise SystemExit(f"container-compose networks.backend.ipamOptions = {options!r}, want {expected!r}")
+if "unsupportedFields" in network:
+    raise SystemExit(f"container-compose networks.backend.unsupportedFields = {network['unsupportedFields']!r}, want absent")
 PY
 }
 
@@ -210,27 +200,23 @@ validate_docker_behavior() {
     local config_output="$FIXTURE_DIR/docker-compose-config.json"
 
     "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" config --format json >"$config_output"
-    assert_docker_config_network_metadata "$config_output"
+    assert_docker_config_ipam_options "$config_output"
 }
 
-# Validate container-compose records and rejects the unsupported field.
+# Validate container-compose preserves the field and uses the normal local path.
 validate_container_compose_behavior() {
     local config_output="$FIXTURE_DIR/container-compose-config.json"
     local up_output
-    local status
 
     "$CONTAINER_COMPOSE" --ansi never -p "$PROJECT_NAME" -f "$COMPOSE_FILE" config --format json >"$config_output"
-    assert_container_config_unsupported_network_metadata "$config_output"
+    assert_container_config_ipam_options "$config_output"
 
-    set +e
     up_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up api 2>&1)"
-    status=$?
-    set -e
-    if ((status == 0)); then
-        error "container-compose up accepted unsupported project network metadata"
+    printf '%s\n' "$up_output" | grep -F '+ container network create ' >/dev/null
+    if printf '%s\n' "$up_output" | grep -F 'com.example.ipam=enabled' >/dev/null; then
+        error 'container-compose forwarded inspection-only IPAM options to VMnet'
         return 1
     fi
-    printf '%s\n' "$up_output" | grep -F "network 'backend' uses unsupported fields driver, attachable, enable_ipv4, enable_ipv6, ipam.options" >/dev/null
 }
 
 # Run the local-only parity check.
@@ -243,7 +229,7 @@ main() {
     validate_docker_behavior
     validate_container_compose_behavior
 
-    info "project network metadata parity check passed using ${DOCKER_COMPOSE_COMMAND[*]} and $CONTAINER_COMPOSE"
+    info "IPAM option parity check passed using ${DOCKER_COMPOSE_COMMAND[*]} and $CONTAINER_COMPOSE"
 }
 
 main "$@"

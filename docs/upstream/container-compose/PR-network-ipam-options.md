@@ -2,12 +2,11 @@
 
 ## Summary
 
-- Preserve unsupported project network `driver`, `attachable`, `enable_ipv4: false`,
-  `enable_ipv6: false`, and `ipam.options` markers across the compose-go to Swift
-  handoff.
-- Reject those semantics before runtime side effects while retaining mapped
-  bridge/default behavior and IPv6 subnets.
-- Document the remaining Apple runtime blocker.
+- Preserve project network `ipam.options` through the compose-go to Swift
+  handoff and config/convert output.
+- Keep it inspection-only on the local vmnet path, matching Docker Compose
+  local-mode behavior instead of forwarding a fabricated runtime option.
+- Retain early rejection for custom drivers and disabled IP families.
 
 ## Type of Change
 
@@ -20,12 +19,12 @@
 
 Compose-go v2.12.1 exposes the current project network fields, and the approved
 compose-go PR #870 confirms `IPAMConfig.Options` belongs in that typed model.
-Docker Compose preserves all five fields in `config` and tracks
-docker/compose#13785 for passing IPAM options through to Docker Engine network
-creation. The generic vmnet path automatically allocates IPv6, so Compose now
-accepts `enable_ipv6: true` with or without an explicit subnet. It cannot
-disable that allocation, so `container-compose` must reject `enable_ipv6: false`
-and the other unsupported subset instead of silently dropping them.
+Docker Compose preserves the options in `config` and tracks docker/compose#13785
+for passing them through to Docker Engine network creation. The generic vmnet
+path automatically allocates IPv6, so Compose accepts `enable_ipv6: true` with
+or without an explicit subnet. It cannot disable that allocation, so
+`container-compose` continues to reject `enable_ipv6: false` and the other
+runtime-backed unsupported subset instead of silently dropping them.
 
 References:
 
@@ -36,22 +35,21 @@ References:
 
 ## Commit Tracking
 
-- Compose rejection code is the current `fix(networks): reject unsupported project network options` slice in `stephenlclarke/container-compose`.
+- Compose implementation is the signed `fix(network): retain local IPAM options` slice in `stephenlclarke/container-compose`, covering `Tools/compose-normalizer/main.go`, `Sources/ComposeCore/NormalizedProject.swift`, and `Tools/parity/check-compose-network-ipam-options.sh`.
 - Automatic IPv6 enablement is superseded by [`55d00074864d21c70c9b03995886fbc9cf9e57de`](https://github.com/stephenlclarke/container-compose/commit/55d00074864d21c70c9b03995886fbc9cf9e57de) and [the dedicated handoff](PR-network-ipv6-auto.md).
-- No Apple fork change is included in this slice. Mapping support needs future
-  Apple-shaped network configuration primitives.
+- No Apple fork change is included in this slice. The remaining driver and
+  IP-family controls need future Apple-shaped network configuration primitives.
 
 ## Implementation Details
 
-- `projectNetworkValues` separates mapped bridge/default, explicit-subnet, and
-  automatic IPv6-enable behavior from custom driver, attachment, IP-family
-  disablement, and IPAM gaps.
-- Go normalizer tests cover both mapped defaults and the complete unsupported
-  field list alongside existing IPAM checks.
-- Swift orchestration tests prove rejection happens before command or resource
-  side effects.
-- The Docker Compose parity fixture checks the same fields against Compose
-  5.3.1 config output.
+- `normalizedNetwork.IPAMOptions` and `ComposeNetwork.ipamOptions` retain the
+  typed Compose metadata without creating a vmnet-specific abstraction.
+- `networkIPAMValues` no longer classifies an IPAM option as an unsupported
+  runtime primitive; the existing custom-driver and IP-family diagnostics stay
+  unchanged.
+- Go and Swift normalizer tests cover retention, and the Docker Compose parity
+  fixture verifies config preservation, successful dry-run orchestration, and
+  absence of a fabricated vmnet option.
 - `STATUS.md` names every current top-level network attribute and blocker.
 
 ## Docker Compose Compatibility Notes
@@ -59,15 +57,17 @@ References:
 Supported:
 
 - Default bridge behavior, ordinary IPv4, one explicitly mapped IPv6 subnet,
-  and `enable_ipv6: true` with automatic vmnet allocation remain supported.
-- Unsupported project network semantics are recognized and rejected before
-  side effects instead of being silently ignored.
+  `enable_ipv6: true` with automatic vmnet allocation, and inspection-only
+  `ipam.options` remain supported.
+- Custom drivers and IP-family-disable semantics remain recognized and rejected
+  before side effects instead of being silently ignored.
 
 Remaining gap:
 
-- Custom drivers, `attachable: true`, IPv4 or IPv6 disabling, and IPAM driver
-  options remain blocked until Apple exposes matching network creation
-  primitives.
+- Custom drivers and IPv4 or IPv6 disabling remain blocked until Apple exposes
+  matching network creation primitives. `attachable: true` is already accepted
+  by the macOS local vmnet path; IPAM options are retained but intentionally
+  ignored, matching Docker Compose local mode.
 
 ## Testing
 
@@ -79,7 +79,7 @@ Focused validation:
 
 ```bash
 cd Tools/compose-normalizer && go test ./...
-swift test --disable-automatic-resolution --filter 'ComposeOrchestratorTests.upRejectsUnsupportedProjectNetworkOptionsBeforeSideEffects'
+swift test --disable-automatic-resolution --filter 'ComposeNormalizerTests.normalizerPreservesInspectionOnlyIPAMOptions'
 make docker-compose-network-ipam-options-parity
 ```
 

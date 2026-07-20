@@ -375,6 +375,7 @@ type normalizedNetwork struct {
 	External              bool              `json:"external,omitempty"`
 	Driver                string            `json:"driver,omitempty"`
 	DriverOpts            map[string]string `json:"driverOpts,omitempty"`
+	IPAMOptions           map[string]string `json:"ipamOptions,omitempty"`
 	Internal              bool              `json:"internal,omitempty"`
 	Attachable            bool              `json:"attachable,omitempty"`
 	Labels                map[string]string `json:"labels,omitempty"`
@@ -793,6 +794,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 			External:              bool(network.External),
 			Driver:                network.Driver,
 			DriverOpts:            mapOptions(network.DriverOpts),
+			IPAMOptions:           mapOptions(network.Ipam.Options),
 			Internal:              network.Internal,
 			Attachable:            network.Attachable,
 			Labels:                mapLabels(network.Labels),
@@ -1559,7 +1561,6 @@ const (
 func networkIPAMValues(ipam types.IPAMConfig) (string, string, string, []string, string, []string) {
 	fields := []string{}
 	appendUnsupportedNetworkField(&fields, "ipam.driver", ipam.Driver != "")
-	appendUnsupportedNetworkField(&fields, "ipam.options", len(ipam.Options) > 0)
 	var ipv4Subnet string
 	var ipv4Gateway string
 	var ipv4AllocationRange string

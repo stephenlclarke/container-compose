@@ -45,20 +45,23 @@ References:
 The pinned `compose-go` dependency exposes all five fields. The normalizer maps
 the default bridge driver, ordinary IPv4 behavior, an explicit IPv6 subnet, and
 `enable_ipv6: true` with or without a subnet. vmnet assigns an IPv6 prefix when
-the generic network-create path has no explicit IPv6 subnet. It records custom
-drivers, `attachable: true`, `enable_ipv4: false`, `enable_ipv6: false`, and
-`ipam.options` in the normalized network `unsupportedFields` list.
+the generic network-create path has no explicit IPv6 subnet. It retains
+`ipam.options` in normalized/config/convert output and deliberately does not
+pass it to vmnet, matching Docker Compose local mode. It records custom
+drivers, `enable_ipv4: false`, and `enable_ipv6: false` in the normalized
+network `unsupportedFields` list.
 
-Runtime-backed commands reject those markers before creating networks or
-service containers instead of silently ignoring them.
+Runtime-backed commands reject the remaining markers before creating networks
+or service containers instead of silently ignoring them.
 
 ## Likely owner
 
 `container-compose` owns the no-side-effects rejection. Future Apple runtime
-changes would be needed to select custom drivers, disable IPv4 or IPv6, or pass
-IPAM options instead of rejecting them. Automatic IPv6 allocation is already a
-generic vmnet behavior; [the dedicated IPv6 handoff](ISSUE-network-ipv6-auto.md)
-records the Compose mapping and the remaining disablement gap.
+changes would be needed to select custom drivers or disable IPv4 or IPv6.
+IPAM options are inspection-only in the local Docker Compose path and require
+no Apple primitive. Automatic IPv6 allocation is already a generic vmnet
+behavior; [the dedicated IPv6 handoff](ISSUE-network-ipv6-auto.md) records the
+Compose mapping and the remaining disablement gap.
 
 ## Minimal example
 
@@ -71,20 +74,17 @@ services:
       - backend
 networks:
   backend:
-    driver: overlay
-    attachable: true
-    enable_ipv4: false
-    enable_ipv6: false
     ipam:
       options:
         com.example.ipam: enabled
 ```
 
-Expected fork-backed behavior:
+Expected container-compose behavior:
 
-- `container compose config --format json` preserves every unsupported project
-  network marker in the normalized model.
-- `container compose up api` fails before resource creation with an unsupported-network message.
+- `container compose config --format json` preserves `ipamOptions` in the
+  normalized model.
+- `container compose up --dry-run api` uses the ordinary vmnet network-create
+  path without forwarding the inspection-only option.
 
 ## Code of Conduct and documentation
 
