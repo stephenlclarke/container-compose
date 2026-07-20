@@ -230,6 +230,22 @@ private func readOnlyVolumeSource(target: String, in arguments: [String]) -> Str
     return nil
 }
 
+private func anonymousVolumeSource(target: String, in arguments: [String]) -> String? {
+    let suffix = ":\(target)"
+    for index in arguments.indices where arguments[index] == "--volume" {
+        let valueIndex = arguments.index(after: index)
+        guard arguments.indices.contains(valueIndex) else {
+            continue
+        }
+        let value = arguments[valueIndex]
+        guard value.hasPrefix("demo_anon-"), value.hasSuffix(suffix) else {
+            continue
+        }
+        return String(value.dropLast(suffix.count))
+    }
+    return nil
+}
+
 private func posixPermissions(at path: String) throws -> Int {
     let attributes = try FileManager.default.attributesOfItem(atPath: path)
     let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
@@ -4015,6 +4031,67 @@ struct ComposeOrchestratorTests {
         #expect(!commands[1].contains { $0.hasPrefix("demo_anon-api-1-") })
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
         #expect(await discoveryManager.listRequests == [true, true])
+    }
+
+    @Test("up isolates anonymous volumes for single replica services")
+    func upIsolatesAnonymousVolumesForSingleReplicaServices() async throws {
+        let runner = RecordingRunner(responses: [.success, .success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(name: "demo", services: [
+            "api": composeService(name: "api", image: "example/api") {
+                $0.volumes = [ComposeMount(type: "volume", target: "/scratch")]
+            },
+            "worker": composeService(name: "worker", image: "example/worker") {
+                $0.volumes = [ComposeMount(type: "volume", target: "/scratch")]
+            },
+        ])
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let commands = runner.commands.map(\.arguments)
+        let api = try #require(commands.first { $0.containsSequence(["--name", "demo-api-1"]) })
+        let worker = try #require(commands.first { $0.containsSequence(["--name", "demo-worker-1"]) })
+        let apiVolume = try #require(anonymousVolumeSource(target: "/scratch", in: api))
+        let workerVolume = try #require(anonymousVolumeSource(target: "/scratch", in: worker))
+        #expect(apiVolume.hasPrefix("demo_anon-api-1-"))
+        #expect(workerVolume.hasPrefix("demo_anon-worker-1-"))
+        #expect(apiVolume != workerVolume)
+    }
+
+    @Test("run isolates anonymous volume from the managed service")
+    func runIsolatesAnonymousVolumeFromManagedService() async throws {
+        let runner = RecordingRunner(responses: [.success, .success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(name: "demo", services: [
+            "job": composeService(name: "job", image: "alpine") {
+                $0.volumes = [ComposeMount(type: "volume", target: "/scratch")]
+            },
+        ])
+        let options = ComposeExecutionOptions(runtimeHooks: .init(oneOffIdentifier: { "abc123" }))
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: options,
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions())
+        try await orchestrator.run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["true"])
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        let managed = try #require(commands.first { $0.containsSequence(["--name", "demo-job-1"]) })
+        let oneOff = try #require(commands.first { $0.containsSequence(["--name", "demo-job-run-abc123"]) })
+        let managedVolume = try #require(anonymousVolumeSource(target: "/scratch", in: managed))
+        let oneOffVolume = try #require(anonymousVolumeSource(target: "/scratch", in: oneOff))
+        #expect(managedVolume.hasPrefix("demo_anon-job-1-"))
+        #expect(oneOffVolume.hasPrefix("demo_anon-job-run-"))
+        #expect(managedVolume != oneOffVolume)
     }
 
     @Test("up renew anonymous volumes recreates matching containers")
@@ -15441,7 +15518,7 @@ struct ComposeOrchestratorTests {
         let resources = await resourceManager.requests
         #expect(resources.count == 1)
         if case let .deleteVolume(name) = resources[0] {
-            #expect(name.hasPrefix("demo_anon-"))
+            #expect(name.hasPrefix("demo_anon-api-1-"))
         } else {
             Issue.record("Expected selected down to remove only the selected service anonymous volume")
         }

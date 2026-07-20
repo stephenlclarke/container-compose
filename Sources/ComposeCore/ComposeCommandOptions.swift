@@ -863,8 +863,9 @@ func dropTrailingZeros(from value: String) -> Substring {
 struct MountRenderContext {
     var project: ComposeProject
     var service: ComposeService
+    var containerName: String
+    var oneOff: Bool
     var containerIndex: Int?
-    var replicaCount: Int?
 }
 
 enum DownImageRemovalPolicy {

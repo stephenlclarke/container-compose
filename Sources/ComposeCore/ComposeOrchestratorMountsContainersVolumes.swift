@@ -283,19 +283,16 @@ extension ComposeOrchestrator {
     /// Returns stable runtime names for anonymous volumes attached to service
     /// container targets.
     func anonymousVolumeRuntimeNames(project: ComposeProject, targets: [ServiceContainerTarget]) throws -> [String] {
-        let targetCounts = Dictionary(grouping: targets, by: { $0.service.name }).mapValues(\.count)
         let names = try targets.flatMap { serviceTarget in
             try effectiveServiceVolumes(project: project, service: serviceTarget.service).compactMap { mount -> String? in
                 guard mount.type == "volume", mount.source?.isEmpty != false, let mountTarget = mount.target else {
                     return nil
                 }
-                let replicaCount = targetCounts[serviceTarget.service.name] ?? 1
                 return anonymousVolumeRuntimeName(
                     project: project,
                     service: serviceTarget.service,
                     target: mountTarget,
                     containerIndex: serviceTarget.index,
-                    replicaCount: replicaCount,
                 )
             }
         }
@@ -323,34 +320,30 @@ extension ComposeOrchestrator {
 
     /// Returns the project-scoped name used for an anonymous Compose service
     /// volume.
-    func anonymousVolumeRuntimeName(context: MountRenderContext, target: String) -> String {
-        anonymousVolumeRuntimeName(
-            project: context.project,
-            service: context.service,
-            target: target,
-            containerIndex: context.containerIndex,
-            replicaCount: context.replicaCount,
-        )
-    }
-
-    /// Returns the project-scoped name used for an anonymous Compose service
-    /// volume.
     func anonymousVolumeRuntimeName(
         project: ComposeProject,
         service: ComposeService,
         target: String,
         containerIndex: Int?,
-        replicaCount: Int?,
     ) -> String {
-        guard let containerIndex, containerIndex >= 1, (replicaCount ?? 1) > 1 else {
-            return anonymousVolumeRuntimeName(project: project, target: target)
-        }
-        return resourceName(project: project.name, name: "anon-\(slug(service.name))-\(containerIndex)-\(stableHash(target).prefix(12))")
+        let index = max(containerIndex ?? 1, 1)
+        return resourceName(project: project.name, name: "anon-\(slug(service.name))-\(index)-\(stableHash(target).prefix(12))")
     }
 
-    /// Returns the project-scoped name used for an anonymous Compose volume.
-    func anonymousVolumeRuntimeName(project: ComposeProject, target: String) -> String {
-        resourceName(project: project.name, name: "anon-\(stableHash(target).prefix(12))")
+    /// Returns an identity-safe name for a rendered anonymous mount.
+    func anonymousVolumeRuntimeName(context: MountRenderContext, target: String) -> String {
+        if context.oneOff {
+            return resourceName(
+                project: context.project.name,
+                name: "anon-\(slug(context.service.name))-run-\(stableHash("\(context.containerName):\(target)").prefix(12))",
+            )
+        }
+        return anonymousVolumeRuntimeName(
+            project: context.project,
+            service: context.service,
+            target: target,
+            containerIndex: context.containerIndex,
+        )
     }
 
     /// Starts a service container and runs `post_start` hooks while preserving
@@ -605,20 +598,16 @@ extension ComposeOrchestrator {
                 if let source = mount.source, !source.isEmpty {
                     names.insert(volumeRuntimeName(project: project, composeName: source))
                 } else if let target = mount.target {
-                    names.insert(anonymousVolumeRuntimeName(project: project, target: target))
                     let replicaCount = try serviceReplicaCount(service, scaleOverrides: [:])
-                    if replicaCount > 1 {
-                        for index in 1 ... replicaCount {
-                            names.insert(
-                                anonymousVolumeRuntimeName(
-                                    project: project,
-                                    service: service,
-                                    target: target,
-                                    containerIndex: index,
-                                    replicaCount: replicaCount,
-                                ),
-                            )
-                        }
+                    for index in 1 ... replicaCount {
+                        names.insert(
+                            anonymousVolumeRuntimeName(
+                                project: project,
+                                service: service,
+                                target: target,
+                                containerIndex: index,
+                            ),
+                        )
                     }
                 }
             }

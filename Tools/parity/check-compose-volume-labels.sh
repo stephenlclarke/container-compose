@@ -32,9 +32,11 @@
 # This script is intentionally local-only and is not part of CI. It verifies
 # Docker Compose V2 preserves service long-form `volume.labels`, applies those
 # labels to anonymous runtime volumes, and does not apply named service mount
-# labels to the named volume resource. It then verifies container-compose
-# preserves the same config metadata and projects labeled anonymous volume
-# creation into the Apple runtime command stream.
+# labels to the named volume resource. It also verifies Docker Compose gives
+# each service and one-off container a distinct anonymous volume for the same
+# mount target. container-compose must preserve the same config metadata and
+# project the same distinct mount identities into the Apple runtime command
+# stream.
 
 set -euo pipefail
 
@@ -49,6 +51,7 @@ CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 DOCKER_COMPOSE_COMMAND=()
 FIXTURE_DIR=""
 PROJECT_NAME="cc-volume-labels-$RANDOM"
+ONE_OFF_NAME="$PROJECT_NAME-oneoff"
 
 # Print an informational line to stdout.
 info() {
@@ -157,6 +160,12 @@ services:
         volume:
           labels:
             com.example.mount: anonymous-service
+  peer:
+    image: alpine:3.20
+    command: ["true"]
+    volumes:
+      - type: volume
+        target: /scratch
 volumes:
   cache:
     labels:
@@ -167,6 +176,7 @@ YAML
 # Remove temporary fixture files and Docker Compose resources.
 cleanup() {
     if [[ -n "$FIXTURE_DIR" ]]; then
+        docker rm --force "$ONE_OFF_NAME" >/dev/null 2>&1 || true
         "${DOCKER_COMPOSE_COMMAND[@]}" \
             --project-directory "$FIXTURE_DIR" \
             -p "$PROJECT_NAME" \
@@ -174,6 +184,14 @@ cleanup() {
             down -v --remove-orphans >/dev/null 2>&1 || true
         rm -rf "$FIXTURE_DIR"
     fi
+}
+
+# Print the anonymous volume mounted at /scratch by one Docker container.
+docker_anonymous_volume() {
+    local container_name="$1"
+
+    docker inspect "$container_name" |
+        python3 -c 'import json, sys; document=json.load(sys.stdin); print(next(mount["Name"] for mount in document[0]["Mounts"] if mount["Destination"] == "/scratch"))'
 }
 
 # Assert Docker Compose config preserves service and top-level volume labels.
@@ -236,8 +254,7 @@ assert_docker_runtime_labels() {
     local anonymous_volume
     local inspect_output="$FIXTURE_DIR/docker-volume-inspect.json"
 
-    anonymous_volume="$(docker inspect "$PROJECT_NAME-anon-1" |
-        python3 -c 'import json, sys; doc=json.load(sys.stdin); print(next(m["Name"] for m in doc[0]["Mounts"] if m["Destination"] == "/scratch"))')"
+    anonymous_volume="$(docker_anonymous_volume "$PROJECT_NAME-anon-1")"
 
     docker volume inspect "$named_volume" "$anonymous_volume" >"$inspect_output"
     python3 - "$inspect_output" "$named_volume" "$anonymous_volume" <<'PY'
@@ -255,6 +272,25 @@ if "com.example.mount" in named:
     raise SystemExit(f"Docker applied named service mount labels to named volume: {named!r}")
 if anonymous.get("com.example.mount") != "anonymous-service":
     raise SystemExit(f"Docker anonymous volume labels = {anonymous!r}")
+PY
+}
+
+# Assert Docker Compose allocates separate anonymous volumes for each identity.
+assert_docker_anonymous_volume_identity() {
+    local anonymous_volume
+    local peer_volume
+    local one_off_volume
+
+    anonymous_volume="$(docker_anonymous_volume "$PROJECT_NAME-anon-1")"
+    peer_volume="$(docker_anonymous_volume "$PROJECT_NAME-peer-1")"
+    one_off_volume="$(docker_anonymous_volume "$ONE_OFF_NAME")"
+
+    python3 - "$anonymous_volume" "$peer_volume" "$one_off_volume" <<'PY'
+import sys
+
+names = sys.argv[1:]
+if len(set(names)) != len(names):
+    raise SystemExit(f"Docker Compose reused an anonymous volume across identities: {names!r}")
 PY
 }
 
@@ -279,13 +315,53 @@ expect_docker_behavior() {
         sed -n '1,120p' "$up_output" >&2
         return 1
     fi
+
+    "${DOCKER_COMPOSE_COMMAND[@]}" \
+        --project-directory "$FIXTURE_DIR" \
+        -p "$PROJECT_NAME" \
+        -f "$FIXTURE_DIR/compose.yml" \
+        run --no-deps --name "$ONE_OFF_NAME" anon true >/dev/null
     assert_docker_runtime_labels
+    assert_docker_anonymous_volume_identity
+}
+
+# Assert container-compose renders separate anonymous mount identities.
+assert_container_anonymous_volume_identity() {
+    local up_output="$1"
+    local run_output="$2"
+
+    python3 - "$up_output" "$run_output" <<'PY'
+import pathlib
+import re
+import sys
+
+up_output = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+run_output = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
+
+def sources(output):
+    return re.findall(r"--volume\s+([^\s:]+):/scratch(?:\s|$)", output)
+
+up_sources = sources(up_output)
+run_sources = sources(run_output)
+api = next((name for name in up_sources if "_anon-anon-1-" in name), None)
+peer = next((name for name in up_sources if "_anon-peer-1-" in name), None)
+one_off = next((name for name in run_sources if "_anon-anon-run-" in name), None)
+
+if api is None or peer is None or one_off is None:
+    raise SystemExit(
+        "container-compose did not render service/index and one-off anonymous volume identities "
+        f"(up={up_sources!r}, run={run_sources!r})"
+    )
+if len({api, peer, one_off}) != 3:
+    raise SystemExit(f"container-compose reused an anonymous volume across identities: {[api, peer, one_off]!r}")
+PY
 }
 
 # Exercise container-compose against the same fixture.
 expect_container_behavior() {
     local config_output="$FIXTURE_DIR/container-compose-config.json"
     local up_output="$FIXTURE_DIR/container-compose-up.txt"
+    local run_output="$FIXTURE_DIR/container-compose-run.txt"
 
     "$CONTAINER_COMPOSE" \
         --ansi never \
@@ -313,6 +389,14 @@ expect_container_behavior() {
         sed -n '1,160p' "$up_output" >&2
         return 1
     fi
+    "$CONTAINER_COMPOSE" \
+        --ansi never \
+        --dry-run \
+        --project-directory "$FIXTURE_DIR" \
+        -p "$PROJECT_NAME" \
+        -f "$FIXTURE_DIR/compose.yml" \
+        run --no-deps anon true >"$run_output" 2>&1
+    assert_container_anonymous_volume_identity "$up_output" "$run_output"
 }
 
 # Run the local-only Docker Compose V2 parity check.
@@ -326,7 +410,7 @@ main() {
     expect_docker_behavior
     expect_container_behavior
 
-    info 'Docker Compose volume labels parity passed.'
+    info 'Docker Compose volume labels and anonymous-volume identity parity passed.'
 }
 
 main "$@"

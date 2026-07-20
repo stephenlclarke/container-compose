@@ -140,8 +140,9 @@ extension ComposeOrchestrator {
         let mountContext = MountRenderContext(
             project: project,
             service: service,
-            containerIndex: run.containerIndex,
-            replicaCount: run.replicaCount
+            containerName: runtimeName,
+            oneOff: run.oneOff,
+            containerIndex: run.containerIndex
         )
         if !options.dryRun {
             try await materializeExternalConfigSecrets(project: project, service: service)

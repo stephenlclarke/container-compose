@@ -841,8 +841,9 @@ extension ComposeOrchestrator {
             context: MountRenderContext(
                 project: project,
                 service: service,
+                containerName: name,
+                oneOff: false,
                 containerIndex: request.runOptions.containerIndex,
-                replicaCount: request.runOptions.replicaCount,
             ),
             externalVolumeMounts: request.externalVolumeMounts,
         )

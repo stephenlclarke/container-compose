@@ -520,7 +520,7 @@ public extension ComposeOrchestrator {
             requested: run.removeOrphans,
             foregroundInteractive: foregroundInteractiveRun,
         )
-        try await ensureRunAnonymousVolumes(preparation: preparation)
+        try await ensureRunAnonymousVolumes(preparation: preparation, containerName: containerName)
         let invocation = ComposeOneOffRunInvocation(
             labelOverrides: labelOverrides,
             publishedPorts: publishedPorts,
@@ -643,15 +643,19 @@ public extension ComposeOrchestrator {
     }
 
     /// Creates labeled anonymous volumes that the one-off service requires.
-    private func ensureRunAnonymousVolumes(preparation: ComposeRunServicePreparation) async throws {
+    private func ensureRunAnonymousVolumes(
+        preparation: ComposeRunServicePreparation,
+        containerName: String,
+    ) async throws {
         try await ensureLabeledAnonymousVolumes(
             project: preparation.project,
             service: preparation.service,
             context: MountRenderContext(
                 project: preparation.project,
                 service: preparation.service,
+                containerName: containerName,
+                oneOff: true,
                 containerIndex: nil,
-                replicaCount: nil,
             ),
             externalVolumeMounts: preparation.externalVolumeMounts,
         )
