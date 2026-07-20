@@ -46,7 +46,10 @@ POLL_INTERVAL_SECONDS = 10
 # a valid slower analysis from producing a release without its quality snapshot.
 POLL_TIMEOUT_SECONDS = 1800
 SHIELDS_STATIC_BADGE_URL = "https://img.shields.io/static/v1"
-BADGE_CACHE_SECONDS = "300"
+# Static snapshot URLs are unique to a release publication, so the longest
+# Shields-supported cache lifetime is safe and prevents GitHub's image proxy
+# from re-fetching an already-validated badge during the life of a release.
+BADGE_CACHE_SECONDS = "432000"
 BADGE_DELIVERY_ATTEMPTS = 3
 GITHUB_API_ATTEMPTS = 12
 GITHUB_API_RETRY_SECONDS = 5

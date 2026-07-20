@@ -105,7 +105,7 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn(expected_badges, snapshot)
         self.assertEqual(snapshot.count("!["), 14)
         self.assertIn("img.shields.io/static/v1?", snapshot)
-        self.assertIn("cacheSeconds=300", snapshot)
+        self.assertIn("cacheSeconds=432000", snapshot)
         self.assertIn("snapshot=0123456789abcdef", snapshot)
         self.assertIn("[Download the self-contained SVG evidence](quality-snapshot.svg)", snapshot)
         self.assertNotIn("### Validated metrics", snapshot)
@@ -117,6 +117,18 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
     def test_default_wait_covers_the_full_codeql_workflow_window(self) -> None:
         module = load_module()
         self.assertEqual(module.POLL_TIMEOUT_SECONDS, 1800)
+
+    def test_static_badges_use_the_longest_supported_cache_lifetime(self) -> None:
+        module = load_module()
+
+        self.assertEqual(module.BADGE_CACHE_SECONDS, "432000")
+        url = module.static_badge_url(
+            badge=module.SnapshotBadge("Quality Gate Status", "Passed", "brightgreen"),
+            snapshot_id="immutable-release-snapshot",
+        )
+
+        self.assertIn("cacheSeconds=432000", url)
+        self.assertIn("snapshot=immutable-release-snapshot", url)
 
     def test_wait_for_analyses_rejects_missing_sonarqube(self) -> None:
         module = load_module()
