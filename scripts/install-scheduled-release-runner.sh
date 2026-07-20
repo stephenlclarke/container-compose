@@ -29,6 +29,7 @@ REPOSITORY="${CONTAINER_COMPOSE_RELEASE_REPOSITORY:-${DEFAULT_REPOSITORY}}"
 RUNNER_DIR="${CONTAINER_COMPOSE_RELEASE_RUNNER_DIR:-${HOME}/.local/share/container-compose-release-runner}"
 RUNNER_NAME="${CONTAINER_COMPOSE_RELEASE_RUNNER_NAME:-}"
 TEMPORARY_DIRECTORY=""
+RUNNER_ARCHIVE=""
 
 cleanup() {
   # Remove the verified runner archive after configuration or a failed install.
@@ -47,6 +48,8 @@ Usage:
 Purpose:
   Register this Apple-silicon Mac as the dedicated local runner for the
   Scheduled Stable Release workflow, then install and start its launchd service.
+  Every invocation also updates an existing runner to the latest signed
+  macOS ARM64 GitHub Actions runner release before returning it to service.
 
 The runner is restricted by the workflow to the main branch and the
 ${RUNNER_LABEL} label. It uses this user's existing GitHub CLI login and SSH
@@ -203,12 +206,104 @@ release_asset() {
   printf '%s\n' "${asset}"
 }
 
-# Download, verify, register, and start the dedicated local runner.
+# Return the semantic version encoded in an actions-runner release asset name.
+runner_asset_version() {
+  local asset="$1" version
+  version="${asset#actions-runner-osx-arm64-}"
+  version="${version%.tar.gz}"
+  if [[ ! "${version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+    printf 'invalid actions runner asset name: %s\n' "${asset}" >&2
+    return 1
+  fi
+  printf '%s\n' "${version}"
+}
+
+# Report the installed runner version without failing a recoverable update.
+runner_version() {
+  local runner_binary="${RUNNER_DIR}/bin/Runner.Listener"
+  if [[ ! -x "${runner_binary}" ]]; then
+    printf 'unavailable\n'
+    return 0
+  fi
+  "${runner_binary}" --version 2>/dev/null || printf 'unavailable\n'
+}
+
+# Run one runner-service command from its root, as required by svc.sh.
+runner_service() {
+  local command_name="$1"
+  if [[ ! -x "${RUNNER_DIR}/svc.sh" ]]; then
+    printf 'runner service helper is unavailable: %s\n' "${RUNNER_DIR}/svc.sh" >&2
+    return 1
+  fi
+  (
+    cd "${RUNNER_DIR}"
+    ./svc.sh "${command_name}"
+  )
+}
+
+# Download and verify the exact upstream runner archive before touching a service.
+download_verified_runner() {
+  local asset="$1" digest="$2" actual_digest release_tag
+  release_tag="${asset#actions-runner-osx-arm64-}"
+  release_tag="v${release_tag%.tar.gz}"
+  TEMPORARY_DIRECTORY="$(mktemp -d)"
+  gh release download "${release_tag}" --repo actions/runner --pattern "${asset}" --dir "${TEMPORARY_DIRECTORY}"
+  RUNNER_ARCHIVE="${TEMPORARY_DIRECTORY}/${asset}"
+  actual_digest="sha256:$(shasum -a 256 "${RUNNER_ARCHIVE}" | awk '{ print $1 }')"
+  if [[ "${actual_digest}" != "${digest}" ]]; then
+    printf 'actions runner digest mismatch for %s\n' "${asset}" >&2
+    return 1
+  fi
+}
+
+# Refresh a configured runner while preserving its registration and launchd service.
+update_runner() {
+  local installed_version="$1" expected_version="$2" updated_version
+  if ! runner_service stop; then
+    printf 'could not stop scheduled release runner for update\n' >&2
+    return 1
+  fi
+  if ! tar -xzf "${RUNNER_ARCHIVE}" -C "${RUNNER_DIR}"; then
+    printf 'could not extract verified actions runner archive\n' >&2
+    runner_service start || true
+    return 1
+  fi
+  updated_version="$(runner_version)"
+  if [[ "${updated_version}" != "${expected_version}" ]]; then
+    printf 'actions runner update did not install %s (found %s)\n' \
+      "${expected_version}" "${updated_version}" >&2
+    runner_service start || true
+    return 1
+  fi
+  runner_service start
+  runner_service status
+  printf 'updated scheduled release runner from %s to %s\n' \
+    "${installed_version}" "${updated_version}"
+}
+
+# Download, verify, register, update, and start the dedicated local runner.
 install_runner() {
-  local asset digest archive actual_digest registration_token release_tag
+  local asset digest installed_version registration_token release_version
+  IFS=$'\t' read -r asset digest <<<"$(release_asset)"
+  if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    printf 'runner release asset has no SHA-256 digest: %s\n' "${asset}" >&2
+    exit 1
+  fi
+  release_version="$(runner_asset_version "${asset}")"
+
   if [[ -f "${RUNNER_DIR}/.runner" ]]; then
-    printf 'scheduled release runner is already configured at %s\n' "${RUNNER_DIR}"
-    "${RUNNER_DIR}/svc.sh" status
+    installed_version="$(runner_version)"
+    if [[ "${installed_version}" == "${release_version}" ]]; then
+      printf 'scheduled release runner is already current at %s\n' "${installed_version}"
+      runner_service status
+      return 0
+    fi
+    if ! download_verified_runner "${asset}" "${digest}"; then
+      return 1
+    fi
+    if ! update_runner "${installed_version}" "${release_version}"; then
+      return 1
+    fi
     return 0
   fi
   if [[ -e "${RUNNER_DIR}" && -n "$(find "${RUNNER_DIR}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
@@ -216,25 +311,13 @@ install_runner() {
     exit 1
   fi
 
-  IFS=$'\t' read -r asset digest <<<"$(release_asset)"
-  if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-    printf 'runner release asset has no SHA-256 digest: %s\n' "${asset}" >&2
-    exit 1
-  fi
-  release_tag="${asset#actions-runner-osx-arm64-}"
-  release_tag="v${release_tag%.tar.gz}"
-  TEMPORARY_DIRECTORY="$(mktemp -d)"
-  gh release download "${release_tag}" --repo actions/runner --pattern "${asset}" --dir "${TEMPORARY_DIRECTORY}"
-  archive="${TEMPORARY_DIRECTORY}/${asset}"
-  actual_digest="sha256:$(shasum -a 256 "${archive}" | awk '{ print $1 }')"
-  if [[ "${actual_digest}" != "${digest}" ]]; then
-    printf 'actions runner digest mismatch for %s\n' "${asset}" >&2
-    exit 1
+  if ! download_verified_runner "${asset}" "${digest}"; then
+    return 1
   fi
 
   mkdir -p "${RUNNER_DIR}"
   chmod 700 "${RUNNER_DIR}"
-  tar -xzf "${archive}" -C "${RUNNER_DIR}"
+  tar -xzf "${RUNNER_ARCHIVE}" -C "${RUNNER_DIR}"
   registration_token="$(gh api --method POST "repos/${REPOSITORY}/actions/runners/registration-token" --jq '.token')"
   (
     cd "${RUNNER_DIR}"

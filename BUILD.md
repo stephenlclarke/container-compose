@@ -227,7 +227,7 @@ Bootstrap that runner once on the release Mac after its normal build prerequisit
 ./scripts/install-scheduled-release-runner.sh
 ```
 
-The installer verifies hardware virtualization, the Git author identity and SSH tag- and commit-signing configuration, that the signing key can operate without an interactive passphrase, the local `gh` account, and the release toolchain before it registers a repository-only runner and starts its standard `launchd` service. It uses the logged-in account through the macOS keychain at run time; it does not copy a GitHub token or signing key into an Actions secret.
+The installer verifies hardware virtualization, the Git author identity and SSH tag- and commit-signing configuration, that the signing key can operate without an interactive passphrase, the local `gh` account, and the release toolchain before it registers a repository-only runner and starts its standard `launchd` service. Rerun the same command during normal release maintenance: it queries the latest GitHub Actions macOS ARM64 runner asset, verifies its published SHA-256 digest before stopping anything, and, when the configured runner is stale, replaces only the runner program files, confirms the installed version, and restarts the existing registration and `launchd` service. It uses the logged-in account through the macOS keychain at run time; it does not copy a GitHub token or signing key into an Actions secret.
 
 From clean `~/github/container-compose`, `~/github/container-builder-shim`,
 `~/github/containerization`, `~/github/container`, and
