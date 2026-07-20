@@ -48,6 +48,8 @@ POLL_TIMEOUT_SECONDS = 1800
 SHIELDS_STATIC_BADGE_URL = "https://img.shields.io/static/v1"
 BADGE_CACHE_SECONDS = "300"
 BADGE_DELIVERY_ATTEMPTS = 3
+GITHUB_API_ATTEMPTS = 12
+GITHUB_API_RETRY_SECONDS = 5
 
 BADGE_COLORS = {
     "blue": "#007ec6",
@@ -150,18 +152,45 @@ def sonar_url(host: str, path: str, parameters: dict[str, str]) -> str:
     return f"{host.rstrip('/')}{path}?{urllib.parse.urlencode(parameters)}"
 
 
-def gh_json(gh: str, *arguments: str) -> Any:
-    result = subprocess.run(
-        [gh, "api", *arguments],
-        check=False,
-        capture_output=True,
-        text=True,
+def transient_github_api_failure(message: str) -> bool:
+    """Return whether GitHub reported a retryable authority-query failure."""
+
+    normalized = message.lower()
+    return (
+        "http 429" in normalized
+        or "http 5" in normalized
+        or "rate limit exceeded" in normalized
     )
-    if result.returncode != 0:
+
+
+def gh_api_text(gh: str, *arguments: str) -> str:
+    """Run an authoritative GitHub API query with bounded transient retries."""
+
+    for attempt in range(1, GITHUB_API_ATTEMPTS + 1):
+        result = subprocess.run(
+            [gh, "api", *arguments],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return result.stdout
         message = result.stderr.strip() or result.stdout.strip() or "unknown error"
-        raise ValueError(f"GitHub API request failed: {message}")
+        if not transient_github_api_failure(message) or attempt == GITHUB_API_ATTEMPTS:
+            suffix = (
+                f" after {attempt} transient attempts"
+                if transient_github_api_failure(message)
+                else ""
+            )
+            raise ValueError(f"GitHub API request failed{suffix}: {message}")
+        time.sleep(attempt * GITHUB_API_RETRY_SECONDS)
+    raise AssertionError("GitHub API retry loop exited unexpectedly")
+
+
+def gh_json(gh: str, *arguments: str) -> Any:
+    output = gh_api_text(gh, *arguments)
     try:
-        return json.loads(result.stdout)
+        return json.loads(output)
     except json.JSONDecodeError as error:
         raise ValueError("GitHub API returned invalid JSON") from error
 
@@ -169,16 +198,7 @@ def gh_json(gh: str, *arguments: str) -> Any:
 def gh_text(gh: str, *arguments: str) -> str:
     """Return text from a GitHub CLI API call with an actionable failure."""
 
-    result = subprocess.run(
-        [gh, "api", *arguments],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        message = result.stderr.strip() or result.stdout.strip() or "unknown error"
-        raise ValueError(f"GitHub API request failed: {message}")
-    return result.stdout
+    return gh_api_text(gh, *arguments)
 
 
 def find_sonarqube_analysis(

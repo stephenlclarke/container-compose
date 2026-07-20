@@ -244,8 +244,51 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
                 text=True,
                 check=False,
                 env={**os.environ, "RETRY_COUNTER": str(retry_counter)},
-            )
+        )
         self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_quality_capture_retries_transient_github_api_failures(self) -> None:
+        module = load_module()
+        transient = subprocess.CompletedProcess(
+            args=["gh", "api"],
+            returncode=1,
+            stdout="",
+            stderr="HTTP 503 temporary outage",
+        )
+        success = subprocess.CompletedProcess(
+            args=["gh", "api"],
+            returncode=0,
+            stdout='{"complete": true}',
+            stderr="",
+        )
+
+        with (
+            mock.patch.object(module.subprocess, "run", side_effect=(transient, success)) as run,
+            mock.patch.object(module.time, "sleep") as sleep,
+        ):
+            self.assertEqual(module.gh_json("gh", "endpoint"), {"complete": True})
+
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(module.GITHUB_API_RETRY_SECONDS)
+
+    def test_quality_capture_rejects_persistent_github_api_failures_after_retries(self) -> None:
+        module = load_module()
+        transient = subprocess.CompletedProcess(
+            args=["gh", "api"],
+            returncode=1,
+            stdout="",
+            stderr="HTTP 503 temporary outage",
+        )
+
+        with (
+            mock.patch.object(module.subprocess, "run", return_value=transient) as run,
+            mock.patch.object(module.time, "sleep") as sleep,
+            self.assertRaisesRegex(ValueError, "after 12 transient attempts"),
+        ):
+            module.gh_text("gh", "endpoint")
+
+        self.assertEqual(run.call_count, module.GITHUB_API_ATTEMPTS)
+        self.assertEqual(sleep.call_count, module.GITHUB_API_ATTEMPTS - 1)
 
     def test_missing_sonarqube_metric_is_rejected(self) -> None:
         module = load_module()
