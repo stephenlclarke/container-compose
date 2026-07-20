@@ -243,14 +243,6 @@ jobs:
           [[ "$(git -C homebrew-tap rev-parse HEAD)" == "${HOMEBREW_TAP_REF}" ]]
           [[ "$(git -C release-tools rev-parse HEAD)" == "${CONTROL_SHA}" ]]
 
-      - name: Use pinned container dependency
-        run: Tools/ci/use-stack-container.sh ../container
-        working-directory: container-compose
-
-      - name: Use pinned containerization dependency
-        run: Tools/ci/use-stack-containerization.sh ../containerization
-        working-directory: container-compose
-
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -284,6 +276,15 @@ jobs:
             )
           done
 
+      # `swift package edit` rewrites the workspace lock state for local
+      # checkouts. Validate Compose against the candidate's immutable remote
+      # pins before any such edit can hide the checked-in release provenance.
+      - name: Run Compose CI from immutable source lockfile
+        shell: bash
+        run: make -C container-compose ci
+        env:
+          HAWKEYE_AUTO_INSTALL: "1"
+
       # GitHub-hosted macOS runners are VMs and cannot launch nested
       # Virtualization.framework guests. The release helper runs the full live
       # gate on a supported local Mac before it creates the signed source tag.
@@ -293,7 +294,6 @@ jobs:
           set -euo pipefail
           release-tools/Tools/ci/run-stack-release-validation.sh hosted \
             container-compose container-builder-shim containerization container homebrew-tap
-          make -C container-compose ci
         env:
           HAWKEYE_AUTO_INSTALL: "1"
 

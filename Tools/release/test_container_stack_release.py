@@ -711,6 +711,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("git -C release-tools rev-parse HEAD", workflow)
         self.assertIn("run-stack-release-validation.sh hosted", workflow)
         self.assertIn("make -C container-compose ci", workflow)
+        self.assertIn("Run Compose CI from immutable source lockfile", workflow)
+        self.assertNotIn("Use pinned container dependency", workflow)
+        self.assertNotIn("Use pinned containerization dependency", workflow)
         self.assertIn("checks: write", workflow)
         self.assertIn("name: Record Stable Release Authority", workflow)
         self.assertIn("needs: [resolve-candidate, release-gate]", workflow)
@@ -728,6 +731,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertLess(
             workflow.index("Provision pinned stack tools"),
+            workflow.index("Run hosted release gate"),
+        )
+        self.assertLess(
+            workflow.index("Run Compose CI from immutable source lockfile"),
             workflow.index("Run hosted release gate"),
         )
 
