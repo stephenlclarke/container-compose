@@ -19,8 +19,12 @@
 
 import importlib.util
 import io
+import os
+import re
+import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -170,6 +174,78 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             retention_step,
         )
         self.assertIn('--current-asset "${QUALITY_SNAPSHOT_ASSET}"', retention_step)
+
+    def test_prebuilt_workflow_retries_transient_authority_api_failures(self) -> None:
+        workflow = (
+            Path(__file__).parents[2] / ".github/workflows/prebuilt-binaries.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("github_authority_query()", workflow)
+        self.assertIn("max_attempts=12", workflow)
+        self.assertIn("HTTP\\ (429|5[0-9]{2})", workflow)
+        self.assertIn("rate limit exceeded", workflow)
+        self.assertIn("transient GitHub API failure while reading", workflow)
+        self.assertIn("return 75", workflow)
+        self.assertIn('github_authority_query "exact-main CI runs for ${commit}"', workflow)
+        self.assertIn('github_authority_query "jobs for CI run ${ci_run_id}"', workflow)
+        self.assertIn('github_authority_query "jobs for validated CI run ${WORKFLOW_RUN_ID}"', workflow)
+        self.assertIn("return 2", workflow)
+        self.assertIn(
+            "refusing Current package because exact-main CI/SonarQube authority could not be read",
+            workflow,
+        )
+        self.assertIn(
+            "refusing package publication because validated CI job evidence could not be read",
+            workflow,
+        )
+
+    def test_authority_query_retries_transient_failures_and_returns_a_distinct_error(self) -> None:
+        workflow = (
+            Path(__file__).parents[2] / ".github/workflows/prebuilt-binaries.yml"
+        ).read_text(encoding="utf-8")
+        function_match = re.search(
+            r"^          github_authority_query\(\) \{.*?^          \}$",
+            workflow,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(function_match)
+        function = textwrap.dedent(function_match.group(0))
+        harness = f"""
+        set -euo pipefail
+        {function}
+        sleep() {{ :; }}
+        gh() {{
+          if [[ "${{1:-}}" == "transient" ]]; then
+            retry_attempt="$(<"${{RETRY_COUNTER}}")"
+            if (( retry_attempt < 2 )); then
+              printf '%s' "$((retry_attempt + 1))" > "${{RETRY_COUNTER}}"
+              printf 'HTTP 503 temporary outage' >&2
+              return 1
+            fi
+            printf 'authoritative output'
+            return 0
+          fi
+          printf 'HTTP 503 persistent outage' >&2
+          return 1
+        }}
+        [[ "$(github_authority_query 'transient query' transient)" == 'authoritative output' ]]
+        set +e
+        github_authority_query 'persistent query' persistent >/dev/null
+        result_code=$?
+        set -e
+        [[ "$result_code" == 75 ]]
+        """
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            retry_counter = Path(temporary_directory) / "retry-counter"
+            retry_counter.write_text("0", encoding="utf-8")
+            completed = subprocess.run(
+                ["bash", "-c", textwrap.dedent(harness)],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**os.environ, "RETRY_COUNTER": str(retry_counter)},
+            )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_missing_sonarqube_metric_is_rejected(self) -> None:
         module = load_module()

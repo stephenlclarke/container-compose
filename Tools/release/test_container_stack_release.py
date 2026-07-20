@@ -343,7 +343,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         end = workflow.index("elif [[ \"${WORKFLOW_RUN_HEAD_BRANCH}\" == \"main\" ]];", start)
         gate = workflow[start:end]
 
-        self.assertIn("gh api --paginate --slurp", gate)
+        self.assertIn('github_authority_query "jobs for validated CI run ${WORKFLOW_RUN_ID}"', gate)
+        self.assertIn("api --paginate --slurp", gate)
+        self.assertIn("refusing package publication because validated CI job evidence could not be read", gate)
         self.assertIn(
             '[.[] | .jobs[] | select(.name == "Validate" or .name == "Validate Runtime") | .conclusion]',
             gate,

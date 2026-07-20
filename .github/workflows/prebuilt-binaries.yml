@@ -133,12 +133,44 @@ jobs:
             exit 1
           }
 
+          # Query GitHub Actions authority with bounded retries. A transient API
+          # outage must never be interpreted as missing quality evidence: that
+          # would leave Current stale while reporting a successful skipped run.
+          github_authority_query() {
+            local description="$1" attempt=1 max_attempts=12 retry_delay output result_code
+            shift
+            while true; do
+              if output="$(gh "$@" 2>&1)"; then
+                printf '%s\n' "${output}"
+                return 0
+              else
+                result_code=$?
+              fi
+              if [[ "${output}" =~ HTTP\ (429|5[0-9]{2}) ]] || [[ "${output}" == *"rate limit exceeded"* ]]; then
+                if (( attempt >= max_attempts )); then
+                  printf 'unable to read %s after %s transient GitHub API attempts:\n%s\n' \
+                    "${description}" "${attempt}" "${output}" >&2
+                  return 75
+                fi
+                retry_delay=$((attempt * 5))
+                printf 'transient GitHub API failure while reading %s; retrying %s/%s in %ss\n' \
+                  "${description}" "$((attempt + 1))" "${max_attempts}" "${retry_delay}" >&2
+                sleep "${retry_delay}"
+                ((attempt += 1))
+                continue
+              fi
+              printf 'unable to read %s:\n%s\n' "${description}" "${output}" >&2
+              return "${result_code}"
+            done
+          }
+
           # Return success only when a completed exact-main CI run uploaded a passed SonarQube scan.
           main_ci_has_successful_sonarqube_scan() {
             local commit="$1"
             local ci_run_ids ci_run_id ci_run_jobs scan_conclusions
-            ci_run_ids="$(
-              gh run list --repo "${GITHUB_REPOSITORY}" --workflow ci.yml \
+            if ! ci_run_ids="$(
+              github_authority_query "exact-main CI runs for ${commit}" \
+                run list --repo "${GITHUB_REPOSITORY}" --workflow ci.yml \
                 --commit "${commit}" --limit 100 \
                 --json databaseId,event,status,conclusion,headBranch,createdAt \
                 --jq 'map(select(
@@ -147,15 +179,20 @@ jobs:
                   .conclusion == "success" and
                   (.event == "push" or .event == "workflow_dispatch")
                 )) | sort_by(.createdAt) | reverse | .[].databaseId'
-            )"
+            )"; then
+              return 2
+            fi
             while IFS= read -r ci_run_id; do
               if [[ -z "${ci_run_id}" ]]; then
                 continue
               fi
-              ci_run_jobs="$(
-                gh api --paginate --slurp \
+              if ! ci_run_jobs="$(
+                github_authority_query "jobs for CI run ${ci_run_id}" \
+                  api --paginate --slurp \
                   "repos/${GITHUB_REPOSITORY}/actions/runs/${ci_run_id}/jobs?per_page=100"
-              )"
+              )"; then
+                return 2
+              fi
               scan_conclusions="$(
                 jq -c '[.[] | .jobs[] | select(.name == "Validate Runtime") | .steps[]? | select(.name == "SonarQube scan") | .conclusion]' \
                   <<<"${ci_run_jobs}"
@@ -176,10 +213,14 @@ jobs:
               # companion for the opposite change set. The package authority
               # is satisfied when at least one Validate succeeds and every
               # matching job is either successful or intentionally skipped.
-              workflow_jobs="$(
-                gh api --paginate --slurp \
+              if ! workflow_jobs="$(
+                github_authority_query "jobs for validated CI run ${WORKFLOW_RUN_ID}" \
+                  api --paginate --slurp \
                   "repos/${GITHUB_REPOSITORY}/actions/runs/${WORKFLOW_RUN_ID}/jobs?per_page=100"
-              )"
+              )"; then
+                printf 'refusing package publication because validated CI job evidence could not be read\n' >&2
+                exit 1
+              fi
               validate_conclusions="$(
                 jq -c '[.[] | .jobs[] | select(.name == "Validate" or .name == "Validate Runtime") | .conclusion]' \
                   <<<"${workflow_jobs}"
@@ -190,10 +231,19 @@ jobs:
                 printf 'Skipping package publish because CI Validate results were %s.\n' \
                   "$(jq -r 'if length == 0 then "missing" else join(",") end' <<<"${validate_conclusions}")"
               elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == "main" ]]; then
-                if ! main_ci_has_successful_sonarqube_scan "${WORKFLOW_RUN_HEAD_SHA}"; then
+                if main_ci_has_successful_sonarqube_scan "${WORKFLOW_RUN_HEAD_SHA}"; then
+                  scan_authority_available=true
+                else
+                  authority_result=$?
+                  if (( authority_result == 2 )); then
+                    printf 'refusing Current package because exact-main CI/SonarQube authority could not be read\n' >&2
+                    exit 1
+                  fi
                   printf 'Skipping current package for %s until successful exact-main CI includes a SonarQube scan.\n' \
                     "${WORKFLOW_RUN_HEAD_SHA}"
-                else
+                  scan_authority_available=false
+                fi
+                if [[ "${scan_authority_available}" == "true" ]]; then
                   current_main="$(git ls-remote --heads "${remote}" refs/heads/main | awk "{ print \$1 }" | tail -n 1)"
                   if [[ "${current_main}" != "${WORKFLOW_RUN_HEAD_SHA}" ]]; then
                     printf 'Skipping superseded main CI at %s; main is now %s.\n' \
@@ -258,10 +308,19 @@ jobs:
               exit 1
             fi
             resolve_remote_ref "${DISPATCH_REF}"
-            if [[ "${ref_type}" == "branch" ]] && ! main_ci_has_successful_sonarqube_scan "${sha}"; then
-              printf 'Refusing Current package for %s without successful exact-main CI including a SonarQube scan.\n' \
-                "${sha}" >&2
-              exit 1
+            if [[ "${ref_type}" == "branch" ]]; then
+              if main_ci_has_successful_sonarqube_scan "${sha}"; then
+                :
+              else
+                authority_result=$?
+                if (( authority_result == 2 )); then
+                  printf 'refusing Current package because exact-main CI/SonarQube authority could not be read\n' >&2
+                else
+                  printf 'Refusing Current package for %s without successful exact-main CI including a SonarQube scan.\n' \
+                    "${sha}" >&2
+                fi
+                exit 1
+              fi
             fi
             case "${REPAIR_TAP:-false}" in
               false|"")
