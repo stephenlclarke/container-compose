@@ -169,13 +169,16 @@ check on that tag commit; the package workflow requires that check, then repeats
 
 The 0.7.0 Phase 1 promotion has one explicitly bounded local-gate exception:
 the current macOS Builder bridge rejects external Dockerfile paths when macOS
-canonicalises `/tmp` to `/private/tmp`. That is tracked as Phase 5 work and is
-not Docker Compose parity. Only this exact semantic release may set
-`CONTAINER_STACK_RELEASE_PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON`; the
-helper rejects the variable for every other version and the local gate then
-excludes only `TestCLIBuilderSerial` while retaining all other Container
-integration suites. The hosted gate is unchanged. The release notes and status
-must state that Phase 5 external-Dockerfile support remains unavailable.
+canonicalises `/tmp` to `/private/tmp`, and its tar-export handoff does not
+reliably create a direct destination file or a repeated directory export. Both
+are tracked as Phase 5 work and are not Docker Compose parity. Only this exact
+semantic release may set
+`CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON`; the helper
+rejects the variable for every other version and the local gate then excludes
+only `TestCLIBuilderSerial` and `TestCLIBuilderTarExportSerial` while retaining
+all other Container integration suites. The hosted gate is unchanged. The
+release notes and status must state that both Phase 5 Builder gaps remain
+unavailable.
 
 ## Promote `main` To A Stable Release
 

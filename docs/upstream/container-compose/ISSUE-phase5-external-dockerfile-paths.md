@@ -41,9 +41,12 @@ Compose-specific filesystem escape.
 
 ## Evidence
 
-The 0.7.0 release candidate ran the complete matched Container suite. The
-primary non-serial partition passed 233 tests in 26 suites. The global serial
+The first 0.7.0 release candidate ran the complete matched Container suite. The
+primary non-serial partition passed 233 tests in 26 suites. Its global serial
 partition recorded 37 issues in `TestCLIBuilderSerial`; the failing cases share
-the external-Dockerfile path rejection. The local release exception excludes
-only that suite, requires an explicit 0.7.0 milestone reason, and is rejected
-by hosted validation. It does not mark this functionality as supported.
+the external-Dockerfile path rejection. A later complete local run also exposed
+the separate Phase 5 tar-export gap documented in
+[the tar-export handoff](ISSUE-phase5-builder-tar-export.md). The local 0.7.0
+exception excludes only these two named Builder suites, requires an explicit
+milestone reason, and is rejected by hosted validation. It does not mark either
+functionality as supported.

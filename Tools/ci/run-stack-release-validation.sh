@@ -45,25 +45,39 @@ case "${mode}" in
     ;;
 esac
 
-# Phase 5 owns Docker Compose-compatible external Dockerfile handling. macOS
-# canonicalises /tmp to /private/tmp, and the current Builder path bridge
-# rejects that otherwise-valid external Dockerfile path. The only sanctioned
+# Phase 5 owns Docker Compose-compatible Builder file and output transfer.
+# The current bridge rejects an external Dockerfile after macOS canonicalises
+# /tmp to /private/tmp, and it does not reliably deliver tar exports to a
+# direct file destination or on repeated exports. The only sanctioned
 # pre-Phase-5 release exception is the documented 0.7.0 promotion. It retains
-# all other integration coverage and cannot be used by the hosted gate.
+# every other integration suite and cannot be used by the hosted gate.
 container_make_args=()
-phase5_exception_reason="${CONTAINER_STACK_RELEASE_PHASE5_EXTERNAL_DOCKERFILE_EXCEPTION_REASON:-}"
+phase5_exception_reason="${CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON:-}"
 if [[ -n "${phase5_exception_reason}" ]]; then
   if [[ "${mode}" != "full" ]]; then
-    printf 'the Phase 5 external-Dockerfile exception is permitted only for full local validation\n' >&2
+    printf 'the Phase 5 Builder-gap exception is permitted only for full local validation\n' >&2
     exit 2
   fi
-  serial_test_suites="$(find "${container_repo}/Tests/IntegrationTests" -name 'Test*Serial.swift' ! -name 'TestCLIBuilderSerial.swift' -exec basename {} .swift \; | sort | sed 's|$|/|' | paste -sd' ' -)"
+  phase5_excluded_serial_suites=(
+    TestCLIBuilderSerial.swift
+    TestCLIBuilderTarExportSerial.swift
+  )
+  for suite in "${phase5_excluded_serial_suites[@]}"; do
+    if [[ -z "$(find "${container_repo}/Tests/IntegrationTests" -name "${suite}" -print -quit)" ]]; then
+      printf 'expected tracked Phase 5 Builder suite is missing: %s\n' "${suite}" >&2
+      exit 2
+    fi
+  done
+  serial_test_suites="$(find "${container_repo}/Tests/IntegrationTests" -name 'Test*Serial.swift' \
+    ! -name 'TestCLIBuilderSerial.swift' \
+    ! -name 'TestCLIBuilderTarExportSerial.swift' \
+    -exec basename {} .swift \; | sort | sed 's|$|/|' | paste -sd' ' -)"
   if [[ -z "${serial_test_suites}" ]]; then
     printf 'could not derive the non-Phase-5 Container serial integration suites\n' >&2
     exit 2
   fi
   container_make_args+=("SERIAL_TEST_SUITES=${serial_test_suites}")
-  printf 'Phase 5 external-Dockerfile exception: excluding TestCLIBuilderSerial only; reason: %s\n' \
+  printf 'Phase 5 Builder-gap exception: excluding TestCLIBuilderSerial and TestCLIBuilderTarExportSerial only; reason: %s\n' \
     "${phase5_exception_reason}"
 fi
 
