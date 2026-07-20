@@ -212,7 +212,10 @@ validate_container_compose_behavior() {
     assert_container_config_ipam_options "$config_output"
 
     up_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up api 2>&1)"
-    printf '%s\n' "$up_output" | grep -F '+ container network create ' >/dev/null
+    # The isolated parity harness passes an absolute Container binary path,
+    # while a normal local invocation renders the bare `container` command.
+    # Both must use the same network-create path.
+    printf '%s\n' "$up_output" | grep -E '^\+ (.+/)?container network create ' >/dev/null
     if printf '%s\n' "$up_output" | grep -F 'com.example.ipam=enabled' >/dev/null; then
         error 'container-compose forwarded inspection-only IPAM options to VMnet'
         return 1
