@@ -23,7 +23,7 @@ This is a `container-compose` release-automation correction. No Apple Container 
 - Set `CONTAINER_COMPOSE_CONTAINER` for every recorded Compose process so the plugin checks that isolated runtime rather than a host installation.
 - Remove only the demo project before recording so the first `up` visibly starts services; retain project volumes with the intermediate `down --remove-orphans`.
 - Record and fail on: first `up`, `stats`, `ps`, nginx health, Alertmanager readiness, a write to a marker in `nginx_cache`, retained-volume shutdown and listing, second `up`, second `stats`/`ps`/health, a read of the same marker, and final `down --volumes --remove-orphans` plus empty `ps --all`.
-- Render only the fresh, failure-gated transcript. VHS markers must be output-only reads, so it can never type a lifecycle command while one is running. Show the verified first and second `up` command/output, compact per-service start summaries, and both `down` command/output at a readable pace.
+- Render only the fresh, failure-gated transcript. VHS markers must be output-only reads, so it can never type a lifecycle command while one is running. Show the verified first `up` command/output with compact per-service start summaries, then replay the complete second `up` and final `down` command/output at a readable pace so retained-volume reuse is unambiguous.
 - Publish a partial transcript artifact on workflow failure and include the failed command output in the verifier error, so a release-runner failure is diagnosable without guessing from a red job summary.
 
 ## Commit tracking

@@ -23,13 +23,14 @@ No forked Apple source changes are required. The change uses existing runtime be
 
 - `fix(release): harden current demo recording`
 - `fix(release): prove monitoring demo volume reuse`
+- `fix(release): show retained-volume reuse in VHS replay`
 
 ## Code Map
 
 - `Tools/release/record_monitoring_stack_transcript.py`: invokes the exact packaged `container` binary, exports it to Compose's compatibility check, resets only the monitoring project before the first start, writes and rereads the named-volume marker, captures fifteen marked logs, clears stale transcript logs, and cleans up on error.
 - `Tools/release/test_record_monitoring_stack_transcript.py`: covers the complete successful sequence, marker lifecycle, stale-transcript cleanup, failure capture/cleanup, absent `curl`, and isolated-runtime environment propagation.
 - `.github/workflows/prebuilt-binaries.yml`: selects the self-hosted Apple-silicon runner, starts the disposable matched runtime, rejects missing transcript logs, uploads a partial transcript on failure, validates the VHS source, and requires a non-empty GIF.
-- `docs/container-compose-demo.tape`: displays the verified first and second startup commands/output, compact summaries for every service start, marker write/read, retained-volume shutdown/listing, health checks, and final empty project table at a deliberately readable pace.
+- `docs/container-compose-demo.tape`: displays the verified first startup command/output and service-start summary, then leaves the complete second `up` command/output and final `down` command/output on screen at a deliberately readable pace so retained-volume reuse is directly visible.
 - `examples/monitoring-stack/docker-compose.yaml`: declares the portable `nginx_cache` named volume used to prove resource retention.
 - `README.md` and `BUILD.md`: document the fail-closed verified-transcript contract and runner requirement.
 

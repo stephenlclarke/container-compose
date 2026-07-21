@@ -125,19 +125,12 @@ Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "headlog 09-second-up.log"
+# Keep the entire retained-volume start visible: the first line is the actual
+# `container compose up` command and the following output proves no existing
+# project resource caused a failure before the persisted marker is reread.
+Type "replay 09-second-up.log"
 Enter
-Sleep 4s
-Ctrl+L
-Sleep 1s
-Type "starts 09-second-up.log"
-Enter
-Sleep 4s
-Ctrl+L
-Sleep 1s
-Type "taillog 09-second-up.log"
-Enter
-Sleep 4s
+Sleep 8s
 Type "marker 09-second-up.log"
 Enter
 Wait+Screen@300s /TAPE_TRANSCRIPT_SECOND_UP_OK/
@@ -187,7 +180,7 @@ Sleep 1s
 
 Type "replay 14-final-down.log"
 Enter
-Sleep 4s
+Sleep 8s
 Type "marker 14-final-down.log"
 Enter
 Wait+Screen@120s /TAPE_TRANSCRIPT_FINAL_DOWN_OK/

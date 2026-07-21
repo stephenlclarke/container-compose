@@ -74,6 +74,12 @@ class MonitoringStackTranscriptTests(unittest.TestCase):
                 "TAPE_TRANSCRIPT_FINAL_DOWN_OK",
                 (output / "14-final-down.log").read_text(encoding="utf-8"),
             )
+            second_up = (output / "09-second-up.log").read_text(encoding="utf-8")
+            self.assertIn("up --detach --wait --wait-timeout 300", second_up)
+            self.assertIn("TAPE_TRANSCRIPT_SECOND_UP_OK", second_up)
+            final_down = (output / "14-final-down.log").read_text(encoding="utf-8")
+            self.assertIn("down --volumes --remove-orphans", final_down)
+            self.assertIn("ps --all", final_down)
             self.assertIn(
                 MODULE.VOLUME_REUSE_MARKER_VALUE,
                 (output / "06-write-volume-marker.log").read_text(encoding="utf-8"),
