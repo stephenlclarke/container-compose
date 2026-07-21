@@ -77,7 +77,13 @@ def write_stack_refs(path: Path, containerization_ref: str = CONTAINERIZATION_RE
     )
 
 
-def write_package(path: Path, requirement: str, value: str, include_container: bool = False) -> None:
+def write_package(
+    path: Path,
+    requirement: str,
+    value: str,
+    include_container: bool = False,
+    requirement_constant: str | None = None,
+) -> None:
     container_dependency = ""
     if include_container:
         container_dependency = textwrap.dedent(
@@ -88,11 +94,17 @@ def write_package(path: Path, requirement: str, value: str, include_container: b
                     ),
             """
         )
+    requirement_value = f'"{value}"'
+    constant_declaration = ""
+    if requirement_constant is not None:
+        constant_declaration = f'let {requirement_constant} = "{value}"\n\n'
+        requirement_value = requirement_constant
     path.write_text(
         textwrap.dedent(
             f"""
             import PackageDescription
 
+            {constant_declaration}
             let builderShimRepository = ProcessInfo.processInfo.environment["BUILDER_SHIM_REPOSITORY"] ?? "ghcr.io/stephenlclarke/container-builder-shim/builder"
             let builderShimVersion = ProcessInfo.processInfo.environment["BUILDER_SHIM_VERSION"] ?? "0.13.8"
             let builderShimDigest = ProcessInfo.processInfo.environment["BUILDER_SHIM_DIGEST"] ?? "{BUILDER_DIGEST}"
@@ -103,7 +115,7 @@ def write_package(path: Path, requirement: str, value: str, include_container: b
             {container_dependency}
                     .package(
                         url: "https://github.com/stephenlclarke/containerization.git",
-                        {requirement}: "{value}"
+                        {requirement}: {requirement_value}
                     ),
                 ]
             )
@@ -190,11 +202,48 @@ class StackConsistencyTests(unittest.TestCase):
             (root / "container").mkdir()
             write_stack_refs(root / "stack-refs.json")
             write_package(root / "compose" / "Package.swift", "revision", CONTAINERIZATION_REF, include_container=True)
-            write_package(root / "container" / "Package.swift", "revision", CONTAINERIZATION_REF)
+            write_package(
+                root / "container" / "Package.swift",
+                "revision",
+                CONTAINERIZATION_REF,
+                requirement_constant="containerizationRevision",
+            )
             write_resolved(root / "compose" / "Package.resolved", include_container=True)
             write_resolved(root / "container" / "Package.resolved")
 
             self.assertEqual(self.run_checker(root), 0)
+
+    def test_rejects_nonliteral_manifest_requirement_constant(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "compose").mkdir()
+            (root / "container").mkdir()
+            write_stack_refs(root / "stack-refs.json")
+            write_package(
+                root / "compose" / "Package.swift",
+                "revision",
+                CONTAINERIZATION_REF,
+                include_container=True,
+            )
+            container_package = root / "container" / "Package.swift"
+            write_package(
+                container_package,
+                "revision",
+                CONTAINERIZATION_REF,
+                requirement_constant="containerizationRevision",
+            )
+            container_package.write_text(
+                container_package.read_text(encoding="utf-8").replace(
+                    f'let containerizationRevision = "{CONTAINERIZATION_REF}"',
+                    'let containerizationRevision = ProcessInfo.processInfo.environment["CONTAINERIZATION_REF"]',
+                ),
+                encoding="utf-8",
+            )
+            write_resolved(root / "compose" / "Package.resolved", include_container=True)
+            write_resolved(root / "container" / "Package.resolved")
+
+            with self.assertRaisesRegex(SystemExit, "must be a string literal"):
+                self.run_checker(root)
 
     def test_rejects_branch_manifest_dependency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

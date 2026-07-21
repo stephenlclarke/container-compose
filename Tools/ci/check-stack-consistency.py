@@ -72,7 +72,7 @@ def containerization_dependencies() -> list[tuple[Path, str, str, str]]:
     dependencies: list[tuple[Path, str, str, str]] = []
     pattern = re.compile(
         r'\.package\(\s*url:\s*"([^"]*containerization\.git)"\s*,\s*'
-        r'(branch|revision|exact|from):\s*"([^"]*)"',
+        r'(branch|revision|exact|from):\s*(?:"([^"]*)"|([A-Za-z_][A-Za-z0-9_]*))',
         re.MULTILINE,
     )
     for path in PACKAGE_SWIFT_FILES:
@@ -83,7 +83,21 @@ def containerization_dependencies() -> list[tuple[Path, str, str, str]]:
         match = pattern.search(text)
         if not match:
             raise SystemExit(f"{path} is missing a containerization package dependency")
-        dependencies.append((path, match.group(1), match.group(2), match.group(3)))
+        requirement_value = match.group(3)
+        requirement_name = match.group(4)
+        if requirement_name is not None:
+            constant = re.search(
+                rf'\blet\s+{re.escape(requirement_name)}\s*=\s*"([^"]*)"',
+                text,
+            )
+            if constant is None:
+                raise SystemExit(
+                    f"{path} containerization requirement {requirement_name} "
+                    "must be a string literal"
+                )
+            requirement_value = constant.group(1)
+        assert requirement_value is not None
+        dependencies.append((path, match.group(1), match.group(2), requirement_value))
     return dependencies
 
 
