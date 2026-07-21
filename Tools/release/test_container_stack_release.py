@@ -350,9 +350,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('Wait+Screen@30s /not running/', tape)
         self.assertEqual(tape.count("--wait-timeout 900"), 2)
         self.assertEqual(
-            tape.count("Wait+Screen@900s /monitoring-stack-.*alertmanager.*running/"),
+            tape.count("Wait+Screen@900s /alertmanager.*running/"),
             2,
         )
+        self.assertNotIn("monitoring-stack-.*alertmanager.*running", tape)
         self.assertNotIn("Wait+Screen@300s /SERVICE.*STATUS/", tape)
         self.assertNotIn("CONTAINER_COMPOSE_DEMO_TRANSCRIPT", tape)
         self.assertNotIn("replay()", tape)
