@@ -10,178 +10,126 @@ Set Padding 24
 Set Margin 0
 Set MarginFill "#0b1020"
 
-# The release workflow executes this exact cycle against the matched packaged
-# runtime before VHS starts. Each replay file contains the actual command and
-# output; the separate marker read keeps VHS completion detection visible.
+# This recording drives the packaged matched runtime directly.  Every command
+# shown below is typed into the terminal and its live result remains visible;
+# the screen waits only for output produced by that command.
 Type "cd $CONTAINER_COMPOSE_DEMO_ROOT || exit 1"
 Enter
 Sleep 2s
 
-Set TypingSpeed 1ms
-Type "replay() { cat $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }; marker() { tail -n 1 $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }; headlog() { sed -n '1,18p' $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }; starts() { grep -E 'Starting (alertmanager|cadvisor|grafana|loki|nginx|prometheus|pushgateway|tempo)$' $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }; taillog() { tail -n 18 $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }"
+Type "container system status"
 Enter
-Sleep 1s
-Ctrl+L
-Sleep 1s
-Set TypingSpeed 48ms
-
-Type "replay 00-system-status.log"
-Enter
-Sleep 3s
-Type "marker 00-system-status.log"
-Enter
-Wait+Screen@30s /TAPE_TRANSCRIPT_SYSTEM_OK/
+Wait+Screen@30s /running/
 Sleep 2s
 Ctrl+L
 Sleep 1s
 
-Type "replay 01-compose-version.log"
+Type "container compose version"
 Enter
-Sleep 3s
-Type "marker 01-compose-version.log"
-Enter
-Wait+Screen@30s /TAPE_TRANSCRIPT_VERSION_OK/
+Wait+Screen@30s /version/
 Sleep 2s
 Ctrl+L
 Sleep 1s
 
-Type "headlog 02-first-up.log"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300"
 Enter
+Wait+Screen@300s /nginx/
 Sleep 4s
 Ctrl+L
 Sleep 1s
-Type "starts 02-first-up.log"
+
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml stats --no-stream"
 Enter
-Sleep 4s
-Ctrl+L
-Sleep 1s
-Type "taillog 02-first-up.log"
-Enter
-Sleep 4s
-Type "marker 02-first-up.log"
-Enter
-Wait+Screen@300s /TAPE_TRANSCRIPT_FIRST_UP_OK/
+Wait+Screen@90s /NAME/
 Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "replay 03-first-stats.log"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml ps"
 Enter
+Wait+Screen@30s /nginx/
+Sleep 3s
+Ctrl+L
+Sleep 1s
+
+Type "curl -4fsS --retry 30 --retry-all-errors --retry-connrefused --retry-delay 1 http://127.0.0.1:8080/healthz"
+Enter
+Wait+Screen@120s /ok/
+Sleep 2s
+
+Type "curl -4fsS --retry 30 --retry-all-errors --retry-connrefused --retry-delay 1 http://127.0.0.1:9093/alertmanager/-/ready"
+Enter
+Wait+Screen@120s /OK/
+Sleep 2s
+Ctrl+L
+Sleep 1s
+
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty nginx sh -c 'echo container-compose-volume-reuse-ok > /var/cache/nginx/.container-compose-volume-reuse && cat /var/cache/nginx/.container-compose-volume-reuse'"
+Enter
+Wait+Screen@30s /container-compose-volume-reuse-ok/
+Sleep 3s
+Ctrl+L
+Sleep 1s
+
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --remove-orphans"
+Enter
+Wait+Screen@120s /Removed/
 Sleep 4s
-Type "marker 03-first-stats.log"
-Enter
-Wait+Screen@90s /TAPE_TRANSCRIPT_FIRST_STATS_OK/
-Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "replay 04-first-ps.log"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml volumes --format json"
 Enter
+Wait+Screen@30s /nginx_cache/
 Sleep 4s
-Type "marker 04-first-ps.log"
-Enter
-Wait+Screen@30s /TAPE_TRANSCRIPT_FIRST_PS_OK/
-Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "replay 05-first-health.log"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300"
 Enter
-Sleep 4s
-Type "marker 05-first-health.log"
-Enter
-Wait+Screen@120s /TAPE_TRANSCRIPT_FIRST_HEALTH_OK/
-Sleep 3s
-Ctrl+L
-Sleep 1s
-
-Type "replay 06-write-volume-marker.log"
-Enter
-Sleep 4s
-Type "marker 06-write-volume-marker.log"
-Enter
-Wait+Screen@30s /TAPE_TRANSCRIPT_VOLUME_MARKER_WRITTEN_OK/
-Sleep 3s
-Ctrl+L
-Sleep 1s
-
-Type "replay 07-retained-down.log"
-Enter
-Sleep 4s
-Type "marker 07-retained-down.log"
-Enter
-Wait+Screen@120s /TAPE_TRANSCRIPT_RETAINED_DOWN_OK/
-Sleep 3s
-Ctrl+L
-Sleep 1s
-
-Type "replay 08-retained-volumes.log"
-Enter
-Sleep 4s
-Type "marker 08-retained-volumes.log"
-Enter
-Wait+Screen@30s /TAPE_TRANSCRIPT_VOLUMES_RETAINED_OK/
-Sleep 3s
-Ctrl+L
-Sleep 1s
-
-# Keep the entire retained-volume start visible: the first line is the actual
-# `container compose up` command and the following output proves no existing
-# project resource caused a failure before the persisted marker is reread.
-Type "replay 09-second-up.log"
-Enter
-Sleep 8s
-Type "marker 09-second-up.log"
-Enter
-Wait+Screen@300s /TAPE_TRANSCRIPT_SECOND_UP_OK/
-Sleep 3s
-Ctrl+L
-Sleep 1s
-
-Type "replay 10-second-stats.log"
-Enter
-Sleep 4s
-Type "marker 10-second-stats.log"
-Enter
-Wait+Screen@90s /TAPE_TRANSCRIPT_SECOND_STATS_OK/
-Sleep 3s
-Ctrl+L
-Sleep 1s
-
-Type "replay 11-second-ps.log"
-Enter
-Sleep 4s
-Type "marker 11-second-ps.log"
-Enter
-Wait+Screen@30s /TAPE_TRANSCRIPT_SECOND_PS_OK/
-Sleep 3s
-Ctrl+L
-Sleep 1s
-
-Type "replay 12-second-health.log"
-Enter
-Sleep 4s
-Type "marker 12-second-health.log"
-Enter
-Wait+Screen@120s /TAPE_TRANSCRIPT_SECOND_HEALTH_OK/
-Sleep 3s
-Ctrl+L
-Sleep 1s
-
-Type "replay 13-verify-volume-marker.log"
-Enter
-Sleep 4s
-Type "marker 13-verify-volume-marker.log"
-Enter
-Wait+Screen@30s /TAPE_TRANSCRIPT_VOLUME_MARKER_REUSED_OK/
-Sleep 3s
-Ctrl+L
-Sleep 1s
-
-Type "replay 14-final-down.log"
-Enter
-Sleep 8s
-Type "marker 14-final-down.log"
-Enter
-Wait+Screen@120s /TAPE_TRANSCRIPT_FINAL_DOWN_OK/
+Wait+Screen@300s /nginx/
 Sleep 5s
+Ctrl+L
+Sleep 1s
+
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml stats --no-stream"
+Enter
+Wait+Screen@90s /NAME/
+Sleep 3s
+Ctrl+L
+Sleep 1s
+
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml ps"
+Enter
+Wait+Screen@30s /nginx/
+Sleep 3s
+Ctrl+L
+Sleep 1s
+
+Type "curl -4fsS --retry 30 --retry-all-errors --retry-connrefused --retry-delay 1 http://127.0.0.1:8080/healthz"
+Enter
+Wait+Screen@120s /ok/
+Sleep 2s
+
+Type "curl -4fsS --retry 30 --retry-all-errors --retry-connrefused --retry-delay 1 http://127.0.0.1:9093/alertmanager/-/ready"
+Enter
+Wait+Screen@120s /OK/
+Sleep 2s
+Ctrl+L
+Sleep 1s
+
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty nginx cat /var/cache/nginx/.container-compose-volume-reuse"
+Enter
+Wait+Screen@30s /container-compose-volume-reuse-ok/
+Sleep 3s
+Ctrl+L
+Sleep 1s
+
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --volumes --remove-orphans"
+Enter
+Wait+Screen@120s /Removed/
+Sleep 4s
+
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml ps --all"
+Enter
+Sleep 4s
