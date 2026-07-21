@@ -65,9 +65,10 @@ func NewOCIRemoteLoader(offline bool) loader.ResourceLoader {
 }
 
 type ociRemoteLoader struct {
-	offline bool
-	known   map[string]string
-	mu      sync.RWMutex
+	offline  bool
+	known    map[string]string
+	resolver func(context.Context) remotes.Resolver
+	mu       sync.RWMutex
 }
 
 func (loader *ociRemoteLoader) Accept(path string) bool {
@@ -95,7 +96,7 @@ func (loader *ociRemoteLoader) Load(ctx context.Context, path string) (string, e
 		return "", err
 	}
 
-	resolver := composeOCI.NewResolver(config.LoadDefaultConfigFile(io.Discard), loader.httpTransport(ctx))
+	resolver := loader.newResolver(ctx)
 	descriptor, content, err := composeOCI.Get(ctx, resolver, ref)
 	if err != nil {
 		return "", fmt.Errorf("failed to pull OCI resource %q: %w", ref, err)
@@ -138,6 +139,16 @@ func (loader *ociRemoteLoader) remember(path, local string) {
 
 func (loader *ociRemoteLoader) httpTransport(context.Context) http.RoundTripper {
 	return nil
+}
+
+func (loader *ociRemoteLoader) newResolver(ctx context.Context) remotes.Resolver {
+	if loader.resolver != nil {
+		return loader.resolver(ctx)
+	}
+	return composeOCI.NewResolver(
+		config.LoadDefaultConfigFile(io.Discard),
+		loader.httpTransport(ctx),
+	)
 }
 
 func (loader *ociRemoteLoader) materialize(

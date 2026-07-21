@@ -35,6 +35,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	spec "github.com/opencontainers/image-spec/specs-go/v1"
 	composeOCI "github.com/stephenlclarke/container-compose/Tools/compose-normalizer/oci"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestPublishDryRunAcceptsShortFormPortMappings(t *testing.T) {
@@ -949,6 +950,95 @@ services:
 	if len(includes) != 1 || includes[0] != "./local.yml" {
 		t.Fatalf("includes = %#v, want only local include", includes)
 	}
+}
+
+func TestPublishEnvironmentHelpersHandleSequenceAndEnvFileForms(t *testing.T) {
+	service := publishServiceNode(t, `
+environment:
+  - TOKEN=literal
+  - ESCAPED=$$literal
+  - missing-separator
+  - =missing-key
+env_file:
+  - .env
+`)
+	values := serviceEnvironmentValues(service)
+	if got, want := values["TOKEN"], "literal"; got != want {
+		t.Fatalf("TOKEN = %q, want %q", got, want)
+	}
+	if got, want := values["ESCAPED"], "Xliteral"; got != want {
+		t.Fatalf("ESCAPED = %q, want %q", got, want)
+	}
+	if len(values) != 2 {
+		t.Fatalf("sequence values = %#v, want two entries", values)
+	}
+	if !serviceEnvFileDeclared(service) {
+		t.Fatal("serviceEnvFileDeclared returned false for sequence env_file")
+	}
+
+	for _, test := range []struct {
+		name string
+		yaml string
+		want bool
+	}{
+		{name: "missing", yaml: "image: alpine\n", want: false},
+		{name: "empty scalar", yaml: "env_file: ''\n", want: false},
+		{name: "scalar", yaml: "env_file: .env\n", want: true},
+		{name: "empty sequence", yaml: "env_file: []\n", want: false},
+		{name: "mapping", yaml: "env_file: {path: .env}\n", want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := serviceEnvFileDeclared(publishServiceNode(t, test.yaml)); got != test.want {
+				t.Fatalf("serviceEnvFileDeclared = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestPublishYAMLHelpersHandleMissingAndLocalExtends(t *testing.T) {
+	if got := documentRoot(nil); got != nil {
+		t.Fatalf("documentRoot(nil) = %#v, want nil", got)
+	}
+	doc := publishYAMLDocument(t, "name: demo\n")
+	root := documentRoot(doc)
+	if root == nil {
+		t.Fatal("documentRoot returned nil for mapping document")
+	}
+	if got := mappingEntry(root, "missing"); got != nil {
+		t.Fatalf("mappingEntry(missing) = %#v, want nil", got)
+	}
+
+	dir := t.TempDir()
+	current := filepath.Join(dir, "compose.yaml")
+	parent := filepath.Join(dir, "base.yaml")
+	if err := os.WriteFile(parent, []byte("services: {}\n"), 0o600); err != nil {
+		t.Fatalf("write extends parent: %v", err)
+	}
+	service := publishServiceNode(t, "extends: {file: base.yaml}\n")
+	if got := localExtendsParent(current, service); got != parent {
+		t.Fatalf("localExtendsParent = %q, want %q", got, parent)
+	}
+	for _, value := range []string{"oci://registry.example.com/team/base:latest", "missing.yaml"} {
+		service := publishServiceNode(t, "extends: {file: '"+value+"'}\n")
+		if got := localExtendsParent(current, service); got != "" {
+			t.Fatalf("localExtendsParent(%q) = %q, want empty", value, got)
+		}
+	}
+}
+
+func publishServiceNode(t *testing.T, input string) *yaml.Node {
+	t.Helper()
+	doc := publishYAMLDocument(t, input)
+	return documentRoot(doc)
+}
+
+func publishYAMLDocument(t *testing.T, input string) *yaml.Node {
+	t.Helper()
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(input), &doc); err != nil {
+		t.Fatalf("unmarshal YAML fixture: %v", err)
+	}
+	return &doc
 }
 
 func TestPublishLayerSnapshotsUnknownDescriptor(t *testing.T) {

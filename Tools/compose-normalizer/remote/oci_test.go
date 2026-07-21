@@ -81,6 +81,112 @@ func TestOCIRemoteLoaderRemembersMaterializedDirectory(t *testing.T) {
 	}
 }
 
+func TestOCIRemoteLoaderUsesRememberedArtifactWithoutRegistryAccess(t *testing.T) {
+	loader := NewOCIRemoteLoader(false).(*ociRemoteLoader)
+	remote := "oci://registry.example.com/team/app:latest"
+	local := t.TempDir()
+	loader.remember(remote, local)
+
+	path, err := loader.Load(t.Context(), remote)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if want := filepath.Join(local, composeFileName); path != want {
+		t.Fatalf("Load = %q, want %q", path, want)
+	}
+}
+
+func TestOCIRemoteLoaderLoadsAndCachesManifest(t *testing.T) {
+	cacheHome := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheHome)
+	loader := NewOCIRemoteLoader(false).(*ociRemoteLoader)
+	ref := mustDockerRef(t, "registry.example.com/team/app:latest")
+	compose := []byte("services:\n  web:\n    image: nginx\n")
+	manifest, resolver := composeManifestFixture(t, compose, nil)
+	content := mustJSON(t, manifest)
+	descriptor := spec.Descriptor{
+		MediaType: spec.MediaTypeImageManifest,
+		Digest:    digest.FromBytes(content),
+		Size:      int64(len(content)),
+	}
+	resolver.references = map[string]spec.Descriptor{ref.String(): descriptor}
+	resolver.descriptors[descriptor.Digest] = descriptor
+	resolver.contents[descriptor.Digest] = content
+	loader.resolver = func(context.Context) remotes.Resolver { return resolver }
+
+	local, err := loader.Load(t.Context(), "oci://"+ref.String())
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	want := filepath.Join(cacheHome, cacheDirectoryName, descriptor.Digest.Hex(), composeFileName)
+	if local != want {
+		t.Fatalf("Load = %q, want %q", local, want)
+	}
+	assertFileContent(t, local, string(compose))
+	if got := loader.Dir("oci://" + ref.String()); got != filepath.Dir(local) {
+		t.Fatalf("Dir = %q, want %q", got, filepath.Dir(local))
+	}
+}
+
+func TestOCIRemoteLoaderRejectsInvalidEnablementValue(t *testing.T) {
+	t.Setenv(OCIRemoteEnabled, "not-a-bool")
+	loader := NewOCIRemoteLoader(false)
+
+	_, err := loader.Load(t.Context(), "oci://registry.example.com/team/app:latest")
+	if err == nil || !strings.Contains(err.Error(), "expects boolean value") {
+		t.Fatalf("Load error = %v, want enablement error", err)
+	}
+}
+
+func TestOCIRemoteLoaderUsesDefaultTransport(t *testing.T) {
+	loader := NewOCIRemoteLoader(false).(*ociRemoteLoader)
+	if transport := loader.httpTransport(t.Context()); transport != nil {
+		t.Fatalf("httpTransport = %T, want nil default transport", transport)
+	}
+}
+
+func TestOCIRemoteLoaderReportsInvalidReferenceAndPullFailure(t *testing.T) {
+	loader := NewOCIRemoteLoader(false).(*ociRemoteLoader)
+	if _, err := loader.Load(t.Context(), "oci://bad reference with spaces"); err == nil {
+		t.Fatal("Load returned nil error for an invalid reference")
+	}
+
+	loader.resolver = func(context.Context) remotes.Resolver {
+		return fakeOCIResolver{}
+	}
+	if _, err := loader.Load(t.Context(), "oci://registry.example.com/team/app:latest"); err == nil || !strings.Contains(err.Error(), "failed to pull OCI resource") {
+		t.Fatalf("Load error = %v, want pull failure", err)
+	}
+}
+
+func TestOCIRemoteLoaderRemovesFailedMaterialization(t *testing.T) {
+	cacheHome := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheHome)
+	loader := NewOCIRemoteLoader(false).(*ociRemoteLoader)
+	ref := mustDockerRef(t, "registry.example.com/team/not-compose:latest")
+	content := mustJSON(t, spec.Manifest{ArtifactType: "application/vnd.example.other"})
+	descriptor := spec.Descriptor{
+		MediaType: spec.MediaTypeImageManifest,
+		Digest:    digest.FromBytes(content),
+		Size:      int64(len(content)),
+	}
+	resolver := fakeOCIResolver{
+		descriptors: map[digest.Digest]spec.Descriptor{descriptor.Digest: descriptor},
+		contents:    map[digest.Digest][]byte{descriptor.Digest: content},
+		references:  map[string]spec.Descriptor{ref.String(): descriptor},
+	}
+	loader.resolver = func(context.Context) remotes.Resolver { return resolver }
+
+	_, err := loader.Load(t.Context(), "oci://"+ref.String())
+	if err == nil || !strings.Contains(err.Error(), "not a compose project OCI artifact") {
+		t.Fatalf("Load error = %v, want non-compose artifact error", err)
+	}
+	cache := filepath.Join(cacheHome, cacheDirectoryName, descriptor.Digest.Hex())
+	if _, err := os.Stat(cache); !os.IsNotExist(err) {
+		t.Fatalf("failed cache stat error = %v, want no cached artifact", err)
+	}
+}
+
 func TestOCIRemoteLoaderMaterializesDirectManifest(t *testing.T) {
 	loader := NewOCIRemoteLoader(false).(*ociRemoteLoader)
 	local := t.TempDir()
@@ -143,6 +249,94 @@ func TestOCIRemoteLoaderRejectsNonComposeManifest(t *testing.T) {
 	}, content)
 	if err == nil || !strings.Contains(err.Error(), "is not a compose project OCI artifact") {
 		t.Fatalf("materialize error = %v, want non-compose artifact error", err)
+	}
+}
+
+func TestResolveComposeArtifactFromIndexRejectsInvalidAndMissingArtifacts(t *testing.T) {
+	ref := mustDockerRef(t, "registry.example.com/team/app:latest")
+	if _, err := resolveComposeArtifactFromIndex(t.Context(), fakeOCIResolver{}, ref, []byte("not JSON")); err == nil {
+		t.Fatal("resolveComposeArtifactFromIndex returned nil error for invalid JSON")
+	}
+	index := mustJSON(t, spec.Index{Manifests: []spec.Descriptor{{ArtifactType: "application/vnd.example.other"}}})
+	if _, err := resolveComposeArtifactFromIndex(t.Context(), fakeOCIResolver{}, ref, index); err == nil || !strings.Contains(err.Error(), "doesn't refer to compose artifacts") {
+		t.Fatalf("resolveComposeArtifactFromIndex error = %v, want missing artifact error", err)
+	}
+}
+
+func TestResolveComposeArtifactFromIndexReportsSelectedPullFailure(t *testing.T) {
+	ref := mustDockerRef(t, "registry.example.com/team/app:latest")
+	index := mustJSON(t, spec.Index{Manifests: []spec.Descriptor{{
+		ArtifactType: composeOCI.ComposeProjectArtifactType,
+		Digest:       digest.FromString("compose manifest"),
+	}}})
+
+	_, err := resolveComposeArtifactFromIndex(t.Context(), fakeOCIResolver{}, ref, index)
+	if err == nil || !strings.Contains(err.Error(), "failed to pull OCI resource") {
+		t.Fatalf("resolveComposeArtifactFromIndex error = %v, want pull error", err)
+	}
+}
+
+func TestPullComposeFilesHandlesEmptyConfigAndInvalidLayers(t *testing.T) {
+	loader := NewOCIRemoteLoader(false).(*ociRemoteLoader)
+	ref := mustDockerRef(t, "registry.example.com/team/app:latest")
+	empty := spec.Descriptor{
+		MediaType: composeOCI.ComposeEmptyConfigMediaType,
+		Digest:    digest.FromString("{}"),
+		Size:      2,
+	}
+	resolver := fakeOCIResolver{
+		descriptors: map[digest.Digest]spec.Descriptor{empty.Digest: empty},
+		contents:    map[digest.Digest][]byte{empty.Digest: []byte("{}")},
+	}
+	if err := loader.pullComposeFiles(t.Context(), t.TempDir(), spec.Manifest{Layers: []spec.Descriptor{empty}}, ref, resolver); err != nil {
+		t.Fatalf("pullComposeFiles empty config returned error: %v", err)
+	}
+
+	if err := loader.pullComposeFiles(t.Context(), t.TempDir(), spec.Manifest{Layers: []spec.Descriptor{{
+		MediaType: composeOCI.ComposeEnvFileMediaType,
+		Digest:    digest.FromString("missing"),
+	}}}, ref, resolver); err == nil {
+		t.Fatal("pullComposeFiles returned nil error for unavailable layer")
+	}
+}
+
+func TestPullComposeFilesPropagatesComposeAndEnvWriteErrors(t *testing.T) {
+	loader := NewOCIRemoteLoader(false).(*ociRemoteLoader)
+	ref := mustDockerRef(t, "registry.example.com/team/app:latest")
+	compose := spec.Descriptor{
+		MediaType: composeOCI.ComposeYAMLMediaType,
+		Digest:    digest.FromString("compose"),
+		Annotations: map[string]string{
+			"com.docker.compose.extends": "true",
+		},
+	}
+	env := spec.Descriptor{
+		MediaType: composeOCI.ComposeEnvFileMediaType,
+		Digest:    digest.FromString("environment"),
+	}
+	resolver := fakeOCIResolver{
+		descriptors: map[digest.Digest]spec.Descriptor{compose.Digest: compose, env.Digest: env},
+		contents: map[digest.Digest][]byte{
+			compose.Digest: []byte("services: {}\n"),
+			env.Digest:     []byte("KEY=value\n"),
+		},
+	}
+	if err := loader.pullComposeFiles(t.Context(), t.TempDir(), spec.Manifest{Layers: []spec.Descriptor{compose}}, ref, resolver); err == nil || !strings.Contains(err.Error(), "missing annotation") {
+		t.Fatalf("compose layer error = %v, want annotation error", err)
+	}
+	if err := loader.pullComposeFiles(t.Context(), t.TempDir(), spec.Manifest{Layers: []spec.Descriptor{env}}, ref, resolver); err == nil || !strings.Contains(err.Error(), "missing annotation") {
+		t.Fatalf("env layer error = %v, want annotation error", err)
+	}
+}
+
+func TestWriteOCIEnvFileRejectsMissingAndUnsafeAnnotations(t *testing.T) {
+	layer := spec.Descriptor{Digest: digest.FromString("environment")}
+	if err := writeOCIEnvFile(layer, t.TempDir(), []byte("KEY=value\n")); err == nil || !strings.Contains(err.Error(), "missing annotation") {
+		t.Fatalf("writeOCIEnvFile error = %v, want missing annotation error", err)
+	}
+	layer.Annotations = map[string]string{"com.docker.compose.envfile": "../.env"}
+	if err := writeOCIEnvFile(layer, t.TempDir(), []byte("KEY=value\n")); err == nil || err.Error() != "invalid OCI artifact" {
+		t.Fatalf("writeOCIEnvFile error = %v, want invalid OCI artifact", err)
 	}
 }
 
@@ -335,9 +529,13 @@ func assertFileContent(t *testing.T, path, want string) {
 type fakeOCIResolver struct {
 	descriptors map[digest.Digest]spec.Descriptor
 	contents    map[digest.Digest][]byte
+	references  map[string]spec.Descriptor
 }
 
 func (resolver fakeOCIResolver) Resolve(_ context.Context, ref string) (string, spec.Descriptor, error) {
+	if descriptor, ok := resolver.references[ref]; ok {
+		return ref, descriptor, nil
+	}
 	for value, descriptor := range resolver.descriptors {
 		if strings.Contains(ref, value.String()) {
 			return ref, descriptor, nil

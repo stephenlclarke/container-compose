@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	gitutil "github.com/moby/buildkit/frontend/dockerfile/dfgitutil"
+	"github.com/sirupsen/logrus"
 )
 
 func TestValidateGitSubDir(t *testing.T) {
@@ -107,6 +108,218 @@ func TestOfflineCacheMissReturnsError(t *testing.T) {
 	_, err := loader.Load(context.Background(), ref)
 	if err == nil || !strings.Contains(err.Error(), "not available in the offline cache") {
 		t.Fatalf("Load error = %v, want offline cache miss", err)
+	}
+}
+
+func TestGitLoaderChecksOutCommitIntoCache(t *testing.T) {
+	cacheHome := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheHome)
+	loader := NewGitRemoteLoader(false).(*gitRemoteLoader)
+	loader.command = successfulGitCommand(t)
+	commit := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	remote := "https://example.test/project.git#" + commit
+
+	local, err := loader.Load(context.Background(), remote)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	want := filepath.Join(cacheHome, cacheDirectoryName, commit, "compose.yaml")
+	if local != want {
+		t.Fatalf("Load = %q, want %q", local, want)
+	}
+	content, err := os.ReadFile(local)
+	if err != nil {
+		t.Fatalf("read checked out compose file: %v", err)
+	}
+	if string(content) != "services: {}\n" {
+		t.Fatalf("compose file = %q, want fixture content", content)
+	}
+	if got := loader.Dir(remote); got != filepath.Dir(local) {
+		t.Fatalf("Dir(remote) = %q, want %q", got, filepath.Dir(local))
+	}
+}
+
+func TestResolveGitRefUsesResolvedCommit(t *testing.T) {
+	loader := NewGitRemoteLoader(false).(*gitRemoteLoader)
+	loader.command = successfulGitCommand(t)
+	ref := &gitutil.GitRef{Remote: "https://example.test/project.git", Ref: "main"}
+
+	if err := loader.resolveGitRef(context.Background(), ref.Remote+"#main", ref); err != nil {
+		t.Fatalf("resolveGitRef returned error: %v", err)
+	}
+	if got, want := ref.Ref, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; got != want {
+		t.Fatalf("resolved ref = %q, want %q", got, want)
+	}
+}
+
+func TestGitLoaderRejectsInvalidEnablementValue(t *testing.T) {
+	t.Setenv(GitRemoteEnabled, "not-a-bool")
+	loader := NewGitRemoteLoader(false)
+
+	_, err := loader.Load(context.Background(), "https://example.test/project.git#main")
+	if err == nil || !strings.Contains(err.Error(), "expects boolean value") {
+		t.Fatalf("Load error = %v, want enablement error", err)
+	}
+}
+
+func TestGitLoaderRejectsDisabledAndMalformedRemote(t *testing.T) {
+	t.Setenv(GitRemoteEnabled, "false")
+	loader := NewGitRemoteLoader(false)
+	if _, err := loader.Load(context.Background(), "https://example.test/project.git#main"); err == nil {
+		t.Fatal("Load returned nil error for disabled Git remote")
+	}
+
+	t.Setenv(GitRemoteEnabled, "true")
+	if _, err := loader.Load(context.Background(), "not a Git remote"); err == nil {
+		t.Fatal("Load returned nil error for malformed Git remote")
+	}
+}
+
+func TestGitLoaderResolvesDefaultHead(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	loader := NewGitRemoteLoader(false).(*gitRemoteLoader)
+	loader.command = successfulGitCommand(t)
+
+	local, err := loader.Load(context.Background(), "https://example.test/project.git")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if filepath.Base(filepath.Dir(local)) != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Fatalf("Load cache directory = %q, want resolved commit", filepath.Dir(local))
+	}
+}
+
+func TestEnsureCheckoutAcceptsDirectoryAndRejectsFile(t *testing.T) {
+	loader := NewGitRemoteLoader(false).(*gitRemoteLoader)
+	ref := &gitutil.GitRef{Remote: "https://example.test/project.git"}
+	directory := t.TempDir()
+	if err := loader.ensureCheckout(context.Background(), directory, ref); err != nil {
+		t.Fatalf("ensureCheckout(directory) returned error: %v", err)
+	}
+	file := filepath.Join(t.TempDir(), "cache-file")
+	if err := os.WriteFile(file, []byte("not a checkout"), 0o600); err != nil {
+		t.Fatalf("write cache file: %v", err)
+	}
+	if err := loader.ensureCheckout(context.Background(), file, ref); err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("ensureCheckout(file) error = %v, want non-directory error", err)
+	}
+}
+
+func TestGitLoaderLogsFetchOutputAtDebugLevel(t *testing.T) {
+	previousLevel := logrus.GetLevel()
+	logrus.SetLevel(logrus.DebugLevel)
+	t.Cleanup(func() { logrus.SetLevel(previousLevel) })
+	loader := NewGitRemoteLoader(false).(*gitRemoteLoader)
+	command := exec.Command("printf", "fetched https://user:secret@example.test/project.git\\n")
+
+	if err := loader.run(command, "https://user:secret@example.test/project.git"); err != nil {
+		t.Fatalf("run returned error: %v", err)
+	}
+}
+
+func TestResolveGitRefRejectsMalformedOutputAndMissingRefs(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		command string
+		want    string
+	}{
+		{name: "short output", command: "printf short", want: "unexpected git command output"},
+		{name: "invalid SHA", command: "printf zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", want: "invalid commit sha"},
+		{name: "missing ref", command: "printf missing; exit 2", want: "repository does not contain ref"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			loader := NewGitRemoteLoader(false).(*gitRemoteLoader)
+			loader.command = shellGitCommand(test.command)
+			ref := &gitutil.GitRef{Remote: "https://user:secret@example.test/project.git", Ref: "main"}
+
+			err := loader.resolveGitRef(context.Background(), ref.Remote+"#main", ref)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("resolveGitRef error = %v, want %q", err, test.want)
+			}
+			if strings.Contains(err.Error(), "secret") {
+				t.Fatalf("resolveGitRef error leaked credentials: %v", err)
+			}
+		})
+	}
+}
+
+func TestGitResourceResolutionReportsMissingPaths(t *testing.T) {
+	root := t.TempDir()
+	if _, err := resolveGitResource(root, ""); err == nil || !strings.Contains(err.Error(), "no compose file") {
+		t.Fatalf("resolveGitResource error = %v, want missing compose file error", err)
+	}
+	if _, err := resolveGitResource(root, "missing"); err == nil || !os.IsNotExist(err) {
+		t.Fatalf("resolveGitResource subdirectory error = %v, want not found", err)
+	}
+	if err := validatePathInBase(filepath.Join(root, "missing"), root); err == nil || !strings.Contains(err.Error(), "resolve Git repository path") {
+		t.Fatalf("validatePathInBase missing base error = %v", err)
+	}
+	if err := validatePathInBase(root, filepath.Join(root, "missing")); err == nil || !strings.Contains(err.Error(), "resolve Git resource path") {
+		t.Fatalf("validatePathInBase missing target error = %v", err)
+	}
+}
+
+func TestGitLoaderDirHandlesAbsoluteFilesAndDirectories(t *testing.T) {
+	loader := NewGitRemoteLoader(false).(*gitRemoteLoader)
+	directory := t.TempDir()
+	file := filepath.Join(directory, "compose.yaml")
+	if err := os.WriteFile(file, []byte("services: {}\n"), 0o600); err != nil {
+		t.Fatalf("write compose file: %v", err)
+	}
+	if got := loader.Dir(directory); got != directory {
+		t.Fatalf("Dir(directory) = %q, want %q", got, directory)
+	}
+	if got := loader.Dir(file); got != directory {
+		t.Fatalf("Dir(file) = %q, want %q", got, directory)
+	}
+}
+
+func TestGitRemoteLoaderDefaultsEnabledAndUsesSystemCommand(t *testing.T) {
+	t.Setenv(GitRemoteEnabled, "")
+	enabled, err := gitRemoteLoaderEnabled()
+	if err != nil || !enabled {
+		t.Fatalf("gitRemoteLoaderEnabled = %v, %v; want true, nil", enabled, err)
+	}
+	loader := NewGitRemoteLoader(false).(*gitRemoteLoader)
+	if command := loader.gitCommand(context.Background(), "--version"); !filepath.IsAbs(command.Path) {
+		t.Fatalf("gitCommand path = %q, want absolute system Git path", command.Path)
+	}
+}
+
+func TestFindFileSelectsLaterNameAndReportsMissingFiles(t *testing.T) {
+	directory := t.TempDir()
+	second := filepath.Join(directory, "docker-compose.yaml")
+	if err := os.WriteFile(second, []byte("services: {}\n"), 0o600); err != nil {
+		t.Fatalf("write compose file: %v", err)
+	}
+	file, err := findFile([]string{"compose.yaml", "docker-compose.yaml"}, directory)
+	if err != nil || file != second {
+		t.Fatalf("findFile = %q, %v; want %q, nil", file, err, second)
+	}
+	if _, err := findFile([]string{"compose.yaml"}, t.TempDir()); err == nil || !strings.Contains(err.Error(), "no compose file") {
+		t.Fatalf("findFile missing error = %v, want no compose file error", err)
+	}
+}
+
+func TestGitLoaderReportsEarlyRemoteResolutionFailures(t *testing.T) {
+	t.Setenv(GitRemoteEnabled, "true")
+	loader := NewGitRemoteLoader(false).(*gitRemoteLoader)
+	if _, err := loader.Load(context.Background(), "git://example.test/project.git#main:%zz"); err == nil || !strings.Contains(err.Error(), "invalid URL escape") {
+		t.Fatalf("Load fragment error = %v, want URL parse error", err)
+	}
+	if _, err := resolveGitResource(filepath.Join(t.TempDir(), "missing"), ""); err == nil || !os.IsNotExist(err) {
+		t.Fatalf("resolveGitResource missing root error = %v, want not found", err)
+	}
+	remote := "https://example.test/project.git#main"
+	loader.rememberCheckout(remote, t.TempDir())
+	if _, err := loader.Load(context.Background(), remote); err == nil || !strings.Contains(err.Error(), "no compose file") {
+		t.Fatalf("Load cached resource error = %v, want missing compose file", err)
+	}
+	loader = NewGitRemoteLoader(false).(*gitRemoteLoader)
+	loader.command = unavailableGitCommand(filepath.Join(t.TempDir(), "missing-git"))
+	ref := &gitutil.GitRef{Remote: "https://example.test/project.git", Ref: "main"}
+	if _, err := loader.checkoutPath(context.Background(), ref.Remote+"#main", ref); err == nil || !strings.Contains(err.Error(), "failed to access repository") {
+		t.Fatalf("checkoutPath error = %v, want Git access error", err)
 	}
 }
 
@@ -225,6 +438,36 @@ func unavailableGitCommand(path string) gitCommandFactory {
 			Path: path,
 			Args: append([]string{path}, args...),
 		}
+	}
+}
+
+func successfulGitCommand(t *testing.T) gitCommandFactory {
+	t.Helper()
+	script := filepath.Join(t.TempDir(), "git")
+	const contents = `#!/bin/sh
+case "$1" in
+  init)
+    mkdir -p "$2"
+    ;;
+  ls-remote)
+    printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\trefs/heads/main\n'
+    ;;
+  checkout)
+    printf 'services: {}\n' > compose.yaml
+    ;;
+esac
+`
+	if err := os.WriteFile(script, []byte(contents), 0o700); err != nil {
+		t.Fatalf("write Git fixture: %v", err)
+	}
+	return func(ctx context.Context, args ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, script, args...)
+	}
+}
+
+func shellGitCommand(command string) gitCommandFactory {
+	return func(ctx context.Context, _ ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "sh", "-c", command)
 	}
 }
 

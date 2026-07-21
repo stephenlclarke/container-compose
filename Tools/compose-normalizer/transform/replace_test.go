@@ -153,3 +153,28 @@ func TestReplaceEnvFile(t *testing.T) {
 		})
 	}
 }
+
+func TestReplaceRejectsMalformedDocuments(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		service string
+	}{
+		{name: "invalid YAML", input: "services: [", service: "api"},
+		{name: "sequence root", input: "- services\n", service: "api"},
+		{name: "missing services", input: "name: demo\n", service: "api"},
+		{name: "missing service", input: "services: {}\n", service: "api"},
+		{name: "missing extends", input: "services:\n  api: {}\n", service: "api"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := ReplaceExtendsFile([]byte(test.input), test.service, "base.yaml"); err == nil {
+				t.Fatal("ReplaceExtendsFile returned nil error")
+			}
+			if _, err := ReplaceEnvFile([]byte(test.input), test.service, 0, ".env"); err == nil {
+				t.Fatal("ReplaceEnvFile returned nil error")
+			}
+		})
+	}
+}
