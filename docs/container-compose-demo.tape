@@ -2,7 +2,7 @@ Output docs/images/container-compose-demo.gif
 
 Set Shell "zsh"
 Set FontSize 18
-Set Width 1100
+Set Width 1600
 Set Height 720
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 48ms
@@ -31,14 +31,14 @@ Sleep 2s
 Ctrl+L
 Sleep 1s
 
-Type "container compose --ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 900 && container compose -f examples/monitoring-stack/docker-compose.yaml ps"
+Type "container compose --ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 900 --quiet-pull nginx alertmanager && clear && container compose -f examples/monitoring-stack/docker-compose.yaml ps"
 Enter
-Wait+Screen@900s /alertmanager.*running/
+Wait+Screen@900s /nginx.*r[[:space:]]*unning/
 Sleep 4s
 Ctrl+L
 Sleep 1s
 
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml stats --no-stream"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml stats --no-stream nginx alertmanager"
 Enter
 Wait+Screen@90s /NAME/
 Sleep 3s
@@ -78,14 +78,14 @@ Sleep 4s
 Ctrl+L
 Sleep 1s
 
-Type "container compose --ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 900 && container compose -f examples/monitoring-stack/docker-compose.yaml ps"
+Type "container compose --ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 900 --quiet-pull nginx alertmanager && clear && container compose -f examples/monitoring-stack/docker-compose.yaml ps"
 Enter
-Wait+Screen@900s /alertmanager.*running/
+Wait+Screen@900s /nginx.*r[[:space:]]*unning/
 Sleep 5s
 Ctrl+L
 Sleep 1s
 
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml stats --no-stream"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml stats --no-stream nginx alertmanager"
 Enter
 Wait+Screen@90s /NAME/
 Sleep 3s

@@ -330,6 +330,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('--current-asset "${{ steps.lane.outputs.demo_asset }}"', workflow)
         tape = (ROOT / "docs" / "container-compose-demo.tape").read_text(encoding="utf-8")
         self.assertIn('Set TypingSpeed 48ms', tape)
+        self.assertIn('Set Width 1600', tape)
         self.assertIn('$CONTAINER_COMPOSE_DEMO_ROOT', tape)
         self.assertIn('Type "container system start', tape)
         self.assertIn('&& container system status', tape)
@@ -341,8 +342,16 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertEqual(tape.count('Wait+Screen@900s /status +running/'), 1)
         self.assertIn('Type "container compose version"', tape)
-        self.assertIn("--ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up", tape)
-        self.assertIn("stats --no-stream", tape)
+        live_up = (
+            "container compose --ansi never --progress plain "
+            "-f examples/monitoring-stack/docker-compose.yaml up --detach --wait "
+            "--wait-timeout 900 --quiet-pull nginx alertmanager && clear && container compose "
+            "-f examples/monitoring-stack/docker-compose.yaml ps"
+        )
+        self.assertEqual(tape.count(live_up), 2)
+        self.assertEqual(tape.count("--quiet-pull nginx alertmanager"), 2)
+        self.assertEqual(tape.count("&& clear && container compose"), 2)
+        self.assertEqual(tape.count("stats --no-stream nginx alertmanager"), 2)
         self.assertIn("volumes --format json", tape)
         self.assertIn("container-compose-volume-reuse-ok", tape)
         self.assertIn("down --volumes --remove-orphans", tape)
@@ -350,9 +359,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('Wait+Screen@30s /not running/', tape)
         self.assertEqual(tape.count("--wait-timeout 900"), 2)
         self.assertEqual(
-            tape.count("Wait+Screen@900s /alertmanager.*running/"),
+            tape.count("Wait+Screen@900s /nginx.*r[[:space:]]*unning/"),
             2,
         )
+        self.assertNotIn("--wait-timeout 900 &&", tape)
         self.assertNotIn("monitoring-stack-.*alertmanager.*running", tape)
         self.assertNotIn("Wait+Screen@300s /SERVICE.*STATUS/", tape)
         self.assertNotIn("CONTAINER_COMPOSE_DEMO_TRANSCRIPT", tape)
