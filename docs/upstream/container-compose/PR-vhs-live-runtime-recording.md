@@ -26,6 +26,7 @@ No forked Apple source changes are required. The change uses existing runtime be
 - `fix(release): show retained-volume reuse in VHS replay`
 - `fix(release): make volume reuse visible in demo` (`ac95e92b71270b37b2a3298bba86f50f16780a70`)
 - [`62908819`](https://github.com/stephenlclarke/container-compose/commit/62908819034156bfc8d24cac7becce9a203d720b) `fix(release): record live VHS commands`
+- [`518ae228`](https://github.com/stephenlclarke/container-compose/commit/518ae228f650a8fa40118c36d68fdad650eb69ef) `fix(release): record direct terminal demo`
 
 ## Code Map
 
