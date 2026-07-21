@@ -1268,6 +1268,29 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(3)) == ["alpine:3.20", "-c", "printf ready"])
     }
 
+    @Test("up maps an empty entrypoint to the generic clear runtime option")
+    func upMapsEmptyEntrypointToClearRuntimeOption() async throws {
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine:3.20") {
+                    $0.command = []
+                    $0.entrypoint = []
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.contains("--clear-entrypoint"))
+        #expect(!command.contains("--entrypoint"))
+        #expect(Array(command.suffix(1)) == ["alpine:3.20"])
+    }
+
     @Test("up dry run renders volume driver options")
     func upDryRunRendersVolumeDriverOptions() async throws {
         let emitted = MessageRecorder()

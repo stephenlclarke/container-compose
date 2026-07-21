@@ -392,12 +392,18 @@ struct ComposeNormalizerTests {
               - LIST_EMPTY=
               - CONTAINER_COMPOSE_TEST_UNSET_LIST_INHERIT
               - LIST_VALUE=two=with=equals
+          cleared:
+            image: alpine
+            command: []
+            entrypoint: []
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
 
         #expect(project.services["map"]?.entrypoint == ["/bin/sh", "-c"])
         #expect(project.services["map"]?.command == ["echo map"])
+        #expect(project.services["cleared"]?.command == [])
+        #expect(project.services["cleared"]?.entrypoint == [])
         #expect(project.services["map"]?.environment == [
             "MAP_EMPTY": nil,
             "MAP_VALUE": "one",

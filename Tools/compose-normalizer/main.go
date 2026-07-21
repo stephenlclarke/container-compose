@@ -155,8 +155,8 @@ type normalizedService struct {
 	DeployLabels            map[string]string                   `json:"deployLabels,omitempty"`
 	DeployRestartPolicy     *normalizedDeployRestartPolicy      `json:"deployRestartPolicy,omitempty"`
 	Build                   *normalizedBuild                    `json:"build,omitempty"`
-	Command                 []string                            `json:"command,omitempty"`
-	Entrypoint              []string                            `json:"entrypoint,omitempty"`
+	Command                 *[]string                           `json:"command,omitempty"`
+	Entrypoint              *[]string                           `json:"entrypoint,omitempty"`
 	Provider                *normalizedProvider                 `json:"provider,omitempty"`
 	CredentialSpec          *types.CredentialSpecConfig         `json:"credentialSpec,omitempty"`
 	DeviceCgroupRules       []string                            `json:"deviceCgroupRules,omitempty"`
@@ -882,8 +882,8 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		DeployMode:              deployMode(service.Deploy),
 		DeployLabels:            deployLabels(service.Deploy),
 		DeployRestartPolicy:     deployRestartPolicyValue(service.Deploy),
-		Command:                 shellCommandValues(service.Command),
-		Entrypoint:              shellCommandValues(service.Entrypoint),
+		Command:                 shellCommandValue(service.Command),
+		Entrypoint:              shellCommandValue(service.Entrypoint),
 		Provider:                providerValue(service.Provider),
 		CredentialSpec:          service.CredentialSpec,
 		DeviceCgroupRules:       append([]string(nil), service.DeviceCgroupRules...),
@@ -1322,13 +1322,16 @@ func mapStringValues(values map[string]string) map[string]string {
 	return result
 }
 
-// shellCommandValues copies compose-go shell command slices into ordinary JSON
-// arrays while preserving nil for omitted fields.
-func shellCommandValues(command types.ShellCommand) []string {
+// shellCommandValue copies compose-go shell command slices into an optional
+// JSON array. A non-nil empty array must remain present so Compose can
+// distinguish an explicit [] override from an omitted field.
+func shellCommandValue(command types.ShellCommand) *[]string {
 	if command == nil {
 		return nil
 	}
-	return append([]string(nil), command...)
+	values := make([]string, len(command))
+	copy(values, command)
+	return &values
 }
 
 // mapEnvironment preserves the difference between KEY and KEY=value entries.

@@ -309,9 +309,13 @@ extension ComposeOrchestrator {
             args.append(contentsOf: ["--ulimit", ulimit])
         }
         var entrypointCommandPrefix: [String] = []
-        if let entrypoint = service.entrypoint, !entrypoint.isEmpty {
-            args.append(contentsOf: ["--entrypoint", entrypoint[0]])
-            entrypointCommandPrefix = Array(entrypoint.dropFirst())
+        if let entrypoint = service.entrypoint {
+            if entrypoint.isEmpty {
+                args.append("--clear-entrypoint")
+            } else {
+                args.append(contentsOf: ["--entrypoint", entrypoint[0]])
+                entrypointCommandPrefix = Array(entrypoint.dropFirst())
+            }
         }
         if service.readOnly == true {
             args.append("--read-only")

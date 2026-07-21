@@ -85,6 +85,42 @@ services:
 	}
 }
 
+func TestRunPreservesExplicitEmptyProcessOverrides(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+services:
+  inherited:
+    image: alpine:3.20
+  cleared:
+    image: alpine:3.20
+    command: []
+    entrypoint: []
+`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	status := run([]string{"--project-directory", dir}, &stdout, &stderr)
+	if status != 0 {
+		t.Fatalf("run status = %d, stderr = %s", status, stderr.String())
+	}
+
+	var project normalizedProject
+	if err := json.Unmarshal(stdout.Bytes(), &project); err != nil {
+		t.Fatalf("decode normalized JSON: %v", err)
+	}
+	if inherited := project.Services["inherited"]; inherited.Command != nil || inherited.Entrypoint != nil {
+		t.Fatalf("inherited process overrides = command %#v entrypoint %#v, want both omitted", inherited.Command, inherited.Entrypoint)
+	}
+	cleared := project.Services["cleared"]
+	if cleared.Command == nil || len(*cleared.Command) != 0 {
+		t.Fatalf("cleared.Command = %#v, want explicit empty array", cleared.Command)
+	}
+	if cleared.Entrypoint == nil || len(*cleared.Entrypoint) != 0 {
+		t.Fatalf("cleared.Entrypoint = %#v, want explicit empty array", cleared.Entrypoint)
+	}
+}
+
 func TestRunPreservesSupportedSecurityOptions(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "compose.yaml"), `
@@ -1306,8 +1342,8 @@ volumes:
 	if len(api.Gpus) != 1 || api.Gpus[0].Driver != "nvidia" || int64(api.Gpus[0].Count) != 1 {
 		t.Fatalf("api.Gpus = %#v, want nvidia device request", api.Gpus)
 	}
-	if got, want := api.Command, []string{"nginx", "-g", "daemon off;"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("api.Command = %#v, want %#v", got, want)
+	if api.Command == nil || !reflect.DeepEqual(*api.Command, []string{"nginx", "-g", "daemon off;"}) {
+		t.Fatalf("api.Command = %#v, want %#v", api.Command, []string{"nginx", "-g", "daemon off;"})
 	}
 	if api.Environment["FOO"] == nil || *api.Environment["FOO"] != "bar" {
 		t.Fatalf("api.Environment[FOO] = %#v, want bar", api.Environment["FOO"])
@@ -2247,8 +2283,11 @@ func TestLoadProjectWithoutComposeFileReturnsError(t *testing.T) {
 }
 
 func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
-	if shellCommandValues(nil) != nil {
-		t.Fatal("shellCommandValues(nil) returned non-nil")
+	if shellCommandValue(nil) != nil {
+		t.Fatal("shellCommandValue(nil) returned non-nil")
+	}
+	if empty := shellCommandValue(types.ShellCommand{}); empty == nil || len(*empty) != 0 {
+		t.Fatalf("shellCommandValue(empty) = %#v, want explicit empty array", empty)
 	}
 	if mapEnvironment(nil) != nil {
 		t.Fatal("mapEnvironment(nil) returned non-nil")

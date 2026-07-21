@@ -1,0 +1,6 @@
+services:
+  process:
+    build:
+      context: .
+    command: []
+    entrypoint: []
