@@ -11,6 +11,22 @@
       }
     },
     {
+      "identity" : "container",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stephenlclarke/container.git",
+      "state" : {
+        "revision" : "c194d298449ffbd0a8a30f3307e75900a0b11970"
+      }
+    },
+    {
+      "identity" : "containerization",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stephenlclarke/containerization.git",
+      "state" : {
+        "revision" : "fe272b22c133bd82e319d3c91863fe11abe708a0"
+      }
+    },
+    {
       "identity" : "grpc-swift-2",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/grpc/grpc-swift-2.git",
