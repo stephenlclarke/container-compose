@@ -14,17 +14,17 @@ This is a `container-compose` release-automation correction. No Apple Container 
 | --- | --- |
 | `apple/containerization` | Existing guest and volume primitives. |
 | `apple/container` | Existing macOS virtualization-backed runtime service. |
-| `container-compose` | Matched-runtime selection, compatibility environment, fail-closed preflight, live VHS recording, and release documentation. |
+| `container-compose` | Matched-runtime selection, compatibility environment, direct fail-closed VHS recording, and release documentation. |
 
 ## Required change
 
 - Use the hardware-virtualization-capable `container-compose-release` Apple-silicon runner for Current packages.
-- Start a clean, isolated matched runtime, execute the entire lifecycle once as a fail-closed preflight, then execute it again inside VHS as visible terminal commands.
+- Start and stop the clean, isolated matched runtime inside VHS so the published terminal session visibly contains the real lifecycle commands and their output.
 - Set `CONTAINER_COMPOSE_CONTAINER` for every recorded Compose process so the plugin checks that isolated runtime rather than a host installation.
 - Remove only the demo project before recording so the first `up` visibly starts services; retain project volumes with the intermediate `down --remove-orphans`.
 - Record and fail on: first `up`, `stats`, `ps`, nginx health, Alertmanager readiness, a write to a marker in `nginx_cache`, retained-volume shutdown and a JSON listing that identifies the Compose-owned volume, second `up`, second `stats`/`ps`/health, a read of the same marker, and final `down --volumes --remove-orphans` plus empty `ps --all`.
 - Render live command/output only. VHS must type each lifecycle command itself and wait for that command's real output; it must not replay transcript files or invoke marker helpers. Show both `up` commands, the persisted marker read, and final `down` at a readable pace so retained-volume reuse is unambiguous.
-- Publish a partial transcript artifact on workflow failure and include the failed command output in the verifier error, so a release-runner failure is diagnosable without guessing from a red job summary.
+- Let the direct VHS session fail closed when a typed command fails or its required live output is absent; the job log is then the authoritative diagnostic artifact.
 
 ## Commit tracking
 
@@ -35,9 +35,8 @@ This is a `container-compose` release-automation correction. No Apple Container 
 
 ## Code map
 
-- `Tools/release/record_monitoring_stack_transcript.py` is the narrow runtime boundary: it performs the fifteen-step verification cycle, writes and rereads a named-volume marker, records the retained volume as JSON before the reuse start, and includes captured output when a command fails. Its output is diagnostic preflight evidence, never tape input.
-- `.github/workflows/prebuilt-binaries.yml` packages the matched runtime and plugin, executes that verifier, requires all fifteen logs, uploads a partial transcript on failure, validates the tape, and publishes the generated GIF.
-- `docs/container-compose-demo.tape` presents the live lifecycle at a readable pace, including both shutdowns and the second startup's marker read.
+- `.github/workflows/prebuilt-binaries.yml` packages the matched runtime and plugin, exports the isolated runtime environment, validates the tape, and publishes the generated GIF. It does not start the system or create a transcript before recording.
+- `docs/container-compose-demo.tape` types the system start, every Compose and HTTP lifecycle command, the system stop, and their live output at a readable pace. It has no replay or marker helper.
 - `examples/monitoring-stack/docker-compose.yaml` includes a portable `nginx_cache` named volume that visibly remains after the non-destructive down.
 
-The tape and release-test validation passed locally with VHS 0.11.0 and 65 release tests.
+The tape and release-test validation run locally with VHS and the release workflow unit suite; the physical Apple-silicon release runner executes the published guest lifecycle.

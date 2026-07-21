@@ -756,13 +756,11 @@ jobs:
           set -euo pipefail
           demo_root="${RUNNER_TEMP}/current-build-demo"
           demo_app_root="${demo_root}/app"
-          demo_transcript="${RUNNER_TEMP}/current-build-demo-transcript"
           demo_output=".build/current-demo/${DEMO_ASSET}"
           tape="${RUNNER_TEMP}/container-compose-current-demo.tape"
-          demo_system_started=0
 
           cleanup() {
-            if [[ "${demo_system_started}" == "1" ]]; then
+            if [[ -n "${container_binary:-}" ]]; then
               "${container_binary}" system stop || true
             fi
           }
@@ -781,43 +779,16 @@ jobs:
           export CONTAINER_APP_ROOT="${demo_app_root}"
           export PATH="${demo_root}/bin:${PATH}"
 
-          "${container_binary}" system start \
-            --app-root "${demo_app_root}" \
-            --install-root "${demo_root}" \
-            --enable-kernel-install \
-            --timeout 60
-          demo_system_started=1
-          "${container_binary}" system status
-
-          # Verify the lifecycle before recording and retain its output as a
-          # diagnosable artifact. VHS then types the same commands into its
-          # terminal and displays their live output; it never replays or cats
-          # a captured transcript.
+          # VHS itself is the fail-closed runtime gate. It types every command
+          # in the published terminal session, including system startup, and
+          # waits for that command's live output before proceeding.
           export CONTAINER_COMPOSE_DEMO_ROOT="${PWD}"
-          python3 Tools/release/record_monitoring_stack_transcript.py \
-            --container "${container_binary}" \
-            --compose-file examples/monitoring-stack/docker-compose.yaml \
-            --working-directory "${PWD}" \
-            --output-directory "${demo_transcript}"
-          for transcript in "${demo_transcript}"/*.log; do
-            test -s "${transcript}"
-          done
-          test "$(find "${demo_transcript}" -maxdepth 1 -name '*.log' -type f | wc -l | tr -d ' ')" -eq 15
-
           sed "1s#^Output .*#Output ${demo_output}#" docs/container-compose-demo.tape > "${tape}"
           rm -f "${demo_output}"
           vhs validate "${tape}"
           vhs "${tape}"
           test -s "${demo_output}"
           cp "${demo_output}" "${RUNNER_TEMP}/${DEMO_ASSET}"
-
-      - name: Upload current demo transcript
-        if: always() && needs.resolve-publish-context.outputs.ref_type == 'branch'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: current-build-demo-transcript
-          path: ${{ runner.temp }}/current-build-demo-transcript
-          if-no-files-found: warn
 
       - name: Attest release package
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3

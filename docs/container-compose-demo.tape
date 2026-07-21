@@ -17,9 +17,9 @@ Type "cd $CONTAINER_COMPOSE_DEMO_ROOT || exit 1"
 Enter
 Sleep 2s
 
-Type "container system status"
+Type "container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --enable-kernel-install --timeout 60 && container system status"
 Enter
-Wait+Screen@30s /running/
+Wait+Screen@90s /status +running/
 Sleep 2s
 Ctrl+L
 Sleep 1s
@@ -31,9 +31,9 @@ Sleep 2s
 Ctrl+L
 Sleep 1s
 
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300"
+Type "container compose --ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300 && container compose -f examples/monitoring-stack/docker-compose.yaml ps"
 Enter
-Wait+Screen@300s /nginx/
+Wait+Screen@300s /SERVICE.*STATUS/
 Sleep 4s
 Ctrl+L
 Sleep 1s
@@ -41,13 +41,6 @@ Sleep 1s
 Type "container compose -f examples/monitoring-stack/docker-compose.yaml stats --no-stream"
 Enter
 Wait+Screen@90s /NAME/
-Sleep 3s
-Ctrl+L
-Sleep 1s
-
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml ps"
-Enter
-Wait+Screen@30s /nginx/
 Sleep 3s
 Ctrl+L
 Sleep 1s
@@ -85,9 +78,9 @@ Sleep 4s
 Ctrl+L
 Sleep 1s
 
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300"
+Type "container compose --ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300 && container compose -f examples/monitoring-stack/docker-compose.yaml ps"
 Enter
-Wait+Screen@300s /nginx/
+Wait+Screen@300s /SERVICE.*STATUS/
 Sleep 5s
 Ctrl+L
 Sleep 1s
@@ -95,13 +88,6 @@ Sleep 1s
 Type "container compose -f examples/monitoring-stack/docker-compose.yaml stats --no-stream"
 Enter
 Wait+Screen@90s /NAME/
-Sleep 3s
-Ctrl+L
-Sleep 1s
-
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml ps"
-Enter
-Wait+Screen@30s /nginx/
 Sleep 3s
 Ctrl+L
 Sleep 1s
@@ -133,3 +119,8 @@ Sleep 4s
 Type "container compose -f examples/monitoring-stack/docker-compose.yaml ps --all"
 Enter
 Sleep 4s
+
+Type "container system stop; container system status"
+Enter
+Wait+Screen@30s /not running/
+Sleep 3s

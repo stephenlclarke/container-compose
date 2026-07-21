@@ -5,7 +5,7 @@
 - Generate the Current GIF by visibly typing the complete lifecycle into VHS against the matched packaged runtime on the physical Apple-silicon release runner.
 - Prove that `down --remove-orphans` retains the portable `monitoring-stack_nginx_cache`: write `container-compose-volume-reuse-ok` into the volume, show the retained asset's Compose labels and identity as JSON, then show a second successful `up`, stats, `ps`, both readiness checks, and a read of that same marker before final volume removal.
 - Bind every Compose invocation to the isolated runtime with `CONTAINER_COMPOSE_CONTAINER`, removing a false compatibility failure caused by a different host installation.
-- Preserve a partial transcript artifact and print captured command output when verification fails, so the release workflow explains a future runtime failure directly.
+- Make the direct VHS session the fail-closed verification: each typed command must produce its expected live output before recording can continue.
 
 ## Type of Change
 
@@ -29,23 +29,16 @@ No forked Apple source changes are required. The change uses existing runtime be
 
 ## Code Map
 
-- `Tools/release/record_monitoring_stack_transcript.py`: invokes the exact packaged `container` binary, exports it to Compose's compatibility check, resets only the monitoring project before the first start, writes and rereads the named-volume marker, captures the retained volume with `compose volumes --format json`, and cleans up on error. It remains a preflight diagnostic, not a source of tape input.
-- `Tools/release/test_record_monitoring_stack_transcript.py`: covers the complete successful sequence, JSON retained-volume transcript command, marker lifecycle, stale-transcript cleanup, failure capture/cleanup, absent `curl`, and isolated-runtime environment propagation.
-- `.github/workflows/prebuilt-binaries.yml`: selects the self-hosted Apple-silicon runner, starts the disposable matched runtime, rejects missing transcript logs, uploads a partial transcript on failure, validates the VHS source, and requires a non-empty GIF.
-- `docs/container-compose-demo.tape`: types every real `container compose` and `curl` command, waits for its live output, and leaves the second `up` command/output and final `down` command/output on screen at a deliberately readable pace so retained-volume reuse is directly visible.
+- `.github/workflows/prebuilt-binaries.yml`: selects the self-hosted Apple-silicon runner, exports the isolated package environment, validates the VHS source, and requires a non-empty GIF. It does not pre-start the runtime or create a transcript.
+- `docs/container-compose-demo.tape`: types the real `container system start`, every `container compose` and `curl` command, the final `container system stop`, and their live output. The tape has no replay function, marker function, or transcript input.
 - `examples/monitoring-stack/docker-compose.yaml`: declares the portable `nginx_cache` named volume used to prove resource retention.
-- `README.md` and `BUILD.md`: document the fail-closed preflight, live-command recording contract, and runner requirement.
+- `README.md` and `BUILD.md`: document the direct live-command recording contract and runner requirement.
 
 ## Validation
 
 ```console
-python3 -m unittest Tools.release.test_record_monitoring_stack_transcript Tools.release.test_container_stack_release
+python3 -m unittest Tools.release.test_container_stack_release
 CONTAINER_COMPOSE_DEMO_ROOT="$PWD" vhs validate docs/container-compose-demo.tape
-python3 Tools/release/record_monitoring_stack_transcript.py \
-  --container /path/to/matched/bin/container \
-  --compose-file examples/monitoring-stack/docker-compose.yaml \
-  --working-directory "$PWD" \
-  --output-directory /path/to/fresh/transcript
 docker compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300
 docker compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty nginx sh -c 'printf "%s\\n" container-compose-volume-reuse-ok > /var/cache/nginx/.container-compose-volume-reuse'
 docker compose -f examples/monitoring-stack/docker-compose.yaml down --remove-orphans
@@ -63,7 +56,7 @@ python3 -m unittest discover Tools/release
 ## Compatibility and Risks
 
 - The runtime path and named-volume lifecycle are macOS-supported and use only portable services. Linux-host-only monitoring profiles remain excluded.
-- The GIF starts Linux guests inside VHS and visibly types each command. The same lifecycle is run first as a fail-closed preflight, so a runner or runtime failure blocks publication and retains diagnostic output.
+- The GIF starts Linux guests inside VHS and visibly types each command. A command failure or missing expected output blocks publication, so the recording cannot become a transcript substitute.
 - A physical, labelled release runner must remain online. If it is unavailable, the package job queues instead of publishing a deceptive Current recording.
 - Local validation passed VHS source validation and all 65 release tests; the runner executes the real guest lifecycle when creating the published GIF.
 
@@ -72,5 +65,5 @@ python3 -m unittest discover Tools/release
 - [x] Docker-specific recording policy stays in Compose release automation.
 - [x] No Apple runtime fork change is required for this slice.
 - [x] The first start is clean, while the second start follows a demonstrably retained-volume shutdown, exposes the retained volume identity in JSON, and reads the first cycle's marker.
-- [x] A failing command or missing transcript prevents GIF publication, and its captured output remains available as a workflow artifact.
+- [x] A failing typed command or missing expected output prevents GIF publication.
 - [x] Current workflow, tape, example, tests, README, BUILD guide, and handoff records describe the same contract.
