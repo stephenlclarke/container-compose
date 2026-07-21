@@ -879,8 +879,8 @@ public extension ComposeOrchestrator {
             }
         }
         if volumes {
-            var volumeNames = Set(try anonymousVolumeRuntimeNames(project: project, targets: targets))
-            volumeNames.formUnion(try await imageAnonymousVolumeRuntimeNames(
+            var volumeNames = try Set(anonymousVolumeRuntimeNames(project: project, targets: targets))
+            try await volumeNames.formUnion(imageAnonymousVolumeRuntimeNames(
                 project: project,
                 containerNames: Set(targets.map(\.name)),
             ))
