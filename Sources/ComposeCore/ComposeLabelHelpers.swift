@@ -102,13 +102,6 @@ func serviceCreateLabels(
     for (key, value) in effectiveLabels where !overriddenLabelKeys.contains(key) {
         labels[key] = value
     }
-    for (key, value) in try effectiveServiceAnnotations(
-        service: service,
-        conflictingLabelKeys: Set(effectiveLabels.keys),
-        conflictingOverrideKeys: overriddenLabelKeys,
-    ) {
-        labels[key] = value
-    }
     for override in labelOverrides {
         labels[override.key] = override.value ?? ""
     }
@@ -208,8 +201,8 @@ func configHash(
 
 /// Validates user-supplied service labels and label files before side effects.
 func validateServiceLabels(project: ComposeProject, service: ComposeService) throws {
-    let labels = try effectiveServiceLabels(project: project, service: service)
-    _ = try effectiveServiceAnnotations(service: service, conflictingLabelKeys: Set(labels.keys))
+    _ = try effectiveServiceLabels(project: project, service: service)
+    _ = try effectiveServiceAnnotations(service: service)
 }
 
 /// Returns the user labels applied to a service after processing label files.
@@ -227,21 +220,11 @@ func effectiveServiceLabels(project: ComposeProject, service: ComposeService) th
     return labels
 }
 
-/// Returns Compose service annotations mapped to apple/container runtime metadata labels.
-func effectiveServiceAnnotations(
-    service: ComposeService,
-    conflictingLabelKeys: Set<String>,
-    conflictingOverrideKeys: Set<String> = [],
-) throws -> [String: String] {
+/// Returns Compose service annotations for the OCI runtime specification.
+func effectiveServiceAnnotations(service: ComposeService) throws -> [String: String] {
     var annotations: [String: String] = [:]
     for (key, value) in service.annotations ?? [:] {
         try validateUserLabelKey(key, source: "service '\(service.name)' annotation")
-        if conflictingLabelKeys.contains(key) {
-            throw ComposeError.invalidProject("service '\(service.name)' annotation '\(key)' conflicts with a service label mapped to the same runtime metadata key")
-        }
-        if conflictingOverrideKeys.contains(key) {
-            throw ComposeError.invalidProject("run --label cannot override service '\(service.name)' annotation '\(key)' because annotations map to runtime metadata labels")
-        }
         annotations[key] = value
     }
     return annotations

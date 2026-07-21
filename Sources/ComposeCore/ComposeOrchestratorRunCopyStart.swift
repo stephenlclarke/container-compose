@@ -92,16 +92,12 @@ extension ComposeOrchestrator {
         }
         let effectiveLabels = try effectiveServiceLabels(project: project, service: service)
         let overriddenLabelKeys = Set(run.labelOverrides.map(\.key))
-        let effectiveAnnotations = try effectiveServiceAnnotations(
-            service: service,
-            conflictingLabelKeys: Set(effectiveLabels.keys),
-            conflictingOverrideKeys: overriddenLabelKeys
-        )
+        let effectiveAnnotations = try effectiveServiceAnnotations(service: service)
         for (key, value) in effectiveLabels.sorted(by: { $0.key < $1.key }) where !overriddenLabelKeys.contains(key) {
             args.append(contentsOf: ["--label", "\(key)=\(value)"])
         }
         for (key, value) in effectiveAnnotations.sorted(by: { $0.key < $1.key }) {
-            args.append(contentsOf: ["--label", "\(key)=\(value)"])
+            args.append(contentsOf: ["--annotation", "\(key)=\(value)"])
         }
         for label in run.labelOverrides {
             args.append(contentsOf: ["--label", label.rawValue])

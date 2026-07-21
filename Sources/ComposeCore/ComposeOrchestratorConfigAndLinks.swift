@@ -203,6 +203,7 @@ extension ComposeOrchestrator {
                 externalVolumeMounts: request.externalVolumeMounts,
                 labelOverrides: request.labelOverrides,
             ),
+            annotations: try effectiveServiceAnnotations(service: service),
         )
         let runtime = try serviceCreateRuntime(
             service: service,

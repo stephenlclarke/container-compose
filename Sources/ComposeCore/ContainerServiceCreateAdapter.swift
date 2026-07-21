@@ -24,6 +24,7 @@ public struct ContainerServiceCreateIdentity: Sendable {
     public var oneOff: Bool
     public var autoRemove: Bool
     public var labels: [String: String]
+    public var annotations: [String: String]
 
     public init(
         name: String,
@@ -31,12 +32,14 @@ public struct ContainerServiceCreateIdentity: Sendable {
         oneOff: Bool = false,
         autoRemove: Bool = false,
         labels: [String: String] = [:],
+        annotations: [String: String] = [:],
     ) {
         self.name = name
         self.imageReference = imageReference
         self.oneOff = oneOff
         self.autoRemove = autoRemove
         self.labels = labels
+        self.annotations = annotations
     }
 }
 
@@ -84,6 +87,7 @@ public struct ContainerServiceCreatePlan: Sendable {
     public var oneOff: Bool
     public var autoRemove: Bool
     public var labels: [String: String]
+    public var annotations: [String: String]
     public var initProcess: ProcessConfiguration
     public var logging: ContainerLogConfiguration
     public var healthCheck: ContainerHealthCheck?
@@ -107,6 +111,7 @@ public struct ContainerServiceCreatePlan: Sendable {
         oneOff = identity.oneOff
         autoRemove = identity.autoRemove
         labels = identity.labels
+        annotations = identity.annotations
         initProcess = runtime.initProcess
         logging = runtime.logging
         healthCheck = runtime.healthCheck

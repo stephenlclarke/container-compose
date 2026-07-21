@@ -2773,6 +2773,7 @@ struct ComposeOrchestratorTests {
                     $0.domainName = "example.test"
                     $0.extraHosts = ["db:10.0.0.5"]
                     $0.sysctls = ["net.core.somaxconn": "1024"]
+                    $0.annotations = ["com.example.owner": "platform"]
                     $0.privileged = true
                     $0.blkioConfig = ComposeBlkioConfig(
                         weight: 300,
@@ -2792,6 +2793,7 @@ struct ComposeOrchestratorTests {
         #expect(plan.hosts.map(\.ipAddress) == ["10.0.0.5"])
         #expect(plan.hosts.flatMap(\.hostnames) == ["db"])
         #expect(plan.sysctls == ["net.core.somaxconn": "1024"])
+        #expect(plan.annotations == ["com.example.owner": "platform"])
         #expect(plan.initProcess.privileged)
         #expect(plan.blockIO?.weight == 300)
         #expect(plan.blockIO?.weightDevice.first?.major == 8)
@@ -27858,8 +27860,8 @@ struct ComposeOrchestratorTests {
         #expect(!command.containsSequence(["--label", "com.example.file=override"]))
     }
 
-    @Test("up applies service annotations as runtime metadata labels")
-    func upAppliesServiceAnnotationsAsRuntimeMetadataLabels() async throws {
+    @Test("up projects service annotations through the OCI annotation channel")
+    func upProjectsServiceAnnotationsThroughTheOCIAnnotationChannel() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -27881,12 +27883,14 @@ struct ComposeOrchestratorTests {
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--label", "com.example.role=api"]))
-        #expect(command.containsSequence(["--label", "example.com/owner=platform"]))
-        #expect(command.containsSequence(["--label", "example.com/purpose=local-dev"]))
+        #expect(command.containsSequence(["--annotation", "example.com/owner=platform"]))
+        #expect(command.containsSequence(["--annotation", "example.com/purpose=local-dev"]))
+        #expect(!command.containsSequence(["--label", "example.com/owner=platform"]))
+        #expect(!command.containsSequence(["--label", "example.com/purpose=local-dev"]))
     }
 
-    @Test("up rejects service annotation label conflicts before creating resources")
-    func upRejectsServiceAnnotationLabelConflictsBeforeCreatingResources() async throws {
+    @Test("up keeps same-key labels and annotations distinct")
+    func upKeepsSameKeyLabelsAndAnnotationsDistinct() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
@@ -27901,18 +27905,13 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-                .up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected annotation conflict error")
-        } catch let error as ComposeError {
-            #expect(error == .invalidProject("service 'api' annotation 'com.example.role' conflicts with a service label mapped to the same runtime metadata key"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
-        #expect(await resourceManager.requests == [])
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--label", "com.example.role=api"]))
+        #expect(command.containsSequence(["--annotation", "com.example.role=metadata"]))
+        #expect(!command.containsSequence(["--label", "com.example.role=metadata"]))
     }
 
     @Test("up recreates containers when service label files change")
@@ -28069,8 +28068,8 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("run rejects label overrides that conflict with service annotations")
-    func runRejectsLabelOverridesThatConflictWithServiceAnnotations() async throws {
+    @Test("run keeps label overrides separate from service annotations")
+    func runKeepsLabelOverridesSeparateFromServiceAnnotations() async throws {
         let runner = RecordingRunner()
         let project = ComposeProject(
             name: "demo",
@@ -28081,22 +28080,17 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(
-                project: project,
-                serviceName: "job",
-                options: composeRunOptions(command: ["true"]) {
-                    $0.labels = ["com.example.owner=override"]
-                }
-            )
-            Issue.record("Expected annotation override conflict")
-        } catch let error as ComposeError {
-            #expect(error == .invalidProject("run --label cannot override service 'job' annotation 'com.example.owner' because annotations map to runtime metadata labels"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["true"]) {
+                $0.labels = ["com.example.owner=override"]
+            }
+        )
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--label", "com.example.owner=override"]))
+        #expect(command.containsSequence(["--annotation", "com.example.owner=platform"]))
     }
 
     @Test("run applies one-off volume overrides")

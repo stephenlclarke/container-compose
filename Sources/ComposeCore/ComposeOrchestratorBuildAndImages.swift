@@ -872,15 +872,6 @@ extension ComposeOrchestrator {
         }
     }
 
-    /// Rejects one-off labels that would overwrite annotation metadata.
-    func validateRunLabelOverridesAgainstAnnotations(_ overrides: [ComposeLabelOverride], service: ComposeService) throws {
-        _ = try effectiveServiceAnnotations(
-            service: service,
-            conflictingLabelKeys: [],
-            conflictingOverrideKeys: Set(overrides.map(\.key)),
-        )
-    }
-
     /// Pulls only service images not already present in the local image store.
     func pullMissingImages(services: [ComposeService], quiet: Bool = false, skipBuildable: Bool = false) async throws {
         for service in services {

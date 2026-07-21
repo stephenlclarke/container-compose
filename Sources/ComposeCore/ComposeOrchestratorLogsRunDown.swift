@@ -454,7 +454,6 @@ public extension ComposeOrchestrator {
         var service = service
         try validateProjectNetworks(runProject)
         let labelOverrides = try parseRunLabelOverrides(run.labels)
-        try validateRunLabelOverridesAgainstAnnotations(labelOverrides, service: service)
         try validatePullPolicy(run.pullPolicy)
         let selectedDependencyServices = try run.noDeps
             ? []
