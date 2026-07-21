@@ -49,6 +49,7 @@ struct ComposeRuntimeResourcesTests {
                 ipv4AllocationRange: "172.25.1.0/24",
                 ipv4ReservedAddresses: ["172.25.0.2"],
                 ipv6Subnet: "fd00::/64",
+                ipv6Gateway: "fd00::53",
             ),
             enableIPv6: false,
             driverOpts: ["dns": "enabled"],
@@ -62,6 +63,7 @@ struct ComposeRuntimeResourcesTests {
         #expect(request.ipv4AllocationRange == "172.25.1.0/24")
         #expect(request.ipv4ReservedAddresses == ["172.25.0.2"])
         #expect(request.ipv6Subnet == "fd00::/64")
+        #expect(request.ipv6Gateway == "fd00::53")
         #expect(request.enableIPv6 == false)
         #expect(request.driverOpts == ["dns": "enabled"])
         #expect(request.labels == ["com.docker.compose.project": "app"])

@@ -162,10 +162,11 @@ extension ComposeOrchestrator {
                 try validateNetworkIPv4Gateway(network, name: name)
                 try validateNetworkIPv4AllocationRange(network, name: name)
                 try validateNetworkIPv4ReservedAddresses(network, name: name)
+                try validateNetworkIPv6Gateway(network, name: name)
                 continue
             }
             let fieldList = fields.joined(separator: ", ")
-            throw ComposeError.unsupported("network '\(name)' uses unsupported fields \(fieldList); supported project network fields are name, external, internal, attachable, enable_ipv6, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet")
+            throw ComposeError.unsupported("network '\(name)' uses unsupported fields \(fieldList); supported project network fields are name, external, internal, attachable, enable_ipv6, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet with an optional gateway")
         }
     }
 

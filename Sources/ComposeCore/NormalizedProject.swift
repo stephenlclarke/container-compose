@@ -706,6 +706,7 @@ public struct ComposeNetwork: Codable, Equatable {
         public var ipv4AllocationRange: String?
         public var ipv4ReservedAddresses: [String]?
         public var ipv6Subnet: String?
+        public var ipv6Gateway: String?
 
         public init(
             ipv4Subnet: String? = nil,
@@ -713,12 +714,14 @@ public struct ComposeNetwork: Codable, Equatable {
             ipv4AllocationRange: String? = nil,
             ipv4ReservedAddresses: [String]? = nil,
             ipv6Subnet: String? = nil,
+            ipv6Gateway: String? = nil,
         ) {
             self.ipv4Subnet = ipv4Subnet
             self.ipv4Gateway = ipv4Gateway
             self.ipv4AllocationRange = ipv4AllocationRange
             self.ipv4ReservedAddresses = ipv4ReservedAddresses
             self.ipv6Subnet = ipv6Subnet
+            self.ipv6Gateway = ipv6Gateway
         }
     }
 
@@ -770,6 +773,7 @@ public struct ComposeNetwork: Codable, Equatable {
     public var ipv4AllocationRange: String?
     public var ipv4ReservedAddresses: [String]?
     public var ipv6Subnet: String?
+    public var ipv6Gateway: String?
     public var unsupportedFields: [String]?
 
     public init(
@@ -790,6 +794,7 @@ public struct ComposeNetwork: Codable, Equatable {
         ipv4AllocationRange = options.subnets.ipv4AllocationRange
         ipv4ReservedAddresses = options.subnets.ipv4ReservedAddresses
         ipv6Subnet = options.subnets.ipv6Subnet
+        ipv6Gateway = options.subnets.ipv6Gateway
         unsupportedFields = options.unsupportedFields
     }
 
@@ -808,6 +813,7 @@ public struct ComposeNetwork: Codable, Equatable {
         case ipv4AllocationRange
         case ipv4ReservedAddresses
         case ipv6Subnet
+        case ipv6Gateway
         case unsupportedFields
     }
 }

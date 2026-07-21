@@ -613,6 +613,9 @@ extension ComposeOrchestrator {
         if network.enableIPv6 != false, let ipv6Subnet = network.ipv6Subnet, !ipv6Subnet.isEmpty {
             args.append(contentsOf: ["--subnet-v6", ipv6Subnet])
         }
+        if network.enableIPv6 != false, let ipv6Gateway = network.ipv6Gateway, !ipv6Gateway.isEmpty {
+            args.append(contentsOf: ["--gateway-v6", ipv6Gateway])
+        }
         let driverOpts = network.driverOpts ?? [:]
         for option in driverOpts.sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--option", "\(option.key)=\(option.value)"])
@@ -637,6 +640,7 @@ extension ComposeOrchestrator {
                     ipv4AllocationRange: network.ipv4AllocationRange,
                     ipv4ReservedAddresses: network.ipv4ReservedAddresses ?? [],
                     ipv6Subnet: network.ipv6Subnet,
+                    ipv6Gateway: network.ipv6Gateway,
                 ),
                 enableIPv6: network.enableIPv6,
                 driverOpts: driverOpts,

@@ -53,6 +53,7 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
         public var ipv4AllocationRange: String?
         public var ipv4ReservedAddresses: [String]
         public var ipv6Subnet: String?
+        public var ipv6Gateway: String?
 
         public init(
             ipv4Subnet: String? = nil,
@@ -60,12 +61,14 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
             ipv4AllocationRange: String? = nil,
             ipv4ReservedAddresses: [String] = [],
             ipv6Subnet: String? = nil,
+            ipv6Gateway: String? = nil,
         ) {
             self.ipv4Subnet = ipv4Subnet
             self.ipv4Gateway = ipv4Gateway
             self.ipv4AllocationRange = ipv4AllocationRange
             self.ipv4ReservedAddresses = ipv4ReservedAddresses
             self.ipv6Subnet = ipv6Subnet
+            self.ipv6Gateway = ipv6Gateway
         }
     }
 
@@ -76,6 +79,7 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
     public var ipv4AllocationRange: String?
     public var ipv4ReservedAddresses: [String]
     public var ipv6Subnet: String?
+    public var ipv6Gateway: String?
     /// Explicit IPv6 setting supplied by the Compose project, when present.
     public var enableIPv6: Bool?
     public var driverOpts: [String: String]
@@ -96,6 +100,7 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
         ipv4AllocationRange = addressing.ipv4AllocationRange
         ipv4ReservedAddresses = addressing.ipv4ReservedAddresses
         ipv6Subnet = addressing.ipv6Subnet
+        ipv6Gateway = addressing.ipv6Gateway
         self.enableIPv6 = enableIPv6
         self.driverOpts = driverOpts
         self.labels = labels

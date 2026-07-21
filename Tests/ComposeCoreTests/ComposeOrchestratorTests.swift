@@ -1351,7 +1351,8 @@ struct ComposeOrchestratorTests {
                             ipv4Gateway: "10.77.0.254",
                             ipv4AllocationRange: "10.77.0.128/25",
                             ipv4ReservedAddresses: ["10.77.0.10", "10.77.0.11"],
-                            ipv6Subnet: "fd77::/64"
+                            ipv6Subnet: "fd77::/64",
+                            ipv6Gateway: "fd77::53"
                         )
                     )
                 ),
@@ -1374,6 +1375,7 @@ struct ComposeOrchestratorTests {
             #expect(request.ipv4AllocationRange == "10.77.0.128/25")
             #expect(request.ipv4ReservedAddresses == ["10.77.0.10", "10.77.0.11"])
             #expect(request.ipv6Subnet == "fd77::/64")
+            #expect(request.ipv6Gateway == "fd77::53")
             #expect(request.enableIPv6 == nil)
             #expect(request.driverOpts == [:])
             #expect(request.labels["com.apple.container.compose.project"] == "demo")
@@ -1454,7 +1456,8 @@ struct ComposeOrchestratorTests {
                             ipv4Gateway: "10.77.0.254",
                             ipv4AllocationRange: "10.77.0.128/25",
                             ipv4ReservedAddresses: ["10.77.0.10", "10.77.0.11"],
-                            ipv6Subnet: "fd77::/64"
+                            ipv6Subnet: "fd77::/64",
+                            ipv6Gateway: "fd77::53"
                         )
                     )
                 ),
@@ -1465,7 +1468,7 @@ struct ComposeOrchestratorTests {
             .up(project: project, options: ComposeUpOptions())
 
         #expect(emitted.messages.contains { message in
-            message.contains("container network create --internal --subnet 10.77.0.0/24 --gateway 10.77.0.254 --ip-range 10.77.0.128/25 --reserve-ip 10.77.0.10 --reserve-ip 10.77.0.11 --subnet-v6 fd77::/64")
+            message.contains("container network create --internal --subnet 10.77.0.0/24 --gateway 10.77.0.254 --ip-range 10.77.0.128/25 --reserve-ip 10.77.0.10 --reserve-ip 10.77.0.11 --subnet-v6 fd77::/64 --gateway-v6 fd77::53")
         })
     }
 
@@ -1637,7 +1640,7 @@ struct ComposeOrchestratorTests {
                 .up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported project network options error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, enable_ipv4; supported project network fields are name, external, internal, attachable, enable_ipv6, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet"))
+            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, enable_ipv4; supported project network fields are name, external, internal, attachable, enable_ipv6, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet with an optional gateway"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -20509,7 +20512,8 @@ struct ComposeOrchestratorTests {
                 ipv4Subnet: "10.10.0.0/24",
                 ipv4Gateway: "10.10.0.254",
                 ipv4AllocationRange: "10.10.0.128/25",
-                ipv6Subnet: "fd00:10::/64"
+                ipv6Subnet: "fd00:10::/64",
+                ipv6Gateway: "fd00:10::53"
             ),
             enableIPv6: true,
             driverOpts: ["variant": "vzNAT"],
@@ -20535,6 +20539,7 @@ struct ComposeOrchestratorTests {
                 ipv4Gateway: "10.10.0.254",
                 ipv4AllocationRange: "10.10.0.128/25",
                 ipv6Subnet: "fd00:10::/64",
+                ipv6Gateway: "fd00:10::53",
                 enableIPv6: true,
                 options: ["variant": "vzNAT"],
                 labels: labels
@@ -20681,7 +20686,7 @@ struct ComposeOrchestratorTests {
 
         try await manager.createNetwork(ComposeNetworkCreateRequest(
             name: "demo_no_ipv6",
-            addressing: .init(ipv6Subnet: "fd00:10::/64"),
+            addressing: .init(ipv6Subnet: "fd00:10::/64", ipv6Gateway: "fd00:10::53"),
             enableIPv6: false
         ))
 
@@ -20694,6 +20699,7 @@ struct ComposeOrchestratorTests {
                 ipv4Gateway: nil,
                 ipv4AllocationRange: nil,
                 ipv6Subnet: nil,
+                ipv6Gateway: nil,
                 enableIPv6: false,
                 options: [:],
                 labels: [:]
@@ -29815,6 +29821,7 @@ private enum ContainerResourceAPIRequest: Equatable {
         ipv4Gateway: String?,
         ipv4AllocationRange: String?,
         ipv6Subnet: String?,
+        ipv6Gateway: String? = nil,
         enableIPv6: Bool,
         options: [String: String],
         labels: [String: String]
@@ -31334,6 +31341,7 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
             ipv4Gateway: configuration.ipv4Gateway?.description,
             ipv4AllocationRange: configuration.ipv4AllocationRange?.description,
             ipv6Subnet: configuration.ipv6Subnet?.description,
+            ipv6Gateway: configuration.ipv6Gateway?.description,
             enableIPv6: configuration.enableIPv6,
             options: configuration.options,
             labels: configuration.labels.dictionary

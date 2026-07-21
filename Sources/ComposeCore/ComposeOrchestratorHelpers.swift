@@ -682,6 +682,42 @@ private func validateStaticIPv6Address(
             "service '\(service.name)' ipv6_address '\(address)' is not in network '\(network)' IPv6 IPAM subnet",
         )
     }
+    if let gatewayText = nonEmpty(configuration.ipv6Gateway) {
+        let gateway: IPv6Address
+        do {
+            gateway = try IPv6Address(gatewayText)
+        } catch {
+            throw ComposeError.invalidProject("network '\(network)' IPv6 IPAM gateway '\(gatewayText)' is invalid")
+        }
+        guard address != gateway else {
+            throw ComposeError.invalidProject(
+                "service '\(service.name)' ipv6_address '\(address)' is the gateway for network '\(network)'",
+            )
+        }
+    }
+}
+
+/// Validates the optional IPv6 IPAM gateway before creating any project resource.
+func validateNetworkIPv6Gateway(_ network: ComposeNetwork, name: String) throws {
+    guard network.enableIPv6 != false, let gatewayText = nonEmpty(network.ipv6Gateway) else {
+        return
+    }
+    guard let subnetText = nonEmpty(network.ipv6Subnet) else {
+        throw ComposeError.invalidProject("network '\(name)' IPv6 IPAM gateway requires an IPv6 IPAM subnet")
+    }
+    let subnet: CIDRv6
+    let gateway: IPv6Address
+    do {
+        subnet = try CIDRv6(subnetText)
+        gateway = try IPv6Address(gatewayText)
+    } catch {
+        throw ComposeError.invalidProject("network '\(name)' IPv6 IPAM gateway '\(gatewayText)' is invalid")
+    }
+    guard gateway.zone == nil, !gateway.isUnspecified, subnet.contains(gateway) else {
+        throw ComposeError.invalidProject(
+            "network '\(name)' IPv6 IPAM gateway '\(gateway)' must be a usable address in subnet '\(subnet)'",
+        )
+    }
 }
 
 /// Returns canonical network aliases for an attachment.

@@ -154,6 +154,7 @@ struct ComposeNormalizerTests {
                     app: 10.10.0.10
                     worker: 10.10.0.11
                 - subnet: fd00:10::/64
+                  gateway: fd00:10::53
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
@@ -260,7 +261,8 @@ struct ComposeNormalizerTests {
                     ipv4Gateway: "10.10.0.254",
                     ipv4AllocationRange: "10.10.0.128/25",
                     ipv4ReservedAddresses: ["10.10.0.10", "10.10.0.11"],
-                    ipv6Subnet: "fd00:10::/64"
+                    ipv6Subnet: "fd00:10::/64",
+                    ipv6Gateway: "fd00:10::53"
                 )
             )
         ))

@@ -161,6 +161,7 @@ public struct ContainerClientResourceManager: ComposeRuntimeResourceManaging {
             ipv4AllocationRange: request.ipv4AllocationRange.map { try CIDRv4($0) },
             ipv4ReservedAddresses: request.ipv4ReservedAddresses.map { try IPv4Address($0) },
             ipv6Subnet: request.enableIPv6 == false ? nil : request.ipv6Subnet.map { try CIDRv6($0) },
+            ipv6Gateway: request.enableIPv6 == false ? nil : request.ipv6Gateway.map { try IPv6Address($0) },
             enableIPv6: request.enableIPv6 ?? true,
             labels: ResourceLabels(request.labels),
             plugin: "container-network-vmnet",
