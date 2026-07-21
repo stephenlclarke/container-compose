@@ -12789,7 +12789,7 @@ struct ComposeOrchestratorTests {
         #expect(output.contains("STATUS"))
         #expect(output.contains("CONFIG FILES"))
         #expect(output.contains("demo"))
-        #expect(output.contains("running(1), stopped(1)"))
+        #expect(output.contains("exited(1), running(1)"))
         #expect(output.contains("/tmp/demo/compose.yml,/tmp/demo/compose.override.yml"))
         #expect(output.contains("other"))
         #expect(output.contains("/tmp/other/compose.yml"))
@@ -12847,7 +12847,7 @@ struct ComposeOrchestratorTests {
         let data = try Data(#require(emitted.messages.first).utf8)
         let records = try #require(JSONSerialization.jsonObject(with: data) as? [[String: String]])
         #expect(records.map { $0["name"] } == ["demo", "other"])
-        #expect(records.map { $0["status"] } == ["running(1), stopped(1)", "running(1)"])
+        #expect(records.map { $0["status"] } == ["exited(1), running(1)", "running(1)"])
         #expect(records.map { $0["configFiles"] } == [
             "/tmp/demo/compose.yml,/tmp/demo/compose.override.yml",
             "/tmp/other/compose.yml",
@@ -13168,7 +13168,7 @@ struct ComposeOrchestratorTests {
             """
             NAME           SERVICE  STATUS   PORTS
             demo-api-1     api      running
-            demo-worker-1  worker   stopped
+            demo-worker-1  worker   exited
             """,
         ])
     }
@@ -13412,6 +13412,54 @@ struct ComposeOrchestratorTests {
         #expect(try listedContainerIDs(from: #require(emitted.messages.first)) == ["demo-worker-1"])
     }
 
+    @Test("ps status filters created containers distinctly from exited containers")
+    func psStatusFiltersCreatedContainers() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-created-1", serviceName: "created", status: "created"),
+            discoveredServiceContainer(id: "demo-exited-1", serviceName: "exited", status: "exited"),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions { $0.statuses = ["created"] }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(try listedContainerIDs(from: #require(emitted.messages.first)) == ["demo-created-1"])
+    }
+
+    @Test("ps status stopped remains a nonmatching legacy filter")
+    func psStatusStoppedDoesNotAliasExited() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: discoveredContainers())
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.quiet = true
+                $0.statuses = ["stopped"]
+            }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(emitted.messages.isEmpty)
+    }
+
     @Test("ps status supports paused containers")
     func psStatusSupportsPausedContainers() async throws {
         let emitted = MessageRecorder()
@@ -13530,7 +13578,7 @@ struct ComposeOrchestratorTests {
             )
             Issue.record("Expected unsupported status error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("ps status 'restarting'; apple/container exposes paused, running, stopped, stopping, and unknown"))
+            #expect(error == .unsupported("ps status 'restarting'; current macOS Compose exposes created, exited, paused, running, stopping, and unknown"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -18161,6 +18209,7 @@ struct ComposeOrchestratorTests {
                 imageReference: "example/worker:debug",
                 imageDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                 platform: "linux/amd64",
+                startedDate: Date(timeIntervalSince1970: 1_699_999_000),
                 exitCode: 17,
                 exitedDate: Date(timeIntervalSince1970: 1_700_000_000)
             ),
@@ -18174,6 +18223,24 @@ struct ComposeOrchestratorTests {
         let missingClient = RecordingContainerDiscoveryAPIClient()
         let missingManager = ContainerClientDiscoveryManager(client: missingClient)
         let missing = try await missingManager.getContainer(id: "demo-missing-1")
+        let createdSnapshot = try containerSnapshot(
+            id: "demo-created-1",
+            status: .stopped,
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "created",
+                composeConfigHashLabel: "created-hash",
+            ],
+            imageReference: "example/created:latest",
+            imageDigest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            platform: "linux/arm64"
+        )
+        let createdClient = RecordingContainerDiscoveryAPIClient(
+            listResponse: [createdSnapshot],
+            getResponse: createdSnapshot
+        )
+        let createdManager = ContainerClientDiscoveryManager(client: createdClient)
+        let created = try await createdManager.getContainer(id: "demo-created-1")
 
         #expect(running.map(\.id) == ["demo-api-1", "demo-worker-1"])
         #expect(running.first == ComposeContainerSummary(
@@ -18209,11 +18276,13 @@ struct ComposeOrchestratorTests {
             ),
             state: ComposeContainerSummary.State(health: "healthy")
         ))
-        #expect(all.map(\.status) == ["running", "stopped"])
+        #expect(all.map(\.status) == ["running", "exited"])
         #expect(worker?.id == "demo-worker-1")
         #expect(worker?.platform == "linux/amd64")
         #expect(worker?.exitCode == 17)
         #expect(worker?.exitedDate == Date(timeIntervalSince1970: 1_700_000_000))
+        #expect(created?.status == "created")
+        #expect(created?.exitCode == nil)
         #expect(missing == nil)
 
         let filters = await client.listFilters
@@ -18274,12 +18343,26 @@ struct ComposeOrchestratorTests {
             imageReference: "example/worker:debug",
             imageDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             platform: "linux/amd64",
+            startedDate: Date(timeIntervalSince1970: 1_699_999_000),
             exitCode: 17,
             exitedDate: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let createdSnapshot = try containerSnapshot(
+            id: "demo-created-1",
+            status: .stopped,
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "created",
+                composeConfigHashLabel: "created-hash",
+            ],
+            imageReference: "example/created:latest",
+            imageDigest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            platform: "linux/arm64"
         )
         let runner = try RecordingRunner(responses: [
             CommandResult(status: 0, stdout: managedContainerJSON([runningSnapshot]), stderr: ""),
             CommandResult(status: 0, stdout: managedContainerJSON([runningSnapshot, stoppedSnapshot]), stderr: ""),
+            CommandResult(status: 0, stdout: managedContainerJSON([runningSnapshot, stoppedSnapshot, createdSnapshot]), stderr: ""),
         ])
         let manager = ContainerCLIJSONDiscoveryManager(
             runner: runner,
@@ -18289,6 +18372,7 @@ struct ComposeOrchestratorTests {
 
         let running = try await manager.listContainers(all: false)
         let worker = try await manager.getContainer(id: "demo-worker-1")
+        let created = try await manager.getContainer(id: "demo-created-1")
 
         #expect(running == [
             ComposeContainerSummary(
@@ -18319,12 +18403,15 @@ struct ComposeOrchestratorTests {
             ),
         ])
         #expect(worker?.id == "demo-worker-1")
-        #expect(worker?.status == "stopped")
+        #expect(worker?.status == "exited")
         #expect(worker?.exitCode == 17)
         #expect(worker?.exitedDate == Date(timeIntervalSince1970: 1_700_000_000))
         #expect(worker?.health == nil)
+        #expect(created?.status == "created")
+        #expect(created?.exitCode == nil)
         #expect(runner.commands.map(\.arguments) == [
             ["forked-container", "list", "--format", "json"],
+            ["forked-container", "list", "--format", "json", "--all"],
             ["forked-container", "list", "--format", "json", "--all"],
         ])
     }
@@ -29185,7 +29272,7 @@ private func discoveredContainers() -> [ComposeContainerSummary] {
         ),
         ComposeContainerSummary(
             id: "demo-worker-1",
-            status: "stopped",
+            status: "exited",
             labels: [
                 composeProjectLabel: "demo",
                 composeServiceLabel: "worker",
@@ -29233,6 +29320,7 @@ private func containerSnapshot(
     publishedPorts: [PublishPort] = [],
     mounts: [Filesystem] = [],
     networks: [ContainerResource.Attachment] = [],
+    startedDate: Date? = nil,
     exitCode: Int32? = nil,
     exitedDate: Date? = nil,
     health: HealthStatus? = nil
@@ -29257,6 +29345,7 @@ private func containerSnapshot(
         configuration: configuration,
         status: status,
         networks: networks,
+        startedDate: startedDate,
         exitCode: exitCode,
         exitedDate: exitedDate,
         health: health

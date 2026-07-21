@@ -182,7 +182,7 @@ private extension ComposeContainerSummary {
     init(snapshot: ContainerSnapshot) {
         self.init(
             id: snapshot.id,
-            status: snapshot.status.rawValue,
+            status: Self.composeStatus(runtimeStatus: snapshot.status, startedDate: snapshot.startedDate),
             labels: snapshot.configuration.labels,
             image: ComposeContainerSummary.Image(
                 reference: snapshot.configuration.image.reference,
@@ -205,7 +205,10 @@ private extension ComposeContainerSummary {
     init(managedContainer: ManagedContainer) {
         self.init(
             id: managedContainer.id,
-            status: managedContainer.status.state.rawValue,
+            status: Self.composeStatus(
+                runtimeStatus: managedContainer.status.state,
+                startedDate: managedContainer.status.startedDate
+            ),
             labels: managedContainer.configuration.labels,
             image: ComposeContainerSummary.Image(
                 reference: managedContainer.configuration.image.reference,
@@ -223,6 +226,17 @@ private extension ComposeContainerSummary {
                 health: managedContainer.health?.rawValue,
             ),
         )
+    }
+
+    /// Projects the runtime's stopped state into Docker's lifecycle vocabulary.
+    /// A container that has never started is `created`; a later stopped
+    /// container is `exited`. All active runtime states retain their native
+    /// spelling.
+    static func composeStatus(runtimeStatus: RuntimeStatus, startedDate: Date?) -> String {
+        guard runtimeStatus == .stopped else {
+            return runtimeStatus.rawValue
+        }
+        return startedDate == nil ? "created" : "exited"
     }
 
     static func publishedPort(from port: PublishPort) -> ComposeContainerPublishedPort {

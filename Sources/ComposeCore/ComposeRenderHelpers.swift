@@ -717,14 +717,16 @@ func psStatusFilters(statuses: [String], filters: [String]) throws -> Set<String
     return try Set(requestedStatuses.map(normalizedRuntimeStatus))
 }
 
-/// Maps Compose status vocabulary onto states exposed by `apple/container`.
+/// Validates Compose status values that the current runtime presentation can expose.
 func normalizedRuntimeStatus(_ status: String) throws -> String {
     switch status.lowercased() {
-    case "paused", "running", "stopped", "stopping", "unknown":
+    case "created", "exited", "paused", "running", "stopping", "unknown":
         return status.lowercased()
-    case "exited":
+    // Keep a legacy generic-runtime filter nonmatching. Docker Compose V2
+    // accepts it but does not treat it as an alias for `exited`.
+    case "stopped":
         return "stopped"
     default:
-        throw ComposeError.unsupported("ps status '\(status)'; apple/container exposes paused, running, stopped, stopping, and unknown")
+        throw ComposeError.unsupported("ps status '\(status)'; current macOS Compose exposes created, exited, paused, running, stopping, and unknown")
     }
 }
