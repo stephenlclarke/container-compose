@@ -12732,6 +12732,61 @@ struct ComposeOrchestratorTests {
         #expect(records[1].attributes["exitCode"] == "137")
     }
 
+    @Test("event manager relays Docker exec actions with public exec metadata")
+    func eventManagerRelaysDockerExecActions() async throws {
+        let emitted = MessageRecorder()
+        let events = [
+            ContainerEvent(
+                time: date("2026-06-22T10:00:00Z"),
+                type: "container",
+                id: "demo-api-1",
+                action: "exec_create: sh -c exit 23",
+                attributes: composeEventAttributes(extra: ["execID": "exec-123"])
+            ),
+            ContainerEvent(
+                time: date("2026-06-22T10:00:01Z"),
+                type: "container",
+                id: "demo-api-1",
+                action: "exec_start: sh -c exit 23",
+                attributes: composeEventAttributes(extra: ["execID": "exec-123"])
+            ),
+            ContainerEvent(
+                time: date("2026-06-22T10:00:02Z"),
+                type: "container",
+                id: "demo-api-1",
+                action: "exec_die",
+                attributes: composeEventAttributes(extra: ["execID": "exec-123", "exitCode": "23"])
+            ),
+        ]
+        let client = try RecordingContainerEventsAPIClient(data: containerEventData(events))
+        let manager = ContainerClientEventsManager(client: client)
+
+        try await manager.events(
+            projectName: "demo",
+            services: ["api"],
+            format: .json,
+            since: nil,
+            until: nil,
+            emit: { emitted.append($0) }
+        )
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let records = try emitted.messages.map {
+            try decoder.decode(ComposeEventRecord.self, from: Data($0.utf8))
+        }
+        #expect(records.map(\.action) == [
+            "exec_create: sh -c exit 23",
+            "exec_start: sh -c exit 23",
+            "exec_die",
+        ])
+        #expect(records.allSatisfy { $0.attributes["execID"] == "exec-123" })
+        #expect(records[2].attributes["exitCode"] == "23")
+        #expect(records.allSatisfy { record in
+            record.attributes.keys.allSatisfy { !$0.hasPrefix("com.docker.compose.") }
+        })
+    }
+
     @Test("event manager renders Docker Compose text service events by default")
     func eventManagerRendersDockerComposeTextServiceEventsByDefault() async throws {
         let emitted = MessageRecorder()

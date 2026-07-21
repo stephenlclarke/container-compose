@@ -343,7 +343,7 @@ enum ComposeCLIHelp {
     private static let supportDetails: [String: String] = [
         "build": "build.no_cache_filter and non-file/environment build-secret source forms are unavailable.",
         "config": "Normalized output omits build.no_cache_filter.",
-        "events": "OOM, automatic restart, rename, resize, update, attach/detach, and exec actions are unavailable.",
+        "events": "OOM, explicit restart, rename, resize, update, and attach/detach actions are unavailable; automatic policy restarts emit die then start, and exec lifecycle actions are supported.",
         "exec": "Docker-complete privileged execution is unavailable.",
         "ps": "Go-template control blocks and nested object paths are unavailable.",
         "run": "Container-facing DNS aliases and interactive lifecycle hooks are incomplete.",

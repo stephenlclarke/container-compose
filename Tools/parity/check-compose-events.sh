@@ -31,8 +31,8 @@
 # Docker Compose V2 event semantics used by container-compose: default text and
 # JSON output are container-scoped, selected service filtering excludes other
 # services, internal Compose labels are stripped, one-off run containers are not
-# emitted, terminal kill/die/destroy actions are present, and --since/--until
-# can replay a bounded project event window.
+# emitted, terminal kill/die/destroy and exec lifecycle actions are present,
+# and --since/--until can replay a bounded project event window.
 
 set -euo pipefail
 
@@ -191,6 +191,38 @@ PY
     return 1
 }
 
+# Wait until Docker Compose has emitted all exec lifecycle actions for the API service.
+wait_for_exec_events() {
+    local deadline
+    ((deadline = SECONDS + 30))
+
+    while ((SECONDS < deadline)); do
+        if python3 - "$EVENTS_FILE" <<'PY'
+import json
+import sys
+
+actions = set()
+for line in open(sys.argv[1], encoding="utf-8"):
+    if not line.strip():
+        continue
+    event = json.loads(line)
+    if event.get("service") != "api":
+        continue
+    actions.add(event.get("action", "").split(":", 1)[0])
+
+required = {"exec_create", "exec_start", "exec_die"}
+sys.exit(0 if required.issubset(actions) else 1)
+PY
+        then
+            return 0
+        fi
+        sleep 1
+    done
+
+    error 'timed out waiting for docker compose exec lifecycle events'
+    return 1
+}
+
 # Wait for the event file line count to stop changing.
 stable_event_count() {
     local previous
@@ -255,6 +287,23 @@ if missing_actions:
         "Docker Compose V2 omitted required terminal actions: "
         f"{sorted(missing_actions)}; saw {sorted(actions)}"
     )
+
+exec_events = [event for event in events if event["action"].split(":", 1)[0].startswith("exec_")]
+exec_actions = {event["action"].split(":", 1)[0] for event in exec_events}
+required_exec_actions = {"exec_create", "exec_start", "exec_die"}
+missing_exec_actions = required_exec_actions.difference(exec_actions)
+if missing_exec_actions:
+    raise SystemExit(
+        "Docker Compose V2 omitted required exec actions: "
+        f"{sorted(missing_exec_actions)}; saw {sorted(exec_actions)}"
+    )
+
+for event in exec_events:
+    attributes = event.get("attributes") or {}
+    if not attributes.get("execID"):
+        raise SystemExit(f"exec event {event['action']!r} is missing execID metadata")
+    if event["action"] == "exec_die" and attributes.get("exitCode") != "23":
+        raise SystemExit(f"exec_die exitCode differs from the expected command result: {attributes!r}")
 PY
 }
 
@@ -374,7 +423,7 @@ lines = [line.strip() for line in open(sys.argv[1], encoding="utf-8") if line.st
 if not lines:
     raise SystemExit("no Docker Compose text events were captured")
 
-event_line = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} container \S+ \S+ \(")
+event_line = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} container .+ \(")
 for index, line in enumerate(lines, start=1):
     if not event_line.search(line):
         raise SystemExit(f"text event {index} has unexpected shape: {line!r}")
@@ -393,6 +442,12 @@ main() {
     start_events_watcher
     "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --force-recreate api db >/dev/null
     wait_for_api_event
+
+    if "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" exec -T api sh -c 'exit 23' >/dev/null 2>&1; then
+        error 'docker compose exec unexpectedly returned success for exit 23'
+        return 1
+    fi
+    wait_for_exec_events
 
     local before_one_off
     local after_one_off

@@ -107,7 +107,7 @@ struct ComposeCLIHelpTests {
         #expect(commitHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(commitHelp.contains("best-effort snapshot"))
         #expect(commitHelp.contains("\u{001B}[32m--pause\u{001B}[0m"))
-        #expect(eventsHelp.contains("OOM, automatic restart, rename, resize, update, attach/detach, and exec actions are unavailable."))
+        #expect(eventsHelp.contains("OOM, explicit restart, rename, resize, update, and attach/detach actions are unavailable; automatic policy restarts emit die then start, and exec lifecycle actions are supported."))
     }
 
     @Test("every documented command option is covered by a parse representative")
