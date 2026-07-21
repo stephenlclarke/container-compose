@@ -19,7 +19,7 @@ Sleep 2s
 
 Type "container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --enable-kernel-install --timeout 60 && container system status"
 Enter
-Wait+Screen@90s /status +running/
+Wait+Screen@900s /status +running/
 Sleep 2s
 Ctrl+L
 Sleep 1s

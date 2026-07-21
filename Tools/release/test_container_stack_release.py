@@ -338,7 +338,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             tape.index('Type "container system start'),
             tape.index('Type "container compose version"'),
         )
-        self.assertIn('Wait+Screen@90s /status +running/', tape)
+        self.assertEqual(tape.count('Wait+Screen@900s /status +running/'), 1)
         self.assertIn('Type "container compose version"', tape)
         self.assertIn("--ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up", tape)
         self.assertIn("stats --no-stream", tape)
