@@ -3,6 +3,12 @@
   "description": "Immutable Stephen-owned snapshots of code proposed upstream.",
   "pullRequests": [
     {
+      "archiveRef": "refs/heads/upstream-pr-1965-618d28197a20",
+      "commit": "618d28197a20baf643dbdc87272e9f768f57f888",
+      "repository": "stephenlclarke/container",
+      "upstream": "apple/container#1965"
+    },
+    {
       "archiveRef": "refs/heads/upstream-pr-1933-3f8d6f3787ab",
       "commit": "3f8d6f3787ab4ee24a13451234545dcab388ac86",
       "repository": "stephenlclarke/container",
