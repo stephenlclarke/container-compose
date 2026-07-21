@@ -63,9 +63,9 @@ Completed locally on macOS:
   `execID`, and `exec_die` exit code `23`.
 - `.build/debug/compose help events --ansi never` reported the current support
   and limitation text.
-- The full coverage measurement reports Swift at 91.46% and Go at 85.55%.
-  A dedicated quality slice will raise the unchanged Go suite to the requested
-  approximately 90% without diluting the higher Swift priority.
+- The full coverage measurement for this event slice reported Swift at 91.46%
+  and Go at 85.55%. The succeeding remote-resource quality handoff raises Go
+  coverage to 90.05% while retaining the higher Swift coverage priority.
 
 ## Compatibility and risks
 

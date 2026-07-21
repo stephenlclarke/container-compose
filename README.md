@@ -33,27 +33,27 @@ orchestration and maps supported Compose behavior to the matched runtime stack.
 > [!WARNING]
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
-> What started as a 'fun' implementation due to a real need for compose functionality on apple/container has turned into a beast! `container-compose` cannot be maintained in isolation. Compose depends on runtime and build capabilities that Apple has not yet merged, released or more likely not even considered for development, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 17 July 2026 baseline, the three support forks are **274 commits ahead of Apple upstream**:
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 21 July 2026 snapshot, the three support forks are **371 commits ahead of Apple upstream**:
 >
-> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 78 ahead** at [`c5ca0366d88c`](https://github.com/stephenlclarke/containerization/commit/c5ca0366d88c).
-> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 165 ahead** at [`d5774583697d`](https://github.com/stephenlclarke/container/commit/d5774583697d).
+> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 112 ahead** at [`ae3eee9d4c00`](https://github.com/stephenlclarke/containerization/commit/ae3eee9d4c008c0c433667f2ccfbd36bf5b78413).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 228 ahead** at [`a8c2e4b`](https://github.com/stephenlclarke/container/commit/a8c2e4b).
 > - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 31 ahead** at [`5939a91ec0dd`](https://github.com/stephenlclarke/container-builder-shim/commit/5939a91ec0dd).
-> - [`container-compose`](https://github.com/stephenlclarke/container-compose): its own integration repository at [`7948b0ae23d3`](https://github.com/stephenlclarke/container-compose/commit/7948b0ae23d3), with no Apple repository to compare against.
+> - [`container-compose`](https://github.com/stephenlclarke/container-compose): the integration repository's current `main` branch, with no Apple repository to compare against.
 >
-> What looks like a local Compose change can therefore require coordinated conflict resolution, pin updates, builds, tests, packaging, and release validation across the entire stack. These revisions must move together.
+> What looks like a local Compose change can therefore require coordinated conflict resolution, pin updates, builds, tests, packaging, and release validation across the entire stack. The pinned revisions must move together.
 >
 > Apple's [#1769 proposal](https://github.com/apple/container/pull/1769) and [stated direction](https://github.com/apple/container/pull/1769#issuecomment-4781645360) are that Docker CLI compatibility is **NOT** a project objective, because of UX, naming, and maintenance trade-offs; its preferred route is Docker CLI access through [Socktainer](https://github.com/socktainer/socktainer) and a separate API bridge or service plugin. The missing primitives and fixes may therefore remain long-lived fork responsibilities rather than work Apple adopts upstream.
 
 <!-- Separate GitHub callouts. -->
 
 > [!NOTE]
-> **Runtime abstraction refactor in progress**
+> **Runtime boundary**
 >
-> `ComposeRuntimeSPI` is now the Compose-owned, runtime-neutral contract layer. It defines requests, summaries, and provider contracts for discovery, lifecycle, execution, copy/export, logs/events, stats/top, images, configs/secrets, and project resources, without importing Apple runtime packages.
+> `ComposeRuntimeSPI` is the Compose-owned, runtime-neutral contract layer. It defines requests, summaries, and provider contracts for discovery, lifecycle, execution, copy/export, logs/events, stats/top, images, configs/secrets, and project resources, without importing Apple runtime packages.
 >
-> `ComposeCore` orchestrates against those contracts. The plugin installs `ComposeContainerRuntime`, the current Apple-backed composition root: it wires typed `ContainerClient` providers, explicit CLI bridges, and Compose-owned filesystem external-config and Keychain external-secret defaults. Standalone `ComposeCore` requires a provider rather than constructing an Apple client.
+> `ComposeCore` uses those contracts for runtime operations while sharing typed container resource models where needed. The plugin installs `ComposeContainerRuntime`, the Apple-backed composition root: it wires typed `ContainerClient` providers, explicit CLI bridges, and Compose-owned filesystem external-config and Keychain external-secret defaults. Standalone `ComposeCore` requires a provider rather than constructing an Apple client.
 >
-> Docker and Compose policy stays above this seam. The pending `memswap_limit` support remains a separate, narrow lower-runtime handoff rather than part of this refactor commit. This is not a general AOP framework: focused decorators can negotiate declared capabilities, while VM, guest, cgroup, mount, archive, device, and builder primitives remain small Apple-shaped runtime slices. The refactor continues in tested vertical slices so the runtime boundary becomes maintainable without changing Compose-visible behavior.
+> Docker and Compose policy stays above this seam. This is not a general AOP framework: focused decorators can negotiate declared capabilities, while VM, guest, cgroup, mount, archive, device, and builder primitives remain small Apple-shaped runtime slices. New runtime work continues in tested vertical slices without changing Compose-visible behavior outside its documented parity surface.
 
 Help color-codes command, subcommand, and option support: green for supported,
 orange for partially supported, and red for unsupported. Command support and

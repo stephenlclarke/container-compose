@@ -66,10 +66,11 @@ minimums of 90% and 85%.
 
 The runtime still publishes generic `delete` for existing clients. Only Compose
 suppresses it, because the following Docker-shaped `destroy` event represents
-the same removal. The adapter forwards unknown future actions unchanged. OOM,
-automatic restart, rename, resize, update, attach/detach, and exec event
-semantics remain unimplemented and are explicitly retained in the status
-ledger and command help.
+the same removal. The adapter forwards unknown future actions unchanged. The
+later exec slice provides `exec_create`/`exec_start`/`exec_die`, and automatic
+policy restart is accurately emitted as `die` then `start`. OOM, explicit
+restart, rename, resize, update, attach/detach actions remain unavailable and
+are retained in the status ledger and command help.
 
 ## Commit tracking
 
@@ -84,5 +85,6 @@ ledger and command help.
 
 - Docker Engine or API socket emulation.
 - Windows event behavior or Linux-only OOM telemetry.
-- Automatic restart, rename, resize, update, attach/detach, or exec action
-  implementation.
+- OOM, explicit restart, rename, resize, update, or attach/detach action
+  implementation. Automatic restart and exec actions are now documented in
+  the later exec lifecycle handoff.

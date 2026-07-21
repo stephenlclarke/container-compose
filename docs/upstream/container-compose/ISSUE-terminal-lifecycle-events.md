@@ -28,8 +28,11 @@ generic runtime added `destroy` while retaining `delete` for compatibility.
   appears once as Docker's `destroy` without breaking generic event consumers.
 - Record an explicit Docker Compose V2 fixture that starts a selected service,
   kills it, and removes it before asserting the terminal action set.
-- Keep the command partially supported until OOM, automatic restart, rename,
-  resize, update, attach/detach, and exec events are available.
+- At the time of this terminal slice, keep the command partially supported
+  until OOM, automatic restart, rename, resize, update, attach/detach, and
+  exec events are available. Subsequent exec work now provides
+  `exec_create`/`exec_start`/`exec_die`, and automatic restart is correctly
+  represented as `die` then `start`.
 
 ## Scope
 
