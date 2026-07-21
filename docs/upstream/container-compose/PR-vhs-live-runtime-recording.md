@@ -11,6 +11,9 @@
 - Make the direct tape reliable for a cold release runner without hiding work:
   each unchanged `up --wait && ps` command has a bounded fifteen-minute wait and
   advances only after its real Alertmanager `running` row appears.
+- Give the unchanged typed `container system start && container system status`
+  command the same bounded fifteen-minute screen wait for a first-run Apple kernel
+  download, and continue only after its real `status running` output appears.
 
 ## Type of Change
 
@@ -34,11 +37,15 @@ No forked Apple source changes are required. The change uses existing runtime be
 - [`518ae228`](https://github.com/stephenlclarke/container-compose/commit/518ae228f650a8fa40118c36d68fdad650eb69ef) `fix(release): record direct terminal demo`
 - [`af6da141`](https://github.com/stephenlclarke/container-compose/commit/af6da14150d62f09fdadf6cf12d6aab6cde6b144) `fix(ci): validate named dependency revisions`
 - [`0ed7efab`](https://github.com/stephenlclarke/container-compose/commit/0ed7efab0f85ced3c3e926ecd82c2cbccbc5ed57) `fix(release): wait for cold monitoring stack`
+- [`2d8748c3`](https://github.com/stephenlclarke/container-compose/commit/2d8748c3) `fix(release): wait for cold kernel bootstrap`
 
 ## Code Map
 
 - `.github/workflows/prebuilt-binaries.yml`: selects the self-hosted Apple-silicon runner, exports the isolated package environment, validates the VHS source, and requires a non-empty GIF. It does not pre-start the runtime or create a transcript.
 - `docs/container-compose-demo.tape`: types the real `container system start`, every `container compose` and `curl` command, the final `container system stop`, and their live output. The tape has no replay function, marker function, or transcript input.
+- `docs/container-compose-demo.tape`: waits up to fifteen minutes for the real
+  `status running` output from its first typed system-start command, accommodating
+  a cold, isolated Apple kernel download without pre-starting or hiding it.
 - `Tools/ci/check-stack-consistency.py`: resolves a named dependency revision only from a
   manifest string literal, then checks it against the stack manifest and SwiftPM lockfile;
   focused unit coverage includes accepted literal and rejected dynamic forms.
@@ -61,6 +68,7 @@ from pathlib import Path
 tape = Path("docs/container-compose-demo.tape").read_text(encoding="utf-8")
 assert tape.count("--wait-timeout 900") == 2
 assert tape.count("Wait+Screen@900s /monitoring-stack-.*alertmanager.*running/") == 2
+assert tape.count("Wait+Screen@900s /status +running/") == 1
 PY
 docker compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300
 docker compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty nginx sh -c 'printf "%s\\n" container-compose-volume-reuse-ok > /var/cache/nginx/.container-compose-volume-reuse'
@@ -86,6 +94,9 @@ python3 -m unittest discover Tools/release
 - A cold physical runner may need to fetch every service image. The taped commands remain
   live and bounded; the recording advances only when `ps` shows its actual running service
   row, not when a generic progress line or synthetic marker appears.
+- A fresh isolated runtime may also need to fetch the Apple kernel before its first
+  status result. That direct command remains visible and bounded at fifteen minutes;
+  progress output cannot satisfy the `status running` gate.
 - Local validation passed VHS source validation and all 65 release tests; the runner executes the real guest lifecycle when creating the published GIF.
 
 ## container-compose Checks
