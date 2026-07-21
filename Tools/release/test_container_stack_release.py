@@ -347,7 +347,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("down --volumes --remove-orphans", tape)
         self.assertIn('Type "container system stop; container system status"', tape)
         self.assertIn('Wait+Screen@30s /not running/', tape)
-        self.assertIn("Wait+Screen@300s /SERVICE.*STATUS/", tape)
+        self.assertEqual(tape.count("--wait-timeout 900"), 2)
+        self.assertEqual(
+            tape.count("Wait+Screen@900s /monitoring-stack-.*alertmanager.*running/"),
+            2,
+        )
+        self.assertNotIn("Wait+Screen@300s /SERVICE.*STATUS/", tape)
         self.assertNotIn("CONTAINER_COMPOSE_DEMO_TRANSCRIPT", tape)
         self.assertNotIn("replay()", tape)
         self.assertNotIn("marker()", tape)

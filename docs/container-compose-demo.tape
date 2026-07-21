@@ -31,9 +31,9 @@ Sleep 2s
 Ctrl+L
 Sleep 1s
 
-Type "container compose --ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300 && container compose -f examples/monitoring-stack/docker-compose.yaml ps"
+Type "container compose --ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 900 && container compose -f examples/monitoring-stack/docker-compose.yaml ps"
 Enter
-Wait+Screen@300s /SERVICE.*STATUS/
+Wait+Screen@900s /monitoring-stack-.*alertmanager.*running/
 Sleep 4s
 Ctrl+L
 Sleep 1s
@@ -78,9 +78,9 @@ Sleep 4s
 Ctrl+L
 Sleep 1s
 
-Type "container compose --ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300 && container compose -f examples/monitoring-stack/docker-compose.yaml ps"
+Type "container compose --ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 900 && container compose -f examples/monitoring-stack/docker-compose.yaml ps"
 Enter
-Wait+Screen@300s /SERVICE.*STATUS/
+Wait+Screen@900s /monitoring-stack-.*alertmanager.*running/
 Sleep 5s
 Ctrl+L
 Sleep 1s
