@@ -204,6 +204,7 @@ extension ComposeOrchestrator {
                 labelOverrides: request.labelOverrides,
             ),
             annotations: try effectiveServiceAnnotations(service: service),
+            exposedPorts: service.expose ?? [],
         )
         let runtime = try serviceCreateRuntime(
             service: service,

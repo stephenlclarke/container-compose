@@ -99,6 +99,9 @@ extension ComposeOrchestrator {
         for (key, value) in effectiveAnnotations.sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--annotation", "\(key)=\(value)"])
         }
+        for port in createPlan.exposedPorts {
+            args.append(contentsOf: ["--expose", port])
+        }
         for label in run.labelOverrides {
             args.append(contentsOf: ["--label", label.rawValue])
         }

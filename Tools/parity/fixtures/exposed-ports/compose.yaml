@@ -1,0 +1,7 @@
+services:
+  api:
+    image: alpine:3.20
+    expose:
+      - "8080"
+      - "8443/udp"
+      - "9000-9001/tcp"

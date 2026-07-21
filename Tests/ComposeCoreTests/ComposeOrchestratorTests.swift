@@ -27889,6 +27889,33 @@ struct ComposeOrchestratorTests {
         #expect(!command.containsSequence(["--label", "example.com/purpose=local-dev"]))
     }
 
+    @Test("up projects service expose as metadata without publishing host ports")
+    func upProjectsServiceExposeThroughTheRuntimeMetadataChannel() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.expose = ["8080", "8443/udp", "9000-9001/tcp"]
+                },
+            ]
+        )
+
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        )
+        let plan = try await orchestrator.serviceCreatePlan(project: project, serviceName: "api")
+        try await orchestrator.up(project: project, options: ComposeUpOptions())
+
+        #expect(plan.exposedPorts == ["8080", "8443/udp", "9000-9001/tcp"])
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--expose", "8080"]))
+        #expect(command.containsSequence(["--expose", "8443/udp"]))
+        #expect(command.containsSequence(["--expose", "9000-9001/tcp"]))
+        #expect(!command.contains("--publish"))
+    }
+
     @Test("up keeps same-key labels and annotations distinct")
     func upKeepsSameKeyLabelsAndAnnotationsDistinct() async throws {
         let runner = RecordingRunner()
