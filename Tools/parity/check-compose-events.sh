@@ -31,13 +31,17 @@
 # Docker Compose V2 event semantics used by container-compose: default text and
 # JSON output are container-scoped, selected service filtering excludes other
 # services, internal Compose labels are stripped, one-off run containers are not
-# emitted, and --since/--until can replay a bounded project event window.
+# emitted, terminal kill/die/destroy actions are present, and --since/--until
+# can replay a bounded project event window.
 
 set -euo pipefail
 
 readonly SELF_PATH="${BASH_SOURCE[0]:-$0}"
 SCRIPT_NAME="$(basename "$SELF_PATH")"
 readonly SCRIPT_NAME
+REPO_ROOT="$(cd "$(dirname "$SELF_PATH")/../.." && pwd)"
+readonly REPO_ROOT
+readonly FIXTURE_FILE="$REPO_ROOT/Tools/parity/fixtures/events/compose.yaml"
 
 STRICT=0
 TMPDIR=""
@@ -122,20 +126,11 @@ check_docker() {
 # Create a minimal project used to observe selected-service event behavior.
 create_fixture() {
     TMPDIR="$(mktemp -d)"
-    COMPOSE_FILE="$TMPDIR/compose.yml"
+    COMPOSE_FILE="$FIXTURE_FILE"
     EVENTS_FILE="$TMPDIR/events.jsonl"
     FILTERED_EVENTS_FILE="$TMPDIR/events-filtered.jsonl"
     TEXT_EVENTS_FILE="$TMPDIR/events.txt"
-
-    cat >"$COMPOSE_FILE" <<'YAML'
-services:
-  api:
-    image: alpine:3.20
-    command: ["sh", "-c", "sleep 30"]
-  db:
-    image: alpine:3.20
-    command: ["sh", "-c", "sleep 30"]
-YAML
+    [[ -f "$COMPOSE_FILE" ]] || { error "missing events fixture: $COMPOSE_FILE"; return 1; }
     : >"$EVENTS_FILE"
 }
 
@@ -250,6 +245,15 @@ if before_one_off != after_one_off:
     raise SystemExit(
         "one-off docker compose run emitted service events; "
         f"line count changed from {before_one_off} to {after_one_off}"
+    )
+
+actions = {event["action"] for event in events}
+required_actions = {"create", "start", "kill", "die", "destroy"}
+missing_actions = required_actions.difference(actions)
+if missing_actions:
+    raise SystemExit(
+        "Docker Compose V2 omitted required terminal actions: "
+        f"{sorted(missing_actions)}; saw {sorted(actions)}"
     )
 PY
 }
@@ -396,6 +400,10 @@ main() {
     "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" run -T --rm api true >/dev/null
     sleep 3
     after_one_off="$(wc -l <"$EVENTS_FILE" | tr -d ' ')"
+
+    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" kill api >/dev/null
+    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" rm --force api >/dev/null
+    stable_event_count >/dev/null
 
     stop_events_watcher
     validate_events "$before_one_off" "$after_one_off"

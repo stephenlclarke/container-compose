@@ -101,11 +101,13 @@ struct ComposeCLIHelpTests {
             .filter { $0.support == "partially supported" }
             .map(\.commandPath)
         let commitHelp = try #require(ComposeCLIHelp.commandHelpText(command: "commit"))
+        let eventsHelp = try #require(ComposeCLIHelp.commandHelpText(command: "events"))
 
         #expect(partialCommands == [["build"], ["config"], ["events"], ["exec"], ["ps"], ["run"], ["stats"], ["up"], ["volumes"]])
         #expect(commitHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(commitHelp.contains("best-effort snapshot"))
         #expect(commitHelp.contains("\u{001B}[32m--pause\u{001B}[0m"))
+        #expect(eventsHelp.contains("OOM, automatic restart, rename, resize, update, attach/detach, and exec actions are unavailable."))
     }
 
     @Test("every documented command option is covered by a parse representative")

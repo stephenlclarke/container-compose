@@ -12677,6 +12677,61 @@ struct ComposeOrchestratorTests {
         ))
     }
 
+    @Test("event manager relays Docker terminal actions and hides generic delete")
+    func eventManagerRelaysDockerTerminalActionsAndHidesGenericDelete() async throws {
+        let emitted = MessageRecorder()
+        let events = [
+            ContainerEvent(
+                time: date("2026-06-22T10:00:00Z"),
+                type: "container",
+                id: "demo-api-1",
+                action: "kill",
+                attributes: composeEventAttributes(extra: ["signal": "9"])
+            ),
+            ContainerEvent(
+                time: date("2026-06-22T10:00:01Z"),
+                type: "container",
+                id: "demo-api-1",
+                action: "die",
+                attributes: composeEventAttributes(extra: ["exitCode": "137"])
+            ),
+            ContainerEvent(
+                time: date("2026-06-22T10:00:02Z"),
+                type: "container",
+                id: "demo-api-1",
+                action: "delete",
+                attributes: composeEventAttributes()
+            ),
+            ContainerEvent(
+                time: date("2026-06-22T10:00:03Z"),
+                type: "container",
+                id: "demo-api-1",
+                action: "destroy",
+                attributes: composeEventAttributes()
+            ),
+        ]
+        let client = try RecordingContainerEventsAPIClient(data: containerEventData(events))
+        let manager = ContainerClientEventsManager(client: client)
+
+        try await manager.events(
+            projectName: "demo",
+            services: ["api"],
+            format: .json,
+            since: nil,
+            until: nil,
+            emit: { emitted.append($0) }
+        )
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let records = try emitted.messages.map {
+            try decoder.decode(ComposeEventRecord.self, from: Data($0.utf8))
+        }
+        #expect(records.map(\.action) == ["kill", "die", "destroy"])
+        #expect(records[0].attributes["signal"] == "9")
+        #expect(records[1].attributes["exitCode"] == "137")
+    }
+
     @Test("event manager renders Docker Compose text service events by default")
     func eventManagerRendersDockerComposeTextServiceEventsByDefault() async throws {
         let emitted = MessageRecorder()
@@ -29288,6 +29343,18 @@ private func containerEventData(_ events: [ContainerEvent], trailingNewline: Boo
         data.removeLast()
     }
     return data
+}
+
+private func composeEventAttributes(extra: [String: String] = [:]) -> [String: String] {
+    var attributes = [
+        composeProjectLabel: "demo",
+        composeServiceLabel: "api",
+        composeOneOffLabel: "false",
+        "image": "example/api",
+        "status": "stopped",
+    ]
+    attributes.merge(extra) { _, additional in additional }
+    return attributes
 }
 
 private func logRecords(from data: Data) throws -> [ContainerLogRecord] {

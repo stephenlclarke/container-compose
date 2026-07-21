@@ -123,6 +123,12 @@ private struct ComposeEventRenderer {
         guard event.type == "container" else {
             return nil
         }
+        // `container` retains its generic delete event for existing consumers,
+        // then emits Docker's matching destroy event. Compose exposes only the
+        // Docker-shaped action to avoid a duplicate removal record.
+        guard event.action != "delete" else {
+            return nil
+        }
         guard event.attributes[ComposeRuntimeLabels.project] == projectName else {
             return nil
         }
