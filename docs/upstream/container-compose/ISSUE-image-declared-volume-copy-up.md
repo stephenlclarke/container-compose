@@ -1,4 +1,6 @@
-# Compose compatibility gap: image-declared volumes require Docker copy-up
+# Historical Compose compatibility gap: image-declared volumes require Docker copy-up
+
+> Historical handoff for the preflight commit. The implemented lifecycle policy is now documented in [ISSUE-image-volume-copy-up-lifecycle.md](ISSUE-image-volume-copy-up-lifecycle.md).
 
 ## Compose surface
 

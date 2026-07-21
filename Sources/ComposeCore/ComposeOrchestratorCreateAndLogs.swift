@@ -211,7 +211,16 @@ public extension ComposeOrchestrator {
         }
 
         if down.volumes {
-            for volume in try anonymousVolumeRuntimeNames(project: project, targets: targets) {
+            var volumeNames = Set(try anonymousVolumeRuntimeNames(project: project, targets: targets))
+            if projectWideCleanup {
+                volumeNames.formUnion(try await imageAnonymousVolumeRuntimeNames(project: project))
+            } else {
+                volumeNames.formUnion(try await imageAnonymousVolumeRuntimeNames(
+                    project: project,
+                    containerNames: Set(targets.map(\.name)),
+                ))
+            }
+            for volume in volumeNames.sorted() {
                 let args = ["volume", "delete", volume]
                 if options.dryRun {
                     try await runContainer(args, check: false)

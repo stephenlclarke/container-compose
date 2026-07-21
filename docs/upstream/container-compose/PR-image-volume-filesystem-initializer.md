@@ -1,4 +1,6 @@
-# Pull Request: add image-volume filesystem initializer
+# Historical Pull Request: add image-volume filesystem initializer
+
+> Historical plumbing handoff. The policy that now consumes this initializer is documented in [PR-image-volume-copy-up-lifecycle.md](PR-image-volume-copy-up-lifecycle.md).
 
 ## Summary
 

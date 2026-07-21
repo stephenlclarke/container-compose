@@ -11,5 +11,16 @@ services:
         source: override-data
         target: /image-data
 
+  nocopy:
+    build:
+      context: .
+    volumes:
+      - type: volume
+        source: nocopy-data
+        target: /image-data
+        volume:
+          nocopy: true
+
 volumes:
   override-data: {}
+  nocopy-data: {}

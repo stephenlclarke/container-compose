@@ -866,6 +866,9 @@ volumes:
 	if got := project.Services["named"].Volumes[0].VolumeSubpath; got != "nested" {
 		t.Fatalf("named volume subpath = %q, want nested", got)
 	}
+	if !project.Services["named"].Volumes[0].VolumeNoCopy {
+		t.Fatal("named volume nocopy was not preserved")
+	}
 	if got := project.Services["imagey"].Volumes[0].ImageSubpath; got != "etc" {
 		t.Fatalf("image mount subpath = %q, want etc", got)
 	}

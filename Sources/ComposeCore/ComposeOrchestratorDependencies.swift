@@ -46,6 +46,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
     public struct Services: Sendable {
         public var configReader: ComposeRuntimeConfigReading
         public var eventsManager: ComposeRuntimeEventsManaging
+        public var imageVolumeInitializer: ComposeRuntimeImageVolumeInitializing
         public var lifecycleManager: ComposeRuntimeLifecycleManaging
         public var resourceManager: ComposeRuntimeResourceManaging
         public var secretReader: ComposeRuntimeSecretReading
@@ -53,12 +54,14 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
         public init(
             configReader: ComposeRuntimeConfigReading = ComposeRuntimeProviderDefaults.configReader(),
             eventsManager: ComposeRuntimeEventsManaging = ComposeRuntimeProviderDefaults.events(),
+            imageVolumeInitializer: ComposeRuntimeImageVolumeInitializing = ComposeRuntimeProviderDefaults.imageVolumeInitializer(),
             lifecycleManager: ComposeRuntimeLifecycleManaging = ComposeRuntimeProviderDefaults.lifecycle(),
             resourceManager: ComposeRuntimeResourceManaging = ComposeRuntimeProviderDefaults.resources(),
             secretReader: ComposeRuntimeSecretReading = ComposeRuntimeProviderDefaults.secretReader(),
         ) {
             self.configReader = configReader
             self.eventsManager = eventsManager
+            self.imageVolumeInitializer = imageVolumeInitializer
             self.lifecycleManager = lifecycleManager
             self.resourceManager = resourceManager
             self.secretReader = secretReader
@@ -82,6 +85,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
     public var configReader: ComposeRuntimeConfigReading
     public var discoveryManager: ComposeRuntimeDiscoveryManaging
     public var eventsManager: ComposeRuntimeEventsManaging
+    public var imageVolumeInitializer: ComposeRuntimeImageVolumeInitializing
     public var lifecycleManager: ComposeRuntimeLifecycleManaging
     public var resourceManager: ComposeRuntimeResourceManaging
     public var statsManager: ComposeRuntimeStatsManaging
@@ -96,6 +100,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
         configReader = services.configReader
         self.discoveryManager = discoveryManager
         eventsManager = services.eventsManager
+        imageVolumeInitializer = services.imageVolumeInitializer
         lifecycleManager = services.lifecycleManager
         resourceManager = services.resourceManager
         statsManager = inspection.statsManager
@@ -176,6 +181,11 @@ public struct ComposeOrchestratorDependencies: Sendable {
     public var lifecycleManager: ComposeRuntimeLifecycleManaging {
         get { runtime.lifecycleManager }
         set { runtime.lifecycleManager = newValue }
+    }
+
+    public var imageVolumeInitializer: ComposeRuntimeImageVolumeInitializing {
+        get { runtime.imageVolumeInitializer }
+        set { runtime.imageVolumeInitializer = newValue }
     }
 
     public var logManager: ComposeRuntimeLogManaging {

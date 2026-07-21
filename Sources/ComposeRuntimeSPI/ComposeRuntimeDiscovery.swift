@@ -42,15 +42,18 @@ public struct ComposeMount: Codable, Equatable, Sendable {
 
     /// Volume-specific behavior retained in a normalized mount.
     public struct VolumeOptions: Codable, Equatable, Sendable {
+        public var noCopy: Bool?
         public var subpath: String?
         public var fileOwnership: FileOwnership
         public var labels: [String: String]?
 
         public init(
+            noCopy: Bool? = nil,
             subpath: String? = nil,
             fileOwnership: FileOwnership = FileOwnership(),
             labels: [String: String]? = nil,
         ) {
+            self.noCopy = noCopy
             self.subpath = subpath
             self.fileOwnership = fileOwnership
             self.labels = labels
@@ -73,6 +76,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         public var readOnly: Bool?
         public var bindCreateHostPath: Bool?
         public var bindPropagation: String?
+        public var volumeNoCopy: Bool?
         public var volumeSubpath: String?
         public var imageSubpath: String?
         public var fileOwnerUID: UInt32?
@@ -90,6 +94,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
             self.readOnly = readOnly
             bindCreateHostPath = bind.createHostPath
             bindPropagation = bind.propagation
+            volumeNoCopy = volume.noCopy
             volumeSubpath = volume.subpath
             self.imageSubpath = imageSubpath
             fileOwnerUID = volume.fileOwnership.uid
@@ -105,6 +110,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
     public var readOnly: Bool?
     public var bindCreateHostPath: Bool?
     public var bindPropagation: String?
+    public var volumeNoCopy: Bool?
     public var volumeSubpath: String?
     public var imageSubpath: String?
     public var fileOwnerUID: UInt32?
@@ -129,6 +135,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         readOnly = options.readOnly
         bindCreateHostPath = options.bindCreateHostPath
         bindPropagation = options.bindPropagation
+        volumeNoCopy = options.volumeNoCopy
         volumeSubpath = options.volumeSubpath
         imageSubpath = options.imageSubpath
         fileOwnerUID = options.fileOwnerUID

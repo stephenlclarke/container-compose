@@ -1,4 +1,6 @@
-# Compose runtime foundation: seed an empty local volume from an image subtree
+# Historical Compose runtime foundation: seed an empty local volume from an image subtree
+
+> Historical plumbing handoff. The policy that now consumes this initializer is documented in [ISSUE-image-volume-copy-up-lifecycle.md](ISSUE-image-volume-copy-up-lifecycle.md).
 
 ## Compose surface
 

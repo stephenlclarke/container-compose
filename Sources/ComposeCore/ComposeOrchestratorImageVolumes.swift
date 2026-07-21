@@ -16,41 +16,125 @@
 
 import Foundation
 
+private struct RuntimeImageVolumeInitialization: Hashable {
+    let imageSubpath: String
+    let volumeName: String
+}
+
+private struct RuntimeImageVolumePlan {
+    let implicitMounts: [ComposeMount]
+    let anonymousVolumeNames: Set<String>
+    let initializations: [RuntimeImageVolumeInitialization]
+}
+
 extension ComposeOrchestrator {
-    /// Rejects image-declared volumes whose Docker copy-up behavior cannot be represented by apple/container.
+    /// Prepares image metadata before resources are created when the active
+    /// pull policy permits it. Docker-specific mount and copy-up decisions are
+    /// deferred until each concrete container target is rendered.
     func validateRuntimeImageVolumes(
         project: ComposeProject,
         services: [ComposeService],
-        externalVolumeMounts: ExternalVolumeMounts,
+        externalVolumeMounts _: ExternalVolumeMounts,
         pullPolicy: String?,
     ) async throws {
         guard !options.dryRun else {
             return
         }
 
-        let cache = ComposeImageVolumeTargetsCache()
         for service in services {
             guard let image = serviceImage(project: project, service: service) else {
                 continue
             }
-            let targets = try await cache.targets(
-                reference: image,
-                platform: service.platform,
+            _ = try await imageManager.prepareImageVolumeMetadata(
+                image,
                 pullIfMissing: imageVolumeMetadataMayPull(service: service, globalPullPolicy: pullPolicy),
-                imageManager: imageManager,
             )
-            guard !targets.isEmpty else {
+        }
+    }
+
+    /// Returns generated anonymous mounts and initializes every local volume
+    /// that Docker would seed from the selected image on first use.
+    func prepareRuntimeImageVolumes(
+        project: ComposeProject,
+        service: ComposeService,
+        context: MountRenderContext,
+        mounts: [ComposeMount],
+    ) async throws -> [ComposeMount] {
+        guard !options.dryRun,
+              let image = serviceImage(project: project, service: service)
+        else {
+            return []
+        }
+
+        let targets = try await imageManager.imageDeclaredVolumeTargets(image, platform: service.platform).sorted()
+        guard !targets.isEmpty else {
+            return []
+        }
+
+        let plan = try imageVolumeInitializationPlan(targets: targets, mounts: mounts, context: context)
+        for name in plan.anonymousVolumeNames.sorted() {
+            try await resourceManager.createVolume(ComposeVolumeCreateRequest(
+                name: name,
+                labels: anonymousImageVolumeLabels(project: project, context: context),
+            ))
+        }
+        for initialization in plan.initializations {
+            try await imageVolumeInitializer.initializeImageVolume(ComposeImageVolumeInitializationRequest(
+                image: image,
+                platform: service.platform,
+                imageSubpath: initialization.imageSubpath,
+                volumeName: initialization.volumeName,
+            ))
+        }
+        return plan.implicitMounts
+    }
+
+    /// Selects the anonymous mounts and copy-up operations required for image targets.
+    private func imageVolumeInitializationPlan(
+        targets: [String],
+        mounts: [ComposeMount],
+        context: MountRenderContext,
+    ) throws -> RuntimeImageVolumePlan {
+        var allMounts = mounts
+        var implicitMounts: [ComposeMount] = []
+        var initializationByVolume: [String: RuntimeImageVolumeInitialization] = [:]
+        var anonymousVolumeNames = Set<String>()
+
+        for target in targets {
+            if let mount = allMounts.last(where: { imageVolumeTargetsMatch($0.target, target) }) {
+                guard ["volume", "external-volume"].contains(mount.type), !mountDisablesImageVolumeCopyUp(mount) else {
+                    continue
+                }
+                let volumeName = try imageVolumeRuntimeName(mount: mount, context: context)
+                if mount.source?.isEmpty != false {
+                    anonymousVolumeNames.insert(volumeName)
+                }
+                try recordImageVolumeInitialization(
+                    imageSubpath: mount.target ?? target,
+                    volumeName: volumeName,
+                    mount: mount,
+                    into: &initializationByVolume,
+                )
                 continue
             }
-            let mounts = try effectiveServiceVolumes(
-                project: project,
-                service: service,
-                externalVolumeMounts: externalVolumeMounts,
+
+            let mount = ComposeMount(type: "volume", target: target)
+            implicitMounts.append(mount)
+            allMounts.append(mount)
+            let volumeName = try imageVolumeRuntimeName(mount: mount, context: context)
+            anonymousVolumeNames.insert(volumeName)
+            try recordImageVolumeInitialization(
+                imageSubpath: target,
+                volumeName: volumeName,
+                mount: mount,
+                into: &initializationByVolume,
             )
-            for target in targets where !imageVolumeTargetIsSafelyMasked(target, by: mounts) {
-                throw unsupportedImageVolumeCopyUp(service: service, image: image, target: target)
-            }
         }
+        return RuntimeImageVolumePlan(
+            implicitMounts: implicitMounts,
+            anonymousVolumeNames: anonymousVolumeNames,
+            initializations: initializationByVolume.values.sorted { $0.volumeName < $1.volumeName },
+        )
     }
 
     /// Returns whether the effective Compose pull policy allows metadata inspection to prepare a missing image.
@@ -61,19 +145,61 @@ extension ComposeOrchestrator {
         return service.pullPolicy != "never" && service.pullPolicy != "build"
     }
 
-    /// Returns whether a service mount masks an image `VOLUME` without needing Docker copy-up.
-    private func imageVolumeTargetIsSafelyMasked(_ target: String, by mounts: [ComposeMount]) -> Bool {
-        guard let mount = mounts.last(where: { imageVolumeTargetsMatch($0.target, target) }) else {
-            return false
+    /// Records one initialization per target volume. Docker's first mount wins
+    /// when the same empty volume is attached at several destinations.
+    private func recordImageVolumeInitialization(
+        imageSubpath: String,
+        volumeName: String,
+        mount: ComposeMount,
+        into storage: inout [String: RuntimeImageVolumeInitialization],
+    ) throws {
+        guard nonEmpty(mount.volumeSubpath) == nil else {
+            throw ComposeError.unsupported(
+                "volume subpath mount '\(mount.target ?? "")' requires image-to-volume subdirectory initialization",
+            )
         }
-        return switch mount.type {
-        case "bind", "image", "tmpfs":
-            true
-        case "volume":
-            (mount.unsupportedFields ?? []).contains("volume.nocopy")
-        default:
-            false
+        storage[volumeName] = storage[volumeName] ?? RuntimeImageVolumeInitialization(
+            imageSubpath: imageSubpath,
+            volumeName: volumeName,
+        )
+    }
+
+    /// Returns the runtime volume name used by one explicit or generated mount.
+    private func imageVolumeRuntimeName(
+        mount: ComposeMount,
+        context: MountRenderContext,
+    ) throws -> String {
+        guard let target = mount.target else {
+            throw ComposeError.invalidProject("volume mount is missing target")
         }
+        if mount.type == "external-volume" {
+            guard let source = nonEmpty(mount.source) else {
+                throw ComposeError.invalidProject("external volume mount is missing source")
+            }
+            return source
+        }
+        if let source = mount.source, !source.isEmpty {
+            return volumeRuntimeName(project: context.project, composeName: source)
+        }
+        return anonymousVolumeRuntimeName(context: context, target: target)
+    }
+
+    /// Returns whether a volume mount has requested Docker's no-copy behavior.
+    private func mountDisablesImageVolumeCopyUp(_ mount: ComposeMount) -> Bool {
+        mount.volumeNoCopy == true || (mount.unsupportedFields ?? []).contains("volume.nocopy")
+    }
+
+    /// Labels generated image volumes so lifecycle cleanup never needs the
+    /// source image to remain present after containers have stopped.
+    private func anonymousImageVolumeLabels(
+        project: ComposeProject,
+        context: MountRenderContext,
+    ) -> [String: String] {
+        var labels = resourceLabels(project: project, labels: nil)
+        labels[imageVolumeAnonymousLabel] = "true"
+        labels[imageVolumeContainerLabel] = context.containerName
+        labels[imageVolumeServiceLabel] = context.service.name
+        return labels
     }
 
     /// Returns whether a mount destination covers an image volume target after lexical normalization.
@@ -84,45 +210,5 @@ extension ComposeOrchestrator {
         let mountPath = URL(fileURLWithPath: mountTarget).standardizedFileURL.path
         let imagePath = URL(fileURLWithPath: imageTarget).standardizedFileURL.path
         return mountPath == imagePath || mountPath == "/" || imagePath.hasPrefix(mountPath + "/")
-    }
-
-    /// Creates the explicit error used when a Docker image requires an unavailable copy-up primitive.
-    private func unsupportedImageVolumeCopyUp(
-        service: ComposeService,
-        image: String,
-        target: String,
-    ) -> ComposeError {
-        ComposeError.unsupported(
-            "service '\(service.name)' image '\(image)' declares VOLUME '\(target)'; "
-                + "Docker copy-up requires an apple/container image-to-volume initialization primitive. "
-                + "Use a bind, tmpfs, or image mount to mask the target, "
-                + "or set volume.nocopy: true to opt out of copy-up",
-        )
-    }
-}
-
-/// Caches platform-specific image volume metadata during one Compose lifecycle preflight.
-private actor ComposeImageVolumeTargetsCache {
-    private var storage: [String: [String]] = [:]
-
-    /// Returns Docker image `VOLUME` targets for one image and selected platform.
-    func targets(
-        reference: String,
-        platform: String?,
-        pullIfMissing: Bool,
-        imageManager: ContainerImageManaging,
-    ) async throws -> [String] {
-        let key = "\(reference)|\(platform ?? "")|\(pullIfMissing)"
-        if let cached = storage[key] {
-            return cached
-        }
-        guard try await imageManager.prepareImageVolumeMetadata(reference, pullIfMissing: pullIfMissing) else {
-            storage[key] = []
-            return []
-        }
-        let targets = try await imageManager.imageDeclaredVolumeTargets(reference, platform: platform)
-            .sorted()
-        storage[key] = targets
-        return targets
     }
 }

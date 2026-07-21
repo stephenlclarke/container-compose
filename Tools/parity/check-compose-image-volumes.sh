@@ -26,14 +26,21 @@
 # ENVIRONMENT:
 #   CONTAINER_COMPOSE  Path to the container-compose binary. Defaults to the
 #                      local SwiftPM debug build at .build/debug/compose.
+#   CONTAINER_COMPOSE_CONTAINER
+#                      Runtime CLI used for live macOS validation. Defaults to
+#                      container from PATH.
+#   CONTAINER_COMPOSE_LIVE
+#                      Set to 1 when an isolated matching Apple runtime is
+#                      running. The check then verifies seeded data and a
+#                      retained marker through down/up reuse.
 #   DOCKER_COMPOSE     Docker Compose command to compare with. Defaults to
 #                      "docker compose" when available, otherwise docker-compose.
 #
 # This local parity check verifies Docker Compose V2's image-declared `VOLUME`
 # behavior: implicit anonymous volumes, explicit-volume copy-up, and seeded
 # image data. It also verifies container-compose preserves the same Compose
-# file mount projection. The Apple runtime cannot initialize a volume from
-# image layers, so its preflight guard is covered by ComposeCore unit tests.
+# file mount projection and, on an isolated macOS runtime, the same first-use
+# copy-up, `volume.nocopy`, and retained-volume behavior across down/up.
 
 set -euo pipefail
 
@@ -48,9 +55,12 @@ readonly COMPOSE_FILE="$FIXTURE_DIR/compose.yaml"
 
 STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
+CONTAINER_BINARY="${CONTAINER_COMPOSE_CONTAINER:-container}"
+CONTAINER_COMPOSE_LIVE="${CONTAINER_COMPOSE_LIVE:-0}"
 DOCKER_COMPOSE_COMMAND=()
 PROJECT_NAME="container-compose-image-volumes-$RANDOM-$$"
 WORK_DIR=""
+CONTAINER_PROJECT_STARTED=0
 
 # Print an informational line to stdout.
 info() {
@@ -148,6 +158,14 @@ cleanup() {
         --project-name "$PROJECT_NAME" \
         --file "$COMPOSE_FILE" \
         down --volumes --remove-orphans >/dev/null 2>&1 || true
+    if ((CONTAINER_PROJECT_STARTED == 1)); then
+        "$CONTAINER_COMPOSE" \
+            --ansi never \
+            --project-directory "$FIXTURE_DIR" \
+            --project-name "$PROJECT_NAME" \
+            --file "$COMPOSE_FILE" \
+            down --volumes --remove-orphans >/dev/null 2>&1 || true
+    fi
     if [[ -n "$WORK_DIR" ]]; then
         rm -rf "$WORK_DIR"
     fi
@@ -168,7 +186,9 @@ model = json.loads(pathlib.Path(config_file).read_text(encoding="utf-8"))
 services = model.get("services", {})
 implicit = services.get("implicit", {})
 overridden = services.get("overridden", {})
+nocopy = services.get("nocopy", {})
 mounts = overridden.get("volumes", [])
+nocopy_mounts = nocopy.get("volumes", [])
 
 if implicit.get("volumes"):
     raise SystemExit(f"{implementation}: implicit service unexpectedly has Compose mounts: {implicit['volumes']!r}")
@@ -181,6 +201,15 @@ if not any(
     raise SystemExit(f"{implementation}: missing override-data volume at /image-data: {mounts!r}")
 if "override-data" not in model.get("volumes", {}):
     raise SystemExit(f"{implementation}: missing top-level override-data volume")
+if not any(
+    mount.get("type") == "volume"
+    and mount.get("source") == "nocopy-data"
+    and mount.get("target") == "/image-data"
+    for mount in nocopy_mounts
+):
+    raise SystemExit(f"{implementation}: missing nocopy-data volume at /image-data: {nocopy_mounts!r}")
+if "nocopy-data" not in model.get("volumes", {}):
+    raise SystemExit(f"{implementation}: missing top-level nocopy-data volume")
 PY
 }
 
@@ -213,13 +242,16 @@ expect_container_config() {
 assert_docker_runtime_behavior() {
     local implicit_container="$PROJECT_NAME-implicit-1"
     local overridden_container="$PROJECT_NAME-overridden-1"
+    local nocopy_container="$PROJECT_NAME-nocopy-1"
     local inspection="$WORK_DIR/docker-inspect.json"
 
     docker exec "$implicit_container" sh -ec \
-        'test "$(cat /image-data/seed.txt)" = image-data-seed && test "$(cat /image-cache/seed.txt)" = image-cache-seed'
+        "test \"\$(cat /image-data/seed.txt)\" = image-data-seed && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
     docker exec "$overridden_container" sh -ec \
-        'test "$(cat /image-data/seed.txt)" = image-data-seed && test "$(cat /image-cache/seed.txt)" = image-cache-seed'
-    docker inspect "$implicit_container" "$overridden_container" >"$inspection"
+        "test \"\$(cat /image-data/seed.txt)\" = image-data-seed && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
+    docker exec "$nocopy_container" sh -ec \
+        "test ! -e /image-data/seed.txt && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
+    docker inspect "$implicit_container" "$overridden_container" "$nocopy_container" >"$inspection"
 
     python3 - "$inspection" "$PROJECT_NAME" <<'PY'
 import json
@@ -230,6 +262,7 @@ path, project = sys.argv[1:3]
 containers = {entry["Name"].lstrip("/"): entry for entry in json.loads(pathlib.Path(path).read_text(encoding="utf-8"))}
 implicit = containers[f"{project}-implicit-1"]
 overridden = containers[f"{project}-overridden-1"]
+nocopy = containers[f"{project}-nocopy-1"]
 
 def volume_mount(container, destination):
     mounts = [
@@ -245,7 +278,10 @@ implicit_data = volume_mount(implicit, "/image-data")
 implicit_cache = volume_mount(implicit, "/image-cache")
 overridden_data = volume_mount(overridden, "/image-data")
 overridden_cache = volume_mount(overridden, "/image-cache")
+nocopy_data = volume_mount(nocopy, "/image-data")
+nocopy_cache = volume_mount(nocopy, "/image-cache")
 expected_named = f"{project}_override-data"
+expected_nocopy = f"{project}_nocopy-data"
 
 if not implicit_data.get("Name") or not implicit_cache.get("Name"):
     raise SystemExit("Docker Compose did not create anonymous image volume names")
@@ -255,6 +291,10 @@ if overridden_data.get("Name") != expected_named:
     raise SystemExit(f"Docker Compose override volume = {overridden_data.get('Name')!r}, expected {expected_named!r}")
 if not overridden_cache.get("Name") or overridden_cache["Name"] == expected_named:
     raise SystemExit(f"Docker Compose image-cache mount = {overridden_cache.get('Name')!r}")
+if nocopy_data.get("Name") != expected_nocopy:
+    raise SystemExit(f"Docker Compose nocopy volume = {nocopy_data.get('Name')!r}, expected {expected_nocopy!r}")
+if not nocopy_cache.get("Name") or nocopy_cache["Name"] == expected_nocopy:
+    raise SystemExit(f"Docker Compose nocopy image-cache mount = {nocopy_cache.get('Name')!r}")
 PY
 }
 
@@ -268,7 +308,76 @@ expect_docker_runtime_behavior() {
     assert_docker_runtime_behavior
 }
 
-# Run the Docker Compose V2 reference behavior and local Compose model check.
+# Assert that the Apple runtime sees Docker-compatible seeded image data.
+assert_apple_runtime_seeded() {
+    local implicit_container="$PROJECT_NAME-implicit-1"
+    local overridden_container="$PROJECT_NAME-overridden-1"
+    local nocopy_container="$PROJECT_NAME-nocopy-1"
+
+    "$CONTAINER_BINARY" exec "$implicit_container" sh -ec \
+        "test \"\$(cat /image-data/seed.txt)\" = image-data-seed && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
+    "$CONTAINER_BINARY" exec "$overridden_container" sh -ec \
+        "test \"\$(cat /image-data/seed.txt)\" = image-data-seed && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
+    "$CONTAINER_BINARY" exec "$nocopy_container" sh -ec \
+        "test ! -e /image-data/seed.txt && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
+}
+
+# Prove a retained volume is neither recreated nor seeded again after down/up.
+assert_apple_runtime_volume_reuse() {
+    local implicit_container="$PROJECT_NAME-implicit-1"
+
+    "$CONTAINER_BINARY" exec "$implicit_container" sh -ec \
+        'printf retained-through-down-up > /image-data/retained.txt'
+    "$CONTAINER_COMPOSE" \
+        --ansi never \
+        --project-directory "$FIXTURE_DIR" \
+        --project-name "$PROJECT_NAME" \
+        --file "$COMPOSE_FILE" \
+        down
+    CONTAINER_PROJECT_STARTED=0
+    CONTAINER_PROJECT_STARTED=1
+    "$CONTAINER_COMPOSE" \
+        --ansi never \
+        --project-directory "$FIXTURE_DIR" \
+        --project-name "$PROJECT_NAME" \
+        --file "$COMPOSE_FILE" \
+        up --detach
+    assert_apple_runtime_seeded
+    "$CONTAINER_BINARY" exec "$implicit_container" sh -ec \
+        "test \"\$(cat /image-data/retained.txt)\" = retained-through-down-up"
+}
+
+# Run the image-volume behavior against the isolated matching Apple runtime.
+expect_apple_runtime_behavior() {
+    if [[ "$CONTAINER_COMPOSE_LIVE" != "1" ]]; then
+        info 'live Apple runtime validation not requested; Docker Compose V2 reference and model parity passed'
+        return
+    fi
+    if [[ ! -x "$CONTAINER_BINARY" ]] && ! command -v "$CONTAINER_BINARY" >/dev/null 2>&1; then
+        skip_or_fail "container runtime binary is not executable: $CONTAINER_BINARY"
+    fi
+    "$CONTAINER_BINARY" system status >/dev/null 2>&1 \
+        || skip_or_fail 'Apple container runtime is not running'
+
+    CONTAINER_PROJECT_STARTED=1
+    "$CONTAINER_COMPOSE" \
+        --ansi never \
+        --project-directory "$FIXTURE_DIR" \
+        --project-name "$PROJECT_NAME" \
+        --file "$COMPOSE_FILE" \
+        up --build --detach --quiet-pull
+    assert_apple_runtime_seeded
+    assert_apple_runtime_volume_reuse
+    "$CONTAINER_COMPOSE" \
+        --ansi never \
+        --project-directory "$FIXTURE_DIR" \
+        --project-name "$PROJECT_NAME" \
+        --file "$COMPOSE_FILE" \
+        down --volumes --remove-orphans
+    CONTAINER_PROJECT_STARTED=0
+}
+
+# Run Docker Compose V2 reference, Compose-model, and optional macOS runtime checks.
 main() {
     parse_args "$@"
     detect_docker_compose
@@ -279,8 +388,9 @@ main() {
     expect_docker_config
     expect_container_config
     expect_docker_runtime_behavior
+    expect_apple_runtime_behavior
 
-    info 'Docker Compose V2 image-declared volume reference behavior and container-compose model parity passed.'
+    info 'Docker Compose V2 image-volume parity passed.'
 }
 
 main "$@"

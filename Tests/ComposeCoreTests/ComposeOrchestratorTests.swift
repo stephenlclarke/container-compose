@@ -497,6 +497,7 @@ private func orchestratorDependencies(
     dependencies.execManager = RecordingContainerExecManager()
     dependencies.exporter = RecordingContainerExporter()
     dependencies.imageManager = RecordingContainerImageManager()
+    dependencies.imageVolumeInitializer = RecordingContainerImageVolumeInitializer()
     dependencies.lifecycleManager = RecordingContainerLifecycleManager()
     dependencies.logManager = RecordingContainerLogManager()
     dependencies.pullMetadataStore = RecordingPullMetadataStore()
@@ -2336,13 +2337,14 @@ struct ComposeOrchestratorTests {
         #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
     }
 
-    @Test("create rejects image volumes requiring Docker copy-up before creating resources")
-    func createRejectsImageVolumesRequiringCopyUpBeforeCreatingResources() async throws {
+    @Test("create initializes image volumes before creating a container")
+    func createInitializesImageVolumesBeforeCreatingContainer() async throws {
         let runner = RecordingRunner()
         let imageManager = RecordingContainerImageManager(imageVolumeTargets: [
             "example/api": ["/image-data"],
         ])
         let resourceManager = RecordingContainerResourceManager()
+        let initializer = RecordingContainerImageVolumeInitializer()
         let project = composeProject(
             name: "demo",
             services: [
@@ -2354,34 +2356,28 @@ struct ComposeOrchestratorTests {
             $0.networks = ["backend": ComposeNetwork(name: "backend")]
         }
 
-        do {
-            try await ComposeOrchestrator(
-                runner: runner,
-                imageManager: imageManager,
-                resourceManager: resourceManager,
-            ).create(project: project, options: ComposeCreateOptions())
-            Issue.record("Expected image volume copy-up error")
-        } catch let error as ComposeError {
-            #expect(
-                error
-                    == .unsupported(
-                        "service 'api' image 'example/api' declares VOLUME '/image-data'; "
-                            + "Docker copy-up requires an apple/container image-to-volume initialization primitive. "
-                            + "Use a bind, tmpfs, or image mount to mask the target, or set volume.nocopy: true to opt out of copy-up"
-                    )
-            )
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+                $0.imageVolumeInitializer = initializer
+                $0.resourceManager = resourceManager
+            },
+        ).create(project: project, options: ComposeCreateOptions())
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.contains { $0.hasPrefix("demo_anon-api-1-") && $0.hasSuffix(":/image-data") })
         #expect(
             await imageManager.requests == [
                 .healthCheck(reference: "example/api", platform: nil),
                 .volumeTargets(reference: "example/api", platform: nil),
             ]
         )
-        #expect(await resourceManager.requests.isEmpty)
+        #expect(await resourceManager.requests.count == 2)
+        let request = try #require((await initializer.requests).first)
+        #expect(request.image == "example/api")
+        #expect(request.imageSubpath == "/image-data")
+        #expect(request.volumeName.hasPrefix("demo_anon-api-1-"))
     }
 
     @Test("create maps legacy links to static host entries after creating dependencies")
@@ -4848,6 +4844,7 @@ struct ComposeOrchestratorTests {
         #expect(await downDiscovery.listRequests == [true])
         #expect(downResourceRequests == [
             .deleteNetwork(id: "team-net"),
+            .listVolumes,
             .deleteVolume(name: "team-cache"),
         ])
     }
@@ -10686,13 +10683,14 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--health-retries", "4"]))
     }
 
-    @Test("up rejects image volumes requiring Docker copy-up before creating resources")
-    func upRejectsImageVolumesRequiringCopyUpBeforeCreatingResources() async throws {
+    @Test("up initializes implicit image volumes before creating a container")
+    func upInitializesImplicitImageVolumesBeforeCreatingContainer() async throws {
         let runner = RecordingRunner()
         let imageManager = RecordingContainerImageManager(imageVolumeTargets: [
             "example/api": ["/image-data"],
         ])
         let resourceManager = RecordingContainerResourceManager()
+        let initializer = RecordingContainerImageVolumeInitializer()
         let project = composeProject(
             name: "demo",
             services: [
@@ -10704,34 +10702,28 @@ struct ComposeOrchestratorTests {
             $0.networks = ["backend": ComposeNetwork(name: "backend")]
         }
 
-        do {
-            try await ComposeOrchestrator(
-                runner: runner,
-                imageManager: imageManager,
-                resourceManager: resourceManager,
-            ).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected image volume copy-up error")
-        } catch let error as ComposeError {
-            #expect(
-                error
-                    == .unsupported(
-                        "service 'api' image 'example/api' declares VOLUME '/image-data'; "
-                            + "Docker copy-up requires an apple/container image-to-volume initialization primitive. "
-                            + "Use a bind, tmpfs, or image mount to mask the target, or set volume.nocopy: true to opt out of copy-up"
-                    )
-            )
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+                $0.imageVolumeInitializer = initializer
+                $0.resourceManager = resourceManager
+            },
+        ).up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.contains { $0.hasPrefix("demo_anon-api-1-") && $0.hasSuffix(":/image-data") })
         #expect(
             await imageManager.requests == [
                 .healthCheck(reference: "example/api", platform: nil),
                 .volumeTargets(reference: "example/api", platform: nil),
             ]
         )
-        #expect(await resourceManager.requests.isEmpty)
+        let request = try #require((await initializer.requests).first)
+        #expect(request.image == "example/api")
+        #expect(request.imageSubpath == "/image-data")
+        #expect(request.volumeName.hasPrefix("demo_anon-api-1-"))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", request.volumeName])
     }
 
     @Test("up accepts no-copy volumes that mask image volume targets")
@@ -10774,6 +10766,76 @@ struct ComposeOrchestratorTests {
         )
         #expect(await resourceManager.requests.map(\.name) == ["demo_cache"])
         #expect(command.containsSequence(["--volume", "demo_cache:/image-data"]))
+    }
+
+    @Test("up initializes a named image volume from its mount destination")
+    func upInitializesNamedImageVolumeFromItsMountDestination() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager(imageVolumeTargets: [
+            "example/api": ["/data/cache"],
+        ])
+        let initializer = RecordingContainerImageVolumeInitializer()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [ComposeMount(type: "volume", source: "data", target: "/data")]
+                },
+            ]
+        ) {
+            $0.volumes = ["data": ComposeVolume(name: "data")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+                $0.imageVolumeInitializer = initializer
+            },
+        ).up(project: project, options: ComposeUpOptions())
+
+        #expect(await initializer.requests == [ComposeImageVolumeInitializationRequest(
+            image: "example/api",
+            imageSubpath: "/data",
+            volumeName: "demo_data",
+        )])
+    }
+
+    @Test("up initializes a volume inherited from an external container")
+    func upInitializesExternalContainerVolumeFromItsMountDestination() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager(imageVolumeTargets: [
+            "example/api": ["/data"],
+        ])
+        let initializer = RecordingContainerImageVolumeInitializer()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [ComposeMount(
+                        type: "external-volume",
+                        source: "legacy_data",
+                        target: "/data",
+                    )]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+                $0.imageVolumeInitializer = initializer
+            },
+        ).up(project: project, options: ComposeUpOptions())
+
+        #expect(await initializer.requests == [ComposeImageVolumeInitializationRequest(
+            image: "example/api",
+            imageSubpath: "/data",
+            volumeName: "legacy_data",
+        )])
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--volume", "legacy_data:/data"]))
     }
 
     @Test("up accepts bind tmpfs and image masks for image volume targets")
@@ -15603,6 +15665,7 @@ struct ComposeOrchestratorTests {
         ])
         #expect(await resourceManager.requests == [
             .deleteNetwork(id: "demo_default"),
+            .listVolumes,
             .deleteVolume(name: "demo_data"),
         ])
     }
@@ -15650,9 +15713,38 @@ struct ComposeOrchestratorTests {
             .delete(id: "demo-api-1", force: false),
         ])
         let resources = await resourceManager.requests
-        #expect(resources.count == 2)
+        #expect(resources.count == 3)
+        #expect(resources.first == .listVolumes)
         #expect(resources.contains { $0.name.hasPrefix("demo_anon-api-1-") })
         #expect(resources.contains { $0.name.hasPrefix("demo_anon-api-2-") })
+    }
+
+    @Test("down volumes removes generated image volumes by lifecycle labels")
+    func downVolumesRemovesGeneratedImageVolumesByLifecycleLabels() async throws {
+        let runtimeVolume = "demo_anon-api-1-9c67416f2a3b"
+        let resourceManager = RecordingContainerResourceManager(volumes: [
+            ComposeVolumeSummary(
+                name: runtimeVolume,
+                labels: [
+                    composeProjectLabel: "demo",
+                    "com.apple.container.compose.image-volume": "true",
+                    "com.apple.container.compose.image-volume.container": "demo-api-1",
+                    "com.apple.container.compose.image-volume.service": "api",
+                ],
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": composeService(name: "api", image: "example/api")],
+        )
+
+        try await ComposeOrchestrator(runner: RecordingRunner(), resourceManager: resourceManager)
+            .down(project: project, options: ComposeDownOptions(volumes: true))
+
+        #expect(await resourceManager.requests == [
+            .listVolumes,
+            .deleteVolume(name: runtimeVolume),
+        ])
     }
 
     @Test("down service selection preserves shared project resources")
@@ -15694,8 +15786,9 @@ struct ComposeOrchestratorTests {
             .delete(id: "demo-api-1", force: false),
         ])
         let resources = await resourceManager.requests
-        #expect(resources.count == 1)
-        if case let .deleteVolume(name) = resources[0] {
+        #expect(resources.count == 2)
+        #expect(resources.first == .listVolumes)
+        if case let .deleteVolume(name) = resources[1] {
             #expect(name.hasPrefix("demo_anon-api-1-"))
         } else {
             Issue.record("Expected selected down to remove only the selected service anonymous volume")
@@ -16134,6 +16227,7 @@ struct ComposeOrchestratorTests {
             .delete(id: "demo-api-1", force: false),
         ])
         #expect(await resourceManager.requests == [
+            .listVolumes,
             .deleteVolume(name: "demo_data"),
         ])
     }
@@ -20224,8 +20318,9 @@ struct ComposeOrchestratorTests {
             .delete(id: "demo-api-1", force: true),
         ])
         let resources = await resourceManager.requests
-        #expect(resources.count == 1)
-        #expect(resources.first?.name.hasPrefix("demo_anon-") == true)
+        #expect(resources.count == 2)
+        #expect(resources.first == .listVolumes)
+        #expect(resources.last?.name.hasPrefix("demo_anon-") == true)
         #expect(!commands.contains { $0.contains("demo_cache") })
     }
 
@@ -20424,8 +20519,9 @@ struct ComposeOrchestratorTests {
             .delete(id: "demo-api-1", force: true),
         ])
         let resources = await resourceManager.requests
-        #expect(resources.count == 1)
-        #expect(resources.first?.name.hasPrefix("demo_anon-") == true)
+        #expect(resources.count == 2)
+        #expect(resources.first == .listVolumes)
+        #expect(resources.last?.name.hasPrefix("demo_anon-") == true)
     }
 
     @Test("lifecycle timeout overrides service stop grace period")
@@ -24528,13 +24624,14 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
-    @Test("run rejects image volumes requiring Docker copy-up before creating resources")
-    func runRejectsImageVolumesRequiringCopyUpBeforeCreatingResources() async throws {
+    @Test("run initializes image volumes before the one-off container")
+    func runInitializesImageVolumesBeforeTheOneOffContainer() async throws {
         let runner = RecordingRunner()
         let imageManager = RecordingContainerImageManager(imageVolumeTargets: [
             "alpine": ["/image-data"],
         ])
         let resourceManager = RecordingContainerResourceManager()
+        let initializer = RecordingContainerImageVolumeInitializer()
         let project = composeProject(
             name: "demo",
             services: [
@@ -24546,34 +24643,28 @@ struct ComposeOrchestratorTests {
             $0.networks = ["backend": ComposeNetwork(name: "backend")]
         }
 
-        do {
-            try await ComposeOrchestrator(
-                runner: runner,
-                imageManager: imageManager,
-                resourceManager: resourceManager,
-            ).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected image volume copy-up error")
-        } catch let error as ComposeError {
-            #expect(
-                error
-                    == .unsupported(
-                        "service 'job' image 'alpine' declares VOLUME '/image-data'; "
-                            + "Docker copy-up requires an apple/container image-to-volume initialization primitive. "
-                            + "Use a bind, tmpfs, or image mount to mask the target, or set volume.nocopy: true to opt out of copy-up"
-                    )
-            )
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+                $0.imageVolumeInitializer = initializer
+                $0.resourceManager = resourceManager
+            },
+        ).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.contains { $0.hasPrefix("demo_anon-job-run-") && $0.hasSuffix(":/image-data") })
         #expect(
             await imageManager.requests == [
                 .healthCheck(reference: "alpine", platform: nil),
                 .volumeTargets(reference: "alpine", platform: nil),
             ]
         )
-        #expect(await resourceManager.requests.isEmpty)
+        #expect(await resourceManager.requests.count == 2)
+        let request = try #require((await initializer.requests).first)
+        #expect(request.image == "alpine")
+        #expect(request.imageSubpath == "/image-data")
+        #expect(request.volumeName.hasPrefix("demo_anon-job-run-"))
     }
 
     @Test("run starts dependencies before one-off container")
@@ -30746,6 +30837,18 @@ private actor RecordingContainerResourceManager: ContainerResourceManaging {
         if let volumeDeleteError {
             throw volumeDeleteError
         }
+    }
+}
+
+private actor RecordingContainerImageVolumeInitializer: ComposeRuntimeImageVolumeInitializing {
+    private var storage: [ComposeImageVolumeInitializationRequest] = []
+
+    var requests: [ComposeImageVolumeInitializationRequest] {
+        storage
+    }
+
+    func initializeImageVolume(_ request: ComposeImageVolumeInitializationRequest) async throws {
+        storage.append(request)
     }
 }
 

@@ -584,8 +584,8 @@ struct ComposeNormalizerTests {
         #expect(project.services["worker"]?.build?.unsupportedFields == ["secrets"])
     }
 
-    @Test("normalizes volume nocopy as supported no-op")
-    func normalizesVolumeNoCopyAsSupportedNoOp() async throws {
+    @Test("normalizes volume nocopy for runtime initialization policy")
+    func normalizesVolumeNoCopyForRuntimeInitializationPolicy() async throws {
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
@@ -620,6 +620,7 @@ struct ComposeNormalizerTests {
         #expect(mount.type == "volume")
         #expect(mount.source == "cache")
         #expect(mount.target == "/cache")
+        #expect(mount.volumeNoCopy == true)
         #expect(mount.unsupportedFields == nil)
     }
 

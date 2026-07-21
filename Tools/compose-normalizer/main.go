@@ -360,6 +360,7 @@ type normalizedMount struct {
 	ReadOnly           bool              `json:"readOnly,omitempty"`
 	BindCreateHostPath *bool             `json:"bindCreateHostPath,omitempty"`
 	BindPropagation    string            `json:"bindPropagation,omitempty"`
+	VolumeNoCopy       bool              `json:"volumeNoCopy,omitempty"`
 	VolumeSubpath      string            `json:"volumeSubpath,omitempty"`
 	ImageSubpath       string            `json:"imageSubpath,omitempty"`
 	VolumeLabels       map[string]string `json:"volumeLabels,omitempty"`
@@ -1431,6 +1432,7 @@ func mountValues(volumes []types.ServiceVolumeConfig) []normalizedMount {
 			ReadOnly:           volume.ReadOnly,
 			BindCreateHostPath: bindCreateHostPathValue(volume),
 			BindPropagation:    bindPropagationValue(volume),
+			VolumeNoCopy:       volumeNoCopyValue(volume),
 			VolumeSubpath:      volumeSubpathValue(volume),
 			ImageSubpath:       imageSubpathValue(volume),
 			VolumeLabels:       volumeLabelsValue(volume),
@@ -1440,6 +1442,11 @@ func mountValues(volumes []types.ServiceVolumeConfig) []normalizedMount {
 		})
 	}
 	return result
+}
+
+// volumeNoCopyValue preserves Docker's explicit no-copy initialization opt-out.
+func volumeNoCopyValue(volume types.ServiceVolumeConfig) bool {
+	return volume.Type == "volume" && volume.Volume != nil && volume.Volume.NoCopy
 }
 
 // bindCreateHostPathValue preserves Compose bind mount source creation policy.

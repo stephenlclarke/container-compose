@@ -121,6 +121,47 @@ struct ContainerImageVolumeInitializerTests {
     }
 
     @Test
+    func `runtime image volume initializer resolves then reuses an existing volume`() async throws {
+        let directory = FileManager.default.uniqueTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let imagePath = FilePath(directory.appendingPathComponent("image.ext4").path)
+        let volumePath = FilePath(directory.appendingPathComponent("volume.img").path)
+        let seed = Data("resolved-image-seed\n".utf8)
+        try formatImage(at: imagePath, contents: seed)
+        try formatEmptyVolume(at: volumePath)
+
+        let recorder = ImageVolumeResolutionRecorder()
+        let initializer = ContainerClientImageVolumeInitializer(
+            resolveImageFilesystem: { image, platform in
+                await recorder.recordImage(image: image, platform: platform)
+                return imagePath.description
+            },
+            resolveVolume: { name in
+                await recorder.recordVolume(name)
+                return ComposeVolumeSummary(name: name, source: volumePath.description)
+            },
+        )
+        let request = ComposeImageVolumeInitializationRequest(
+            image: "example/api:latest",
+            platform: "linux/arm64",
+            imageSubpath: "/var/lib/data",
+            volumeName: "demo_data",
+        )
+
+        try await initializer.initializeImageVolume(request)
+        try await initializer.initializeImageVolume(request)
+
+        #expect(await recorder.imageRequests == [
+            ImageVolumeImageRequest(image: "example/api:latest", platform: "linux/arm64"),
+            ImageVolumeImageRequest(image: "example/api:latest", platform: "linux/arm64"),
+        ])
+        #expect(await recorder.volumeRequests == ["demo_data", "demo_data"])
+        let reader = try EXT4.EXT4Reader(blockDevice: volumePath)
+        #expect(try reader.readFile(at: FilePath("/payload.txt")) == seed)
+    }
+
+    @Test
     func `a failed source export leaves an empty target volume unchanged`() async throws {
         let directory = FileManager.default.uniqueTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -206,4 +247,30 @@ struct ContainerImageVolumeInitializerTests {
         let formatter = try EXT4.Formatter(path, minDiskSize: size, journal: journal)
         try formatter.close()
     }
+}
+
+private actor ImageVolumeResolutionRecorder {
+    private var imageStorage: [ImageVolumeImageRequest] = []
+    private var volumeStorage: [String] = []
+
+    var imageRequests: [ImageVolumeImageRequest] {
+        imageStorage
+    }
+
+    var volumeRequests: [String] {
+        volumeStorage
+    }
+
+    func recordImage(image: String, platform: String?) {
+        imageStorage.append(ImageVolumeImageRequest(image: image, platform: platform))
+    }
+
+    func recordVolume(_ name: String) {
+        volumeStorage.append(name)
+    }
+}
+
+private struct ImageVolumeImageRequest: Equatable {
+    let image: String
+    let platform: String?
 }

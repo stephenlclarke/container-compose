@@ -71,7 +71,7 @@ The authoritative parity ledger is [STATUS.md](STATUS.md). It lists every
 tracked Compose file, service, Dockerfile/build, command, and long-option
 surface with ✅ yes, ⚠️ partial, or ❌ no, and explains every partial surface.
 
-On macOS, `container-compose` honors the active pull policy, prepares missing default-pull images when needed, then reads Dockerfile-declared image `VOLUME` metadata before `up`, `create`, and one-off `run`. It accepts bind, tmpfs, image, and `volume.nocopy: true` masks, and fails before resource creation when Docker would need image-to-volume copy-up that the Apple runtime cannot perform yet.
+On macOS, `container-compose` honors the active pull policy, prepares missing default-pull images when needed, then reads Dockerfile-declared image `VOLUME` metadata before `up`, `create`, and one-off `run`. It creates deterministic implicit volumes, seeds empty local volumes from the selected image path (including an inherited external volume), honors `volume.nocopy: true`, and preserves populated volumes across `down`/`up`. Generic Docker copy-up for a volume mount not covered by an image-declared `VOLUME`, and image-volume initialization through `volume.subpath`, remain explicit gaps.
 
 Use `container system version` to see the running `container` runtime source, branch lane, commit, compiled `containerization` ref, and builder image metadata. Use `container compose version` to see the installed plugin lane, embedded `compose-go` version, and package/runtime compatibility metadata.
 

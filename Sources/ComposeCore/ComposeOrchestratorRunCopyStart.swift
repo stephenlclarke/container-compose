@@ -160,7 +160,13 @@ extension ComposeOrchestrator {
             materializedConfigSecretRoot: options.materializedConfigSecretDirectory
         )
         try prepareBindMountSources(project: project, service: service, mounts: composeDeclaredMounts)
-        for mount in mounts {
+        let imageVolumeMounts = try await prepareRuntimeImageVolumes(
+            project: project,
+            service: service,
+            context: mountContext,
+            mounts: mounts,
+        )
+        for mount in mounts + imageVolumeMounts {
             try appendMount(mount, context: mountContext, args: &args)
         }
         for tmpfs in service.tmpfs ?? [] {

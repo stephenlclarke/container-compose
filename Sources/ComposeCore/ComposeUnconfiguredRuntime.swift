@@ -26,6 +26,7 @@ struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExportin
     ComposeRuntimeEventsManaging, ComposeRuntimeLifecycleManaging, ComposeRuntimeStatsManaging,
     ComposeRuntimeTopManaging, ComposeRuntimeLogManaging, ComposeRuntimeConfigReading,
     ComposeRuntimeSecretReading, ComposeRuntimeDiscoveryManaging, ComposeRuntimeImageManaging,
+    ComposeRuntimeImageVolumeInitializing,
     ComposeRuntimeResourceManaging
 {
     private func unavailable(_ operation: String) -> ComposeError {
@@ -165,6 +166,10 @@ struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExportin
         []
     }
 
+    func initializeImageVolume(_: ComposeImageVolumeInitializationRequest) async throws {
+        throw unavailable("image volume initialization")
+    }
+
     func bridgeTransformers() async throws -> [ComposeBridgeTransformer] {
         throw unavailable("bridge transformer lookup")
     }
@@ -262,6 +267,10 @@ public enum ComposeRuntimeProviderDefaults {
     }
 
     public static func images() -> any ComposeRuntimeImageManaging {
+        ComposeUnconfiguredRuntime()
+    }
+
+    public static func imageVolumeInitializer() -> any ComposeRuntimeImageVolumeInitializing {
         ComposeUnconfiguredRuntime()
     }
 

@@ -46,7 +46,7 @@ Existing managed service anonymous volumes become service-scoped on their next r
 ## Remaining Risks
 
 - Docker Compose uses randomly generated anonymous volume names, whereas container-compose retains deterministic names so `down --volumes` and `--renew-anon-volumes` can resolve Apple runtime resources. The Docker Compose V2 parity check asserts the shared semantic: separate container identities do not share a volume.
-- Docker copy-up, complete `volume.nocopy`, image-declared anonymous volumes, non-local volume plugins, recursive bind modes, and consistency/cache modes remain runtime limitations tracked in `Status.md`.
+- At the time of this historical anonymous-identity slice, Docker copy-up, complete `volume.nocopy`, and image-declared anonymous volumes were still pending. The implemented image-volume lifecycle policy is now documented in [PR-image-volume-copy-up-lifecycle.md](PR-image-volume-copy-up-lifecycle.md); non-local volume plugins, recursive bind modes, and consistency/cache modes remain limitations tracked in `STATUS.md`.
 
 ## Commit Tracking
 

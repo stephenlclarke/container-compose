@@ -1,4 +1,6 @@
-# Pull Request: preflight image-declared volume copy-up
+# Historical Pull Request: preflight image-declared volume copy-up
+
+> Historical handoff for the preflight commit. The implemented lifecycle policy is now documented in [PR-image-volume-copy-up-lifecycle.md](PR-image-volume-copy-up-lifecycle.md).
 
 ## Summary
 

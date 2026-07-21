@@ -37,6 +37,7 @@ public enum ComposeContainerRuntime {
             services: .init(
                 configReader: ComposeExternalConfigReader(),
                 eventsManager: ContainerClientEventsManager(),
+                imageVolumeInitializer: ContainerClientImageVolumeInitializer(),
                 lifecycleManager: ContainerClientLifecycleManager(),
                 resourceManager: ContainerClientResourceManager(),
                 secretReader: ComposeExternalSecretReader(),

@@ -301,21 +301,47 @@ extension ComposeOrchestrator {
 
     /// Removes existing anonymous volume names for one service container target.
     func removeExistingAnonymousVolumes(project: ComposeProject, target: ServiceContainerTarget) async throws {
-        let names = try anonymousVolumeRuntimeNames(project: project, targets: [target])
-        guard !names.isEmpty else {
-            return
-        }
+        var names = Set(try anonymousVolumeRuntimeNames(project: project, targets: [target]))
         if options.dryRun {
-            for name in names {
+            guard !names.isEmpty else {
+                return
+            }
+            for name in names.sorted() {
                 try await runContainer(["volume", "delete", name], check: false)
             }
             return
         }
         let existingVolumes = try await resourceManager.listVolumes()
+        let imageVolumeNames = existingVolumes
+            .filter {
+                $0.labels[projectLabel] == project.name
+                    && $0.labels[imageVolumeAnonymousLabel] == "true"
+                    && $0.labels[imageVolumeContainerLabel] == target.name
+            }
+            .map(\.name)
+        names.formUnion(imageVolumeNames)
         let existingNames = Set(existingVolumes.map(\.name))
-        for name in names where existingNames.contains(name) {
+        for name in names.sorted() where existingNames.contains(name) {
             try await resourceManager.deleteVolume(name: name)
         }
+    }
+
+    /// Returns all generated image-declared anonymous volumes owned by a project.
+    func imageAnonymousVolumeRuntimeNames(
+        project: ComposeProject,
+        containerNames: Set<String>? = nil,
+    ) async throws -> [String] {
+        guard !options.dryRun else {
+            return []
+        }
+        return try await resourceManager.listVolumes()
+            .filter {
+                $0.labels[projectLabel] == project.name
+                    && $0.labels[imageVolumeAnonymousLabel] == "true"
+                    && (containerNames == nil || containerNames?.contains($0.labels[imageVolumeContainerLabel] ?? "") == true)
+            }
+            .map(\.name)
+            .sorted()
     }
 
     /// Returns the project-scoped name used for an anonymous Compose service

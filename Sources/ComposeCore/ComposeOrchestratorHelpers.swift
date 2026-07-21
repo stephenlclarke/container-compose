@@ -82,6 +82,9 @@ struct ComposeLabelOverride {
 }
 
 let projectLabel = ComposeRuntimeLabels.project
+let imageVolumeAnonymousLabel = "com.apple.container.compose.image-volume"
+let imageVolumeContainerLabel = "com.apple.container.compose.image-volume.container"
+let imageVolumeServiceLabel = "com.apple.container.compose.image-volume.service"
 let serviceLabel = ComposeRuntimeLabels.service
 let oneOffLabel = ComposeRuntimeLabels.oneOff
 let configHashLabel = "com.apple.container.compose.config-hash"
