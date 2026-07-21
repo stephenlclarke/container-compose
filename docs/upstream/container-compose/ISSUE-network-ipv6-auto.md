@@ -1,97 +1,40 @@
-# Compose compatibility gap: explicit IPv6 disablement
+# Compose compatibility: IPv6 network address assignment
 
 ## Compose surface
 
-- `networks.<name>.enable_ipv6`
+- networks.NETWORK_NAME.enable_ipv6
 
 ## Docker Compose v2 behavior
 
-Docker Compose accepts both boolean values in normalized config. `true` asks
-the network implementation to assign IPv6 addresses; `false` asks it not to.
-
-```yaml
-services:
-  api:
-    image: alpine:3.20
-    networks:
-      - backend
-networks:
-  backend:
-    enable_ipv6: true
-```
+Docker Compose accepts both boolean values in normalized configuration. A true value enables IPv6 address assignment; a false value disables it. Configuration output retains a declared IPv6 IPAM pool even when IPv6 is disabled. Docker Engine ignores that IPv6 pool during network creation.
 
 References:
 
-- Compose networks reference: <https://docs.docker.com/reference/compose-file/networks/#enable_ipv6>
-- Compose IPAM reference: <https://docs.docker.com/reference/compose-file/networks/#ipam>
+- [Compose networks reference](https://docs.docker.com/reference/compose-file/networks/#enable_ipv6)
+- [Compose IPAM reference](https://docs.docker.com/reference/compose-file/networks/#ipam)
 
 ## Current container-compose behavior
 
-The Compose-only slice
-[`55d00074864d21c70c9b03995886fbc9cf9e57de`](https://github.com/stephenlclarke/container-compose/commit/55d00074864d21c70c9b03995886fbc9cf9e57de)
-accepts `enable_ipv6: true` with or without an explicit IPv6 IPAM subnet. The
-generic vmnet network-create path automatically assigns a prefix when no subnet
-is supplied, and `up` creates a network whose runtime status has a non-empty
-`ipv6Subnet`.
+container-compose accepts enable_ipv6: true with or without an explicit IPv6 IPAM subnet. vmnet assigns a prefix when the enabled path has no explicit subnet.
 
-vmnet exposes no control that suppresses this automatic allocation. The
-normalizer therefore reports `enable_ipv6: false` as unsupported and Compose
-rejects it before network or service-container side effects. This is deliberate:
-silently accepting a request to disable IPv6 would be incorrect.
+container-compose also applies enable_ipv6: false on macOS 26. Its normalized config and convert model retain a declared IPv6 pool for Docker Compose compatibility. The runtime request carries the disabled setting but deliberately suppresses that pool before constructing the generic NetworkConfiguration: a direct generic request cannot simultaneously disable IPv6 and select an IPv6 subnet. The resulting vmnet network disables NAT66 and router advertisements and reports no IPv6 subnet.
 
-This change does not implement embedded DNS, service-name discovery, or any
-other network feature beyond the IPv6 assignment result.
+## Ownership and handoff
 
-## Likely owner
+container-compose owns Compose YAML normalization, Docker-compatible config and dry-run output, and the decision to retain only model metadata that the effective macOS network create cannot use.
 
-`container-compose` owns the typed Compose normalization, pre-side-effect
-diagnostic, Docker Compose V2 parity fixture, and runtime integration test.
+The generic macOS primitive is owned by apple/container. It is represented by the Apple-shaped fork commit [4bce15d507837e3f8bb58ebc4efd557a283bff82](https://github.com/stephenlclarke/container/commit/4bce15d507837e3f8bb58ebc4efd557a283bff82) and the paired [Apple handoff](../apple-container/ISSUE-network-ipv6-disablement.md). The Compose implementation is [d49c2505a8c7536388b3fd8f996c94bdc1f56013](https://github.com/stephenlclarke/container-compose/commit/d49c2505a8c7536388b3fd8f996c94bdc1f56013).
 
-An Apple-shaped `container` API is needed only to close the remaining gap: a
-generic network configuration control that can suppress automatic IPv6 address
-allocation and reports the resulting state. No fork change is justified for
-the accepted `true` path because the existing generic vmnet behavior already
-provides its required result. Windows-specific networking is out of scope.
+Windows-specific networking is out of scope.
 
-## Code handoff
+## Validation
 
-- Normalization: `Tools/compose-normalizer/main.go`,
-  `projectNetworkValues`.
-- Go coverage: `Tools/compose-normalizer/main_test.go`.
-- Swift normalizer coverage:
-  `Tests/ComposeCoreTests/ComposeNormalizerTests.swift`.
-- macOS runtime integration:
-  `Tests/ComposeRuntimeTests/ComposeRuntimeSmokeTests.swift`.
-- Docker Compose V2 parity harness:
-  `Tools/parity/check-compose-network-ipv6.sh` and the
-  `docker-compose-network-ipv6-parity` Make target.
+- Go normalizer tests cover enabled, disabled, and disabled-with-pool models.
+- Swift unit tests cover normalization, dry-run rendering, request forwarding, and the generic adapter.
+- A macOS runtime smoke test brings up a Compose YAML project with enable_ipv6: false and an IPv6 pool, then confirms the realized network has enableIPv6 false and no IPv6 subnet.
+- The focused generic CLI integration creates a network with --disable-ipv6 and confirms the persisted configuration and vmnet status.
+- Tools/parity/check-compose-network-ipv6.sh compares both values with local Docker Compose v5.3.1.
 
-## Minimal examples
+## Remaining macOS gaps
 
-Supported on macOS:
-
-```yaml
-networks:
-  backend:
-    enable_ipv6: true
-```
-
-Expected result: `container compose up` creates `backend` and
-`container network inspect backend` reports a non-empty `status.ipv6Subnet`.
-
-Correctly rejected until the runtime gains an IPv6-disable primitive:
-
-```yaml
-networks:
-  backend:
-    enable_ipv6: false
-```
-
-Expected result: `container compose up` fails before side effects with
-`network 'backend' uses unsupported fields enable_ipv6`.
-
-## Documentation checklist
-
-- [x] I checked `STATUS.md`.
-- [x] I checked the relevant Docker Compose reference.
-- [x] The documented remaining gap is limited to macOS-implementable behavior.
+IPv6 gateways, allocation ranges, auxiliary addresses, and multiple IPv6 pools remain unsupported. This slice does not implement embedded DNS or service discovery, and enable_ipv4: false remains a separate runtime gap.

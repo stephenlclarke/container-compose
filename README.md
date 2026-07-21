@@ -33,10 +33,10 @@ orchestration and maps supported Compose behavior to the matched runtime stack.
 > [!WARNING]
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
-> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 21 July 2026 snapshot, the three support forks are **371 commits ahead of Apple upstream**:
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 21 July 2026 snapshot, the three support forks are **372 commits ahead of Apple upstream**:
 >
 > - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 112 ahead** at [`ae3eee9d4c00`](https://github.com/stephenlclarke/containerization/commit/ae3eee9d4c008c0c433667f2ccfbd36bf5b78413).
-> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 228 ahead** at [`a8c2e4b`](https://github.com/stephenlclarke/container/commit/a8c2e4b).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 229 ahead** at [`4bce15d`](https://github.com/stephenlclarke/container/commit/4bce15d507837e3f8bb58ebc4efd557a283bff82).
 > - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 31 ahead** at [`5939a91ec0dd`](https://github.com/stephenlclarke/container-builder-shim/commit/5939a91ec0dd).
 > - [`container-compose`](https://github.com/stephenlclarke/container-compose): the integration repository's current `main` branch, with no Apple repository to compare against.
 >
@@ -54,6 +54,8 @@ orchestration and maps supported Compose behavior to the matched runtime stack.
 > `ComposeCore` uses those contracts for runtime operations while sharing typed container resource models where needed. The plugin installs `ComposeContainerRuntime`, the Apple-backed composition root: it wires typed `ContainerClient` providers, explicit CLI bridges, and Compose-owned filesystem external-config and Keychain external-secret defaults. Standalone `ComposeCore` requires a provider rather than constructing an Apple client.
 >
 > Docker and Compose policy stays above this seam. This is not a general AOP framework: focused decorators can negotiate declared capabilities, while VM, guest, cgroup, mount, archive, device, and builder primitives remain small Apple-shaped runtime slices. New runtime work continues in tested vertical slices without changing Compose-visible behavior outside its documented parity surface.
+>
+> The resource contract also carries an explicit `enableIPv6` network intent. For `enable_ipv6: false`, Compose preserves the declared IPv6 IPAM pool in `config` output, but omits that contradictory pool from the effective runtime create request, as Docker Engine does. The matched macOS 26 vmnet primitive then disables NAT66 and router advertisements and reports no IPv6 subnet.
 
 Help color-codes command, subcommand, and option support: green for supported,
 orange for partially supported, and red for unsupported. Command support and

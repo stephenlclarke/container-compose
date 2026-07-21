@@ -1,93 +1,39 @@
-# Compose compatibility gap: project network options
+# Compose compatibility gap: remaining project network options
 
 ## Compose surface
 
-- `networks.<name>.driver`
-- `networks.<name>.attachable`
-- `networks.<name>.enable_ipv4: false`
-- `networks.<name>.enable_ipv6: false`
-- `networks.<name>.ipam.options`
+- networks.NETWORK_NAME.driver
+- networks.NETWORK_NAME.attachable
+- networks.NETWORK_NAME.enable_ipv4: false
+- networks.NETWORK_NAME.ipam.options
+
+The related enable_ipv6: false surface is implemented and recorded in [ISSUE-network-ipv6-auto.md](ISSUE-network-ipv6-auto.md).
 
 ## Docker Compose v2 behavior
 
-The Compose specification exposes project network driver selection, standalone
-attachment, IP-family controls, and driver-specific IPAM options. Docker
-Compose preserves these fields in `config`; docker/compose#13785 separately
-tracks its current failure to pass `ipam.options` into Docker Engine network
-creation.
-
-```yaml
-services:
-  api:
-    image: alpine:3.20
-    networks:
-      - backend
-networks:
-  backend:
-    driver: overlay
-    attachable: true
-    enable_ipv4: false
-    enable_ipv6: false
-    ipam:
-      options:
-        com.example.ipam: enabled
-```
+The Compose specification exposes project network driver selection, standalone attachment, IP-family controls, and driver-specific IPAM options. Docker Compose preserves these fields in config. docker/compose issue 13785 tracks its current failure to pass ipam.options into Docker Engine network creation.
 
 References:
 
-- Docker Compose issue: <https://github.com/docker/compose/issues/13785>
-- Approved compose-go model PR: <https://github.com/compose-spec/compose-go/pull/870>
-- Compose network reference: <https://docs.docker.com/reference/compose-file/networks/>
-- Compose network IPAM reference: <https://docs.docker.com/reference/compose-file/networks/#ipam>
+- [Docker Compose issue 13785](https://github.com/docker/compose/issues/13785)
+- [compose-go model PR 870](https://github.com/compose-spec/compose-go/pull/870)
+- [Compose network reference](https://docs.docker.com/reference/compose-file/networks/)
+- [Compose IPAM reference](https://docs.docker.com/reference/compose-file/networks/#ipam)
 
 ## Current container-compose behavior
 
-The pinned `compose-go` dependency exposes all five fields. The normalizer maps
-the default bridge driver, ordinary IPv4 behavior, an explicit IPv6 subnet, and
-`enable_ipv6: true` with or without a subnet. vmnet assigns an IPv6 prefix when
-the generic network-create path has no explicit IPv6 subnet. It retains
-`ipam.options` in normalized/config/convert output and deliberately does not
-pass it to vmnet, matching Docker Compose local mode. It records custom
-drivers, `enable_ipv4: false`, and `enable_ipv6: false` in the normalized
-network `unsupportedFields` list.
+The pinned compose-go dependency exposes these fields. The normalizer retains ipam.options in normalized, config, and convert output and deliberately does not pass them to vmnet, matching Docker Compose local-mode behavior.
 
-Runtime-backed commands reject the remaining markers before creating networks
-or service containers instead of silently ignoring them.
+The default bridge driver, attachable metadata, ordinary IPv4, one IPv6 subnet, and both enable_ipv6 values are supported. A disabled IPv6 network retains its Compose IPAM pool in the model but suppresses it from the effective generic create request, as documented in the dedicated IPv6 handoff.
+
+Runtime-backed commands still reject custom drivers and enable_ipv4: false before network or service-container side effects. Those are the remaining behaviorally significant network-option gaps.
 
 ## Likely owner
 
-`container-compose` owns the no-side-effects rejection. Future Apple runtime
-changes would be needed to select custom drivers or disable IPv4 or IPv6.
-IPAM options are inspection-only in the local Docker Compose path and require
-no Apple primitive. Automatic IPv6 allocation is already a generic vmnet
-behavior; [the dedicated IPv6 handoff](ISSUE-network-ipv6-auto.md) records the
-Compose mapping and the remaining disablement gap.
+container-compose owns the recognition and no-side-effects diagnostics. A future generic Apple primitive is needed only for IPv4 disablement or real custom driver selection. IPAM options remain inspection-only in the macOS local path and need no fabricated vmnet option.
 
-## Minimal example
+## Validation
 
-```yaml
-services:
-  api:
-    image: alpine:3.20
-    command: ["true"]
-    networks:
-      - backend
-networks:
-  backend:
-    ipam:
-      options:
-        com.example.ipam: enabled
-```
-
-Expected container-compose behavior:
-
-- `container compose config --format json` preserves `ipamOptions` in the
-  normalized model.
-- `container compose up --dry-run api` uses the ordinary vmnet network-create
-  path without forwarding the inspection-only option.
-
-## Code of Conduct and documentation
-
-- [x] I agree to follow this project's Code of Conduct.
-- [x] I checked `STATUS.md`.
-- [x] I checked the relevant upstream Compose docs.
+- Config output preserves ipam.options.
+- Dry-run orchestration omits an invented vmnet IPAM option.
+- IPv6 disablement is covered by the dedicated Compose and generic runtime integrations.
