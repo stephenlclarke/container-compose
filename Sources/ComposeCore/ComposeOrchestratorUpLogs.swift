@@ -184,22 +184,21 @@ extension ComposeOrchestrator {
         exitControlOperation: @Sendable @escaping () async throws -> Int32,
     ) async throws -> Int32 {
         let session = UncheckedSendable(value: session)
-        let logTask: Task<Void, Error>?
-        if session.value.targets.isEmpty, !session.value.startedTargets.isEmpty {
-            logTask = Task { [self, session] in
+        let logTask: Task<Void, Error>? = if session.value.targets.isEmpty, !session.value.startedTargets.isEmpty {
+            Task { [self, session] in
                 try await waitForUpServiceTargets(session.value.startedTargets)
             }
         } else if !session.value.targets.isEmpty {
-            logTask = Task { [self, session] in
+            Task { [self, session] in
                 try await upLogFollowOperation(session.value)()
             }
         } else {
-            logTask = nil
+            nil
         }
 
         let exitControlResult: Result<Int32, Error>
         do {
-            exitControlResult = .success(try await exitControlOperation())
+            exitControlResult = try await .success(exitControlOperation())
         } catch {
             exitControlResult = .failure(error)
         }
