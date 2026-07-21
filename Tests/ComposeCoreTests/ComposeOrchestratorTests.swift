@@ -5867,6 +5867,81 @@ struct ComposeOrchestratorTests {
         #expect(lifecycleRequests.contains(.delete(id: "demo-db-1", force: false)))
     }
 
+    @Test("up exit-code-from preserves selected status when attached log follow ends")
+    func upExitCodeFromPreservesSelectedStatusWhenAttachedLogFollowEnds() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager(
+            waitExitCodes: [
+                "demo-api-1": 7,
+                "demo-db-1": 0,
+            ],
+            waitDelaysByID: [
+                "demo-api-1": .milliseconds(20),
+            ]
+        )
+        let logManager = RecordingContainerLogManager(
+            delay: .milliseconds(10),
+            error: ComposeError.unsupported("attached log stream ended during exit-control teardown")
+        )
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            containers: [
+                ComposeContainerSummary(
+                    id: "demo-api-1",
+                    status: "running",
+                    labels: [
+                        composeProjectLabel: "demo",
+                        composeServiceLabel: "api",
+                        composeOneOffLabel: "false",
+                    ]
+                ),
+                ComposeContainerSummary(
+                    id: "demo-db-1",
+                    status: "running",
+                    labels: [
+                        composeProjectLabel: "demo",
+                        composeServiceLabel: "db",
+                        composeOneOffLabel: "false",
+                    ]
+                ),
+            ],
+            getResponses: [
+                "demo-api-1": [nil],
+                "demo-db-1": [nil],
+            ]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        let exitCode = try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+                $0.logManager = logManager
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.exitCodeFrom = "api"
+        })
+
+        #expect(exitCode == 7)
+        #expect(await logManager.requests.sorted { $0.id < $1.id } == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+            ContainerLogRequest(id: "demo-db-1", tail: nil, follow: true),
+        ])
+    }
+
     @Test("up abort-on-container-failure returns failing status and tears down project")
     func upAbortOnContainerFailureReturnsFailingStatusAndTearsDownProject() async throws {
         let runner = RecordingRunner(responses: [
@@ -29698,11 +29773,13 @@ private actor RecordingContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienti
 private actor RecordingContainerLogManager: ContainerLogManaging {
     private let outputs: [String]
     private let delay: Duration?
+    private let error: (any Error)?
     private var storage: [ContainerLogRequest] = []
 
-    init(outputs: [String] = [], delay: Duration? = nil) {
+    init(outputs: [String] = [], delay: Duration? = nil, error: (any Error)? = nil) {
         self.outputs = outputs
         self.delay = delay
+        self.error = error
     }
 
     var requests: [ContainerLogRequest] {
@@ -29730,6 +29807,9 @@ private actor RecordingContainerLogManager: ContainerLogManaging {
         )
         if let delay {
             try await Task.sleep(for: delay)
+        }
+        if let error {
+            throw error
         }
         for output in outputs {
             emit(Data(output.utf8))

@@ -1,5 +1,9 @@
 # Pull Request
 
+## Resolution Status
+
+This historical handoff documented the then-current partial behavior. The Phase 4 lifecycle correction is now complete; see [PR-up-exit-code-from-status.md](PR-up-exit-code-from-status.md). Current generated help and `STATUS.md` mark `up --exit-code-from` as supported.
+
 ## Summary
 
 - Mark `compose up --exit-code-from` as partially supported in generated help

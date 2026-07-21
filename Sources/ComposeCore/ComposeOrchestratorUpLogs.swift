@@ -16,11 +16,6 @@
 
 import Foundation
 
-enum ComposeUpLogOperationResult {
-    case logsFinished
-    case exitCode(Int32)
-}
-
 actor ComposeUpExitCode {
     private var storage: Int32?
 
@@ -189,31 +184,33 @@ extension ComposeOrchestrator {
         exitControlOperation: @Sendable @escaping () async throws -> Int32,
     ) async throws -> Int32 {
         let session = UncheckedSendable(value: session)
-        return try await withThrowingTaskGroup(of: ComposeUpLogOperationResult.self) { group in
-            if session.value.targets.isEmpty, !session.value.startedTargets.isEmpty {
-                group.addTask { [self, session] in
-                    try await waitForUpServiceTargets(session.value.startedTargets)
-                    return .logsFinished
-                }
-            } else if !session.value.targets.isEmpty {
-                group.addTask { [self, session] in
-                    try await upLogFollowOperation(session.value)()
-                    return .logsFinished
-                }
+        let logTask: Task<Void, Error>?
+        if session.value.targets.isEmpty, !session.value.startedTargets.isEmpty {
+            logTask = Task { [self, session] in
+                try await waitForUpServiceTargets(session.value.startedTargets)
             }
-            group.addTask { try await .exitCode(exitControlOperation()) }
-
-            while let result = try await group.next() {
-                switch result {
-                case .logsFinished:
-                    continue
-                case let .exitCode(code):
-                    group.cancelAll()
-                    return code
-                }
+        } else if !session.value.targets.isEmpty {
+            logTask = Task { [self, session] in
+                try await upLogFollowOperation(session.value)()
             }
-            throw ComposeError.invalidProject("up exit-control requires at least one service container")
+        } else {
+            logTask = nil
         }
+
+        let exitControlResult: Result<Int32, Error>
+        do {
+            exitControlResult = .success(try await exitControlOperation())
+        } catch {
+            exitControlResult = .failure(error)
+        }
+        logTask?.cancel()
+        if let logTask {
+            // `down` naturally terminates the foreground log stream. Exit-control
+            // status is authoritative, so that teardown interruption cannot replace
+            // a selected service's terminal status with an orchestration failure.
+            _ = try? await logTask.value
+        }
+        return try exitControlResult.get()
     }
 
     /// Waits for started service containers when no log stream is attached.

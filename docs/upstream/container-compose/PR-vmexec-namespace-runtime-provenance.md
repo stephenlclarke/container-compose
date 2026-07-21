@@ -85,6 +85,7 @@ execution.
 - [x] `Package.swift`, lockfile, and stack manifest use the same lower refs.
 - [x] The lower forks expose signed Apple-shaped source and handoff commits.
 - [x] Docker-specific behavior remains in Compose rather than the forks.
-- [x] Help/status explicitly mark the independent Phase 4
-  `--exit-code-from` status-propagation defect as partial.
+- [x] Then-current help/status marked the independent Phase 4
+  `--exit-code-from` status-propagation defect as partial; the Compose-layer
+  correction is now tracked by [PR-up-exit-code-from-status.md](PR-up-exit-code-from-status.md).
 - [x] This commit uses a Conventional Commit subject and verified signature.

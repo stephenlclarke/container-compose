@@ -348,7 +348,7 @@ enum ComposeCLIHelp {
         "ps": "Go-template control blocks and nested object paths are unavailable.",
         "run": "Container-facing DNS aliases and interactive lifecycle hooks are incomplete.",
         "stats": "Go-template control blocks and nested object paths are unavailable.",
-        "up": "Live --exit-code-from can return a generic orchestration status instead of the selected service status; pre_start and container-facing DNS aliases are unavailable.",
+        "up": "pre_start and container-facing DNS aliases are unavailable.",
         "volumes": "Go-template control blocks and nested object paths are unavailable.",
     ]
 
@@ -665,7 +665,7 @@ enum ComposeCLIHelp {
             "--build": .supported,
             "--detach": .supported,
             "--dry-run": .supported,
-            "--exit-code-from": .partiallySupported,
+            "--exit-code-from": .supported,
             "--force-recreate": .supported,
             "--menu": .supported,
             "--no-attach": .supported,

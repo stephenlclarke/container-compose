@@ -491,13 +491,13 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--attach-dependencies\u{001B}[0m"))
     }
 
-    @Test("up exit-control options reflect their current support")
-    func upExitControlOptionsReflectTheirCurrentSupport() throws {
+    @Test("up exit-control options are shown as supported")
+    func upExitControlOptionsAreShownAsSupported() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
 
         #expect(help.contains("\u{001B}[32m--abort-on-container-exit\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--abort-on-container-failure\u{001B}[0m"))
-        #expect(help.contains("\u{001B}[38;5;208m--exit-code-from\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--exit-code-from\u{001B}[0m"))
     }
 
     @Test("up menu option shows supported interactive shortcut help")
@@ -508,12 +508,12 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("Use --menu=false to explicitly disable the helper menu."))
     }
 
-    @Test("up wait options remain supported while command gaps are disclosed")
-    func upWaitOptionsRemainSupportedWhileCommandGapsAreDisclosed() throws {
+    @Test("up wait options remain supported while remaining command gaps are disclosed")
+    func upWaitOptionsRemainSupportedWhileRemainingCommandGapsAreDisclosed() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
 
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(help.contains("Live --exit-code-from can return a generic orchestration status instead of the selected service status; pre_start and container-facing DNS aliases are unavailable."))
+        #expect(help.contains("pre_start and container-facing DNS aliases are unavailable."))
         #expect(help.contains("\u{001B}[32m--wait\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--wait-timeout\u{001B}[0m"))
     }

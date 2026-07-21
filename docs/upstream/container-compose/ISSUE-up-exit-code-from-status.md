@@ -1,47 +1,42 @@
-# Issue handoff: `up --exit-code-from` loses selected service status
+# Issue handoff: `up --exit-code-from` lost the selected service status
+
+## Status
+
+Resolved in the Compose layer by the `fix(up): preserve exit-code-from status` slice. No Apple runtime or fork change is required.
 
 ## Problem
 
-The Compose `up` path accepts `--exit-code-from SERVICE`, renders it in
-dry-run output, starts the selected service, and waits for it. In a live macOS
-guest runtime run, however, it returns generic orchestration status `5` instead
-of the selected service's terminal status.
+The foreground `container compose up --exit-code-from SERVICE` path starts the selected graph detached, waits for the selected container, and then tears the project down. A live macOS guest run with an `api` service exiting with `7` incorrectly returned generic orchestration status `5`.
 
-The regression fixture starts an `api` service that exits with `7`. Docker
-Compose V2 semantics require `up --exit-code-from api api` to return `7`; the
-current live path returns `5`.
+Docker Compose V2 returns the selected service status for `up --exit-code-from api api`. This command must continue to return `7` even though cleanup naturally closes the foreground log streams.
 
-## Scope and ownership
+## Root Cause
 
-This is Phase 4 lifecycle/status-propagation work in `container-compose`. No
-additional Apple runtime primitive has been identified: the matched runtime
-can start and observe the selected container. The fix should remain in the
-Compose orchestration layer unless a narrower runtime lifecycle defect is
-demonstrated.
+`runUpLogOperationUntilExitControl` raced log following against the exit-control lifecycle operation in one throwing task group. The lifecycle operation performs `down` before returning the selected status. Closing a followed log stream during that teardown could therefore throw before the lifecycle task published its result, causing the plugin to surface a generic command failure instead of the selected service status.
 
-## Reproduction
+## Scope and Ownership
 
-With the matched local runtime stack and a freshly built guest image, run:
+This was Phase 4 lifecycle/status-propagation work in `container-compose`. The matched runtime can start, wait for, stop, and delete the selected container; no missing Apple primitive was involved. The correction remains in the Compose orchestration layer, preserving an Apple-shaped upstream boundary.
+
+## Resolution
+
+- Treat exit control as the authoritative owner of the command result.
+- Keep the attached log follower for output only while exit control is active.
+- Cancel and await the log task after the lifecycle operation completes, deliberately ignoring a teardown-induced log-stream error.
+- Continue to surface a real lifecycle error if exit control itself fails.
+
+## Verification
+
+The regression fixture uses an `api` service that exits with `7` beside a `db` dependency that remains running.
 
 ```console
+swift test --disable-automatic-resolution --filter \
+  'upExitCodeFrom(ReturnsSelectedServiceStatusAndTearsDownProject|AbortsOnOtherServiceExitAndReturnsSelectedStatus|PreservesSelectedStatusWhenAttachedLogFollowEnds)' --no-parallel
+make docker-compose-up-exit-code-from-parity
 CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 \
 swift test --disable-automatic-resolution --skip-build \
   --filter ComposeRuntimeTests.ComposeRuntimeSmokeTests/\
-runtimeUpExitCodeFromReportsDocumentedOrchestrationStatus --no-parallel
+runtimeUpExitCodeFromReturnsSelectedServiceStatus --no-parallel
 ```
 
-The release-gate regression test asserts the observed status `5`, so the
-current supported-but-partial behavior remains continuously verified. Phase 4
-acceptance must change that assertion to the Docker Compose V2 status `7`.
-
-## Expected behavior
-
-The managed foreground `up` path returns the terminal status of the selected
-service, after applying Docker Compose-compatible exit-control cleanup. It
-must not substitute a generic orchestrator failure for that selected status.
-
-## Current mitigation
-
-`compose up --help` and `STATUS.md` mark `--exit-code-from` as partially
-supported. The option remains visible and parsed; the help limitation explains
-that its live selected-service status propagation is incorrect.
+The Docker Compose V2 parity target verifies the reference exits `7` and validates the same checked-in Compose fixture and status on the isolated matching Apple runtime during the hosted release gate.

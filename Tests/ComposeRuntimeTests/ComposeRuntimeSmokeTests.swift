@@ -999,8 +999,8 @@ struct ComposeRuntimeSmokeTests {
         #expect(withDetachKeys.stdout.contains("+ compose-runtime logs --follow \(project)-api-1"))
     }
 
-    @Test("runtime up exit-code-from reports documented orchestration status")
-    func runtimeUpExitCodeFromReportsDocumentedOrchestrationStatus() throws {
+    @Test("runtime up exit-code-from returns selected service status")
+    func runtimeUpExitCodeFromReturnsSelectedServiceStatus() throws {
         guard runtimeTestsEnabled else {
             return
         }
@@ -1066,11 +1066,9 @@ struct ComposeRuntimeSmokeTests {
                 "up", "--exit-code-from", "api", "api",
             ],
             timeout: 120,
-            // Phase 4 must replace this documented orchestration status with
-            // Docker Compose V2's selected-service status (7).
-            expectedStatus: 5
+            expectedStatus: 7
         )
-        #expect(result.status == 5)
+        #expect(result.status == 7)
     }
 
     @Test("runtime config resolves image digests")
