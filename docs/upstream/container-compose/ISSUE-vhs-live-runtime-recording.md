@@ -47,6 +47,15 @@ when they were intentionally not started. The direct, commit-matched runtime
 lifecycle passed twice when restricted to nginx and Alertmanager, including both
 HTTP readiness checks, retained named-volume reuse, stats, and final teardown.
 
+The subsequent matched-package release run
+[`29877513415`](https://github.com/stephenlclarke/container-compose/actions/runs/29877513415)
+confirmed that both live `up && ps` checks now pass, then stopped at the first
+live `stats` check. This runtime's actual table begins with `CONTAINER ID`, not
+Docker's `NAME` heading; no generated or replayed output was involved. Commit
+[`b6d9154e`](https://github.com/stephenlclarke/container-compose/commit/b6d9154e4584650a4923abb64bd50e2a5ee45153)
+changes only the two tape screen assertions to that observed heading and adds
+unit coverage that rejects the stale Docker-specific assertion.
+
 ## Scope and boundary
 
 This is a `container-compose` release-automation correction. No Apple Container or Containerization primitive is missing: Container remains the authority for guest startup, volumes, and teardown; Compose owns the release demonstration policy.

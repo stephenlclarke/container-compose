@@ -23,6 +23,9 @@
   progress scrollback, then match the wrapped-or-unwrapped nginx `running` cell.
 - Scope `stats` to the same two services so it does not inspect macOS-safe
   services that the recording deliberately did not start.
+- Match the actual Apple Container Compose `stats` heading, `CONTAINER ID`,
+  rather than Docker's `NAME`; the direct release run reached that live table
+  and failed closed before publication when the stale heading did not match.
 
 ## Type of Change
 
@@ -50,6 +53,7 @@ No forked Apple source changes are required. The change uses existing runtime be
 - [`0c2c330f`](https://github.com/stephenlclarke/container-compose/commit/0c2c330f) `fix(release): dedicate current build runner`
 - [`b09e3c79`](https://github.com/stephenlclarke/container-compose/commit/b09e3c79) `fix(release): match live compose status row`
 - [`86dc033d`](https://github.com/stephenlclarke/container-compose/commit/86dc033d85d9c9c19817d4582dfa22cd92ba1022) `fix(release): keep live demo output visible`
+- [`b6d9154e`](https://github.com/stephenlclarke/container-compose/commit/b6d9154e4584650a4923abb64bd50e2a5ee45153) `fix(release): match live stats header`
 
 ## Code Map
 
@@ -68,6 +72,11 @@ No forked Apple source changes are required. The change uses existing runtime be
   from `ps` as completion evidence. Its ordinary typed `clear` runs only after a
   successful `up`, keeping the genuine short `ps` result visible; it has no
   sentinel, replay, transcript, or synthetic result command.
+- `docs/container-compose-demo.tape` and
+  `Tools/release/test_container_stack_release.py`: require the observed
+  `CONTAINER ID` header from each live two-service `stats` table and reject the
+  stale Docker-specific `NAME` screen assertion. This is derived from the
+  fail-closed Current package run, not an assumed output format.
 - `examples/monitoring-stack/docker-compose.yaml`: declares the portable `nginx_cache` named volume used to prove resource retention.
 - `README.md` and `BUILD.md`: document the direct live-command recording contract and runner requirement.
 
@@ -84,6 +93,7 @@ tape = Path("docs/container-compose-demo.tape").read_text(encoding="utf-8")
 assert tape.count("--wait-timeout 900") == 2
 assert tape.count("--quiet-pull nginx alertmanager && clear && container compose") == 2
 assert tape.count("stats --no-stream nginx alertmanager") == 2
+assert tape.count("Wait+Screen@90s /CONTAINER ID/") == 2
 assert tape.count("Wait+Screen@900s /nginx.*r[[:space:]]*unning/") == 2
 assert tape.count("Wait+Screen@900s /status +running/") == 1
 PY
@@ -113,6 +123,10 @@ python3 -m unittest discover Tools/release
   running row, not when a project-name assumption, generic progress line, or
   synthetic marker appears. The two-service slice avoids attempting stats for
   services that the recording did not start.
+- The `stats` screen assertion is deliberately tied to the macOS Compose table
+  emitted by the matched packaged runtime (`CONTAINER ID`), rather than a
+  Docker-CLI heading. A runtime formatting change fails the Current job before a
+  GIF can be published, preserving the evidence boundary.
 - A fresh isolated runtime may also need to fetch the Apple kernel before its first
   status result. That direct command remains visible and bounded at fifteen minutes;
   progress output cannot satisfy the `status running` gate.
