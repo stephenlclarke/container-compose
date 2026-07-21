@@ -23,7 +23,8 @@ private struct RuntimeImageVolumeInitialization: Hashable {
 
 private struct RuntimeImageVolumePlan {
     let implicitMounts: [ComposeMount]
-    let anonymousVolumeNames: Set<String>
+    let imageAnonymousVolumeNames: Set<String>
+    let genericAnonymousVolumeNames: Set<String>
     let initializations: [RuntimeImageVolumeInitialization]
 }
 
@@ -67,16 +68,15 @@ extension ComposeOrchestrator {
         }
 
         let targets = try await imageManager.imageDeclaredVolumeTargets(image, platform: service.platform).sorted()
-        guard !targets.isEmpty else {
-            return []
-        }
-
         let plan = try imageVolumeInitializationPlan(targets: targets, mounts: mounts, context: context)
-        for name in plan.anonymousVolumeNames.sorted() {
+        for name in plan.imageAnonymousVolumeNames.sorted() {
             try await resourceManager.createVolume(ComposeVolumeCreateRequest(
                 name: name,
                 labels: anonymousImageVolumeLabels(project: project, context: context),
             ))
+        }
+        for name in plan.genericAnonymousVolumeNames.sorted() {
+            try await resourceManager.createVolume(ComposeVolumeCreateRequest(name: name))
         }
         for initialization in plan.initializations {
             try await imageVolumeInitializer.initializeImageVolume(ComposeImageVolumeInitializationRequest(
@@ -89,7 +89,7 @@ extension ComposeOrchestrator {
         return plan.implicitMounts
     }
 
-    /// Selects the anonymous mounts and copy-up operations required for image targets.
+    /// Selects the anonymous mounts and copy-up operations required for image targets and explicit local volumes.
     private func imageVolumeInitializationPlan(
         targets: [String],
         mounts: [ComposeMount],
@@ -98,7 +98,8 @@ extension ComposeOrchestrator {
         var allMounts = mounts
         var implicitMounts: [ComposeMount] = []
         var initializationByVolume: [String: RuntimeImageVolumeInitialization] = [:]
-        var anonymousVolumeNames = Set<String>()
+        var imageAnonymousVolumeNames = Set<String>()
+        var genericAnonymousVolumeNames = Set<String>()
 
         for target in targets {
             if let mount = allMounts.last(where: { imageVolumeTargetsMatch($0.target, target) }) {
@@ -112,7 +113,7 @@ extension ComposeOrchestrator {
                 }
                 let volumeName = try imageVolumeRuntimeName(mount: mount, context: context)
                 if mount.source?.isEmpty != false {
-                    anonymousVolumeNames.insert(volumeName)
+                    imageAnonymousVolumeNames.insert(volumeName)
                 }
                 recordImageVolumeInitialization(
                     imageSubpath: mount.target ?? target,
@@ -126,18 +127,60 @@ extension ComposeOrchestrator {
             implicitMounts.append(mount)
             allMounts.append(mount)
             let volumeName = try imageVolumeRuntimeName(mount: mount, context: context)
-            anonymousVolumeNames.insert(volumeName)
+            imageAnonymousVolumeNames.insert(volumeName)
             recordImageVolumeInitialization(
                 imageSubpath: target,
                 volumeName: volumeName,
                 into: &initializationByVolume,
             )
         }
+
+        try recordGenericImageVolumeInitializations(
+            targets: targets,
+            mounts: mounts,
+            context: context,
+            anonymousVolumeNames: &genericAnonymousVolumeNames,
+            into: &initializationByVolume,
+        )
         return RuntimeImageVolumePlan(
             implicitMounts: implicitMounts,
-            anonymousVolumeNames: anonymousVolumeNames,
+            imageAnonymousVolumeNames: imageAnonymousVolumeNames,
+            genericAnonymousVolumeNames: genericAnonymousVolumeNames,
             initializations: initializationByVolume.values.sorted { $0.volumeName < $1.volumeName },
         )
+    }
+
+    /// Adds copy-up operations for explicit local mounts not covered by an image-declared target.
+    private func recordGenericImageVolumeInitializations(
+        targets: [String],
+        mounts: [ComposeMount],
+        context: MountRenderContext,
+        anonymousVolumeNames: inout Set<String>,
+        into storage: inout [String: RuntimeImageVolumeInitialization],
+    ) throws {
+        // Docker also seeds a fresh local volume at an ordinary image path,
+        // even when the image does not declare that path with `VOLUME`.
+        // Targets already covered above retain the image-volume policy and
+        // ownership labels used for implicit Dockerfile declarations.
+        for mount in mounts {
+            guard ["volume", "external-volume"].contains(mount.type),
+                  let target = nonEmpty(mount.target),
+                  !mountDisablesImageVolumeCopyUp(mount),
+                  nonEmpty(mount.volumeSubpath) == nil,
+                  !targets.contains(where: { imageVolumeTargetsMatch(mount.target, $0) })
+            else {
+                continue
+            }
+            let volumeName = try imageVolumeRuntimeName(mount: mount, context: context)
+            if mount.source?.isEmpty != false {
+                anonymousVolumeNames.insert(volumeName)
+            }
+            recordImageVolumeInitialization(
+                imageSubpath: target,
+                volumeName: volumeName,
+                into: &storage,
+            )
+        }
     }
 
     /// Returns whether the effective Compose pull policy allows metadata inspection to prepare a missing image.

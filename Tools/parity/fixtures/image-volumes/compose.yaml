@@ -42,7 +42,47 @@ services:
         volume:
           subpath: nested
 
+  generic-named:
+    build:
+      context: .
+      dockerfile: Dockerfile.generic
+    volumes:
+      - type: volume
+        source: generic-data
+        target: /generic-data
+
+  generic-anonymous:
+    build:
+      context: .
+      dockerfile: Dockerfile.generic
+    volumes:
+      - type: volume
+        target: /generic-data
+
+  generic-nocopy:
+    build:
+      context: .
+      dockerfile: Dockerfile.generic
+    volumes:
+      - type: volume
+        source: generic-nocopy-data
+        target: /generic-data
+        volume:
+          nocopy: true
+
+  generic-missing:
+    build:
+      context: .
+      dockerfile: Dockerfile.generic
+    volumes:
+      - type: volume
+        source: generic-missing-data
+        target: /not-in-image
+
 volumes:
   override-data: {}
   nocopy-data: {}
   subpath-data: {}
+  generic-data: {}
+  generic-nocopy-data: {}
+  generic-missing-data: {}

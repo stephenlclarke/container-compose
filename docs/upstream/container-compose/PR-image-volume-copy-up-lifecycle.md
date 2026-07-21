@@ -22,7 +22,7 @@ References:
 
 - `ComposeRuntimeImageVolumeInitializing` is a narrow runtime SPI: Compose provides image, platform, selected image subtree, and runtime volume name; the runtime initializer has no Compose lifecycle knowledge.
 - `ContainerClientImageVolumeInitializer` resolves the immutable image snapshot and local volume through direct Container APIs, then delegates empty-volume handling to `ContainerImageVolumeInitializer`.
-- `ComposeOrchestratorImageVolumes` chooses implicit or explicit volumes only for Dockerfile-declared targets, skips `nocopy`, existing `volume.subpath`, and non-volume masks, and invokes initialization before the `container run` handoff.
+- `ComposeOrchestratorImageVolumes` chooses implicit or explicit volumes for Dockerfile-declared targets, skips `nocopy`, existing `volume.subpath`, and non-volume masks, and invokes initialization before the `container run` handoff. The subsequent generic-path extension is documented in [PR-generic-volume-copy-up.md](PR-generic-volume-copy-up.md).
 - Implicit and anonymous image volumes get project/container/service ownership labels. Teardown and anonymous-volume renewal query those labels, so cleanup does not depend on an image still being available.
 - The normalizer carries `volume.nocopy` as a typed field rather than treating it as an unsupported marker.
 
@@ -45,7 +45,7 @@ The only fork prerequisites remain independently reviewable generic commits; no 
 
 ## Docker Compose V2 parity
 
-`Tools/parity/fixtures/image-volumes/compose.yaml` contains an implicit image-volume service, an explicit named override, a `volume.nocopy` service, and a service that mounts a pre-created `volume.subpath`. `Tools/parity/check-compose-image-volumes.sh` asserts Docker Compose V2's seeded content and mount identities, verifies the same Compose-model projection through `container-compose`, and, when `CONTAINER_COMPOSE_LIVE=1`, proves the matched macOS runtime:
+`Tools/parity/fixtures/image-volumes/compose.yaml` contains an implicit image-volume service, an explicit named override, a `volume.nocopy` service, a service that mounts a pre-created `volume.subpath`, and generic local-volume cases. `Tools/parity/check-compose-image-volumes.sh` asserts Docker Compose V2's seeded content and mount identities, verifies the same Compose-model projection through `container-compose`, and, when `CONTAINER_COMPOSE_LIVE=1`, proves the matched macOS runtime:
 
 1. seeds implicit and explicit image volumes;
 2. leaves the `nocopy` and pre-existing `subpath` targets empty while still seeding their other declared target;
@@ -69,6 +69,6 @@ git diff --check
 
 ## Compatibility and remaining risks
 
-- This change covers only Dockerfile-declared image volume targets. Docker's generic copy-up for other volume mounts remains intentionally unsupported rather than silently degraded. A `volume.subpath` is already a pre-existing directory by Docker contract, so it is correctly mounted without image copy-up rather than initialized.
+- The original lifecycle change covers Dockerfile-declared image volume targets; [PR-generic-volume-copy-up.md](PR-generic-volume-copy-up.md) adds generic local-volume paths. A `volume.subpath` is already a pre-existing directory by Docker contract, so it is correctly mounted without image copy-up rather than initialized.
 - The safe initializer treats only ext4 roots containing `lost+found` as empty. It preserves populated volumes, which is required for Docker-compatible retained-volume reuse.
 - The live integration leg runs only against the isolated matched Apple runtime (`CONTAINER_COMPOSE_LIVE=1`); the Docker Compose V2 reference and model checks remain reproducible on a normal local Docker Engine.

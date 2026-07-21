@@ -36,12 +36,12 @@
 #   DOCKER_COMPOSE     Docker Compose command to compare with. Defaults to
 #                      "docker compose" when available, otherwise docker-compose.
 #
-# This local parity check verifies Docker Compose V2's image-declared `VOLUME`
-# behavior: implicit anonymous volumes, explicit-volume copy-up, a pre-created
-# volume subpath, and seeded image data. It also verifies container-compose
-# preserves the same Compose file mount projection and, on an isolated macOS
-# runtime, the same first-use copy-up, `volume.nocopy`, subpath, and
-# retained-volume behavior across down/up.
+# This local parity check verifies Docker Compose V2's local-volume copy-up
+# behavior: Dockerfile-declared implicit volumes, explicit generic paths,
+# `volume.nocopy`, a pre-created volume subpath, missing image paths, and
+# retained volumes. It also verifies container-compose preserves the same
+# Compose file mount projection and, on an isolated macOS runtime, the same
+# first-use copy-up and down/up reuse behavior.
 
 set -euo pipefail
 
@@ -114,7 +114,7 @@ skip_or_fail() {
         return 1
     fi
 
-    warning "$message; skipping image-declared volume parity check"
+    warning "$message; skipping local-volume parity check"
     exit 0
 }
 
@@ -145,6 +145,7 @@ check_tools() {
     [[ -x "$CONTAINER_COMPOSE" ]] || skip_or_fail "container-compose binary is not executable: $CONTAINER_COMPOSE"
     [[ -f "$COMPOSE_FILE" ]] || { error "missing image volume fixture: $COMPOSE_FILE"; return 1; }
     [[ -f "$FIXTURE_DIR/Dockerfile" ]] || { error "missing image volume Dockerfile: $FIXTURE_DIR/Dockerfile"; return 1; }
+    [[ -f "$FIXTURE_DIR/Dockerfile.generic" ]] || { error "missing generic image volume Dockerfile: $FIXTURE_DIR/Dockerfile.generic"; return 1; }
 }
 
 # Create a unique temporary directory for command output and inspection data.
@@ -189,9 +190,17 @@ implicit = services.get("implicit", {})
 overridden = services.get("overridden", {})
 nocopy = services.get("nocopy", {})
 subpath = services.get("subpath", {})
+generic_named = services.get("generic-named", {})
+generic_anonymous = services.get("generic-anonymous", {})
+generic_nocopy = services.get("generic-nocopy", {})
+generic_missing = services.get("generic-missing", {})
 mounts = overridden.get("volumes", [])
 nocopy_mounts = nocopy.get("volumes", [])
 subpath_mounts = subpath.get("volumes", [])
+generic_named_mounts = generic_named.get("volumes", [])
+generic_anonymous_mounts = generic_anonymous.get("volumes", [])
+generic_nocopy_mounts = generic_nocopy.get("volumes", [])
+generic_missing_mounts = generic_missing.get("volumes", [])
 
 if implicit.get("volumes"):
     raise SystemExit(f"{implementation}: implicit service unexpectedly has Compose mounts: {implicit['volumes']!r}")
@@ -223,6 +232,37 @@ if not any(
     raise SystemExit(f"{implementation}: missing subpath-data volume at /image-data: {subpath_mounts!r}")
 if "subpath-data" not in model.get("volumes", {}):
     raise SystemExit(f"{implementation}: missing top-level subpath-data volume")
+if not any(
+    mount.get("type") == "volume"
+    and mount.get("source") == "generic-data"
+    and mount.get("target") == "/generic-data"
+    for mount in generic_named_mounts
+):
+    raise SystemExit(f"{implementation}: missing generic-data volume at /generic-data: {generic_named_mounts!r}")
+if not any(
+    mount.get("type") == "volume"
+    and not mount.get("source")
+    and mount.get("target") == "/generic-data"
+    for mount in generic_anonymous_mounts
+):
+    raise SystemExit(f"{implementation}: missing anonymous generic volume at /generic-data: {generic_anonymous_mounts!r}")
+if not any(
+    mount.get("type") == "volume"
+    and mount.get("source") == "generic-nocopy-data"
+    and mount.get("target") == "/generic-data"
+    for mount in generic_nocopy_mounts
+):
+    raise SystemExit(f"{implementation}: missing generic-nocopy-data volume at /generic-data: {generic_nocopy_mounts!r}")
+if not any(
+    mount.get("type") == "volume"
+    and mount.get("source") == "generic-missing-data"
+    and mount.get("target") == "/not-in-image"
+    for mount in generic_missing_mounts
+):
+    raise SystemExit(f"{implementation}: missing generic-missing-data volume at /not-in-image: {generic_missing_mounts!r}")
+for name in ("generic-data", "generic-nocopy-data", "generic-missing-data"):
+    if name not in model.get("volumes", {}):
+        raise SystemExit(f"{implementation}: missing top-level {name} volume")
 PY
 }
 
@@ -257,6 +297,10 @@ assert_docker_runtime_behavior() {
     local overridden_container="$PROJECT_NAME-overridden-1"
     local nocopy_container="$PROJECT_NAME-nocopy-1"
     local subpath_container="$PROJECT_NAME-subpath-1"
+    local generic_named_container="$PROJECT_NAME-generic-named-1"
+    local generic_anonymous_container="$PROJECT_NAME-generic-anonymous-1"
+    local generic_nocopy_container="$PROJECT_NAME-generic-nocopy-1"
+    local generic_missing_container="$PROJECT_NAME-generic-missing-1"
     local inspection="$WORK_DIR/docker-inspect.json"
 
     docker exec "$implicit_container" sh -ec \
@@ -267,7 +311,17 @@ assert_docker_runtime_behavior() {
         "test ! -e /image-data/seed.txt && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
     docker exec "$subpath_container" sh -ec \
         "test ! -e /image-data/seed.txt && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
-    docker inspect "$implicit_container" "$overridden_container" "$nocopy_container" "$subpath_container" >"$inspection"
+    docker exec "$generic_named_container" sh -ec \
+        "test \"\$(cat /generic-data/seed.txt)\" = generic-image-seed"
+    docker exec "$generic_anonymous_container" sh -ec \
+        "test \"\$(cat /generic-data/seed.txt)\" = generic-image-seed"
+    docker exec "$generic_nocopy_container" sh -ec \
+        "test ! -e /generic-data/seed.txt"
+    docker exec "$generic_missing_container" sh -ec \
+        "test ! -e /not-in-image/seed.txt"
+    docker inspect "$implicit_container" "$overridden_container" "$nocopy_container" "$subpath_container" \
+        "$generic_named_container" "$generic_anonymous_container" "$generic_nocopy_container" \
+        "$generic_missing_container" >"$inspection"
 
     python3 - "$inspection" "$PROJECT_NAME" <<'PY'
 import json
@@ -280,6 +334,10 @@ implicit = containers[f"{project}-implicit-1"]
 overridden = containers[f"{project}-overridden-1"]
 nocopy = containers[f"{project}-nocopy-1"]
 subpath = containers[f"{project}-subpath-1"]
+generic_named = containers[f"{project}-generic-named-1"]
+generic_anonymous = containers[f"{project}-generic-anonymous-1"]
+generic_nocopy = containers[f"{project}-generic-nocopy-1"]
+generic_missing = containers[f"{project}-generic-missing-1"]
 
 def volume_mount(container, destination):
     mounts = [
@@ -299,9 +357,16 @@ nocopy_data = volume_mount(nocopy, "/image-data")
 nocopy_cache = volume_mount(nocopy, "/image-cache")
 subpath_data = volume_mount(subpath, "/image-data")
 subpath_cache = volume_mount(subpath, "/image-cache")
+generic_named_data = volume_mount(generic_named, "/generic-data")
+generic_anonymous_data = volume_mount(generic_anonymous, "/generic-data")
+generic_nocopy_data = volume_mount(generic_nocopy, "/generic-data")
+generic_missing_data = volume_mount(generic_missing, "/not-in-image")
 expected_named = f"{project}_override-data"
 expected_nocopy = f"{project}_nocopy-data"
 expected_subpath = f"{project}_subpath-data"
+expected_generic_named = f"{project}_generic-data"
+expected_generic_nocopy = f"{project}_generic-nocopy-data"
+expected_generic_missing = f"{project}_generic-missing-data"
 
 if not implicit_data.get("Name") or not implicit_cache.get("Name"):
     raise SystemExit("Docker Compose did not create anonymous image volume names")
@@ -319,6 +384,14 @@ if subpath_data.get("Name") != expected_subpath:
     raise SystemExit(f"Docker Compose subpath volume = {subpath_data.get('Name')!r}, expected {expected_subpath!r}")
 if not subpath_cache.get("Name") or subpath_cache["Name"] == expected_subpath:
     raise SystemExit(f"Docker Compose subpath image-cache mount = {subpath_cache.get('Name')!r}")
+if generic_named_data.get("Name") != expected_generic_named:
+    raise SystemExit(f"Docker Compose generic named volume = {generic_named_data.get('Name')!r}, expected {expected_generic_named!r}")
+if not generic_anonymous_data.get("Name") or generic_anonymous_data["Name"] == expected_generic_named:
+    raise SystemExit(f"Docker Compose generic anonymous volume = {generic_anonymous_data.get('Name')!r}")
+if generic_nocopy_data.get("Name") != expected_generic_nocopy:
+    raise SystemExit(f"Docker Compose generic nocopy volume = {generic_nocopy_data.get('Name')!r}, expected {expected_generic_nocopy!r}")
+if generic_missing_data.get("Name") != expected_generic_missing:
+    raise SystemExit(f"Docker Compose generic missing-path volume = {generic_missing_data.get('Name')!r}, expected {expected_generic_missing!r}")
 PY
 }
 
@@ -338,6 +411,10 @@ assert_apple_runtime_seeded() {
     local overridden_container="$PROJECT_NAME-overridden-1"
     local nocopy_container="$PROJECT_NAME-nocopy-1"
     local subpath_container="$PROJECT_NAME-subpath-1"
+    local generic_named_container="$PROJECT_NAME-generic-named-1"
+    local generic_anonymous_container="$PROJECT_NAME-generic-anonymous-1"
+    local generic_nocopy_container="$PROJECT_NAME-generic-nocopy-1"
+    local generic_missing_container="$PROJECT_NAME-generic-missing-1"
 
     "$CONTAINER_BINARY" exec "$implicit_container" sh -ec \
         "test \"\$(cat /image-data/seed.txt)\" = image-data-seed && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
@@ -347,14 +424,25 @@ assert_apple_runtime_seeded() {
         "test ! -e /image-data/seed.txt && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
     "$CONTAINER_BINARY" exec "$subpath_container" sh -ec \
         "test ! -e /image-data/seed.txt && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
+    "$CONTAINER_BINARY" exec "$generic_named_container" sh -ec \
+        "test \"\$(cat /generic-data/seed.txt)\" = generic-image-seed"
+    "$CONTAINER_BINARY" exec "$generic_anonymous_container" sh -ec \
+        "test \"\$(cat /generic-data/seed.txt)\" = generic-image-seed"
+    "$CONTAINER_BINARY" exec "$generic_nocopy_container" sh -ec \
+        "test ! -e /generic-data/seed.txt"
+    "$CONTAINER_BINARY" exec "$generic_missing_container" sh -ec \
+        "test ! -e /not-in-image/seed.txt"
 }
 
 # Prove a retained volume is neither recreated nor seeded again after down/up.
 assert_apple_runtime_volume_reuse() {
     local implicit_container="$PROJECT_NAME-implicit-1"
+    local generic_named_container="$PROJECT_NAME-generic-named-1"
 
     "$CONTAINER_BINARY" exec "$implicit_container" sh -ec \
         'printf retained-through-down-up > /image-data/retained.txt'
+    "$CONTAINER_BINARY" exec "$generic_named_container" sh -ec \
+        'printf generic-retained-through-down-up > /generic-data/retained.txt'
     "$CONTAINER_COMPOSE" \
         --ansi never \
         --project-directory "$FIXTURE_DIR" \
@@ -372,6 +460,8 @@ assert_apple_runtime_volume_reuse() {
     assert_apple_runtime_seeded
     "$CONTAINER_BINARY" exec "$implicit_container" sh -ec \
         "test \"\$(cat /image-data/retained.txt)\" = retained-through-down-up"
+    "$CONTAINER_BINARY" exec "$generic_named_container" sh -ec \
+        "test \"\$(cat /generic-data/retained.txt)\" = generic-retained-through-down-up"
 }
 
 # Run the image-volume behavior against the isolated matching Apple runtime.
@@ -417,7 +507,7 @@ main() {
     expect_docker_runtime_behavior
     expect_apple_runtime_behavior
 
-    info 'Docker Compose V2 image-volume parity passed.'
+    info 'Docker Compose V2 local-volume parity passed.'
 }
 
 main "$@"

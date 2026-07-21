@@ -4185,6 +4185,7 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests == [
             .listVolumes,
             .deleteVolume(name: anonymousVolume),
+            .createVolume(ComposeVolumeCreateRequest(name: anonymousVolume)),
         ])
         #expect(runner.commands.map(\.arguments).count == 1)
         #expect(try #require(runner.commands.last?.arguments).contains { $0 == "\(anonymousVolume):/scratch" })
@@ -10838,6 +10839,111 @@ struct ComposeOrchestratorTests {
             imageSubpath: "/data",
             volumeName: "demo_data",
         )])
+    }
+
+    @Test("up initializes a named local volume from a generic image path")
+    func upInitializesNamedGenericImageVolumeFromItsMountDestination() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
+        let initializer = RecordingContainerImageVolumeInitializer()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [ComposeMount(type: "volume", source: "data", target: "/generic-data")]
+                },
+            ]
+        ) {
+            $0.volumes = ["data": ComposeVolume(name: "data")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+                $0.imageVolumeInitializer = initializer
+                $0.resourceManager = resourceManager
+            },
+        ).up(project: project, options: ComposeUpOptions())
+
+        #expect(await initializer.requests == [ComposeImageVolumeInitializationRequest(
+            image: "example/api",
+            imageSubpath: "/generic-data",
+            volumeName: "demo_data",
+        )])
+        #expect(await resourceManager.requests.map(\.name) == ["demo_data"])
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--volume", "demo_data:/generic-data"]))
+    }
+
+    @Test("up creates and initializes an anonymous local volume from a generic image path")
+    func upInitializesAnonymousGenericImageVolumeFromItsMountDestination() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
+        let initializer = RecordingContainerImageVolumeInitializer()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [ComposeMount(type: "volume", target: "/generic-data")]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+                $0.imageVolumeInitializer = initializer
+                $0.resourceManager = resourceManager
+            },
+        ).up(project: project, options: ComposeUpOptions())
+
+        let request = try #require((await initializer.requests).first)
+        #expect(request.image == "example/api")
+        #expect(request.imageSubpath == "/generic-data")
+        #expect(request.volumeName.hasPrefix("demo_anon-api-1-"))
+        #expect(await resourceManager.requests.map(\.name) == [request.volumeName])
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--volume", "\(request.volumeName):/generic-data"]))
+    }
+
+    @Test("up preserves Docker no-copy behavior for a generic volume path")
+    func upSkipsGenericImageInitializationWhenVolumeUsesNoCopy() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
+        let initializer = RecordingContainerImageVolumeInitializer()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [ComposeMount(
+                        type: "volume",
+                        source: "data",
+                        target: "/generic-data",
+                        unsupportedFields: ["volume.nocopy"],
+                    )]
+                },
+            ]
+        ) {
+            $0.volumes = ["data": ComposeVolume(name: "data")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+                $0.imageVolumeInitializer = initializer
+                $0.resourceManager = resourceManager
+            },
+        ).up(project: project, options: ComposeUpOptions())
+
+        #expect(await initializer.requests.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--volume", "demo_data:/generic-data"]))
     }
 
     @Test("up initializes a volume inherited from an external container")
@@ -24248,7 +24354,15 @@ struct ComposeOrchestratorTests {
         let hostSource = directory.appendingPathComponent("host").path
 
         let runner = RecordingRunner()
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let resourceManager = RecordingContainerResourceManager()
+        let initializer = RecordingContainerImageVolumeInitializer()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.resourceManager = resourceManager
+                $0.imageVolumeInitializer = initializer
+            },
+        )
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -27918,6 +28032,9 @@ struct ComposeOrchestratorTests {
             }
         )
 
+        let command = try #require(runner.commands.last?.arguments)
+        let anonymousVolume = try #require(command.first { $0.hasPrefix("demo_anon-") && $0.hasSuffix(":/scratch") })
+        let anonymousVolumeName = String(anonymousVolume.split(separator: ":", maxSplits: 1)[0])
         #expect(await resourceManager.requests == [
             .createVolume(ComposeVolumeCreateRequest(name: "demo_cache", labels: [
                 "com.apple.container.compose.project": "demo",
@@ -27926,14 +28043,14 @@ struct ComposeOrchestratorTests {
                 "com.apple.container.compose.project.config-files": "",
                 "com.apple.container.compose.project.config-files-hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             ])),
+            .createVolume(ComposeVolumeCreateRequest(name: anonymousVolumeName)),
         ])
-        let command = try #require(runner.commands.last?.arguments)
         #expect(FileManager.default.fileExists(atPath: defaultSource))
         #expect(FileManager.default.fileExists(atPath: overrideSource))
         #expect(command.containsSequence(["--volume", "\(defaultSource):/default"]))
         #expect(command.containsSequence(["--volume", "\(overrideSource):/container:ro"]))
         #expect(command.containsSequence(["--volume", "demo_cache:/cache"]))
-        #expect(command.contains { $0.hasPrefix("demo_anon-") && $0.hasSuffix(":/scratch") })
+        #expect(command.contains { $0 == anonymousVolume })
         #expect(Array(command.suffix(2)) == ["alpine", "ls"])
     }
 

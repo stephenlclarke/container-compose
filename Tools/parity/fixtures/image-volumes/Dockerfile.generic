@@ -1,0 +1,6 @@
+FROM alpine:3.22
+
+RUN mkdir -p /generic-data \
+    && printf 'generic-image-seed\n' > /generic-data/seed.txt
+
+CMD ["sh", "-ec", "while :; do sleep 600; done"]

@@ -162,7 +162,7 @@ struct ContainerImageVolumeInitializerTests {
     }
 
     @Test
-    func `a failed source export leaves an empty target volume unchanged`() async throws {
+    func `a missing image path leaves an empty target volume unchanged`() async throws {
         let directory = FileManager.default.uniqueTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -177,14 +177,13 @@ struct ContainerImageVolumeInitializerTests {
             source: volumePath.description,
             sizeInBytes: 4.mib(),
         )
-        await #expect(throws: Error.self) {
-            try await initializer.initializeIfEmpty(
-                imageFilesystem: imagePath.description,
-                imageSubpath: "/missing",
-                volume: volume,
-            )
-        }
+        let seeded = try await initializer.initializeIfEmpty(
+            imageFilesystem: imagePath.description,
+            imageSubpath: "/missing",
+            volume: volume,
+        )
 
+        #expect(!seeded)
         let reader = try EXT4.EXT4Reader(blockDevice: volumePath)
         #expect(try reader.listDirectory(FilePath("/")) == ["lost+found"])
     }

@@ -35,7 +35,7 @@ The Compose layer now owns the Docker-specific policy without adding Compose beh
 
 ## Remaining scope
 
-- Docker's generic copy-up for a volume mount when the image does not declare that destination is still a gap.
+- Generic local-volume copy-up for an image path not declared with `VOLUME` is implemented separately in [ISSUE-generic-volume-copy-up.md](ISSUE-generic-volume-copy-up.md).
 - This implementation intentionally supports only local ext4 volumes. Non-local drivers/plugins, recursive bind semantics, macOS consistency modes, Windows `npipe`, and Swarm cluster/CSI mounts are outside this macOS-feasible slice.
 
 ## Apple-shaped boundary

@@ -35,7 +35,7 @@ public struct ContainerImageVolumeInitializer: Sendable {
     /// entries other than ext4's required `lost+found` directory.
     ///
     /// - Returns: `true` when the volume was seeded; `false` when its existing
-    ///   contents were preserved.
+    ///   contents were preserved or the requested image path is absent.
     @discardableResult
     public func initializeIfEmpty(
         imageFilesystem: String,
@@ -63,7 +63,17 @@ public struct ContainerImageVolumeInitializer: Sendable {
         let stagedVolumeURL = stagingDirectory.appendingPathComponent("volume.img")
         let stagedVolumePath = FilePath(stagedVolumeURL.path)
         let imageReader = try EXT4.EXT4Reader(blockDevice: FilePath(imageFilesystem))
-        try imageReader.export(archive: archivePath, subtree: FilePath(imageSubpath))
+        do {
+            try imageReader.export(archive: archivePath, subtree: FilePath(imageSubpath))
+        } catch let error as EXT4.PathIOError {
+            guard case .notFound = error else {
+                throw error
+            }
+            // Docker leaves a fresh volume empty when it is mounted at an
+            // image path that does not exist. Do not create that path or
+            // replace the target volume merely to model this no-copy case.
+            return false
+        }
 
         let formatter = try EXT4.Formatter(
             stagedVolumePath,
