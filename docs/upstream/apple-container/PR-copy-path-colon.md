@@ -43,8 +43,10 @@ make check
 The focused test and complete 1,114-test unit suite passed. Unit coverage
 reported 38.06% line coverage (13,247 / 34,806), and formatting/license checks
 passed. The integration test is compiled and registered in the macOS
-integration suite; run it on a healthy macOS Virtualization/XPC runner before
-offering this upstream.
+integration suite. A source-matched isolated integration attempt timed out
+while starting its local apiserver, before a guest was created; cleanup
+confirmed the service stopped. Run the committed test on a healthy macOS
+Virtualization/XPC runner before offering this upstream.
 
 ## Handoff Status
 

@@ -51,5 +51,7 @@ standalone runtime CLI operation.
 - Compose service behavior and Docker Compose file conversion are unchanged.
 - The correction is macOS-supported and generic; Windows-only behavior is not
   included.
-- The generic Container live integration test remains the runtime acceptance
-  gate before a release is cut.
+- A source-matched local Container integration attempt timed out while starting
+  its apiserver before a guest was created; cleanup stopped the service. The
+  committed live test remains the runtime acceptance gate before a release is
+  cut.
