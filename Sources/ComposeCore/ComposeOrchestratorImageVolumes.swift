@@ -105,14 +105,18 @@ extension ComposeOrchestrator {
                 guard ["volume", "external-volume"].contains(mount.type), !mountDisablesImageVolumeCopyUp(mount) else {
                     continue
                 }
+                // Docker requires a volume subpath to exist before mounting it.
+                // Its containing volume is therefore not a fresh copy-up target.
+                guard nonEmpty(mount.volumeSubpath) == nil else {
+                    continue
+                }
                 let volumeName = try imageVolumeRuntimeName(mount: mount, context: context)
                 if mount.source?.isEmpty != false {
                     anonymousVolumeNames.insert(volumeName)
                 }
-                try recordImageVolumeInitialization(
+                recordImageVolumeInitialization(
                     imageSubpath: mount.target ?? target,
                     volumeName: volumeName,
-                    mount: mount,
                     into: &initializationByVolume,
                 )
                 continue
@@ -123,10 +127,9 @@ extension ComposeOrchestrator {
             allMounts.append(mount)
             let volumeName = try imageVolumeRuntimeName(mount: mount, context: context)
             anonymousVolumeNames.insert(volumeName)
-            try recordImageVolumeInitialization(
+            recordImageVolumeInitialization(
                 imageSubpath: target,
                 volumeName: volumeName,
-                mount: mount,
                 into: &initializationByVolume,
             )
         }
@@ -150,14 +153,8 @@ extension ComposeOrchestrator {
     private func recordImageVolumeInitialization(
         imageSubpath: String,
         volumeName: String,
-        mount: ComposeMount,
         into storage: inout [String: RuntimeImageVolumeInitialization],
-    ) throws {
-        guard nonEmpty(mount.volumeSubpath) == nil else {
-            throw ComposeError.unsupported(
-                "volume subpath mount '\(mount.target ?? "")' requires image-to-volume subdirectory initialization",
-            )
-        }
+    ) {
         storage[volumeName] = storage[volumeName] ?? RuntimeImageVolumeInitialization(
             imageSubpath: imageSubpath,
             volumeName: volumeName,

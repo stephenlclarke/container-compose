@@ -21,6 +21,28 @@ services:
         volume:
           nocopy: true
 
+  subpath-preparer:
+    image: alpine:3.22
+    command: ["sh", "-ec", "mkdir -p /volume/nested"]
+    volumes:
+      - type: volume
+        source: subpath-data
+        target: /volume
+
+  subpath:
+    build:
+      context: .
+    depends_on:
+      subpath-preparer:
+        condition: service_completed_successfully
+    volumes:
+      - type: volume
+        source: subpath-data
+        target: /image-data
+        volume:
+          subpath: nested
+
 volumes:
   override-data: {}
   nocopy-data: {}
+  subpath-data: {}

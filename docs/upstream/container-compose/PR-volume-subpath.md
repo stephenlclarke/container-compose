@@ -25,6 +25,7 @@ rejects traversal, symlink escape, missing paths, and non-directory subpaths.
 - Preserve read-only mode on the typed mount.
 - Keep `volume.nocopy` accepted as before.
 - Update the parity ledger to mark `volume.subpath` supported.
+- When a subpath covers a Dockerfile-declared `VOLUME`, skip image copy-up: Docker requires the subdirectory to exist before mounting it, so its parent volume cannot be a fresh copy-up target.
 
 ## Deliberately out of scope
 

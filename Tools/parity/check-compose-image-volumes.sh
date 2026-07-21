@@ -37,10 +37,11 @@
 #                      "docker compose" when available, otherwise docker-compose.
 #
 # This local parity check verifies Docker Compose V2's image-declared `VOLUME`
-# behavior: implicit anonymous volumes, explicit-volume copy-up, and seeded
-# image data. It also verifies container-compose preserves the same Compose
-# file mount projection and, on an isolated macOS runtime, the same first-use
-# copy-up, `volume.nocopy`, and retained-volume behavior across down/up.
+# behavior: implicit anonymous volumes, explicit-volume copy-up, a pre-created
+# volume subpath, and seeded image data. It also verifies container-compose
+# preserves the same Compose file mount projection and, on an isolated macOS
+# runtime, the same first-use copy-up, `volume.nocopy`, subpath, and
+# retained-volume behavior across down/up.
 
 set -euo pipefail
 
@@ -187,8 +188,10 @@ services = model.get("services", {})
 implicit = services.get("implicit", {})
 overridden = services.get("overridden", {})
 nocopy = services.get("nocopy", {})
+subpath = services.get("subpath", {})
 mounts = overridden.get("volumes", [])
 nocopy_mounts = nocopy.get("volumes", [])
+subpath_mounts = subpath.get("volumes", [])
 
 if implicit.get("volumes"):
     raise SystemExit(f"{implementation}: implicit service unexpectedly has Compose mounts: {implicit['volumes']!r}")
@@ -210,6 +213,16 @@ if not any(
     raise SystemExit(f"{implementation}: missing nocopy-data volume at /image-data: {nocopy_mounts!r}")
 if "nocopy-data" not in model.get("volumes", {}):
     raise SystemExit(f"{implementation}: missing top-level nocopy-data volume")
+if not any(
+    mount.get("type") == "volume"
+    and mount.get("source") == "subpath-data"
+    and mount.get("target") == "/image-data"
+    and mount.get("volume", {}).get("subpath", mount.get("volumeSubpath")) == "nested"
+    for mount in subpath_mounts
+):
+    raise SystemExit(f"{implementation}: missing subpath-data volume at /image-data: {subpath_mounts!r}")
+if "subpath-data" not in model.get("volumes", {}):
+    raise SystemExit(f"{implementation}: missing top-level subpath-data volume")
 PY
 }
 
@@ -243,6 +256,7 @@ assert_docker_runtime_behavior() {
     local implicit_container="$PROJECT_NAME-implicit-1"
     local overridden_container="$PROJECT_NAME-overridden-1"
     local nocopy_container="$PROJECT_NAME-nocopy-1"
+    local subpath_container="$PROJECT_NAME-subpath-1"
     local inspection="$WORK_DIR/docker-inspect.json"
 
     docker exec "$implicit_container" sh -ec \
@@ -251,7 +265,9 @@ assert_docker_runtime_behavior() {
         "test \"\$(cat /image-data/seed.txt)\" = image-data-seed && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
     docker exec "$nocopy_container" sh -ec \
         "test ! -e /image-data/seed.txt && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
-    docker inspect "$implicit_container" "$overridden_container" "$nocopy_container" >"$inspection"
+    docker exec "$subpath_container" sh -ec \
+        "test ! -e /image-data/seed.txt && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
+    docker inspect "$implicit_container" "$overridden_container" "$nocopy_container" "$subpath_container" >"$inspection"
 
     python3 - "$inspection" "$PROJECT_NAME" <<'PY'
 import json
@@ -263,6 +279,7 @@ containers = {entry["Name"].lstrip("/"): entry for entry in json.loads(pathlib.P
 implicit = containers[f"{project}-implicit-1"]
 overridden = containers[f"{project}-overridden-1"]
 nocopy = containers[f"{project}-nocopy-1"]
+subpath = containers[f"{project}-subpath-1"]
 
 def volume_mount(container, destination):
     mounts = [
@@ -280,8 +297,11 @@ overridden_data = volume_mount(overridden, "/image-data")
 overridden_cache = volume_mount(overridden, "/image-cache")
 nocopy_data = volume_mount(nocopy, "/image-data")
 nocopy_cache = volume_mount(nocopy, "/image-cache")
+subpath_data = volume_mount(subpath, "/image-data")
+subpath_cache = volume_mount(subpath, "/image-cache")
 expected_named = f"{project}_override-data"
 expected_nocopy = f"{project}_nocopy-data"
+expected_subpath = f"{project}_subpath-data"
 
 if not implicit_data.get("Name") or not implicit_cache.get("Name"):
     raise SystemExit("Docker Compose did not create anonymous image volume names")
@@ -295,6 +315,10 @@ if nocopy_data.get("Name") != expected_nocopy:
     raise SystemExit(f"Docker Compose nocopy volume = {nocopy_data.get('Name')!r}, expected {expected_nocopy!r}")
 if not nocopy_cache.get("Name") or nocopy_cache["Name"] == expected_nocopy:
     raise SystemExit(f"Docker Compose nocopy image-cache mount = {nocopy_cache.get('Name')!r}")
+if subpath_data.get("Name") != expected_subpath:
+    raise SystemExit(f"Docker Compose subpath volume = {subpath_data.get('Name')!r}, expected {expected_subpath!r}")
+if not subpath_cache.get("Name") or subpath_cache["Name"] == expected_subpath:
+    raise SystemExit(f"Docker Compose subpath image-cache mount = {subpath_cache.get('Name')!r}")
 PY
 }
 
@@ -313,12 +337,15 @@ assert_apple_runtime_seeded() {
     local implicit_container="$PROJECT_NAME-implicit-1"
     local overridden_container="$PROJECT_NAME-overridden-1"
     local nocopy_container="$PROJECT_NAME-nocopy-1"
+    local subpath_container="$PROJECT_NAME-subpath-1"
 
     "$CONTAINER_BINARY" exec "$implicit_container" sh -ec \
         "test \"\$(cat /image-data/seed.txt)\" = image-data-seed && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
     "$CONTAINER_BINARY" exec "$overridden_container" sh -ec \
         "test \"\$(cat /image-data/seed.txt)\" = image-data-seed && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
     "$CONTAINER_BINARY" exec "$nocopy_container" sh -ec \
+        "test ! -e /image-data/seed.txt && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
+    "$CONTAINER_BINARY" exec "$subpath_container" sh -ec \
         "test ! -e /image-data/seed.txt && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
 }
 

@@ -29,14 +29,13 @@ The Compose layer now owns the Docker-specific policy without adding Compose beh
 - `up`, `create`, and one-off `run` retain the active pull-policy metadata preparation, then inspect image-declared targets for each concrete container.
 - An unmasked declared target receives a deterministic anonymous local volume, scoped to the service replica or one-off container.
 - An explicit named or anonymous `type: volume` mount, including a local volume inherited through `volumes_from`, that covers a declared target is initialized from its mount destination; parent mounts correctly seed the parent image subtree.
-- `volume.nocopy: true`, bind, tmpfs, and read-only image mounts deliberately skip initialization.
+- `volume.nocopy: true`, an existing `volume.subpath`, bind, tmpfs, and read-only image mounts deliberately skip initialization. Docker requires the subpath before the mount is created, so Compose leaves its parent volume unmodified and delegates secure subpath validation to the generic runtime.
 - Generated image volumes carry Compose ownership labels so `down --volumes`, `rm --volumes`, and `--renew-anon-volumes` locate them without rereading an image that may no longer exist.
 - A reused volume is passed through the initializer again, which preserves any volume with entries beyond ext4's `lost+found`; `down` followed by `up` therefore retains user data instead of recreating or reseeding it.
 
 ## Remaining scope
 
 - Docker's generic copy-up for a volume mount when the image does not declare that destination is still a gap.
-- A declared target mounted through `volume.subpath` is rejected because selected-subdirectory initialization has not been implemented.
 - This implementation intentionally supports only local ext4 volumes. Non-local drivers/plugins, recursive bind semantics, macOS consistency modes, Windows `npipe`, and Swarm cluster/CSI mounts are outside this macOS-feasible slice.
 
 ## Apple-shaped boundary
@@ -60,6 +59,7 @@ No fork receives Docker Compose types, Compose labels, command handling, or life
 
 - Implicit, named, and anonymous declared-image volumes are initialized before container creation in `up`, `create`, and `run`.
 - `volume.nocopy`, bind, tmpfs, and image masks preserve Docker's no-copy behavior.
+- A pre-existing `volume.subpath` on a declared target is mounted without image copy-up and remains unchanged.
 - A `down`/`up` cycle preserves a written marker in the retained image volume.
 - Lifecycle cleanup finds generated image volumes by labels.
 - Unit coverage, Docker Compose V2 reference behavior, normalized model coverage, and live matched-runtime integration coverage are automated.

@@ -10768,6 +10768,45 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--volume", "demo_cache:/image-data"]))
     }
 
+    @Test("up preserves Docker no-copy behavior for an image volume subpath")
+    func upSkipsImageInitializationWhenVolumeUsesSubpath() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager(imageVolumeTargets: [
+            "example/api": ["/image-data"],
+        ])
+        let initializer = RecordingContainerImageVolumeInitializer()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [ComposeMount(
+                        type: "volume",
+                        source: "cache",
+                        target: "/image-data",
+                        options: .init(volume: .init(subpath: "nested")),
+                    )]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+                $0.imageVolumeInitializer = initializer
+            },
+        ).up(project: project, options: ComposeUpOptions())
+
+        #expect(await initializer.requests.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence([
+            "--mount",
+            "type=volume,source=demo_cache,destination=/image-data,volume-subpath=nested",
+        ]))
+    }
+
     @Test("up initializes a named image volume from its mount destination")
     func upInitializesNamedImageVolumeFromItsMountDestination() async throws {
         let runner = RecordingRunner()
