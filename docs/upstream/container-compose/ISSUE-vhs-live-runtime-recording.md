@@ -25,6 +25,12 @@ but its isolated root had to fetch the 569 MB Apple kernel. At the previous
 printed `status running`; the fail-closed tape correctly stopped instead of
 publishing an incomplete result.
 
+The Current package queue may contain more than one virtualization-capable
+self-hosted runner. One online runner repeatedly failed before checkout because it
+could not establish TLS to GitHub's pinned action archive. A dedicated
+`container-compose-current` capability label now routes the mutable recording to
+the locally validated runner without changing the action pin or the tape.
+
 ## Scope and boundary
 
 This is a `container-compose` release-automation correction. No Apple Container or Containerization primitive is missing: Container remains the authority for guest startup, volumes, and teardown; Compose owns the release demonstration policy.
@@ -55,6 +61,9 @@ This is a `container-compose` release-automation correction. No Apple Container 
   entirely live and give its cold-kernel screen wait the same bounded
   fifteen-minute allowance. Its actual `status running` output, not download
   progress, remains the only completion evidence.
+- Require the dedicated `container-compose-current` self-hosted label in addition
+  to the normal macOS, ARM64, and release labels. Assign it only to a runner that
+  has successfully downloaded pinned GitHub actions over TLS.
 
 ## Commit tracking
 
@@ -66,10 +75,13 @@ This is a `container-compose` release-automation correction. No Apple Container 
 - [`af6da141`](https://github.com/stephenlclarke/container-compose/commit/af6da14150d62f09fdadf6cf12d6aab6cde6b144) `fix(ci): validate named dependency revisions`
 - [`0ed7efab`](https://github.com/stephenlclarke/container-compose/commit/0ed7efab0f85ced3c3e926ecd82c2cbccbc5ed57) `fix(release): wait for cold monitoring stack`
 - [`2d8748c3`](https://github.com/stephenlclarke/container-compose/commit/2d8748c3) `fix(release): wait for cold kernel bootstrap`
+- [`0c2c330f`](https://github.com/stephenlclarke/container-compose/commit/0c2c330f) `fix(release): dedicate current build runner`
 
 ## Code map
 
 - `.github/workflows/prebuilt-binaries.yml` packages the matched runtime and plugin, exports the isolated runtime environment, validates the tape, and publishes the generated GIF. It does not start the system or create a transcript before recording.
+- `.github/actionlint.yaml` declares the dedicated `container-compose-current`
+  self-hosted capability so the workflow's MBP-only recording route is linted.
 - `docs/container-compose-demo.tape` types the system start, every Compose and HTTP lifecycle command, the system stop, and their live output at a readable pace. It has no replay or marker helper.
 - Its two `up --wait && ps` steps use the same bounded cold-run allowance and
   continue only after the real Alertmanager `running` row from `ps` is visible.

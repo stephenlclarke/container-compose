@@ -14,6 +14,9 @@
 - Give the unchanged typed `container system start && container system status`
   command the same bounded fifteen-minute screen wait for a first-run Apple kernel
   download, and continue only after its real `status running` output appears.
+- Route Current packaging to this MBP's dedicated
+  `container-compose-current` capability label, excluding an online runner that
+  cannot download pinned actions over TLS without weakening action pinning.
 
 ## Type of Change
 
@@ -38,10 +41,13 @@ No forked Apple source changes are required. The change uses existing runtime be
 - [`af6da141`](https://github.com/stephenlclarke/container-compose/commit/af6da14150d62f09fdadf6cf12d6aab6cde6b144) `fix(ci): validate named dependency revisions`
 - [`0ed7efab`](https://github.com/stephenlclarke/container-compose/commit/0ed7efab0f85ced3c3e926ecd82c2cbccbc5ed57) `fix(release): wait for cold monitoring stack`
 - [`2d8748c3`](https://github.com/stephenlclarke/container-compose/commit/2d8748c3) `fix(release): wait for cold kernel bootstrap`
+- [`0c2c330f`](https://github.com/stephenlclarke/container-compose/commit/0c2c330f) `fix(release): dedicate current build runner`
 
 ## Code Map
 
 - `.github/workflows/prebuilt-binaries.yml`: selects the self-hosted Apple-silicon runner, exports the isolated package environment, validates the VHS source, and requires a non-empty GIF. It does not pre-start the runtime or create a transcript.
+- `.github/actionlint.yaml`: declares `container-compose-current` as an approved
+  self-hosted label, keeping the MBP-only Current route under workflow linting.
 - `docs/container-compose-demo.tape`: types the real `container system start`, every `container compose` and `curl` command, the final `container system stop`, and their live output. The tape has no replay function, marker function, or transcript input.
 - `docs/container-compose-demo.tape`: waits up to fifteen minutes for the real
   `status running` output from its first typed system-start command, accommodating
@@ -97,6 +103,10 @@ python3 -m unittest discover Tools/release
 - A fresh isolated runtime may also need to fetch the Apple kernel before its first
   status result. That direct command remains visible and bounded at fifteen minutes;
   progress output cannot satisfy the `status running` gate.
+- The mutable Current recording requires the dedicated runner label in addition to
+  the general release label. The label is assigned only after a runner has proved
+  it can fetch the pinned GitHub action archive over TLS; this avoids changing the
+  action pin or silently falling back to a transcript.
 - Local validation passed VHS source validation and all 65 release tests; the runner executes the real guest lifecycle when creating the published GIF.
 
 ## container-compose Checks
