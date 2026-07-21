@@ -31,8 +31,10 @@
 #                      otherwise docker-compose.
 #
 # This script is intentionally local-only and is not part of CI. It confirms
-# Docker Compose V2 accepts both IPv6 enablement spellings, then verifies the
-# matching container-compose normalization and pre-side-effect behavior.
+# Docker Compose V2 accepts both IPv6 enablement spellings. The disabled case
+# retains any declared IPv6 IPAM pool in config, but Docker Engine ignores it
+# while creating the network. Verify the Compose layer preserves the model then
+# renders the effective Apple runtime create request without that pool.
 
 set -euo pipefail
 
@@ -149,6 +151,9 @@ services:
 networks:
   backend:
     enable_ipv6: false
+    ipam:
+      config:
+        - subnet: fd00:10::/64
 YAML
 }
 
@@ -174,7 +179,7 @@ if network.get("enable_ipv6") is not expected:
 PY
 }
 
-assert_container_unsupported_fields() {
+assert_container_ipv6_value() {
     local path="$1"
     local expected="$2"
 
@@ -183,10 +188,27 @@ import json
 import pathlib
 import sys
 
-fields = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).get("networks", {}).get("backend", {}).get("unsupportedFields")
-expected = None if sys.argv[2] == "none" else [sys.argv[2]]
-if fields != expected:
-    raise SystemExit(f"container-compose networks.backend.unsupportedFields = {fields!r}, want {expected!r}")
+network = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).get("networks", {}).get("backend", {})
+expected = sys.argv[2] == "true"
+if network.get("enableIPv6") is not expected:
+    raise SystemExit(f"container-compose networks.backend.enableIPv6 = {network.get('enableIPv6')!r}, want {expected!r}")
+if network.get("unsupportedFields") is not None:
+    raise SystemExit(f"container-compose networks.backend.unsupportedFields = {network.get('unsupportedFields')!r}, want absent")
+PY
+}
+
+assert_container_preserves_ipv6_subnet() {
+    local path="$1"
+    local expected="$2"
+
+    python3 - "$path" "$expected" <<'PY'
+import json
+import pathlib
+import sys
+
+network = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).get("networks", {}).get("backend", {})
+if network.get("ipv6Subnet") != sys.argv[2]:
+    raise SystemExit(f"container-compose networks.backend.ipv6Subnet = {network.get('ipv6Subnet')!r}, want {sys.argv[2]!r}")
 PY
 }
 
@@ -203,25 +225,21 @@ validate_docker_behavior() {
 validate_container_compose_behavior() {
     local enabled_output="$FIXTURE_DIR/container-compose-enabled.json"
     local disabled_output="$FIXTURE_DIR/container-compose-disabled.json"
-    local disabled_up_output
-    local status
 
     "$CONTAINER_COMPOSE" --ansi never -p "$PROJECT_NAME" -f "$ENABLED_COMPOSE_FILE" config --format json >"$enabled_output"
-    assert_container_unsupported_fields "$enabled_output" none
+    assert_container_ipv6_value "$enabled_output" true
     "$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$ENABLED_COMPOSE_FILE" up api >/dev/null
 
     "$CONTAINER_COMPOSE" --ansi never -p "$PROJECT_NAME" -f "$DISABLED_COMPOSE_FILE" config --format json >"$disabled_output"
-    assert_container_unsupported_fields "$disabled_output" enable_ipv6
+    assert_container_ipv6_value "$disabled_output" false
+    assert_container_preserves_ipv6_subnet "$disabled_output" "fd00:10::/64"
 
-    set +e
     disabled_up_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$DISABLED_COMPOSE_FILE" up api 2>&1)"
-    status=$?
-    set -e
-    if ((status == 0)); then
-        error 'container-compose up accepted enable_ipv6: false without a disabling runtime primitive'
+    printf '%s\n' "$disabled_up_output" | grep -E '^\+ (.+/)?container network create --disable-ipv6 ' >/dev/null
+    if printf '%s\n' "$disabled_up_output" | grep -F -- '--subnet-v6' >/dev/null; then
+        error 'container-compose forwarded an IPv6 subnet while IPv6 is disabled'
         return 1
     fi
-    printf '%s\n' "$disabled_up_output" | grep -F "network 'backend' uses unsupported fields enable_ipv6" >/dev/null
 }
 
 main() {

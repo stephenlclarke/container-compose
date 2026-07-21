@@ -595,6 +595,9 @@ extension ComposeOrchestrator {
         if network.isInternal == true {
             args.append("--internal")
         }
+        if network.enableIPv6 == false {
+            args.append("--disable-ipv6")
+        }
         if let ipv4Subnet = network.ipv4Subnet, !ipv4Subnet.isEmpty {
             args.append(contentsOf: ["--subnet", ipv4Subnet])
         }
@@ -607,7 +610,7 @@ extension ComposeOrchestrator {
         for address in network.ipv4ReservedAddresses ?? [] {
             args.append(contentsOf: ["--reserve-ip", address])
         }
-        if let ipv6Subnet = network.ipv6Subnet, !ipv6Subnet.isEmpty {
+        if network.enableIPv6 != false, let ipv6Subnet = network.ipv6Subnet, !ipv6Subnet.isEmpty {
             args.append(contentsOf: ["--subnet-v6", ipv6Subnet])
         }
         let driverOpts = network.driverOpts ?? [:]
@@ -635,6 +638,7 @@ extension ComposeOrchestrator {
                     ipv4ReservedAddresses: network.ipv4ReservedAddresses ?? [],
                     ipv6Subnet: network.ipv6Subnet,
                 ),
+                enableIPv6: network.enableIPv6,
                 driverOpts: driverOpts,
                 labels: resourceLabels(project: project, labels: network.labels),
             ))

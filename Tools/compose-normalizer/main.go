@@ -385,6 +385,7 @@ type normalizedNetwork struct {
 	IPv4AllocationRange   string            `json:"ipv4AllocationRange,omitempty"`
 	IPv4ReservedAddresses []string          `json:"ipv4ReservedAddresses,omitempty"`
 	IPv6Subnet            string            `json:"ipv6Subnet,omitempty"`
+	EnableIPv6            *bool             `json:"enableIPv6,omitempty"`
 	UnsupportedFields     []string          `json:"unsupportedFields,omitempty"`
 }
 
@@ -789,7 +790,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 		result.Services[service.Name] = normalizeService(service, project.Secrets)
 	}
 	for name, network := range project.Networks {
-		ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, unsupportedFields := projectNetworkValues(network)
+		ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, enableIPv6, unsupportedFields := projectNetworkValues(network)
 		result.Networks[name] = normalizedNetwork{
 			Name:                  firstNonEmpty(network.Name, name),
 			External:              bool(network.External),
@@ -804,6 +805,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 			IPv4AllocationRange:   ipv4AllocationRange,
 			IPv4ReservedAddresses: ipv4ReservedAddresses,
 			IPv6Subnet:            ipv6Subnet,
+			EnableIPv6:            enableIPv6,
 			UnsupportedFields:     unsupportedFields,
 		}
 	}
@@ -834,22 +836,18 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 
 // projectNetworkValues returns mapped IPAM values and project network fields that
 // need runtime behavior beyond apple/container's current network API.
-func projectNetworkValues(network types.NetworkConfig) (string, string, string, []string, string, []string) {
+func projectNetworkValues(network types.NetworkConfig) (string, string, string, []string, string, *bool, []string) {
 	ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipamFields := networkIPAMValues(network.Ipam)
+	enableIPv6 := network.EnableIPv6
 	fields := []string{}
 	driver := strings.TrimSpace(network.Driver)
 	appendUnsupportedNetworkField(&fields, "driver", driver != "" && driver != "bridge")
 	appendUnsupportedNetworkField(&fields, "enable_ipv4", network.EnableIPv4 != nil && !*network.EnableIPv4)
-	// VMnet allocates an IPv6 prefix when the caller does not supply one, so
-	// `enable_ipv6: true` is already represented by the generic network create
-	// path. It has no corresponding supported control to suppress that automatic
-	// allocation, so only an explicit disable request remains a runtime gap.
-	appendUnsupportedNetworkField(&fields, "enable_ipv6", network.EnableIPv6 != nil && !*network.EnableIPv6)
 	fields = append(fields, ipamFields...)
 	if len(fields) == 0 {
-		return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, nil
+		return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, enableIPv6, nil
 	}
-	return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, fields
+	return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, enableIPv6, fields
 }
 
 // normalizeService copies a compose-go service into the stable Swift model.

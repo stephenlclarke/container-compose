@@ -1374,6 +1374,7 @@ struct ComposeOrchestratorTests {
             #expect(request.ipv4AllocationRange == "10.77.0.128/25")
             #expect(request.ipv4ReservedAddresses == ["10.77.0.10", "10.77.0.11"])
             #expect(request.ipv6Subnet == "fd77::/64")
+            #expect(request.enableIPv6 == nil)
             #expect(request.driverOpts == [:])
             #expect(request.labels["com.apple.container.compose.project"] == "demo")
             #expect(request.labels["com.apple.container.compose.project.config-files-hash"] != nil)
@@ -1500,6 +1501,76 @@ struct ComposeOrchestratorTests {
         })
     }
 
+    @Test("up maps IPv6 disablement through the runtime abstraction")
+    func upMapsIPv6DisablementThroughRuntimeAbstraction() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: .init(
+                        enableIPv6: false,
+                        subnets: .init(ipv6Subnet: "fd00:10::/64")
+                    )
+                ),
+            ]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        let resources = await resourceManager.requests
+        #expect(resources.count == 1)
+        if case let .createNetwork(request) = resources[0] {
+            #expect(request.name == "demo_backend")
+            #expect(request.enableIPv6 == false)
+            #expect(request.ipv6Subnet == "fd00:10::/64")
+        } else {
+            Issue.record("Expected network creation through direct API")
+        }
+    }
+
+    @Test("up dry run renders IPv6 disablement without a conflicting IPv6 subnet")
+    func upDryRunRendersIPv6Disablement() async throws {
+        let emitted = MessageRecorder()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: .init(
+                        enableIPv6: false,
+                        subnets: .init(ipv6Subnet: "fd00:10::/64")
+                    )
+                ),
+            ]
+        }
+
+        try await ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }))
+            .up(project: project, options: ComposeUpOptions())
+
+        #expect(emitted.messages.contains { message in
+            message.contains("container network create")
+                && message.contains("--disable-ipv6")
+                && message.contains("demo_backend")
+                && !message.contains("--subnet-v6")
+        })
+    }
+
     @Test("up accepts attachable project network metadata")
     func upAcceptsAttachableProjectNetworkMetadata() async throws {
         let runner = RecordingRunner(responses: [
@@ -1544,7 +1615,7 @@ struct ComposeOrchestratorTests {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         var networkOptions = ComposeNetwork.Options(isAttachable: true)
-        networkOptions.unsupportedFields = ["driver", "enable_ipv4", "enable_ipv6"]
+        networkOptions.unsupportedFields = ["driver", "enable_ipv4"]
         let project = composeProject(
             name: "demo",
             services: [
@@ -1566,7 +1637,7 @@ struct ComposeOrchestratorTests {
                 .up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported project network options error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, enable_ipv4, enable_ipv6; supported project network fields are name, external, internal, attachable, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet"))
+            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, enable_ipv4; supported project network fields are name, external, internal, attachable, enable_ipv6, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -20440,6 +20511,7 @@ struct ComposeOrchestratorTests {
                 ipv4AllocationRange: "10.10.0.128/25",
                 ipv6Subnet: "fd00:10::/64"
             ),
+            enableIPv6: true,
             driverOpts: ["variant": "vzNAT"],
             labels: labels
         ))
@@ -20463,6 +20535,7 @@ struct ComposeOrchestratorTests {
                 ipv4Gateway: "10.10.0.254",
                 ipv4AllocationRange: "10.10.0.128/25",
                 ipv6Subnet: "fd00:10::/64",
+                enableIPv6: true,
                 options: ["variant": "vzNAT"],
                 labels: labels
             ),
@@ -20580,6 +20653,7 @@ struct ComposeOrchestratorTests {
                 ipv4Gateway: nil,
                 ipv4AllocationRange: nil,
                 ipv6Subnet: nil,
+                enableIPv6: true,
                 options: [:],
                 labels: [:]
             ),
@@ -20597,6 +20671,33 @@ struct ComposeOrchestratorTests {
 
         #expect(await client.requests == [
             .createVolume(ComposeVolumeCreateRequest(name: "demo_cache")),
+        ])
+    }
+
+    @Test("resource manager disables IPv6 and suppresses an ignored IPv6 subnet")
+    func resourceManagerDisablesIPv6AndSuppressesIgnoredSubnet() async throws {
+        let client = RecordingContainerResourceAPIClient()
+        let manager = ContainerClientResourceManager(client: client)
+
+        try await manager.createNetwork(ComposeNetworkCreateRequest(
+            name: "demo_no_ipv6",
+            addressing: .init(ipv6Subnet: "fd00:10::/64"),
+            enableIPv6: false
+        ))
+
+        #expect(await client.requests == [
+            .createNetwork(
+                name: "demo_no_ipv6",
+                mode: .nat,
+                plugin: "container-network-vmnet",
+                ipv4Subnet: nil,
+                ipv4Gateway: nil,
+                ipv4AllocationRange: nil,
+                ipv6Subnet: nil,
+                enableIPv6: false,
+                options: [:],
+                labels: [:]
+            ),
         ])
     }
 
@@ -20706,6 +20807,7 @@ struct ComposeOrchestratorTests {
                 ipv4Gateway: nil,
                 ipv4AllocationRange: nil,
                 ipv6Subnet: nil,
+                enableIPv6: true,
                 options: [:],
                 labels: labels
             ),
@@ -29713,6 +29815,7 @@ private enum ContainerResourceAPIRequest: Equatable {
         ipv4Gateway: String?,
         ipv4AllocationRange: String?,
         ipv6Subnet: String?,
+        enableIPv6: Bool,
         options: [String: String],
         labels: [String: String]
     )
@@ -31231,6 +31334,7 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
             ipv4Gateway: configuration.ipv4Gateway?.description,
             ipv4AllocationRange: configuration.ipv4AllocationRange?.description,
             ipv6Subnet: configuration.ipv6Subnet?.description,
+            enableIPv6: configuration.enableIPv6,
             options: configuration.options,
             labels: configuration.labels.dictionary
         ))

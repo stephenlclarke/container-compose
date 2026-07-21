@@ -335,10 +335,11 @@ struct ComposeNormalizerTests {
 
         #expect(project.networks["backend"]?.unsupportedFields == nil)
         #expect(project.networks["backend"]?.ipv6Subnet == nil)
+        #expect(project.networks["backend"]?.enableIPv6 == true)
     }
 
-    @Test("normalizer rejects IPv6 disablement before runtime side effects")
-    func normalizerMarksIPv6DisablementUnsupported() async throws {
+    @Test("normalizer maps IPv6 disablement and suppresses an ignored IPv6 pool")
+    func normalizerMapsIPv6Disablement() async throws {
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
@@ -355,6 +356,9 @@ struct ComposeNormalizerTests {
         networks:
           backend:
             enable_ipv6: false
+            ipam:
+              config:
+                - subnet: fd00::/64
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
@@ -363,7 +367,9 @@ struct ComposeNormalizerTests {
             projectDirectory: directory.path
         ))
 
-        #expect(project.networks["backend"]?.unsupportedFields == ["enable_ipv6"])
+        #expect(project.networks["backend"]?.unsupportedFields == nil)
+        #expect(project.networks["backend"]?.enableIPv6 == false)
+        #expect(project.networks["backend"]?.ipv6Subnet == "fd00::/64")
     }
 
     @Test("normalizer preserves entrypoint command and environment forms")

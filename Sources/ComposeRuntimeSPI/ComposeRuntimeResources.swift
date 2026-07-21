@@ -76,6 +76,8 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
     public var ipv4AllocationRange: String?
     public var ipv4ReservedAddresses: [String]
     public var ipv6Subnet: String?
+    /// Explicit IPv6 setting supplied by the Compose project, when present.
+    public var enableIPv6: Bool?
     public var driverOpts: [String: String]
     public var labels: [String: String]
 
@@ -83,6 +85,7 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
         name: String,
         isInternal: Bool = false,
         addressing: Addressing = Addressing(),
+        enableIPv6: Bool? = nil,
         driverOpts: [String: String] = [:],
         labels: [String: String] = [:],
     ) {
@@ -93,6 +96,7 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
         ipv4AllocationRange = addressing.ipv4AllocationRange
         ipv4ReservedAddresses = addressing.ipv4ReservedAddresses
         ipv6Subnet = addressing.ipv6Subnet
+        self.enableIPv6 = enableIPv6
         self.driverOpts = driverOpts
         self.labels = labels
     }

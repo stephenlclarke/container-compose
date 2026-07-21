@@ -730,6 +730,7 @@ public struct ComposeNetwork: Codable, Equatable {
         public var ipamOptions: [String: String]?
         public var isInternal: Bool?
         public var isAttachable: Bool?
+        public var enableIPv6: Bool?
         public var labels: [String: String]?
         public var subnets: Subnets
         public var unsupportedFields: [String]?
@@ -740,6 +741,7 @@ public struct ComposeNetwork: Codable, Equatable {
             driverOpts: [String: String]? = nil,
             isInternal: Bool? = nil,
             isAttachable: Bool? = nil,
+            enableIPv6: Bool? = nil,
             labels: [String: String]? = nil,
             subnets: Subnets = Subnets(),
         ) {
@@ -748,6 +750,7 @@ public struct ComposeNetwork: Codable, Equatable {
             self.driverOpts = driverOpts
             self.isInternal = isInternal
             self.isAttachable = isAttachable
+            self.enableIPv6 = enableIPv6
             self.labels = labels
             self.subnets = subnets
         }
@@ -760,6 +763,7 @@ public struct ComposeNetwork: Codable, Equatable {
     public var ipamOptions: [String: String]?
     public var isInternal: Bool?
     public var isAttachable: Bool?
+    public var enableIPv6: Bool?
     public var labels: [String: String]?
     public var ipv4Subnet: String?
     public var ipv4Gateway: String?
@@ -779,6 +783,7 @@ public struct ComposeNetwork: Codable, Equatable {
         ipamOptions = options.ipamOptions
         isInternal = options.isInternal
         isAttachable = options.isAttachable
+        enableIPv6 = options.enableIPv6
         labels = options.labels
         ipv4Subnet = options.subnets.ipv4Subnet
         ipv4Gateway = options.subnets.ipv4Gateway
@@ -796,6 +801,7 @@ public struct ComposeNetwork: Codable, Equatable {
         case ipamOptions
         case isInternal = "internal"
         case isAttachable = "attachable"
+        case enableIPv6
         case labels
         case ipv4Subnet
         case ipv4Gateway
