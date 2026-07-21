@@ -38,6 +38,15 @@ project-prefixed expression therefore could not match after a successful `up &&
 ps`; the run was cancelled rather than wait out the remaining fifteen-minute
 screen timeout.
 
+The next direct attempt exposed two display and scope issues rather than an Apple
+runtime fault. At the 1100-pixel recording width, the real `ps` status cell wraps
+`running` across two screen rows, so a same-line regular expression cannot see it.
+The complete monitoring file also contains services outside the two portable
+demonstration endpoints; unqualified `stats` attempts to inspect those services
+when they were intentionally not started. The direct, commit-matched runtime
+lifecycle passed twice when restricted to nginx and Alertmanager, including both
+HTTP readiness checks, retained named-volume reuse, stats, and final teardown.
+
 ## Scope and boundary
 
 This is a `container-compose` release-automation correction. No Apple Container or Containerization primitive is missing: Container remains the authority for guest startup, volumes, and teardown; Compose owns the release demonstration policy.
@@ -60,11 +69,13 @@ This is a `container-compose` release-automation correction. No Apple Container 
 - Accept a named Swift manifest revision only when it resolves to a local string literal;
   reject dynamic or environment-derived values and continue to compare the result against
   `stack-refs.json` and `Package.resolved`.
-- Keep the first and second `up --wait && ps` commands entirely live, give their
-  cold-run waits a bounded fifteen-minute allowance, and wait for the actual
-  `alertmanager` service `running` row produced by `ps` instead of a project
-  container-name assumption or generic table header. Do not add a sentinel,
-  replay, or marker command.
+- Keep the first and second `up --wait && ps` commands entirely live, but select
+  the portable nginx and Alertmanager services for both `up` and `stats`. Give
+  their cold-run waits a bounded fifteen-minute allowance. After the real `up`
+  succeeds, clear the terminal and run the real `ps` command in the same typed
+  shell chain so its actual result remains visible rather than scrollback. Match
+  the nginx `running` cell across a possible screen-row wrap. Do not add a
+  sentinel, replay, transcript, or marker-result command.
 - Keep the first typed `container system start && container system status` command
   entirely live and give its cold-kernel screen wait the same bounded
   fifteen-minute allowance. Its actual `status running` output, not download
@@ -85,16 +96,18 @@ This is a `container-compose` release-automation correction. No Apple Container 
 - [`2d8748c3`](https://github.com/stephenlclarke/container-compose/commit/2d8748c3) `fix(release): wait for cold kernel bootstrap`
 - [`0c2c330f`](https://github.com/stephenlclarke/container-compose/commit/0c2c330f) `fix(release): dedicate current build runner`
 - [`b09e3c79`](https://github.com/stephenlclarke/container-compose/commit/b09e3c79) `fix(release): match live compose status row`
+- [`86dc033d`](https://github.com/stephenlclarke/container-compose/commit/86dc033d85d9c9c19817d4582dfa22cd92ba1022) `fix(release): keep live demo output visible`
 
 ## Code map
 
 - `.github/workflows/prebuilt-binaries.yml` packages the matched runtime and plugin, exports the isolated runtime environment, validates the tape, and publishes the generated GIF. It does not start the system or create a transcript before recording.
 - `.github/actionlint.yaml` declares the dedicated `container-compose-current`
   self-hosted capability so the workflow's MBP-only recording route is linted.
-- `docs/container-compose-demo.tape` types the system start, every Compose and HTTP lifecycle command, the system stop, and their live output at a readable pace. It has no replay or marker helper.
-- Its two `up --wait && ps` steps use the same bounded cold-run allowance and
-  continue only after the real `alertmanager` service `running` row from `ps` is
-  visible.
+- `docs/container-compose-demo.tape` types the system start, every Compose and HTTP lifecycle command, the system stop, and their live output at a readable pace. It has no replay or marker helper. Its wider terminal preserves the real status table legibly.
+- Its two `up --wait && clear && ps` steps select nginx and Alertmanager, then
+  continue only after the real nginx `running` row from the just-typed `ps`
+  command is visible. `clear` is a normal shell display command in the same
+  failing shell chain, not a sentinel or a synthetic result.
 - Its direct system-start step has that same bounded allowance and continues only
   after the just-typed command prints `status running`.
 - `Tools/ci/check-stack-consistency.py` validates the Compose inline revision and the
@@ -102,4 +115,4 @@ This is a `container-compose` release-automation correction. No Apple Container 
   agreement checks.
 - `examples/monitoring-stack/docker-compose.yaml` includes a portable `nginx_cache` named volume that visibly remains after the non-destructive down.
 
-The tape and release-test validation run locally with VHS and the release workflow unit suite; the physical Apple-silicon release runner executes the published guest lifecycle.
+The tape and release-test validation run locally with VHS and the release workflow unit suite. The exact current Compose and Container sources also passed the full two-cycle lifecycle locally; the physical Apple-silicon release runner executes the published guest lifecycle.

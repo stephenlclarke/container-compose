@@ -9,17 +9,20 @@
 - Restore the Source Checks gate by recognizing Container's immutable named SwiftPM
   revision without permitting runtime-computed dependency requirements.
 - Make the direct tape reliable for a cold release runner without hiding work:
-  each unchanged `up --wait && ps` command has a bounded fifteen-minute wait and
-  advances only after its real Alertmanager `running` row appears.
+  each typed nginx-and-Alertmanager `up --wait && clear && ps` chain has a
+  bounded fifteen-minute wait and advances only after its real nginx `running`
+  row appears.
 - Give the unchanged typed `container system start && container system status`
   command the same bounded fifteen-minute screen wait for a first-run Apple kernel
   download, and continue only after its real `status running` output appears.
 - Route Current packaging to this MBP's dedicated
   `container-compose-current` capability label, excluding an online runner that
   cannot download pinned actions over TLS without weakening action pinning.
-- Match the direct `up --wait && ps` screen contract to the real Compose table:
-  `alertmanager … running`, rather than an unavailable project-prefixed
-  container name.
+- Keep the genuine `ps` result visible after the two-service `up`: use a wider
+  terminal and a normal `clear` in the typed success chain to discard only live
+  progress scrollback, then match the wrapped-or-unwrapped nginx `running` cell.
+- Scope `stats` to the same two services so it does not inspect macOS-safe
+  services that the recording deliberately did not start.
 
 ## Type of Change
 
@@ -46,6 +49,7 @@ No forked Apple source changes are required. The change uses existing runtime be
 - [`2d8748c3`](https://github.com/stephenlclarke/container-compose/commit/2d8748c3) `fix(release): wait for cold kernel bootstrap`
 - [`0c2c330f`](https://github.com/stephenlclarke/container-compose/commit/0c2c330f) `fix(release): dedicate current build runner`
 - [`b09e3c79`](https://github.com/stephenlclarke/container-compose/commit/b09e3c79) `fix(release): match live compose status row`
+- [`86dc033d`](https://github.com/stephenlclarke/container-compose/commit/86dc033d85d9c9c19817d4582dfa22cd92ba1022) `fix(release): keep live demo output visible`
 
 ## Code Map
 
@@ -59,9 +63,11 @@ No forked Apple source changes are required. The change uses existing runtime be
 - `Tools/ci/check-stack-consistency.py`: resolves a named dependency revision only from a
   manifest string literal, then checks it against the stack manifest and SwiftPM lockfile;
   focused unit coverage includes accepted literal and rejected dynamic forms.
-- `docs/container-compose-demo.tape`: uses the real `ps` row for
-  `alertmanager` in `running` state as the completion evidence for each unchanged
-  live `up --wait && ps` command. It has no sentinel or synthetic result command.
+- `docs/container-compose-demo.tape`: uses two portable services (`nginx` and
+  `alertmanager`) for `up` and `stats`, then uses the real nginx `running` row
+  from `ps` as completion evidence. Its ordinary typed `clear` runs only after a
+  successful `up`, keeping the genuine short `ps` result visible; it has no
+  sentinel, replay, transcript, or synthetic result command.
 - `examples/monitoring-stack/docker-compose.yaml`: declares the portable `nginx_cache` named volume used to prove resource retention.
 - `README.md` and `BUILD.md`: document the direct live-command recording contract and runner requirement.
 
@@ -76,15 +82,17 @@ python3 - <<'PY'
 from pathlib import Path
 tape = Path("docs/container-compose-demo.tape").read_text(encoding="utf-8")
 assert tape.count("--wait-timeout 900") == 2
-assert tape.count("Wait+Screen@900s /alertmanager.*running/") == 2
+assert tape.count("--quiet-pull nginx alertmanager && clear && container compose") == 2
+assert tape.count("stats --no-stream nginx alertmanager") == 2
+assert tape.count("Wait+Screen@900s /nginx.*r[[:space:]]*unning/") == 2
 assert tape.count("Wait+Screen@900s /status +running/") == 1
 PY
-docker compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300
+docker compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300 nginx alertmanager
 docker compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty nginx sh -c 'printf "%s\\n" container-compose-volume-reuse-ok > /var/cache/nginx/.container-compose-volume-reuse'
 docker compose -f examples/monitoring-stack/docker-compose.yaml down --remove-orphans
 docker volume inspect monitoring-stack_nginx_cache
-docker compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300
-docker compose -f examples/monitoring-stack/docker-compose.yaml stats --no-stream
+docker compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300 nginx alertmanager
+docker compose -f examples/monitoring-stack/docker-compose.yaml stats --no-stream nginx alertmanager
 docker compose -f examples/monitoring-stack/docker-compose.yaml ps
 curl -4fsS http://127.0.0.1:8080/healthz
 curl -4fsS http://127.0.0.1:9093/alertmanager/-/ready
@@ -100,9 +108,11 @@ python3 -m unittest discover Tools/release
 - A physical, labelled release runner must remain online. If it is unavailable, the package job queues instead of publishing a deceptive Current recording.
 - Manifest parsing accepts only checked-in string literals. A dynamic source of truth such as
   an environment variable fails the gate rather than allowing a runtime-specific stack pin.
-- A cold physical runner may need to fetch every service image. The taped commands remain
-  live and bounded; the recording advances only when `ps` shows its actual running service
-  row, not when a project-name assumption, generic progress line, or synthetic marker appears.
+- A cold physical runner may need to fetch service images. The taped commands remain
+  live and bounded; the recording advances only when `ps` shows its actual nginx
+  running row, not when a project-name assumption, generic progress line, or
+  synthetic marker appears. The two-service slice avoids attempting stats for
+  services that the recording did not start.
 - A fresh isolated runtime may also need to fetch the Apple kernel before its first
   status result. That direct command remains visible and bounded at fifteen minutes;
   progress output cannot satisfy the `status running` gate.
@@ -110,7 +120,9 @@ python3 -m unittest discover Tools/release
   the general release label. The label is assigned only after a runner has proved
   it can fetch the pinned GitHub action archive over TLS; this avoids changing the
   action pin or silently falling back to a transcript.
-- Local validation passed VHS source validation and all 65 release tests; the runner executes the real guest lifecycle when creating the published GIF.
+- Local validation passed VHS source validation, all 138 release tests, and the
+  exact current-runtime two-cycle lifecycle; the runner executes the real guest
+  lifecycle when creating the published GIF.
 
 ## container-compose Checks
 
