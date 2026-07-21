@@ -17,6 +17,9 @@
 - Route Current packaging to this MBP's dedicated
   `container-compose-current` capability label, excluding an online runner that
   cannot download pinned actions over TLS without weakening action pinning.
+- Match the direct `up --wait && ps` screen contract to the real Compose table:
+  `alertmanager … running`, rather than an unavailable project-prefixed
+  container name.
 
 ## Type of Change
 
@@ -42,6 +45,7 @@ No forked Apple source changes are required. The change uses existing runtime be
 - [`0ed7efab`](https://github.com/stephenlclarke/container-compose/commit/0ed7efab0f85ced3c3e926ecd82c2cbccbc5ed57) `fix(release): wait for cold monitoring stack`
 - [`2d8748c3`](https://github.com/stephenlclarke/container-compose/commit/2d8748c3) `fix(release): wait for cold kernel bootstrap`
 - [`0c2c330f`](https://github.com/stephenlclarke/container-compose/commit/0c2c330f) `fix(release): dedicate current build runner`
+- [`b09e3c79`](https://github.com/stephenlclarke/container-compose/commit/b09e3c79) `fix(release): match live compose status row`
 
 ## Code Map
 
@@ -56,9 +60,8 @@ No forked Apple source changes are required. The change uses existing runtime be
   manifest string literal, then checks it against the stack manifest and SwiftPM lockfile;
   focused unit coverage includes accepted literal and rejected dynamic forms.
 - `docs/container-compose-demo.tape`: uses the real `ps` row for
-  `monitoring-stack` Alertmanager in `running` state as the completion evidence
-  for each unchanged live `up --wait && ps` command. It has no sentinel or
-  synthetic result command.
+  `alertmanager` in `running` state as the completion evidence for each unchanged
+  live `up --wait && ps` command. It has no sentinel or synthetic result command.
 - `examples/monitoring-stack/docker-compose.yaml`: declares the portable `nginx_cache` named volume used to prove resource retention.
 - `README.md` and `BUILD.md`: document the direct live-command recording contract and runner requirement.
 
@@ -73,7 +76,7 @@ python3 - <<'PY'
 from pathlib import Path
 tape = Path("docs/container-compose-demo.tape").read_text(encoding="utf-8")
 assert tape.count("--wait-timeout 900") == 2
-assert tape.count("Wait+Screen@900s /monitoring-stack-.*alertmanager.*running/") == 2
+assert tape.count("Wait+Screen@900s /alertmanager.*running/") == 2
 assert tape.count("Wait+Screen@900s /status +running/") == 1
 PY
 docker compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300
@@ -99,7 +102,7 @@ python3 -m unittest discover Tools/release
   an environment variable fails the gate rather than allowing a runtime-specific stack pin.
 - A cold physical runner may need to fetch every service image. The taped commands remain
   live and bounded; the recording advances only when `ps` shows its actual running service
-  row, not when a generic progress line or synthetic marker appears.
+  row, not when a project-name assumption, generic progress line, or synthetic marker appears.
 - A fresh isolated runtime may also need to fetch the Apple kernel before its first
   status result. That direct command remains visible and bounded at fifteen minutes;
   progress output cannot satisfy the `status running` gate.

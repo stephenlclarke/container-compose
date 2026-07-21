@@ -31,6 +31,13 @@ could not establish TLS to GitHub's pinned action archive. A dedicated
 `container-compose-current` capability label now routes the mutable recording to
 the locally validated runner without changing the action pin or the tape.
 
+That routed run proved the monitoring stack itself was healthy, but also found a
+second screen-contract error: its real `ps` table renders the service name as
+`alertmanager`, not a `monitoring-stack-…alertmanager` container name. The old
+project-prefixed expression therefore could not match after a successful `up &&
+ps`; the run was cancelled rather than wait out the remaining fifteen-minute
+screen timeout.
+
 ## Scope and boundary
 
 This is a `container-compose` release-automation correction. No Apple Container or Containerization primitive is missing: Container remains the authority for guest startup, volumes, and teardown; Compose owns the release demonstration policy.
@@ -55,8 +62,9 @@ This is a `container-compose` release-automation correction. No Apple Container 
   `stack-refs.json` and `Package.resolved`.
 - Keep the first and second `up --wait && ps` commands entirely live, give their
   cold-run waits a bounded fifteen-minute allowance, and wait for the actual
-  `monitoring-stack` Alertmanager `running` row produced by `ps` instead of a
-  generic table header. Do not add a sentinel, replay, or marker command.
+  `alertmanager` service `running` row produced by `ps` instead of a project
+  container-name assumption or generic table header. Do not add a sentinel,
+  replay, or marker command.
 - Keep the first typed `container system start && container system status` command
   entirely live and give its cold-kernel screen wait the same bounded
   fifteen-minute allowance. Its actual `status running` output, not download
@@ -76,6 +84,7 @@ This is a `container-compose` release-automation correction. No Apple Container 
 - [`0ed7efab`](https://github.com/stephenlclarke/container-compose/commit/0ed7efab0f85ced3c3e926ecd82c2cbccbc5ed57) `fix(release): wait for cold monitoring stack`
 - [`2d8748c3`](https://github.com/stephenlclarke/container-compose/commit/2d8748c3) `fix(release): wait for cold kernel bootstrap`
 - [`0c2c330f`](https://github.com/stephenlclarke/container-compose/commit/0c2c330f) `fix(release): dedicate current build runner`
+- [`b09e3c79`](https://github.com/stephenlclarke/container-compose/commit/b09e3c79) `fix(release): match live compose status row`
 
 ## Code map
 
@@ -84,7 +93,8 @@ This is a `container-compose` release-automation correction. No Apple Container 
   self-hosted capability so the workflow's MBP-only recording route is linted.
 - `docs/container-compose-demo.tape` types the system start, every Compose and HTTP lifecycle command, the system stop, and their live output at a readable pace. It has no replay or marker helper.
 - Its two `up --wait && ps` steps use the same bounded cold-run allowance and
-  continue only after the real Alertmanager `running` row from `ps` is visible.
+  continue only after the real `alertmanager` service `running` row from `ps` is
+  visible.
 - Its direct system-start step has that same bounded allowance and continues only
   after the just-typed command prints `status running`.
 - `Tools/ci/check-stack-consistency.py` validates the Compose inline revision and the
