@@ -8,6 +8,9 @@
 - Make the direct VHS session the fail-closed verification: each typed command must produce its expected live output before recording can continue.
 - Restore the Source Checks gate by recognizing Container's immutable named SwiftPM
   revision without permitting runtime-computed dependency requirements.
+- Make the direct tape reliable for a cold release runner without hiding work:
+  each unchanged `up --wait && ps` command has a bounded fifteen-minute wait and
+  advances only after its real Alertmanager `running` row appears.
 
 ## Type of Change
 
@@ -30,6 +33,7 @@ No forked Apple source changes are required. The change uses existing runtime be
 - [`62908819`](https://github.com/stephenlclarke/container-compose/commit/62908819034156bfc8d24cac7becce9a203d720b) `fix(release): record live VHS commands`
 - [`518ae228`](https://github.com/stephenlclarke/container-compose/commit/518ae228f650a8fa40118c36d68fdad650eb69ef) `fix(release): record direct terminal demo`
 - [`af6da141`](https://github.com/stephenlclarke/container-compose/commit/af6da14150d62f09fdadf6cf12d6aab6cde6b144) `fix(ci): validate named dependency revisions`
+- [`0ed7efab`](https://github.com/stephenlclarke/container-compose/commit/0ed7efab0f85ced3c3e926ecd82c2cbccbc5ed57) `fix(release): wait for cold monitoring stack`
 
 ## Code Map
 
@@ -38,6 +42,10 @@ No forked Apple source changes are required. The change uses existing runtime be
 - `Tools/ci/check-stack-consistency.py`: resolves a named dependency revision only from a
   manifest string literal, then checks it against the stack manifest and SwiftPM lockfile;
   focused unit coverage includes accepted literal and rejected dynamic forms.
+- `docs/container-compose-demo.tape`: uses the real `ps` row for
+  `monitoring-stack` Alertmanager in `running` state as the completion evidence
+  for each unchanged live `up --wait && ps` command. It has no sentinel or
+  synthetic result command.
 - `examples/monitoring-stack/docker-compose.yaml`: declares the portable `nginx_cache` named volume used to prove resource retention.
 - `README.md` and `BUILD.md`: document the direct live-command recording contract and runner requirement.
 
@@ -48,6 +56,12 @@ python3 -m unittest Tools.release.test_container_stack_release
 python3 -m unittest Tools.ci.test_check_stack_consistency
 CONTAINER_STACK_REPO=/path/to/container make stack-consistency
 CONTAINER_COMPOSE_DEMO_ROOT="$PWD" vhs validate docs/container-compose-demo.tape
+python3 - <<'PY'
+from pathlib import Path
+tape = Path("docs/container-compose-demo.tape").read_text(encoding="utf-8")
+assert tape.count("--wait-timeout 900") == 2
+assert tape.count("Wait+Screen@900s /monitoring-stack-.*alertmanager.*running/") == 2
+PY
 docker compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300
 docker compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty nginx sh -c 'printf "%s\\n" container-compose-volume-reuse-ok > /var/cache/nginx/.container-compose-volume-reuse'
 docker compose -f examples/monitoring-stack/docker-compose.yaml down --remove-orphans
@@ -69,6 +83,9 @@ python3 -m unittest discover Tools/release
 - A physical, labelled release runner must remain online. If it is unavailable, the package job queues instead of publishing a deceptive Current recording.
 - Manifest parsing accepts only checked-in string literals. A dynamic source of truth such as
   an environment variable fails the gate rather than allowing a runtime-specific stack pin.
+- A cold physical runner may need to fetch every service image. The taped commands remain
+  live and bounded; the recording advances only when `ps` shows its actual running service
+  row, not when a generic progress line or synthetic marker appears.
 - Local validation passed VHS source validation and all 65 release tests; the runner executes the real guest lifecycle when creating the published GIF.
 
 ## container-compose Checks

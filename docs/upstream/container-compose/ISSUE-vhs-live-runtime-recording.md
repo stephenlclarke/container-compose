@@ -12,6 +12,13 @@ Container manifest correctly uses its immutable `containerizationRevision` const
 the CI job rejected a valid stack before the release workflow could produce the corrected
 GIF.
 
+The first physical-runner attempt at the direct tape, from
+[`d446560d`](https://github.com/stephenlclarke/container-compose/commit/d446560d5b9f34c46e4e135f3101f87486fa17da),
+proved the fail-closed behaviour works: the cold runner was still fetching and
+starting the first monitoring services after five minutes, so the chained
+`ps` command had not yet emitted its table. The generic header wait therefore
+timed out and prevented the stale recording from being replaced.
+
 ## Scope and boundary
 
 This is a `container-compose` release-automation correction. No Apple Container or Containerization primitive is missing: Container remains the authority for guest startup, volumes, and teardown; Compose owns the release demonstration policy.
@@ -34,6 +41,10 @@ This is a `container-compose` release-automation correction. No Apple Container 
 - Accept a named Swift manifest revision only when it resolves to a local string literal;
   reject dynamic or environment-derived values and continue to compare the result against
   `stack-refs.json` and `Package.resolved`.
+- Keep the first and second `up --wait && ps` commands entirely live, give their
+  cold-run waits a bounded fifteen-minute allowance, and wait for the actual
+  `monitoring-stack` Alertmanager `running` row produced by `ps` instead of a
+  generic table header. Do not add a sentinel, replay, or marker command.
 
 ## Commit tracking
 
@@ -43,11 +54,14 @@ This is a `container-compose` release-automation correction. No Apple Container 
 - [`62908819`](https://github.com/stephenlclarke/container-compose/commit/62908819034156bfc8d24cac7becce9a203d720b) `fix(release): record live VHS commands`
 - [`518ae228`](https://github.com/stephenlclarke/container-compose/commit/518ae228f650a8fa40118c36d68fdad650eb69ef) `fix(release): record direct terminal demo`
 - [`af6da141`](https://github.com/stephenlclarke/container-compose/commit/af6da14150d62f09fdadf6cf12d6aab6cde6b144) `fix(ci): validate named dependency revisions`
+- [`0ed7efab`](https://github.com/stephenlclarke/container-compose/commit/0ed7efab0f85ced3c3e926ecd82c2cbccbc5ed57) `fix(release): wait for cold monitoring stack`
 
 ## Code map
 
 - `.github/workflows/prebuilt-binaries.yml` packages the matched runtime and plugin, exports the isolated runtime environment, validates the tape, and publishes the generated GIF. It does not start the system or create a transcript before recording.
 - `docs/container-compose-demo.tape` types the system start, every Compose and HTTP lifecycle command, the system stop, and their live output at a readable pace. It has no replay or marker helper.
+- Its two `up --wait && ps` steps use the same bounded cold-run allowance and
+  continue only after the real Alertmanager `running` row from `ps` is visible.
 - `Tools/ci/check-stack-consistency.py` validates the Compose inline revision and the
   Container named literal revision without weakening the stack manifest or lockfile
   agreement checks.
