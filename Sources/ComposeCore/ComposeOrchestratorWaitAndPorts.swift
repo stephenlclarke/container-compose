@@ -147,7 +147,7 @@ extension ComposeOrchestrator {
     }
 
     /// Resolves a dependency target's exit code, using stored exit metadata
-    /// for stopped containers and runtime wait for live containers.
+    /// for completed containers and runtime wait for live containers.
     func completedDependencyExitCode(
         for target: ServiceContainerTarget,
         dependentService: ComposeService,
@@ -160,9 +160,13 @@ extension ComposeOrchestrator {
             throw ComposeError.invalidProject("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' does not exist")
         }
         switch container.status.lowercased() {
-        case "stopped":
+        // `container list` uses `stopped` for a locally stopped container,
+        // while discovery can surface a naturally completed one-shot service
+        // as `exited`. Both statuses preserve the exit code required by
+        // `service_completed_successfully`.
+        case "stopped", "exited":
             guard let exitCode = container.exitCode else {
-                throw ComposeError.unsupported("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' is stopped but has no stored exit code")
+                throw ComposeError.unsupported("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' is \(container.status) but has no stored exit code")
             }
             return exitCode
         case "running", "stopping":

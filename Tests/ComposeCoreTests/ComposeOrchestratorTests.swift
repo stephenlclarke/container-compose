@@ -2226,6 +2226,48 @@ struct ComposeOrchestratorTests {
         #expect(await lifecycleManager.requests.isEmpty)
     }
 
+    @Test("up accepts exited service-completed dependencies")
+    func upAcceptsExitedServiceCompletedDependencies() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
+            "demo-job-1": [
+                nil,
+                ComposeContainerSummary(id: "demo-job-1", status: "exited", exitCode: 0),
+            ],
+            "demo-api-1": [nil],
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": ComposeService(name: "job", image: "example/job:latest"),
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["job": ComposeDependency(condition: "service_completed_successfully")]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        ).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.services = ["api"]
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-job-1"]))
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(await lifecycleManager.requests.isEmpty)
+    }
+
     @Test("up waits for healthy dependencies before starting dependents")
     func upWaitsForHealthyDependenciesBeforeStartingDependents() async throws {
         let runner = RecordingRunner(responses: [
