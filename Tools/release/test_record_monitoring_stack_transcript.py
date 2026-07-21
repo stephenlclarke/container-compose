@@ -88,6 +88,9 @@ class MonitoringStackTranscriptTests(unittest.TestCase):
                 MODULE.VOLUME_REUSE_MARKER_PATH,
                 (output / "13-verify-volume-marker.log").read_text(encoding="utf-8"),
             )
+            retained_volumes = (output / "08-retained-volumes.log").read_text(encoding="utf-8")
+            self.assertIn("volumes --format json", retained_volumes)
+            self.assertIn("TAPE_TRANSCRIPT_VOLUMES_RETAINED_OK", retained_volumes)
             self.assertEqual(run.call_count, 19)
             self.assertIn("down", run.call_args_list[0].args[0])
             self.assertEqual(

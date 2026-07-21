@@ -178,7 +178,9 @@ def steps(
         TranscriptStep(
             "08-retained-volumes.log",
             "TAPE_TRANSCRIPT_VOLUMES_RETAINED_OK",
-            (compose("volumes"),),
+            # JSON makes the retained asset's project labels and exact volume
+            # name visible in the tape before the next `up` reuses it.
+            (compose("volumes", "--format", "json"),),
         ),
         TranscriptStep(
             "09-second-up.log",
