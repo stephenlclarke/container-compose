@@ -47,7 +47,7 @@ python3 -m unittest Tools.ci.test_check_stack_consistency
 make docker-compose-oci-annotations-parity
 ```
 
-All commands above passed against Docker Compose v2.5.3.1 and the committed
+All commands above passed against Docker Compose v5.3.1 and the committed
 source checkout.
 
 ## Compatibility and Risks
