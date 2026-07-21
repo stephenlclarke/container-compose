@@ -1,3 +1,4 @@
 self-hosted-runner:
   labels:
     - container-compose-release
+    - container-compose-current

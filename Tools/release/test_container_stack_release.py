@@ -302,9 +302,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('demo_asset="container-compose-demo-current.gif"', workflow)
         package = workflow[workflow.index("  package:") : workflow.index("  repair-stable-tap:")]
         self.assertIn(
-            "runs-on: [self-hosted, macOS, ARM64, container-compose-release]",
+            "runs-on: [self-hosted, macOS, ARM64, container-compose-release, container-compose-current]",
             package,
         )
+        self.assertIn("validated for GitHub", package)
         self.assertIn("Install VHS", workflow)
         self.assertIn("Generate Current build VHS recording", workflow)
         self.assertIn('tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"', workflow)

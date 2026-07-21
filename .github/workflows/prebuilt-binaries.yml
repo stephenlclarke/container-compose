@@ -360,7 +360,10 @@ jobs:
     # The packaged Container runtime starts Linux guests for the Current
     # recording. GitHub-hosted macOS workers do not expose nested
     # virtualization, so a hosted runner can only publish a broken transcript.
-    runs-on: [self-hosted, macOS, ARM64, container-compose-release]
+    # Current recordings also require the release runner validated for GitHub
+    # action-download TLS; the dedicated label keeps this mutable artifact off
+    # a runner that cannot prepare its pinned actions.
+    runs-on: [self-hosted, macOS, ARM64, container-compose-release, container-compose-current]
     timeout-minutes: 120
     steps:
       - name: Checkout container-compose
