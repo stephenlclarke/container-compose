@@ -95,7 +95,8 @@ extension ComposeOrchestrator {
         ComposeError.unsupported(
             "service '\(service.name)' image '\(image)' declares VOLUME '\(target)'; "
                 + "Docker copy-up requires an apple/container image-to-volume initialization primitive. "
-                + "Use a bind, tmpfs, or image mount to mask the target, or set volume.nocopy: true to opt out of copy-up",
+                + "Use a bind, tmpfs, or image mount to mask the target, "
+                + "or set volume.nocopy: true to opt out of copy-up",
         )
     }
 }

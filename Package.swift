@@ -29,11 +29,11 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/stephenlclarke/container.git",
-            revision: "169968b42d3376511f492e9e8810896ba02d6231",
+            revision: "18b3b9bfc800764bd36698caa46e989a4c46b27c",
         ),
         .package(
             url: "https://github.com/stephenlclarke/containerization.git",
-            revision: "20293eeb5aa2dcf992d7adb8d613a4f68b7edd6e",
+            revision: "b91f20f717439c26d51ae13ad7b172cf86cbabb2",
         ),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.4.0"),
@@ -80,6 +80,7 @@ let package = Package(
                 .product(name: "ContainerPersistence", package: "container"),
                 .product(name: "ContainerResource", package: "container"),
                 .product(name: "Containerization", package: "containerization"),
+                .product(name: "ContainerizationEXT4", package: "containerization"),
                 .product(name: "ContainerizationExtras", package: "containerization"),
                 .product(name: "ContainerizationOCI", package: "containerization"),
                 .product(name: "Logging", package: "swift-log"),
@@ -123,6 +124,15 @@ let package = Package(
             resources: [
                 .copy("Fixtures"),
             ],
+        ),
+        .testTarget(
+            name: "ComposeContainerRuntimeTests",
+            dependencies: [
+                "ComposeContainerRuntime",
+                .product(name: "ContainerResource", package: "container"),
+                .product(name: "ContainerizationEXT4", package: "containerization"),
+            ],
+            path: "Tests/ComposeContainerRuntimeTests",
         ),
     ],
 )

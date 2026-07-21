@@ -94,13 +94,7 @@ public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
         createVolumeOperation = createVolume
         listVolumesOperation = listVolumes ?? {
             try await ClientVolume.list().map { configuration in
-                ComposeVolumeSummary(
-                    name: configuration.name,
-                    driver: configuration.driver,
-                    source: configuration.source,
-                    labels: configuration.labels,
-                    sizeInBytes: configuration.sizeInBytes,
-                )
+                Self.composeVolumeSummary(from: configuration)
             }
         }
         deleteVolumeOperation = deleteVolume
@@ -134,6 +128,17 @@ public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
     /// Deletes a volume through `ClientVolume`.
     public func deleteVolume(name: String) async throws {
         try await deleteVolumeOperation(name)
+    }
+
+    static func composeVolumeSummary(from configuration: VolumeConfiguration) -> ComposeVolumeSummary {
+        ComposeVolumeSummary(
+            name: configuration.name,
+            driver: configuration.driver,
+            source: configuration.source,
+            labels: configuration.labels,
+            options: configuration.options,
+            sizeInBytes: configuration.sizeInBytes,
+        )
     }
 }
 

@@ -24,6 +24,7 @@ public struct ComposeVolumeSummary: Codable, Equatable, Sendable {
     public var driver: String
     public var source: String
     public var labels: [String: String]
+    public var options: [String: String]
     public var sizeInBytes: UInt64?
 
     public init(
@@ -31,12 +32,14 @@ public struct ComposeVolumeSummary: Codable, Equatable, Sendable {
         driver: String = "local",
         source: String = "",
         labels: [String: String] = [:],
+        options: [String: String] = [:],
         sizeInBytes: UInt64? = nil,
     ) {
         self.name = name
         self.driver = driver
         self.source = source
         self.labels = labels
+        self.options = options
         self.sizeInBytes = sizeInBytes
     }
 }
