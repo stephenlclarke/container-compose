@@ -3,7 +3,7 @@
 ## Summary
 
 - Generate the Current GIF from a complete, fresh lifecycle transcript produced by the matched packaged runtime on the physical Apple-silicon release runner.
-- Prove that `down --remove-orphans` retains the portable `monitoring-stack_nginx_cache`: write `container-compose-volume-reuse-ok` into the volume, then show a second successful `up`, stats, `ps`, both readiness checks, and a read of that same marker before final volume removal.
+- Prove that `down --remove-orphans` retains the portable `monitoring-stack_nginx_cache`: write `container-compose-volume-reuse-ok` into the volume, show the retained asset's Compose labels and identity as JSON, then show a second successful `up`, stats, `ps`, both readiness checks, and a read of that same marker before final volume removal.
 - Bind every Compose invocation to the isolated runtime with `CONTAINER_COMPOSE_CONTAINER`, removing a false compatibility failure caused by a different host installation.
 - Preserve a partial transcript artifact and print captured command output when verification fails, so the release workflow explains a future runtime failure directly.
 
@@ -24,11 +24,12 @@ No forked Apple source changes are required. The change uses existing runtime be
 - `fix(release): harden current demo recording`
 - `fix(release): prove monitoring demo volume reuse`
 - `fix(release): show retained-volume reuse in VHS replay`
+- `fix(release): make volume reuse visible in demo` (`ac95e92b71270b37b2a3298bba86f50f16780a70`)
 
 ## Code Map
 
-- `Tools/release/record_monitoring_stack_transcript.py`: invokes the exact packaged `container` binary, exports it to Compose's compatibility check, resets only the monitoring project before the first start, writes and rereads the named-volume marker, captures fifteen marked logs, clears stale transcript logs, and cleans up on error.
-- `Tools/release/test_record_monitoring_stack_transcript.py`: covers the complete successful sequence, marker lifecycle, stale-transcript cleanup, failure capture/cleanup, absent `curl`, and isolated-runtime environment propagation.
+- `Tools/release/record_monitoring_stack_transcript.py`: invokes the exact packaged `container` binary, exports it to Compose's compatibility check, resets only the monitoring project before the first start, writes and rereads the named-volume marker, captures the retained volume with `compose volumes --format json`, clears stale transcript logs, and cleans up on error.
+- `Tools/release/test_record_monitoring_stack_transcript.py`: covers the complete successful sequence, JSON retained-volume transcript command, marker lifecycle, stale-transcript cleanup, failure capture/cleanup, absent `curl`, and isolated-runtime environment propagation.
 - `.github/workflows/prebuilt-binaries.yml`: selects the self-hosted Apple-silicon runner, starts the disposable matched runtime, rejects missing transcript logs, uploads a partial transcript on failure, validates the VHS source, and requires a non-empty GIF.
 - `docs/container-compose-demo.tape`: displays the verified first startup command/output and service-start summary, then leaves the complete second `up` command/output and final `down` command/output on screen at a deliberately readable pace so retained-volume reuse is directly visible.
 - `examples/monitoring-stack/docker-compose.yaml`: declares the portable `nginx_cache` named volume used to prove resource retention.
@@ -70,6 +71,6 @@ python3 -m unittest discover Tools/release
 
 - [x] Docker-specific recording policy stays in Compose release automation.
 - [x] No Apple runtime fork change is required for this slice.
-- [x] The first start is clean, while the second start follows a demonstrably retained-volume shutdown and reads the first cycle's marker.
+- [x] The first start is clean, while the second start follows a demonstrably retained-volume shutdown, exposes the retained volume identity in JSON, and reads the first cycle's marker.
 - [x] A failing command or missing transcript prevents GIF publication, and its captured output remains available as a workflow artifact.
 - [x] Current workflow, tape, example, tests, README, BUILD guide, and handoff records describe the same contract.
