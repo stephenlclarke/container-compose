@@ -3,8 +3,9 @@
 ## Summary
 
 - Generate the Current GIF from a complete, fresh lifecycle transcript produced by the matched packaged runtime on the physical Apple-silicon release runner.
-- Prove that `down --remove-orphans` retains the portable `monitoring-stack_nginx_cache`, then show a second successful `up`, stats, `ps`, and both readiness checks before final volume removal.
+- Prove that `down --remove-orphans` retains the portable `monitoring-stack_nginx_cache`: write `container-compose-volume-reuse-ok` into the volume, then show a second successful `up`, stats, `ps`, both readiness checks, and a read of that same marker before final volume removal.
 - Bind every Compose invocation to the isolated runtime with `CONTAINER_COMPOSE_CONTAINER`, removing a false compatibility failure caused by a different host installation.
+- Preserve a partial transcript artifact and print captured command output when verification fails, so the release workflow explains a future runtime failure directly.
 
 ## Type of Change
 
@@ -21,13 +22,14 @@ No forked Apple source changes are required. The change uses existing runtime be
 ## Commit Tracking
 
 - `fix(release): harden current demo recording`
+- `fix(release): prove monitoring demo volume reuse`
 
 ## Code Map
 
-- `Tools/release/record_monitoring_stack_transcript.py`: invokes the exact packaged `container` binary, exports it to Compose's compatibility check, resets only the monitoring project before the first start, captures thirteen marked logs, and cleans up on error.
-- `Tools/release/test_record_monitoring_stack_transcript.py`: covers the complete successful sequence, failure capture/cleanup, absent `curl`, and isolated-runtime environment propagation.
-- `.github/workflows/prebuilt-binaries.yml`: selects the self-hosted Apple-silicon runner, starts the disposable matched runtime, rejects missing transcript logs, validates the VHS source, and requires a non-empty GIF.
-- `docs/container-compose-demo.tape`: displays the verified first start, retained volume listing, second start, health checks, and final empty project table at a deliberately readable pace.
+- `Tools/release/record_monitoring_stack_transcript.py`: invokes the exact packaged `container` binary, exports it to Compose's compatibility check, resets only the monitoring project before the first start, writes and rereads the named-volume marker, captures fifteen marked logs, clears stale transcript logs, and cleans up on error.
+- `Tools/release/test_record_monitoring_stack_transcript.py`: covers the complete successful sequence, marker lifecycle, stale-transcript cleanup, failure capture/cleanup, absent `curl`, and isolated-runtime environment propagation.
+- `.github/workflows/prebuilt-binaries.yml`: selects the self-hosted Apple-silicon runner, starts the disposable matched runtime, rejects missing transcript logs, uploads a partial transcript on failure, validates the VHS source, and requires a non-empty GIF.
+- `docs/container-compose-demo.tape`: displays the verified first and second startup commands/output, compact summaries for every service start, marker write/read, retained-volume shutdown/listing, health checks, and final empty project table at a deliberately readable pace.
 - `examples/monitoring-stack/docker-compose.yaml`: declares the portable `nginx_cache` named volume used to prove resource retention.
 - `README.md` and `BUILD.md`: document the fail-closed verified-transcript contract and runner requirement.
 
@@ -44,6 +46,7 @@ python3 Tools/release/record_monitoring_stack_transcript.py \
   --working-directory "$PWD" \
   --output-directory /path/to/fresh/transcript
 docker compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300
+docker compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty nginx sh -c 'printf "%s\\n" container-compose-volume-reuse-ok > /var/cache/nginx/.container-compose-volume-reuse'
 docker compose -f examples/monitoring-stack/docker-compose.yaml down --remove-orphans
 docker volume inspect monitoring-stack_nginx_cache
 docker compose -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 300
@@ -51,6 +54,7 @@ docker compose -f examples/monitoring-stack/docker-compose.yaml stats --no-strea
 docker compose -f examples/monitoring-stack/docker-compose.yaml ps
 curl -4fsS http://127.0.0.1:8080/healthz
 curl -4fsS http://127.0.0.1:9093/alertmanager/-/ready
+docker compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty nginx cat /var/cache/nginx/.container-compose-volume-reuse
 docker compose -f examples/monitoring-stack/docker-compose.yaml down --volumes --remove-orphans
 python3 -m unittest discover Tools/release
 ```
@@ -65,6 +69,6 @@ python3 -m unittest discover Tools/release
 
 - [x] Docker-specific recording policy stays in Compose release automation.
 - [x] No Apple runtime fork change is required for this slice.
-- [x] The first start is clean, while the second start follows a demonstrably retained-volume shutdown.
-- [x] A failing command or missing transcript prevents GIF publication.
+- [x] The first start is clean, while the second start follows a demonstrably retained-volume shutdown and reads the first cycle's marker.
+- [x] A failing command or missing transcript prevents GIF publication, and its captured output remains available as a workflow artifact.
 - [x] Current workflow, tape, example, tests, README, BUILD guide, and handoff records describe the same contract.

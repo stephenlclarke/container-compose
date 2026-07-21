@@ -121,6 +121,39 @@ struct ContainerImageVolumeInitializerTests {
     }
 
     @Test
+    func `an empty volume preserves its selected image directory metadata`() async throws {
+        let directory = FileManager.default.uniqueTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let imagePath = FilePath(directory.appendingPathComponent("image.ext4").path)
+        let volumePath = FilePath(directory.appendingPathComponent("volume.img").path)
+        let imageVolumeOwner: UInt32 = 65534
+        let imageVolumeGroup: UInt32 = 65534
+        try formatImage(
+            at: imagePath,
+            contents: Data("writable-by-image-user\n".utf8),
+            directoryMode: 0o755,
+            directoryUID: imageVolumeOwner,
+            directoryGID: imageVolumeGroup,
+        )
+        try formatEmptyVolume(at: volumePath)
+
+        #expect(try await ContainerImageVolumeInitializer().initializeIfEmpty(
+            imageFilesystem: imagePath.description,
+            imageSubpath: "/var/lib/data",
+            volume: ComposeVolumeSummary(name: "data", source: volumePath.description),
+        ))
+
+        let reader = try EXT4.EXT4Reader(blockDevice: volumePath)
+        let root = try reader.stat(FilePath("/")).inode
+        #expect(root.mode & 0o777 == 0o755)
+        #expect(root.uid == UInt16(imageVolumeOwner))
+        #expect(root.uidHigh == 0)
+        #expect(root.gid == UInt16(imageVolumeGroup))
+        #expect(root.gidHigh == 0)
+    }
+
+    @Test
     func `runtime image volume initializer resolves then reuses an existing volume`() async throws {
         let directory = FileManager.default.uniqueTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -217,13 +250,19 @@ struct ContainerImageVolumeInitializerTests {
         #expect(try reader.listDirectory(FilePath("/")) == ["lost+found"])
     }
 
-    private func formatImage(at path: FilePath, contents: Data) throws {
+    private func formatImage(
+        at path: FilePath,
+        contents: Data,
+        directoryMode: UInt16 = 0o750,
+        directoryUID: UInt32 = 1000,
+        directoryGID: UInt32 = 1001,
+    ) throws {
         let formatter = try EXT4.Formatter(path, minDiskSize: 4.mib())
         try formatter.create(
             path: FilePath("/var/lib/data"),
-            mode: EXT4.Inode.Mode(.S_IFDIR, 0o750),
-            uid: 1000,
-            gid: 1001,
+            mode: EXT4.Inode.Mode(.S_IFDIR, directoryMode),
+            uid: directoryUID,
+            gid: directoryGID,
         )
         let stream = InputStream(data: contents)
         stream.open()
@@ -232,8 +271,8 @@ struct ContainerImageVolumeInitializerTests {
             path: FilePath("/var/lib/data/payload.txt"),
             mode: EXT4.Inode.Mode(.S_IFREG, 0o640),
             buf: stream,
-            uid: 1000,
-            gid: 1001,
+            uid: directoryUID,
+            gid: directoryGID,
         )
         try formatter.close()
     }

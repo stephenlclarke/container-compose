@@ -63,8 +63,11 @@ public struct ContainerImageVolumeInitializer: Sendable {
         let stagedVolumeURL = stagingDirectory.appendingPathComponent("volume.img")
         let stagedVolumePath = FilePath(stagedVolumeURL.path)
         let imageReader = try EXT4.EXT4Reader(blockDevice: FilePath(imageFilesystem))
+        let imageVolumeRoot: EXT4.Inode
         do {
-            try imageReader.export(archive: archivePath, subtree: FilePath(imageSubpath))
+            let sourcePath = FilePath(imageSubpath)
+            imageVolumeRoot = try imageReader.stat(sourcePath, followSymlinks: false).inode
+            try imageReader.export(archive: archivePath, subtree: sourcePath)
         } catch let error as EXT4.PathIOError {
             guard case .notFound = error else {
                 throw error
@@ -82,6 +85,16 @@ public struct ContainerImageVolumeInitializer: Sendable {
         )
         do {
             try await formatter.unpack(source: archivePath.url, compression: .none)
+            // `export(subtree:)` deliberately writes the selected directory's
+            // children at the archive root. Restore the selected directory's
+            // ownership and mode on that root so a non-root image user can
+            // write to its Docker image `VOLUME` after the first copy-up.
+            try formatter.create(
+                path: FilePath("/"),
+                mode: imageVolumeRoot.mode,
+                uid: Self.id(low: imageVolumeRoot.uid, high: imageVolumeRoot.uidHigh),
+                gid: Self.id(low: imageVolumeRoot.gid, high: imageVolumeRoot.gidHigh),
+            )
             try formatter.close()
         } catch {
             try? formatter.close()
@@ -101,6 +114,10 @@ public struct ContainerImageVolumeInitializer: Sendable {
             throw ComposeError.invalidProject("runtime volume '\(volume.name)' has an invalid backing size")
         }
         return size
+    }
+
+    private static func id(low: UInt16, high: UInt16) -> UInt32 {
+        UInt32(high) << 16 | UInt32(low)
     }
 
     private func journalConfig(_ value: String?) throws -> EXT4.JournalConfig? {

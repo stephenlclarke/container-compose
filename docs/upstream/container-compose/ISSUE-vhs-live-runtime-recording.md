@@ -22,16 +22,18 @@ This is a `container-compose` release-automation correction. No Apple Container 
 - Start a clean, isolated matched runtime, then execute the entire lifecycle outside VHS before rendering anything.
 - Set `CONTAINER_COMPOSE_CONTAINER` for every recorded Compose process so the plugin checks that isolated runtime rather than a host installation.
 - Remove only the demo project before recording so the first `up` visibly starts services; retain project volumes with the intermediate `down --remove-orphans`.
-- Record and fail on: first `up`, `stats`, `ps`, nginx health, Alertmanager readiness, retained-volume listing, second `up`, second `stats`/`ps`/health, and final `down --volumes --remove-orphans` plus empty `ps --all`.
-- Render only the fresh, failure-gated transcript. VHS markers must be output-only reads, so it can never type a lifecycle command while one is running.
+- Record and fail on: first `up`, `stats`, `ps`, nginx health, Alertmanager readiness, a write to a marker in `nginx_cache`, retained-volume shutdown and listing, second `up`, second `stats`/`ps`/health, a read of the same marker, and final `down --volumes --remove-orphans` plus empty `ps --all`.
+- Render only the fresh, failure-gated transcript. VHS markers must be output-only reads, so it can never type a lifecycle command while one is running. Show the verified first and second `up` command/output, compact per-service start summaries, and both `down` command/output at a readable pace.
+- Publish a partial transcript artifact on workflow failure and include the failed command output in the verifier error, so a release-runner failure is diagnosable without guessing from a red job summary.
 
 ## Commit tracking
 
 - `fix(release): harden current demo recording`
+- `fix(release): prove monitoring demo volume reuse`
 
 ## Code map
 
-- `Tools/release/record_monitoring_stack_transcript.py` is the narrow runtime boundary: it performs the thirteen-step verification cycle and writes marked logs only after each command succeeds.
-- `.github/workflows/prebuilt-binaries.yml` packages the matched runtime and plugin, executes that verifier, requires all thirteen logs, validates the tape, and publishes the generated GIF.
-- `docs/container-compose-demo.tape` presents the real transcript at a readable pace while clearing its one-time replay setup before the viewer sees the lifecycle.
+- `Tools/release/record_monitoring_stack_transcript.py` is the narrow runtime boundary: it performs the fifteen-step verification cycle, writes and rereads a named-volume marker, clears only stale transcript logs, and includes captured output when a command fails.
+- `.github/workflows/prebuilt-binaries.yml` packages the matched runtime and plugin, executes that verifier, requires all fifteen logs, uploads a partial transcript on failure, validates the tape, and publishes the generated GIF.
+- `docs/container-compose-demo.tape` presents the real transcript at a readable pace while clearing its one-time replay setup before the viewer sees the lifecycle, including both shutdowns and the second startup's marker read.
 - `examples/monitoring-stack/docker-compose.yaml` includes a portable `nginx_cache` named volume that visibly remains after the non-destructive down.

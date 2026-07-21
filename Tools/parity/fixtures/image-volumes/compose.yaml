@@ -79,6 +79,15 @@ services:
         source: generic-missing-data
         target: /not-in-image
 
+  nonroot:
+    build:
+      context: .
+      dockerfile: Dockerfile.nonroot
+    volumes:
+      - type: volume
+        source: nonroot-data
+        target: /nonroot-data
+
 volumes:
   override-data: {}
   nocopy-data: {}
@@ -86,3 +95,4 @@ volumes:
   generic-data: {}
   generic-nocopy-data: {}
   generic-missing-data: {}
+  nonroot-data: {}

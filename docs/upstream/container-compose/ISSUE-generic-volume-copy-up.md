@@ -27,6 +27,7 @@ The completed image-declared-volume lifecycle policy initialized local volumes o
 - A named or external local volume is initialized through the same narrow `ComposeRuntimeImageVolumeInitializing` SPI.
 - `volume.nocopy`, `volume.subpath`, bind, tmpfs, and image mounts are deliberately excluded. Declared targets retain their existing labels and implicit mount creation path.
 - `ContainerImageVolumeInitializer` translates only the generic ext4 `PathIOError.notFound` source condition into a no-op result. Other archive and filesystem errors still fail atomically, leaving the target unchanged.
+- The selected image directory becomes the volume root after subtree export, so its mode and UID/GID are restored on the new ext4 root. This preserves write access for an image process that does not run as root, including Prometheus's `nobody`-owned `/prometheus` directory.
 
 ## Apple-shaped boundary
 
@@ -41,16 +42,18 @@ No Docker or Compose concept is added to an Apple-owned fork. The only lower-lay
 ## Required source and commit map
 
 - `Sources/ComposeCore/ComposeOrchestratorImageVolumes.swift`: generic local-mount selection, separate image-declared versus ordinary anonymous-volume creation, and image-path initialization requests.
-- `Sources/ComposeContainerRuntime/ContainerImageVolumeFilesystemInitializer.swift`: absent image path leaves an empty volume unchanged.
+- `Sources/ComposeContainerRuntime/ContainerImageVolumeFilesystemInitializer.swift`: absent image path leaves an empty volume unchanged and the selected image directory's root ownership/mode survives copy-up.
 - `Tests/ComposeCoreTests/ComposeOrchestratorTests.swift`: named, anonymous, and `nocopy` generic policy coverage.
-- `Tests/ComposeContainerRuntimeTests/ContainerImageVolumeFilesystemInitializerTests.swift`: typed missing-path no-op coverage.
-- `Tools/parity/fixtures/image-volumes/Dockerfile.generic`, `compose.yaml`, and `Tools/parity/check-compose-image-volumes.sh`: Docker Compose V2 reference, normalized-model, and optional matched-runtime integration coverage, including retained generic volume reuse.
+- `Tests/ComposeContainerRuntimeTests/ContainerImageVolumeFilesystemInitializerTests.swift`: typed missing-path no-op and non-root selected-directory metadata coverage.
+- `Tools/parity/fixtures/image-volumes/Dockerfile.generic`, `Dockerfile.nonroot`, `compose.yaml`, and `Tools/parity/check-compose-image-volumes.sh`: Docker Compose V2 reference, normalized-model, and optional matched-runtime integration coverage, including retained generic volume reuse and a non-root image process writing to its copied-up volume root.
 - This slice's signed `container-compose` commit: `feat(volumes): seed generic local volume mounts` (replace this line with the final commit permalink when proposing the change upstream).
 - Existing generic prerequisites, unchanged: `stephenlclarke/containerization` [`b91f20f717439c26d51ae13ad7b172cf86cbabb2`](https://github.com/stephenlclarke/containerization/commit/b91f20f717439c26d51ae13ad7b172cf86cbabb2), `feat(ext4): add subtree archive export`; `stephenlclarke/container` [`18b3b9bfc800764bd36698caa46e989a4c46b27c`](https://github.com/stephenlclarke/container/commit/18b3b9bfc800764bd36698caa46e989a4c46b27c), `build(deps): update containerization subtree exporter`.
+- This slice's signed `container-compose` commit: `fix(volumes): preserve image volume root metadata` (replace this line with the final commit permalink when proposing the change upstream).
 
 ## Acceptance criteria
 
 - Empty named, anonymous, and inherited local volume mounts at an existing ordinary image directory receive that directory's image contents before container creation.
+- The target volume root has the selected image directory's mode and full UID/GID, so a non-root image user can write to it after copy-up.
 - A missing image directory, `volume.nocopy`, and a pre-existing `volume.subpath` leave the target volume unchanged.
 - Existing content survives `down` then `up` without reseeding.
 - Dockerfile-declared target behavior and its cleanup labels remain unchanged.

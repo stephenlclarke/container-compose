@@ -18,7 +18,7 @@ Enter
 Sleep 2s
 
 Set TypingSpeed 1ms
-Type "replay() { cat $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }; marker() { tail -n 1 $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }; headlog() { sed -n '1,18p' $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }; taillog() { tail -n 18 $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }"
+Type "replay() { cat $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }; marker() { tail -n 1 $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }; headlog() { sed -n '1,18p' $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }; starts() { grep -E 'Starting (alertmanager|cadvisor|grafana|loki|nginx|prometheus|pushgateway|tempo)$' $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }; taillog() { tail -n 18 $CONTAINER_COMPOSE_DEMO_TRANSCRIPT/$1; }"
 Enter
 Sleep 1s
 Ctrl+L
@@ -46,6 +46,11 @@ Ctrl+L
 Sleep 1s
 
 Type "headlog 02-first-up.log"
+Enter
+Sleep 4s
+Ctrl+L
+Sleep 1s
+Type "starts 02-first-up.log"
 Enter
 Sleep 4s
 Ctrl+L
@@ -90,75 +95,100 @@ Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "replay 06-retained-down.log"
+Type "replay 06-write-volume-marker.log"
 Enter
 Sleep 4s
-Type "marker 06-retained-down.log"
+Type "marker 06-write-volume-marker.log"
+Enter
+Wait+Screen@30s /TAPE_TRANSCRIPT_VOLUME_MARKER_WRITTEN_OK/
+Sleep 3s
+Ctrl+L
+Sleep 1s
+
+Type "replay 07-retained-down.log"
+Enter
+Sleep 4s
+Type "marker 07-retained-down.log"
 Enter
 Wait+Screen@120s /TAPE_TRANSCRIPT_RETAINED_DOWN_OK/
 Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "replay 07-retained-volumes.log"
+Type "replay 08-retained-volumes.log"
 Enter
 Sleep 4s
-Type "marker 07-retained-volumes.log"
+Type "marker 08-retained-volumes.log"
 Enter
 Wait+Screen@30s /TAPE_TRANSCRIPT_VOLUMES_RETAINED_OK/
 Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "headlog 08-second-up.log"
+Type "headlog 09-second-up.log"
 Enter
 Sleep 4s
 Ctrl+L
 Sleep 1s
-Type "taillog 08-second-up.log"
+Type "starts 09-second-up.log"
 Enter
 Sleep 4s
-Type "marker 08-second-up.log"
+Ctrl+L
+Sleep 1s
+Type "taillog 09-second-up.log"
+Enter
+Sleep 4s
+Type "marker 09-second-up.log"
 Enter
 Wait+Screen@300s /TAPE_TRANSCRIPT_SECOND_UP_OK/
 Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "replay 09-second-stats.log"
+Type "replay 10-second-stats.log"
 Enter
 Sleep 4s
-Type "marker 09-second-stats.log"
+Type "marker 10-second-stats.log"
 Enter
 Wait+Screen@90s /TAPE_TRANSCRIPT_SECOND_STATS_OK/
 Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "replay 10-second-ps.log"
+Type "replay 11-second-ps.log"
 Enter
 Sleep 4s
-Type "marker 10-second-ps.log"
+Type "marker 11-second-ps.log"
 Enter
 Wait+Screen@30s /TAPE_TRANSCRIPT_SECOND_PS_OK/
 Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "replay 11-second-health.log"
+Type "replay 12-second-health.log"
 Enter
 Sleep 4s
-Type "marker 11-second-health.log"
+Type "marker 12-second-health.log"
 Enter
 Wait+Screen@120s /TAPE_TRANSCRIPT_SECOND_HEALTH_OK/
 Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "replay 12-final-down.log"
+Type "replay 13-verify-volume-marker.log"
 Enter
 Sleep 4s
-Type "marker 12-final-down.log"
+Type "marker 13-verify-volume-marker.log"
+Enter
+Wait+Screen@30s /TAPE_TRANSCRIPT_VOLUME_MARKER_REUSED_OK/
+Sleep 3s
+Ctrl+L
+Sleep 1s
+
+Type "replay 14-final-down.log"
+Enter
+Sleep 4s
+Type "marker 14-final-down.log"
 Enter
 Wait+Screen@120s /TAPE_TRANSCRIPT_FINAL_DOWN_OK/
 Sleep 5s

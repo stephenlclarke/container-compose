@@ -146,6 +146,7 @@ check_tools() {
     [[ -f "$COMPOSE_FILE" ]] || { error "missing image volume fixture: $COMPOSE_FILE"; return 1; }
     [[ -f "$FIXTURE_DIR/Dockerfile" ]] || { error "missing image volume Dockerfile: $FIXTURE_DIR/Dockerfile"; return 1; }
     [[ -f "$FIXTURE_DIR/Dockerfile.generic" ]] || { error "missing generic image volume Dockerfile: $FIXTURE_DIR/Dockerfile.generic"; return 1; }
+    [[ -f "$FIXTURE_DIR/Dockerfile.nonroot" ]] || { error "missing non-root image volume Dockerfile: $FIXTURE_DIR/Dockerfile.nonroot"; return 1; }
 }
 
 # Create a unique temporary directory for command output and inspection data.
@@ -194,6 +195,7 @@ generic_named = services.get("generic-named", {})
 generic_anonymous = services.get("generic-anonymous", {})
 generic_nocopy = services.get("generic-nocopy", {})
 generic_missing = services.get("generic-missing", {})
+nonroot = services.get("nonroot", {})
 mounts = overridden.get("volumes", [])
 nocopy_mounts = nocopy.get("volumes", [])
 subpath_mounts = subpath.get("volumes", [])
@@ -201,6 +203,7 @@ generic_named_mounts = generic_named.get("volumes", [])
 generic_anonymous_mounts = generic_anonymous.get("volumes", [])
 generic_nocopy_mounts = generic_nocopy.get("volumes", [])
 generic_missing_mounts = generic_missing.get("volumes", [])
+nonroot_mounts = nonroot.get("volumes", [])
 
 if implicit.get("volumes"):
     raise SystemExit(f"{implementation}: implicit service unexpectedly has Compose mounts: {implicit['volumes']!r}")
@@ -260,7 +263,14 @@ if not any(
     for mount in generic_missing_mounts
 ):
     raise SystemExit(f"{implementation}: missing generic-missing-data volume at /not-in-image: {generic_missing_mounts!r}")
-for name in ("generic-data", "generic-nocopy-data", "generic-missing-data"):
+if not any(
+    mount.get("type") == "volume"
+    and mount.get("source") == "nonroot-data"
+    and mount.get("target") == "/nonroot-data"
+    for mount in nonroot_mounts
+):
+    raise SystemExit(f"{implementation}: missing nonroot-data volume at /nonroot-data: {nonroot_mounts!r}")
+for name in ("generic-data", "generic-nocopy-data", "generic-missing-data", "nonroot-data"):
     if name not in model.get("volumes", {}):
         raise SystemExit(f"{implementation}: missing top-level {name} volume")
 PY
@@ -301,6 +311,7 @@ assert_docker_runtime_behavior() {
     local generic_anonymous_container="$PROJECT_NAME-generic-anonymous-1"
     local generic_nocopy_container="$PROJECT_NAME-generic-nocopy-1"
     local generic_missing_container="$PROJECT_NAME-generic-missing-1"
+    local nonroot_container="$PROJECT_NAME-nonroot-1"
     local inspection="$WORK_DIR/docker-inspect.json"
 
     docker exec "$implicit_container" sh -ec \
@@ -319,9 +330,11 @@ assert_docker_runtime_behavior() {
         "test ! -e /generic-data/seed.txt"
     docker exec "$generic_missing_container" sh -ec \
         "test ! -e /not-in-image/seed.txt"
+    docker exec "$nonroot_container" sh -ec \
+        "test \"\$(cat /nonroot-data/seed.txt)\" = nonroot-image-seed && test \"\$(cat /nonroot-data/runtime-write.txt)\" = nonroot-volume-write-ok"
     docker inspect "$implicit_container" "$overridden_container" "$nocopy_container" "$subpath_container" \
         "$generic_named_container" "$generic_anonymous_container" "$generic_nocopy_container" \
-        "$generic_missing_container" >"$inspection"
+        "$generic_missing_container" "$nonroot_container" >"$inspection"
 
     python3 - "$inspection" "$PROJECT_NAME" <<'PY'
 import json
@@ -338,6 +351,7 @@ generic_named = containers[f"{project}-generic-named-1"]
 generic_anonymous = containers[f"{project}-generic-anonymous-1"]
 generic_nocopy = containers[f"{project}-generic-nocopy-1"]
 generic_missing = containers[f"{project}-generic-missing-1"]
+nonroot = containers[f"{project}-nonroot-1"]
 
 def volume_mount(container, destination):
     mounts = [
@@ -361,12 +375,14 @@ generic_named_data = volume_mount(generic_named, "/generic-data")
 generic_anonymous_data = volume_mount(generic_anonymous, "/generic-data")
 generic_nocopy_data = volume_mount(generic_nocopy, "/generic-data")
 generic_missing_data = volume_mount(generic_missing, "/not-in-image")
+nonroot_data = volume_mount(nonroot, "/nonroot-data")
 expected_named = f"{project}_override-data"
 expected_nocopy = f"{project}_nocopy-data"
 expected_subpath = f"{project}_subpath-data"
 expected_generic_named = f"{project}_generic-data"
 expected_generic_nocopy = f"{project}_generic-nocopy-data"
 expected_generic_missing = f"{project}_generic-missing-data"
+expected_nonroot = f"{project}_nonroot-data"
 
 if not implicit_data.get("Name") or not implicit_cache.get("Name"):
     raise SystemExit("Docker Compose did not create anonymous image volume names")
@@ -392,6 +408,8 @@ if generic_nocopy_data.get("Name") != expected_generic_nocopy:
     raise SystemExit(f"Docker Compose generic nocopy volume = {generic_nocopy_data.get('Name')!r}, expected {expected_generic_nocopy!r}")
 if generic_missing_data.get("Name") != expected_generic_missing:
     raise SystemExit(f"Docker Compose generic missing-path volume = {generic_missing_data.get('Name')!r}, expected {expected_generic_missing!r}")
+if nonroot_data.get("Name") != expected_nonroot:
+    raise SystemExit(f"Docker Compose non-root volume = {nonroot_data.get('Name')!r}, expected {expected_nonroot!r}")
 PY
 }
 
@@ -415,6 +433,7 @@ assert_apple_runtime_seeded() {
     local generic_anonymous_container="$PROJECT_NAME-generic-anonymous-1"
     local generic_nocopy_container="$PROJECT_NAME-generic-nocopy-1"
     local generic_missing_container="$PROJECT_NAME-generic-missing-1"
+    local nonroot_container="$PROJECT_NAME-nonroot-1"
 
     "$CONTAINER_BINARY" exec "$implicit_container" sh -ec \
         "test \"\$(cat /image-data/seed.txt)\" = image-data-seed && test \"\$(cat /image-cache/seed.txt)\" = image-cache-seed"
@@ -432,6 +451,8 @@ assert_apple_runtime_seeded() {
         "test ! -e /generic-data/seed.txt"
     "$CONTAINER_BINARY" exec "$generic_missing_container" sh -ec \
         "test ! -e /not-in-image/seed.txt"
+    "$CONTAINER_BINARY" exec "$nonroot_container" sh -ec \
+        "test \"\$(cat /nonroot-data/seed.txt)\" = nonroot-image-seed && test \"\$(cat /nonroot-data/runtime-write.txt)\" = nonroot-volume-write-ok"
 }
 
 # Prove a retained volume is neither recreated nor seeded again after down/up.

@@ -804,7 +804,7 @@ jobs:
           for transcript in "${demo_transcript}"/*.log; do
             test -s "${transcript}"
           done
-          test "$(find "${demo_transcript}" -maxdepth 1 -name '*.log' -type f | wc -l | tr -d ' ')" -eq 13
+          test "$(find "${demo_transcript}" -maxdepth 1 -name '*.log' -type f | wc -l | tr -d ' ')" -eq 15
 
           sed "1s#^Output .*#Output ${demo_output}#" docs/container-compose-demo.tape > "${tape}"
           rm -f "${demo_output}"
@@ -812,6 +812,14 @@ jobs:
           vhs "${tape}"
           test -s "${demo_output}"
           cp "${demo_output}" "${RUNNER_TEMP}/${DEMO_ASSET}"
+
+      - name: Upload current demo transcript
+        if: always() && needs.resolve-publish-context.outputs.ref_type == 'branch'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: current-build-demo-transcript
+          path: ${{ runner.temp }}/current-build-demo-transcript
+          if-no-files-found: warn
 
       - name: Attest release package
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
