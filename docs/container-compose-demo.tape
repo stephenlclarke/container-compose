@@ -40,7 +40,7 @@ Sleep 1s
 
 Type "container compose -f examples/monitoring-stack/docker-compose.yaml stats --no-stream nginx alertmanager"
 Enter
-Wait+Screen@90s /NAME/
+Wait+Screen@90s /CONTAINER ID/
 Sleep 3s
 Ctrl+L
 Sleep 1s
@@ -87,7 +87,7 @@ Sleep 1s
 
 Type "container compose -f examples/monitoring-stack/docker-compose.yaml stats --no-stream nginx alertmanager"
 Enter
-Wait+Screen@90s /NAME/
+Wait+Screen@90s /CONTAINER ID/
 Sleep 3s
 Ctrl+L
 Sleep 1s
