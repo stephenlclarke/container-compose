@@ -2,7 +2,7 @@ services:
   api:
     image: alpine:3.20
     labels:
-      com.example.metadata: label
+      com.example.metadata: label=with=equals
     annotations:
       com.example.metadata: annotation
       com.example.owner: platform

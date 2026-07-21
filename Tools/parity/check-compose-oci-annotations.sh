@@ -109,7 +109,7 @@ service = json.load(sys.stdin).get("services", {}).get("api", {})
 labels = service.get("labels")
 annotations = service.get("annotations")
 
-if labels != {"com.example.metadata": "label"}:
+if labels != {"com.example.metadata": "label=with=equals"}:
     raise SystemExit(f"{implementation}: labels = {labels!r}, want only the label map")
 if annotations != {
     "com.example.metadata": "annotation",
@@ -141,7 +141,7 @@ expect_container_dry_run() {
         --project-name "$PROJECT_NAME" \
         --file "$FIXTURE_FILE" \
         --dry-run up --no-start api)"
-    if [[ "$output" != *"--label com.example.metadata=label"* ]]; then
+    if [[ "$output" != *"--label com.example.metadata=label=with=equals"* ]]; then
         error 'container-compose dry-run did not retain the service label'
         printf '%s\n' "$output" >&2
         return 1
