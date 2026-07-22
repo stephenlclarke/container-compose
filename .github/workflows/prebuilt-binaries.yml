@@ -787,10 +787,9 @@ jobs:
           # waits for that command's live output before proceeding.
           export CONTAINER_COMPOSE_DEMO_ROOT="${PWD}"
           sed "1s#^Output .*#Output ${demo_output}#" docs/container-compose-demo.tape > "${tape}"
-          rm -f "${demo_output}"
           vhs validate "${tape}"
-          vhs "${tape}"
-          test -s "${demo_output}"
+          bash Tools/release/record-vhs-live-demo.sh \
+            "${tape}" "${demo_output}" "${container_binary}"
           cp "${demo_output}" "${RUNNER_TEMP}/${DEMO_ASSET}"
 
       - name: Attest release package
