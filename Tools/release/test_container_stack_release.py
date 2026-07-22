@@ -371,6 +371,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertEqual(tape.count("&& clear && container compose"), 4)
         self.assertEqual(tape.count("stats --no-stream nginx alertmanager"), 2)
         self.assertEqual(tape.count("Wait+Screen@90s /CONTAINER ID/"), 2)
+        nginx_health = (
+            "container compose -f examples/monitoring-stack/docker-compose.yaml "
+            "exec --no-tty nginx wget -qO- http://127.0.0.1/healthz"
+        )
+        alertmanager_readiness = (
+            "container compose -f examples/monitoring-stack/docker-compose.yaml "
+            "exec --no-tty alertmanager wget -qO- "
+            "http://127.0.0.1:9093/alertmanager/-/ready"
+        )
+        self.assertEqual(tape.count(nginx_health), 2)
+        self.assertEqual(tape.count(alertmanager_readiness), 2)
+        self.assertNotIn("curl -4fsS", tape)
         self.assertIn("volumes --format json", tape)
         self.assertIn("container-compose-volume-reuse-ok", tape)
         self.assertIn("down --volumes --remove-orphans", tape)

@@ -45,12 +45,12 @@ Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "curl -4fsS --retry 30 --retry-all-errors --retry-connrefused --retry-delay 1 http://127.0.0.1:8080/healthz"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty nginx wget -qO- http://127.0.0.1/healthz"
 Enter
 Wait+Screen@120s /ok/
 Sleep 2s
 
-Type "curl -4fsS --retry 30 --retry-all-errors --retry-connrefused --retry-delay 1 http://127.0.0.1:9093/alertmanager/-/ready"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty alertmanager wget -qO- http://127.0.0.1:9093/alertmanager/-/ready"
 Enter
 Wait+Screen@120s /OK/
 Sleep 2s
@@ -85,12 +85,12 @@ Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "curl -4fsS --retry 30 --retry-all-errors --retry-connrefused --retry-delay 1 http://127.0.0.1:8080/healthz"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty nginx wget -qO- http://127.0.0.1/healthz"
 Enter
 Wait+Screen@120s /ok/
 Sleep 2s
 
-Type "curl -4fsS --retry 30 --retry-all-errors --retry-connrefused --retry-delay 1 http://127.0.0.1:9093/alertmanager/-/ready"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty alertmanager wget -qO- http://127.0.0.1:9093/alertmanager/-/ready"
 Enter
 Wait+Screen@120s /OK/
 Sleep 2s
