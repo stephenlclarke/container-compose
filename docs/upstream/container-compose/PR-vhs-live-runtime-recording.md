@@ -26,6 +26,10 @@
 - Match the actual Apple Container Compose `stats` heading, `CONTAINER ID`,
   rather than Docker's `NAME`; the direct release run reached that live table
   and failed closed before publication when the stale heading did not match.
+- Show macOS Compose teardown through its real postconditions: a retained-volume
+  JSON listing after `down --remove-orphans`, then the empty `ps --all` result
+  after final volume removal. The runtime does not print Docker's `Removed`
+  status line.
 
 ## Type of Change
 
@@ -54,6 +58,7 @@ No forked Apple source changes are required. The change uses existing runtime be
 - [`b09e3c79`](https://github.com/stephenlclarke/container-compose/commit/b09e3c79) `fix(release): match live compose status row`
 - [`86dc033d`](https://github.com/stephenlclarke/container-compose/commit/86dc033d85d9c9c19817d4582dfa22cd92ba1022) `fix(release): keep live demo output visible`
 - [`b6d9154e`](https://github.com/stephenlclarke/container-compose/commit/b6d9154e4584650a4923abb64bd50e2a5ee45153) `fix(release): match live stats header`
+- [`1d8ff63f`](https://github.com/stephenlclarke/container-compose/commit/1d8ff63fb5f42f75a948a47dc36660296aa25ce4) `fix(release): show live teardown results`
 
 ## Code Map
 
@@ -77,6 +82,12 @@ No forked Apple source changes are required. The change uses existing runtime be
   `CONTAINER ID` header from each live two-service `stats` table and reject the
   stale Docker-specific `NAME` screen assertion. This is derived from the
   fail-closed Current package run, not an assumed output format.
+- `docs/container-compose-demo.tape` and
+  `Tools/release/test_container_stack_release.py`: chain each typed silent
+  teardown to a real result produced only after that teardown succeeds. The
+  retained-volume chain renders the JSON identity, while the final-volume chain
+  renders the empty `ps --all` result. Neither expects Docker's unsupported
+  `Removed` line.
 - `examples/monitoring-stack/docker-compose.yaml`: declares the portable `nginx_cache` named volume used to prove resource retention.
 - `README.md` and `BUILD.md`: document the direct live-command recording contract and runner requirement.
 
@@ -94,6 +105,8 @@ assert tape.count("--wait-timeout 900") == 2
 assert tape.count("--quiet-pull nginx alertmanager && clear && container compose") == 2
 assert tape.count("stats --no-stream nginx alertmanager") == 2
 assert tape.count("Wait+Screen@90s /CONTAINER ID/") == 2
+assert tape.count("&& clear && container compose") == 4
+assert "Wait+Screen@120s /Removed/" not in tape
 assert tape.count("Wait+Screen@900s /nginx.*r[[:space:]]*unning/") == 2
 assert tape.count("Wait+Screen@900s /status +running/") == 1
 PY
@@ -127,6 +140,10 @@ python3 -m unittest discover Tools/release
   emitted by the matched packaged runtime (`CONTAINER ID`), rather than a
   Docker-CLI heading. A runtime formatting change fails the Current job before a
   GIF can be published, preserving the evidence boundary.
+- Teardown output differs from Docker Compose: the matched macOS runtime has
+  no `Removed` status line. The tape therefore makes a successful `down` prove
+  itself through the following live postcondition rather than hiding it behind
+  a synthetic marker or a Docker-specific message.
 - A fresh isolated runtime may also need to fetch the Apple kernel before its first
   status result. That direct command remains visible and bounded at fifteen minutes;
   progress output cannot satisfy the `status running` gate.

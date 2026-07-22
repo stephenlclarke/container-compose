@@ -56,6 +56,19 @@ Docker's `NAME` heading; no generated or replayed output was involved. Commit
 changes only the two tape screen assertions to that observed heading and adds
 unit coverage that rejects the stale Docker-specific assertion.
 
+The following matched-package release run
+[`29878978449`](https://github.com/stephenlclarke/container-compose/actions/runs/29878978449)
+proved that correction: both live `stats` tables, both HTTP readiness checks,
+and the retained-volume marker write completed. It then failed closed at the
+first `down --remove-orphans`: successful macOS Compose teardown prints only
+its real `Loading Compose model` progress and no Docker-style `Removed` line.
+Commit
+[`1d8ff63f`](https://github.com/stephenlclarke/container-compose/commit/1d8ff63fb5f42f75a948a47dc36660296aa25ce4)
+keeps `down` live and chains its successful completion to a real retained-volume
+JSON listing; final teardown similarly chains to the real empty `ps --all`
+result. It removes only the unsupported output assertion and adds a regression
+test that rejects it.
+
 ## Scope and boundary
 
 This is a `container-compose` release-automation correction. No Apple Container or Containerization primitive is missing: Container remains the authority for guest startup, volumes, and teardown; Compose owns the release demonstration policy.
