@@ -350,7 +350,19 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertEqual(tape.count(live_up), 2)
         self.assertEqual(tape.count("--quiet-pull nginx alertmanager"), 2)
-        self.assertEqual(tape.count("&& clear && container compose"), 2)
+        retained_volume_down = (
+            "container compose -f examples/monitoring-stack/docker-compose.yaml "
+            "down --remove-orphans && clear && container compose "
+            "-f examples/monitoring-stack/docker-compose.yaml volumes --format json"
+        )
+        final_volume_down = (
+            "container compose -f examples/monitoring-stack/docker-compose.yaml "
+            "down --volumes --remove-orphans && clear && container compose "
+            "-f examples/monitoring-stack/docker-compose.yaml ps --all"
+        )
+        self.assertIn(retained_volume_down, tape)
+        self.assertIn(final_volume_down, tape)
+        self.assertEqual(tape.count("&& clear && container compose"), 4)
         self.assertEqual(tape.count("stats --no-stream nginx alertmanager"), 2)
         self.assertEqual(tape.count("Wait+Screen@90s /CONTAINER ID/"), 2)
         self.assertIn("volumes --format json", tape)
@@ -367,6 +379,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertNotIn("monitoring-stack-.*alertmanager.*running", tape)
         self.assertNotIn("Wait+Screen@300s /SERVICE.*STATUS/", tape)
         self.assertNotIn("Wait+Screen@90s /NAME/", tape)
+        self.assertNotIn("Wait+Screen@120s /Removed/", tape)
         self.assertNotIn("CONTAINER_COMPOSE_DEMO_TRANSCRIPT", tape)
         self.assertNotIn("replay()", tape)
         self.assertNotIn("marker()", tape)

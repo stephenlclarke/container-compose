@@ -64,16 +64,9 @@ Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --remove-orphans"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --remove-orphans && clear && container compose -f examples/monitoring-stack/docker-compose.yaml volumes --format json"
 Enter
-Wait+Screen@120s /Removed/
-Sleep 4s
-Ctrl+L
-Sleep 1s
-
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml volumes --format json"
-Enter
-Wait+Screen@30s /nginx_cache/
+Wait+Screen@120s /nginx_cache/
 Sleep 4s
 Ctrl+L
 Sleep 1s
@@ -111,12 +104,7 @@ Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --volumes --remove-orphans"
-Enter
-Wait+Screen@120s /Removed/
-Sleep 4s
-
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml ps --all"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --volumes --remove-orphans && clear && container compose -f examples/monitoring-stack/docker-compose.yaml ps --all"
 Enter
 Sleep 4s
 
