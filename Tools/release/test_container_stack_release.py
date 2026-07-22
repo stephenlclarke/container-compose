@@ -563,7 +563,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("run-stack-release-validation.sh full", makefile)
         self.assertIn("run-stack-release-validation.sh hosted", makefile)
         self.assertIn(
-            "containerization_targets=(check containerization examples docs coverage integration)",
+            "containerization_targets=(check containerization examples docs coverage fetch-default-kernel integration)",
             validation,
         )
         self.assertIn(
@@ -665,7 +665,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertEqual(full.returncode, 0, full.stderr)
             full_commands = log.read_text(encoding="utf-8")
             self.assertIn(
-                f"make:-C {containerization} check containerization examples docs coverage integration",
+                f"make:-C {containerization} check containerization examples docs coverage fetch-default-kernel integration",
                 full_commands,
             )
             self.assertIn(
@@ -737,6 +737,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 hosted_commands,
             )
             self.assertNotIn(" integration", hosted_commands)
+            self.assertNotIn(" fetch-default-kernel", hosted_commands)
 
             rejected = subprocess.run(
                 [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],

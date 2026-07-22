@@ -32,7 +32,10 @@ homebrew_tap_repo="$6"
 
 case "${mode}" in
   full)
-    containerization_targets=(check containerization examples docs coverage integration)
+    # Containerization's integration target requires a kernel, which is not
+    # retained in a clean checkout. Provision its documented default here so a
+    # full local release gate is self-contained.
+    containerization_targets=(check containerization examples docs coverage fetch-default-kernel integration)
     container_targets=(check container dsym docs coverage)
     ;;
   hosted)
