@@ -298,6 +298,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('release_title="Current build"', workflow)
         self.assertIn('asset="container-compose-plugin-current-${short_sha}-arm64.tar.gz"', workflow)
         self.assertIn('highlights_asset="release-highlights-current-${short_sha}.json"', workflow)
+        self.assertIn("python3 Tools/release/current-formula-version.py", workflow)
+        self.assertIn('--run-number "${GITHUB_RUN_NUMBER}"', workflow)
+        self.assertIn('--commit "${PUBLISH_SHA}"', workflow)
+        self.assertNotIn('formula_version="current.${short_sha}"', workflow)
         self.assertIn('RELEASE_PHASE="${release_phase}"', workflow)
         self.assertIn("Publish Current build release", workflow)
         self.assertLess(

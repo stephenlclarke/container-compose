@@ -433,7 +433,11 @@ jobs:
               container_formula="container-current.rb"
               container_formula_class="ContainerCurrent"
               container_compose_formula="container-compose-current"
-              formula_version="current.${short_sha}"
+              formula_version="$(
+                python3 Tools/release/current-formula-version.py \
+                  --run-number "${GITHUB_RUN_NUMBER}" \
+                  --commit "${PUBLISH_SHA}"
+              )"
               package_lane="current"
               ;;
             tag:*)
