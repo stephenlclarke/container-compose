@@ -182,20 +182,21 @@ successful hosted gate records a candidate-bound GitHub Actions release-authorit
 check on that tag commit; the package workflow requires that check, then repeats
 `make ci` before it publishes assets or updates the tap.
 
-The 0.7.0 Phase 1 promotion has one explicitly bounded local-gate exception:
+Pre-Phase-5 promotions from `0.7.x` through `0.9.x` have one explicitly
+bounded local-gate exception:
 the current macOS Builder bridge rejects external Dockerfile paths when macOS
 canonicalises `/tmp` to `/private/tmp`, and its tar-export handoff does not
 reliably create a direct destination file or a repeated directory export. Both
 are tracked as Phase 5 work and are not Docker Compose parity. Only this exact
-semantic release may set
+pre-Phase-5 range may set
 `CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON`; the helper
-rejects the variable for every other version and the local gate then excludes
-only `TestCLIBuilderSerial`, `TestCLIBuilderLocalOutputSerial`, and
-`TestCLIBuilderTarExportSerial`: the first two exercise the same external
-Dockerfile context-boundary gap, while the third exercises tar export delivery.
-All other Container integration suites remain required. The hosted gate is
-unchanged. The release notes and status must state that both Phase 5 Builder
-gaps remain unavailable.
+rejects the variable before `0.7.0` and from the Phase 5 `0.10.0` lane onward.
+The local gate excludes only `TestCLIBuilderSerial`,
+`TestCLIBuilderLocalOutputSerial`, and `TestCLIBuilderTarExportSerial`: the
+first two exercise the same external Dockerfile context-boundary gap, while the
+third exercises tar export delivery. All other Container integration suites
+remain required. The hosted gate is unchanged. The release notes and status
+must state that both Phase 5 Builder gaps remain unavailable.
 
 ## Promote `main` To A Stable Release
 

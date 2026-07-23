@@ -231,6 +231,11 @@ Released Apple `container` compatibility is not a supported-lane functionality g
 
 This is the complete known runtime and adapter gap register from the Docker Compose v5.3.1 audit on 2026-07-18. It distinguishes a missing Apple/fork runtime primitive from a `container-compose` adapter gap and from a Docker platform feature that local macOS Compose does not need to emulate. The surface tables above are the concise ledger; this section is the implementation backlog behind their partial markers.
 
+The macOS-feasible Phase 4 metadata, state, and events boundary is closed by
+`make docker-compose-phase4-parity`; its exact commits, ownership split, and
+remaining primitive gaps are recorded in the
+[Phase 4 handoff](docs/upstream/container-compose/PR-phase4-metadata-state-events-closure.md).
+
 | Area | Missing Apple/fork runtime behavior | Compose adapter or compatibility work | Scope notes |
 | --- | --- | --- | --- |
 | CPU and memory controls | `cpu_rt_period`, `cpu_rt_runtime`, `mem_swappiness`, and `oom_kill_disable`. | No additional adapter work remains for fractional `cpus`, Docker Compose V2's zero/no-limit normalization, `cpu_period`, `cpu_quota`, or `cpuset`. | Positive fractional `cpus`, Docker Compose V2-compatible `cpus: 0` normalization, direct generic zero/unlimited CPU limits, explicit cgroup v2 CPU quota/period, CPU sets, integral CPU counts, byte-accurate hard memory limits, CPU shares, service/Deploy memory reservation, memory swap, and pids limits work. |
