@@ -31,10 +31,12 @@ line_length:
   ignores_interpolated_strings: true
 
 # `cache_to` is part of the Compose build vocabulary, so its in-memory API
-# deliberately exposes the concise `to` member next to `from`.
+# deliberately exposes the concise `to` member next to `from`. The public
+# command-running API uses the standard `io` abbreviation for stream handling.
 identifier_name:
   excluded:
     - id
+    - io
     - to
 
 # The normalized Compose schema is intentionally broad. It is split by concern

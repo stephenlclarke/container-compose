@@ -25,6 +25,34 @@ import ContainerizationOCI
 import ContainerResource
 import Foundation
 
+private struct WatchExecRequest {
+    var service: ComposeService
+    var containerID: String
+    var command: [String]
+    var user: String?
+    var workingDirectory: String?
+    var environment: [String]
+    var privileged: Bool
+}
+
+private extension WatchExecRequest {
+    init(
+        service: ComposeService,
+        containerID: String,
+        hook: ComposeWatchExecHook,
+    ) {
+        self.init(
+            service: service,
+            containerID: containerID,
+            command: hook.command,
+            user: hook.user,
+            workingDirectory: hook.workingDirectory,
+            environment: hook.environment,
+            privileged: hook.privileged,
+        )
+    }
+}
+
 extension ComposeOrchestrator {
     /// Formats one validated `develop.watch` trigger for dry-run output.
     func watchDryRunLine(service: ComposeService, trigger: ComposeDevelopWatch) -> String {
@@ -112,12 +140,30 @@ extension ComposeOrchestrator {
     ) async throws {
         switch trigger.action.trimmingCharacters(in: .whitespacesAndNewlines) {
         case "sync":
-            try await syncWatchChanges(project: project, service: service, trigger: trigger, changes: changes, quiet: watch.quiet)
+            try await syncWatchChanges(
+                project: project,
+                service: service,
+                trigger: trigger,
+                changes: changes,
+                quiet: watch.quiet,
+            )
         case "sync+restart":
-            try await syncWatchChanges(project: project, service: service, trigger: trigger, changes: changes, quiet: watch.quiet)
+            try await syncWatchChanges(
+                project: project,
+                service: service,
+                trigger: trigger,
+                changes: changes,
+                quiet: watch.quiet,
+            )
             try await restartWatchService(project: project, service: service, quiet: watch.quiet)
         case "sync+exec":
-            try await syncWatchChanges(project: project, service: service, trigger: trigger, changes: changes, quiet: watch.quiet)
+            try await syncWatchChanges(
+                project: project,
+                service: service,
+                trigger: trigger,
+                changes: changes,
+                quiet: watch.quiet,
+            )
             try await execWatchHook(project: project, service: service, trigger: trigger, quiet: watch.quiet)
         case "restart":
             try await restartWatchService(project: project, service: service, quiet: watch.quiet)
@@ -138,11 +184,23 @@ extension ComposeOrchestrator {
     ) async throws {
         let upserts = changes.compactMap(\.entry)
         if !upserts.isEmpty {
-            try await syncWatchEntries(project: project, service: service, trigger: trigger, entries: upserts, quiet: quiet)
+            try await syncWatchEntries(
+                project: project,
+                service: service,
+                trigger: trigger,
+                entries: upserts,
+                quiet: quiet,
+            )
         }
         let deletes = changes.compactMap(\.deletedRelativePath)
         if !deletes.isEmpty {
-            try await deleteWatchEntries(project: project, service: service, trigger: trigger, relativePaths: deletes, quiet: quiet)
+            try await deleteWatchEntries(
+                project: project,
+                service: service,
+                trigger: trigger,
+                relativePaths: deletes,
+                quiet: quiet,
+            )
         }
     }
 
@@ -161,7 +219,12 @@ extension ComposeOrchestrator {
                 if !quiet {
                     options.emit("compose: watch sync \(service.name)[\(target.index)] \(entry.sourcePath) -> \(destination)")
                 }
-                try await copier.copyIntoContainer(id: target.name, source: entry.sourcePath, destination: destination, options: ContainerCopyTransferOptions())
+                try await copier.copyIntoContainer(
+                    id: target.name,
+                    source: entry.sourcePath,
+                    destination: destination,
+                    options: ContainerCopyTransferOptions(),
+                )
             }
         }
     }
@@ -181,7 +244,7 @@ extension ComposeOrchestrator {
                 if !quiet {
                     options.emit("compose: watch delete \(service.name)[\(target.index)] \(destination)")
                 }
-                try await runWatchExec(
+                try await runWatchExec(WatchExecRequest(
                     service: service,
                     containerID: target.name,
                     command: ["sh", "-c", "rm -rf -- \(shellQuoted([destination]))"],
@@ -189,7 +252,7 @@ extension ComposeOrchestrator {
                     workingDirectory: nil,
                     environment: [],
                     privileged: false,
-                )
+                ))
             }
         }
     }
@@ -206,7 +269,11 @@ extension ComposeOrchestrator {
     }
 
     /// Rebuilds and recreates a service after a rebuild watch trigger.
-    func rebuildWatchService(project: ComposeProject, service: ComposeService, options watch: ComposeWatchOptions) async throws {
+    func rebuildWatchService(
+        project: ComposeProject,
+        service: ComposeService,
+        options watch: ComposeWatchOptions,
+    ) async throws {
         if !watch.quiet {
             options.emit("compose: watch rebuild \(service.name)")
         }
@@ -226,22 +293,23 @@ extension ComposeOrchestrator {
     }
 
     /// Runs the command attached to a `sync+exec` trigger on each service replica.
-    func execWatchHook(project: ComposeProject, service: ComposeService, trigger: ComposeDevelopWatch, quiet: Bool) async throws {
+    func execWatchHook(
+        project: ComposeProject,
+        service: ComposeService,
+        trigger: ComposeDevelopWatch,
+        quiet: Bool,
+    ) async throws {
         let hook = try watchExecHook(trigger: trigger, service: service)
         let targets = try await serviceContainerTargets(project: project, services: [service])
         for target in targets {
             if !quiet {
                 options.emit("compose: watch exec \(service.name)[\(target.index)] \(shellQuoted(hook.command))")
             }
-            try await runWatchExec(
+            try await runWatchExec(WatchExecRequest(
                 service: service,
                 containerID: target.name,
-                command: hook.command,
-                user: hook.user,
-                workingDirectory: hook.workingDirectory,
-                environment: hook.environment,
-                privileged: hook.privileged,
-            )
+                hook: hook,
+            ))
         }
     }
 
@@ -263,43 +331,45 @@ extension ComposeOrchestrator {
     }
 
     /// Runs a non-interactive direct exec request for watch actions.
-    func runWatchExec(
-        service: ComposeService,
-        containerID: String,
-        command: [String],
-        user: String?,
-        workingDirectory: String?,
-        environment: [String],
-        privileged: Bool,
-    ) async throws {
+    private func runWatchExec(_ request: WatchExecRequest) async throws {
         let status = try await execManager.execAttached(
             request: ContainerAttachedExecRequest(
-                id: containerID,
-                command: command,
-                environment: environment,
-                user: user,
-                workingDirectory: workingDirectory,
-                privileged: privileged,
+                id: request.containerID,
+                command: request.command,
+                environment: request.environment,
+                user: request.user,
+                workingDirectory: request.workingDirectory,
+                privileged: request.privileged,
                 terminal: .init(interactive: false, tty: false),
             ),
         )
         if status != 0 {
             throw ComposeError.commandFailed(
-                command: shellQuoted(command),
+                command: shellQuoted(request.command),
                 status: status,
-                stderr: "watch exec failed for service '\(service.name)'",
+                stderr: "watch exec failed for service '\(request.service.name)'",
             )
         }
     }
 
     /// Runs all `post_start` hooks for a service container.
     func runPostStartHooks(service: ComposeService, containerID: String) async throws {
-        try await runLifecycleHooks(service: service, containerID: containerID, hooks: service.postStart ?? [], composeName: "post_start")
+        try await runLifecycleHooks(
+            service: service,
+            containerID: containerID,
+            hooks: service.postStart ?? [],
+            composeName: "post_start",
+        )
     }
 
     /// Runs all `pre_stop` hooks for a service container.
     func runPreStopHooks(service: ComposeService, containerID: String) async throws {
-        try await runLifecycleHooks(service: service, containerID: containerID, hooks: service.preStop ?? [], composeName: "pre_stop")
+        try await runLifecycleHooks(
+            service: service,
+            containerID: containerID,
+            hooks: service.preStop ?? [],
+            composeName: "pre_stop",
+        )
     }
 
     /// Executes Compose service lifecycle hooks with the direct exec API.
@@ -317,10 +387,8 @@ extension ComposeOrchestrator {
             let args = lifecycleHookExecArguments(
                 containerID: containerID,
                 command: command,
-                user: nonEmpty(hook.user),
-                workingDirectory: nonEmpty(hook.workingDir),
+                hook: hook,
                 environment: environment,
-                privileged: hook.privileged == true,
             )
             if options.dryRun {
                 try await runContainer(args)
@@ -351,22 +419,20 @@ extension ComposeOrchestrator {
     func lifecycleHookExecArguments(
         containerID: String,
         command: [String],
-        user: String?,
-        workingDirectory: String?,
+        hook: ComposeServiceHook,
         environment: [String],
-        privileged: Bool,
     ) -> [String] {
         var args = ["exec"]
         for value in environment {
             args.append(contentsOf: ["--env", value])
         }
-        if let user {
+        if let user = nonEmpty(hook.user) {
             args.append(contentsOf: ["--user", user])
         }
-        if let workingDirectory {
+        if let workingDirectory = nonEmpty(hook.workingDir) {
             args.append(contentsOf: ["--workdir", workingDirectory])
         }
-        if privileged {
+        if hook.privileged == true {
             args.append("--privileged")
         }
         args.append(containerID)

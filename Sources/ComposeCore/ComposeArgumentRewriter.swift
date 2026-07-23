@@ -124,10 +124,12 @@ public enum ComposeArgumentRewriter {
     private static let compactBridgeCreateValueOptions: [(shortOption: String, normalizedOption: String)] = [
         ("-f", "--from"),
     ]
+}
 
+public extension ComposeArgumentRewriter {
     /// Returns arguments with known Compose global options moved immediately
     /// after the subcommand while preserving unknown pre-command arguments.
-    public static func rewrite(_ arguments: [String]) -> [String] {
+    static func rewrite(_ arguments: [String]) -> [String] {
         guard let commandIndex = commandIndex(in: arguments) else {
             return arguments
         }
@@ -136,7 +138,7 @@ public enum ComposeArgumentRewriter {
         let command = arguments[commandIndex]
         let suffix = rewriteCommandLocalOptions(
             command: command,
-            arguments: Array(arguments[arguments.index(after: commandIndex)...])
+            arguments: Array(arguments[arguments.index(after: commandIndex)...]),
         )
         if command == "version" {
             return normalizeCompactGlobalOptions(prefix) + [command] + suffix
@@ -146,7 +148,7 @@ public enum ComposeArgumentRewriter {
                 command: command,
                 prefix: prefix,
                 suffix: suffix,
-                nestedCommands: ["dry-run", "scale", "watch"]
+                nestedCommands: ["dry-run", "scale", "watch"],
             )
         }
         if command == "bridge" {
@@ -161,7 +163,7 @@ public enum ComposeArgumentRewriter {
         command: String,
         prefix: [String],
         suffix: [String],
-        nestedCommands: Set<String>
+        nestedCommands: Set<String>,
     ) -> [String] {
         guard let nestedIndex = nestedCommandIndex(in: suffix, commands: nestedCommands) else {
             let split = splitGlobalOptions(prefix)
@@ -184,7 +186,10 @@ public enum ComposeArgumentRewriter {
 
     /// Moves Bridge root options onto the concrete nested command that consumes them.
     private static func rewriteBridgeGlobalOptions(prefix: [String], suffix: [String]) -> [String] {
-        guard let bridgeCommandIndex = nestedCommandIndex(in: suffix, commands: ["convert", "transformations"]) else {
+        guard let bridgeCommandIndex = nestedCommandIndex(
+            in: suffix,
+            commands: ["convert", "transformations"],
+        ) else {
             let split = splitGlobalOptions(prefix)
             return split.retained + ["bridge"] + split.moved + suffix
         }
@@ -205,7 +210,23 @@ public enum ComposeArgumentRewriter {
                 + bridgeSuffix
         }
 
-        guard let transformationCommandIndex = nestedCommandIndex(in: bridgeSuffix, commands: ["create", "list", "ls"]) else {
+        return rewriteBridgeTransformationGlobalOptions(
+            prefix: prefix,
+            bridgePrefix: bridgePrefix,
+            bridgeSuffix: bridgeSuffix,
+        )
+    }
+
+    /// Moves root dry-run options onto a Bridge transformation command.
+    private static func rewriteBridgeTransformationGlobalOptions(
+        prefix: [String],
+        bridgePrefix: [String],
+        bridgeSuffix: [String],
+    ) -> [String] {
+        guard let transformationCommandIndex = nestedCommandIndex(
+            in: bridgeSuffix,
+            commands: ["create", "list", "ls"],
+        ) else {
             let prefixDryRun = splitDryRunOption(prefix)
             let bridgeDryRun = splitDryRunOption(bridgePrefix)
             return prefixDryRun.retained
@@ -237,7 +258,9 @@ public enum ComposeArgumentRewriter {
             + transformationsDryRun.moved
             + rewrittenTransformationsSuffix
     }
+}
 
+private extension ComposeArgumentRewriter {
     /// Locates a nested subcommand while skipping global options.
     private static func nestedCommandIndex(in arguments: [String], commands nestedCommands: Set<String>) -> Array<String>.Index? {
         var index = arguments.startIndex
@@ -375,28 +398,30 @@ public enum ComposeArgumentRewriter {
     private static func rewriteCommandLocalOptions(command: String, arguments: [String]) -> [String] {
         switch command {
         case "commit":
-            return rewriteCommitOptions(arguments)
+            rewriteCommitOptions(arguments)
         case "exec":
-            return rewriteExecOptions(arguments)
+            rewriteExecOptions(arguments)
         case "kill":
-            return rewriteCompactCommandValueOptions(arguments, options: compactKillValueOptions)
+            rewriteCompactCommandValueOptions(arguments, options: compactKillValueOptions)
         case "logs":
-            return rewriteLogsOptions(arguments)
+            rewriteLogsOptions(arguments)
         case "down", "restart", "stop":
-            return rewriteCompactCommandValueOptions(arguments, options: compactTimeoutValueOptions)
+            rewriteCompactCommandValueOptions(arguments, options: compactTimeoutValueOptions)
         case "up":
-            return rewriteUpOptions(arguments)
+            rewriteUpOptions(arguments)
         case "rm":
-            return rewriteRemoveOptions(arguments)
+            rewriteRemoveOptions(arguments)
         case "run":
-            return rewriteRunOptions(arguments)
+            rewriteRunOptions(arguments)
         case "version":
-            return rewriteCompactCommandValueOptions(arguments, options: compactVersionValueOptions)
+            rewriteCompactCommandValueOptions(arguments, options: compactVersionValueOptions)
         default:
-            return arguments
+            arguments
         }
     }
+}
 
+private extension ComposeArgumentRewriter {
     /// Normalizes Docker Compose `commit` optional boolean and shorthand options.
     private static func rewriteCommitOptions(_ arguments: [String]) -> [String] {
         var rewritten: [String] = []
@@ -411,9 +436,20 @@ public enum ComposeArgumentRewriter {
                 rewritten.append("--no-pause")
             } else if shouldRewriteOptions, argument == "-p=true" {
                 rewritten.append("--pause")
-            } else if shouldRewriteOptions, let pause = rewriteOptionalBooleanFlag(argument, flag: "--pause", falseFlag: "--no-pause") {
+            } else if shouldRewriteOptions,
+                      let pause = rewriteOptionalBooleanFlag(
+                          argument,
+                          flag: "--pause",
+                          falseFlag: "--no-pause",
+                      )
+            {
                 rewritten.append(contentsOf: pause)
-            } else if shouldRewriteOptions, let split = splitCompactValueOption(argument, options: compactCommitValueOptions) {
+            } else if shouldRewriteOptions,
+                      let split = splitCompactValueOption(
+                          argument,
+                          options: compactCommitValueOptions,
+                      )
+            {
                 rewritten.append(split.option)
                 rewritten.append(split.value)
             } else {
@@ -431,9 +467,20 @@ public enum ComposeArgumentRewriter {
             if shouldRewriteOptions, argument == "--" {
                 shouldRewriteOptions = false
                 rewritten.append(argument)
-            } else if shouldRewriteOptions, let menu = rewriteOptionalBooleanFlag(argument, flag: "--menu", falseFlag: "--menu-disabled") {
+            } else if shouldRewriteOptions,
+                      let menu = rewriteOptionalBooleanFlag(
+                          argument,
+                          flag: "--menu",
+                          falseFlag: "--menu-disabled",
+                      )
+            {
                 rewritten.append(contentsOf: menu)
-            } else if shouldRewriteOptions, let split = splitCompactValueOption(argument, options: compactTimeoutValueOptions) {
+            } else if shouldRewriteOptions,
+                      let split = splitCompactValueOption(
+                          argument,
+                          options: compactTimeoutValueOptions,
+                      )
+            {
                 rewritten.append(split.option)
                 rewritten.append(split.value)
             } else {
@@ -501,7 +548,12 @@ public enum ComposeArgumentRewriter {
                 // Docker Compose `logs -f` alias before validation sees the
                 // command-local option.
                 rewritten.append("--follow")
-            } else if shouldRewriteOptions, let split = splitCompactValueOption(argument, options: compactLogValueOptions) {
+            } else if shouldRewriteOptions,
+                      let split = splitCompactValueOption(
+                          argument,
+                          options: compactLogValueOptions,
+                      )
+            {
                 rewritten.append(split.option)
                 rewritten.append(split.value)
             } else {
@@ -540,11 +592,13 @@ public enum ComposeArgumentRewriter {
             flag == "f" ? "--force" : "-\(flag)"
         }
     }
+}
 
+private extension ComposeArgumentRewriter {
     /// Normalizes compact short options that carry their value in one token.
     private static func rewriteCompactCommandValueOptions(
         _ arguments: [String],
-        options: [(shortOption: String, normalizedOption: String)]
+        options: [(shortOption: String, normalizedOption: String)],
     ) -> [String] {
         var rewritten: [String] = []
         var shouldRewriteOptions = true
@@ -572,7 +626,12 @@ public enum ComposeArgumentRewriter {
                 rewritten.append(argument)
             } else if shouldRewriteOptions, argument == "-f" {
                 rewritten.append("--from")
-            } else if shouldRewriteOptions, let split = splitCompactValueOption(argument, options: compactBridgeCreateValueOptions) {
+            } else if shouldRewriteOptions,
+                      let split = splitCompactValueOption(
+                          argument,
+                          options: compactBridgeCreateValueOptions,
+                      )
+            {
                 rewritten.append(split.option)
                 rewritten.append(split.value)
             } else {
@@ -661,7 +720,7 @@ public enum ComposeArgumentRewriter {
     /// Splits one-token short option values and strips an optional separator.
     private static func splitCompactValueOption(
         _ argument: String,
-        options: [(shortOption: String, normalizedOption: String)]
+        options: [(shortOption: String, normalizedOption: String)],
     ) -> (option: String, value: String)? {
         for option in options {
             guard argument.hasPrefix(option.shortOption), argument.count > option.shortOption.count else {

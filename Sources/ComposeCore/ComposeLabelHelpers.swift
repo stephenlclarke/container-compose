@@ -196,7 +196,10 @@ func configHash(
     guard let data = try? encoder.encode(fingerprint) else {
         return stableHash(service.name)
     }
-    return stableHash(String(decoding: data, as: UTF8.self))
+    guard let encodedFingerprint = String(bytes: data, encoding: .utf8) else {
+        return stableHash(service.name)
+    }
+    return stableHash(encodedFingerprint)
 }
 
 /// Validates user-supplied service labels and label files before side effects.
@@ -231,7 +234,11 @@ func effectiveServiceAnnotations(service: ComposeService) throws -> [String: Str
 }
 
 /// Loads one Compose `label_file` using the env-file-like key-value syntax.
-func loadLabels(fromLabelFile path: String, project: ComposeProject, service: ComposeService) throws -> [String: String] {
+func loadLabels(
+    fromLabelFile path: String,
+    project: ComposeProject,
+    service: ComposeService,
+) throws -> [String: String] {
     let url = labelFileURL(path, project: project)
     let contents: String
     do {
@@ -242,7 +249,12 @@ func loadLabels(fromLabelFile path: String, project: ComposeProject, service: Co
 
     var labels: [String: String] = [:]
     for (offset, line) in contents.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
-        guard let label = try parseLabelFileLine(String(line), path: path, lineNumber: offset + 1, service: service) else {
+        guard let label = try parseLabelFileLine(
+            String(line),
+            path: path,
+            lineNumber: offset + 1,
+            service: service,
+        ) else {
             continue
         }
         labels[label.key] = label.value
@@ -255,7 +267,11 @@ func labelFileURL(_ path: String, project: ComposeProject) -> URL {
     if path.hasPrefix("/") {
         return URL(fileURLWithPath: path)
     }
-    return URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: project.workingDirectory, isDirectory: true)).absoluteURL
+    let projectDirectory = URL(
+        fileURLWithPath: project.workingDirectory,
+        isDirectory: true,
+    )
+    return URL(fileURLWithPath: path, relativeTo: projectDirectory).absoluteURL
 }
 
 /// Parses one key-value line from a Compose label file.
@@ -280,7 +296,9 @@ func parseLabelFileLine(
         value = ""
     }
     guard !key.isEmpty else {
-        throw ComposeError.invalidProject("service '\(service.name)' label_file '\(path)' line \(lineNumber) has an empty label key")
+        throw ComposeError.invalidProject(
+            "service '\(service.name)' label_file '\(path)' line \(lineNumber) has an empty label key",
+        )
     }
     try validateUserLabelKey(key, source: "service '\(service.name)' label_file '\(path)'")
     return (key, value)
@@ -324,8 +342,18 @@ func serviceVolumeRuntimeNames(
 
 /// Returns pretty JSON for a filtered direct API container list.
 func containerListJSON(_ containers: [ComposeContainerSummary]) throws -> String {
-    let scopedData = try JSONSerialization.data(withJSONObject: containers.map(containerListJSONObject), options: [.prettyPrinted, .sortedKeys])
-    return String(decoding: scopedData, as: UTF8.self)
+    let scopedData = try JSONSerialization.data(
+        withJSONObject: containers.map(containerListJSONObject),
+        options: [.prettyPrinted, .sortedKeys],
+    )
+    guard let json = String(bytes: scopedData, encoding: .utf8) else {
+        throw ComposeError.commandFailed(
+            command: "container list --format json",
+            status: 1,
+            stderr: "container list JSON was not valid UTF-8",
+        )
+    }
+    return json
 }
 
 /// Builds the legacy `container list --format json` shape used by Compose projections.

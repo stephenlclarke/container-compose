@@ -16,10 +16,18 @@
 
 import Foundation
 #if canImport(Darwin)
-import Darwin
+    import Darwin
 #elseif canImport(Glibc)
-import Glibc
+    import Glibc
 #endif
+
+/// Decodes arbitrary process bytes for display without dropping invalid UTF-8.
+private func processOutputString(_ data: Data) -> String {
+    // Process streams are arbitrary bytes, so replacement characters are more
+    // useful than discarding the complete output when one byte is invalid.
+    // swiftlint:disable:next optional_data_string_conversion
+    String(decoding: data, as: UTF8.self)
+}
 
 /// Captured result from an external command.
 public struct CommandResult: Equatable, Sendable {
@@ -54,7 +62,7 @@ public protocol CommandRunning: Sendable {
         _ arguments: [String],
         workingDirectory: URL?,
         environment: [String: String]?,
-        io: CommandIO
+        io: CommandIO,
     ) async throws -> CommandResult
 }
 
@@ -65,14 +73,14 @@ public extension CommandRunning {
         _ arguments: [String],
         workingDirectory: URL? = nil,
         environment: [String: String]? = nil,
-        input: Data? = nil
+        input: Data? = nil,
     ) async throws -> CommandResult {
         try await run(
             executable,
             arguments,
             workingDirectory: workingDirectory,
             environment: environment,
-            io: .captured(input: input)
+            io: .captured(input: input),
         )
     }
 }
@@ -91,37 +99,37 @@ public struct ProcessRunner: CommandRunning {
         _ arguments: [String],
         workingDirectory: URL?,
         environment: [String: String]?,
-        io: CommandIO
+        io: CommandIO,
     ) async throws -> CommandResult {
         switch io {
-        case .captured(let input):
+        case let .captured(input):
             try await runCaptured(
                 executable,
                 arguments,
                 workingDirectory: workingDirectory,
                 environment: environment,
-                input: input
+                input: input,
             )
         case .capturedOutputInheritingInputAndError:
             try await runCapturedOutputInheritingInputAndError(
                 executable,
                 arguments,
                 workingDirectory: workingDirectory,
-                environment: environment
+                environment: environment,
             )
         case .inherited:
             try await runInheritingIO(
                 executable,
                 arguments,
                 workingDirectory: workingDirectory,
-                environment: environment
+                environment: environment,
             )
         case .replacingProcess:
             try replaceCurrentProcess(
                 executable,
                 arguments,
                 workingDirectory: workingDirectory,
-                environment: environment
+                environment: environment,
             )
         }
     }
@@ -131,7 +139,7 @@ public struct ProcessRunner: CommandRunning {
         _ executable: String,
         _ arguments: [String],
         workingDirectory: URL?,
-        environment: [String: String]?
+        environment: [String: String]?,
     ) async throws -> CommandResult {
         try await withCheckedThrowingContinuation { continuation in
             let process = Process()
@@ -172,7 +180,7 @@ public struct ProcessRunner: CommandRunning {
         _ arguments: [String],
         workingDirectory: URL?,
         environment: [String: String]?,
-        input: Data?
+        input: Data?,
     ) async throws -> CommandResult {
         try await withCheckedThrowingContinuation { continuation in
             let process = Process()
@@ -222,7 +230,7 @@ public struct ProcessRunner: CommandRunning {
         _ executable: String,
         _ arguments: [String],
         workingDirectory: URL?,
-        environment: [String: String]?
+        environment: [String: String]?,
     ) async throws -> CommandResult {
         try await withCheckedThrowingContinuation { continuation in
             let process = Process()
@@ -260,7 +268,7 @@ public struct ProcessRunner: CommandRunning {
         _ executable: String,
         _ arguments: [String],
         workingDirectory: URL?,
-        environment: [String: String]?
+        environment: [String: String]?,
     ) throws -> CommandResult {
         if let workingDirectory, chdir(workingDirectory.path) != 0 {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
@@ -375,9 +383,9 @@ private final class StdoutProcessRunState: @unchecked Sendable {
             continuation,
             CommandResult(
                 status: status,
-                stdout: String(decoding: stdout, as: UTF8.self),
-                stderr: ""
-            )
+                stdout: processOutputString(stdout),
+                stderr: "",
+            ),
         )
     }
 
@@ -470,9 +478,9 @@ private final class ProcessRunState: @unchecked Sendable {
             continuation,
             CommandResult(
                 status: status,
-                stdout: String(decoding: stdout, as: UTF8.self),
-                stderr: String(decoding: stderr, as: UTF8.self)
-            )
+                stdout: processOutputString(stdout),
+                stderr: processOutputString(stderr),
+            ),
         )
     }
 
@@ -495,7 +503,7 @@ public struct RecordedCommand: Equatable, Sendable {
     public var io: CommandIO
 
     public var input: Data? {
-        if case .captured(let input) = io {
+        if case let .captured(input) = io {
             return input
         }
         return nil
@@ -537,7 +545,7 @@ public final class RecordingRunner: CommandRunning, @unchecked Sendable {
         _ arguments: [String],
         workingDirectory: URL?,
         environment: [String: String]?,
-        io: CommandIO
+        io: CommandIO,
     ) async throws -> CommandResult {
         lock.withLock {
             commandStorage.append(RecordedCommand(
@@ -545,7 +553,7 @@ public final class RecordingRunner: CommandRunning, @unchecked Sendable {
                 arguments: arguments,
                 workingDirectory: workingDirectory,
                 environment: environment,
-                io: io
+                io: io,
             ))
             return responseStorage.isEmpty
                 ? CommandResult(status: 0, stdout: "", stderr: "")

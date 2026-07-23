@@ -55,7 +55,12 @@ extension ComposeOrchestrator {
         let restartCondition = condition.flatMap { $0.isEmpty ? nil : $0 } ?? "any"
         let timing = try deployRestartTiming(service: service, policy: policy)
         if isDeployJobService(service), restartCondition != "none" {
-            throw ComposeError.unsupported(jobRestartPolicyUnsupportedMessage(service: service, source: "deploy.restart_policy"))
+            throw ComposeError.unsupported(
+                jobRestartPolicyUnsupportedMessage(
+                    service: service,
+                    source: "deploy.restart_policy",
+                ),
+            )
         }
 
         switch restartCondition {

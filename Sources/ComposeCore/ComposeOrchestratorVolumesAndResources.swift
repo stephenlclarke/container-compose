@@ -591,7 +591,66 @@ extension ComposeOrchestrator {
 
     /// Creates a project network unless it already exists.
     func ensureNetwork(project: ComposeProject, composeName: String, network: ComposeNetwork) async throws {
+        let runtimeName = networkRuntimeName(
+            project: project,
+            composeName: composeName,
+            network: network,
+        )
+        let driverOpts = network.driverOpts ?? [:]
+        let args = networkCreateArguments(
+            project: project,
+            network: network,
+            runtimeName: runtimeName,
+            driverOpts: driverOpts,
+        )
+        if options.dryRun {
+            try await runContainer(args, check: false)
+        } else {
+            try await resourceManager.createNetwork(ComposeNetworkCreateRequest(
+                name: runtimeName,
+                isInternal: network.isInternal == true,
+                addressing: .init(
+                    ipv4Subnet: network.ipv4Subnet,
+                    ipv4Gateway: network.ipv4Gateway,
+                    ipv4AllocationRange: network.ipv4AllocationRange,
+                    ipv4ReservedAddresses: network.ipv4ReservedAddresses ?? [],
+                    ipv6Subnet: network.ipv6Subnet,
+                    ipv6Gateway: network.ipv6Gateway,
+                ),
+                enableIPv6: network.enableIPv6,
+                driverOpts: driverOpts,
+                labels: resourceLabels(project: project, labels: network.labels),
+            ))
+        }
+    }
+
+    /// Builds the direct CLI projection for a project network.
+    func networkCreateArguments(
+        project: ComposeProject,
+        network: ComposeNetwork,
+        runtimeName: String,
+        driverOpts: [String: String],
+    ) -> [String] {
         var args = ["network", "create"]
+        appendNetworkAddressingArguments(&args, network: network)
+        for option in driverOpts.sorted(by: { $0.key < $1.key }) {
+            args.append(contentsOf: ["--option", "\(option.key)=\(option.value)"])
+        }
+        for label in resourceLabels(project: project) {
+            args.append(contentsOf: ["--label", label])
+        }
+        for label in (network.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
+            args.append(contentsOf: ["--label", "\(label.key)=\(label.value)"])
+        }
+        args.append(runtimeName)
+        return args
+    }
+
+    /// Adds network mode and address-family arguments to a create command.
+    func appendNetworkAddressingArguments(
+        _ args: inout [String],
+        network: ComposeNetwork,
+    ) {
         if network.isInternal == true {
             args.append("--internal")
         }
@@ -615,37 +674,6 @@ extension ComposeOrchestrator {
         }
         if network.enableIPv6 != false, let ipv6Gateway = network.ipv6Gateway, !ipv6Gateway.isEmpty {
             args.append(contentsOf: ["--gateway-v6", ipv6Gateway])
-        }
-        let driverOpts = network.driverOpts ?? [:]
-        for option in driverOpts.sorted(by: { $0.key < $1.key }) {
-            args.append(contentsOf: ["--option", "\(option.key)=\(option.value)"])
-        }
-        for label in resourceLabels(project: project) {
-            args.append(contentsOf: ["--label", label])
-        }
-        for label in (network.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
-            args.append(contentsOf: ["--label", "\(label.key)=\(label.value)"])
-        }
-        let runtimeName = networkRuntimeName(project: project, composeName: composeName, network: network)
-        args.append(runtimeName)
-        if options.dryRun {
-            try await runContainer(args, check: false)
-        } else {
-            try await resourceManager.createNetwork(ComposeNetworkCreateRequest(
-                name: runtimeName,
-                isInternal: network.isInternal == true,
-                addressing: .init(
-                    ipv4Subnet: network.ipv4Subnet,
-                    ipv4Gateway: network.ipv4Gateway,
-                    ipv4AllocationRange: network.ipv4AllocationRange,
-                    ipv4ReservedAddresses: network.ipv4ReservedAddresses ?? [],
-                    ipv6Subnet: network.ipv6Subnet,
-                    ipv6Gateway: network.ipv6Gateway,
-                ),
-                enableIPv6: network.enableIPv6,
-                driverOpts: driverOpts,
-                labels: resourceLabels(project: project, labels: network.labels),
-            ))
         }
     }
 

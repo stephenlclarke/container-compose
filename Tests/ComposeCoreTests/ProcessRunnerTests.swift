@@ -41,6 +41,18 @@ struct ProcessRunnerTests {
     }
 
     @Test
+    func `process runner preserves invalid UTF-8 as replacement characters`() async throws {
+        let result = try await ProcessRunner().run(
+            "/bin/sh",
+            ["-c", "printf '\\377'; printf '\\376' >&2"],
+        )
+
+        #expect(result.succeeded)
+        #expect(result.stdout == "\u{FFFD}")
+        #expect(result.stderr == "\u{FFFD}")
+    }
+
+    @Test
     func `process runner captures stdout while inheriting prompt streams`() async throws {
         let result = try await ProcessRunner().run(
             "/bin/sh",

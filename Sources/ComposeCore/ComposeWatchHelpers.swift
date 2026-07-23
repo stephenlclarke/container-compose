@@ -133,7 +133,11 @@ func resolvedWatchURL(project: ComposeProject, path: String) -> URL {
     if expanded.hasPrefix("/") {
         return URL(fileURLWithPath: expanded).standardizedFileURL
     }
-    return URL(fileURLWithPath: expanded, relativeTo: URL(fileURLWithPath: project.workingDirectory)).standardizedFileURL
+    let projectDirectory = URL(fileURLWithPath: project.workingDirectory)
+    return URL(
+        fileURLWithPath: expanded,
+        relativeTo: projectDirectory,
+    ).standardizedFileURL
 }
 
 /// Builds a stable relative path with POSIX separators for matching.
