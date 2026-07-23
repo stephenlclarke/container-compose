@@ -659,13 +659,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff", makefile)
         self.assertNotIn("repackage-release", makefile)
 
-    def test_phase5_builder_gaps_exception_is_local_and_0_7_0_only(self) -> None:
+    def test_phase5_builder_gaps_exception_is_local_and_expires_at_phase5(self) -> None:
         validation = STACK_RELEASE_VALIDATION.read_text(encoding="utf-8")
         self.assertIn(
             "CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON",
             self.script,
         )
-        self.assertIn('"${version}" != "0.7.0"', self.script)
+        self.assertIn("0.7.*|0.8.*|0.9.*", self.script)
+        self.assertIn("not %s", self.script)
         self.assertIn('"${RELEASE_INTENT}" != "milestone"', self.script)
         self.assertIn("TestCLIBuilderSerial.swift", validation)
         self.assertIn("TestCLIBuilderLocalOutputSerial.swift", validation)
@@ -673,6 +674,50 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("phase5_excluded_serial_suites", validation)
         self.assertIn('"${mode}" != "full"', validation)
         self.assertIn("SERIAL_TEST_SUITES=${serial_test_suites}", validation)
+
+    def test_phase5_builder_gaps_exception_accepts_only_pre_phase5_milestones(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            setup = "\n".join(
+                [
+                    "PHASE5_BUILDER_GAPS_EXCEPTION_REASON='tracked Phase 5 Builder work'",
+                    "RELEASE_INTENT=milestone",
+                ]
+            )
+            for version in ("0.7.0", "0.8.0", "0.9.0", "0.9.4"):
+                accepted = self.run_release_function(
+                    root,
+                    f"ensure_phase5_builder_gaps_exception {version}",
+                    shell_setup=setup,
+                )
+                self.assertEqual(accepted.returncode, 0, accepted.stderr)
+                self.assertIn(
+                    f"pre-Phase-5 Builder-gap exception accepted for {version}",
+                    accepted.stdout,
+                )
+
+            for version in ("0.6.70", "0.10.0", "1.0.0"):
+                rejected = self.run_release_function(
+                    root,
+                    f"ensure_phase5_builder_gaps_exception {version}",
+                    shell_setup=setup,
+                )
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn(
+                    "permitted only for pre-Phase-5 0.7.x through 0.9.x releases",
+                    rejected.stderr,
+                )
+
+            non_milestone = self.run_release_function(
+                root,
+                "ensure_phase5_builder_gaps_exception 0.8.0",
+                shell_setup=setup.replace("milestone", "maintenance"),
+            )
+            self.assertNotEqual(non_milestone.returncode, 0)
+            self.assertIn(
+                "requires CONTAINER_STACK_RELEASE_INTENT=milestone",
+                non_milestone.stderr,
+            )
 
     def test_hosted_stack_validation_excludes_virtualization_commands(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

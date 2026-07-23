@@ -115,11 +115,12 @@ Environment:
       release gates, signed-tag verification, or paired Homebrew verification.
 
   CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON
-      One-time, 0.7.0-only release-gate exception for the documented Phase 5
-      external-Dockerfile and tar-export Builder gaps. It requires a non-empty
+      Temporary pre-Phase-5 release-gate exception for the documented Phase 5
+      external-Dockerfile and tar-export Builder gaps. It is accepted only for
+      the 0.7.x through 0.9.x phase-release lanes, requires a non-empty
       maintainer reason, runs every other Container integration suite, and is
-      rejected for every other version. It never changes the hosted gate or
-      claims Phase 5 parity.
+      rejected from 0.10.0 onward. It never changes the hosted gate or claims
+      Phase 5 parity.
 
   CONTAINER_STACK_MAINTENANCE_REASON
       Required when CONTAINER_STACK_RELEASE_INTENT=maintenance. Record the
@@ -1919,23 +1920,28 @@ require_release_upstream_alignment() {
   run make -C "$(repo_path "${COMPOSE_REPO}")" upstream-divergence-release-check
 }
 
-# The temporary 0.7.0 exception cannot silently broaden a later release. The
-# omitted suites are real Phase 5 Builder gaps; the local gate records them
-# explicitly while the completed Phase 1 promotion validates every other suite.
+# The temporary exception cannot silently survive the Phase 5 release lane. The
+# 0.7.x, 0.8.x, and 0.9.x lanes cover the completed pre-Phase-5 milestones; the
+# 0.10.x lane starts Phase 5 and must restore the three tracked Builder suites.
+# The local gate always records the explicit reason and validates every other
+# suite.
 ensure_phase5_builder_gaps_exception() {
   local version="$1"
   if [[ -z "${PHASE5_BUILDER_GAPS_EXCEPTION_REASON}" ]]; then
     return 0
   fi
-  if [[ "${version}" != "0.7.0" ]]; then
-    printf 'CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON is permitted only for 0.7.0, not %s\n' "${version}" >&2
-    exit 2
-  fi
   if [[ "${RELEASE_INTENT}" != "milestone" ]]; then
-    printf 'the 0.7.0 Phase 5 Builder-gap exception requires CONTAINER_STACK_RELEASE_INTENT=milestone\n' >&2
+    printf 'the pre-Phase-5 Builder-gap exception requires CONTAINER_STACK_RELEASE_INTENT=milestone\n' >&2
     exit 2
   fi
-  printf '0.7.0 Phase 5 Builder-gap exception accepted: %s\n' \
+  case "${version}" in
+    0.7.*|0.8.*|0.9.*) ;;
+    *)
+      printf 'CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON is permitted only for pre-Phase-5 0.7.x through 0.9.x releases, not %s\n' "${version}" >&2
+      exit 2
+      ;;
+  esac
+  printf 'pre-Phase-5 Builder-gap exception accepted for %s: %s\n' "${version}" \
     "${PHASE5_BUILDER_GAPS_EXCEPTION_REASON}"
 }
 
