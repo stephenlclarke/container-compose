@@ -76,7 +76,7 @@ compatibility.
 | `make build` | Debug Swift `compose` executable. |
 | `make build-release` | Release Swift `compose` executable. |
 | `make go-build` | Static, trimmed release `compose-normalizer`. |
-| `make package` | Release plugin archive and checksum. |
+| `make package` | Release plugin archive and relocatable checksum sidecar. |
 
 Run the plugin directly from source with:
 
@@ -382,6 +382,11 @@ dist/compose/resources/compose-normalizer
 `build-info.json` records the package lane, branch, commit, build type, resolved
 `container` commit, exact `containerization` revision, and embedded `compose-go` version.
 `container compose version` exposes that metadata after installation.
+The checksum sidecar names only the published archive basename, so a downloaded pair verifies without retaining any build-runner path:
+
+```sh
+shasum -a 256 -c container-compose-plugin-release-arm64.tar.gz.sha256
+```
 
 ## SonarQube
 

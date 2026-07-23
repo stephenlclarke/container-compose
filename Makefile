@@ -1509,7 +1509,7 @@ package-built:
 		--compose-go-version "$(COMPOSE_GO_VERSION)"
 	tar -czf "$(PLUGIN_ARCHIVE)" -C "$(DIST_DIR)" compose
 	tar -tzf "$(PLUGIN_ARCHIVE)" | grep -Fx 'compose/resources/container-compose-icon.png' >/dev/null
-	shasum -a 256 "$(PLUGIN_ARCHIVE)" > "$(PLUGIN_ARCHIVE).sha256"
+	$(PYTHON) Tools/release/write-sha256-sidecar.py "$(PLUGIN_ARCHIVE)"
 
 coverage-tools-test:
 	$(PYTHON) -m py_compile Tools/coverage/*.py Tools/release/*.py Tools/ci/*.py

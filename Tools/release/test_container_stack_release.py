@@ -238,6 +238,19 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('verify_archive_entry "${RUNTIME_ASSET}" "./bin/container" "runtime"', renderer)
         self.assertIn("published ${label} package archive is corrupt", renderer)
 
+    def test_release_checksum_sidecars_use_published_asset_basenames(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        writer = "Tools/release/write-sha256-sidecar.py"
+
+        self.assertIn(f'$(PYTHON) {writer} "$(PLUGIN_ARCHIVE)"', makefile)
+        self.assertEqual(
+            workflow.count(
+                f'python3 container-compose/{writer} "${{runtime_local_asset}}"'
+            ),
+            2,
+        )
+
     def test_formula_renderer_uses_an_authenticated_published_release(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         renderer_step = workflow[
