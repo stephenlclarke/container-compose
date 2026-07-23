@@ -198,6 +198,88 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("Release-Note: none", runtime_pin)
         self.assertIn("sync_container_package_pin", self.script)
 
+    def test_containerization_pin_supports_literal_and_named_revisions(self) -> None:
+        revision = "a" * 40
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            named = root / "container"
+            named.mkdir()
+            named_manifest = named / "Package.swift"
+            named_manifest.write_text(
+                textwrap.dedent(
+                    """\
+                    import PackageDescription
+
+                    let containerizationRevision = "old"
+                    let package = Package(
+                        name: "container",
+                        dependencies: [
+                            .package(
+                                url: "https://github.com/stephenlclarke/containerization.git",
+                                revision: containerizationRevision
+                            ),
+                        ]
+                    )
+                    """
+                ),
+                encoding="utf-8",
+            )
+            named_result = self.run_release_function(
+                root,
+                f"update_containerization_package_pin container {revision} 0",
+            )
+            self.assertEqual(named_result.returncode, 0, named_result.stderr)
+            named_text = named_manifest.read_text(encoding="utf-8")
+            self.assertIn(f'let containerizationRevision = "{revision}"', named_text)
+            self.assertIn("revision: containerizationRevision", named_text)
+
+            literal = root / "container-compose"
+            literal.mkdir()
+            literal_manifest = literal / "Package.swift"
+            literal_manifest.write_text(
+                textwrap.dedent(
+                    """\
+                    import PackageDescription
+
+                    let package = Package(
+                        name: "container-compose",
+                        dependencies: [
+                            .package(
+                                url: "https://github.com/stephenlclarke/containerization.git",
+                                revision: "old"
+                            ),
+                        ]
+                    )
+                    """
+                ),
+                encoding="utf-8",
+            )
+            literal_result = self.run_release_function(
+                root,
+                f"update_containerization_package_pin container-compose {revision} 0",
+            )
+            self.assertEqual(literal_result.returncode, 0, literal_result.stderr)
+            self.assertIn(
+                f'revision: "{revision}"',
+                literal_manifest.read_text(encoding="utf-8"),
+            )
+
+            unsupported = root / "unsupported"
+            unsupported.mkdir()
+            (unsupported / "Package.swift").write_text(
+                '.package(url: "https://github.com/apple/containerization.git", branch: "main")\n',
+                encoding="utf-8",
+            )
+            unsupported_result = self.run_release_function(
+                root,
+                f"update_containerization_package_pin unsupported {revision} 0",
+            )
+            self.assertNotEqual(unsupported_result.returncode, 0)
+            self.assertIn(
+                "is missing the stephenlclarke containerization dependency",
+                unsupported_result.stderr,
+            )
+
     def test_release_helper_resolves_immutable_dependencies(self) -> None:
         helper = self.script[
             self.script.index("unedit_release_dependency() {") : self.script.index(

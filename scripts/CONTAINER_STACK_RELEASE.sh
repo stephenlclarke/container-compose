@@ -945,14 +945,36 @@ import sys
 package = Path(sys.argv[1])
 ref = sys.argv[2]
 text = package.read_text(encoding="utf-8")
-pattern = re.compile(
+dependency_pattern = re.compile(
     r'(\.package\(\s*url:\s*"https://github.com/stephenlclarke/containerization\.git"\s*,\s*)'
     r'(?:branch|revision):\s*"[^"]*"'
     r"(\s*,?\s*\))",
     re.MULTILINE,
 )
-updated, count = pattern.subn(rf'\1revision: "{ref}"\2', text, count=1)
-if count != 1:
+updated, direct_count = dependency_pattern.subn(
+    rf'\1revision: "{ref}"\2',
+    text,
+    count=1,
+)
+constant_dependency = re.search(
+    r'\.package\(\s*url:\s*"https://github.com/stephenlclarke/containerization\.git"\s*,\s*'
+    r"revision:\s*containerizationRevision\s*,?\s*\)",
+    text,
+    re.MULTILINE,
+)
+constant_pattern = re.compile(
+    r'^(let\s+containerizationRevision\s*=\s*")[^"]*(")',
+    re.MULTILINE,
+)
+if direct_count == 0 and constant_dependency:
+    updated, constant_count = constant_pattern.subn(
+        rf'\g<1>{ref}\g<2>',
+        text,
+        count=1,
+    )
+else:
+    constant_count = 0
+if direct_count + constant_count != 1:
     raise SystemExit(f"{package} is missing the stephenlclarke containerization dependency")
 package.write_text(updated, encoding="utf-8")
 PY
