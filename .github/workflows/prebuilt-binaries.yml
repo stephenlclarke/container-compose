@@ -205,6 +205,28 @@ jobs:
             return 1
           }
 
+          # A workflow_run event can arrive before the jobs API exposes the
+          # final step conclusions for the run that triggered it. Retry only
+          # missing SonarQube evidence; API read failures retain their distinct
+          # fail-closed result.
+          wait_for_successful_main_sonarqube_scan() {
+            local commit="$1" attempt=1 max_attempts=12 retry_delay=5 authority_result
+            while true; do
+              if main_ci_has_successful_sonarqube_scan "${commit}"; then
+                return 0
+              else
+                authority_result=$?
+              fi
+              if (( authority_result == 2 || attempt >= max_attempts )); then
+                return "${authority_result}"
+              fi
+              printf 'CI SonarQube job evidence for %s is not visible yet; retrying %s/%s in %ss\n' \
+                "${commit}" "$((attempt + 1))" "${max_attempts}" "${retry_delay}" >&2
+              sleep "${retry_delay}"
+              ((attempt += 1))
+            done
+          }
+
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
             if [[ "${WORKFLOW_RUN_EVENT}" != "push" && "${WORKFLOW_RUN_EVENT}" != "workflow_dispatch" ]]; then
               printf 'Skipping non-release CI event: %s\n' "${WORKFLOW_RUN_EVENT}"
@@ -231,7 +253,7 @@ jobs:
                 printf 'Skipping package publish because CI Validate results were %s.\n' \
                   "$(jq -r 'if length == 0 then "missing" else join(",") end' <<<"${validate_conclusions}")"
               elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == "main" ]]; then
-                if main_ci_has_successful_sonarqube_scan "${WORKFLOW_RUN_HEAD_SHA}"; then
+                if wait_for_successful_main_sonarqube_scan "${WORKFLOW_RUN_HEAD_SHA}"; then
                   scan_authority_available=true
                 else
                   authority_result=$?

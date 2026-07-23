@@ -446,7 +446,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("--component-repo container=../container", workflow)
         self.assertIn('quality_snapshot_args=(', workflow)
         self.assertIn(
-            'main_ci_has_successful_sonarqube_scan "${WORKFLOW_RUN_HEAD_SHA}"',
+            'wait_for_successful_main_sonarqube_scan "${WORKFLOW_RUN_HEAD_SHA}"',
             workflow,
         )
         self.assertNotIn('nc -z -w 5 sonarcloud.io 443', workflow)
@@ -486,6 +486,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn('elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == "main" ]]', workflow)
         self.assertIn("main_ci_has_successful_sonarqube_scan()", workflow)
+        self.assertIn("wait_for_successful_main_sonarqube_scan()", workflow)
         self.assertIn('.event == "workflow_dispatch"', workflow)
         self.assertIn("Skipping current package for %s until successful exact-main CI", workflow)
         self.assertIn("timeout-minutes: 120", workflow)

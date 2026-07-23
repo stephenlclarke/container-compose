@@ -193,6 +193,7 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("github_authority_query()", workflow)
+        self.assertIn("wait_for_successful_main_sonarqube_scan()", workflow)
         self.assertIn("max_attempts=12", workflow)
         self.assertIn("HTTP\\ (429|5[0-9]{2})", workflow)
         self.assertIn("rate limit exceeded", workflow)
@@ -201,6 +202,11 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn('github_authority_query "exact-main CI runs for ${commit}"', workflow)
         self.assertIn('github_authority_query "jobs for CI run ${ci_run_id}"', workflow)
         self.assertIn('github_authority_query "jobs for validated CI run ${WORKFLOW_RUN_ID}"', workflow)
+        self.assertIn(
+            'wait_for_successful_main_sonarqube_scan "${WORKFLOW_RUN_HEAD_SHA}"',
+            workflow,
+        )
+        self.assertIn("CI SonarQube job evidence for %s is not visible yet", workflow)
         self.assertIn("return 2", workflow)
         self.assertIn(
             "refusing Current package because exact-main CI/SonarQube authority could not be read",
@@ -257,6 +263,50 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
                 check=False,
                 env={**os.environ, "RETRY_COUNTER": str(retry_counter)},
         )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_sonarqube_authority_waits_for_eventually_consistent_job_evidence(self) -> None:
+        workflow = (
+            Path(__file__).parents[2] / ".github/workflows/prebuilt-binaries.yml"
+        ).read_text(encoding="utf-8")
+        function_match = re.search(
+            r"^          wait_for_successful_main_sonarqube_scan\(\) \{.*?^          \}$",
+            workflow,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(function_match)
+        function = textwrap.dedent(function_match.group(0))
+        harness = f"""
+        set -euo pipefail
+        {function}
+        sleep() {{ :; }}
+        main_ci_has_successful_sonarqube_scan() {{
+          attempt="$(<"${{EVIDENCE_COUNTER}}")"
+          if (( attempt < 2 )); then
+            printf '%s' "$((attempt + 1))" > "${{EVIDENCE_COUNTER}}"
+            return 1
+          fi
+          return 0
+        }}
+        wait_for_successful_main_sonarqube_scan 0123456789abcdef
+        [[ "$(<"${{EVIDENCE_COUNTER}}")" == 2 ]]
+        main_ci_has_successful_sonarqube_scan() {{ return 2; }}
+        set +e
+        wait_for_successful_main_sonarqube_scan 0123456789abcdef
+        result_code=$?
+        set -e
+        [[ "$result_code" == 2 ]]
+        """
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            evidence_counter = Path(temporary_directory) / "evidence-counter"
+            evidence_counter.write_text("0", encoding="utf-8")
+            completed = subprocess.run(
+                ["bash", "-c", textwrap.dedent(harness)],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**os.environ, "EVIDENCE_COUNTER": str(evidence_counter)},
+            )
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_quality_capture_retries_transient_github_api_failures(self) -> None:
