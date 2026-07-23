@@ -111,9 +111,78 @@ silicon MacBook Pro after the maintenance sync:
   `docker compose` 5.3.1.
 
 Exact-main CI, SonarQube, Current assets, signed Homebrew pair, install smoke,
-and rendered-GIF verification remain post-push publication gates. Publishing
-the refreshed Current pair resets the seven-day Phase 3 soak; Phase 4 must not
-start before the replacement deadline.
+and rendered-GIF verification remain post-push publication gates. The
+repository owner explicitly waived the seven-day Phase 3 time gate on 23 July
+2026; that waiver does not bypass any of these evidence gates.
+
+## 23 July Containerization and automation follow-up
+
+This follow-up supersedes the earlier point-in-time stack, automation, and
+validation snapshots.
+
+### Runtime follow-up commits
+
+- Containerization merge
+  `75bdc3dddaf1f8943c49514d68a40cf4fd3fa846`
+  (`chore(upstream): merge apple containerization main`) retains Apple
+  [#809](https://github.com/apple/containerization/pull/809) parentage and
+  preserves the fork's narrow source-subpath extension.
+- Containerization fix
+  `766318bb7d33494838c1896adde1490d8e34c0a4`
+  (`fix(runtime): stop VM when create startup fails`) fixes reproduced Apple
+  [#804](https://github.com/apple/containerization/issues/804) by placing
+  `vm.start()` inside the existing create cleanup boundary. The focused fake
+  verifies the original startup error, exactly one stop, and terminal VM state.
+- Containerization handoff
+  `9097a24d60deddaaa394f73c2ec5f8276ab5867b`
+  (`docs(upstream): hand off July runtime updates`) provides the matching issue
+  and pull-request templates.
+- Container dependency
+  `8cf9468b861306a801c56924e591e98f39f771e8`
+  (`build(deps): update Containerization runtime`) consumes that exact runtime.
+- Container handoff
+  `d028c825c8198eca370346f832c8d04d80f12181`
+  (`docs(upstream): hand off runtime dependency sync`) provides the matching
+  issue and pull-request templates.
+
+The final support stack is zero commits behind Apple and 421 commits ahead:
+Builder `5939a91` (31), Containerization `9097a24` (124), and Container
+`d028c82` (266).
+
+### Compose and automation commits
+
+- `59482006d8f80f996a38c8d25fe688c27c0b5d4b`
+  (`build(deps): update validated runtime stack`) pins SwiftPM, immutable
+  release refs, and README provenance to the validated lower-fork commits.
+- `2f3002d47226c5922bc30f77548c74c0a415dd48`
+  (`build(actions): refresh GitHub Actions pins`) is byte-for-byte equivalent
+  to Dependabot
+  [#136](https://github.com/stephenlclarke/container-compose/pull/136): 49
+  action-SHA replacements across nine workflows.
+
+The bot pull request should be closed after the equivalent signed commit lands
+on `main`. No author action is required on `apple/container#1965`, `#1934`,
+`#1935`, or `apple/containerization#799`; all four remain mergeable and await
+Apple review.
+
+### Final local validation
+
+- Builder: complete unit suite and enforced Go coverage.
+- Containerization: 647 unit tests in 85 suites; 175 of 177 integration tests
+  passed, with two virtio GPU render-node cases skipped on the selected kernel.
+- Container: 1,135 unit tests in 131 suites, plus 238 concurrent and 91 global
+  live tests; combined line coverage is 51.10%.
+- Compose: 1,117 Swift tests in 26 suites, 91.38% Swift line coverage, and
+  90.06% Go statement coverage.
+- Live Compose runtime: 25 of 25 scenarios passed in 166.5 seconds.
+- Docker Compose V2: all 56 strict parity contracts passed against
+  `docker compose` 5.3.1.
+- VHS: `docs/container-compose-demo.tape` types commands and asserts their live
+  screen output; it contains no `Replay` or marker instruction.
+
+The Phase 5 builder-gap exception remains bounded to the three documented
+external Dockerfile/tar-output integration suites. It does not weaken the Phase
+3 volume/mount stable gate and must be removed as part of Phase 5.
 
 ```sh
 CONTAINER_BUILDER_SHIM_STACK_REPO=/path/to/container-builder-shim \
@@ -132,5 +201,8 @@ make release-gate
 - [x] README stack snapshot current
 - [x] VHS tape types commands and displays live output
 - [x] Final matched-stack release gate
+- [x] Containerization upstream and reproducible-bug follow-up
+- [x] Dependabot change applied as an equivalent signed commit
+- [x] Owner-authorized Phase 3 soak waiver recorded
 - [ ] Post-merge exact-main hosted CI and SonarQube publication gate
 - [ ] Post-merge Current assets, Homebrew, and rendered GIF publication gate
