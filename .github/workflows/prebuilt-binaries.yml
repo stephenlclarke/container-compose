@@ -722,6 +722,7 @@ jobs:
           PUBLISH_REF_NAME: ${{ needs.resolve-publish-context.outputs.ref_name }}
           PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
           RELEASE_TAG: ${{ steps.lane.outputs.release_tag }}
+          FORMULA_VERSION: ${{ steps.lane.outputs.formula_version }}
         shell: bash
         run: |
           set -euo pipefail
@@ -733,7 +734,7 @@ jobs:
               make -C container package BUILD_CONFIGURATION=release HOMEBREW_ARCHIVE="${runtime_local_asset}"
               python3 container-compose/Tools/release/write-sha256-sidecar.py "${runtime_local_asset}"
               runtime_sha="$(awk '{print $1}' "${runtime_local_asset}.sha256")"
-              runtime_version="current.${PUBLISH_SHA:0:12}"
+              runtime_version="${FORMULA_VERSION}"
               runtime_repository="${GITHUB_REPOSITORY}"
               ;;
             tag)
