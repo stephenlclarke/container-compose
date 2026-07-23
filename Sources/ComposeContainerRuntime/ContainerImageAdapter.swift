@@ -254,7 +254,7 @@ public struct ContainerClientImageManager: ComposeRuntimeImageManaging {
 
     /// Ensures a local image exists before the Compose layer reads its `VOLUME` metadata.
     public func prepareImageVolumeMetadata(_ reference: String, pullIfMissing: Bool) async throws -> Bool {
-        guard !(try await client.imageExists(reference: reference)) else {
+        guard try await !(client.imageExists(reference: reference)) else {
             return true
         }
         guard pullIfMissing else {

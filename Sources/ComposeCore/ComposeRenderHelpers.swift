@@ -60,7 +60,7 @@ func composePsFormat(_ value: String) throws -> ComposePsFormat {
             try validateDockerTemplateFields(
                 dockerTemplateFields(in: template),
                 command: "ps",
-                supported: composePsTemplateFields
+                supported: composePsTemplateFields,
             )
             return .template(template, table: true)
         }
@@ -68,7 +68,7 @@ func composePsFormat(_ value: String) throws -> ComposePsFormat {
         try validateDockerTemplateFields(
             dockerTemplateFields(in: normalized),
             command: "ps",
-            supported: composePsTemplateFields
+            supported: composePsTemplateFields,
         )
         return .template(normalized, table: false)
     }
@@ -84,7 +84,7 @@ enum ComposePsFormat {
 /// Renders project container rows as a compact Docker Compose-style table.
 func renderComposeContainerTable(
     _ containers: [ComposeContainerSummary],
-    noTrunc _: Bool
+    noTrunc _: Bool,
 ) -> String {
     let rows = [
         ["NAME", "IMAGE", "SERVICE", "STATUS", "PORTS"],
@@ -112,14 +112,14 @@ func renderComposeContainerTemplate(
     _ containers: [ComposeContainerSummary],
     template: String,
     table: Bool,
-    noTrunc: Bool
+    noTrunc: Bool,
 ) throws -> String {
     let fields = dockerTemplateFields(in: template)
     try validateDockerTemplateActions(in: template)
     try validateDockerTemplateFields(
         fields,
         command: "ps",
-        supported: composePsTemplateFields
+        supported: composePsTemplateFields,
     )
     let rows = try containers.map { container in
         try renderDockerTemplate(template, values: composeContainerTemplateValues(container, noTrunc: noTrunc))
@@ -180,7 +180,7 @@ func containerIdentifiers(_ containers: [ComposeContainerSummary]) -> [String] {
 func filterContainersByOrphanPolicy(
     _ containers: [ComposeContainerSummary],
     project: ComposeProject,
-    includeOrphans: Bool
+    includeOrphans: Bool,
 ) -> [ComposeContainerSummary] {
     guard !includeOrphans else {
         return containers
@@ -223,7 +223,7 @@ func composeProjectRecords(containers: [ComposeContainerSummary], nameFilters: [
         return ComposeProjectRecord(
             name: projectName,
             status: combinedProjectStatus(projectContainers),
-            configFiles: combinedProjectConfigFiles(projectContainers)
+            configFiles: combinedProjectConfigFiles(projectContainers),
         )
     }
 }
@@ -277,7 +277,7 @@ func composeImageRecords(containers: [ComposeContainerSummary], selectedServices
             repository: reference.repository,
             tag: reference.tag,
             platform: container.platform,
-            imageID: shortImageID(container.imageDigest)
+            imageID: shortImageID(container.imageDigest),
         )
     }
     .sorted { lhs, rhs in
@@ -486,7 +486,7 @@ struct ComposeVolumeRecord: Encodable, Equatable {
             labels: summary.labels,
             mountpoint: summary.source,
             name: summary.name,
-            sizeInBytes: summary.sizeInBytes
+            sizeInBytes: summary.sizeInBytes,
         )
     }
 
@@ -496,7 +496,7 @@ struct ComposeVolumeRecord: Encodable, Equatable {
         mountpoint: String = "",
         name: String,
         scope: String = "local",
-        sizeInBytes: UInt64? = nil
+        sizeInBytes: UInt64? = nil,
     ) {
         availability = "N/A"
         self.driver = driver
@@ -577,7 +577,7 @@ func composeVolumesFormat(_ value: String) throws -> ComposeVolumesFormat {
             try validateDockerTemplateFields(
                 dockerTemplateFields(in: template),
                 command: "volumes",
-                supported: composeVolumesTemplateFields
+                supported: composeVolumesTemplateFields,
             )
             return .template(template, table: true)
         }
@@ -585,7 +585,7 @@ func composeVolumesFormat(_ value: String) throws -> ComposeVolumesFormat {
         try validateDockerTemplateFields(
             dockerTemplateFields(in: normalized),
             command: "volumes",
-            supported: composeVolumesTemplateFields
+            supported: composeVolumesTemplateFields,
         )
         return .template(normalized, table: false)
     }

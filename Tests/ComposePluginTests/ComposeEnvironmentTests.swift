@@ -20,8 +20,8 @@ import Testing
 
 @Suite("Compose environment defaults")
 struct ComposeEnvironmentTests {
-    @Test("truthy Compose environment values are opt-in")
-    func truthyValuesAreOptIn() {
+    @Test
+    func `truthy Compose environment values are opt-in`() {
         let environment = ComposeEnvironment(values: [
             "ENABLED": " yes ",
             "DISABLED": "false",
@@ -37,8 +37,8 @@ struct ComposeEnvironmentTests {
         #expect(!environment.isEnabled("MISSING"))
     }
 
-    @Test("root options use Compose environment defaults and preserve CLI precedence")
-    func rootOptionsUseEnvironmentDefaults() throws {
+    @Test
+    func `root options use Compose environment defaults and preserve CLI precedence`() throws {
         let environment = ComposeEnvironment(values: [
             "COMPOSE_ANSI": "always",
             "COMPOSE_COMPATIBILITY": "true",
@@ -65,8 +65,8 @@ struct ComposeEnvironmentTests {
         #expect(!options.shouldColorProgress(environment: environment))
     }
 
-    @Test("invalid progress values fail before Compose commands run")
-    func invalidProgressValuesFailValidation() throws {
+    @Test
+    func `invalid progress values fail before Compose commands run`() throws {
         var options = try GlobalOptions.parse([])
         options.progress = "invalid"
 

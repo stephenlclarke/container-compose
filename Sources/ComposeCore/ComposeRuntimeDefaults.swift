@@ -14,8 +14,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerResource
 import ContainerizationOCI
+import ContainerResource
 import Foundation
 
 /// Runtime defaults shared by typed Compose projections.
@@ -34,7 +34,7 @@ public enum ComposeRuntimeDefaults {
             executable: shellExecutable,
             arguments: [],
             environment: [],
-            workingDirectory: workingDirectory
+            workingDirectory: workingDirectory,
         )
     }
 }

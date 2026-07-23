@@ -36,7 +36,7 @@ public struct ComposeUpMenuActions: Sendable {
     public var forceStop: @Sendable () async throws -> Void
     public var toggleWatch: @Sendable (
         _ desiredEnabled: Bool,
-        _ stateChanged: @escaping @Sendable (Bool) async -> Void
+        _ stateChanged: @escaping @Sendable (Bool) async -> Void,
     ) async throws -> Bool
 
     public init(
@@ -57,7 +57,7 @@ public struct ComposeUpMenuActions: Sendable {
         forceStop: @escaping @Sendable () async throws -> Void,
         toggleWatch: @escaping @Sendable (
             _ desiredEnabled: Bool,
-            _ stateChanged: @escaping @Sendable (Bool) async -> Void
+            _ stateChanged: @escaping @Sendable (Bool) async -> Void,
         ) async throws -> Bool,
     ) {
         self.gracefulStop = gracefulStop
@@ -96,7 +96,7 @@ public struct ComposeUpMenuConfiguration: Sendable {
 public protocol ComposeUpMenuControlling: Sendable {
     func runMenuSession(
         configuration: ComposeUpMenuConfiguration,
-        operation: @escaping @Sendable () async throws -> Void
+        operation: @escaping @Sendable () async throws -> Void,
     ) async throws
 }
 
@@ -108,7 +108,7 @@ public struct TerminalComposeUpMenuController: ComposeUpMenuControlling {
 
     public func runMenuSession(
         configuration: ComposeUpMenuConfiguration,
-        operation: @escaping @Sendable () async throws -> Void
+        operation: @escaping @Sendable () async throws -> Void,
     ) async throws {
         let terminal = RawTerminalMode(fileDescriptor: STDIN_FILENO)
         do {
@@ -124,7 +124,7 @@ public struct TerminalComposeUpMenuController: ComposeUpMenuControlling {
 
         let state = ComposeUpMenuSessionState(watchEnabled: configuration.watchEnabled && configuration.watchAvailable)
         await Self.enableInitialWatchIfNeeded(configuration: configuration, state: state)
-        configuration.emitStatus(await Self.menuLine(configuration: configuration, state: state))
+        await configuration.emitStatus(Self.menuLine(configuration: configuration, state: state))
         let operationTask = Task {
             try await operation()
         }
@@ -172,7 +172,7 @@ public struct TerminalComposeUpMenuController: ComposeUpMenuControlling {
             let watchVersion = await state.watchChangeVersion
             let applied = try await configuration.actions.toggleWatch(true) { enabled in
                 await state.setWatchEnabled(enabled)
-                configuration.emitStatus(await menuLine(configuration: configuration, state: state))
+                await configuration.emitStatus(menuLine(configuration: configuration, state: state))
             }
             await state.setWatchEnabled(applied, ifWatchVersion: watchVersion)
         } catch is CancellationError {
@@ -197,7 +197,7 @@ public struct TerminalComposeUpMenuController: ComposeUpMenuControlling {
         case .toggleWatch:
             guard configuration.watchAvailable else {
                 configuration.emitStatus("compose: watch is not configured for the selected services")
-                configuration.emitStatus(await menuLine(configuration: configuration, state: state))
+                await configuration.emitStatus(menuLine(configuration: configuration, state: state))
                 return
             }
             let previous = await state.watchIsEnabled
@@ -206,11 +206,11 @@ public struct TerminalComposeUpMenuController: ComposeUpMenuControlling {
                 let watchVersion = await state.watchChangeVersion
                 let applied = try await configuration.actions.toggleWatch(desired) { enabled in
                     await state.setWatchEnabled(enabled)
-                    configuration.emitStatus(await menuLine(configuration: configuration, state: state))
+                    await configuration.emitStatus(menuLine(configuration: configuration, state: state))
                 }
                 let didApply = await state.setWatchEnabled(applied, ifWatchVersion: watchVersion)
                 if didApply {
-                    configuration.emitStatus(await menuLine(configuration: configuration, state: state))
+                    await configuration.emitStatus(menuLine(configuration: configuration, state: state))
                 }
             } catch is CancellationError {
                 await state.setWatchEnabled(previous)
@@ -234,7 +234,7 @@ public struct TerminalComposeUpMenuController: ComposeUpMenuControlling {
                 operationTask.cancel()
             }
         case .redraw:
-            configuration.emitStatus(await menuLine(configuration: configuration, state: state))
+            await configuration.emitStatus(menuLine(configuration: configuration, state: state))
         }
     }
 
@@ -288,15 +288,15 @@ public struct TerminalComposeUpMenuController: ComposeUpMenuControlling {
     static func menuKey(for byte: UInt8) -> ComposeUpMenuKey? {
         switch byte {
         case 3:
-            return .interrupt
+            .interrupt
         case UInt8(ascii: "d"), UInt8(ascii: "D"):
-            return .detach
+            .detach
         case UInt8(ascii: "w"), UInt8(ascii: "W"):
-            return .toggleWatch
+            .toggleWatch
         case UInt8(ascii: "\n"), UInt8(ascii: "\r"):
-            return .redraw
+            .redraw
         default:
-            return nil
+            nil
         }
     }
 }

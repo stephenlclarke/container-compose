@@ -68,10 +68,11 @@ enum ComposeTimeParser {
 
             guard sawDigit,
                   numberStart < index,
-                  let amount = TimeInterval(String(trimmed[numberStart..<index])),
+                  let amount = TimeInterval(String(trimmed[numberStart ..< index])),
                   amount.isFinite,
                   amount >= 0,
-                  let unit = durationUnit(in: trimmed, at: index) else {
+                  let unit = durationUnit(in: trimmed, at: index)
+            else {
                 return nil
             }
 
@@ -112,7 +113,8 @@ enum ComposeTimeParser {
               secondsPart.allSatisfy(\.isNumber),
               let seconds = TimeInterval(String(secondsPart)),
               seconds.isFinite,
-              seconds >= 0 else {
+              seconds >= 0
+        else {
             return nil
         }
 
@@ -122,7 +124,8 @@ enum ComposeTimeParser {
             guard !fractionPart.isEmpty,
                   fractionPart.count <= 9,
                   fractionPart.allSatisfy(\.isNumber),
-                  let fraction = TimeInterval("0.\(fractionPart)") else {
+                  let fraction = TimeInterval("0.\(fractionPart)")
+            else {
                 return nil
             }
             fractionalSeconds = fraction

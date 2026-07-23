@@ -207,7 +207,7 @@ private extension ComposeContainerSummary {
             id: managedContainer.id,
             status: Self.composeStatus(
                 runtimeStatus: managedContainer.status.state,
-                startedDate: managedContainer.status.startedDate
+                startedDate: managedContainer.status.startedDate,
             ),
             labels: managedContainer.configuration.labels,
             image: ComposeContainerSummary.Image(

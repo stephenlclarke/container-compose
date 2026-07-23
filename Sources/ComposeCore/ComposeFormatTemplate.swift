@@ -143,7 +143,7 @@ private enum DockerTemplateValue {
         }
         let data = try JSONSerialization.data(
             withJSONObject: object,
-            options: [.fragmentsAllowed, .sortedKeys]
+            options: [.fragmentsAllowed, .sortedKeys],
         )
         return String(bytes: data, encoding: .utf8) ?? ""
     }
@@ -170,7 +170,7 @@ private func dockerTemplateActionIsSupported(_ action: String) -> Bool {
         guard dockerTemplateFunctionArgumentsAreSupported(
             function,
             arguments: tokens.dropFirst(),
-            hasPipelineValue: hasPipelineValue
+            hasPipelineValue: hasPipelineValue,
         ) else {
             return false
         }
@@ -343,7 +343,7 @@ private func renderDockerTemplateAction(_ action: String, values: [String: Strin
 
 private func dockerTemplateEvaluatedAction(
     _ action: String,
-    values: [String: String]
+    values: [String: String],
 ) throws -> DockerTemplateValue {
     guard let segments = dockerTemplatePipelineSegments(action) else {
         throw unsupportedDockerTemplateAction(action)
@@ -391,7 +391,7 @@ private func dockerTemplateValue(_ token: String, values: [String: String]) thro
 private func applyDockerTemplateFunction(
     _ function: String,
     arguments: [DockerTemplateValue],
-    pipelineValue: DockerTemplateValue?
+    pipelineValue: DockerTemplateValue?,
 ) throws -> DockerTemplateValue {
     switch function {
     case "json", "len", "lower", "table", "title", "upper":
@@ -408,7 +408,7 @@ private func applyDockerTemplateFunction(
 private func dockerTemplateSimpleFunction(
     _ function: String,
     arguments: [DockerTemplateValue],
-    pipelineValue: DockerTemplateValue?
+    pipelineValue: DockerTemplateValue?,
 ) throws -> DockerTemplateValue {
     switch function {
     case "json":
@@ -431,7 +431,7 @@ private func dockerTemplateSimpleFunction(
 private func dockerTemplateOutputFunction(
     _ function: String,
     arguments: [DockerTemplateValue],
-    pipelineValue: DockerTemplateValue?
+    pipelineValue: DockerTemplateValue?,
 ) throws -> DockerTemplateValue {
     let inputs = arguments + (pipelineValue.map { [$0] } ?? [])
     switch function {
@@ -450,7 +450,7 @@ private func dockerTemplateOutputFunction(
 private func dockerTemplateCollectionFunction(
     _ function: String,
     arguments: [DockerTemplateValue],
-    pipelineValue: DockerTemplateValue?
+    pipelineValue: DockerTemplateValue?,
 ) throws -> DockerTemplateValue {
     guard pipelineValue == nil else { throw unsupportedDockerTemplateAction(function) }
     switch function {
@@ -477,7 +477,7 @@ private func dockerTemplateCollectionFunction(
 private func dockerTemplateFunctionArgumentsAreSupported(
     _ function: String,
     arguments: ArraySlice<String>,
-    hasPipelineValue: Bool
+    hasPipelineValue: Bool,
 ) -> Bool {
     let argumentCount = arguments.count
     switch function {
@@ -502,14 +502,14 @@ private func dockerTemplateFunctionArgumentsAreSupported(
 
 private func unsupportedDockerTemplateAction(_ action: String) -> ComposeError {
     ComposeError.unsupported(
-        "format template action '{{\(action)}}'; supported actions are field references plus Docker's json, join, table, lower, split, title, upper, pad, truncate, and println functions, and Go's print, printf, len, index, and slice functions"
+        "format template action '{{\(action)}}'; supported actions are field references plus Docker's json, join, table, lower, split, title, upper, pad, truncate, and println functions, and Go's print, printf, len, index, and slice functions",
     )
 }
 
 private func dockerTemplateSingleInput(
     _ function: String,
     _ arguments: [DockerTemplateValue],
-    _ pipelineValue: DockerTemplateValue?
+    _ pipelineValue: DockerTemplateValue?,
 ) throws -> DockerTemplateValue {
     if let pipelineValue {
         guard arguments.isEmpty else { throw unsupportedDockerTemplateAction(function) }
@@ -524,7 +524,7 @@ private func dockerTemplateSingleInput(
 private func dockerTemplateStringInput(
     _ function: String,
     _ arguments: [DockerTemplateValue],
-    _ pipelineValue: DockerTemplateValue?
+    _ pipelineValue: DockerTemplateValue?,
 ) throws -> String {
     let value = try dockerTemplateSingleInput(function, arguments, pipelineValue)
     guard case let .string(string) = value else {
@@ -735,8 +735,8 @@ private func dockerTemplateActionMatches(in template: String) throws -> [DockerT
             DockerTemplateActionMatch(
                 action: String(template[contentStart ..< closeRange.lowerBound])
                     .trimmingCharacters(in: .whitespacesAndNewlines),
-                range: openRange.lowerBound ..< closeRange.upperBound
-            )
+                range: openRange.lowerBound ..< closeRange.upperBound,
+            ),
         )
         cursor = closeRange.upperBound
     }

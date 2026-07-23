@@ -578,33 +578,33 @@ extension ComposeOrchestrator {
         inherited: ComposeImageHealthCheck?,
         serviceName: String,
     ) throws -> ComposeImageHealthCheck {
-        ComposeImageHealthCheck(
+        try ComposeImageHealthCheck(
             test: test,
-            intervalInNanoseconds: try commitHealthCheckDuration(
+            intervalInNanoseconds: commitHealthCheckDuration(
                 fields["interval"],
                 inherited: inherited?.intervalInNanoseconds,
                 field: "interval",
                 serviceName: serviceName,
             ) ?? Int64(ContainerHealthCheck.defaultIntervalInNanoseconds),
-            timeoutInNanoseconds: try commitHealthCheckDuration(
+            timeoutInNanoseconds: commitHealthCheckDuration(
                 fields["timeout"],
                 inherited: inherited?.timeoutInNanoseconds,
                 field: "timeout",
                 serviceName: serviceName,
             ) ?? Int64(ContainerHealthCheck.defaultTimeoutInNanoseconds),
-            startPeriodInNanoseconds: try commitHealthCheckDuration(
+            startPeriodInNanoseconds: commitHealthCheckDuration(
                 fields["start_period"],
                 inherited: inherited?.startPeriodInNanoseconds,
                 field: "start_period",
                 serviceName: serviceName,
             ) ?? Int64(ContainerHealthCheck.defaultStartPeriodInNanoseconds),
-            startIntervalInNanoseconds: try commitHealthCheckDuration(
+            startIntervalInNanoseconds: commitHealthCheckDuration(
                 fields["start_interval"],
                 inherited: inherited?.startIntervalInNanoseconds,
                 field: "start_interval",
                 serviceName: serviceName,
             ),
-            retries: Int(try healthCheckRetries(
+            retries: Int(healthCheckRetries(
                 fields["retries"],
                 inherited: inherited?.retries,
                 serviceName: serviceName,

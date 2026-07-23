@@ -19,8 +19,8 @@ import Testing
 
 @Suite("Docker output template actions")
 struct ComposeFormatTemplateTests {
-    @Test("functions and pipelines render row values")
-    func functionsAndPipelinesRenderRowValues() throws {
+    @Test
+    func `functions and pipelines render row values`() throws {
         let values = ["ID": "abcdef", "Image": "registry.example/demo-api:latest", "Name": "demo-api"]
 
         #expect(try renderDockerTemplate("{{.Name | upper}}", values: values) == "DEMO-API")
@@ -33,7 +33,7 @@ struct ComposeFormatTemplateTests {
         #expect(try renderDockerTemplate("{{printf \"{{%s}}\" .Name}}", values: values) == "{{demo-api}}")
         #expect(
             try renderDockerTemplate("{{join (split .Image \":\") \"/\"}}", values: values)
-                == "registry.example/demo-api/latest"
+                == "registry.example/demo-api/latest",
         )
         #expect(try renderDockerTemplate("{{index .Name 5}}", values: values) == "a")
         #expect(try renderDockerTemplate("{{slice .Name 5}}", values: values) == "api")
@@ -42,16 +42,16 @@ struct ComposeFormatTemplateTests {
         #expect(try renderDockerTemplate("{{table .Name}}", values: values) == "demo-api")
     }
 
-    @Test("JSON action renders the complete row or one field")
-    func jsonActionRendersRows() throws {
+    @Test
+    func `JSON action renders the complete row or one field`() throws {
         let values = ["ID": "abcdef", "Name": "demo-api"]
 
         #expect(try renderDockerTemplate("{{json .}}", values: values) == #"{"ID":"abcdef","Name":"demo-api"}"#)
         #expect(try renderDockerTemplate("{{json .Name}}", values: values) == #""demo-api""#)
     }
 
-    @Test("control and nonportable actions remain explicit gaps")
-    func controlAndNonportableActionsRemainUnsupported() {
+    @Test
+    func `control and nonportable actions remain explicit gaps`() {
         #expect(throws: (any Error).self) {
             try validateDockerTemplateActions(in: "{{if .Name}}{{.Name}}{{end}}")
         }
@@ -63,8 +63,8 @@ struct ComposeFormatTemplateTests {
         }
     }
 
-    @Test("quoted field-like literals do not become field references")
-    func quotedFieldLikeLiteralsDoNotBecomeFieldReferences() {
+    @Test
+    func `quoted field-like literals do not become field references`() {
         #expect(dockerTemplateFields(in: "{{printf \".NotAField\" .Name}}") == ["Name"])
     }
 }

@@ -25,7 +25,7 @@ extension Array where Element: Equatable {
             guard let end else {
                 return false
             }
-            return Array(self[index..<end]) == sequence
+            return Array(self[index ..< end]) == sequence
         }
     }
 }

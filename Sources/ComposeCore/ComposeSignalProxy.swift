@@ -15,7 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #if canImport(Darwin)
-import Darwin
+    import Darwin
 #endif
 import Dispatch
 
@@ -25,7 +25,7 @@ public protocol ComposeSignalProxying: Sendable {
     func withSignalProxy(
         signals: [String],
         handler: @escaping @Sendable (String) async -> Void,
-        operation: @escaping @Sendable () async throws -> Void
+        operation: @escaping @Sendable () async throws -> Void,
     ) async throws
 }
 
@@ -38,60 +38,60 @@ public struct DispatchComposeSignalProxy: ComposeSignalProxying {
     public func withSignalProxy(
         signals: [String],
         handler: @escaping @Sendable (String) async -> Void,
-        operation: @escaping @Sendable () async throws -> Void
+        operation: @escaping @Sendable () async throws -> Void,
     ) async throws {
-#if canImport(Darwin)
-        let mappings = signals.compactMap(Self.signalMapping(named:))
-        guard !mappings.isEmpty else {
-            try await operation()
-            return
-        }
+        #if canImport(Darwin)
+            let mappings = signals.compactMap(Self.signalMapping(named:))
+            guard !mappings.isEmpty else {
+                try await operation()
+                return
+            }
 
-        let queue = DispatchQueue(label: "container-compose.signal-proxy")
-        var sources: [DispatchSourceSignal] = []
-        var previousHandlers: [(Int32, (@convention(c) (Int32) -> Void)?)] = []
-        for mapping in mappings {
-            previousHandlers.append((mapping.number, Darwin.signal(mapping.number, SIG_IGN)))
-            let source = DispatchSource.makeSignalSource(signal: mapping.number, queue: queue)
-            source.setEventHandler {
-                Task {
-                    await handler(mapping.name)
+            let queue = DispatchQueue(label: "container-compose.signal-proxy")
+            var sources: [DispatchSourceSignal] = []
+            var previousHandlers: [(Int32, (@convention(c) (Int32) -> Void)?)] = []
+            for mapping in mappings {
+                previousHandlers.append((mapping.number, Darwin.signal(mapping.number, SIG_IGN)))
+                let source = DispatchSource.makeSignalSource(signal: mapping.number, queue: queue)
+                source.setEventHandler {
+                    Task {
+                        await handler(mapping.name)
+                    }
+                }
+                source.resume()
+                sources.append(source)
+            }
+            defer {
+                for source in sources {
+                    source.cancel()
+                }
+                for (number, previousHandler) in previousHandlers {
+                    _ = Darwin.signal(number, previousHandler)
                 }
             }
-            source.resume()
-            sources.append(source)
-        }
-        defer {
-            for source in sources {
-                source.cancel()
-            }
-            for (number, previousHandler) in previousHandlers {
-                _ = Darwin.signal(number, previousHandler)
-            }
-        }
 
-        try await operation()
-#else
-        _ = signals
-        _ = handler
-        try await operation()
-#endif
+            try await operation()
+        #else
+            _ = signals
+            _ = handler
+            try await operation()
+        #endif
     }
 
-#if canImport(Darwin)
-    private static func signalMapping(named name: String) -> (name: String, number: Int32)? {
-        switch name {
-        case "SIGHUP":
-            return ("SIGHUP", SIGHUP)
-        case "SIGINT":
-            return ("SIGINT", SIGINT)
-        case "SIGQUIT":
-            return ("SIGQUIT", SIGQUIT)
-        case "SIGTERM":
-            return ("SIGTERM", SIGTERM)
-        default:
-            return nil
+    #if canImport(Darwin)
+        private static func signalMapping(named name: String) -> (name: String, number: Int32)? {
+            switch name {
+            case "SIGHUP":
+                ("SIGHUP", SIGHUP)
+            case "SIGINT":
+                ("SIGINT", SIGINT)
+            case "SIGQUIT":
+                ("SIGQUIT", SIGQUIT)
+            case "SIGTERM":
+                ("SIGTERM", SIGTERM)
+            default:
+                nil
+            }
         }
-    }
-#endif
+    #endif
 }

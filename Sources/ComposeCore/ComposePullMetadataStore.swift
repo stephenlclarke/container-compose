@@ -71,7 +71,7 @@ public actor FileComposePullMetadataStore: ComposePullMetadataStoring {
     private func save(_ contents: Contents) throws {
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
+            withIntermediateDirectories: true,
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

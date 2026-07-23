@@ -15,14 +15,14 @@
 //===----------------------------------------------------------------------===//
 
 import ComposeCore
-import Foundation
 @testable import ComposePlugin
+import Foundation
 import Testing
 
 @Suite("Compose loading progress")
 struct ComposeProgressLoadingTests {
-    @Test("project loading emits first progress row before normalizer starts")
-    func projectLoadingEmitsFirstProgressRowBeforeNormalizerStarts() async throws {
+    @Test
+    func `project loading emits first progress row before normalizer starts`() async throws {
         let emitted = LockedDataRecorder()
         let progress = ComposeProgressReporter(
             style: .plain,
@@ -35,15 +35,15 @@ struct ComposeProgressLoadingTests {
                 #expect(options.files == ["compose.yml"])
                 #expect(emitted.string == "⠓ Loading Compose model\n")
                 return ComposeProject(name: "demo", services: [:])
-            }
+            },
         )
 
         #expect(project.name == "demo")
         #expect(emitted.string == "⠓ Loading Compose model\n✓ Loading Compose model\n")
     }
 
-    @Test("variable loading emits first progress row before normalizer starts")
-    func variableLoadingEmitsFirstProgressRowBeforeNormalizerStarts() async throws {
+    @Test
+    func `variable loading emits first progress row before normalizer starts`() async throws {
         let emitted = LockedDataRecorder()
         let progress = ComposeProgressReporter(
             style: .plain,
@@ -56,7 +56,7 @@ struct ComposeProgressLoadingTests {
                 #expect(options.files == ["compose.yml"])
                 #expect(emitted.string == "⠓ Loading Compose variables\n")
                 return [ComposeVariable(name: "TAG", defaultValue: "latest")]
-            }
+            },
         )
 
         #expect(variables == [ComposeVariable(name: "TAG", defaultValue: "latest")])

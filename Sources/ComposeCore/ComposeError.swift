@@ -27,17 +27,17 @@ public enum ComposeError: Error, CustomStringConvertible, Equatable {
     /// A user-facing error description suitable for CLI output.
     public var description: String {
         switch self {
-        case .commandFailed(let command, let status, let stderr):
+        case let .commandFailed(command, status, stderr):
             let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             if detail.isEmpty {
                 return "\(command) failed with exit code \(status)"
             }
             return "\(command) failed with exit code \(status): \(detail)"
-        case .invalidProject(let message):
+        case let .invalidProject(message):
             return "invalid compose project: \(message)"
-        case .unsupported(let message):
+        case let .unsupported(message):
             return "unsupported compose feature: \(message)"
-        case .missingNormalizer(let message):
+        case let .missingNormalizer(message):
             return "compose normalizer unavailable: \(message)"
         case .missingComposeFile:
             return "no configuration file provided: not found"

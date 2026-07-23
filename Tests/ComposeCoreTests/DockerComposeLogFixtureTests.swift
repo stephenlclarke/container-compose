@@ -19,8 +19,8 @@ import Testing
 
 @Suite("Docker Compose log fixtures")
 struct DockerComposeLogFixtureTests {
-    @Test("rotated tail fixture records Docker Compose line semantics")
-    func rotatedTailFixtureRecordsDockerComposeLineSemantics() throws {
+    @Test
+    func `rotated tail fixture records Docker Compose line semantics`() throws {
         let fixture = try String(contentsOf: Self.rotatedTailFixtureURL(), encoding: .utf8)
 
         assertFixture(fixture, contains: "## rotating-json --tail 5")
@@ -41,7 +41,7 @@ struct DockerComposeLogFixtureTests {
     private static func rotatedTailFixtureURL() throws -> URL {
         guard let url = Bundle.module.url(
             forResource: "docker-compose-rotated-tail",
-            withExtension: "expected"
+            withExtension: "expected",
         ) else {
             throw FixtureError.missing("Fixtures/logging/docker-compose-rotated-tail.expected")
         }
@@ -58,8 +58,8 @@ private enum FixtureError: Error, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case .missing(let path):
-            return "Missing test fixture: \(path)"
+        case let .missing(path):
+            "Missing test fixture: \(path)"
         }
     }
 }
