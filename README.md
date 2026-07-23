@@ -33,10 +33,10 @@ orchestration and maps supported Compose behavior to the matched runtime stack.
 > [!WARNING]
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
-> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 23 July 2026 snapshot, the three support forks are **429 commits ahead of Apple upstream**:
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 23 July 2026 snapshot, the three support forks are **431 commits ahead of Apple upstream**:
 >
 > - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 126 ahead** at [`6aa6e803539c`](https://github.com/stephenlclarke/containerization/commit/6aa6e803539c59ce754c55628e5417356216b297).
-> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 272 ahead** at [`02e69edc55eb`](https://github.com/stephenlclarke/container/commit/02e69edc55eb84059906d7314a25ae276911535c).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 274 ahead** at [`ffe5819db359`](https://github.com/stephenlclarke/container/commit/ffe5819db3595ab88403bef01e9c3aa0ff5e9e88).
 > - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 31 ahead** at [`5939a91ec0dd`](https://github.com/stephenlclarke/container-builder-shim/commit/5939a91ec0dd).
 > - [`container-compose`](https://github.com/stephenlclarke/container-compose): the integration repository's current `main` branch, with no Apple repository to compare against.
 >

@@ -2,16 +2,16 @@
 
 ## Proposed pull request
 
-`build(deps): consume indexed EXT4 runtime`
+`build(deps): consume stable formula ownership fix`
 
 This handoff covers the signed Compose source commit
-[`3decbde6d0293a6eb64b5fd6bba642e0b0330d99`](https://github.com/stephenlclarke/container-compose/commit/3decbde6d0293a6eb64b5fd6bba642e0b0330d99).
+[`b99fd82f9e357a45c3c40bb70a6ad72228f1950e`](https://github.com/stephenlclarke/container-compose/commit/b99fd82f9e357a45c3c40bb70a6ad72228f1950e).
 
 ## Summary
 
 Advance the final Phase 3 prerelease graph to the latest reviewed Apple
-Containerization sync and both Homebrew packaging reliability fixes. No
-Compose policy or executable source changes.
+Containerization sync and all Homebrew packaging reliability fixes, including
+stable-formula ownership. No Compose policy or executable source changes.
 
 ## Minimal integration boundary
 
@@ -24,7 +24,7 @@ Compose policy or executable source changes.
 ## Code map
 
 - `Package.swift`
-  - resolves Container at `02e69edc`;
+  - resolves Container at `ffe5819d`;
   - resolves Containerization at `6aa6e803`.
 - `Package.resolved`
   - records the same immutable dependency revisions.
@@ -64,8 +64,10 @@ retains insertion order. The fork's subtree-export conflict was resolved at
 the traversal initialization boundary and passed its full coverage suite.
 
 The Container changes after the stable runtime commit are dependency,
-Homebrew-test, workflow, and handoff updates. Compose behavior and the
-published stable executable assets are unchanged.
+Homebrew-test, workflow, and handoff updates. Main prerelease packages remain
+available, but only Compose stable promotion can change the shared stable
+formula pair. Compose behavior and the published stable executable assets are
+unchanged.
 
 ## PR template
 
@@ -82,7 +84,8 @@ published stable executable assets are unchanged.
 
 Publish Current only after the matched stack contains Apple's latest
 macOS-usable runtime fix and the packaging checks distinguish source defects
-from environmental service state and artifact retention.
+from environmental service state, artifact retention, and cross-workflow
+formula ownership.
 
 ### Testing
 

@@ -15,6 +15,12 @@ index. The final Current prerelease must contain that new upstream change and
 all packaging corrections rather than publishing a graph already behind
 Apple.
 
+The first exact Current publication then reproduced a separate automation
+race: Container main packaging replaced only the stable runtime formula after
+the matched 0.8.0 promotion. The final graph must also contain the ownership
+fix that prevents Container main builds from mutating the Compose-owned stable
+formula pair.
+
 ## Required behavior
 
 - Keep the published `0.8.0` executable assets and signed tag immutable.
@@ -28,16 +34,17 @@ Apple.
 ## Resolution
 
 The signed Compose commit
-[`3decbde6d0293a6eb64b5fd6bba642e0b0330d99`](https://github.com/stephenlclarke/container-compose/commit/3decbde6d0293a6eb64b5fd6bba642e0b0330d99)
+[`b99fd82f9e357a45c3c40bb70a6ad72228f1950e`](https://github.com/stephenlclarke/container-compose/commit/b99fd82f9e357a45c3c40bb70a6ad72228f1950e)
 advances both direct SwiftPM pins and the release stack manifest:
 
 - Container
-  [`02e69edc55eb84059906d7314a25ae276911535c`](https://github.com/stephenlclarke/container/commit/02e69edc55eb84059906d7314a25ae276911535c);
+  [`ffe5819db3595ab88403bef01e9c3aa0ff5e9e88`](https://github.com/stephenlclarke/container/commit/ffe5819db3595ab88403bef01e9c3aa0ff5e9e88);
 - Containerization
   [`6aa6e803539c59ce754c55628e5417356216b297`](https://github.com/stephenlclarke/containerization/commit/6aa6e803539c59ce754c55628e5417356216b297).
 
 Those tips contain the indexed EXT4 sync, full fork handoffs, the
-service-independent formula smoke, and the retained-template workflow fix.
+service-independent formula smoke, the retained-template workflow fix, and
+the stable-formula ownership gate.
 
 ## Validation
 
@@ -69,6 +76,6 @@ typed-command VHS evidence.
 - Containerization final tip:
   `6aa6e803539c59ce754c55628e5417356216b297`.
 - Container final tip:
-  `02e69edc55eb84059906d7314a25ae276911535c`.
+  `ffe5819db3595ab88403bef01e9c3aa0ff5e9e88`.
 - Compose source pin:
-  `3decbde6d0293a6eb64b5fd6bba642e0b0330d99`.
+  `b99fd82f9e357a45c3c40bb70a6ad72228f1950e`.
