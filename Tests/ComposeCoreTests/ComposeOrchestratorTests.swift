@@ -19148,6 +19148,19 @@ struct ComposeOrchestratorTests {
         #expect(await client.followRequests == ["demo-api-1"])
     }
 
+    @Test("rotating log fixture tolerates a closed reader")
+    func rotatingLogFixtureToleratesClosedReader() async throws {
+        let client = RotatingContainerLogAPIClient(followChunks: [
+            Data("delayed\n".utf8),
+        ])
+        let reader = try await client.followLogs(id: "demo-api-1", options: .default)
+
+        try reader.close()
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(await client.followRequests == ["demo-api-1"])
+    }
+
     @Test("log manager emits runtime-followed rotated direct API stream")
     func logManagerEmitsRuntimeFollowedRotatedDirectAPIStream() async throws {
         let emitted = MessageRecorder()
@@ -30482,6 +30495,7 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
         followOptionsStorage.append(options)
         let pipe = Pipe()
         let writer = pipe.fileHandleForWriting
+        try suppressBrokenPipeSignal(for: writer)
         followWriters.append(writer)
         let chunks = followChunks
         Task {
@@ -30498,6 +30512,7 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
         followRecordOptionsStorage.append(options)
         let pipe = Pipe()
         let writer = pipe.fileHandleForWriting
+        try suppressBrokenPipeSignal(for: writer)
         followRecordWriters.append(writer)
         let snapshots = recordSnapshots
         let closeStream = closeFollowRecordStream
@@ -30538,6 +30553,16 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
         }
         return recordSnapshots.removeFirst()
     }
+}
+
+private func suppressBrokenPipeSignal(for fileHandle: FileHandle) throws {
+    #if canImport(Darwin)
+        guard Darwin.fcntl(fileHandle.fileDescriptor, F_SETNOSIGPIPE, 1) != -1 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+    #else
+        _ = fileHandle
+    #endif
 }
 
 private func applyLogOptions(
