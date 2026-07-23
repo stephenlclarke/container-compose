@@ -226,9 +226,11 @@ makes GitHub's published time represent this Current build rather than the
 first build that used the `current` tag. If that final replacement is
 interrupted, rerunning the same publication recreates the release from the same
 candidate assets. The Current Homebrew pair uses the monotonically increasing
-package-workflow run number before the source SHA in its formula version, so
-`brew upgrade container-current container-compose-current` recognizes each
-newer atomic pair even when the new commit SHA sorts below the prior SHA.
+package-workflow run number before the source SHA in its shared formula
+version. Both `container-current` and `container-compose-current` receive that
+same version, so `brew upgrade container-current container-compose-current`
+recognizes each newer atomic pair even when the new commit SHA sorts below the
+prior SHA.
 
 ### Scheduled Stable Releases
 
