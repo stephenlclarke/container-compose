@@ -181,6 +181,7 @@ endif
 
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: docker-compose-environment-parity docker-compose-named-volume-reuse-parity docker-compose-oci-annotations-parity docker-compose-exposed-ports-parity docker-compose-empty-process-overrides-parity
+.PHONY: docker-compose-phase4-parity
 .PHONY: docker-compose-format-template-actions-parity
 .PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity
 .PHONY: docker-compose-up-exit-code-from-parity
@@ -1267,6 +1268,15 @@ docker-compose-oci-annotations-parity: build docker-compose-reference
 
 docker-compose-exposed-ports-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-exposed-ports.sh --strict
+
+docker-compose-phase4-parity: \
+	docker-compose-oci-annotations-parity \
+	docker-compose-exposed-ports-parity \
+	docker-compose-empty-process-overrides-parity \
+	docker-compose-state-status-parity \
+	docker-compose-events-parity \
+	docker-compose-up-exit-code-from-parity
+	@printf 'Phase 4 metadata, state, and events parity passed.\n'
 
 docker-compose-cli-surface-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-cli-surface.sh --strict
