@@ -126,6 +126,18 @@ Useful focused targets are:
 | `make upstream-divergence-check` | Run the same report as a strict check that fails on dirty worktrees, unpushed local commits, missing refs, or Apple upstream merge conflicts. |
 | `make upstream-divergence-release-check` | Stable-release check: also fails when a fork `main` is behind Apple upstream. |
 
+Before publishing a Current prerelease, dispatch the full hosted Quality gate
+against the exact `main` revision:
+
+```sh
+gh workflow run quality.yml --ref main
+```
+
+Unlike the changed-file `push` lane, `workflow_dispatch` selects every
+non-legacy Swift file for strict SwiftLint and SwiftFormat validation and runs
+the complete Address Sanitizer and Thread Sanitizer suites. A failure is a
+release blocker even when ordinary push CI is green.
+
 Override local coverage floors only for deliberate stricter validation:
 
 ```sh
