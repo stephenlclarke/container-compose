@@ -1,5 +1,9 @@
 # Pull request handoff: bound the 0.7.0 Phase 5 Builder-gap release exception
 
+> Current follow-up: the original exact-`0.7.0` version guard was corrected to
+> expire at the actual Phase 5 release boundary. See
+> [the pre-Phase-5 version-boundary handoff](PR-pre-phase5-builder-deferral-version-boundary.md).
+
 ## Summary
 
 - Keep the ordinary stack release gate unchanged: it runs all Container
