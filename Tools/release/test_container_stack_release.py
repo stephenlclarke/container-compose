@@ -438,16 +438,29 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         end = workflow.index("elif [[ \"${WORKFLOW_RUN_HEAD_BRANCH}\" == \"main\" ]];", start)
         gate = workflow[start:end]
 
-        self.assertIn('github_authority_query "jobs for validated CI run ${WORKFLOW_RUN_ID}"', gate)
-        self.assertIn("api --paginate --slurp", gate)
+        self.assertIn("wait_for_complete_validate_conclusions()", workflow)
+        self.assertIn(
+            'wait_for_complete_validate_conclusions "${WORKFLOW_RUN_ID}"',
+            gate,
+        )
+        self.assertIn(
+            'github_authority_query "jobs for validated CI run ${run_id}"',
+            workflow,
+        )
+        self.assertIn("api --paginate --slurp", workflow)
         self.assertIn("refusing package publication because validated CI job evidence could not be read", gate)
         self.assertIn(
             '[.[] | .jobs[] | select(.name == "Validate" or .name == "Validate Runtime") | .conclusion]',
-            gate,
+            workflow,
         )
         self.assertIn('any(.[]; . == "success")', gate)
         self.assertIn('all(.[]; . == "success" or . == "skipped")', gate)
         self.assertIn('if length == 0 then "missing" else join(",") end', gate)
+        self.assertIn('map(. // "pending") | join(",")', gate)
+        self.assertIn(
+            "refusing package publication because CI Validate results did not settle",
+            gate,
+        )
         self.assertIn('quality_release_kind="current"', workflow)
         self.assertIn('quality_release_kind="stable"', workflow)
         self.assertIn('--release-kind "${quality_release_kind}"', workflow)
@@ -470,6 +483,35 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertNotIn('SonarQube was unavailable during promotion', workflow)
         self.assertNotIn('SONARQUBE_SNAPSHOT_REQUIRED', workflow)
         self.assertNotIn('--allow-missing-sonarqube', workflow)
+
+    def test_package_gate_retries_unsettled_validate_conclusions(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        start = workflow.index("wait_for_complete_validate_conclusions()")
+        end = workflow.index('if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]', start)
+        retry = workflow[start:end]
+        settled_filter = "length > 0 and all(.[]; . != null)"
+
+        self.assertIn(settled_filter, retry)
+        self.assertIn("attempt=1 max_attempts=12 retry_delay=5", retry)
+        self.assertIn("CI Validate job conclusions for run %s are not visible yet", retry)
+        for payload, expected in (
+            ('[null, "skipped", "success"]', False),
+            ("[]", False),
+            ('["skipped", "success"]', True),
+            ('["failure", "skipped"]', True),
+        ):
+            result = subprocess.run(
+                ["jq", "-e", settled_filter],
+                input=payload,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                result.returncode == 0,
+                expected,
+                msg=f"unexpected settled classification for {payload}: {result.stderr}",
+            )
 
     def test_current_package_skips_only_when_the_pointer_already_matches_main(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")

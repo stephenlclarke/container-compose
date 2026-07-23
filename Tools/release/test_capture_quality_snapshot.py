@@ -201,7 +201,8 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn("return 75", workflow)
         self.assertIn('github_authority_query "exact-main CI runs for ${commit}"', workflow)
         self.assertIn('github_authority_query "jobs for CI run ${ci_run_id}"', workflow)
-        self.assertIn('github_authority_query "jobs for validated CI run ${WORKFLOW_RUN_ID}"', workflow)
+        self.assertIn("wait_for_complete_validate_conclusions()", workflow)
+        self.assertIn('github_authority_query "jobs for validated CI run ${run_id}"', workflow)
         self.assertIn(
             'wait_for_successful_main_sonarqube_scan "${WORKFLOW_RUN_HEAD_SHA}"',
             workflow,

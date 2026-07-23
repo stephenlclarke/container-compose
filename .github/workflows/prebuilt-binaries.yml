@@ -227,6 +227,38 @@ jobs:
             done
           }
 
+          # A completed workflow_run event can arrive before the jobs API has
+          # populated every aggregate job conclusion. Retry that transient
+          # state so an intentionally skipped companion plus a successful
+          # Validate job cannot be mistaken for failed release authority.
+          wait_for_complete_validate_conclusions() {
+            local run_id="$1" attempt=1 max_attempts=12 retry_delay=5
+            while true; do
+              if ! workflow_jobs="$(
+                github_authority_query "jobs for validated CI run ${run_id}" \
+                  api --paginate --slurp \
+                  "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100"
+              )"; then
+                return 2
+              fi
+              validate_conclusions="$(
+                jq -c '[.[] | .jobs[] | select(.name == "Validate" or .name == "Validate Runtime") | .conclusion]' \
+                  <<<"${workflow_jobs}"
+              )"
+              if jq -e 'length > 0 and all(.[]; . != null)' \
+                <<<"${validate_conclusions}" >/dev/null; then
+                return 0
+              fi
+              if (( attempt >= max_attempts )); then
+                return 1
+              fi
+              printf 'CI Validate job conclusions for run %s are not visible yet; retrying %s/%s in %ss\n' \
+                "${run_id}" "$((attempt + 1))" "${max_attempts}" "${retry_delay}" >&2
+              sleep "${retry_delay}"
+              ((attempt += 1))
+            done
+          }
+
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
             if [[ "${WORKFLOW_RUN_EVENT}" != "push" && "${WORKFLOW_RUN_EVENT}" != "workflow_dispatch" ]]; then
               printf 'Skipping non-release CI event: %s\n' "${WORKFLOW_RUN_EVENT}"
@@ -235,18 +267,18 @@ jobs:
               # companion for the opposite change set. The package authority
               # is satisfied when at least one Validate succeeds and every
               # matching job is either successful or intentionally skipped.
-              if ! workflow_jobs="$(
-                github_authority_query "jobs for validated CI run ${WORKFLOW_RUN_ID}" \
-                  api --paginate --slurp \
-                  "repos/${GITHUB_REPOSITORY}/actions/runs/${WORKFLOW_RUN_ID}/jobs?per_page=100"
-              )"; then
-                printf 'refusing package publication because validated CI job evidence could not be read\n' >&2
+              if wait_for_complete_validate_conclusions "${WORKFLOW_RUN_ID}"; then
+                :
+              else
+                authority_result=$?
+                if (( authority_result == 2 )); then
+                  printf 'refusing package publication because validated CI job evidence could not be read\n' >&2
+                else
+                  printf 'refusing package publication because CI Validate results did not settle: %s\n' \
+                    "$(jq -r 'if length == 0 then "missing" else map(. // "pending") | join(",") end' <<<"${validate_conclusions}")" >&2
+                fi
                 exit 1
               fi
-              validate_conclusions="$(
-                jq -c '[.[] | .jobs[] | select(.name == "Validate" or .name == "Validate Runtime") | .conclusion]' \
-                  <<<"${workflow_jobs}"
-              )"
               if ! jq -e \
                 'length > 0 and any(.[]; . == "success") and all(.[]; . == "success" or . == "skipped")' \
                 <<<"${validate_conclusions}" >/dev/null; then
