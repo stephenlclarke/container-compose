@@ -24,6 +24,26 @@ MacBook Pro without modifying user worktrees.
 - Compose consumes the exact Container tip in signed commit
   `d2464978e156d4ab30db104f3e0abf878fb10a0b`.
 
+## 23 July maintenance follow-up
+
+Apple Container subsequently advanced to
+`78e2cb4417640ff2d630c407a1d00ef09c9d3334` with pull request
+[#1889](https://github.com/apple/container/pull/1889), which routes the
+`system start` status messages through structured logging. The fork already
+contained the same behavior in signed commit `0fe78339`; its signed
+`d24be8a9` merge therefore retains Apple's parentage without changing the
+source tree. Signed handoff commit `248f8e0b` documents that disposition.
+
+The refreshed fork tips are:
+
+- `apple/container-builder-shim`: fork `5939a91`, 0 behind and 31 ahead.
+- `apple/containerization`: fork `8d4c408`, 0 behind and 121 ahead.
+- `apple/container`: fork `248f8e0`, 0 behind and 264 ahead.
+
+The support forks are now 416 commits ahead and zero behind Apple. Compose
+consumes the exact refreshed Container tip in signed commit `2d973e43`
+(`chore(deps): consume latest Apple Container maintenance`).
+
 ## Automation and pull-request result
 
 - No new open Dependabot or other bot-authored pull request requires action in
@@ -58,6 +78,7 @@ Swarm, and CSI behavior are out of macOS scope.
 
 `docs/container-compose-demo.tape` types real commands and shows their live
 output. It contains no `Replay`, marker, or transcript-helper instruction.
+The maintenance follow-up does not change the tape or relax this contract.
 
 ## Release gate
 

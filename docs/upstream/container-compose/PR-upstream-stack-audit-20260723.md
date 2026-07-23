@@ -69,6 +69,52 @@ asset hashes, publication time, and seven-day soak deadline belong in the
 generated Current release evidence so this source commit does not claim a
 release that cannot exist until after it is merged.
 
+## 23 July Apple Container maintenance follow-up
+
+Apple Container advanced once more to
+`78e2cb4417640ff2d630c407a1d00ef09c9d3334` with the structured startup-log
+change from [#1889](https://github.com/apple/container/pull/1889). The fork had
+already implemented that behavior in signed commit
+`0fe78339ac28d6fca33eeaa94bfd1f09aa772529`. Signed, source-empty merge
+`d24be8a91ea82baa27f9546e82897e52dcc6862b` retains Apple's new ancestry, and
+signed commit `248f8e0b0f12179835d7902f4922d3c652421ff3` provides the focused
+Apple handoff.
+
+Compose commit `2d973e4380f3e8583d4197ee199de2cde7e4253d`
+(`chore(deps): consume latest Apple Container maintenance`) updates only the
+SwiftPM pins, immutable stack reference, and README provenance. The resulting
+support stack is 416 commits ahead and zero behind Apple:
+
+- Builder `5939a91`: 31 ahead.
+- Containerization `8d4c408`: 121 ahead.
+- Container `248f8e0`: 264 ahead.
+
+The follow-up audit found no open bot pull request, no newly updated Apple bug
+requiring a reproducible fork fix, and no author action on
+`apple/container#1965`, `#1934`, `#1935`, or
+`apple/containerization#799`. All four Stephen Clarke pull requests are
+mergeable and await only Apple review. The Docker-shaped implementation and
+the live, typed-command VHS tape are unchanged.
+
+The complete matched-stack release gate was rerun on the designated Apple
+silicon MacBook Pro after the maintenance sync:
+
+- Builder: complete unit suite, 44.4% Go statement coverage.
+- Containerization: 646 unit tests in 85 suites; 175 of 177 integration tests
+  passed, with the two virtio GPU render-node cases skipped as expected.
+- Container: 1,135 unit tests in 131 suites plus 381 integration tests in 41
+  suites; 51.58% combined line coverage.
+- Compose: 1,114 Swift tests in 26 suites, 91.39% Swift line coverage, and
+  90.06% Go statement coverage.
+- Live Compose runtime: 25 of 25 scenarios passed.
+- Docker Compose V2: 56 of 56 strict parity contracts passed against
+  `docker compose` 5.3.1.
+
+Exact-main CI, SonarQube, Current assets, signed Homebrew pair, install smoke,
+and rendered-GIF verification remain post-push publication gates. Publishing
+the refreshed Current pair resets the seven-day Phase 3 soak; Phase 4 must not
+start before the replacement deadline.
+
 ```sh
 CONTAINER_BUILDER_SHIM_STACK_REPO=/path/to/container-builder-shim \
 CONTAINERIZATION_STACK_REPO=/path/to/containerization \
