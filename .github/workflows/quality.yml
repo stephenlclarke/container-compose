@@ -65,7 +65,7 @@ jobs:
     steps:
       - name: Checkout for push diff
         if: github.event_name == 'push'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -128,7 +128,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout container-compose
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: container-compose
           fetch-depth: 0
@@ -166,7 +166,7 @@ jobs:
           printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
 
       - name: Checkout container dependency
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/container
           path: container
@@ -174,7 +174,7 @@ jobs:
 
       - name: Checkout containerization dependency
         if: steps.stack-refs.outputs.containerization_ref != ''
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/containerization
           path: containerization
@@ -265,7 +265,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout container-compose
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: container-compose
           fetch-depth: 0
@@ -303,7 +303,7 @@ jobs:
           printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
 
       - name: Checkout container dependency
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/container
           path: container
@@ -311,7 +311,7 @@ jobs:
 
       - name: Checkout containerization dependency
         if: steps.stack-refs.outputs.containerization_ref != ''
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/containerization
           path: containerization
@@ -402,7 +402,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout container-compose
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 

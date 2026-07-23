@@ -162,7 +162,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout the stable candidate
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: container-compose
           fetch-depth: 0
@@ -171,7 +171,7 @@ jobs:
       # Stable tags are immutable, so use the immutable workflow revision for
       # release-control tooling while validating the tag checkout separately.
       - name: Checkout immutable stable-gate tools
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: release-tools
           fetch-depth: 0
@@ -196,7 +196,7 @@ jobs:
           PY
 
       - name: Checkout pinned stack dependencies
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/container-builder-shim
           path: container-builder-shim
@@ -204,7 +204,7 @@ jobs:
           ref: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
 
       - name: Checkout pinned containerization dependency
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/containerization
           path: containerization
@@ -212,7 +212,7 @@ jobs:
           ref: ${{ steps.stack-refs.outputs.containerization_ref }}
 
       - name: Checkout pinned runtime dependency
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/container
           path: container
@@ -220,7 +220,7 @@ jobs:
           ref: ${{ steps.stack-refs.outputs.container_ref }}
 
       - name: Checkout immutable Homebrew tap snapshot
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/homebrew-tap
           path: homebrew-tap

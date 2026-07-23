@@ -421,7 +421,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout container-compose
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: container-compose
           fetch-depth: 0
@@ -583,7 +583,7 @@ jobs:
 
       - name: Checkout container-builder-shim dependency
         if: steps.stack-refs.outputs.container_builder_shim_ref != ''
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/container-builder-shim
           path: container-builder-shim
@@ -592,7 +592,7 @@ jobs:
 
       - name: Checkout containerization dependency
         if: steps.stack-refs.outputs.containerization_ref != ''
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/containerization
           path: containerization
@@ -600,7 +600,7 @@ jobs:
           ref: ${{ steps.stack-refs.outputs.containerization_ref }}
 
       - name: Checkout container dependency
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/container
           path: container
@@ -854,12 +854,12 @@ jobs:
           cp "${demo_output}" "${RUNNER_TEMP}/${DEMO_ASSET}"
 
       - name: Attest release package
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
 
       - name: Attest matched runtime package
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ steps.runtime-package.outputs.local_asset }}
 
@@ -1024,7 +1024,7 @@ jobs:
 
       - name: Checkout immutable release control tools
         if: steps.current-freshness.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: release-tools
           fetch-depth: 1
@@ -1047,7 +1047,7 @@ jobs:
 
       - name: Checkout Homebrew tap
         if: steps.current-freshness.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/homebrew-tap
           path: homebrew-tap
@@ -1194,7 +1194,7 @@ jobs:
     runs-on: macos-26
     steps:
       - name: Checkout tagged container-compose source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: container-compose
           fetch-depth: 1
@@ -1202,7 +1202,7 @@ jobs:
           token: ${{ github.token }}
 
       - name: Checkout immutable release control tools
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: release-tools
           fetch-depth: 1
@@ -1300,7 +1300,7 @@ jobs:
           printf 'ref=%s\n' "${ref}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout pinned container dependency
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/container
           path: container
@@ -1321,7 +1321,7 @@ jobs:
           fi
 
       - name: Checkout Homebrew tap
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/homebrew-tap
           path: homebrew-tap

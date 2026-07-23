@@ -50,7 +50,7 @@ jobs:
     steps:
       - name: Checkout for push diff
         if: github.event_name == 'push'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -106,7 +106,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout container-compose
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -117,7 +117,7 @@ jobs:
           cache-dependency-path: Tools/compose-normalizer/go.sum
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4
         with:
           languages: go
           build-mode: manual
@@ -128,7 +128,7 @@ jobs:
         run: make go-build
 
       - name: Analyze
-        uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4
         with:
           # Keep the historical configuration identity stable. CodeQL uses this
           # category to find the main-branch baseline for pull-request alert
