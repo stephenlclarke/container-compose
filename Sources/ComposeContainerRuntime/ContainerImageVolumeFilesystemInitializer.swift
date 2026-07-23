@@ -29,7 +29,9 @@ import SystemPackage
 public struct ContainerImageVolumeInitializer: Sendable {
     private static let minimumVolumeSize: UInt64 = 1 * 1024 * 1024
 
-    public init() {}
+    public init() {
+        // This runtime adapter is stateless; construction needs no setup.
+    }
 
     /// Copies `imageSubpath` into `volume` only when the volume contains no
     /// entries other than ext4's required `lost+found` directory.
@@ -46,9 +48,10 @@ public struct ContainerImageVolumeInitializer: Sendable {
             throw ComposeError.invalidProject("runtime volume '\(volume.name)' does not expose an ext4 backing path")
         }
 
+        let (sourcePath, filesystemRoot) = try imagePaths(for: imageSubpath)
         let volumePath = FilePath(volume.source)
         let volumeReader = try EXT4.EXT4Reader(blockDevice: volumePath)
-        guard try volumeReader.listDirectory(FilePath("/")) == ["lost+found"] else {
+        guard try volumeReader.listDirectory(filesystemRoot) == ["lost+found"] else {
             return false
         }
 
@@ -65,7 +68,6 @@ public struct ContainerImageVolumeInitializer: Sendable {
         let imageReader = try EXT4.EXT4Reader(blockDevice: FilePath(imageFilesystem))
         let imageVolumeRoot: EXT4.Inode
         do {
-            let sourcePath = FilePath(imageSubpath)
             imageVolumeRoot = try imageReader.stat(sourcePath, followSymlinks: false).inode
             try imageReader.export(archive: archivePath, subtree: sourcePath)
         } catch let error as EXT4.PathIOError {
@@ -90,7 +92,7 @@ public struct ContainerImageVolumeInitializer: Sendable {
             // ownership and mode on that root so a non-root image user can
             // write to its Docker image `VOLUME` after the first copy-up.
             try formatter.create(
-                path: FilePath("/"),
+                path: filesystemRoot,
                 mode: imageVolumeRoot.mode,
                 uid: Self.id(low: imageVolumeRoot.uid, high: imageVolumeRoot.uidHigh),
                 gid: Self.id(low: imageVolumeRoot.gid, high: imageVolumeRoot.gidHigh),
@@ -103,6 +105,14 @@ public struct ContainerImageVolumeInitializer: Sendable {
 
         _ = try fileManager.replaceItemAt(volumeURL, withItemAt: stagedVolumeURL)
         return true
+    }
+
+    private func imagePaths(for subpath: String) throws -> (subpath: FilePath, root: FilePath) {
+        let subpath = FilePath(subpath)
+        guard let root = subpath.root else {
+            throw ComposeError.invalidProject("image volume path '\(subpath)' must be absolute")
+        }
+        return (subpath, FilePath(root: root))
     }
 
     private func volumeSize(volume: ComposeVolumeSummary, at path: URL) throws -> UInt64 {

@@ -746,7 +746,6 @@ public struct ComposeNetwork: Codable, Equatable {
             isAttachable: Bool? = nil,
             enableIPv6: Bool? = nil,
             labels: [String: String]? = nil,
-            subnets: Subnets = Subnets(),
         ) {
             self.external = external
             self.driver = driver
@@ -755,6 +754,30 @@ public struct ComposeNetwork: Codable, Equatable {
             self.isAttachable = isAttachable
             self.enableIPv6 = enableIPv6
             self.labels = labels
+            subnets = Subnets()
+        }
+
+        /// Creates options for a locally managed network with explicit IPAM subnets.
+        ///
+        /// External networks cannot declare local IPAM configuration, so this
+        /// initializer deliberately omits the mutually exclusive `external` flag.
+        public init(
+            driver: String? = nil,
+            driverOpts: [String: String]? = nil,
+            isInternal: Bool? = nil,
+            isAttachable: Bool? = nil,
+            enableIPv6: Bool? = nil,
+            labels: [String: String]? = nil,
+            subnets: Subnets,
+        ) {
+            self.init(
+                driver: driver,
+                driverOpts: driverOpts,
+                isInternal: isInternal,
+                isAttachable: isAttachable,
+                enableIPv6: enableIPv6,
+                labels: labels,
+            )
             self.subnets = subnets
         }
     }

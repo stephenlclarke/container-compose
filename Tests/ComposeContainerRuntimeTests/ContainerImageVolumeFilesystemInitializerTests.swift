@@ -78,6 +78,17 @@ struct ContainerImageVolumeInitializerTests {
     }
 
     @Test
+    func `a relative image volume path is rejected`() async {
+        await #expect(throws: Error.self) {
+            try await ContainerImageVolumeInitializer().initializeIfEmpty(
+                imageFilesystem: "/missing",
+                imageSubpath: "var/lib/data",
+                volume: ComposeVolumeSummary(name: "data", source: "/missing-volume"),
+            )
+        }
+    }
+
+    @Test
     func `an empty volume is seeded from the selected image subtree and then reused`() async throws {
         let directory = FileManager.default.uniqueTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
