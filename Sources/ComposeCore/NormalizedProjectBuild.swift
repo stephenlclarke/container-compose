@@ -30,7 +30,7 @@ public struct ComposeBuildImageOptions: Equatable {
         noCacheFilter: [String]? = nil,
         pull: Bool? = nil,
         platforms: [String]? = nil,
-        tags: [String]? = nil
+        tags: [String]? = nil,
     ) {
         self.target = target
         self.noCache = noCache
@@ -59,7 +59,7 @@ public struct ComposeBuildFrontendOptions: Equatable {
         network: String? = nil,
         privileged: Bool? = nil,
         shmSize: String? = nil,
-        ulimits: [String]? = nil
+        ulimits: [String]? = nil,
     ) {
         self.entitlements = entitlements
         self.extraHosts = extraHosts
@@ -140,7 +140,7 @@ public struct ComposeBuild: Codable, Equatable {
             image: Image = Image(),
             frontend: Frontend = Frontend(),
             attestations: Attestations = Attestations(),
-            unsupportedFields: [String]? = nil
+            unsupportedFields: [String]? = nil,
         ) {
             target = image.target
             noCache = image.noCache
@@ -172,7 +172,7 @@ public struct ComposeBuild: Codable, Equatable {
             context: String? = nil,
             dockerfile: String? = nil,
             dockerfileInline: String? = nil,
-            additionalContexts: [String: String]? = nil
+            additionalContexts: [String: String]? = nil,
         ) {
             self.context = context
             self.dockerfile = dockerfile
@@ -215,18 +215,18 @@ public struct ComposeBuild: Codable, Equatable {
         args: [String: String]? = nil,
         cache: Cache = Cache(),
         metadata: Metadata = Metadata(),
-        options: Options = Options()
+        options: Options = Options(),
     ) {
         self.init(
             contexts: Contexts(
                 context: context,
                 dockerfile: dockerfile,
-                dockerfileInline: dockerfileInline
+                dockerfileInline: dockerfileInline,
             ),
             args: args,
             cache: cache,
             metadata: metadata,
-            options: options
+            options: options,
         )
     }
 
@@ -235,7 +235,7 @@ public struct ComposeBuild: Codable, Equatable {
         args: [String: String]? = nil,
         cache: Cache = Cache(),
         metadata: Metadata = Metadata(),
-        options: Options = Options()
+        options: Options = Options(),
     ) {
         context = contexts.context
         dockerfile = contexts.dockerfile
@@ -277,7 +277,7 @@ public struct ComposeBuildSecret: Codable, Equatable {
         id: String,
         file: String? = nil,
         environment: String? = nil,
-        externalName: String? = nil
+        externalName: String? = nil,
     ) {
         self.id = id
         self.file = file
