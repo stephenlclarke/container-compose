@@ -830,6 +830,16 @@ jobs:
           }
           trap cleanup EXIT
 
+          # A self-hosted runner can retain the prior demo package and app
+          # root. Stop whichever CLI owns that root before replacing it so a
+          # stale launchd service cannot reject the newly typed app root.
+          if [[ -x "${demo_root}/bin/container" ]]; then
+            "${demo_root}/bin/container" system stop || true
+          elif command -v container >/dev/null 2>&1; then
+            container system stop || true
+          fi
+          rm -rf "${demo_root}"
+
           mkdir -p "${demo_root}/libexec/container-plugins"
           mkdir -p "$(dirname "${demo_output}")"
           tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"
