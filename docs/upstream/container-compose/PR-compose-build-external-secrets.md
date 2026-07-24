@@ -90,8 +90,8 @@ Current local results:
 - Docker Compose V2 5.3.1 external config, bake omission, expected missing
   external secret, and positive file-backed build/run: passed.
 - Matching live Apple runtime external config, bake omission, Keychain read,
-  BuildKit secret mount, build, run, and cleanup: passed against Compose
-  `69cec2369316eee77a36bb35c74b6e90297928c7`, Container
+  BuildKit secret mount, build, run, and cleanup: passed with the implementation
+  recorded in `00ed7934e994cd654f40d3717a96d3ce57cfaa17`, Container
   `ea20b242e763eb3e64d412c3dc2bbaa69639d2f4`, Containerization
   `6aa6e803539c59ce754c55628e5417356216b297`, and Builder shim digest
   `sha256:d993210e3960bce33a84e061d6cb96385b43277fe94a7492fd6c60b6317d2197`.
@@ -105,7 +105,11 @@ Current local results:
 ## Commit tracking
 
 - Compose implementation:
-  [`00ed793`](https://github.com/stephenlclarke/container-compose/commit/00ed793)
+  [`00ed793`](https://github.com/stephenlclarke/container-compose/commit/00ed7934e994cd654f40d3717a96d3ce57cfaa17)
   (`feat(build): materialize external secrets from secure store`).
+- Hosted style-gate refactor:
+  [`f4fab8c`](https://github.com/stephenlclarke/container-compose/commit/f4fab8c28a85d9de8249982fdf9bec2730b771e0)
+  and
+  [`a408c9f`](https://github.com/stephenlclarke/container-compose/commit/a408c9f613fa4b9c017970b7af6378cfa85cce6b).
 - Compose documentation: this signed handoff commit.
 - Runtime forks: no code change required.

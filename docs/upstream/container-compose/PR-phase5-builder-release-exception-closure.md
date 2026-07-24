@@ -91,8 +91,40 @@ Results:
   ([run 30072061188](https://github.com/stephenlclarke/container-compose/actions/runs/30072061188)),
   and Documentation
   ([run 30072061213](https://github.com/stephenlclarke/container-compose/actions/runs/30072061213)).
-  The final signed merge head, Current prerelease, and signed Homebrew pair
-  remain pending.
+- Final signed PR head
+  `782897cb86bafc0425bef96b9927dacfff23a40b` passed CI
+  ([run 30074024521](https://github.com/stephenlclarke/container-compose/actions/runs/30074024521)),
+  CodeQL
+  ([run 30074024202](https://github.com/stephenlclarke/container-compose/actions/runs/30074024202)),
+  and Documentation
+  ([run 30074024174](https://github.com/stephenlclarke/container-compose/actions/runs/30074024174)).
+- [PR #141](https://github.com/stephenlclarke/container-compose/pull/141)
+  merged as verified main commit
+  `334460b9e060bb0dae5000709a783b4a3772c101`. Exact-main CI, coverage, and
+  SonarQube passed in
+  [run 30075342185](https://github.com/stephenlclarke/container-compose/actions/runs/30075342185).
+- [Current prerelease](https://github.com/stephenlclarke/container-compose/releases/tag/current)
+  published from exact main in
+  [run 30076108059](https://github.com/stephenlclarke/container-compose/actions/runs/30076108059).
+  The Compose archive is
+  `sha256:4e3359799e96112704fbfc383e9ddad9344669cbe937090ba994720aa719a928`
+  and the matched-runtime archive is
+  `sha256:e44185eefefadf1f26006bcfcce3ea931312ecd4fe7f36041d87d65129a09116`;
+  both passed their sidecars and each has one verified GitHub artifact
+  attestation.
+- The signed atomic Homebrew update is
+  [`e5a9045`](https://github.com/stephenlclarke/homebrew-tap/commit/e5a9045a347d4dedafe4006dbf480527958e0d6c);
+  both formulae installed and passed their tests at
+  `current.867.334460b9e060`.
+- The installed Current pair repeated the strict Docker Compose V2 5.3.1 and
+  live Apple external-Dockerfile config, bake, build, and run parity fixture on
+  this MBP.
+- The published 1600×720 GIF is
+  `sha256:6c7f0186e312fbf936ad045b5bc18b70746231b0ca9ec0d3494ee5e0d0c51314`,
+  251.32 seconds, and 6,283 frames. Its source contains 16 `Type` plus 16
+  `Enter` actions, no `Replay` or `Marker` directives, and visual inspection
+  confirms typed commands followed by real runtime, service, volume, and
+  shutdown output.
 
 ## Commit tracking
 
@@ -102,6 +134,12 @@ Results:
 - Compose documentation:
   `eea99ebc698cdb5fb21ef9039d594ae2411db790`
   (`docs(build): hand off builder gate closure`).
+- Verified no-cache release evidence:
+  `b4922c6bbf47fcb8e3d1e4742cbd8ed8390c49ce`.
+- Final signed PR head:
+  `782897cb86bafc0425bef96b9927dacfff23a40b`.
+- Main merge:
+  `334460b9e060bb0dae5000709a783b4a3772c101`.
 - Apple upstream: `d1d763530df3c6a326dbae7f0c0a59a335808045`.
 - Signed Container synchronization:
   `1bc31674629287f3386637db4c6d8652dc36602a`.
