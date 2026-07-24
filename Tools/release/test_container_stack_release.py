@@ -422,6 +422,16 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('export CONTAINER_APP_ROOT="${demo_app_root}"', workflow)
         self.assertIn('trap cleanup EXIT', workflow)
         self.assertIn('"${container_binary}" system stop || true', workflow)
+        self.assertIn('"${demo_root}/bin/container" system stop || true', workflow)
+        self.assertIn("elif command -v container >/dev/null 2>&1; then", workflow)
+        self.assertLess(
+            workflow.index('"${demo_root}/bin/container" system stop || true'),
+            workflow.index('rm -rf "${demo_root}"'),
+        )
+        self.assertLess(
+            workflow.index('rm -rf "${demo_root}"'),
+            workflow.index('tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"'),
+        )
         self.assertIn("docs/container-compose-demo.tape", workflow)
         self.assertIn("VHS itself is the fail-closed runtime gate", workflow)
         self.assertIn("bash Tools/release/record-vhs-live-demo.sh", workflow)

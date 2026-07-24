@@ -19,6 +19,7 @@
 public struct ComposeBuildImageOptions: Equatable {
     public var target: String?
     public var noCache: Bool?
+    public var noCacheFilter: [String]?
     public var pull: Bool?
     public var platforms: [String]?
     public var tags: [String]?
@@ -26,12 +27,14 @@ public struct ComposeBuildImageOptions: Equatable {
     public init(
         target: String? = nil,
         noCache: Bool? = nil,
+        noCacheFilter: [String]? = nil,
         pull: Bool? = nil,
         platforms: [String]? = nil,
         tags: [String]? = nil,
     ) {
         self.target = target
         self.noCache = noCache
+        self.noCacheFilter = noCacheFilter
         self.pull = pull
         self.platforms = platforms
         self.tags = tags
@@ -118,6 +121,7 @@ public struct ComposeBuild: Codable, Equatable {
 
         public var target: String?
         public var noCache: Bool?
+        public var noCacheFilter: [String]?
         public var pull: Bool?
         public var platforms: [String]?
         public var tags: [String]?
@@ -140,6 +144,7 @@ public struct ComposeBuild: Codable, Equatable {
         ) {
             target = image.target
             noCache = image.noCache
+            noCacheFilter = image.noCacheFilter
             pull = image.pull
             platforms = image.platforms
             tags = image.tags
@@ -194,6 +199,7 @@ public struct ComposeBuild: Codable, Equatable {
     public var ssh: [String]?
     public var target: String?
     public var noCache: Bool?
+    public var noCacheFilter: [String]?
     public var pull: Bool?
     public var platforms: [String]?
     public var tags: [String]?
@@ -249,6 +255,7 @@ public struct ComposeBuild: Codable, Equatable {
         ssh = metadata.ssh
         target = options.target
         noCache = options.noCache
+        noCacheFilter = options.noCacheFilter
         pull = options.pull
         platforms = options.platforms
         tags = options.tags

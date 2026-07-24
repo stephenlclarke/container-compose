@@ -298,6 +298,7 @@ type normalizedBuild struct {
 	SSH                []string                `json:"ssh,omitempty"`
 	Target             string                  `json:"target,omitempty"`
 	NoCache            bool                    `json:"noCache,omitempty"`
+	NoCacheFilter      []string                `json:"noCacheFilter,omitempty"`
 	Pull               bool                    `json:"pull,omitempty"`
 	Platforms          []string                `json:"platforms,omitempty"`
 	Tags               []string                `json:"tags,omitempty"`
@@ -979,6 +980,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 			SSH:                buildSSHValues(service.Build.SSH),
 			Target:             service.Build.Target,
 			NoCache:            service.Build.NoCache,
+			NoCacheFilter:      append([]string(nil), service.Build.NoCacheFilter...),
 			Pull:               service.Build.Pull,
 			Platforms:          append([]string(nil), service.Build.Platforms...),
 			Tags:               append([]string(nil), service.Build.Tags...),

@@ -74,6 +74,21 @@ Current local results:
   macOS Container/Containerization source runtime fixture: passed.
 - ShellCheck, Markdown lint, SwiftFormat, strict SwiftLint, license, release-tool,
   and stack-consistency checks: passed.
+- Exact-main Quality workflow `30067635529`, CodeQL workflow `30067635480`,
+  CI workflow `30067635488`, and Documentation workflow `30067635498`:
+  passed for merge commit
+  `5077f91e4ec6df2890d722788cecd2e258fa074b`.
+- The CI SonarQube scan and quality gate passed.
+- Current workflow `30068134568` attempt 2 passed and published
+  [`current`](https://github.com/stephenlclarke/container-compose/releases/tag/current)
+  at exact target `5077f91e4ec6df2890d722788cecd2e258fa074b`.
+- Both release archive checksums and GitHub artifact attestations passed.
+- Signed Homebrew tap commit
+  `0583ac43a312f8f527eb2a5818a20de0b0f453d3` atomically updated
+  `container-current` and `container-compose-current` to
+  `current.865.5077f91e4ec6`.
+- The installed Current pair passed an isolated start, status, Compose version,
+  and stop smoke test on the MBP. Stable `0.9.0` remained linked and stopped.
 
 ## Compatibility and Risks
 
@@ -95,5 +110,5 @@ Current local results:
 - [x] Docker Compose V2 5.3.1 parity passed
 - [x] Matching macOS runtime parity passed
 - [x] Swift coverage threshold passed
-- [ ] SonarQube quality gate passed
-- [ ] Signed commit and prerelease published
+- [x] SonarQube quality gate passed
+- [x] Signed commit and prerelease published

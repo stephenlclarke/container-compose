@@ -1,0 +1,8 @@
+services:
+  app:
+    image: container-compose-no-cache-filter:latest
+    build:
+      context: .
+      no_cache_filter:
+        - base
+        - compile
