@@ -1,4 +1,12 @@
-# Phase 5 gap: Builder tar exports do not reach all requested macOS destinations
+# Resolved Phase 5 gap: Builder tar exports on macOS
+
+> Resolved by Apple [`container@d1d7635`](https://github.com/apple/container/commit/d1d763530df3c6a326dbae7f0c0a59a335808045),
+> synchronized into the signed fork as
+> [`1bc3167`](https://github.com/stephenlclarke/container/commit/1bc31674629287f3386637db4c6d8652dc36602a)
+> with the fixture-only reconciliation
+> [`abed15f`](https://github.com/stephenlclarke/container/commit/abed15fdd0cafe340f8aceb65080e4a88d0ceb0a).
+> The former release exception is removed by
+> [the Phase 5 closure handoff](PR-phase5-builder-release-exception-closure.md).
 
 ## Problem
 
@@ -31,7 +39,7 @@ failures across these two tests:
 same isolated run. The failure therefore is not parser acceptance: it is the
 post-build archive delivery contract.
 
-## Required Apple-shaped change
+## Required Apple-shaped change (completed upstream)
 
 Implement a narrow generic output-transfer abstraction that owns the lifecycle
 of a Builder tar result and delivers it to the exact host destination. It must:
@@ -54,14 +62,14 @@ The likely implementation and test starting points are:
 - `container-builder-shim/pkg/build/build.go` — preserve the generic Builder
   output stream/staging contract without teaching it Compose paths;
 - `container/Tests/ContainerBuildTests/BuilderMetadataTests.swift`; and
-- `container/Tests/IntegrationTests/Build/TestCLIBuilderTarExportSerial.swift`.
+- `container/Tests/IntegrationTests/Build/TestCLIBuilderTarExport.swift`.
 
 The change should be split into Apple-reviewable commits: first the generic
 destination/transfer abstraction with unit tests, then the matched VM-backed
 integration coverage. No Compose-layer workaround should move archives or
 special-case paths.
 
-## Release boundary
+## Original release boundary
 
 Until the generic implementation and its full suite pass, the 0.7.0 Phase 1
 local release gate may exclude only `TestCLIBuilderTarExportSerial` together
@@ -69,3 +77,12 @@ with the two separately documented external-Dockerfile suites
 `TestCLIBuilderSerial` and `TestCLIBuilderLocalOutputSerial`. The exception is
 milestone-only, version-bound, local-only, and rejected by hosted validation;
 it is not a parity claim.
+
+## Closure evidence
+
+The exact synchronized `TestCLIBuilderTarExport` suite passes the direct-file,
+existing-directory, repeated-directory, and invalid-destination cases. It
+asserts the requested direct archive, `out.tar`, and `out.tar.1` artifacts and
+the structured missing-`dest` error. The full and hosted stack release gates
+now run all Builder suites unconditionally; there is no remaining
+tar-export-specific exclusion.

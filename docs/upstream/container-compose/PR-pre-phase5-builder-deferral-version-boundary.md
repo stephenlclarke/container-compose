@@ -1,5 +1,9 @@
 # Pull request handoff: expire the Builder deferral at Phase 5
 
+> Historical release control. The boundary behaved as intended and Phase 5
+> removes the exception; see
+> [the closure handoff](PR-phase5-builder-release-exception-closure.md).
+
 ## Summary
 
 - Align the temporary local Builder-suite deferral with the stable version

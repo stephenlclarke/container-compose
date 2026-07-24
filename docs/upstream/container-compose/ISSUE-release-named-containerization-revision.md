@@ -1,5 +1,9 @@
 # Stable release helper rejects the current Container dependency shape
 
+> The reproduction below is historical. Phase 5 removed the
+> `CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON` input; current
+> releases run the complete local Builder suite.
+
 ## Problem
 
 The stable-release helper could update only a Containerization dependency whose

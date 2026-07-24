@@ -1,5 +1,8 @@
 # Phase 4 release gate: Builder suite rename invalidates the bounded exception
 
+> Historical release control. Phase 5 removes this exception completely; see
+> [the closure handoff](PR-phase5-builder-release-exception-closure.md).
+
 ## Summary
 
 Apple's container#2002 moved the build integration tests from the serial pass
