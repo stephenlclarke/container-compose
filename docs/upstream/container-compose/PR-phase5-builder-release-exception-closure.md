@@ -84,15 +84,24 @@ Results:
   suite passed, followed by successful runtime cleanup.
 - The prerequisite no-cache slice merged as verified main commit
   `69cec2369316eee77a36bb35c74b6e90297928c7`.
-- Exact-head hosted CI, CodeQL, Quality, Documentation, Current prerelease,
-  and signed Homebrew-pair evidence: pending until the branch is pushed.
+- Initial exact-head commit
+  `eea99ebc698cdb5fb21ef9039d594ae2411db790` passed CI
+  ([run 30072061271](https://github.com/stephenlclarke/container-compose/actions/runs/30072061271)),
+  CodeQL
+  ([run 30072061188](https://github.com/stephenlclarke/container-compose/actions/runs/30072061188)),
+  and Documentation
+  ([run 30072061213](https://github.com/stephenlclarke/container-compose/actions/runs/30072061213)).
+  The final signed merge head, Current prerelease, and signed Homebrew pair
+  remain pending.
 
 ## Commit tracking
 
 - Compose implementation:
   `9ec28541d716a529743aa23d491345d9f7b5e79c`
   (`fix(release): restore phase five builder gates`).
-- Compose documentation: pending.
+- Compose documentation:
+  `eea99ebc698cdb5fb21ef9039d594ae2411db790`
+  (`docs(build): hand off builder gate closure`).
 - Apple upstream: `d1d763530df3c6a326dbae7f0c0a59a335808045`.
 - Signed Container synchronization:
   `1bc31674629287f3386637db4c6d8652dc36602a`.

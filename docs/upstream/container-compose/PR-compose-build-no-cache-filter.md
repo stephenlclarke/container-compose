@@ -88,9 +88,36 @@ Results:
   config/bake/two-build fixture: passed.
 - ShellCheck, Markdown lint, SwiftFormat, strict SwiftLint, license,
   release-tool, and stack-consistency checks: passed.
-- Exact-main hosted CI/SonarQube: pending until the signed branch is merged.
-- Current prerelease and signed Homebrew pair: pending until exact-main hosted
-  validation passes.
+- Verified main commit:
+  `69cec2369316eee77a36bb35c74b6e90297928c7`.
+- Exact-main CI with SonarQube
+  ([run 30071941986](https://github.com/stephenlclarke/container-compose/actions/runs/30071941986)),
+  Quality
+  ([run 30071941970](https://github.com/stephenlclarke/container-compose/actions/runs/30071941970)),
+  CodeQL
+  ([run 30071942081](https://github.com/stephenlclarke/container-compose/actions/runs/30071942081)),
+  and Documentation
+  ([run 30071941963](https://github.com/stephenlclarke/container-compose/actions/runs/30071941963)):
+  passed.
+- Exact-main Current publication
+  ([run 30072504609](https://github.com/stephenlclarke/container-compose/actions/runs/30072504609)):
+  passed with seven release assets and verified provenance attestations for
+  both package archives.
+- Current release:
+  [`current`](https://github.com/stephenlclarke/container-compose/releases/tag/current),
+  targeting exact main with Compose digest
+  `sha256:32aa6baa65f45d645bd5af307fd1d2f73d5521dd6bbdcb481bd4145e978918db`
+  and runtime digest
+  `sha256:bf7b8ec54bd04c8f15a369c6282d3582ce4c0cd22b0992c87578ca5e3d85b6c9`.
+- Signed atomic Homebrew commit:
+  `442cc2f362035875fd038b2086a96d631ed07dce`; the installed and linked
+  `current.866.69cec2369316` pair reported exact Compose, Container, Builder,
+  and Containerization provenance, started successfully on this MBP, and
+  stopped cleanly.
+- The published 1600x720 VHS contains 6,267 frames across 250.68 seconds.
+  Its source has 19 typed commands, 19 matching Enter actions, 17 live-output
+  waits, and no `Replay` or `Marker`; sampled frames show commands being typed
+  followed by their real Container and Compose output.
 
 ## Compatibility and risk
 
