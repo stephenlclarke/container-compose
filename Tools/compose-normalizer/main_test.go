@@ -2018,6 +2018,9 @@ services:
         build.label: "true"
       network: host
       no_cache: true
+      no_cache_filter:
+        - base
+        - compile
       privileged: true
       pull: true
       platforms:
@@ -2115,6 +2118,9 @@ services:
 	}
 	if !api.Build.NoCache {
 		t.Fatal("api.Build.NoCache = false, want true")
+	}
+	if got, want := api.Build.NoCacheFilter, []string{"base", "compile"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("build no-cache filter = %#v, want %#v", got, want)
 	}
 	if !api.Build.Privileged {
 		t.Fatal("api.Build.Privileged = false, want true")

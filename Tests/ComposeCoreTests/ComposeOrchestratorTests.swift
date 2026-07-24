@@ -14911,6 +14911,7 @@ struct ComposeOrchestratorTests {
                             image: ComposeBuild.Options.Image(
                                 target: "runtime",
                                 noCache: true,
+                                noCacheFilter: ["base", "compile"],
                                 pull: true,
                                 platforms: ["linux/amd64", "linux/arm64"],
                                 tags: ["example/api:latest", "example/api:dev", "example/api:test"]
@@ -14950,6 +14951,8 @@ struct ComposeOrchestratorTests {
         ]))
         #expect(apiCommand.containsSequence(["--target", "runtime"]))
         #expect(apiCommand.contains("--no-cache"))
+        #expect(apiCommand.containsSequence(["--no-cache-filter", "base"]))
+        #expect(apiCommand.containsSequence(["--no-cache-filter", "compile"]))
         #expect(apiCommand.contains("--pull"))
         #expect(apiCommand.containsSequence(["--platform", "linux/amd64"]))
         #expect(apiCommand.containsSequence(["--platform", "linux/arm64"]))
@@ -15666,6 +15669,7 @@ struct ComposeOrchestratorTests {
                             image: ComposeBuild.Options.Image(
                                 target: "runtime",
                                 noCache: true,
+                                noCacheFilter: ["base", "compile"],
                                 pull: true,
                                 platforms: ["linux/arm64"],
                                 tags: ["example/api:dev"]
@@ -15724,6 +15728,7 @@ struct ComposeOrchestratorTests {
         #expect(api["target"] as? String == "runtime")
         #expect(api["pull"] as? Bool == true)
         #expect(api["no-cache"] as? Bool == true)
+        #expect(api["no-cache-filter"] as? [String] == ["base", "compile"])
         #expect(api["tags"] as? [String] == ["example/api:dev", "example/api:latest"])
         #expect(api["cache-from"] as? [String] == ["type=registry,ref=example/api:cache"])
         #expect(api["cache-to"] as? [String] == ["type=local,dest=.cache"])

@@ -65,6 +65,9 @@ extension ComposeOrchestrator {
         if buildOptions.noCache || build.noCache == true {
             args.append("--no-cache")
         }
+        for stage in build.noCacheFilter ?? [] where !stage.isEmpty {
+            args.append(contentsOf: ["--no-cache-filter", stage])
+        }
         if buildOptions.check {
             args.append("--check")
         }
@@ -312,6 +315,7 @@ extension ComposeOrchestrator {
             attest: attest.isEmpty ? nil : attest,
             pull: (buildOptions.pull || build.pull == true) ? true : nil,
             noCache: (buildOptions.noCache || build.noCache == true) ? true : nil,
+            noCacheFilter: buildBakeValues(build.noCacheFilter),
             output: buildOptions.check ? nil : [buildOptions.push && service.image != nil ? "type=registry" : "type=docker"],
             call: buildOptions.check ? "lint" : nil,
         )

@@ -343,6 +343,7 @@ struct ComposeBuildBakeTarget: Encodable {
     var attest: [String]?
     var pull: Bool?
     var noCache: Bool?
+    var noCacheFilter: [String]?
     var output: [String]?
     var call: String?
 
@@ -369,6 +370,7 @@ struct ComposeBuildBakeTarget: Encodable {
         case attest
         case pull
         case noCache = "no-cache"
+        case noCacheFilter = "no-cache-filter"
         case output
         case call
     }
