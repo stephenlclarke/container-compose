@@ -1,0 +1,17 @@
+services:
+  app:
+    image: container-compose-external-build-secret-${IMAGE_SUFFIX:-local}
+    build:
+      context: .
+      secrets:
+        - source: build_secret
+          target: api_token
+    command:
+      - /bin/sh
+      - -c
+      - cat /result
+
+secrets:
+  build_secret:
+    external: true
+    name: ${EXTERNAL_SECRET_NAME:-container-compose-build-external-secret}

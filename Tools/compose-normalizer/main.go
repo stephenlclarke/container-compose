@@ -311,9 +311,10 @@ type normalizedBuild struct {
 // normalizedBuildSecret contains the apple/container `container build --secret` fields
 // that can be safely derived from a Compose top-level secret definition.
 type normalizedBuildSecret struct {
-	ID          string `json:"id"`
-	File        string `json:"file,omitempty"`
-	Environment string `json:"environment,omitempty"`
+	ID           string `json:"id"`
+	File         string `json:"file,omitempty"`
+	Environment  string `json:"environment,omitempty"`
+	ExternalName string `json:"externalName,omitempty"`
 }
 
 // normalizedDevelop preserves Compose Develop Specification data needed by
@@ -1840,6 +1841,16 @@ func buildSecretValues(build *types.BuildConfig, secrets map[string]types.Secret
 			values = append(values, normalizedBuildSecret{ID: id, Environment: source.Environment})
 		case source.File != "":
 			values = append(values, normalizedBuildSecret{ID: id, File: source.File})
+		case bool(source.External):
+			name := strings.TrimSpace(source.Name)
+			if name == "" {
+				name = strings.TrimSpace(secret.Source)
+			}
+			if name == "" {
+				unsupported = true
+				continue
+			}
+			values = append(values, normalizedBuildSecret{ID: id, ExternalName: name})
 		default:
 			unsupported = true
 		}

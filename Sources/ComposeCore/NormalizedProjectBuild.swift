@@ -271,10 +271,17 @@ public struct ComposeBuildSecret: Codable, Equatable {
     public var id: String
     public var file: String?
     public var environment: String?
+    public var externalName: String?
 
-    public init(id: String, file: String? = nil, environment: String? = nil) {
+    public init(
+        id: String,
+        file: String? = nil,
+        environment: String? = nil,
+        externalName: String? = nil,
+    ) {
         self.id = id
         self.file = file
         self.environment = environment
+        self.externalName = externalName
     }
 }

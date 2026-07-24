@@ -670,7 +670,8 @@ services:
     build:
       context: .
       secrets:
-        - external_secret
+        - source: external_secret
+          target: external_token
 secrets:
   token:
     file: ./token.txt
@@ -678,6 +679,7 @@ secrets:
     environment: NPM_TOKEN
   external_secret:
     external: true
+    name: shared_build_secret
 `)
 
 	project, err := loadProject(nil, nil, nil, "", dir)
@@ -696,8 +698,15 @@ secrets:
 	if fields := project.Services["api"].Build.UnsupportedFields; len(fields) != 0 {
 		t.Fatalf("api unsupported build fields = %#v, want none", fields)
 	}
-	if fields := project.Services["worker"].Build.UnsupportedFields; !reflect.DeepEqual(fields, []string{"secrets"}) {
-		t.Fatalf("worker unsupported build fields = %#v, want secrets", fields)
+	workerSecrets := project.Services["worker"].Build.Secrets
+	wantWorker := []normalizedBuildSecret{
+		{ID: "external_token", ExternalName: "shared_build_secret"},
+	}
+	if !reflect.DeepEqual(workerSecrets, wantWorker) {
+		t.Fatalf("worker build secrets = %#v, want %#v", workerSecrets, wantWorker)
+	}
+	if fields := project.Services["worker"].Build.UnsupportedFields; len(fields) != 0 {
+		t.Fatalf("worker unsupported build fields = %#v, want none", fields)
 	}
 }
 
