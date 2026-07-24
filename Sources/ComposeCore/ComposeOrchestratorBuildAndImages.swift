@@ -113,23 +113,34 @@ extension ComposeOrchestrator {
         for (key, value) in (build.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(key)=\(value)"])
         }
-        for secret in build.secrets ?? [] {
-            try args.append(contentsOf: ["--secret", buildSecretArgument(secret)])
+        let materializedBuildSecrets = try await materializeBuildSecrets(
+            project: project,
+            service: service,
+            build: build,
+        )
+        do {
+            for secret in materializedBuildSecrets.secrets {
+                try args.append(contentsOf: ["--secret", buildSecretArgument(secret)])
+            }
+            for ssh in buildSSHValues(build: build, options: buildOptions) {
+                args.append(contentsOf: ["--ssh", ssh])
+            }
+            for attestation in buildAttestationArguments(build: build, options: buildOptions) {
+                args.append(contentsOf: [attestation.flag, attestation.value])
+            }
+            for (key, value) in (build.args ?? [:]).sorted(by: { $0.key < $1.key }) {
+                args.append(contentsOf: ["--build-arg", "\(key)=\(value)"])
+            }
+            for buildArgument in buildOptions.buildArguments where !buildArgument.isEmpty {
+                args.append(contentsOf: ["--build-arg", buildArgument])
+            }
+            args.append(containerBuildContext(build.context, project: project))
+            try await runContainer(args)
+            try materializedBuildSecrets.remove()
+        } catch {
+            try? materializedBuildSecrets.remove()
+            throw error
         }
-        for ssh in buildSSHValues(build: build, options: buildOptions) {
-            args.append(contentsOf: ["--ssh", ssh])
-        }
-        for attestation in buildAttestationArguments(build: build, options: buildOptions) {
-            args.append(contentsOf: [attestation.flag, attestation.value])
-        }
-        for (key, value) in (build.args ?? [:]).sorted(by: { $0.key < $1.key }) {
-            args.append(contentsOf: ["--build-arg", "\(key)=\(value)"])
-        }
-        for buildArgument in buildOptions.buildArguments where !buildArgument.isEmpty {
-            args.append(contentsOf: ["--build-arg", buildArgument])
-        }
-        args.append(containerBuildContext(build.context, project: project))
-        try await runContainer(args)
     }
 
     /// Returns selected build services after runtime and `additional_contexts`
@@ -457,23 +468,19 @@ extension ComposeOrchestrator {
 
     /// Encodes supported build secrets using Buildx bake syntax.
     func buildBakeSecrets(project: ComposeProject, build: ComposeBuild) throws -> [String] {
-        try (build.secrets ?? []).map { secret in
+        try (build.secrets ?? []).compactMap { secret in
             let id = secret.id.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !id.isEmpty else {
-                throw ComposeError.invalidProject("build secret id must not be empty")
-            }
-            let file = secret.file?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let environment = secret.environment?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let file, !file.isEmpty, let environment, !environment.isEmpty {
-                throw ComposeError.invalidProject("build secret '\(id)' cannot define both file and environment")
-            }
-            if let file, !file.isEmpty {
+            switch try buildSecretSource(secret) {
+            case .file(let file):
                 return "id=\(id),type=file,src=\(absoluteProjectPath(file, project: project))"
-            }
-            if let environment, !environment.isEmpty {
+            case .environment(let environment):
                 return "id=\(id),type=env,env=\(environment)"
+            case .external:
+                // Docker Compose V2 retains this reference in `config`, but
+                // omits it from bake output because the local Docker engine
+                // has no external secret store.
+                return nil
             }
-            throw ComposeError.invalidProject("build secret '\(id)' must define file or environment")
         }
     }
 
@@ -573,21 +580,16 @@ extension ComposeOrchestrator {
     /// Encodes one Compose build secret for apple/container `container build --secret`.
     func buildSecretArgument(_ secret: ComposeBuildSecret) throws -> String {
         let id = secret.id.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !id.isEmpty else {
-            throw ComposeError.invalidProject("build secret id must not be empty")
-        }
-        let file = secret.file?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let environment = secret.environment?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let file, !file.isEmpty, let environment, !environment.isEmpty {
-            throw ComposeError.invalidProject("build secret '\(id)' cannot define both file and environment")
-        }
-        if let file, !file.isEmpty {
+        switch try buildSecretSource(secret) {
+        case .file(let file):
             return "id=\(id),src=\(file)"
-        }
-        if let environment, !environment.isEmpty {
+        case .environment(let environment):
             return "id=\(id),env=\(environment)"
+        case .external:
+            throw ComposeError.invalidProject(
+                "build secret '\(id)' external resource was not materialized before build execution",
+            )
         }
-        throw ComposeError.invalidProject("build secret '\(id)' must define file or environment")
     }
 
     /// Applies the Compose `up --pull` policy before starting services.

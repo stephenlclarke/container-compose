@@ -103,7 +103,7 @@ struct ComposeCLIHelpTests {
         let commitHelp = try #require(ComposeCLIHelp.commandHelpText(command: "commit"))
         let eventsHelp = try #require(ComposeCLIHelp.commandHelpText(command: "events"))
 
-        #expect(partialCommands == [["build"], ["events"], ["exec"], ["ps"], ["run"], ["stats"], ["up"], ["volumes"]])
+        #expect(partialCommands == [["events"], ["exec"], ["ps"], ["run"], ["stats"], ["up"], ["volumes"]])
         #expect(commitHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(commitHelp.contains("best-effort snapshot"))
         #expect(commitHelp.contains("\u{001B}[32m--pause\u{001B}[0m"))
@@ -442,12 +442,11 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[38;5;208m--privileged\u{001B}[0m"))
     }
 
-    @Test("build command reports its current build-surface limitations")
-    func buildCommandReportsBuildSurfaceLimitations() throws {
+    @Test("build command reports its complete local build surface")
+    func buildCommandReportsCompleteLocalBuildSurface() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "build"))
 
-        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(help.contains("Non-file/environment build-secret source forms are unavailable."))
+        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--print\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--check\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--ssh\u{001B}[0m"))

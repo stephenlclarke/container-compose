@@ -1,0 +1,16 @@
+services:
+  app:
+    image: container-compose-external-build-secret-${IMAGE_SUFFIX:-local}
+    build:
+      context: .
+      secrets:
+        - source: build_secret
+          target: api_token
+    command:
+      - /bin/sh
+      - -c
+      - cat /result
+
+secrets:
+  build_secret:
+    file: fixture-secret.txt

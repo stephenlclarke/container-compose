@@ -400,6 +400,98 @@ private final class InlineDockerfileRunner: CommandRunning, @unchecked Sendable 
     }
 }
 
+private final class BuildSecretInspectingRunner: CommandRunning, @unchecked Sendable {
+    private let lock = NSLock()
+    private let result: CommandResult
+    private var commandStorage: [[String]] = []
+    private var secretContentsStorage: [Data] = []
+    private var secretPermissionsStorage: [Int] = []
+    private var secretURLsStorage: [URL] = []
+
+    var commands: [[String]] {
+        lock.withLock { commandStorage }
+    }
+
+    var secretContents: [Data] {
+        lock.withLock { secretContentsStorage }
+    }
+
+    var secretPermissions: [Int] {
+        lock.withLock { secretPermissionsStorage }
+    }
+
+    var secretURLs: [URL] {
+        lock.withLock { secretURLsStorage }
+    }
+
+    init(result: CommandResult = .success) {
+        self.result = result
+    }
+
+    func run(
+        _ executable: String,
+        _ arguments: [String],
+        workingDirectory: URL?,
+        environment: [String: String]?,
+        io: CommandIO
+    ) async throws -> CommandResult {
+        _ = executable
+        _ = workingDirectory
+        _ = environment
+        _ = io
+        var contents: [Data] = []
+        var permissions: [Int] = []
+        var urls: [URL] = []
+        for index in arguments.indices where arguments[index] == "--secret" {
+            let valueIndex = arguments.index(after: index)
+            guard arguments.indices.contains(valueIndex) else {
+                continue
+            }
+            let fields = arguments[valueIndex].split(separator: ",").map(String.init)
+            guard let source = fields.first(where: { $0.hasPrefix("src=") }) else {
+                continue
+            }
+            let url = URL(fileURLWithPath: String(source.dropFirst("src=".count)))
+            urls.append(url)
+            try contents.append(Data(contentsOf: url))
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            permissions.append((attributes[.posixPermissions] as? NSNumber)?.intValue ?? -1)
+        }
+        lock.withLock {
+            commandStorage.append(arguments)
+            secretContentsStorage.append(contentsOf: contents)
+            secretPermissionsStorage.append(contentsOf: permissions)
+            secretURLsStorage.append(contentsOf: urls)
+        }
+        return result
+    }
+}
+
+private actor BuildSecretFixtureReader: ComposeRuntimeSecretReading {
+    private let secrets: [String: Data]
+    private var requestStorage: [String] = []
+
+    init(secrets: [String: Data]) {
+        self.secrets = secrets
+    }
+
+    var requests: [String] {
+        requestStorage
+    }
+
+    func readSecret(name: String) async throws -> Data {
+        requestStorage.append(name)
+        guard let contents = secrets[name] else {
+            throw NSError(
+                domain: "BuildSecretFixtureReader",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "missing build secret fixture '\(name)'"],
+            )
+        }
+        return contents
+    }
+}
+
 private final class ProgressAssertingRunner: CommandRunning, @unchecked Sendable {
     private let onRun: @Sendable ([String]) -> Void
     private(set) var commands: [[String]] = []
@@ -14975,6 +15067,202 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["example/api:latest"])
     }
 
+    @Test("build materializes external secrets only for the engine invocation")
+    func buildMaterializesExternalSecretsOnlyForEngineInvocation() async throws {
+        let directory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let contents = Data([0x00, 0xFF, 0x0A])
+        let reader = BuildSecretFixtureReader(secrets: ["shared_build_secret": contents])
+        let runner = BuildSecretInspectingRunner()
+        let stateRoot = directory.appendingPathComponent("state", isDirectory: true)
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(
+                        context: "api",
+                        metadata: ComposeBuild.Metadata(secrets: [
+                            ComposeBuildSecret(id: "api_token", externalName: "shared_build_secret"),
+                        ])
+                    )
+                },
+            ]
+        )
+        let dependencies = orchestratorDependencies {
+            $0.secretReader = reader
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(materializedConfigSecretDirectory: stateRoot),
+            dependencies: dependencies
+        ).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.quiet = true
+            }
+        )
+
+        #expect(await reader.requests == ["shared_build_secret"])
+        #expect(runner.secretContents == [contents])
+        #expect(runner.secretPermissions == [0o400])
+        let secretURL = try #require(runner.secretURLs.first)
+        #expect(!FileManager.default.fileExists(atPath: secretURL.path))
+        let command = try #require(runner.commands.first)
+        #expect(command.containsSequence(["--secret", "id=api_token,src=\(secretURL.path)"]))
+        #expect(!command.joined(separator: " ").contains("shared_build_secret"))
+    }
+
+    @Test("build removes external secret files after an engine failure")
+    func buildRemovesExternalSecretFilesAfterEngineFailure() async throws {
+        let directory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let contents = Data("fixture".utf8)
+        let reader = BuildSecretFixtureReader(secrets: ["shared_build_secret": contents])
+        let runner = BuildSecretInspectingRunner(
+            result: CommandResult(status: 1, stdout: "", stderr: "")
+        )
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(
+                        context: "api",
+                        metadata: ComposeBuild.Metadata(secrets: [
+                            ComposeBuildSecret(id: "api_token", externalName: "shared_build_secret"),
+                        ])
+                    )
+                },
+            ]
+        )
+        let dependencies = orchestratorDependencies {
+            $0.secretReader = reader
+        }
+
+        await #expect(throws: ComposeError.self) {
+            try await ComposeOrchestrator(
+                runner: runner,
+                options: ComposeExecutionOptions(
+                    materializedConfigSecretDirectory: directory.appendingPathComponent(
+                        "state",
+                        isDirectory: true
+                    )
+                ),
+                dependencies: dependencies
+            ).build(
+                project: project,
+                options: ComposeBuildOptions {
+                    $0.quiet = true
+                }
+            )
+        }
+
+        #expect(runner.secretContents == [contents])
+        let secretURL = try #require(runner.secretURLs.first)
+        #expect(!FileManager.default.fileExists(atPath: secretURL.path))
+    }
+
+    @Test("build dry run neither reads nor writes external secrets")
+    func buildDryRunNeitherReadsNorWritesExternalSecrets() async throws {
+        let directory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let reader = BuildSecretFixtureReader(secrets: [:])
+        let emitted = MessageRecorder()
+        let stateRoot = directory.appendingPathComponent("state", isDirectory: true)
+        var executionOptions = ComposeExecutionOptions(
+            dryRun: true,
+            materializedConfigSecretDirectory: stateRoot
+        )
+        executionOptions.emit = { emitted.append($0) }
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(
+                        context: "api",
+                        metadata: ComposeBuild.Metadata(secrets: [
+                            ComposeBuildSecret(id: "api_token", externalName: "shared_build_secret"),
+                        ])
+                    )
+                },
+            ]
+        )
+        let dependencies = orchestratorDependencies {
+            $0.secretReader = reader
+        }
+
+        try await ComposeOrchestrator(
+            options: executionOptions,
+            dependencies: dependencies
+        ).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.quiet = true
+            }
+        )
+
+        #expect(await reader.requests.isEmpty)
+        let command = try #require(emitted.messages.first)
+        #expect(command.contains("--secret"))
+        #expect(command.contains("build-secrets/dry-run/secret-0"))
+        #expect(!command.contains("shared_build_secret"))
+        #expect(!FileManager.default.fileExists(atPath: stateRoot.path))
+    }
+
+    @Test("build reports an unavailable external secret before invoking the engine")
+    func buildReportsUnavailableExternalSecretBeforeInvokingEngine() async throws {
+        let reader = BuildSecretFixtureReader(secrets: [:])
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(
+                        context: "api",
+                        metadata: ComposeBuild.Metadata(secrets: [
+                            ComposeBuildSecret(id: "api_token", externalName: "missing_build_secret"),
+                        ])
+                    )
+                },
+            ]
+        )
+        let dependencies = orchestratorDependencies {
+            $0.secretReader = reader
+        }
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                dependencies: dependencies
+            ).build(
+                project: project,
+                options: ComposeBuildOptions {
+                    $0.quiet = true
+                }
+            )
+            Issue.record("Expected missing external build secret failure")
+        } catch let error as ComposeError {
+            guard case .invalidProject(let message) = error else {
+                Issue.record("Unexpected Compose error: \(error)")
+                return
+            }
+            #expect(message.contains("service 'api' could not read external build secret 'api_token'"))
+            #expect(message.contains("as 'missing_build_secret'"))
+            #expect(message.contains("missing build secret fixture"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await reader.requests == ["missing_build_secret"])
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("build honors the configured parallel engine call limit")
     func buildHonorsConfiguredParallelEngineCallLimit() async throws {
         let runner = DelayedBuildRunner(delay: .milliseconds(50))
@@ -15662,6 +15950,7 @@ struct ComposeOrchestratorTests {
                             secrets: [
                                 ComposeBuildSecret(id: "file_token", file: "token.txt"),
                                 ComposeBuildSecret(id: "npm_token", environment: "NPM_TOKEN"),
+                                ComposeBuildSecret(id: "external_token", externalName: "shared_build_secret"),
                             ],
                             ssh: ["default", "git=/tmp/git.sock"]
                         ),
@@ -16183,6 +16472,44 @@ struct ComposeOrchestratorTests {
             #expect(error == .invalidProject("build secret 'both' cannot define both file and environment"))
         } catch {
             Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("build rejects external secrets combined with another source")
+    func buildRejectsExternalSecretsCombinedWithAnotherSource() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(
+                        context: "api",
+                        metadata: ComposeBuild.Metadata(
+                            secrets: [
+                                ComposeBuildSecret(
+                                    id: "both",
+                                    file: "./token.txt",
+                                    externalName: "shared_build_secret"
+                                ),
+                            ]
+                        )
+                    )
+                },
+            ]
+        )
+        let runner = RecordingRunner()
+
+        await #expect(
+            throws: ComposeError.invalidProject(
+                "build secret 'both' cannot combine an external resource with file or environment"
+            )
+        ) {
+            try await ComposeOrchestrator(runner: runner).build(
+                project: project,
+                services: [],
+                noCache: false
+            )
         }
 
         #expect(runner.commands.isEmpty)

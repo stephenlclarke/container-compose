@@ -574,7 +574,8 @@ struct ComposeNormalizerTests {
             build:
               context: .
               secrets:
-                - external_token
+                - source: external_token
+                  target: shared_token
         secrets:
           file_token:
             file: ./token.txt
@@ -582,6 +583,7 @@ struct ComposeNormalizerTests {
             environment: \(tokenVariable)
           external_token:
             external: true
+            name: shared_build_secret
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
@@ -595,7 +597,10 @@ struct ComposeNormalizerTests {
             ComposeBuildSecret(id: "npm_token", environment: tokenVariable),
         ])
         #expect(project.services["api"]?.build?.unsupportedFields == nil)
-        #expect(project.services["worker"]?.build?.unsupportedFields == ["secrets"])
+        #expect(project.services["worker"]?.build?.secrets == [
+            ComposeBuildSecret(id: "shared_token", externalName: "shared_build_secret"),
+        ])
+        #expect(project.services["worker"]?.build?.unsupportedFields == nil)
     }
 
     @Test("normalizes volume nocopy for runtime initialization policy")

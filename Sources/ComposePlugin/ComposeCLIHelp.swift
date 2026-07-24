@@ -303,7 +303,7 @@ enum ComposeCLIHelp {
         "bridge transformations create": .supported,
         "bridge transformations list": .supported,
         "bridge transformations ls": .supported,
-        "build": .partiallySupported,
+        "build": .supported,
         "commit": .supported,
         "config": .supported,
         "convert": .supported,
@@ -341,7 +341,6 @@ enum ComposeCLIHelp {
     ]
 
     private static let supportDetails: [String: String] = [
-        "build": "Non-file/environment build-secret source forms are unavailable.",
         "events": "OOM, explicit restart, rename, resize, update, and attach/detach actions are unavailable; automatic policy restarts emit die then start, and exec lifecycle actions are supported.",
         "exec": "Docker-complete privileged execution is unavailable.",
         "ps": "Go-template control blocks and nested object paths are unavailable.",
