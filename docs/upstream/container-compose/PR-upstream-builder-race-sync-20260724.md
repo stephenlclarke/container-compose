@@ -49,7 +49,9 @@ Completed before handoff:
 - release/CI/tooling checks passed;
 - 1,118 Swift tests in 26 suites passed;
 - Swift coverage is 91.38%;
-- Go coverage is 90.06%.
+- Go coverage is 90.06%;
+- Docker Compose 5.3.1 model parity passed;
+- the exact matched Phase 4 live aggregate passed and cleaned up its runtime.
 
 The Phase 4 aggregate is the downstream live gate for annotations, exposed
 ports, empty process overrides, state, events, and `up --exit-code-from`.
@@ -76,8 +78,8 @@ restores zero-lag upstream ancestry before Phase 4 is released.
 - [x] SwiftPM exact resolution
 - [x] Stack consistency
 - [x] Compose unit and coverage gates
-- [ ] Live Phase 4 aggregate
-- [ ] Docker Compose V2 parity
+- [x] Live Phase 4 aggregate
+- [x] Docker Compose V2 parity
 - [ ] Exact hosted CI, Sonar, Current, and stable release verification
 
 ### Reviewer notes

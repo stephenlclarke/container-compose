@@ -61,8 +61,9 @@ make docker-compose-phase4-parity
 - 1,118 Swift tests in 26 suites passed;
 - Swift coverage: 91.38%;
 - Go coverage: 90.06%;
-- Phase 4 unit and Docker Compose V2 parity must pass with the exact matched
-  runtime before publication.
+- Phase 4 model parity passed against Docker Compose 5.3.1;
+- the Phase 4 live aggregate passed with the exact matched runtime and stopped
+  that runtime during cleanup.
 
 ## Release impact
 
