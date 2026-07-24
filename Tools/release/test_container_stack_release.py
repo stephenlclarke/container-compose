@@ -751,68 +751,21 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff", makefile)
         self.assertNotIn("repackage-release", makefile)
 
-    def test_phase5_builder_gaps_exception_is_local_and_expires_at_phase5(self) -> None:
+    def test_phase5_builder_suites_are_unconditionally_restored(self) -> None:
         validation = STACK_RELEASE_VALIDATION.read_text(encoding="utf-8")
-        self.assertIn(
+        self.assertNotIn(
             "CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON",
             self.script,
         )
-        self.assertIn("0.7.*|0.8.*|0.9.*", self.script)
-        self.assertIn("not %s", self.script)
-        self.assertIn('"${RELEASE_INTENT}" != "milestone"', self.script)
-        self.assertIn("TestCLIBuilder.swift", validation)
-        self.assertIn("TestCLIBuilderLocalOutput.swift", validation)
-        self.assertIn("TestCLIBuilderTarExport.swift", validation)
-        self.assertIn("phase5_excluded_concurrent_suites", validation)
-        self.assertIn('"${mode}" != "full"', validation)
-        self.assertIn(
-            "CONCURRENT_TEST_SUITES=${concurrent_test_suites}",
+        self.assertNotIn(
+            "CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON",
             validation,
         )
-
-    def test_phase5_builder_gaps_exception_accepts_only_pre_phase5_milestones(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            setup = "\n".join(
-                [
-                    "PHASE5_BUILDER_GAPS_EXCEPTION_REASON='tracked Phase 5 Builder work'",
-                    "RELEASE_INTENT=milestone",
-                ]
-            )
-            for version in ("0.7.0", "0.8.0", "0.9.0", "0.9.4"):
-                accepted = self.run_release_function(
-                    root,
-                    f"ensure_phase5_builder_gaps_exception {version}",
-                    shell_setup=setup,
-                )
-                self.assertEqual(accepted.returncode, 0, accepted.stderr)
-                self.assertIn(
-                    f"pre-Phase-5 Builder-gap exception accepted for {version}",
-                    accepted.stdout,
-                )
-
-            for version in ("0.6.70", "0.10.0", "1.0.0"):
-                rejected = self.run_release_function(
-                    root,
-                    f"ensure_phase5_builder_gaps_exception {version}",
-                    shell_setup=setup,
-                )
-                self.assertNotEqual(rejected.returncode, 0)
-                self.assertIn(
-                    "permitted only for pre-Phase-5 0.7.x through 0.9.x releases",
-                    rejected.stderr,
-                )
-
-            non_milestone = self.run_release_function(
-                root,
-                "ensure_phase5_builder_gaps_exception 0.8.0",
-                shell_setup=setup.replace("milestone", "maintenance"),
-            )
-            self.assertNotEqual(non_milestone.returncode, 0)
-            self.assertIn(
-                "requires CONTAINER_STACK_RELEASE_INTENT=milestone",
-                non_milestone.stderr,
-            )
+        self.assertNotIn("phase5_excluded_concurrent_suites", validation)
+        self.assertNotIn("CONCURRENT_TEST_SUITES=", validation)
+        self.assertNotIn("TestCLIBuilder.swift", validation)
+        self.assertNotIn("TestCLIBuilderLocalOutput.swift", validation)
+        self.assertNotIn("TestCLIBuilderTarExport.swift", validation)
 
     def test_hosted_stack_validation_excludes_virtualization_commands(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -825,13 +778,6 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             for checkout in (compose, builder, containerization, container):
                 checkout.mkdir()
                 (checkout / "Makefile").touch()
-            serial_tests = container / "Tests" / "IntegrationTests" / "Build"
-            serial_tests.mkdir(parents=True)
-            (serial_tests / "TestCLIBuilder.swift").touch()
-            (serial_tests / "TestCLIBuilderLocalOutput.swift").touch()
-            (serial_tests / "TestCLIBuilderTarExport.swift").touch()
-            (serial_tests / "TestCLIOther.swift").touch()
-            (serial_tests / "TestCLIOtherSerial.swift").touch()
             (tap / "Formula").mkdir(parents=True)
             (tap / "Formula" / "container-compose.rb").touch()
 
@@ -848,10 +794,6 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 tool.chmod(0o755)
 
             environment = os.environ.copy()
-            environment.pop(
-                "CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON",
-                None,
-            )
             environment["PATH"] = f"{tools}{os.pathsep}{environment['PATH']}"
             environment["STACK_VALIDATION_LOG"] = str(log)
             validation_paths = [
@@ -883,45 +825,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "check container dsym docs coverage",
                 full_commands,
             )
+            self.assertNotIn("CONCURRENT_TEST_SUITES=", full_commands)
 
             log.unlink()
-            exception_environment = environment.copy()
-            exception_environment[
-                "CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON"
-            ] = "Promote completed Phase 1 while the documented Phase 5 Builder gaps remain scheduled."
-            exception = subprocess.run(
-                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
-                check=False,
-                capture_output=True,
-                env=exception_environment,
-                text=True,
-            )
-            self.assertEqual(exception.returncode, 0, exception.stderr)
-            exception_commands = log.read_text(encoding="utf-8")
-            self.assertIn(
-                "make:-C "
-                f"{container} "
-                f"APP_ROOT={container}/.test-scratch/stack-release-app-root "
-                f"LOG_ROOT={container}/.test-scratch/stack-release-log-root "
-                "CONCURRENT_TEST_SUITES=TestCLIOther/ check container dsym docs coverage",
-                exception_commands,
-            )
-
-            log.unlink()
-            (serial_tests / "TestCLIBuilderTarExport.swift").unlink()
-            missing_tracked_suite = subprocess.run(
-                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
-                check=False,
-                capture_output=True,
-                env=exception_environment,
-                text=True,
-            )
-            self.assertNotEqual(missing_tracked_suite.returncode, 0)
-            self.assertIn(
-                "expected tracked Phase 5 Builder suite is missing: TestCLIBuilderTarExport.swift",
-                missing_tracked_suite.stderr,
-            )
-
             hosted = subprocess.run(
                 [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
                 check=False,
@@ -945,16 +851,6 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
             self.assertNotIn(" integration", hosted_commands)
             self.assertNotIn(" fetch-default-kernel", hosted_commands)
-
-            rejected = subprocess.run(
-                [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
-                check=False,
-                capture_output=True,
-                env=exception_environment,
-                text=True,
-            )
-            self.assertNotEqual(rejected.returncode, 0)
-            self.assertIn("permitted only for full local validation", rejected.stderr)
 
     def test_hosted_release_gate_uses_an_unpublished_verified_tag_and_immutable_tap_snapshot(
         self,

@@ -48,13 +48,6 @@ case "${mode}" in
     ;;
 esac
 
-# Phase 5 owns Docker Compose-compatible Builder file and output transfer.
-# The current bridge rejects an external Dockerfile after macOS canonicalises
-# /tmp to /private/tmp, and it does not reliably deliver tar exports to a
-# direct file destination or on repeated exports. The only sanctioned
-# pre-Phase-5 release exception is the documented 0.7.x through 0.9.x
-# milestone range. It retains every other integration suite and cannot be used
-# by the hosted gate.
 # Container integration is VM-backed and the CLI otherwise defaults to the
 # developer's persistent Application Support directory.  A stable-release gate
 # must never inherit stale machines, images, or networks from an earlier local
@@ -67,37 +60,6 @@ container_make_args=(
   "APP_ROOT=${container_app_root}"
   "LOG_ROOT=${container_log_root}"
 )
-phase5_exception_reason="${CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON:-}"
-if [[ -n "${phase5_exception_reason}" ]]; then
-  if [[ "${mode}" != "full" ]]; then
-    printf 'the Phase 5 Builder-gap exception is permitted only for full local validation\n' >&2
-    exit 2
-  fi
-  phase5_excluded_concurrent_suites=(
-    TestCLIBuilder.swift
-    TestCLIBuilderLocalOutput.swift
-    TestCLIBuilderTarExport.swift
-  )
-  for suite in "${phase5_excluded_concurrent_suites[@]}"; do
-    if [[ -z "$(find "${container_repo}/Tests/IntegrationTests" -name "${suite}" -print -quit)" ]]; then
-      printf 'expected tracked Phase 5 Builder suite is missing: %s\n' "${suite}" >&2
-      exit 2
-    fi
-  done
-  concurrent_test_suites="$(find "${container_repo}/Tests/IntegrationTests" -name 'Test*.swift' \
-    ! -name '*Serial.swift' \
-    ! -name 'TestCLIBuilder.swift' \
-    ! -name 'TestCLIBuilderLocalOutput.swift' \
-    ! -name 'TestCLIBuilderTarExport.swift' \
-    -exec basename {} .swift \; | sort | sed 's|$|/|' | paste -sd' ' -)"
-  if [[ -z "${concurrent_test_suites}" ]]; then
-    printf 'could not derive the non-Phase-5 Container concurrent integration suites\n' >&2
-    exit 2
-  fi
-  container_make_args+=("CONCURRENT_TEST_SUITES=${concurrent_test_suites}")
-  printf 'Phase 5 Builder-gap exception: excluding TestCLIBuilder, TestCLIBuilderLocalOutput, and TestCLIBuilderTarExport only; reason: %s\n' \
-    "${phase5_exception_reason}"
-fi
 
 for path in "${compose_repo}" "${builder_repo}" "${containerization_repo}" "${container_repo}"; do
   if [[ ! -f "${path}/Makefile" ]]; then
