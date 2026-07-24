@@ -1,6 +1,6 @@
 # External Compose Resources
 
-`configs.<name>.external` and `secrets.<name>.external` are Compose-owned local resource backends. Compose resolves a resource's optional `name:` first, then reads it only for a non-dry-run lifecycle operation and materializes a private read-only service mount. Values never appear in command arguments, labels, or normal diagnostics.
+`configs.<name>.external` and `secrets.<name>.external` are Compose-owned local resource backends. Compose resolves a resource's optional `name:` first, then reads it only for a non-dry-run lifecycle or build operation. External configs and service secrets become private read-only mounts; external build secrets become invocation-private files that are deleted as soon as the build command returns. Values never appear in normalized JSON, bake output, command-line values, labels, or normal diagnostics.
 
 ## External Configs
 
@@ -42,6 +42,22 @@ secrets:
 
 The caller's Keychain access controls apply because Compose reads the item in its own process. Do not place secret contents in Compose files, labels, or shell history. Delete an item with `security delete-generic-password -s com.apple.container-compose -a shared_api_secret` when it is no longer needed.
 
+The same resource can be granted to a build:
+
+```yaml
+services:
+  app:
+    build:
+      context: .
+      secrets:
+        - source: api_secret
+          target: api_token
+```
+
+For a live Apple build, Compose writes the Keychain bytes to an opaque 0400 file below its private state directory, passes that path to the generic `container build --secret` primitive, and deletes the invocation directory on success or failure. Concurrent builds use distinct directories. `--dry-run` does not read or write the secret.
+
+Docker Compose V2 retains this external reference in `config`, but omits it from `build --print` and its local Docker engine reports a missing required BuildKit secret. `container compose build --print` deliberately matches that bake omission. The live Keychain resolution is the documented macOS extension; file-backed and environment-backed build secrets retain ordinary Docker Compose behavior.
+
 ## Compatibility
 
-The external-resource reader is selected through `ComposeRuntimeSPI`, so another runtime provider can replace either backend without changing Compose orchestration. This local Compose backend does not require the fork-only `container config` or `container secret` command/API additions.
+The external-resource reader is selected through `ComposeRuntimeSPI`, so another runtime provider can replace either backend without changing Compose orchestration. This local Compose backend does not require the fork-only `container config` or `container secret` command/API additions, and build-secret resolution does not add a runtime secret-store primitive.
