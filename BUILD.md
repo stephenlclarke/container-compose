@@ -191,12 +191,14 @@ are tracked as Phase 5 work and are not Docker Compose parity. Only this exact
 pre-Phase-5 range may set
 `CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON`; the helper
 rejects the variable before `0.7.0` and from the Phase 5 `0.10.0` lane onward.
-The local gate excludes only `TestCLIBuilderSerial`,
-`TestCLIBuilderLocalOutputSerial`, and `TestCLIBuilderTarExportSerial`: the
+The local gate excludes only `TestCLIBuilder`,
+`TestCLIBuilderLocalOutput`, and `TestCLIBuilderTarExport`: the
 first two exercise the same external Dockerfile context-boundary gap, while the
-third exercises tar export delivery. All other Container integration suites
-remain required. The hosted gate is unchanged. The release notes and status
-must state that both Phase 5 Builder gaps remain unavailable.
+third exercises tar export delivery. Apple moved these tests from serial to
+concurrent suites in apple/container#2002; the exception follows only those
+renamed suites. All other Container integration suites remain required. The
+hosted gate is unchanged. The release notes and status must state that both
+Phase 5 Builder gaps remain unavailable.
 
 ## Promote `main` To A Stable Release
 

@@ -750,12 +750,15 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("0.7.*|0.8.*|0.9.*", self.script)
         self.assertIn("not %s", self.script)
         self.assertIn('"${RELEASE_INTENT}" != "milestone"', self.script)
-        self.assertIn("TestCLIBuilderSerial.swift", validation)
-        self.assertIn("TestCLIBuilderLocalOutputSerial.swift", validation)
-        self.assertIn("TestCLIBuilderTarExportSerial.swift", validation)
-        self.assertIn("phase5_excluded_serial_suites", validation)
+        self.assertIn("TestCLIBuilder.swift", validation)
+        self.assertIn("TestCLIBuilderLocalOutput.swift", validation)
+        self.assertIn("TestCLIBuilderTarExport.swift", validation)
+        self.assertIn("phase5_excluded_concurrent_suites", validation)
         self.assertIn('"${mode}" != "full"', validation)
-        self.assertIn("SERIAL_TEST_SUITES=${serial_test_suites}", validation)
+        self.assertIn(
+            "CONCURRENT_TEST_SUITES=${concurrent_test_suites}",
+            validation,
+        )
 
     def test_phase5_builder_gaps_exception_accepts_only_pre_phase5_milestones(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -814,9 +817,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 (checkout / "Makefile").touch()
             serial_tests = container / "Tests" / "IntegrationTests" / "Build"
             serial_tests.mkdir(parents=True)
-            (serial_tests / "TestCLIBuilderSerial.swift").touch()
-            (serial_tests / "TestCLIBuilderLocalOutputSerial.swift").touch()
-            (serial_tests / "TestCLIBuilderTarExportSerial.swift").touch()
+            (serial_tests / "TestCLIBuilder.swift").touch()
+            (serial_tests / "TestCLIBuilderLocalOutput.swift").touch()
+            (serial_tests / "TestCLIBuilderTarExport.swift").touch()
+            (serial_tests / "TestCLIOther.swift").touch()
             (serial_tests / "TestCLIOtherSerial.swift").touch()
             (tap / "Formula").mkdir(parents=True)
             (tap / "Formula" / "container-compose.rb").touch()
@@ -889,12 +893,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 f"{container} "
                 f"APP_ROOT={container}/.test-scratch/stack-release-app-root "
                 f"LOG_ROOT={container}/.test-scratch/stack-release-log-root "
-                "SERIAL_TEST_SUITES=TestCLIOtherSerial/ check container dsym docs coverage",
+                "CONCURRENT_TEST_SUITES=TestCLIOther/ check container dsym docs coverage",
                 exception_commands,
             )
 
             log.unlink()
-            (serial_tests / "TestCLIBuilderTarExportSerial.swift").unlink()
+            (serial_tests / "TestCLIBuilderTarExport.swift").unlink()
             missing_tracked_suite = subprocess.run(
                 [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
                 check=False,
@@ -904,7 +908,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
             self.assertNotEqual(missing_tracked_suite.returncode, 0)
             self.assertIn(
-                "expected tracked Phase 5 Builder suite is missing: TestCLIBuilderTarExportSerial.swift",
+                "expected tracked Phase 5 Builder suite is missing: TestCLIBuilderTarExport.swift",
                 missing_tracked_suite.stderr,
             )
 

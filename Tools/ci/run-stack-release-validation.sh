@@ -52,8 +52,9 @@ esac
 # The current bridge rejects an external Dockerfile after macOS canonicalises
 # /tmp to /private/tmp, and it does not reliably deliver tar exports to a
 # direct file destination or on repeated exports. The only sanctioned
-# pre-Phase-5 release exception is the documented 0.7.0 promotion. It retains
-# every other integration suite and cannot be used by the hosted gate.
+# pre-Phase-5 release exception is the documented 0.7.x through 0.9.x
+# milestone range. It retains every other integration suite and cannot be used
+# by the hosted gate.
 # Container integration is VM-backed and the CLI otherwise defaults to the
 # developer's persistent Application Support directory.  A stable-release gate
 # must never inherit stale machines, images, or networks from an earlier local
@@ -72,28 +73,29 @@ if [[ -n "${phase5_exception_reason}" ]]; then
     printf 'the Phase 5 Builder-gap exception is permitted only for full local validation\n' >&2
     exit 2
   fi
-  phase5_excluded_serial_suites=(
-    TestCLIBuilderSerial.swift
-    TestCLIBuilderLocalOutputSerial.swift
-    TestCLIBuilderTarExportSerial.swift
+  phase5_excluded_concurrent_suites=(
+    TestCLIBuilder.swift
+    TestCLIBuilderLocalOutput.swift
+    TestCLIBuilderTarExport.swift
   )
-  for suite in "${phase5_excluded_serial_suites[@]}"; do
+  for suite in "${phase5_excluded_concurrent_suites[@]}"; do
     if [[ -z "$(find "${container_repo}/Tests/IntegrationTests" -name "${suite}" -print -quit)" ]]; then
       printf 'expected tracked Phase 5 Builder suite is missing: %s\n' "${suite}" >&2
       exit 2
     fi
   done
-  serial_test_suites="$(find "${container_repo}/Tests/IntegrationTests" -name 'Test*Serial.swift' \
-    ! -name 'TestCLIBuilderSerial.swift' \
-    ! -name 'TestCLIBuilderLocalOutputSerial.swift' \
-    ! -name 'TestCLIBuilderTarExportSerial.swift' \
+  concurrent_test_suites="$(find "${container_repo}/Tests/IntegrationTests" -name 'Test*.swift' \
+    ! -name '*Serial.swift' \
+    ! -name 'TestCLIBuilder.swift' \
+    ! -name 'TestCLIBuilderLocalOutput.swift' \
+    ! -name 'TestCLIBuilderTarExport.swift' \
     -exec basename {} .swift \; | sort | sed 's|$|/|' | paste -sd' ' -)"
-  if [[ -z "${serial_test_suites}" ]]; then
-    printf 'could not derive the non-Phase-5 Container serial integration suites\n' >&2
+  if [[ -z "${concurrent_test_suites}" ]]; then
+    printf 'could not derive the non-Phase-5 Container concurrent integration suites\n' >&2
     exit 2
   fi
-  container_make_args+=("SERIAL_TEST_SUITES=${serial_test_suites}")
-  printf 'Phase 5 Builder-gap exception: excluding TestCLIBuilderSerial, TestCLIBuilderLocalOutputSerial, and TestCLIBuilderTarExportSerial only; reason: %s\n' \
+  container_make_args+=("CONCURRENT_TEST_SUITES=${concurrent_test_suites}")
+  printf 'Phase 5 Builder-gap exception: excluding TestCLIBuilder, TestCLIBuilderLocalOutput, and TestCLIBuilderTarExport only; reason: %s\n' \
     "${phase5_exception_reason}"
 fi
 
