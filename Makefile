@@ -453,8 +453,7 @@ cli-smoke-built:
 	[[ "$$commit_help_output" == *"$${ansi_escape}[32m--author$${ansi_escape}[0m"* ]]; \
 	[[ "$$commit_help_output" == *"$${ansi_escape}[32m--pause$${ansi_escape}[0m"* ]]; \
 	config_help_output="$$(".build/debug/compose" config --help)"; \
-	[[ "$$config_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
-	[[ "$$config_help_output" == *"Normalized output omits build.no_cache_filter."* ]]; \
+	[[ "$$config_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--services$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--images$${ansi_escape}[0m"* ]]; \
@@ -471,7 +470,7 @@ cli-smoke-built:
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--no-path-resolution$${ansi_escape}[0m"* ]]; \
 	build_help_output="$$(".build/debug/compose" build --help)"; \
 	[[ "$$build_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
-	[[ "$$build_help_output" == *"build.no_cache_filter and non-file/environment build-secret source forms are unavailable."* ]]; \
+	[[ "$$build_help_output" == *"Non-file/environment build-secret source forms are unavailable."* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--build-arg$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--memory$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--no-cache$${ansi_escape}[0m"* ]]; \
