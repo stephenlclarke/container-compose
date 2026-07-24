@@ -1,0 +1,6 @@
+services:
+  app:
+    image: container-compose-external-dockerfile:latest
+    build:
+      context: ./context
+      dockerfile: ../Dockerfile

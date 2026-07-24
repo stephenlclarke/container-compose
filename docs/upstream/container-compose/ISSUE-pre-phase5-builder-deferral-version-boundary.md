@@ -1,5 +1,9 @@
 # Keep the Builder deferral bounded through the pre-Phase-5 releases
 
+> Historical release control. The boundary behaved as intended and Phase 5
+> removes the exception; see
+> [the closure handoff](PR-phase5-builder-release-exception-closure.md).
+
 ## Problem
 
 The local stable-release helper documented the three known Phase 5 Builder

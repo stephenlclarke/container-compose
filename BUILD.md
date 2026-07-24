@@ -182,23 +182,25 @@ successful hosted gate records a candidate-bound GitHub Actions release-authorit
 check on that tag commit; the package workflow requires that check, then repeats
 `make ci` before it publishes assets or updates the tap.
 
-Pre-Phase-5 promotions from `0.7.x` through `0.9.x` have one explicitly
-bounded local-gate exception:
-the current macOS Builder bridge rejects external Dockerfile paths when macOS
-canonicalises `/tmp` to `/private/tmp`, and its tar-export handoff does not
-reliably create a direct destination file or a repeated directory export. Both
-are tracked as Phase 5 work and are not Docker Compose parity. Only this exact
-pre-Phase-5 range may set
-`CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON`; the helper
-rejects the variable before `0.7.0` and from the Phase 5 `0.10.0` lane onward.
-The local gate excludes only `TestCLIBuilder`,
-`TestCLIBuilderLocalOutput`, and `TestCLIBuilderTarExport`: the
-first two exercise the same external Dockerfile context-boundary gap, while the
-third exercises tar export delivery. Apple moved these tests from serial to
-concurrent suites in apple/container#2002; the exception follows only those
-renamed suites. All other Container integration suites remain required. The
-hosted gate is unchanged. The release notes and status must state that both
-Phase 5 Builder gaps remain unavailable.
+Phase 5 promotions have no Builder-suite exception. Apple
+[`container@d1d7635`](https://github.com/apple/container/commit/d1d763530df3c6a326dbae7f0c0a59a335808045)
+fixed the shared Builder startup race and moved the complete coverage into
+parallel `TestCLIBuilder`, `TestCLIBuilderLocalOutput`, and
+`TestCLIBuilderTarExport` suites. The signed fork synchronizes that ancestry in
+[`1bc3167`](https://github.com/stephenlclarke/container/commit/1bc31674629287f3386637db4c6d8652dc36602a)
+and limits its follow-up
+[`abed15f`](https://github.com/stephenlclarke/container/commit/abed15fdd0cafe340f8aceb65080e4a88d0ceb0a)
+to a named lifecycle fixture. The local full gate runs every Container suite,
+including existing Dockerfiles outside the build context and direct,
+directory, repeated-directory, and invalid tar exports. The hosted gate
+continues to omit all Virtualization.framework integration rather than
+filtering individual suites.
+
+`make docker-compose-build-external-dockerfile-parity` adds the adapter-level
+proof: Docker Compose V2 and `container compose` must project the same config
+and bake paths, then build and run the same external-Dockerfile fixture through
+their live engines. The release helper no longer accepts
+`CONTAINER_STACK_RELEASE_PHASE5_BUILDER_GAPS_EXCEPTION_REASON`.
 
 ## Promote `main` To A Stable Release
 

@@ -1,4 +1,12 @@
-# Phase 5 gap: external Dockerfile paths are rejected by the Builder bridge
+# Resolved Phase 5 gap: external Dockerfile paths in the Builder bridge
+
+> Resolved by Apple [`container@d1d7635`](https://github.com/apple/container/commit/d1d763530df3c6a326dbae7f0c0a59a335808045),
+> synchronized into the signed fork as
+> [`1bc3167`](https://github.com/stephenlclarke/container/commit/1bc31674629287f3386637db4c6d8652dc36602a)
+> with the fixture-only reconciliation
+> [`abed15f`](https://github.com/stephenlclarke/container/commit/abed15fdd0cafe340f8aceb65080e4a88d0ceb0a).
+> The former release exception is removed by
+> [the Phase 5 closure handoff](PR-phase5-builder-release-exception-closure.md).
 
 ## Problem
 
@@ -20,7 +28,7 @@ the underlying gap is that the Dockerfile is external to the context.
 - `build.dockerfile` within the effective local context and remote-context
   pass-through remain supported.
 
-## Required Apple-shaped change
+## Required Apple-shaped change (completed upstream)
 
 Extend the generic Builder file-sync boundary so it can transfer a declared,
 existing Dockerfile from outside the context without broadening context access
@@ -28,19 +36,20 @@ for arbitrary `ADD`/`COPY` inputs. The implementation must canonicalise the
 two paths consistently, including macOS `/tmp` and `/private/tmp` aliases, and
 keep the context-child restriction for normal build-context requests.
 
-The likely code and test starting points are:
+The relevant generic code and test boundaries are:
 
 - `Sources/ContainerBuild/BuildFSSync.swift`
 - `Sources/ContainerBuild/URL+Extensions.swift`
 - `Tests/ContainerBuildTests/BuilderExtensionsTests.swift`
-- `Tests/IntegrationTests/Build/TestCLIBuilderSerial.swift`
-- `Tests/IntegrationTests/Build/TestCLIBuilderLocalOutputSerial.swift`
+- `Sources/ContainerCommands/Builder/BuilderStart.swift`
+- `Tests/IntegrationTests/Build/TestCLIBuilder.swift`
+- `Tests/IntegrationTests/Build/TestCLIBuilderLocalOutput.swift`
 
 Compose should remain an adapter: once the generic Builder accepts the declared
 Dockerfile input, its existing `build.dockerfile` projection should require no
 Compose-specific filesystem escape.
 
-## Evidence
+## Original failure evidence
 
 The first 0.7.0 release candidate ran the complete matched Container suite. The
 primary non-serial partition passed 233 tests in 26 suites. Its global serial
@@ -53,3 +62,14 @@ tar-export gap documented in
 exception excludes those two external-Dockerfile suites and the tar-export
 suite, requires an explicit milestone reason, and is rejected by hosted
 validation. It does not mark either functionality as supported.
+
+## Closure evidence
+
+Apple's synchronized suite now keeps the existing-Dockerfile-outside-context
+case in `TestCLIBuilder` and the different Dockerfile/build-context case in
+`TestCLIBuilderLocalOutput`. The exact matched fork passes both suites. The
+Compose-owned
+`make docker-compose-build-external-dockerfile-parity` target additionally
+compares Docker Compose V2 and `container compose` config and bake paths, then
+builds and runs the same fixture through both live engines. No Compose-specific
+filesystem escape or `/tmp` alias workaround was added.

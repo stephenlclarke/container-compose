@@ -1,5 +1,8 @@
 # Pull request handoff: follow Apple's Builder suite rename
 
+> Historical release control. Phase 5 removes this exception completely; see
+> [the closure handoff](PR-phase5-builder-release-exception-closure.md).
+
 ## Summary
 
 Keep the narrowly bounded pre-Phase-5 Builder-gap exception valid after
