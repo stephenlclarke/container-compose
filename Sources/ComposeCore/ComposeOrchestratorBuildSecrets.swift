@@ -43,50 +43,44 @@ extension ComposeOrchestrator {
     func materializeBuildSecrets(
         project: ComposeProject,
         service: ComposeService,
-        build: ComposeBuild,
+        build: ComposeBuild
     ) async throws -> ComposeMaterializedBuildSecrets {
         let resolved = try (build.secrets ?? []).map { secret in
-            try (secret, buildSecretSource(secret))
+            try (secret: secret, source: buildSecretSource(secret))
         }
         guard
             resolved.contains(where: {
-                if case .external = $0.1 {
+                if case .external = $0.source {
                     return true
                 }
                 return false
             })
         else {
             return ComposeMaterializedBuildSecrets(
-                secrets: resolved.map { normalizedBuildSecret($0.0, source: $0.1) },
-                directory: nil,
+                secrets: resolved.map { normalizedBuildSecret($0.secret, source: $0.source) },
+                directory: nil
             )
         }
 
+        if options.dryRun {
+            return materializedDryRunBuildSecrets(project: project, resolved: resolved)
+        }
+        return try await materializedLiveBuildSecrets(
+            project: project,
+            service: service,
+            resolved: resolved
+        )
+    }
+
+    private func materializedLiveBuildSecrets(
+        project: ComposeProject,
+        service: ComposeService,
+        resolved: [(secret: ComposeBuildSecret, source: ComposeBuildSecretSource)]
+    ) async throws -> ComposeMaterializedBuildSecrets {
         let projectDirectory = materializedProjectDirectory(
             project: project,
-            root: options.materializedConfigSecretDirectory,
+            root: options.materializedConfigSecretDirectory
         )
-        if options.dryRun {
-            let directory =
-                projectDirectory
-                    .appendingPathComponent("build-secrets", isDirectory: true)
-                    .appendingPathComponent("dry-run", isDirectory: true)
-            return ComposeMaterializedBuildSecrets(
-                secrets: resolved.enumerated().map { index, item in
-                    switch item.1 {
-                    case .external:
-                        ComposeBuildSecret(
-                            id: item.0.id,
-                            file: directory.appendingPathComponent("secret-\(index)").path,
-                        )
-                    default:
-                        normalizedBuildSecret(item.0, source: item.1)
-                    }
-                },
-                directory: nil,
-            )
-        }
-
         let directory =
             projectDirectory
                 .appendingPathComponent("build-secrets", isDirectory: true)
@@ -94,8 +88,8 @@ extension ComposeOrchestrator {
         do {
             var materialized: [ComposeBuildSecret] = []
             for (index, item) in resolved.enumerated() {
-                let secret = item.0
-                switch item.1 {
+                let secret = item.secret
+                switch item.source {
                 case let .external(name):
                     let contents: Data
                     do {
@@ -103,28 +97,55 @@ extension ComposeOrchestrator {
                     } catch {
                         throw ComposeError.invalidProject(
                             "service '\(service.name)' could not read external build secret "
-                                + "'\(secret.id)' as '\(name)': \(error.localizedDescription)",
+                                + "'\(secret.id)' as '\(name)': \(error.localizedDescription)"
                         )
                     }
                     let file = directory.appendingPathComponent("secret-\(index)", isDirectory: false)
                     try ComposeMaterializedFile(
                         url: file,
                         contents: contents,
-                        permissions: 0o400,
+                        permissions: 0o400
                     ).write()
                     materialized.append(ComposeBuildSecret(id: secret.id, file: file.path))
                 default:
-                    materialized.append(normalizedBuildSecret(secret, source: item.1))
+                    materialized.append(normalizedBuildSecret(secret, source: item.source))
                 }
             }
             return ComposeMaterializedBuildSecrets(
                 secrets: materialized,
-                directory: directory,
+                directory: directory
             )
         } catch {
             try? FileManager.default.removeItem(at: directory)
             throw error
         }
+    }
+
+    private func materializedDryRunBuildSecrets(
+        project: ComposeProject,
+        resolved: [(secret: ComposeBuildSecret, source: ComposeBuildSecretSource)]
+    ) -> ComposeMaterializedBuildSecrets {
+        let directory =
+            materializedProjectDirectory(
+                project: project,
+                root: options.materializedConfigSecretDirectory
+            )
+            .appendingPathComponent("build-secrets", isDirectory: true)
+            .appendingPathComponent("dry-run", isDirectory: true)
+        return ComposeMaterializedBuildSecrets(
+            secrets: resolved.enumerated().map { index, item in
+                switch item.source {
+                case .external:
+                    ComposeBuildSecret(
+                        id: item.secret.id,
+                        file: directory.appendingPathComponent("secret-\(index)").path
+                    )
+                default:
+                    normalizedBuildSecret(item.secret, source: item.source)
+                }
+            },
+            directory: nil
+        )
     }
 
     func buildSecretSource(_ secret: ComposeBuildSecret) throws -> ComposeBuildSecretSource {
@@ -135,16 +156,16 @@ extension ComposeOrchestrator {
         let file = nonEmpty(secret.file?.trimmingCharacters(in: .whitespacesAndNewlines))
         let environment = nonEmpty(secret.environment?.trimmingCharacters(in: .whitespacesAndNewlines))
         let externalName = nonEmpty(
-            secret.externalName?.trimmingCharacters(in: .whitespacesAndNewlines),
+            secret.externalName?.trimmingCharacters(in: .whitespacesAndNewlines)
         )
         if file != nil, environment != nil {
             throw ComposeError.invalidProject(
-                "build secret '\(id)' cannot define both file and environment",
+                "build secret '\(id)' cannot define both file and environment"
             )
         }
         if externalName != nil, file != nil || environment != nil {
             throw ComposeError.invalidProject(
-                "build secret '\(id)' cannot combine an external resource with file or environment",
+                "build secret '\(id)' cannot combine an external resource with file or environment"
             )
         }
         if let file {
@@ -157,13 +178,13 @@ extension ComposeOrchestrator {
             return .external(externalName)
         }
         throw ComposeError.invalidProject(
-            "build secret '\(id)' must define file, environment, or an external resource",
+            "build secret '\(id)' must define file, environment, or an external resource"
         )
     }
 
     private func normalizedBuildSecret(
         _ secret: ComposeBuildSecret,
-        source: ComposeBuildSecretSource,
+        source: ComposeBuildSecretSource
     ) -> ComposeBuildSecret {
         switch source {
         case let .file(file):
