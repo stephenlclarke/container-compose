@@ -1,0 +1,13 @@
+services:
+  app:
+    image: alpine:3.20
+    command: env
+    environment:
+      CLOUD_REGION: user-defined-region
+    depends_on:
+      - secrets
+  secrets:
+    provider:
+      type: ${PROVIDER_EXECUTABLE:?set PROVIDER_EXECUTABLE to the provider fixture}
+      options:
+        name: secrets

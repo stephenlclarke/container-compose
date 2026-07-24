@@ -996,6 +996,16 @@ struct ComposeProviderMessage: Decodable {
     var message: String
 }
 
+/// Environment variables emitted by a Compose provider lifecycle command.
+struct ComposeProviderVariables: Equatable {
+    var prefixed: [String: String] = [:]
+    var raw: [String: String] = [:]
+
+    var isEmpty: Bool {
+        prefixed.isEmpty && raw.isEmpty
+    }
+}
+
 /// Optional provider command metadata emitted by `compose metadata`.
 struct ComposeProviderMetadata: Decodable {
     var description: String? = nil

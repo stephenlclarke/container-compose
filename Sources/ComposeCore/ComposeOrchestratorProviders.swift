@@ -22,9 +22,9 @@ extension ComposeOrchestrator {
         project: ComposeProject,
         service: ComposeService,
         action: ComposeProviderAction,
-    ) async throws -> [String: String] {
+    ) async throws -> ComposeProviderVariables {
         guard let provider = service.provider else {
-            return [:]
+            return ComposeProviderVariables()
         }
         let executable = options.dryRun
             ? provider.type
@@ -34,7 +34,7 @@ extension ComposeOrchestrator {
             ? ComposeProviderMetadata()
             : await providerMetadata(executable: executable, project: project)
         if action == .stop && metadata.commandMetadata(for: .stop) == nil && !options.dryRun {
-            return [:]
+            return ComposeProviderVariables()
         }
         if !metadata.isEmpty {
             try validateProviderOptions(provider: provider, metadata: metadata, action: action)
@@ -49,14 +49,14 @@ extension ComposeOrchestrator {
         )
         if options.dryRun {
             options.emit("+ " + shellQuoted([executable] + arguments))
-            return [:]
+            return ComposeProviderVariables()
         }
 
         let result = try await runner.run(
             executable,
             arguments,
             workingDirectory: URL(fileURLWithPath: project.workingDirectory, isDirectory: true),
-            environment: nil,
+            environment: project.environment,
             io: .captured(input: nil),
         )
         let variables = try parseProviderOutput(result.stdout, service: service, action: action)
@@ -67,7 +67,7 @@ extension ComposeOrchestrator {
                 stderr: result.stderr,
             )
         }
-        return action == .stop ? [:] : variables
+        return action == .stop ? ComposeProviderVariables() : variables
     }
 
     /// Reads optional provider metadata. Metadata failures intentionally fall
@@ -78,7 +78,7 @@ extension ComposeOrchestrator {
                 executable,
                 ["compose", "metadata"],
                 workingDirectory: URL(fileURLWithPath: project.workingDirectory, isDirectory: true),
-                environment: nil,
+                environment: project.environment,
                 io: .captured(input: nil),
             )
             guard result.succeeded,
@@ -137,8 +137,8 @@ extension ComposeOrchestrator {
         _ output: String,
         service: ComposeService,
         action: ComposeProviderAction,
-    ) throws -> [String: String] {
-        var variables: [String: String] = [:]
+    ) throws -> ComposeProviderVariables {
+        var variables = ComposeProviderVariables()
         for line in output.split(whereSeparator: \.isNewline) {
             let text = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else {
@@ -156,12 +156,8 @@ extension ComposeOrchestrator {
                 continue
             case "error":
                 throw ComposeError.invalidProject("provider service '\(service.name)' failed during \(action.rawValue): \(message.message)")
-            case "setenv":
-                let parts = message.message.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-                guard parts.count == 2, !parts[0].isEmpty else {
-                    throw ComposeError.invalidProject("invalid setenv response from provider service '\(service.name)': \(message.message)")
-                }
-                variables[String(parts[0])] = String(parts[1])
+            case "setenv", "rawsetenv":
+                try recordProviderVariable(message, service: service, variables: &variables)
             default:
                 throw ComposeError.invalidProject("invalid response type '\(message.type)' from provider service '\(service.name)'")
             }
@@ -169,11 +165,32 @@ extension ComposeOrchestrator {
         return variables
     }
 
+    /// Records one prefixed or exact-name provider environment variable.
+    func recordProviderVariable(
+        _ message: ComposeProviderMessage,
+        service: ComposeService,
+        variables: inout ComposeProviderVariables,
+    ) throws {
+        let parts = message.message.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty else {
+            throw ComposeError.invalidProject(
+                "invalid \(message.type) response from provider service '\(service.name)': \(message.message)",
+            )
+        }
+        let key = String(parts[0])
+        let value = String(parts[1])
+        if message.type == "setenv" {
+            variables.prefixed[key] = value
+        } else {
+            variables.raw[key] = value
+        }
+    }
+
     /// Injects provider variables into services that directly depend on it.
     func projectByInjectingProviderEnvironment(
         project: ComposeProject,
         providerServiceName: String,
-        variables: [String: String],
+        variables: ComposeProviderVariables,
     ) -> ComposeProject {
         var updatedProject = project
         let prefix = providerServiceName.uppercased() + "_"
@@ -184,8 +201,16 @@ extension ComposeOrchestrator {
                 continue
             }
             var environment = service.environment ?? [:]
-            for (key, value) in variables.sorted(by: { $0.key < $1.key }) {
+            for (key, value) in variables.prefixed.sorted(by: { $0.key < $1.key }) {
                 environment[prefix + key] = value
+            }
+            for (key, value) in variables.raw.sorted(by: { $0.key < $1.key }) {
+                if environment.keys.contains(key), environment[key] ?? nil != value {
+                    options.emit(
+                        "warning: provider \"\(providerServiceName)\" overrides environment variable \"\(key)\" in service \"\(name)\"",
+                    )
+                }
+                environment[key] = value
             }
             service.environment = environment
             updatedProject.services[name] = service
