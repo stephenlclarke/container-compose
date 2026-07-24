@@ -99,8 +99,37 @@ Current local results:
 - Coverage gate: Swift 91.46% and Go 89.88% passed.
 - `make check`: 155 release tests, 14 CI tests, source checks, formatting,
   lint, security, documentation, and policy gates passed.
-- Exact-head hosted gates, Current prerelease, and signed Homebrew pair:
-  pending.
+- Exact-head hosted gates passed for
+  [`f3e7563`](https://github.com/stephenlclarke/container-compose/commit/f3e756333c1c9f03ce6b7236bfba330d8730601d):
+  [CI](https://github.com/stephenlclarke/container-compose/actions/runs/30077249673),
+  [Documentation](https://github.com/stephenlclarke/container-compose/actions/runs/30077249675),
+  [Quality](https://github.com/stephenlclarke/container-compose/actions/runs/30077249696),
+  and
+  [CodeQL](https://github.com/stephenlclarke/container-compose/actions/runs/30077249723).
+- The GitHub-verified merge
+  [`361c271`](https://github.com/stephenlclarke/container-compose/commit/361c271d18300acf0a323a411de90fe994875149)
+  passed exact-main CI and SonarQube in
+  [run 30078794333](https://github.com/stephenlclarke/container-compose/actions/runs/30078794333);
+  exact-main Documentation, Quality, and CodeQL also passed.
+- [Current build 868](https://github.com/stephenlclarke/container-compose/releases/tag/current)
+  was published by
+  [release run 30079633665](https://github.com/stephenlclarke/container-compose/actions/runs/30079633665)
+  after a transient GitHub transparency-log 404 was retried against the same
+  immutable source. The Compose package SHA-256 is
+  `234d1741086375a03a551c1bc0bee3f195e5cc5a0aeefd492b1b3aa7a735ebe5`;
+  the matched runtime package SHA-256 is
+  `ade8a22bbc57a5022f585bcdc7939149cf9573556f311a66367d720303d7b791`;
+  both provenance attestations verified.
+- Signed Homebrew tap commit
+  [`e794daa`](https://github.com/stephenlclarke/homebrew-tap/commit/e794daaee745b70518597b846f675d256c0c8b76)
+  atomically published the `current.868.361c271d1830` formula pair. Both
+  formula tests and the strict installed Docker Compose V2 5.3.1 plus live
+  Apple external-secret parity fixture passed on the release Mac.
+- The published live demo GIF is 1600x720, 255.16 seconds, and 6,379 frames.
+  Its source tape contains 16 typed commands with 16 Enter actions and 14
+  live output waits, with no Replay or Marker commands; sampled frames show
+  typed commands followed by the runtime, service, volume-reuse, and shutdown
+  results.
 
 ## Commit tracking
 
