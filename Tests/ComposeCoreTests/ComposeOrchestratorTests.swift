@@ -9437,8 +9437,8 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("up runs provider services and injects setenv into dependents")
-    func upRunsProviderServicesAndInjectsSetenvIntoDependents() async throws {
+    @Test("up runs provider services and injects setenv and rawsetenv into dependents")
+    func upRunsProviderServicesAndInjectsProviderEnvironmentIntoDependents() async throws {
         let provider = try temporaryExecutable(name: "example-provider")
         defer {
             try? FileManager.default.removeItem(at: provider.deletingLastPathComponent())
@@ -9451,6 +9451,7 @@ struct ComposeOrchestratorTests {
             CommandResult(status: 0, stdout: """
             {"type":"info","message":"provisioned database"}
             {"type":"setenv","message":"URL=https://magic.cloud/database"}
+            {"type":"rawsetenv","message":"CLOUD_REGION=us-east-1"}
             """, stderr: ""),
         ])
         let project = composeProject(
@@ -9468,9 +9469,19 @@ struct ComposeOrchestratorTests {
                 },
                 "api": composeService(name: "api", image: "alpine") {
                     $0.dependsOn = ["database": ComposeDependency()]
+                    $0.environment = ["CLOUD_REGION": "user-defined-region"]
+                },
+                "worker-identical": composeService(name: "worker-identical", image: "alpine") {
+                    $0.dependsOn = ["database": ComposeDependency()]
+                    $0.environment = ["CLOUD_REGION": "us-east-1"]
+                },
+                "worker-missing": composeService(name: "worker-missing", image: "alpine") {
+                    $0.dependsOn = ["database": ComposeDependency()]
                 },
             ]
-        )
+        ) {
+            $0.environment = ["PROVIDER_PROJECT_TOKEN": "from-project"]
+        }
 
         try await ComposeOrchestrator(
             runner: runner,
@@ -9478,13 +9489,17 @@ struct ComposeOrchestratorTests {
             dependencies: orchestratorDependencies { _ in }
         ).up(project: project, options: ComposeUpOptions())
 
-        #expect(emitted.messages == ["compose: provider database: provisioned database"])
-        #expect(runner.commands.map(\.executable) == [
-            provider.path,
-            provider.path,
-            ComposeExecutionOptions.defaultEnvironmentLauncher,
+        #expect(emitted.messages == [
+            "compose: provider database: provisioned database",
+            "warning: provider \"database\" overrides environment variable \"CLOUD_REGION\" in service \"api\"",
         ])
+        #expect(runner.commands.prefix(2).map(\.executable) == [provider.path, provider.path])
+        #expect(runner.commands.count == 5)
+        #expect(runner.commands.dropFirst(2).allSatisfy {
+            $0.executable == ComposeExecutionOptions.defaultEnvironmentLauncher
+        })
         #expect(runner.commands[0].arguments == ["compose", "metadata"])
+        #expect(runner.commands[0].environment == ["PROVIDER_PROJECT_TOKEN": "from-project"])
         #expect(runner.commands[1].arguments == [
             "compose",
             "--project-name=demo",
@@ -9493,11 +9508,56 @@ struct ComposeOrchestratorTests {
             "--size=small",
             "database",
         ])
+        #expect(runner.commands[1].environment == ["PROVIDER_PROJECT_TOKEN": "from-project"])
         #expect(!runner.commands[1].arguments.contains("--ignored=not-forwarded"))
-        let runArguments = runner.commands[2].arguments
+        let runArguments = try #require(runner.commands.first {
+            $0.arguments.contains("demo-api-1")
+        }).arguments
         #expect(runArguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
         #expect(runArguments.contains("--env"))
         #expect(runArguments.contains("DATABASE_URL=https://magic.cloud/database"))
+        #expect(runArguments.contains("CLOUD_REGION=us-east-1"))
+        #expect(!runArguments.contains("CLOUD_REGION=user-defined-region"))
+        for name in ["demo-worker-identical-1", "demo-worker-missing-1"] {
+            let arguments = try #require(runner.commands.first {
+                $0.arguments.contains(name)
+            }).arguments
+            #expect(arguments.contains("DATABASE_URL=https://magic.cloud/database"))
+            #expect(arguments.contains("CLOUD_REGION=us-east-1"))
+        }
+    }
+
+    @Test("up rejects malformed provider rawsetenv", arguments: ["MISSING_VALUE", "=value"])
+    func upRejectsMalformedProviderRawSetenv(message: String) async throws {
+        let provider = try temporaryExecutable(name: "example-provider")
+        defer {
+            try? FileManager.default.removeItem(at: provider.deletingLastPathComponent())
+        }
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: "", stderr: ""),
+            CommandResult(status: 0, stdout: """
+            {"type":"rawsetenv","message":"\(message)"}
+            """, stderr: ""),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "database": composeService(name: "database") {
+                    $0.provider = ComposeProvider(type: provider.path)
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected malformed rawsetenv failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject(
+                "invalid rawsetenv response from provider service 'database': \(message)"
+            ))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
     }
 
     @Test("down runs provider service down lifecycle")
