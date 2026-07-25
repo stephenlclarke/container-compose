@@ -20,6 +20,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): project runtime mount metadata`
 - `551710612d8ca9439029efb4596e7518c429f5e0`
   `fix(format): reject invalid scalar template operations`
+- `00279ef21f28b5244a94f236f4a3f4194fe171e7`
+  `fix(format): preserve table header semantics`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -39,6 +41,11 @@ This documentation commit is intentionally separate.
     variables, pipelines, root paths, nested paths, and variables;
   - traverses arrays in source order and objects in deterministic key order;
   - validates root-row field references before command side effects.
+- `Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift`
+  - validates lexical variable scope before command side effects;
+  - preserves repeated fields and walks all control-flow branches for command
+    validation;
+  - discovers `.Label` keys used by Docker's dynamic table header context.
 - `Sources/ComposeCore/ComposeDockerTemplateData.swift`
   - supplies recursive array, object, lookup-object, scalar, and null values;
   - keeps display, truthiness, and JSON projection separate.
@@ -51,11 +58,14 @@ This documentation commit is intentionally separate.
   - distinguishes whitespace-delimited trim markers from signed integer
     literals on both action boundaries.
 - `Sources/ComposeCore/ComposeFormatTemplate.swift`
-  - retains the public row-rendering boundary and delegates to the structured
-    engine.
-- `Sources/ComposeCore/ComposeRenderHelpers.swift`
+  - retains the public row-rendering boundary and evaluates table templates
+    against Docker-style header values before rendering rows.
+- `Sources/ComposeCore/ComposeRenderHelpers.swift` and
+  `Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift`
   - projects structured publishers, labels, mounts, networks, local-volume
-    counts, and volume labels for the owning command rows.
+    counts, and volume labels for the owning command rows;
+  - supplies the exact `ps`, `stats`, and `volumes` header contexts used by
+    Docker Compose.
 - `Sources/ComposePlugin/ComposeCLIHelp.swift` and `STATUS.md`
   - mark `ps`, `stats`, and `volumes` supported and close the output-template
     gap without overstating unrelated lifecycle work.
@@ -66,13 +76,17 @@ This documentation commit is intentionally separate.
 - `Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift`
   - isolates malformed collection, logical, trim-marker, and formatting cases
     from the successful structured evaluator suite.
+- `Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift`
+  - covers duplicate columns, conditional headers, label headers, empty
+    tables, legacy callers, field analysis, and variable scope.
 - `Tests/ComposeCoreTests/ComposeOrchestratorTests.swift` and
   `Tests/ComposePluginTests/ComposeCLIHelpTests.swift`
   - cover structured command rows and honest support metadata.
 - `Tools/parity/fixtures/output-template/compose.yaml` and
   `Tools/parity/check-compose-format-template-actions.sh`
   - provide the committed Docker Compose v2 oracle for container publishers,
-    labels, stats control flow, volume labels, functions, and whitespace.
+    labels, stats control flow, volume labels, duplicate and conditional table
+    headers, undefined variables, functions, and whitespace.
 
 ## Validation
 
@@ -87,17 +101,22 @@ swiftlint lint --strict --quiet \
   Sources/ComposeCore/ComposeDockerTemplateFunctionSupport.swift \
   Sources/ComposeCore/ComposeDockerTemplatePrintf.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
+  Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
   Sources/ComposeCore/ComposeRenderHelpers.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift
-swiftformat \
+  Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift \
+  Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift \
+  Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift
+swiftformat --lint --swift-version 6.2 --disable trailingCommas \
   Sources/ComposeCore/ComposeFormatTemplate.swift \
   Sources/ComposeCore/ComposeDockerTemplateData.swift \
   Sources/ComposeCore/ComposeDockerTemplateFunctionSupport.swift \
   Sources/ComposeCore/ComposeDockerTemplatePrintf.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
+  Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
   Sources/ComposeCore/ComposeRenderHelpers.swift \
+  Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift \
-  --lint --swift-version 6.2
+  Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift
 CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
 CONTAINER_COMPOSE="$PWD/.build/debug/compose" \
 DOCKER_COMPOSE_REFERENCE='docker compose' \
@@ -106,15 +125,16 @@ CONTAINER_COMPOSE_LIVE=1 \
 git diff --check
 ```
 
-- Swift: 1,135 tests in 27 suites passed.
-- New structured formatter: 1,022/1,109 lines, 92.2%.
-- `ComposeStructuredFormatTemplate.swift`: 772/840 lines, 91.9%.
+- Swift: 1,136 tests in 28 suites passed.
+- Structured template engine: 1,106/1,200 lines, 92.17%.
+- `ComposeStructuredFormatTemplate.swift`: 721/784 lines, 91.96%.
+- `ComposeStructuredTemplateAnalysis.swift`: 135/147 lines, 91.84%.
 - `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
 - `ComposeDockerTemplateData.swift`: 81/85 lines, 95.3%.
 - `ComposeDockerTemplatePrintf.swift`: 73/75 lines, 97.3%.
 - `ComposeDockerTemplateFunctionSupport.swift`: 78/91 lines, 85.7%.
-- Existing formatter boundary: 39/41 lines, 95.1%.
-- Command rendering helpers: 770/801 lines, 96.1%.
+- Formatter table boundary: 67/68 lines, 98.53%.
+- Command rendering helpers: 752/781 lines, 96.29%.
 - Repository checks passed, including 167 release-controller tests, 14
   CI-helper tests, stack consistency, release consistency, licence validation,
   and credential scanning.
@@ -147,7 +167,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified eight actionable compatibility cases:
+identified eleven actionable compatibility cases:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
   invalid collection access;
@@ -164,14 +184,23 @@ identified eight actionable compatibility cases:
   comparisons instead of comparing display text;
 - `len` rejects integer, boolean, and null scalars instead of fabricating
   lengths.
+- undefined variables are rejected during template validation instead of
+  reaching runtime rendering;
+- duplicate table fields retain one header for every rendered column;
+- table headers execute the same conditional template as data rows instead of
+  unioning fields from mutually exclusive branches.
 
-Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes all three and adds focused
-template regressions. Commit `0fa6bafd119829df09da2b1555a5c463f1d41fc9`
-fixes both runtime mount projections with command-path regression coverage. No
-autobot finding was deferred. Commit
+Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
+trim cases with focused template regressions. Commit
+`0fa6bafd119829df09da2b1555a5c463f1d41fc9` fixes both runtime mount
+projections with command-path regression coverage. Commit
 `551710612d8ca9439029efb4596e7518c429f5e0` fixes the three scalar-operation
 findings and extends the live Docker Compose v2 oracle to require matching
-execution failures.
+execution failures. Commit `00279ef21f28b5244a94f236f4a3f4194fe171e7`
+fixes variable validation and table-header execution, adds exact command header
+contexts, and extends the live oracle to duplicate, conditional, label, stats,
+and volume headers. No autobot finding was deferred, and every connector
+comment is answered with its implementation and verification disposition.
 
 ## Documentation And Operations
 
