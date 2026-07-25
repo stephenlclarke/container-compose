@@ -67,6 +67,15 @@ invalid partial UTF-8 through `split` and `join`. That handoff records the
 complete code map, exact validation, coverage, Docker Compose dispositions for
 every connector review, runtime revisions, and promotion evidence.
 
+Signed follow-up commit `fce7edbadf8acfc4bf7b410d2f116d4e5f5ca0fa`
+(`fix(format): preserve exact Go output semantics`) closes the delayed review:
+`.Labels` participates in generic Go string helpers, root `index` access and
+the unsupported `table` function fail before discovery, and direct, formatted,
+table, `ps`, `stats`, and `volumes` output preserve partial UTF-8 as exact
+bytes. The paired handoff records focused unit and command tests, Docker
+Compose 5.3.1/Apple Current parity, increased coverage, and the passing
+SonarQube pull-request quality gate.
+
 ## Compatibility
 
 Existing literal, field-only, JSON, table, and function templates remain

@@ -54,6 +54,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): align logical and UTF-8 helpers`
 - `130ed4d91b2e3402e702d6d3ba3a265d92d8dd2b`
   `fix(format): preserve raw Go string helpers`
+- `fce7edbadf8acfc4bf7b410d2f116d4e5f5ca0fa`
+  `fix(format): preserve exact Go output semantics`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -104,6 +106,8 @@ This documentation commit is intentionally separate.
     `pad`, and `truncate`;
   - retains separate computed lookup keys and source-literal display keys so
     transformed label lookup and Docker's table-header spelling both match.
+  - rejects `index` when its first operand retains the root formatter row, so
+    root map-like access cannot bypass command field validation.
 - `Sources/ComposeCore/ComposeStructuredTemplateLookup.swift`
   - isolates Compose-owned field and label lookup policy from parsing and
     evaluation;
@@ -121,7 +125,7 @@ This documentation commit is intentionally separate.
   - renders publisher records in Go struct-field order while retaining
     `map[...]` display for ordinary objects;
   - keeps display, truthiness, and JSON projection separate while retaining
-    partial UTF-8 slices for exact Go quoting.
+    partial UTF-8 slices for exact Go quoting and exact output bytes.
 - `Sources/ComposeCore/ComposeDockerTemplateFunctionSupport.swift` and
   `ComposeDockerTemplatePrintf.swift`
   - implement typed arity checks, boolean helpers, string and collection
@@ -137,22 +141,35 @@ This documentation commit is intentionally separate.
   - preserve operand types for `%s` and `%d`, recursively apply verbs to
     collections and records, reproduce Go type diagnostics, and count Unicode
     scalars as Go runes when applying `printf` field widths;
+  - treat the lookup-object display used by `.Labels` as its generic Go string
+    while preserving `.Label` as the dedicated key-lookup surface;
+  - preserve invalid UTF-8 bytes through direct `%s` and `%v` output;
   - require a typed string or valid UTF-8 byte-string `printf` format instead
     of coercing arbitrary values through display text.
+- `Sources/ComposeCore/ComposeDockerTemplatePrintSupport.swift`
+  - isolates exact-byte `print`, `println`, and `printf` output from parsing and
+    retains Go spacing rules without converting through Swift `String`.
 - `Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift`
   - distinguishes whitespace-delimited trim markers from signed integer
     literals on both action boundaries.
 - `Sources/ComposeCore/ComposeFormatTemplate.swift`
   - retains the public row-rendering boundary and evaluates table templates
-    against Docker-style header values before rendering rows.
+    against Docker-style header values before rendering rows;
+  - adds exact-byte row joining, table padding, and output dispatch while
+    retaining the existing String API for compatible callers.
 - `Sources/ComposeCore/ComposeRenderHelpers.swift` and
   `Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift`
   - projects structured publishers, labels, mounts, networks, local-volume
     counts, and volume labels for the owning command rows;
   - supplies the exact `ps`, `stats`, and `volumes` header contexts used by
     Docker Compose;
+  - emits valid UTF-8 through the existing text callback and partial UTF-8
+    through the byte callback for `ps`, `stats`, and `volumes`;
   - defaults absent running or created-container exit codes to typed integer
     zero, matching Docker's `.ExitCode` template value.
+- `Sources/ComposeRuntimeSPI/ComposeRuntimeCollaborators.swift`
+  - adds an optional exact-byte stats-output capability while preserving the
+    existing stats-manager protocol for external implementations.
 - `Sources/ComposePlugin/ComposeCLIHelp.swift` and `STATUS.md`
   - mark `ps`, `stats`, and `volumes` supported and close the output-template
     gap without overstating unrelated lifecycle work.
@@ -184,6 +201,11 @@ This documentation commit is intentionally separate.
   - covers duplicate columns, conditional headers, label headers, empty
     tables, deliberately omitted Docker headers, legacy callers, field
     analysis, and variable scope.
+- `Tests/ComposeCoreTests/ComposeFormatTemplateRawOutputTests.swift` and
+  `ComposeFormatTemplateStructuredValueTests.swift`
+  - cover every structured output value, `.Labels` through generic Go string
+    helpers, direct and formatted partial UTF-8, exact-byte row joining, raw
+    table padding, label headers, and decomposed structured-value assertions.
 - `Tests/ComposeCoreTests/ComposeOrchestratorTests.swift` and
   `Tests/ComposePluginTests/ComposeCLIHelpTests.swift`
   - cover structured command rows and honest support metadata.
@@ -206,7 +228,10 @@ This documentation commit is intentionally separate.
     `upper`, `lower`, `title`, `pad`, and `truncate`.
   - verifies ordered logical publisher selection, empty-separator and
     empty-input splitting, partial UTF-8 byte truncation and splitting, and
-    negative truncation rejection.
+    negative truncation rejection;
+  - verifies `.Labels` through generic string helpers, rejects root `index`
+    and the unsupported `table` template function, and compares direct and
+    `%s` partial UTF-8 output byte-for-byte.
 
 ## Validation
 
@@ -214,35 +239,46 @@ The final local verification passed on the MacBook Pro:
 
 ```sh
 make swift-coverage
+make go-test
+make coverage-check
 make check
 swiftlint lint --strict --quiet \
+  Sources/ComposeCore/ComposeDockerTemplatePrintSupport.swift \
   Sources/ComposeCore/ComposeDockerTemplateStringSupport.swift \
+  Sources/ComposeCore/ComposeFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift
+  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
+  Tests/ComposeCoreTests/ComposeFormatTemplateRawOutputTests.swift
 swiftformat --lint --swift-version 6.2 \
+  Sources/ComposeCore/ComposeDockerTemplatePrintSupport.swift \
   Sources/ComposeCore/ComposeDockerTemplateStringSupport.swift \
+  Sources/ComposeCore/ComposeFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift
+  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
+  Tests/ComposeCoreTests/ComposeFormatTemplateRawOutputTests.swift
 shellcheck Tools/parity/check-compose-format-template-actions.sh
 CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
   make docker-compose-format-template-actions-parity
 git diff --check
 ```
 
-- Swift: 1,165 tests in 31 suites passed.
-- Structured template engine: 1,942/2,079 lines, 93.41%.
-- `ComposeStructuredFormatTemplate.swift`: 795/851 lines, 93.42%.
-- `ComposeStructuredTemplateAnalysis.swift`: 443/459 lines, 96.51%.
+- Swift: 1,174 tests in 33 suites passed.
+- Swift repository coverage: 91.91%.
+- Go normalizer coverage: 89.88%.
+- Structured template engine and support: 2,134/2,281 lines, 93.56%.
+- `ComposeStructuredFormatTemplate.swift`: 786/842 lines, 93.35%.
+- `ComposeStructuredTemplateAnalysis.swift`: 508/526 lines, 96.58%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 61/65 lines,
   93.85%.
 - `ComposeStructuredTemplateLookup.swift`: 31/37 lines, 83.78%.
 - `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
-- `ComposeDockerTemplateData.swift`: 92/107 lines, 85.98%.
-- `ComposeDockerTemplatePrintf.swift`: 284/298 lines, 95.30%.
-- `ComposeDockerTemplateFunctionSupport.swift`: 155/174 lines, 89.08%.
-- `ComposeDockerTemplateStringSupport.swift`: 63/70 lines, 90.00%.
-- Formatter table boundary: 67/68 lines, 98.53%.
-- Command rendering helpers: 751/780 lines, 96.28%.
+- `ComposeDockerTemplateData.swift`: 142/164 lines, 86.59%.
+- `ComposeDockerTemplatePrintSupport.swift`: 53/57 lines, 92.98%.
+- `ComposeDockerTemplatePrintf.swift`: 311/324 lines, 95.99%.
+- `ComposeDockerTemplateFunctionSupport.swift`: 158/176 lines, 89.77%.
+- `ComposeDockerTemplateStringSupport.swift`: 66/72 lines, 91.67%.
+- Formatter table boundary: 210/211 lines, 99.53%.
+- Command rendering helpers: 765/815 lines, 93.87%.
 - Repository checks passed, including 167 release-controller tests, 14
   CI-helper tests, stack consistency, release consistency, licence validation,
   and credential scanning.
@@ -254,6 +290,10 @@ git diff --check
     `164088e02e16ed80e536d0c59822b09931d213df`;
   - `container-compose` base
     `b644c71fd0f7dd665a2a74192ab55745faafa281`.
+- SonarQube pull-request analysis for implementation commit
+  `fce7edbadf8acfc4bf7b410d2f116d4e5f5ca0fa` passed with zero unresolved
+  issues, 91.6% new-code coverage, 0.0% new duplication, A ratings for
+  reliability, security, and maintainability, and 100% hotspot review.
 
 The user explicitly waived the soak gate for this slice. Hosted CI, CodeQL,
 quality, Current publication, and exact-release verification remain promotion
@@ -278,7 +318,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified forty actionable compatibility cases and two suggestions that
+identified forty-three actionable compatibility cases and three suggestions that
 were disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
@@ -363,6 +403,12 @@ were disproved against the exact Docker Compose 5.3.1 oracle:
   elements for an empty input;
 - `truncate` prefixes UTF-8 bytes and retains partial invalid strings for exact
   Go quoting.
+- `.Labels` uses its rendered display as the Go string accepted by generic
+  string, formatting, length, index, and slice helpers.
+- static `index` access to the root formatter row is rejected during preflight
+  rather than bypassing unsupported-field validation.
+- direct, `%s`, `%v`, `print`, table, and command output retain partial UTF-8
+  as exact bytes instead of inserting replacement characters.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -438,6 +484,16 @@ created by byte truncation. Commit
 rejects negative lengths, preserves byte strings across all three helpers, and
 adds focused and committed live-parity regressions.
 
+A delayed connector review then identified `.Labels` generic helper
+compatibility, root indexing, an invented `table` identity helper, and raw
+output replacement. Signed commit
+`fce7edbadf8acfc4bf7b410d2f116d4e5f5ca0fa` treats `.Labels` as its rendered
+Go string for generic helpers, rejects root indexing before discovery, removes
+the non-Docker `table` helper, and carries exact bytes through the evaluator,
+table renderer, command layer, and optional stats SPI. Focused unit,
+command-path, coverage, SonarQube, and live Docker Compose 5.3.1/Apple Current
+evidence covers all four findings.
+
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
 `{127.0.0.1 8080 32768 tcp}`. The same successful behavior is now protected by
@@ -446,8 +502,12 @@ unit and committed live-parity coverage. The suggestion to invent headers for
 `Publishers` was also not implemented: Docker Compose 5.3.1 emits
 `<no value>` for every one of those table headers. Focused unit coverage and
 the committed Docker/Apple live oracle now preserve that exact behavior. No
-actionable autobot finding was deferred, and all forty-two connector threads
-are answered with their implementation or verified compatibility disposition.
+actionable autobot finding was deferred. The suggestion to propagate root
+identity through `table` was not implemented because Docker Compose 5.3.1
+rejects the template at parse time with `function "table" not defined`; the
+unsupported helper was removed and that exact rejection is protected instead.
+All forty-six connector threads are answered with their implementation or
+verified compatibility disposition.
 
 ## Documentation And Operations
 
@@ -471,6 +531,7 @@ are answered with their implementation or verified compatibility disposition.
 - [x] A committed `compose.yaml` fixture confirms Docker Compose v2 parity.
 - [x] The matched Apple Current stack passes the live integration oracle.
 - [x] Local repository, style, licence, consistency, and credential gates pass.
+- [x] SonarQube reports zero issues and passes its new-code quality gate.
 - [x] README VHS source uses typed commands and live output only.
 - [ ] Hosted CI, CodeQL, and quality checks pass for the exact revision.
 - [ ] Current prerelease artifacts, checksums, attestations, and live VHS pass.
