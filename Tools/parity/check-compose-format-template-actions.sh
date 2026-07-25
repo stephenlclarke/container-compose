@@ -208,6 +208,16 @@ check_implementation() {
     )"
     assert_equal "$actual" '127.0.0.1|8080|32768|tcp|value' "$project ps control template"
 
+    # Go-template root references must reach Compose literally.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range or .Publishers $}}{{.}}{{end}}'
+    )"
+    assert_equal "$actual" \
+        '{127.0.0.1 8080 32768 tcp}' \
+        "$project logical publisher range template"
+
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format '{{with ""}}missing{{else with .Service}}{{.}}{{end}}'

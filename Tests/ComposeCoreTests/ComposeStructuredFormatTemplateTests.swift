@@ -62,7 +62,6 @@ struct ComposeStructuredFormatTemplateTests {
 
         for template in [
             "{{range .Text}}{{.}}{{end}}",
-            "{{range or .Publishers $}}{{.}}{{end}}",
             "{{len .Integer}}",
             "{{len .False}}",
             "{{len .Nothing}}",
@@ -72,6 +71,30 @@ struct ComposeStructuredFormatTemplateTests {
             #expect(throws: (any Error).self) {
                 try renderDockerTemplate(template, values: values)
             }
+        }
+    }
+
+    @Test
+    func `range rejects root only when logical fallback selects it`() throws {
+        let template = "{{range or .Publishers $}}{{.}}{{end}}"
+        let publisher = DockerTemplateData.record([
+            "Protocol": .string("tcp"),
+            "PublishedPort": .integer(32768),
+            "TargetPort": .integer(8080),
+            "URL": .string("127.0.0.1"),
+        ])
+
+        #expect(
+            try renderDockerTemplate(
+                template,
+                values: ["Publishers": .array([publisher])],
+            ) == "{127.0.0.1 8080 32768 tcp}",
+        )
+        #expect(throws: (any Error).self) {
+            try renderDockerTemplate(
+                template,
+                values: ["Publishers": .array([])],
+            )
         }
     }
 

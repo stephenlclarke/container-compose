@@ -53,9 +53,10 @@ private struct StructuredTemplateAction {
     var trimFollowingText: Bool
 }
 
-private struct StructuredTemplateContext {
+struct StructuredTemplateContext {
     var root: DockerTemplateData
     var dot: DockerTemplateData
+    var dotIsRoot = true
     var variables: [String: DockerTemplateData] = [:]
 }
 
@@ -424,13 +425,17 @@ private func renderStructuredTemplateNodes(
                 ),
             )
         case let .with(expression, success, failure):
-            let value = try evaluateStructuredTemplateExpression(expression, context: context)
+            let evaluation = try evaluateStructuredTemplateExpressionWithRoot(
+                expression,
+                context: context,
+            )
             var nested = context
-            nested.dot = value
+            nested.dot = evaluation.value
+            nested.dotIsRoot = evaluation.isRoot
             try rendered.append(
                 contentsOf: renderStructuredTemplateNodes(
-                    value.isTruthy ? success : failure,
-                    context: value.isTruthy ? nested : context,
+                    evaluation.value.isTruthy ? success : failure,
+                    context: evaluation.value.isTruthy ? nested : context,
                 ),
             )
         case let .range(specification, success, failure):
@@ -459,7 +464,14 @@ private func renderStructuredTemplateRange(
     failure: [StructuredTemplateNode],
     context: StructuredTemplateContext,
 ) throws -> [UInt8] {
-    let value = try evaluateStructuredTemplateExpression(specification.expression, context: context)
+    let evaluation = try evaluateStructuredTemplateExpressionWithRoot(
+        specification.expression,
+        context: context,
+    )
+    if evaluation.isRoot {
+        throw structuredUnsupportedAction("range root value")
+    }
+    let value = evaluation.value
     if specification.keyVariable != nil, case .integer = value {
         throw structuredUnsupportedAction("range integer with two variables")
     }
@@ -478,6 +490,7 @@ private func renderStructuredTemplateRange(
     for entry in entries {
         var nested = context
         nested.dot = entry.value
+        nested.dotIsRoot = false
         if let keyVariable = specification.keyVariable {
             nested.variables[keyVariable] = entry.key
         }
@@ -494,7 +507,7 @@ private func renderStructuredTemplateRange(
     return rendered
 }
 
-private let structuredTemplateFunctions: Set<String> = [
+let structuredTemplateFunctions: Set<String> = [
     "and",
     "eq",
     "index",
@@ -554,7 +567,7 @@ private func validateStructuredExpression(_ expression: String) throws {
     }
 }
 
-private func isStructuredTemplateValue(_ token: String) -> Bool {
+func isStructuredTemplateValue(_ token: String) -> Bool {
     token == "."
         || token == "$"
         || structuredTemplatePath(token) != nil
@@ -663,146 +676,6 @@ func structuredTemplatePipelineSegments(_ expression: String) -> [String]? {
     guard scan.isBalanced, !trimmed.isEmpty else { return nil }
     segments.append(trimmed)
     return segments
-}
-
-private func evaluateStructuredTemplateExpression(
-    _ expression: String,
-    context: StructuredTemplateContext,
-) throws -> DockerTemplateData {
-    guard let segments = structuredTemplatePipelineSegments(expression) else {
-        throw structuredUnsupportedAction(expression)
-    }
-    var pipelineValue: DockerTemplateData?
-    for (index, segment) in segments.enumerated() {
-        guard let tokens = structuredTemplateTokens(segment), let head = tokens.first else {
-            throw structuredUnsupportedAction(expression)
-        }
-        if index == 0, tokens.count == 1, isStructuredTemplateValue(head) {
-            pipelineValue = try structuredTemplateValue(head, context: context)
-        } else if isStructuredTemplateLabelFunction(head) {
-            var inputs = try tokens.dropFirst().map {
-                try structuredTemplateValue($0, context: context)
-            }
-            if let pipelineValue {
-                inputs.append(pipelineValue)
-            }
-            guard inputs.count == 1 else {
-                throw structuredUnsupportedAction("Label")
-            }
-            let key = try structuredString(inputs[0], function: "Label")
-            let source = head == "$.Label" ? context.root : context.dot
-            pipelineValue = try structuredTemplateLabel(key, source: source)
-        } else {
-            guard structuredTemplateFunctions.contains(head) else {
-                throw structuredUnsupportedAction(expression)
-            }
-            if head == "and" || head == "or" {
-                pipelineValue = try evaluateStructuredShortCircuitFunction(
-                    head,
-                    argumentTokens: tokens.dropFirst(),
-                    pipelineValue: pipelineValue,
-                    context: context,
-                )
-                continue
-            }
-            let arguments = try tokens.dropFirst().map {
-                try structuredTemplateValue($0, context: context)
-            }
-            pipelineValue = try applyStructuredTemplateFunction(
-                head,
-                arguments: arguments,
-                pipelineValue: pipelineValue,
-            )
-        }
-    }
-    guard let pipelineValue else { throw structuredUnsupportedAction(expression) }
-    return pipelineValue
-}
-
-private func evaluateStructuredShortCircuitFunction(
-    _ function: String,
-    argumentTokens: ArraySlice<String>,
-    pipelineValue: DockerTemplateData?,
-    context: StructuredTemplateContext,
-) throws -> DockerTemplateData {
-    var last: DockerTemplateData?
-    for token in argumentTokens {
-        let value = try structuredTemplateValue(token, context: context)
-        last = value
-        if function == "and", !value.isTruthy {
-            return value
-        }
-        if function == "or", value.isTruthy {
-            return value
-        }
-    }
-    if let pipelineValue {
-        last = pipelineValue
-        if function == "and", !pipelineValue.isTruthy {
-            return pipelineValue
-        }
-        if function == "or", pipelineValue.isTruthy {
-            return pipelineValue
-        }
-    }
-    guard let last else {
-        throw structuredUnsupportedAction(function)
-    }
-    return last
-}
-
-private func structuredTemplateValue(
-    _ token: String,
-    context: StructuredTemplateContext,
-) throws -> DockerTemplateData {
-    switch token {
-    case ".":
-        return context.dot
-    case "$":
-        return context.root
-    case "true":
-        return .boolean(true)
-    case "false":
-        return .boolean(false)
-    default:
-        break
-    }
-    if let path = structuredTemplatePath(token) {
-        let base = structuredTemplateBase(path.base, context: context)
-        return try path.fields.reduce(base) { value, field in
-            try structuredTemplateLookup(value, field)
-        }
-    }
-    if let value = structuredTemplateStringLiteral(token) {
-        return .string(value)
-    }
-    if let parenthesized = structuredTemplateParenthesizedValue(token) {
-        let base = try evaluateStructuredTemplateExpression(
-            parenthesized.expression,
-            context: context,
-        )
-        return try parenthesized.fields.reduce(base) { value, field in
-            try structuredTemplateLookup(value, field)
-        }
-    }
-    if let value = Int(token) {
-        return .integer(value)
-    }
-    throw structuredUnsupportedAction(token)
-}
-
-private func structuredTemplateBase(
-    _ base: String,
-    context: StructuredTemplateContext,
-) -> DockerTemplateData {
-    switch base {
-    case ".":
-        context.dot
-    case "$":
-        context.root
-    default:
-        context.variables[base] ?? .null
-    }
 }
 
 func applyStructuredTemplateFunction(
