@@ -78,7 +78,7 @@ python3 Tools/release/capture-quality-snapshot.py \
 
 Observed locally:
 
-- 160 release-tool tests passed.
+- 164 release-tool tests passed.
 - All coverage, release, CI-helper, consistency, and secret checks in
   `make check` passed.
 - The live command resolved CI run `30089845474`, CI job `89470421550`, the
