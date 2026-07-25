@@ -155,7 +155,7 @@ private func composeContainerStructuredTemplateValues(
             ])
         }
     }
-    let mounts = container.mounts.compactMap(\.target).joined(separator: ",")
+    let mounts = container.mounts.compactMap(\.source).joined(separator: ",")
     let networks = container.networks.map(\.network).joined(separator: ",")
     return [
         "ExitCode": container.exitCode.map { .integer(Int($0)) } ?? .string(""),
@@ -163,7 +163,9 @@ private func composeContainerStructuredTemplateValues(
         "ID": .string(noTrunc ? container.id : truncatedDockerIdentifier(container.id)),
         "Image": .string(container.imageReference),
         "Labels": .lookupObject(labelValues, display: labels),
-        "LocalVolumes": .integer(container.mounts.count { $0.type == "volume" }),
+        "LocalVolumes": .integer(container.mounts.count {
+            $0.type == "volume" || $0.type == "external-volume"
+        }),
         "Mounts": .string(mounts),
         "Name": .string(container.id),
         "Names": .string(container.id),

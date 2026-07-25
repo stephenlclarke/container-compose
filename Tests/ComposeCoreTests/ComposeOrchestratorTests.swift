@@ -13643,7 +13643,7 @@ struct ComposeOrchestratorTests {
                         ),
                     ],
                     mounts: [
-                        ComposeMount(type: "volume", source: "demo_cache", target: "/cache"),
+                        ComposeMount(type: "external-volume", source: "demo_cache", target: "/cache"),
                     ],
                     networks: [
                         ComposeContainerNetworkAttachment(network: "demo_default", ipv4Address: "192.0.2.2"),
@@ -13666,7 +13666,7 @@ struct ComposeOrchestratorTests {
 
         #expect(
             emitted.messages == [
-                "0=127.0.0.1|8080|32768|tcp\tvalue\t1\t/cache\tdemo_default",
+                "0=127.0.0.1|8080|32768|tcp\tvalue\t1\tdemo_cache\tdemo_default",
             ]
         )
     }
