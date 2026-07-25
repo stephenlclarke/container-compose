@@ -93,49 +93,142 @@ private func structuredPrintfReplacement(
     _ value: DockerTemplateData,
     directive: StructuredPrintfDirective,
 ) throws -> String {
-    let replacement = switch directive.verb {
+    switch value {
+    case let .array(values):
+        let elements = try values.map {
+            try structuredPrintfReplacement($0, directive: directive)
+        }
+        return "[\(elements.joined(separator: " "))]"
+    case let .object(values):
+        let entries = try values.keys.sorted().map { key in
+            let renderedKey = try structuredPrintfReplacement(.string(key), directive: directive)
+            let renderedValue = try structuredPrintfReplacement(
+                values[key] ?? .null,
+                directive: directive,
+            )
+            return "\(renderedKey):\(renderedValue)"
+        }
+        return "map[\(entries.joined(separator: " "))]"
+    case let .record(values):
+        let fields = try structuredTemplateRecordValues(values).map {
+            try structuredPrintfReplacement($0, directive: directive)
+        }
+        return "{\(fields.joined(separator: " "))}"
+    case .boolean, .byteString, .integer, .lookupObject, .null, .string:
+        return try structuredPrintfScalarReplacement(value, directive: directive)
+    }
+}
+
+private func structuredPrintfScalarReplacement(
+    _ value: DockerTemplateData,
+    directive: StructuredPrintfDirective,
+) throws -> String {
+    switch directive.verb {
     case "d":
-        try String(structuredInteger(value, function: "printf"))
+        return structuredPrintfDecimalReplacement(value, directive: directive)
     case "q":
-        structuredPrintfQuoted(value)
-    case "s", "v":
-        value.display
+        return try structuredPrintfQuotedReplacement(value, directive: directive)
+    case "s":
+        return try structuredPrintfStringReplacement(value, directive: directive)
+    case "v":
+        return structuredPrintfPadded(value.display, directive: directive)
     default:
         throw structuredUnsupportedAction("printf")
     }
+}
+
+private func structuredPrintfDecimalReplacement(
+    _ value: DockerTemplateData,
+    directive: StructuredPrintfDirective,
+) -> String {
+    guard case let .integer(integer) = value else {
+        return structuredPrintfTypeDiagnostic(value, directive: directive)
+    }
+    return structuredPrintfPadded(String(integer), directive: directive)
+}
+
+private func structuredPrintfQuotedReplacement(
+    _ value: DockerTemplateData,
+    directive: StructuredPrintfDirective,
+) throws -> String {
+    let replacement: String
+    switch value {
+    case let .byteString(bytes):
+        replacement = structuredGoQuotedBytes(bytes)
+    case let .integer(integer):
+        replacement = structuredGoQuotedRune(integer)
+    case let .lookupObject(_, display):
+        replacement = structuredGoQuotedString(display)
+    case let .string(string):
+        replacement = structuredGoQuotedString(string)
+    case .boolean, .null:
+        return structuredPrintfTypeDiagnostic(value, directive: directive)
+    case .array, .object, .record:
+        throw structuredUnsupportedAction("printf")
+    }
+    return structuredPrintfPadded(replacement, directive: directive)
+}
+
+private func structuredPrintfStringReplacement(
+    _ value: DockerTemplateData,
+    directive: StructuredPrintfDirective,
+) throws -> String {
+    let replacement: String
+    switch value {
+    case let .byteString(bytes):
+        replacement = String(bytes: bytes, encoding: .utf8) ?? "\u{FFFD}"
+    case let .lookupObject(_, display):
+        replacement = display
+    case let .string(string):
+        replacement = string
+    case .boolean, .integer, .null:
+        return structuredPrintfTypeDiagnostic(value, directive: directive)
+    case .array, .object, .record:
+        throw structuredUnsupportedAction("printf")
+    }
+    return structuredPrintfPadded(replacement, directive: directive)
+}
+
+private func structuredPrintfTypeDiagnostic(
+    _ value: DockerTemplateData,
+    directive: StructuredPrintfDirective,
+) -> String {
+    if value == .null {
+        return "%!\(directive.verb)(<nil>)"
+    }
+    let rendered = structuredPrintfPadded(value.display, directive: directive)
+    return "%!\(directive.verb)(\(structuredPrintfTypeName(value))=\(rendered))"
+}
+
+private func structuredPrintfTypeName(_ value: DockerTemplateData) -> String {
+    switch value {
+    case .boolean:
+        "bool"
+    case .integer:
+        "int"
+    case .byteString, .lookupObject, .string:
+        "string"
+    case .array:
+        "[]interface {}"
+    case .null:
+        "<nil>"
+    case .object:
+        "map[string]interface {}"
+    case .record:
+        "formatter.Port"
+    }
+}
+
+private func structuredPrintfPadded(
+    _ replacement: String,
+    directive: StructuredPrintfDirective,
+) -> String {
     let replacementWidth = replacement.unicodeScalars.count
     guard let width = directive.width, replacementWidth < width else {
         return replacement
     }
     let padding = String(repeating: " ", count: width - replacementWidth)
     return directive.leftAligned ? replacement + padding : padding + replacement
-}
-
-private func structuredPrintfQuoted(_ value: DockerTemplateData) -> String {
-    switch value {
-    case let .array(values):
-        return "[\(values.map(structuredPrintfQuoted).joined(separator: " "))]"
-    case let .boolean(value):
-        return "%!q(bool=\(value ? "true" : "false"))"
-    case let .byteString(bytes):
-        return structuredGoQuotedBytes(bytes)
-    case let .integer(value):
-        return structuredGoQuotedRune(value)
-    case let .lookupObject(_, display):
-        return structuredGoQuotedString(display)
-    case .null:
-        return "%!q(<nil>)"
-    case let .object(values):
-        let entries = values.keys.sorted().map { key in
-            "\(structuredGoQuotedString(key)):\(structuredPrintfQuoted(values[key] ?? .null))"
-        }
-        return "map[\(entries.joined(separator: " "))]"
-    case let .record(values):
-        let fields = structuredTemplateRecordValues(values).map(structuredPrintfQuoted)
-        return "{\(fields.joined(separator: " "))}"
-    case let .string(value):
-        return structuredGoQuotedString(value)
-    }
 }
 
 private func structuredGoQuotedBytes(_ bytes: [UInt8]) -> String {

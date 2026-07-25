@@ -247,6 +247,22 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{join .Publishers ","}}'
+    )"
+    assert_equal "$actual" \
+        '{127.0.0.1 8080 32768 tcp}' \
+        "$project structured join template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range .Publishers}}{{printf "%s|%d|%5s|%-5d" .TargetPort .Protocol .TargetPort .Protocol}}{{end}}'
+    )"
+    assert_equal "$actual" \
+        '%!s(int=8080)|%!d(string=tcp)|%!s(int= 8080)|%!d(string=tcp  )' \
+        "$project typed printf verb template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format "{{printf \"[%2s]|[%3s]|[%-3s]\" \"$combining\" \"$combining\" \"$combining\"}}"
     )"
     assert_equal "$actual" \
@@ -327,6 +343,15 @@ check_implementation() {
     assert_rejected "$project non-string map key template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{index .Labels true}}'
+    assert_rejected "$project string array index template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{index .Publishers "0"}}'
+    assert_rejected "$project string byte index template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{index .Name "1"}}'
+    assert_rejected "$project string slice bound template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{slice .Name "0" 1}}'
     assert_rejected "$project nested scalar field template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{range .Publishers}}{{.TargetPort.Bad}}{{end}}'

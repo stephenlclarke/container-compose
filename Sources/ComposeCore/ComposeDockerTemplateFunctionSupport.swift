@@ -85,10 +85,7 @@ func structuredInteger(
     switch value {
     case let .integer(integer):
         return integer
-    case let .string(string):
-        guard let integer = Int(string) else { throw structuredUnsupportedAction(function) }
-        return integer
-    default:
+    case .array, .boolean, .byteString, .lookupObject, .null, .object, .record, .string:
         throw structuredUnsupportedAction(function)
     }
 }
