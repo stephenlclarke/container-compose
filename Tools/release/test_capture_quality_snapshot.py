@@ -258,6 +258,102 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             )
         )
 
+    def test_retained_evidence_waits_for_indexing_without_a_newer_analysis(
+        self,
+    ) -> None:
+        module = load_module()
+        evidence = module.RetainedSonarEvidence(
+            check_url="https://sonarcloud.io/example",
+            ci_job_url="https://github.com/example/repo/actions/jobs/456",
+            completed_at="2026-07-24T11:41:07Z",
+        )
+        module.find_sonarqube_analysis = lambda **_kwargs: None
+        module.find_codeql_analysis = lambda **_kwargs: {
+            "results_count": 0,
+            "rules_count": 34,
+            "error": "",
+            "warning": "",
+        }
+        module.find_retained_sonarqube_evidence = lambda **_kwargs: evidence
+        module.sonarqube_has_analysis_after = lambda **_kwargs: False
+
+        with (
+            mock.patch.object(module.time, "monotonic", side_effect=(0, 0, 1)),
+            mock.patch.object(module.time, "sleep") as sleep,
+        ):
+            result = module.wait_for_quality_evidence(
+                host="https://example.invalid",
+                project="example",
+                branch="main",
+                gh="gh",
+                repository="example/repo",
+                codeql_ref="refs/heads/main",
+                commit="0123456789abcdef",
+                poll_interval=1,
+                poll_timeout=1,
+                allow_retained_sonarqube=True,
+            )
+
+        self.assertEqual(result, (None, module.find_codeql_analysis(), evidence))
+        sleep.assert_called_once_with(1)
+
+    def test_retained_evidence_is_immediate_after_a_newer_analysis(self) -> None:
+        module = load_module()
+        evidence = module.RetainedSonarEvidence(
+            check_url="https://sonarcloud.io/example",
+            ci_job_url="https://github.com/example/repo/actions/jobs/456",
+            completed_at="2026-07-24T11:41:07Z",
+        )
+        module.find_sonarqube_analysis = lambda **_kwargs: None
+        module.find_codeql_analysis = lambda **_kwargs: {
+            "results_count": 0,
+            "rules_count": 34,
+            "error": "",
+            "warning": "",
+        }
+        module.find_retained_sonarqube_evidence = lambda **_kwargs: evidence
+        module.sonarqube_has_analysis_after = lambda **_kwargs: True
+
+        with mock.patch.object(module.time, "sleep") as sleep:
+            result = module.wait_for_quality_evidence(
+                host="https://example.invalid",
+                project="example",
+                branch="main",
+                gh="gh",
+                repository="example/repo",
+                codeql_ref="refs/heads/main",
+                commit="0123456789abcdef",
+                poll_interval=1,
+                poll_timeout=1,
+                allow_retained_sonarqube=True,
+            )
+
+        self.assertEqual(result, (None, module.find_codeql_analysis(), evidence))
+        sleep.assert_not_called()
+
+    def test_newer_sonarqube_analysis_must_follow_the_exact_scan(self) -> None:
+        module = load_module()
+        module.sonarqube_analyses = lambda **_kwargs: [
+            {
+                "revision": "older-commit",
+                "date": "2026-07-24T11:40:00+0000",
+            },
+            {
+                "revision": "newer-commit",
+                "date": "2026-07-24T11:42:00+0000",
+            },
+        ]
+
+        self.assertTrue(
+            module.sonarqube_has_analysis_after(
+                host="https://example.invalid",
+                project="example",
+                branch="main",
+                commit="0123456789abcdef",
+                timestamp="2026-07-24T11:41:07Z",
+            )
+        )
+
     def test_prebuilt_workflow_requires_exact_main_sonarqube_evidence(self) -> None:
         workflow = (
             Path(__file__).parents[2] / ".github/workflows/prebuilt-binaries.yml"
@@ -737,6 +833,7 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             "warning": "",
         }
         module.find_retained_sonarqube_evidence = lambda **_kwargs: evidence
+        module.sonarqube_has_analysis_after = lambda **_kwargs: True
 
         output = io.StringIO()
         with mock.patch.object(
@@ -758,6 +855,39 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn("SonarQube Metrics", output.getvalue())
         self.assertIn("Expired", output.getvalue())
         self.assertIn("no later metrics were substituted", output.getvalue())
+
+    def test_cli_does_not_treat_a_metric_request_failure_as_retention(self) -> None:
+        module = load_module()
+        module.wait_for_quality_evidence = lambda **_kwargs: (
+            {"date": "2026-07-24T11:41:07+0000"},
+            {"results_count": 0, "rules_count": 34, "error": "", "warning": ""},
+            None,
+        )
+        module.sonar_measures_for_analysis = mock.Mock(
+            side_effect=ValueError("temporary SonarCloud request failure")
+        )
+        module.find_retained_sonarqube_evidence = mock.Mock()
+
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                "capture-quality-snapshot.py",
+                "--repo",
+                "example/repo",
+                "--commit",
+                "0123456789abcdef",
+                "--release-kind",
+                "stable",
+                "--allow-expired-sonarqube-metrics",
+            ],
+        ):
+            with self.assertRaisesRegex(
+                SystemExit, "temporary SonarCloud request failure"
+            ):
+                module.main()
+
+        module.find_retained_sonarqube_evidence.assert_not_called()
 
     def test_cli_writes_self_contained_svg_and_verified_static_badges(self) -> None:
         module = load_module()

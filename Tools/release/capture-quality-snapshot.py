@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime
 import html
 from html.parser import HTMLParser
 import json
@@ -225,9 +226,9 @@ def gh_text(gh: str, *arguments: str) -> str:
     return gh_api_text(gh, *arguments)
 
 
-def find_sonarqube_analysis(
-    *, host: str, project: str, branch: str, commit: str
-) -> dict[str, Any] | None:
+def sonarqube_analyses(
+    *, host: str, project: str, branch: str
+) -> list[dict[str, Any]]:
     response = request_json(
         sonar_url(
             host,
@@ -238,10 +239,61 @@ def find_sonarqube_analysis(
     analyses = response.get("analyses")
     if not isinstance(analyses, list):
         raise ValueError("SonarQube did not return an analyses list")
+    result: list[dict[str, Any]] = []
     for analysis in analyses:
-        if isinstance(analysis, dict) and analysis.get("revision") == commit:
+        if not isinstance(analysis, dict):
+            raise ValueError("SonarQube returned an invalid analysis entry")
+        result.append(analysis)
+    return result
+
+
+def find_sonarqube_analysis(
+    *, host: str, project: str, branch: str, commit: str
+) -> dict[str, Any] | None:
+    for analysis in sonarqube_analyses(host=host, project=project, branch=branch):
+        if analysis.get("revision") == commit:
             return analysis
     return None
+
+
+def sonarqube_has_analysis_after(
+    *,
+    host: str,
+    project: str,
+    branch: str,
+    commit: str,
+    timestamp: str,
+) -> bool:
+    """Return whether a different retained analysis supersedes the exact scan."""
+
+    try:
+        threshold = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError(f"invalid retained SonarQube timestamp: {timestamp}") from error
+    if threshold.tzinfo is None:
+        raise ValueError(f"retained SonarQube timestamp lacks a time zone: {timestamp}")
+
+    for analysis in sonarqube_analyses(host=host, project=project, branch=branch):
+        if analysis.get("revision") == commit:
+            continue
+        analysis_date = analysis.get("date")
+        if not isinstance(analysis_date, str):
+            raise ValueError("SonarQube analysis did not include a timestamp")
+        try:
+            candidate = datetime.fromisoformat(
+                analysis_date.replace("Z", "+00:00")
+            )
+        except ValueError as error:
+            raise ValueError(
+                f"invalid SonarQube analysis timestamp: {analysis_date}"
+            ) from error
+        if candidate.tzinfo is None:
+            raise ValueError(
+                f"SonarQube analysis timestamp lacks a time zone: {analysis_date}"
+            )
+        if candidate > threshold:
+            return True
+    return False
 
 
 def find_codeql_analysis(
@@ -426,6 +478,7 @@ def wait_for_quality_evidence(
 
     deadline = time.monotonic() + poll_timeout
     while True:
+        retained_evidence = None
         sonar_analysis = find_sonarqube_analysis(
             host=host, project=project, branch=branch, commit=commit
         )
@@ -443,9 +496,17 @@ def wait_for_quality_evidence(
                 repository=repository,
                 commit=commit,
             )
-            if retained_evidence is not None:
+            if retained_evidence is not None and sonarqube_has_analysis_after(
+                host=host,
+                project=project,
+                branch=branch,
+                commit=commit,
+                timestamp=retained_evidence.completed_at,
+            ):
                 return None, codeql_analysis, retained_evidence
         if time.monotonic() >= deadline:
+            if codeql_analysis is not None and retained_evidence is not None:
+                return None, codeql_analysis, retained_evidence
             waiting_for = []
             if sonar_analysis is None:
                 waiting_for.append("SonarQube")
