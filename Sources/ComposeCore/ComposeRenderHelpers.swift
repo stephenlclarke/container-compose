@@ -172,7 +172,7 @@ private func composeContainerStructuredTemplateValues(
     let labelValues = container.labels.mapValues(DockerTemplateData.string)
     let publishers = container.publishedPorts.flatMap { port in
         (0 ..< Int(port.count)).map { offset in
-            DockerTemplateData.object([
+            DockerTemplateData.record([
                 "Protocol": .string(port.protocolName),
                 "PublishedPort": .integer(Int(port.hostPort) + offset),
                 "TargetPort": .integer(Int(port.containerPort) + offset),

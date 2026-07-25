@@ -16,6 +16,50 @@
 
 import Foundation
 
+func structuredTemplateControlExpression(
+    _ action: String,
+    keyword: String,
+) -> String? {
+    guard action.hasPrefix(keyword) else {
+        return nil
+    }
+    let suffix = action.dropFirst(keyword.count)
+    guard suffix.first?.isWhitespace == true || suffix.first == "(" else {
+        return nil
+    }
+    let expression = suffix.trimmingCharacters(in: .whitespacesAndNewlines)
+    return expression.isEmpty ? nil : expression
+}
+
+func structuredTemplateElseIfExpression(_ action: String) -> String? {
+    guard action.hasPrefix("else") else {
+        return nil
+    }
+    let suffix = action.dropFirst(4)
+    guard suffix.first?.isWhitespace == true else {
+        return nil
+    }
+    return structuredTemplateControlExpression(
+        suffix.trimmingCharacters(in: .whitespacesAndNewlines),
+        keyword: "if",
+    )
+}
+
+func structuredTemplateRangeEntries(
+    _ value: DockerTemplateData,
+) throws -> [(key: DockerTemplateData, value: DockerTemplateData)] {
+    switch value {
+    case let .array(values):
+        values.enumerated().map { (.integer($0.offset), $0.element) }
+    case let .object(values):
+        values.keys.sorted().map { (.string($0), values[$0] ?? .null) }
+    case .null:
+        []
+    case .boolean, .integer, .lookupObject, .record, .string:
+        throw structuredUnsupportedAction("range")
+    }
+}
+
 func structuredDockerTemplateFields(in template: String) -> [String] {
     guard let nodes = try? structuredDockerTemplateNodes(template) else {
         return []

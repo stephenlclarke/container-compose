@@ -204,6 +204,12 @@ check_implementation() {
     )"
     assert_equal "$actual" "$name" "$project comment delimiter template"
 
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{if(.Name)}}{{with(index .Publishers 0)}}{{.TargetPort}}{{end}}|{{range(.Publishers)}}{{.PublishedPort}}{{end}}{{end}}'
+    )"
+    assert_equal "$actual" '8080|32768' "$project compact control template"
+
     # Go-template variables must reach Compose literally.
     # shellcheck disable=SC2016
     actual="$(
@@ -275,12 +281,30 @@ check_implementation() {
     assert_rejected "$project scalar length template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{range .Publishers}}{{len .TargetPort}}{{end}}'
+    assert_rejected "$project nested scalar field template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Publishers}}{{.TargetPort.Bad}}{{end}}'
+    assert_rejected "$project missing publisher field template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Publishers}}{{.Unknown}}{{end}}'
     # Go-template variables must reach Compose literally.
     # shellcheck disable=SC2016
     assert_rejected "$project undefined variable template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{range $index, $publisher := .Publishers}}{{$missing.TargetPort}}{{end}}'
 
+    "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
+        down --remove-orphans --volumes >/dev/null
+
+    "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
+        run --detach --no-deps api >/dev/null
+    # Go-template variables must reach Compose literally.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps --all \
+            --format '{{range $publisher := .Publishers}}{{else}}{{len $publisher}}{{end}}'
+    )"
+    assert_equal "$actual" '0' "$project empty range variable template"
     "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
         down --remove-orphans --volumes >/dev/null
 }

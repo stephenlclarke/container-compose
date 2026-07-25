@@ -24,6 +24,7 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
     case lookupObject([String: DockerTemplateData], display: String)
     case null
     case object([String: DockerTemplateData])
+    case record([String: DockerTemplateData])
     case string(String)
 
     var display: String {
@@ -38,7 +39,7 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
             return display
         case .null:
             return "<no value>"
-        case let .object(values):
+        case let .object(values), let .record(values):
             let entries = values.keys.sorted().map { key in
                 "\(key):\(values[key]?.display ?? "<no value>")"
             }
@@ -60,7 +61,7 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
             !display.isEmpty
         case .null:
             false
-        case let .object(values):
+        case let .object(values), let .record(values):
             !values.isEmpty
         case let .string(value):
             !value.isEmpty
@@ -87,7 +88,7 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
             display
         case .null:
             NSNull()
-        case let .object(values):
+        case let .object(values), let .record(values):
             values.mapValues(\.foundationObject)
         case let .string(value):
             value

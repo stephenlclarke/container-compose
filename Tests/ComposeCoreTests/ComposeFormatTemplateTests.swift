@@ -59,7 +59,7 @@ struct ComposeFormatTemplateTests {
             ),
             "Name": .string("demo-api"),
             "Publishers": .array([
-                .object([
+                .record([
                     "Protocol": .string("tcp"),
                     "PublishedPort": .integer(32768),
                     "TargetPort": .integer(8080),

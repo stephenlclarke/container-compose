@@ -96,7 +96,7 @@ func structuredTemplateLength(_ value: DockerTemplateData) throws -> Int {
         values.count
     case let .string(value):
         value.count
-    case .boolean, .integer, .null:
+    case .boolean, .integer, .null, .record:
         throw structuredUnsupportedAction("len")
     }
 }
@@ -119,7 +119,9 @@ func structuredTemplateEqual(
         return true
     case (.null, _), (_, .null):
         return false
-    case (.array, _), (.object, _), (_, .array), (_, .object), (.lookupObject, _), (_, .lookupObject):
+    case (.array, _), (.object, _), (.record, _),
+         (_, .array), (_, .object), (_, .record),
+         (.lookupObject, _), (_, .lookupObject):
         throw structuredUnsupportedAction(function)
     default:
         throw structuredUnsupportedAction(function)

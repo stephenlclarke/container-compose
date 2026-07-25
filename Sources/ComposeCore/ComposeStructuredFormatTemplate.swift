@@ -82,16 +82,18 @@ private struct StructuredTemplateParser {
             case let .text(value):
                 nodes.append(.text(value))
             case let .action(action):
-                if action == "else" || action == "end" || action.hasPrefix("else ") {
+                if action == "else" || action == "end"
+                    || structuredTemplateElseIfExpression(action) != nil
+                {
                     guard acceptStops else { throw structuredUnsupportedAction(action) }
                     return (nodes, action)
                 }
-                if action.hasPrefix("if ") {
-                    try nodes.append(parseConditional(String(action.dropFirst(3))))
-                } else if action.hasPrefix("with ") {
-                    try nodes.append(parseWith(String(action.dropFirst(5))))
-                } else if action.hasPrefix("range ") {
-                    try nodes.append(parseRange(String(action.dropFirst(6))))
+                if let expression = structuredTemplateControlExpression(action, keyword: "if") {
+                    try nodes.append(parseConditional(expression))
+                } else if let expression = structuredTemplateControlExpression(action, keyword: "with") {
+                    try nodes.append(parseWith(expression))
+                } else if let expression = structuredTemplateControlExpression(action, keyword: "range") {
+                    try nodes.append(parseRange(expression))
                 } else if action.hasPrefix("/*"), action.hasSuffix("*/") {
                     continue
                 } else {
@@ -132,8 +134,8 @@ private struct StructuredTemplateParser {
         if stop == "end" {
             return []
         }
-        if stop.hasPrefix("else if ") {
-            let nested = try parseConditional(String(stop.dropFirst(8)))
+        if let expression = structuredTemplateElseIfExpression(stop) {
+            let nested = try parseConditional(expression)
             return [nested]
         }
         guard stop == "else" else {
@@ -387,41 +389,48 @@ private func renderStructuredTemplateNodes(
                 context: value.isTruthy ? nested : context,
             )
         case let .range(specification, success, failure):
-            let value = try evaluateStructuredTemplateExpression(specification.expression, context: context)
-            let entries = try structuredTemplateRangeEntries(value)
-            if entries.isEmpty {
-                rendered += try renderStructuredTemplateNodes(failure, context: context)
-            } else {
-                for entry in entries {
-                    var nested = context
-                    nested.dot = entry.value
-                    if let keyVariable = specification.keyVariable {
-                        nested.variables[keyVariable] = entry.key
-                    }
-                    if let valueVariable = specification.valueVariable {
-                        nested.variables[valueVariable] = entry.value
-                    }
-                    rendered += try renderStructuredTemplateNodes(success, context: nested)
-                }
-            }
+            rendered += try renderStructuredTemplateRange(
+                specification,
+                success: success,
+                failure: failure,
+                context: context,
+            )
         }
     }
     return rendered
 }
 
-private func structuredTemplateRangeEntries(
-    _ value: DockerTemplateData,
-) throws -> [(key: DockerTemplateData, value: DockerTemplateData)] {
-    switch value {
-    case let .array(values):
-        values.enumerated().map { (.integer($0.offset), $0.element) }
-    case let .object(values):
-        values.keys.sorted().map { (.string($0), values[$0] ?? .null) }
-    case .null:
-        []
-    case .boolean, .integer, .lookupObject, .string:
-        throw structuredUnsupportedAction("range")
+private func renderStructuredTemplateRange(
+    _ specification: StructuredTemplateRange,
+    success: [StructuredTemplateNode],
+    failure: [StructuredTemplateNode],
+    context: StructuredTemplateContext,
+) throws -> String {
+    let value = try evaluateStructuredTemplateExpression(specification.expression, context: context)
+    let entries = try structuredTemplateRangeEntries(value)
+    guard !entries.isEmpty else {
+        var nested = context
+        if let keyVariable = specification.keyVariable {
+            nested.variables[keyVariable] = value
+        }
+        if let valueVariable = specification.valueVariable {
+            nested.variables[valueVariable] = value
+        }
+        return try renderStructuredTemplateNodes(failure, context: nested)
     }
+    var rendered = ""
+    for entry in entries {
+        var nested = context
+        nested.dot = entry.value
+        if let keyVariable = specification.keyVariable {
+            nested.variables[keyVariable] = entry.key
+        }
+        if let valueVariable = specification.valueVariable {
+            nested.variables[valueVariable] = entry.value
+        }
+        rendered += try renderStructuredTemplateNodes(success, context: nested)
+    }
+    return rendered
 }
 
 private let structuredTemplateFunctions: Set<String> = [
@@ -618,7 +627,7 @@ private func evaluateStructuredTemplateExpression(
             pipelineValue = try structuredTemplateValue(head, context: context)
         } else if index == 0, head == ".Label", tokens.count == 2 {
             let key = try structuredTemplateValue(tokens[1], context: context).display
-            pipelineValue = structuredTemplateLabel(key, context: context)
+            pipelineValue = try structuredTemplateLabel(key, context: context)
         } else {
             guard structuredTemplateFunctions.contains(head) else {
                 throw structuredUnsupportedAction(expression)
@@ -696,7 +705,9 @@ private func structuredTemplateValue(
     }
     if let path = structuredTemplatePath(token) {
         let base = structuredTemplateBase(path.base, context: context)
-        return path.fields.reduce(base, structuredTemplateLookup)
+        return try path.fields.reduce(base) { value, field in
+            try structuredTemplateLookup(value, field)
+        }
     }
     if let value = structuredTemplateStringLiteral(token) {
         return .string(value)
@@ -727,22 +738,44 @@ private func structuredTemplateBase(
 private func structuredTemplateLookup(
     _ value: DockerTemplateData,
     _ field: String,
-) -> DockerTemplateData {
+) throws -> DockerTemplateData {
     switch value {
     case let .lookupObject(values, _), let .object(values):
-        values[field] ?? .null
-    default:
-        .null
+        return values[field] ?? .null
+    case let .record(values):
+        guard let value = values[field] else {
+            throw structuredUnsupportedAction("unknown record field .\(field)")
+        }
+        return value
+    case .array, .boolean, .integer, .null, .string:
+        throw structuredUnsupportedAction("field .\(field)")
     }
 }
 
 private func structuredTemplateLabel(
     _ key: String,
     context: StructuredTemplateContext,
-) -> DockerTemplateData {
-    let labels = structuredTemplateLookup(context.dot, "Labels")
-    let value = structuredTemplateLookup(labels, key)
-    return value == .null ? .string("") : value
+) throws -> DockerTemplateData {
+    let labels: DockerTemplateData
+    switch context.dot {
+    case let .lookupObject(values, _), let .object(values):
+        guard let value = values["Labels"] else {
+            return .string("")
+        }
+        labels = value
+    case let .record(values):
+        guard let value = values["Labels"] else {
+            throw structuredUnsupportedAction("unknown record field .Labels")
+        }
+        labels = value
+    case .array, .boolean, .integer, .null, .string:
+        throw structuredUnsupportedAction("field .Labels")
+    }
+    let value = try structuredTemplateLookup(labels, key)
+    if value == .null {
+        return .string("")
+    }
+    return value
 }
 
 private func applyStructuredTemplateFunction(
