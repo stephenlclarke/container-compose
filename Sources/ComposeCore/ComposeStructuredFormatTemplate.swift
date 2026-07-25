@@ -21,7 +21,7 @@ private enum StructuredTemplateLexeme {
     case text(String)
 }
 
-private indirect enum StructuredTemplateNode {
+indirect enum StructuredTemplateNode {
     case action(String)
     case conditional(
         expression: String,
@@ -41,7 +41,7 @@ private indirect enum StructuredTemplateNode {
     )
 }
 
-private struct StructuredTemplateRange {
+struct StructuredTemplateRange {
     var expression: String
     var keyVariable: String?
     var valueVariable: String?
@@ -209,19 +209,11 @@ func validateStructuredDockerTemplate(_ template: String) throws {
     _ = try structuredDockerTemplateNodes(template)
 }
 
-func structuredDockerTemplateFields(in template: String) -> [String] {
-    guard let nodes = try? structuredDockerTemplateNodes(template) else {
-        return []
-    }
-    var fields: [String] = []
-    collectStructuredTemplateFields(nodes, dotIsRoot: true, into: &fields)
-    var seen: Set<String> = []
-    return fields.filter { seen.insert($0).inserted }
-}
-
-private func structuredDockerTemplateNodes(_ template: String) throws -> [StructuredTemplateNode] {
+func structuredDockerTemplateNodes(_ template: String) throws -> [StructuredTemplateNode] {
     var parser = try StructuredTemplateParser(lexemes: structuredTemplateLexemes(template))
-    return try parser.parse()
+    let nodes = try parser.parse()
+    try validateStructuredTemplateVariables(nodes)
+    return nodes
 }
 
 private func structuredTemplateLexemes(_ template: String) throws -> [StructuredTemplateLexeme] {
@@ -471,7 +463,7 @@ private func isStructuredTemplateValue(_ token: String) -> Bool {
         || token == "false"
 }
 
-private func structuredTemplatePath(_ token: String) -> (base: String, fields: [String])? {
+func structuredTemplatePath(_ token: String) -> (base: String, fields: [String])? {
     guard token.hasPrefix(".") || token.hasPrefix("$") else {
         return nil
     }
@@ -512,7 +504,7 @@ private func isStructuredTemplateVariable(_ value: String) -> Bool {
     return isStructuredTemplateIdentifier(String(value.dropFirst()))
 }
 
-private func structuredTemplateStringLiteral(_ token: String) -> String? {
+func structuredTemplateStringLiteral(_ token: String) -> String? {
     guard token.count >= 2 else { return nil }
     if token.first == "`", token.last == "`" {
         return String(token.dropFirst().dropLast())
@@ -526,14 +518,14 @@ private func structuredTemplateStringLiteral(_ token: String) -> String? {
     return value as? String
 }
 
-private func structuredTemplateParenthesizedExpression(_ token: String) -> String? {
+func structuredTemplateParenthesizedExpression(_ token: String) -> String? {
     guard token.count >= 3, token.first == "(", token.last == ")" else {
         return nil
     }
     return String(token.dropFirst().dropLast())
 }
 
-private func structuredTemplateTokens(_ value: String) -> [String]? {
+func structuredTemplateTokens(_ value: String) -> [String]? {
     var tokens: [String] = []
     var token = ""
     var scan = StructuredTemplateScanState()
@@ -555,7 +547,7 @@ private func structuredTemplateTokens(_ value: String) -> [String]? {
     return tokens
 }
 
-private func structuredTemplatePipelineSegments(_ expression: String) -> [String]? {
+func structuredTemplatePipelineSegments(_ expression: String) -> [String]? {
     var segments: [String] = []
     var segment = ""
     var scan = StructuredTemplateScanState()
@@ -930,68 +922,5 @@ private func structuredTemplateSlice(_ values: [DockerTemplateData]) throws -> D
         return .string(String(string[start ..< end]))
     default:
         throw structuredUnsupportedAction("slice")
-    }
-}
-
-private func collectStructuredTemplateFields(
-    _ nodes: [StructuredTemplateNode],
-    dotIsRoot: Bool,
-    into fields: inout [String],
-) {
-    for node in nodes {
-        switch node {
-        case let .action(expression):
-            collectStructuredExpressionFields(expression, dotIsRoot: dotIsRoot, into: &fields)
-        case let .conditional(expression, success, failure):
-            collectStructuredExpressionFields(expression, dotIsRoot: dotIsRoot, into: &fields)
-            collectStructuredTemplateFields(success, dotIsRoot: dotIsRoot, into: &fields)
-            collectStructuredTemplateFields(failure, dotIsRoot: dotIsRoot, into: &fields)
-        case let .range(specification, success, failure):
-            collectStructuredExpressionFields(specification.expression, dotIsRoot: dotIsRoot, into: &fields)
-            collectStructuredTemplateFields(success, dotIsRoot: false, into: &fields)
-            collectStructuredTemplateFields(failure, dotIsRoot: dotIsRoot, into: &fields)
-        case .text:
-            continue
-        case let .with(expression, success, failure):
-            collectStructuredExpressionFields(expression, dotIsRoot: dotIsRoot, into: &fields)
-            collectStructuredTemplateFields(success, dotIsRoot: false, into: &fields)
-            collectStructuredTemplateFields(failure, dotIsRoot: dotIsRoot, into: &fields)
-        }
-    }
-}
-
-private func collectStructuredExpressionFields(
-    _ expression: String,
-    dotIsRoot: Bool,
-    into fields: inout [String],
-) {
-    guard let segments = structuredTemplatePipelineSegments(expression) else { return }
-    for segment in segments {
-        guard let tokens = structuredTemplateTokens(segment) else { continue }
-        for token in tokens {
-            collectStructuredValueFields(token, dotIsRoot: dotIsRoot, into: &fields)
-        }
-    }
-}
-
-private func collectStructuredValueFields(
-    _ token: String,
-    dotIsRoot: Bool,
-    into fields: inout [String],
-) {
-    if token == ".Label", dotIsRoot {
-        fields.append("Labels")
-        return
-    }
-    if let path = structuredTemplatePath(token) {
-        if path.base == ".", dotIsRoot, let field = path.fields.first {
-            fields.append(field == "Label" ? "Labels" : field)
-        } else if path.base == "$", let field = path.fields.first {
-            fields.append(field)
-        }
-        return
-    }
-    if let expression = structuredTemplateParenthesizedExpression(token) {
-        collectStructuredExpressionFields(expression, dotIsRoot: dotIsRoot, into: &fields)
     }
 }

@@ -36,6 +36,17 @@ let composePsTemplateFields: Set<String> = [
     "State",
     "Status",
 ]
+private let composePsTemplateHeaders = [
+    "ID": "CONTAINER ID",
+    "Image": "IMAGE",
+    "Labels": "LABELS",
+    "Name": "NAME",
+    "Ports": "PORTS",
+    "Project": "PROJECT",
+    "Service": "SERVICE",
+    "State": "STATE",
+    "Status": "STATUS",
+]
 let composeVolumesTemplateFields: Set<String> = [
     "Availability",
     "Driver",
@@ -47,6 +58,18 @@ let composeVolumesTemplateFields: Set<String> = [
     "Scope",
     "Size",
     "Status",
+]
+private let composeVolumesTemplateHeaders = [
+    "Availability": "AVAILABILITY",
+    "Driver": "DRIVER",
+    "Group": "GROUP",
+    "Labels": "LABELS",
+    "Links": "LINKS",
+    "Mountpoint": "MOUNTPOINT",
+    "Name": "VOLUME NAME",
+    "Scope": "SCOPE",
+    "Size": "SIZE",
+    "Status": "STATUS",
 ]
 
 /// Validates the `compose ps --format` value.
@@ -132,7 +155,9 @@ func renderComposeContainerTemplate(
             values: composeContainerStructuredTemplateValues(container, noTrunc: noTrunc),
         )
     }
-    return table ? renderDockerTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
+    return try table
+        ? renderDockerTemplateTable(template: template, headers: composePsTemplateHeaders, rows: rows)
+        : rows.joined(separator: "\n")
 }
 
 private func composeContainerStructuredTemplateValues(
@@ -651,7 +676,9 @@ func renderComposeVolumeTemplate(_ records: [ComposeVolumeRecord], template: Str
     let rows = try records.map { record in
         try renderDockerTemplate(template, values: composeVolumeStructuredTemplateValues(record))
     }
-    return table ? renderComposeVolumeTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
+    return try table
+        ? renderDockerTemplateTable(template: template, headers: composeVolumesTemplateHeaders, rows: rows)
+        : rows.joined(separator: "\n")
 }
 
 private func composeVolumeStructuredTemplateValues(
@@ -672,24 +699,6 @@ private func composeVolumeStructuredTemplateValues(
         "Size": .string(record.size),
         "Status": .string(record.status),
     ]
-}
-
-/// Renders volume template table rows with Docker Compose's volume headers.
-func renderComposeVolumeTemplateTable(fields: [String], rows: [String]) -> String {
-    guard !rows.isEmpty else {
-        return ""
-    }
-    guard !fields.isEmpty else {
-        return rows.joined(separator: "\n")
-    }
-    let headers = fields.map { field in
-        field == "Name" ? "VOLUME NAME" : field.uppercased()
-    }
-    let tableRows = [headers] + rows.map { row in
-        let columns = row.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-        return columns.count == fields.count ? columns : [row]
-    }
-    return renderTable(tableRows)
 }
 
 /// Renders volume rows as deterministic newline-delimited Docker-style JSON.

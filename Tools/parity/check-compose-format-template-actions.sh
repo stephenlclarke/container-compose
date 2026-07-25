@@ -202,6 +202,28 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{.Name}}\t{{.Name}}'
+    )"
+    assert_equal "$(printf '%s\n' "$actual" | sed -n '1p' | awk '{$1=$1; print}')" \
+        'NAME NAME' "$project duplicate table headers"
+    assert_equal "$(printf '%s\n' "$actual" | sed -n '2p' | awk '{$1=$1; print}')" \
+        "$name $name" "$project duplicate table row"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{if .Health}}{{.Health}}{{else}}{{.Status}}{{end}}'
+    )"
+    assert_equal "$(printf '%s\n' "$actual" | sed -n '1p' | awk '{$1=$1; print}')" \
+        'STATUS' "$project conditional table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{.Label "oracle.example/key"}}'
+    )"
+    assert_equal "$actual" $'example/key\nvalue' "$project label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format 'A {{- if .Name -}} B {{- end -}} C'
     )"
     assert_equal "$actual" 'ABC' "$project ps whitespace template"
@@ -213,10 +235,24 @@ check_implementation() {
     assert_equal "$actual" "$name" "$project stats control template"
 
     actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" stats \
+            --no-stream --no-trunc --format 'table {{.Name}}\t{{.CPUPerc}}' api
+    )"
+    assert_equal "$(printf '%s\n' "$actual" | sed -n '1p' | awk '{$1=$1; print}')" \
+        'NAME CPU %' "$project stats table headers"
+
+    actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" volumes \
             --format '{{if .Name}}{{.Name}}={{.Label "oracle.example/key"}}{{else}}missing{{end}}'
     )"
     assert_equal "$actual" "$volume_name=value" "$project volumes control template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" volumes \
+            --format 'table {{.Name}}\t{{.Driver}}'
+    )"
+    assert_equal "$(printf '%s\n' "$actual" | sed -n '1p' | awk '{$1=$1; print}')" \
+        'VOLUME NAME DRIVER' "$project volume table headers"
 
     assert_rejected "$project string range template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
@@ -227,6 +263,11 @@ check_implementation() {
     assert_rejected "$project scalar length template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{range .Publishers}}{{len .TargetPort}}{{end}}'
+    # Go-template variables must reach Compose literally.
+    # shellcheck disable=SC2016
+    assert_rejected "$project undefined variable template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range $index, $publisher := .Publishers}}{{$missing.TargetPort}}{{end}}'
 
     "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
         down --remove-orphans --volumes >/dev/null

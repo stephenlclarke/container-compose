@@ -33,17 +33,48 @@ public func renderDockerTemplate(_ template: String, values: [String: DockerTemp
 
 /// Renders table template rows with Docker-style headers from referenced fields.
 public func renderDockerTemplateTable(fields: [String], rows: [String]) -> String {
+    renderDockerTemplateTable(
+        header: fields.map { $0.uppercased() }.joined(separator: "\t"),
+        rows: rows,
+    )
+}
+
+/// Renders table rows after evaluating the template against Docker-style header values.
+public func renderDockerTemplateTable(
+    template: String,
+    headers: [String: String],
+    rows: [String],
+) throws -> String {
+    var headerValues = headers.mapValues(DockerTemplateData.string)
+    if let labelsHeader = headers["Labels"] {
+        var labelValues: [String: DockerTemplateData] = [:]
+        for key in structuredDockerTemplateLabelKeys(in: template) {
+            labelValues[key] = .string(dockerTemplateLabelHeader(key))
+        }
+        headerValues["Labels"] = .lookupObject(labelValues, display: labelsHeader)
+    }
+    let header = try renderDockerTemplate(template, values: headerValues)
+    return renderDockerTemplateTable(header: header, rows: rows)
+}
+
+private func renderDockerTemplateTable(header: String, rows: [String]) -> String {
     guard !rows.isEmpty else {
         return ""
     }
-    guard !fields.isEmpty else {
+    guard !header.isEmpty else {
         return rows.joined(separator: "\n")
     }
-    let tableRows = [fields.map { $0.uppercased() }] + rows.map { row in
+    let headers = header.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+    let tableRows = [headers] + rows.map { row in
         let columns = row.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-        return columns.count == fields.count ? columns : [row]
+        return columns.count == headers.count ? columns : [row]
     }
     return renderTable(tableRows)
+}
+
+private func dockerTemplateLabelHeader(_ key: String) -> String {
+    let name = key.split(separator: ".", omittingEmptySubsequences: false).last.map(String.init) ?? key
+    return name.replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: "_", with: " ")
 }
 
 /// Validates template syntax and supported Docker/Go actions before discovery.

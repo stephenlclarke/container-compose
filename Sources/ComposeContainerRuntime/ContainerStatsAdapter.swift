@@ -225,7 +225,20 @@ public struct ContainerClientStatsManager: ComposeRuntimeStatsManaging {
         let rows = try records.map { snapshot in
             try renderDockerTemplate(template, values: statsTemplateValues(snapshot, noTrunc: noTrunc))
         }
-        return table ? renderDockerTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
+        let headers = [
+            "BlockIO": "BLOCK I/O",
+            "CPUPerc": "CPU %",
+            "Container": "CONTAINER ID",
+            "ID": "CONTAINER ID",
+            "MemPerc": "MEM %",
+            "MemUsage": "MEM USAGE / LIMIT",
+            "Name": "NAME",
+            "NetIO": "NET I/O",
+            "PIDs": "PIDS",
+        ]
+        return try table
+            ? renderDockerTemplateTable(template: template, headers: headers, rows: rows)
+            : rows.joined(separator: "\n")
     }
 
     /// Projects one stats snapshot pair into display values.
