@@ -118,32 +118,65 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
     }
 
     func json() throws -> String {
-        let data = try JSONSerialization.data(
-            withJSONObject: foundationObject,
-            options: [.fragmentsAllowed, .sortedKeys],
-        )
-        return String(bytes: data, encoding: .utf8) ?? ""
-    }
-
-    private var foundationObject: Any {
         switch self {
         case let .array(values):
-            values.map(\.foundationObject)
+            return try "[\(values.map { try $0.json() }.joined(separator: ","))]"
         case let .boolean(value):
-            value
+            return value ? "true" : "false"
         case let .byteString(value):
-            String(bytes: value, encoding: .utf8) ?? "\u{FFFD}"
+            return try structuredTemplateJSONString(bytes: value)
         case let .integer(value):
-            value
+            return String(value)
         case let .lookupObject(_, display):
-            display
+            return try structuredTemplateJSONString(display)
         case .null:
-            NSNull()
+            return "null"
         case let .object(values), let .record(values):
-            values.mapValues(\.foundationObject)
+            let entries = try values.keys.sorted().map { key in
+                let encodedKey = try structuredTemplateJSONString(key)
+                let encodedValue = try values[key]?.json() ?? "null"
+                return "\(encodedKey):\(encodedValue)"
+            }
+            return "{\(entries.joined(separator: ","))}"
         case let .string(value):
-            value
+            return try structuredTemplateJSONString(value)
         }
+    }
+}
+
+private func structuredTemplateJSONString(_ value: String) throws -> String {
+    let data = try JSONSerialization.data(
+        withJSONObject: value,
+        options: [.fragmentsAllowed],
+    )
+    return String(bytes: data, encoding: .utf8) ?? ""
+}
+
+private func structuredTemplateJSONString(bytes: [UInt8]) throws -> String {
+    var decoder = Unicode.UTF8()
+    var iterator = bytes.makeIterator()
+    var valid = ""
+    var content = ""
+    var decoding = true
+    while decoding {
+        switch decoder.decode(&iterator) {
+        case let .scalarValue(scalar):
+            valid.unicodeScalars.append(scalar)
+        case .error:
+            content += try structuredTemplateJSONString(valid).dropQuotes
+            content += #"\ufffd"#
+            valid = ""
+        case .emptyInput:
+            content += try structuredTemplateJSONString(valid).dropQuotes
+            decoding = false
+        }
+    }
+    return "\"\(content)\""
+}
+
+private extension String {
+    var dropQuotes: String {
+        String(dropFirst().dropLast())
     }
 }
 

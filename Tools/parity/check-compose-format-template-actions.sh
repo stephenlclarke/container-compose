@@ -468,6 +468,12 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{json (truncate "aéz" 2)}}'
+    )"
+    assert_equal "$actual" '"a\ufffd"' "$project partial UTF-8 JSON template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format '{{printf "%q" (split (truncate "é" 1) "")}}'
     )"
     assert_equal "$actual" '["\xc3"]' "$project partial UTF-8 split"
