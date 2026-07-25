@@ -499,6 +499,12 @@ check_implementation() {
     assert_rejected "$project two-variable integer range template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{range $index, $value := 3}}{{$index}}={{$value}}{{end}}'
+    assert_rejected "$project non-Go leading action whitespace" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format "{{${non_breaking_space}.Name}}"
+    assert_rejected "$project non-Go control whitespace" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format "{{if${non_breaking_space}.Name}}{{.Name}}{{end}}"
     # `table` is a --format prefix and is not registered as a Go template
     # function by Docker Compose.
     # shellcheck disable=SC2016

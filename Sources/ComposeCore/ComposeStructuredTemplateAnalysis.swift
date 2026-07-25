@@ -24,10 +24,10 @@ func structuredTemplateControlExpression(
         return nil
     }
     let suffix = action.dropFirst(keyword.count)
-    guard suffix.first?.isWhitespace == true || suffix.first == "(" else {
+    guard suffix.first.map(structuredTemplateIsGoWhitespace) == true || suffix.first == "(" else {
         return nil
     }
-    let expression = suffix.trimmingCharacters(in: .whitespacesAndNewlines)
+    let expression = structuredTemplateTrimGoWhitespace(suffix)
     return expression.isEmpty ? nil : expression
 }
 
@@ -47,11 +47,11 @@ private func structuredTemplateElseControlExpression(
         return nil
     }
     let suffix = action.dropFirst(4)
-    guard suffix.first?.isWhitespace == true else {
+    guard suffix.first.map(structuredTemplateIsGoWhitespace) == true else {
         return nil
     }
     return structuredTemplateControlExpression(
-        suffix.trimmingCharacters(in: .whitespacesAndNewlines),
+        structuredTemplateTrimGoWhitespace(suffix),
         keyword: keyword,
     )
 }

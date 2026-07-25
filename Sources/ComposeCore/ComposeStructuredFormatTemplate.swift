@@ -304,8 +304,9 @@ private func structuredTemplateAction(
         trimFollowingText = true
         contentEnd = template.index(before: contentEnd)
     }
-    let action = String(template[contentStart ..< contentEnd])
-        .trimmingCharacters(in: .whitespacesAndNewlines)
+    let action = structuredTemplateTrimGoWhitespace(
+        template[contentStart ..< contentEnd],
+    )
     guard !action.isEmpty else {
         throw structuredUnsupportedAction("")
     }
@@ -320,7 +321,9 @@ private func structuredTemplateCommentClose(
     in template: String,
     from contentStart: String.Index,
 ) throws -> String.Index? {
-    let commentStart = template[contentStart...].firstIndex(where: { !$0.isWhitespace })
+    let commentStart = template[contentStart...].firstIndex {
+        !structuredTemplateIsGoWhitespace($0)
+    }
         ?? template.endIndex
     guard template[commentStart...].hasPrefix("/*") else {
         return nil
@@ -370,21 +373,22 @@ private func structuredTemplateRange(_ value: String) throws -> StructuredTempla
         return StructuredTemplateRange(expression: value, keyVariable: nil, valueVariable: nil)
     }
     let declarationText = String(value[..<assignmentRange.lowerBound])
-    guard !declarationText.trimmingCharacters(in: .whitespaces).hasSuffix(","),
+    guard !structuredTemplateTrimGoWhitespace(declarationText).hasSuffix(","),
           !declarationText.contains(",,")
     else {
         throw structuredUnsupportedAction("range \(value)")
     }
     let declarations = declarationText
         .split(separator: ",", omittingEmptySubsequences: true)
-        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .map(structuredTemplateTrimGoWhitespace)
     guard (1 ... 2).contains(declarations.count),
           declarations.allSatisfy(isStructuredTemplateVariable)
     else {
         throw structuredUnsupportedAction("range \(value)")
     }
-    let expression = String(value[assignmentRange.upperBound...])
-        .trimmingCharacters(in: .whitespacesAndNewlines)
+    let expression = structuredTemplateTrimGoWhitespace(
+        value[assignmentRange.upperBound...],
+    )
     guard !expression.isEmpty else {
         throw structuredUnsupportedAction("range \(value)")
     }
@@ -622,9 +626,9 @@ func structuredTemplateTokens(_ value: String) -> [String]? {
     var tokens: [String] = []
     var token = ""
     var scan = StructuredTemplateScanState()
-    for character in value.trimmingCharacters(in: .whitespacesAndNewlines) {
+    for character in structuredTemplateTrimGoWhitespace(value) {
         guard scan.consume(character) else { return nil }
-        if character.isWhitespace, scan.isTopLevel {
+        if structuredTemplateIsGoWhitespace(character), scan.isTopLevel {
             if !token.isEmpty {
                 tokens.append(token)
                 token = ""
@@ -647,7 +651,7 @@ func structuredTemplatePipelineSegments(_ expression: String) -> [String]? {
     for character in expression {
         guard scan.consume(character) else { return nil }
         if character == "|", scan.isTopLevel {
-            let trimmed = segment.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = structuredTemplateTrimGoWhitespace(segment)
             guard !trimmed.isEmpty else { return nil }
             segments.append(trimmed)
             segment = ""
@@ -655,7 +659,7 @@ func structuredTemplatePipelineSegments(_ expression: String) -> [String]? {
             segment.append(character)
         }
     }
-    let trimmed = segment.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmed = structuredTemplateTrimGoWhitespace(segment)
     guard scan.isBalanced, !trimmed.isEmpty else { return nil }
     segments.append(trimmed)
     return segments

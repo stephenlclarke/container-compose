@@ -49,3 +49,9 @@ func structuredTemplateIsGoWhitespace(_ character: Character) -> Bool {
         false
     }
 }
+
+func structuredTemplateTrimGoWhitespace(_ value: some StringProtocol) -> String {
+    String(value)
+        .trimmingPrefixWhitespace()
+        .trimmingSuffixWhitespace()
+}

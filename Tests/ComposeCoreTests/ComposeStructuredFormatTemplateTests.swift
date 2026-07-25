@@ -78,4 +78,26 @@ struct ComposeStructuredFormatTemplateTests {
     func `quoted field-like literals do not become field references`() {
         #expect(dockerTemplateFields(in: "{{printf \".NotAField\" .Name}}") == ["Name"])
     }
+
+    @Test
+    func `non-Go whitespace is rejected inside actions`() throws {
+        let nonBreakingSpace = "\u{00A0}"
+        let values = ["Name": DockerTemplateData.string("demo-api")]
+
+        for template in [
+            "{{\(nonBreakingSpace).Name}}",
+            "{{if\(nonBreakingSpace).Name}}{{.Name}}{{end}}",
+            "{{.Name\(nonBreakingSpace)}}",
+        ] {
+            #expect(throws: (any Error).self) {
+                try renderDockerTemplate(template, values: values)
+            }
+        }
+        #expect(
+            try renderDockerTemplate(
+                "{{printf \"%s\" \"A\(nonBreakingSpace)B\"}}",
+                values: values,
+            ) == "A\(nonBreakingSpace)B",
+        )
+    }
 }

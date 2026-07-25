@@ -13914,6 +13914,7 @@ struct ComposeOrchestratorTests {
         let runner = RecordingRunner()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [])
         let orchestrator = ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+        let nonBreakingSpace = "\u{00A0}"
 
         for template in [
             "{{index $ \"Command\"}}",
@@ -13921,6 +13922,8 @@ struct ComposeOrchestratorTests {
             "{{range $}}{{.}}{{end}}",
             "{{range $index, $value := 3}}{{$index}}={{$value}}{{end}}",
             "{{with table $}}{{.Command}}{{end}}",
+            "{{\(nonBreakingSpace).Name}}",
+            "{{if\(nonBreakingSpace).Name}}{{.Name}}{{end}}",
         ] {
             await #expect(throws: (any Error).self) {
                 try await orchestrator.ps(
