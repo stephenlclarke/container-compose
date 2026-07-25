@@ -29,8 +29,12 @@ func structuredTemplateArgumentsAreSupported(
         return total == 2
     case "slice":
         return (2 ... 3).contains(total)
-    case "eq", "ne", "and", "or":
+    case "eq":
         return total >= 2
+    case "ne":
+        return total == 2
+    case "and", "or":
+        return total >= 1
     case "printf":
         return total >= 1
     case "print", "println":

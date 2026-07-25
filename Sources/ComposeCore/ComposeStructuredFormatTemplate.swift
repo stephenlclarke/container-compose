@@ -236,7 +236,7 @@ private func structuredTemplateLexemes(_ template: String) throws -> [Structured
         }
 
         var contentStart = open.upperBound
-        if contentStart < template.endIndex, template[contentStart] == "-" {
+        if structuredTemplateHasLeftTrimMarker(template, at: contentStart) {
             text = text.trimmingSuffixWhitespace()
             contentStart = template.index(after: contentStart)
         }
@@ -286,7 +286,11 @@ private func structuredTemplateAction(
 
     var contentEnd = closeStart
     var trimFollowingText = false
-    if contentEnd > contentStart, template[template.index(before: contentEnd)] == "-" {
+    if structuredTemplateHasRightTrimMarker(
+        template,
+        contentStart: contentStart,
+        contentEnd: contentEnd,
+    ) {
         trimFollowingText = true
         contentEnd = template.index(before: contentEnd)
     }
@@ -593,6 +597,15 @@ private func evaluateStructuredTemplateExpression(
             guard structuredTemplateFunctions.contains(head) else {
                 throw structuredUnsupportedAction(expression)
             }
+            if head == "and" || head == "or" {
+                pipelineValue = try evaluateStructuredShortCircuitFunction(
+                    head,
+                    argumentTokens: tokens.dropFirst(),
+                    pipelineValue: pipelineValue,
+                    context: context,
+                )
+                continue
+            }
             let arguments = try tokens.dropFirst().map {
                 try structuredTemplateValue($0, context: context)
             }
@@ -605,6 +618,38 @@ private func evaluateStructuredTemplateExpression(
     }
     guard let pipelineValue else { throw structuredUnsupportedAction(expression) }
     return pipelineValue
+}
+
+private func evaluateStructuredShortCircuitFunction(
+    _ function: String,
+    argumentTokens: ArraySlice<String>,
+    pipelineValue: DockerTemplateData?,
+    context: StructuredTemplateContext,
+) throws -> DockerTemplateData {
+    var last: DockerTemplateData?
+    for token in argumentTokens {
+        let value = try structuredTemplateValue(token, context: context)
+        last = value
+        if function == "and", !value.isTruthy {
+            return value
+        }
+        if function == "or", value.isTruthy {
+            return value
+        }
+    }
+    if let pipelineValue {
+        last = pipelineValue
+        if function == "and", !pipelineValue.isTruthy {
+            return pipelineValue
+        }
+        if function == "or", pipelineValue.isTruthy {
+            return pipelineValue
+        }
+    }
+    guard let last else {
+        throw structuredUnsupportedAction(function)
+    }
+    return last
 }
 
 private func structuredTemplateValue(
@@ -709,10 +754,12 @@ private func applyStructuredLogicalFunction(
     case "not":
         guard inputs.count == 1 else { throw structuredUnsupportedAction(function) }
         return .boolean(!inputs[0].isTruthy)
-    case "eq", "ne":
+    case "eq":
         guard inputs.count >= 2 else { throw structuredUnsupportedAction(function) }
-        let equal = inputs.dropFirst().allSatisfy { structuredTemplateEqual(inputs[0], $0) }
-        return .boolean(function == "eq" ? equal : !equal)
+        return .boolean(inputs.dropFirst().contains { structuredTemplateEqual(inputs[0], $0) })
+    case "ne":
+        guard inputs.count == 2 else { throw structuredUnsupportedAction(function) }
+        return .boolean(!structuredTemplateEqual(inputs[0], inputs[1]))
     default:
         throw structuredUnsupportedAction(function)
     }

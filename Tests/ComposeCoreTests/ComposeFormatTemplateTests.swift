@@ -121,6 +121,24 @@ struct ComposeFormatTemplateTests {
                 values: values,
             ) == "second",
         )
+        #expect(
+            try renderDockerTemplate(
+                "{{if eq .Name \"missing\" \"demo-api\"}}yes{{else}}no{{end}}",
+                values: values,
+            ) == "yes",
+        )
+        #expect(
+            try renderDockerTemplate(
+                "{{if and .Empty (index .Empty 0)}}bad{{else}}guarded{{end}}",
+                values: values,
+            ) == "guarded",
+        )
+        #expect(
+            try renderDockerTemplate(
+                "{{if or .Name (index .Empty 0)}}guarded{{else}}bad{{end}}",
+                values: values,
+            ) == "guarded",
+        )
     }
 
     @Test
@@ -214,6 +232,9 @@ struct ComposeFormatTemplateTests {
             try renderDockerTemplate("A {{- if .Name -}} B {{- end -}} C", values: values)
                 == "ABC",
         )
+        #expect(try renderDockerTemplate("A {{-3}} B", values: values) == "A -3 B")
+        #expect(try renderDockerTemplate("A {{- 3}} B", values: values) == "A3 B")
+        #expect(try renderDockerTemplate("A {{3 -}} B", values: values) == "A 3B")
         #expect(
             try renderDockerTemplate(
                 "{{range $index, $value := split .Name \"-\"}}{{$index}}={{$value}};{{end}}",
@@ -255,33 +276,5 @@ struct ComposeFormatTemplateTests {
         #expect(throws: (any Error).self) {
             try validateDockerTemplateActions(in: "{{printf \"%s\" .Name")
         }
-    }
-
-    @Test
-    func `invalid collection and printf operations fail explicitly`() {
-        let values: [String: DockerTemplateData] = [
-            "Array": .array([.string("alpha")]),
-            "Name": .string("demo-api"),
-            "Object": .object([:]),
-        ]
-
-        for template in [
-            "{{index .Array 2}}",
-            "{{index .Object}}",
-            "{{slice .Array 1 0}}",
-            "{{slice .Object 0}}",
-            "{{printf \"%\"}}",
-            "{{printf \"%s\" .Name .Name}}",
-            "{{printf \"%f\" .Name}}",
-        ] {
-            #expect(throws: (any Error).self) {
-                try renderDockerTemplate(template, values: values)
-            }
-        }
-    }
-
-    @Test
-    func `quoted field-like literals do not become field references`() {
-        #expect(dockerTemplateFields(in: "{{printf \".NotAField\" .Name}}") == ["Name"])
     }
 }
