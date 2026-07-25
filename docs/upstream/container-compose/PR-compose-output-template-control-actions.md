@@ -62,6 +62,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): preserve Go root and range semantics`
 - `555dfb0ec739bb2a745d02af000d3b3ddf1f5344`
   `fix(format): restrict action whitespace to Go syntax`
+- `e63293cce41444f4e44e6aa6f2bf1ad8d099690b`
+  `fix(format): reject possible root ranges`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -117,8 +119,9 @@ This documentation commit is intentionally separate.
   - rejects `index` and `len` when their first operand retains the root
     formatter row, so root map-like access cannot bypass command field
     validation;
-  - rejects attempts to range over the root formatter row before command side
-    effects and rejects statically known two-variable integer ranges.
+  - rejects attempts to range over any expression that can return the root
+    formatter row, including logical fallbacks, before command side effects
+    and rejects statically known two-variable integer ranges.
 - `Sources/ComposeCore/ComposeStructuredTemplateLookup.swift`
   - isolates Compose-owned field and label lookup policy from parsing and
     evaluation;
@@ -198,6 +201,8 @@ This documentation commit is intentionally separate.
 - `Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift`
   - isolates malformed collection, logical, trim-marker, and formatting cases
     from the successful structured evaluator suite;
+  - rejects logical range expressions that can fall back to the root formatter
+    row;
   - rejects non-breaking spaces at action, control, and trailing-expression
     boundaries while preserving the same character inside quoted Go strings.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift`
@@ -251,6 +256,8 @@ This documentation commit is intentionally separate.
   - verifies positive, zero, and negative integer ranges, one-variable integer
     range declarations, and exact rejection of root `len`, root `range`, and
     two-variable integer ranges;
+  - creates a one-off container with no publishers and rejects a logical
+    publisher range that can therefore fall back to the root formatter row;
   - rejects non-breaking spaces as action and control separators exactly as Go
     does while retaining literal non-ASCII whitespace outside actions;
   - verifies `.Labels` through generic string helpers, rejects root `index`
@@ -272,20 +279,24 @@ swiftlint lint --strict --quiet \
   Sources/ComposeCore/ComposeDockerTemplateStringSupport.swift \
   Sources/ComposeCore/ComposeFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
+  Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
   Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateRawOutputTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift
+  Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift \
+  Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift
 swiftformat --lint --swift-version 6.2 \
   Sources/ComposeCore/ComposeDockerTemplateData.swift \
   Sources/ComposeCore/ComposeDockerTemplatePrintSupport.swift \
   Sources/ComposeCore/ComposeDockerTemplateStringSupport.swift \
   Sources/ComposeCore/ComposeFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
+  Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
   Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateRawOutputTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift
+  Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift \
+  Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift
 shellcheck Tools/parity/check-compose-format-template-actions.sh
 CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
   make docker-compose-format-template-actions-parity
@@ -312,7 +323,9 @@ git diff --check
 - Repository checks passed, including 167 release-controller tests, 14
   CI-helper tests, stack consistency, release consistency, licence validation,
   and credential scanning.
-- The exact changed-file SwiftLint and SwiftFormat gates passed.
+- The focused formatter SwiftLint and SwiftFormat gates passed; the repository
+  `make check` gate covered the legacy orchestrator test file with its checked-in
+  lint configuration.
 - The committed integration fixture passed against Docker Compose 5.3.1 and
   the Apple Current stack:
   - `container` `c65687b084b08cf4ca5fe0d7d9b5225e1843d55f`;
@@ -321,7 +334,7 @@ git diff --check
   - `container-compose` base
     `b644c71fd0f7dd665a2a74192ab55745faafa281`.
 - SonarQube pull-request analysis for implementation commit
-  `555dfb0ec739bb2a745d02af000d3b3ddf1f5344` passed with zero unresolved
+  `e63293cce41444f4e44e6aa6f2bf1ad8d099690b` passed with zero unresolved
   issues, 91.7% new-code coverage, 0.0% new duplication, A ratings for
   reliability, security, and maintainability, and 100% hotspot review.
 
@@ -348,7 +361,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified forty-four actionable compatibility cases and three suggestions that
+identified forty-eight actionable compatibility cases and three suggestions that
 were disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
@@ -441,6 +454,9 @@ were disproved against the exact Docker Compose 5.3.1 oracle:
   as exact bytes instead of inserting replacement characters.
 - trim markers remove only Go's four ASCII whitespace characters and preserve
   adjacent non-breaking spaces and other literal Unicode whitespace.
+- logical range expressions are rejected when any reachable result can be the
+  root formatter row, including `.Publishers` falling back to `$` through
+  `or`.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -557,6 +573,16 @@ pipelines, and range declarations. Focused evaluator and pre-discovery command
 tests plus the committed Docker Compose 5.3.1/Apple Current oracle protect both
 reported rejection forms.
 
+A final connector thread showed that range validation considered only
+expressions whose every truthy result was the root. A one-off Docker Compose
+5.3.1 container has no publishers, so
+`{{range or .Publishers $}}{{.}}{{end}}` falls back to the root struct and
+fails with `range can't iterate over`. Signed commit
+`e63293cce41444f4e44e6aa6f2bf1ad8d099690b` rejects any range expression that
+can return a truthy root value before discovery. Focused evaluator and
+command-path coverage plus the same one-off Docker Compose 5.3.1/Apple Current
+live oracle protect the reported fallback.
+
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
 `{127.0.0.1 8080 32768 tcp}`. The same successful behavior is now protected by
@@ -569,7 +595,7 @@ actionable autobot finding was deferred. The suggestion to propagate root
 identity through `table` was not implemented because Docker Compose 5.3.1
 rejects the template at parse time with `function "table" not defined`; the
 unsupported helper was removed and that exact rejection is protected instead.
-All fifty-one connector threads are answered with their implementation or
+All fifty-two connector threads are answered with their implementation or
 verified compatibility disposition.
 
 ## Documentation And Operations
