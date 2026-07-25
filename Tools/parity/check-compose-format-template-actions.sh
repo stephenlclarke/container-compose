@@ -150,6 +150,18 @@ assert_equal() {
     fi
 }
 
+# Verifies that malformed Go-template execution fails instead of producing
+# plausible but incompatible output.
+assert_rejected() {
+    local label="$1"
+    shift
+
+    if "$@" >/dev/null 2>&1; then
+        error "$label unexpectedly succeeded"
+        return 1
+    fi
+}
+
 # Runs the shared ps template against one Compose implementation.
 template_output() {
     local project="$1"
@@ -205,6 +217,16 @@ check_implementation() {
             --format '{{if .Name}}{{.Name}}={{.Label "oracle.example/key"}}{{else}}missing{{end}}'
     )"
     assert_equal "$actual" "$volume_name=value" "$project volumes control template"
+
+    assert_rejected "$project string range template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Name}}{{.}}{{end}}'
+    assert_rejected "$project mixed comparison template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Publishers}}{{if eq .TargetPort "8080"}}invalid{{end}}{{end}}'
+    assert_rejected "$project scalar length template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Publishers}}{{len .TargetPort}}{{end}}'
 
     "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
         down --remove-orphans --volumes >/dev/null

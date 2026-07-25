@@ -47,6 +47,29 @@ struct ComposeStructuredFormatTemplateTests {
     }
 
     @Test
+    func `invalid scalar ranges lengths and mixed comparisons are rejected`() {
+        let values: [String: DockerTemplateData] = [
+            "False": .boolean(false),
+            "Integer": .integer(1),
+            "Nothing": .null,
+            "Text": .string("1"),
+        ]
+
+        for template in [
+            "{{range .Text}}{{.}}{{end}}",
+            "{{len .Integer}}",
+            "{{len .False}}",
+            "{{len .Nothing}}",
+            "{{eq .Integer .Text}}",
+            "{{ne .Integer \"1\"}}",
+        ] {
+            #expect(throws: (any Error).self) {
+                try renderDockerTemplate(template, values: values)
+            }
+        }
+    }
+
+    @Test
     func `quoted field-like literals do not become field references`() {
         #expect(dockerTemplateFields(in: "{{printf \".NotAField\" .Name}}") == ["Name"])
     }

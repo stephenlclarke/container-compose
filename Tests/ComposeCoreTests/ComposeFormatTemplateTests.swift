@@ -142,7 +142,7 @@ struct ComposeFormatTemplateTests {
     }
 
     @Test
-    func `structured values support deterministic object and string ranges`() throws {
+    func `structured values support deterministic object ranges`() throws {
         let values: [String: DockerTemplateData] = [
             "Array": .array([.string("alpha"), .string("beta"), .string("gamma")]),
             "False": .boolean(false),
@@ -165,12 +165,6 @@ struct ComposeFormatTemplateTests {
                 "{{range $key, $value := .Object}}{{$key}}={{$value}};{{end}}",
                 values: values,
             ) == "a=1;b=2;",
-        )
-        #expect(
-            try renderDockerTemplate(
-                "{{range $index, $value := .Text}}{{$index}}={{$value}};{{end}}",
-                values: values,
-            ) == "0=a;1=b;2=c;",
         )
         #expect(
             try renderDockerTemplate(
@@ -212,9 +206,9 @@ struct ComposeFormatTemplateTests {
         )
         #expect(
             try renderDockerTemplate(
-                "{{slice .Array 1 3}}|{{slice .Text 1 3}}|{{len .Object}}|{{len .Nothing}}",
+                "{{slice .Array 1 3}}|{{slice .Text 1 3}}|{{len .Object}}|{{len .Array}}",
                 values: values,
-            ) == "[beta gamma]|bc|1|0",
+            ) == "[beta gamma]|bc|1|3",
         )
         #expect(
             try renderDockerTemplate(

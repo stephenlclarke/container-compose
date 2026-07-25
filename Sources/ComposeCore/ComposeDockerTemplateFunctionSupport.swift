@@ -86,19 +86,51 @@ func structuredInteger(
     }
 }
 
-func structuredTemplateLength(_ value: DockerTemplateData) -> Int {
+func structuredTemplateLength(_ value: DockerTemplateData) throws -> Int {
     switch value {
     case let .array(values):
         values.count
-    case .boolean, .integer:
-        1
     case let .lookupObject(_, display):
         display.count
-    case .null:
-        0
     case let .object(values):
         values.count
     case let .string(value):
         value.count
+    case .boolean, .integer, .null:
+        throw structuredUnsupportedAction("len")
     }
+}
+
+func structuredTemplateEqual(
+    _ lhs: DockerTemplateData,
+    _ rhs: DockerTemplateData,
+    function: String,
+) throws -> Bool {
+    let lhs = structuredTemplateComparableValue(lhs)
+    let rhs = structuredTemplateComparableValue(rhs)
+    switch (lhs, rhs) {
+    case let (.boolean(lhs), .boolean(rhs)):
+        return lhs == rhs
+    case let (.integer(lhs), .integer(rhs)):
+        return lhs == rhs
+    case let (.string(lhs), .string(rhs)):
+        return lhs == rhs
+    case (.null, .null):
+        return true
+    case (.null, _), (_, .null):
+        return false
+    case (.array, _), (.object, _), (_, .array), (_, .object), (.lookupObject, _), (_, .lookupObject):
+        throw structuredUnsupportedAction(function)
+    default:
+        throw structuredUnsupportedAction(function)
+    }
+}
+
+private func structuredTemplateComparableValue(
+    _ value: DockerTemplateData,
+) -> DockerTemplateData {
+    guard case let .lookupObject(_, display) = value else {
+        return value
+    }
+    return .string(display)
 }

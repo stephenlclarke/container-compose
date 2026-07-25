@@ -362,7 +362,7 @@ private func renderStructuredTemplateNodes(
             )
         case let .range(specification, success, failure):
             let value = try evaluateStructuredTemplateExpression(specification.expression, context: context)
-            let entries = structuredTemplateRangeEntries(value)
+            let entries = try structuredTemplateRangeEntries(value)
             if entries.isEmpty {
                 rendered += try renderStructuredTemplateNodes(failure, context: context)
             } else {
@@ -385,16 +385,16 @@ private func renderStructuredTemplateNodes(
 
 private func structuredTemplateRangeEntries(
     _ value: DockerTemplateData,
-) -> [(key: DockerTemplateData, value: DockerTemplateData)] {
+) throws -> [(key: DockerTemplateData, value: DockerTemplateData)] {
     switch value {
     case let .array(values):
         values.enumerated().map { (.integer($0.offset), $0.element) }
     case let .object(values):
         values.keys.sorted().map { (.string($0), values[$0] ?? .null) }
-    case let .string(value):
-        value.enumerated().map { (.integer($0.offset), .string(String($0.element))) }
-    default:
+    case .null:
         []
+    case .boolean, .integer, .lookupObject, .string:
+        throw structuredUnsupportedAction("range")
     }
 }
 
@@ -756,10 +756,15 @@ private func applyStructuredLogicalFunction(
         return .boolean(!inputs[0].isTruthy)
     case "eq":
         guard inputs.count >= 2 else { throw structuredUnsupportedAction(function) }
-        return .boolean(inputs.dropFirst().contains { structuredTemplateEqual(inputs[0], $0) })
+        for input in inputs.dropFirst()
+            where try structuredTemplateEqual(inputs[0], input, function: function)
+        {
+            return .boolean(true)
+        }
+        return .boolean(false)
     case "ne":
         guard inputs.count == 2 else { throw structuredUnsupportedAction(function) }
-        return .boolean(!structuredTemplateEqual(inputs[0], inputs[1]))
+        return try .boolean(!structuredTemplateEqual(inputs[0], inputs[1], function: function))
     default:
         throw structuredUnsupportedAction(function)
     }
@@ -774,7 +779,7 @@ private func applyStructuredValueFunction(
     case "json":
         return try .string(input.json())
     case "len":
-        return .integer(structuredTemplateLength(input))
+        return try .integer(structuredTemplateLength(input))
     case "table":
         return input
     default:
@@ -926,13 +931,6 @@ private func structuredTemplateSlice(_ values: [DockerTemplateData]) throws -> D
     default:
         throw structuredUnsupportedAction("slice")
     }
-}
-
-private func structuredTemplateEqual(
-    _ lhs: DockerTemplateData,
-    _ rhs: DockerTemplateData,
-) -> Bool {
-    lhs == rhs || lhs.display == rhs.display
 }
 
 private func collectStructuredTemplateFields(
