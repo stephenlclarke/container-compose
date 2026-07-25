@@ -83,6 +83,16 @@ now survive both left and right markers, with focused unit coverage, committed
 Docker Compose 5.3.1/Apple Current parity, and a clean SonarQube pull-request
 quality gate.
 
+Signed follow-up commit `3fe67c044ead24cca8e7c0ee2dd2afb125772a6c`
+(`fix(format): preserve Go root and range semantics`) closes the next connector
+review. Formatter roots retain Go struct semantics, so root `len` and `range`
+fail before discovery, while positive integer ranges emit `0..<value`,
+non-positive ranges are empty, one declaration is supported, and two
+declarations are rejected. Focused evaluator and command-path tests, the
+committed Docker Compose 5.3.1/Apple Current oracle, increased repository
+coverage, and an exact-commit clean SonarQube pull-request quality gate protect
+the behavior.
+
 ## Compatibility
 
 Existing literal, field-only, JSON, table, and function templates remain

@@ -58,6 +58,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): preserve exact Go output semantics`
 - `4fbd1b26023c873cc006c69a8de42e6c10979d1d`
   `fix(format): preserve Go trim whitespace`
+- `3fe67c044ead24cca8e7c0ee2dd2afb125772a6c`
+  `fix(format): preserve Go root and range semantics`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -83,6 +85,8 @@ This documentation commit is intentionally separate.
   - resolves root-scoped `$.Label` calls against the original formatter row
     after `range` or `with` changes dot;
   - traverses arrays in source order and objects in deterministic key order;
+  - traverses positive integer ranges as `0..<value`, treats non-positive
+    integer ranges as empty, and rejects their unsupported two-variable form;
   - delegates raw Go string operations without converting invalid UTF-8 byte
     sequences back through Swift `String`;
   - validates root-row field references before command side effects.
@@ -108,8 +112,11 @@ This documentation commit is intentionally separate.
     `pad`, and `truncate`;
   - retains separate computed lookup keys and source-literal display keys so
     transformed label lookup and Docker's table-header spelling both match.
-  - rejects `index` when its first operand retains the root formatter row, so
-    root map-like access cannot bypass command field validation.
+  - rejects `index` and `len` when their first operand retains the root
+    formatter row, so root map-like access cannot bypass command field
+    validation;
+  - rejects attempts to range over the root formatter row before command side
+    effects and rejects statically known two-variable integer ranges.
 - `Sources/ComposeCore/ComposeStructuredTemplateLookup.swift`
   - isolates Compose-owned field and label lookup policy from parsing and
     evaluation;
@@ -180,8 +187,9 @@ This documentation commit is intentionally separate.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift`
   - covers control flow, nested/root/variable paths, deterministic traversal,
     functions, JSON, collections, `printf`, whitespace trimming, field
-    extraction, `else with` chains, invalid cross-control shorthand,
-    malformed input, and typed failures.
+    extraction, positive and non-positive integer ranges, one-variable integer
+    declarations, root collection-operation rejection, `else with` chains,
+    invalid cross-control shorthand, malformed input, and typed failures.
 - `Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift`
   - isolates malformed collection, logical, trim-marker, and formatting cases
     from the successful structured evaluator suite.
@@ -233,6 +241,9 @@ This documentation commit is intentionally separate.
   - verifies ordered logical publisher selection, empty-separator and
     empty-input splitting, partial UTF-8 byte truncation and splitting, and
     negative truncation rejection;
+  - verifies positive, zero, and negative integer ranges, one-variable integer
+    range declarations, and exact rejection of root `len`, root `range`, and
+    two-variable integer ranges;
   - verifies `.Labels` through generic string helpers, rejects root `index`
     and the unsupported `table` template function, and compares direct and
     `%s` partial UTF-8 output byte-for-byte.
@@ -272,17 +283,17 @@ CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
 git diff --check
 ```
 
-- Swift: 1,174 tests in 33 suites passed.
-- Swift repository coverage: 91.92%.
+- Swift: 1,175 tests in 33 suites passed.
+- Swift repository coverage: 91.93%.
 - Go normalizer coverage: 89.88%.
-- Structured template engine and support: 2,141/2,288 lines, 93.58%.
-- `ComposeStructuredFormatTemplate.swift`: 786/842 lines, 93.35%.
-- `ComposeStructuredTemplateAnalysis.swift`: 508/526 lines, 96.58%.
+- Structured template engine and support: 2,172/2,320 lines, 93.62%.
+- `ComposeStructuredFormatTemplate.swift`: 788/845 lines, 93.25%.
+- `ComposeStructuredTemplateAnalysis.swift`: 536/555 lines, 96.58%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 61/65 lines,
   93.85%.
 - `ComposeStructuredTemplateLookup.swift`: 31/37 lines, 83.78%.
 - `ComposeStructuredTemplateWhitespace.swift`: 27/27 lines, 100%.
-- `ComposeDockerTemplateData.swift`: 140/162 lines, 86.42%.
+- `ComposeDockerTemplateData.swift`: 141/162 lines, 87.04%.
 - `ComposeDockerTemplatePrintSupport.swift`: 53/57 lines, 92.98%.
 - `ComposeDockerTemplatePrintf.swift`: 311/324 lines, 95.99%.
 - `ComposeDockerTemplateFunctionSupport.swift`: 158/176 lines, 89.77%.
@@ -301,8 +312,8 @@ git diff --check
   - `container-compose` base
     `b644c71fd0f7dd665a2a74192ab55745faafa281`.
 - SonarQube pull-request analysis for implementation commit
-  `4fbd1b26023c873cc006c69a8de42e6c10979d1d` passed with zero unresolved
-  issues, 91.6% new-code coverage, 0.0% new duplication, A ratings for
+  `3fe67c044ead24cca8e7c0ee2dd2afb125772a6c` passed with zero unresolved
+  issues, 91.7% new-code coverage, 0.0% new duplication, A ratings for
   reliability, security, and maintainability, and 100% hotspot review.
 
 The user explicitly waived the soak gate for this slice. Hosted CI, CodeQL,
@@ -516,6 +527,17 @@ Compose 5.3.1/Apple Current oracle cover both directions. The oracle also
 checks map-backed `.Labels` byte indexing with an order-independent unsigned
 byte invariant, avoiding Docker's nondeterministic label iteration.
 
+A fresh connector review then identified that the formatter root still behaved
+like its internal object representation and that current Go templates support
+integer range sequences. Docker Compose 5.3.1 rejects `{{len $}}` and
+`{{range $}}{{.}}{{end}}`, emits `012` for `{{range 3}}`, takes the `else`
+branch for zero and negative integers, accepts one declaration, and rejects two
+declarations. Signed commit
+`3fe67c044ead24cca8e7c0ee2dd2afb125772a6c` preserves those exact struct-root
+and integer-range semantics before runtime discovery, with focused evaluator
+and command-path tests plus the committed Docker Compose 5.3.1/Apple Current
+oracle.
+
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
 `{127.0.0.1 8080 32768 tcp}`. The same successful behavior is now protected by
@@ -528,7 +550,7 @@ actionable autobot finding was deferred. The suggestion to propagate root
 identity through `table` was not implemented because Docker Compose 5.3.1
 rejects the template at parse time with `function "table" not defined`; the
 unsupported helper was removed and that exact rejection is protected instead.
-All forty-eight connector threads are answered with their implementation or
+All fifty connector threads are answered with their implementation or
 verified compatibility disposition.
 
 ## Documentation And Operations
