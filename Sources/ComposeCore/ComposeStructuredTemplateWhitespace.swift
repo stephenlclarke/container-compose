@@ -42,8 +42,9 @@ func structuredTemplateHasRightTrimMarker(
 }
 
 func structuredTemplateIsGoWhitespace(_ character: Character) -> Bool {
+    // Swift groups CRLF into one Character; Go accepts both constituent runes.
     switch character {
-    case " ", "\t", "\r", "\n":
+    case " ", "\t", "\r", "\n", "\r\n":
         true
     default:
         false

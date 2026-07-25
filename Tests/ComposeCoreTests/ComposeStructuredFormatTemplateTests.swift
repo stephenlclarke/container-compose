@@ -81,6 +81,25 @@ struct ComposeStructuredFormatTemplateTests {
     }
 
     @Test
+    func `CRLF is accepted as Go action whitespace`() throws {
+        let values = ["Name": DockerTemplateData.string("demo-api")]
+
+        #expect(try renderDockerTemplate("{{\r\n.Name}}", values: values) == "demo-api")
+        #expect(
+            try renderDockerTemplate(
+                "{{if\r\n.Name}}{{.Name}}{{end}}",
+                values: values,
+            ) == "demo-api",
+        )
+        #expect(
+            try renderDockerTemplate(
+                "A {{-\r\n.Name\r\n-}} B",
+                values: values,
+            ) == "Ademo-apiB",
+        )
+    }
+
+    @Test
     func `non-Go whitespace is rejected inside actions`() throws {
         let nonBreakingSpace = "\u{00A0}"
         let values = ["Name": DockerTemplateData.string("demo-api")]

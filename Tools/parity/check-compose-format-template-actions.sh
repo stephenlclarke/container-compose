@@ -188,11 +188,12 @@ check_implementation() {
     local project="$1"
     shift
     local command=("$@")
-    local actual combining expected name non_breaking_space volume_name
+    local actual combining crlf expected name non_breaking_space volume_name
 
     name="$project-api-1"
     volume_name="${project}_cache"
     combining=$'e\u0301'
+    crlf=$'\r\n'
     non_breaking_space=$'\u00a0'
     "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
         up --detach --wait --wait-timeout 120 >/dev/null
@@ -533,6 +534,14 @@ check_implementation() {
     assert_equal "$actual" \
         "${name}${non_breaking_space}B" \
         "$project non-ASCII right trim template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format "{{${crlf}.Name}}|{{if${crlf}.Name}}{{.Service}}{{end}}|A {{-${crlf}.Name${crlf}-}} B"
+    )"
+    assert_equal "$actual" \
+        "${name}|api|A${name}B" \
+        "$project CRLF action whitespace template"
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" stats \
