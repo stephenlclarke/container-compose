@@ -18,8 +18,9 @@ primitive. The fix must stay in `container-compose` and must not widen the
 
 - Represent formatter input as recursive typed values rather than flattening
   nested objects and collections into strings.
-- Support `if`, `else`, `else if`, `with`, `range`, range variables, comments,
-  pipelines, root paths, nested paths, and action whitespace trimming.
+- Support `if`, `else`, `else if`, `with`, `else with`, `range`, range
+  variables, comments, pipelines, root paths, nested paths, and action
+  whitespace trimming.
 - Preserve deterministic object traversal and Docker-shaped display behavior.
 - Support Docker/Go row helpers used by Compose output, including boolean
   helpers, `json`, string helpers, collection helpers, and portable `printf`
@@ -57,8 +58,8 @@ ranges, mixed-type comparisons, and scalar `len` calls fail exactly as the
 Docker Compose v2 oracle does.
 
 The remaining signed compatibility commits, through
-`b751f1951e23ddac7d223846073146e6c58f3cec`
-(`fix(format): preserve logical root analysis`), are enumerated in the paired
+`53a3bcf7253bc0ac30550731f92c8437a1c31c56`
+(`fix(format): support else-with continuations`), are enumerated in the paired
 pull-request handoff. That handoff records the complete code map, exact
 validation, coverage, Docker Compose dispositions for every connector review,
 runtime revisions, and promotion evidence.

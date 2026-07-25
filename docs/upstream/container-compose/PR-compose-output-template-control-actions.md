@@ -42,6 +42,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): validate parenthesized root selectors`
 - `b751f1951e23ddac7d223846073146e6c58f3cec`
   `fix(format): preserve logical root analysis`
+- `53a3bcf7253bc0ac30550731f92c8437a1c31c56`
+  `fix(format): support else-with continuations`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -57,8 +59,11 @@ This documentation commit is intentionally separate.
 
 - `Sources/ComposeCore/ComposeStructuredFormatTemplate.swift`
   - lexes actions, comments, quoted literals, trim markers, and text;
-  - parses and evaluates `if`, `else`, `else if`, `with`, `range`, range
-    variables, pipelines, root paths, nested paths, and variables;
+  - parses and evaluates `if`, `else`, `else if`, `with`, `else with`,
+    `range`, range variables, pipelines, root paths, nested paths, and
+    variables;
+  - accepts shorthand continuations only for their matching Go control
+    actions: `else if` after `if` and `else with` after `with`;
   - resolves root-scoped `$.Label` calls against the original formatter row
     after `range` or `with` changes dot;
   - traverses arrays in source order and objects in deterministic key order;
@@ -122,7 +127,8 @@ This documentation commit is intentionally separate.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift`
   - covers control flow, nested/root/variable paths, deterministic traversal,
     functions, JSON, collections, `printf`, whitespace trimming, field
-    extraction, malformed input, and typed failures.
+    extraction, `else with` chains, invalid cross-control shorthand,
+    malformed input, and typed failures.
 - `Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift`
   - isolates malformed collection, logical, trim-marker, and formatting cases
     from the successful structured evaluator suite.
@@ -158,7 +164,8 @@ This documentation commit is intentionally separate.
     typed default exit codes, compact range declarations, parenthesized
     selectors, parenthesized and logical-root field validation, Docker's
     deliberately omitted `ps` headers, non-string label-key rejection,
-    functions, and whitespace.
+    `else with` output through `ps`, `stats`, and `volumes`, functions, and
+    whitespace.
 
 ## Validation
 
@@ -210,14 +217,14 @@ CONTAINER_COMPOSE_LIVE=1 \
 git diff --check
 ```
 
-- Swift: 1,157 tests in 31 suites passed.
-- Structured template engine: 1,628/1,763 lines, 92.34%.
-- `ComposeStructuredFormatTemplate.swift`: 777/838 lines, 92.72%.
-- `ComposeStructuredTemplateAnalysis.swift`: 242/263 lines, 92.02%.
+- Swift: 1,158 tests in 31 suites passed.
+- Structured template engine: 1,648/1,781 lines, 92.53%.
+- `ComposeStructuredFormatTemplate.swift`: 788/848 lines, 92.92%.
+- `ComposeStructuredTemplateAnalysis.swift`: 250/271 lines, 92.25%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 61/65 lines,
   93.85%.
 - `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
-- `ComposeDockerTemplateData.swift`: 91/107 lines, 85.05%.
+- `ComposeDockerTemplateData.swift`: 92/107 lines, 85.98%.
 - `ComposeDockerTemplatePrintf.swift`: 284/298 lines, 95.30%.
 - `ComposeDockerTemplateFunctionSupport.swift`: 155/174 lines, 89.08%.
 - Formatter table boundary: 67/68 lines, 98.53%.
@@ -257,7 +264,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified thirty-three actionable compatibility cases and two suggestions that
+identified thirty-four actionable compatibility cases and two suggestions that
 were disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
@@ -324,6 +331,9 @@ were disproved against the exact Docker Compose 5.3.1 oracle:
   top-level field validation, including nested parenthesized root forms.
 - root values returned by `and`, `or`, or a logical pipeline keep successful
   `with` bodies in top-level field validation.
+- Go's `else with` shorthand is parsed as a nested `with` continuation, while
+  invalid `else if` after `with` and `else with` after `if` or `range` remain
+  rejected.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -367,6 +377,10 @@ Commit `b751f1951e23ddac7d223846073146e6c58f3cec` propagates possible
 root results through short-circuit `and`/`or` expressions and pipelines,
 covers both root-returning and scalar-returning forms, and extends the command
 and live validation regressions.
+Commit `53a3bcf7253bc0ac30550731f92c8437a1c31c56` adds control-specific
+continuation parsing, covers successful, chained, compact, and invalid
+shorthand forms, and extends the committed live oracle across all three
+formatter command paths.
 
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
