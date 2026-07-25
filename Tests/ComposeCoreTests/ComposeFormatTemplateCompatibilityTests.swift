@@ -152,13 +152,12 @@ struct ComposeFormatTemplateCompatibilityTests {
     @Test
     func `string keyed maps preserve key types`() throws {
         let values: [String: DockerTemplateData] = [
-            "Lookup": .lookupObject(["1": .string("one")], display: "1=one"),
             "Object": .object(["1": .string("one")]),
         ]
 
         #expect(
             try renderDockerTemplate(
-                "{{index .Object \"1\"}}|{{index .Lookup (slice \"1\" 0 1)}}",
+                "{{index .Object \"1\"}}|{{index .Object (slice \"1\" 0 1)}}",
                 values: values,
             ) == "one|one",
         )

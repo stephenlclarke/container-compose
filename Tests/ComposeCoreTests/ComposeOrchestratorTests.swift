@@ -12603,6 +12603,43 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("stats forwards exact bytes from capable runtime managers")
+    func statsForwardsExactBytesFromCapableRuntimeManagers() async throws {
+        let emittedText = MessageRecorder()
+        let emittedData = DataRecorder()
+        let statsManager = RecordingContainerStatsDataManager(output: Data([0xC3]))
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(
+                runtimeHooks: .init(
+                    emit: { emittedText.append($0) },
+                    emitData: { emittedData.append($0) }
+                )
+            ),
+            statsManager: statsManager
+        ).stats(
+            project: project,
+            options: ComposeStatsOptions(services: ["api"], noStream: true)
+        )
+
+        #expect(emittedText.messages.isEmpty)
+        #expect(emittedData.data == [Data([0xC3])])
+        #expect(await statsManager.requests == [
+            ContainerStatsRequest(
+                ids: ["demo-api-1"],
+                format: "table",
+                noStream: true,
+                noTrunc: false,
+                includeStopped: false
+            ),
+        ])
+    }
+
     @Test("stats stops a streaming session on interrupt")
     func statsStopsStreamingSessionOnInterrupt() async throws {
         let signalProxy = RecordingComposeSignalProxy(forwardedSignals: ["SIGINT"])
@@ -13679,6 +13716,40 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["0\ttrue"])
     }
 
+    @Test("ps format template emits partial UTF-8 as exact bytes")
+    func psFormatTemplateEmitsPartialUTF8AsExactBytes() async throws {
+        let emittedText = MessageRecorder()
+        let emittedData = DataRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(
+                runtimeHooks: .init(
+                    emit: { emittedText.append($0) },
+                    emitData: { emittedData.append($0) }
+                )
+            ),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions { $0.format = #"{{printf "%s" (truncate "é" 1)}}"# }
+        )
+
+        #expect(emittedText.messages.isEmpty)
+        #expect(emittedData.data == [Data([0xC3])])
+    }
+
     @Test("ps format template ranges structured publishers and reads labels")
     func psFormatTemplateRangesStructuredPublishersAndReadsLabels() async throws {
         let emitted = MessageRecorder()
@@ -13831,6 +13902,28 @@ struct ComposeOrchestratorTests {
                 #expect(error == .unsupported("ps --format field '.Command'; supported fields are ExitCode, Health, ID, Image, Labels, LocalVolumes, Mounts, Name, Names, Networks, Ports, Project, Publishers, Service, State, Status"))
             } catch {
                 Issue.record("Unexpected error for \(template): \(error)")
+            }
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests.isEmpty)
+    }
+
+    @Test("ps rejects root indexing and the unsupported table function before discovery")
+    func psRejectsRootIndexingAndTableFunction() async throws {
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [])
+        let orchestrator = ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+
+        for template in [
+            "{{index $ \"Command\"}}",
+            "{{with table $}}{{.Command}}{{end}}",
+        ] {
+            await #expect(throws: (any Error).self) {
+                try await orchestrator.ps(
+                    project: ComposeProject(name: "demo", services: [:]),
+                    options: ComposePsOptions { $0.format = template }
+                )
             }
         }
 
@@ -20276,6 +20369,40 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages[0].contains("25.00%"))
         #expect(emitted.messages[0].contains("1MiB / 2MiB"))
         #expect(emitted.messages[0].contains("50.00%"))
+    }
+
+    @Test("stats template emits partial UTF-8 as exact bytes")
+    func statsTemplateEmitsPartialUTF8AsExactBytes() async throws {
+        let emittedText = MessageRecorder()
+        let emittedData = DataRecorder()
+        let client = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: "demo-api-1", status: "running")],
+            statsResponses: [
+                "demo-api-1": [
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_000_000),
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_250_000),
+                ],
+            ]
+        )
+        let manager = ContainerClientStatsManager(
+            client: client,
+            sampleInterval: .microseconds(1),
+            sampleIntervalMicroseconds: 1_000_000,
+            sleep: { _ in }
+        )
+
+        try await manager.stats(
+            ids: ["demo-api-1"],
+            format: #"{{printf "%s" (truncate "é" 1)}}"#,
+            noStream: true,
+            noTrunc: false,
+            includeStopped: false,
+            emit: { emittedText.append($0) },
+            emitData: { emittedData.append($0) }
+        )
+
+        #expect(emittedText.messages.isEmpty)
+        #expect(emittedData.data == [Data([0xC3])])
     }
 
     @Test("stats template keeps display identifier aliases")
@@ -31367,6 +31494,47 @@ private actor RecordingContainerStatsManager: ContainerStatsManaging {
         for output in outputs {
             emit(output)
         }
+    }
+}
+
+private actor RecordingContainerStatsDataManager: ComposeRuntimeStatsDataManaging {
+    private let output: Data
+    private var storage: [ContainerStatsRequest] = []
+
+    init(output: Data) {
+        self.output = output
+    }
+
+    var requests: [ContainerStatsRequest] {
+        storage
+    }
+
+    func stats(
+        ids _: [String],
+        format _: String,
+        noStream _: Bool,
+        noTrunc _: Bool,
+        includeStopped _: Bool,
+        emit _: @escaping @Sendable (String) -> Void
+    ) async throws {}
+
+    func stats(
+        ids: [String],
+        format: String,
+        noStream: Bool,
+        noTrunc: Bool,
+        includeStopped: Bool,
+        emit _: @escaping @Sendable (String) -> Void,
+        emitData: @escaping @Sendable (Data) -> Void
+    ) async throws {
+        storage.append(ContainerStatsRequest(
+            ids: ids,
+            format: format,
+            noStream: noStream,
+            noTrunc: noTrunc,
+            includeStopped: includeStopped
+        ))
+        emitData(output)
     }
 }
 

@@ -72,7 +72,7 @@ public struct ContainerStatsAPIClient: ContainerStatsAPIClienting {
 }
 
 /// `ContainerClient`-backed stats manager for service containers.
-public struct ContainerClientStatsManager: ComposeRuntimeStatsManaging {
+public struct ContainerClientStatsManager: ComposeRuntimeStatsDataManaging {
     public typealias Sleeper = @Sendable (Duration) async throws -> Void
 
     private let client: ContainerStatsAPIClienting
@@ -102,24 +102,19 @@ public struct ContainerClientStatsManager: ComposeRuntimeStatsManaging {
         includeStopped: Bool,
         emit: @escaping @Sendable (String) -> Void,
     ) async throws {
-        let parsedFormat = try composeStatsFormat(format)
-        if !parsedFormat.isStreamingTable || noStream {
-            let records = try await collectStats(ids: ids, includeStopped: includeStopped)
-            try emit(renderStats(records, format: parsedFormat, noTrunc: noTrunc))
-            return
-        }
-
-        emit("\u{001B}[?1049h\u{001B}[?25l")
-        defer {
-            emit("\u{001B}[?25h\u{001B}[?1049l")
-        }
-
-        emit("\u{001B}[H\u{001B}[J" + renderStatsTable([], noTrunc: noTrunc))
-        while !Task.isCancelled {
-            let records = try await collectStats(ids: ids, includeStopped: includeStopped)
-            emit("\u{001B}[H\u{001B}[J" + renderStatsTable(records, noTrunc: noTrunc))
-            try await sleep(sampleInterval)
-        }
+        try await stats(
+            ids: ids,
+            format: format,
+            noStream: noStream,
+            noTrunc: noTrunc,
+            includeStopped: includeStopped,
+            emit: emit,
+            emitData: { data in
+                // Legacy String callback intentionally replaces partial UTF-8.
+                // swiftlint:disable:next optional_data_string_conversion
+                emit(String(decoding: Array(data), as: UTF8.self))
+            },
+        )
     }
 
     // swiftlint:enable function_parameter_count
@@ -177,22 +172,32 @@ public struct ContainerClientStatsManager: ComposeRuntimeStatsManaging {
     }
 
     /// Renders the direct stats payload in a supported format.
-    private func renderStats(_ records: [StatsSnapshot], format: ComposeStatsFormat, noTrunc: Bool) throws -> String {
+    private func renderStatsData(
+        _ records: [StatsSnapshot],
+        format: ComposeStatsFormat,
+        noTrunc: Bool,
+    ) throws -> Data {
         switch format {
         case .json:
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
-            return try records.map { snapshot in
+            let output = try records.map { snapshot in
                 let data = try encoder.encode(statsJSONObject(snapshot, noTrunc: noTrunc))
                 guard let output = String(data: data, encoding: .utf8) else {
                     throw ComposeError.invalidProject("failed to encode Compose stats JSON")
                 }
                 return output
             }.joined(separator: "\n")
+            return Data(output.utf8)
         case .table:
-            return renderStatsTable(records, noTrunc: noTrunc)
+            return Data(renderStatsTable(records, noTrunc: noTrunc).utf8)
         case let .template(template, table):
-            return try renderStatsTemplate(records, template: template, table: table, noTrunc: noTrunc)
+            return try renderStatsTemplateData(
+                records,
+                template: template,
+                table: table,
+                noTrunc: noTrunc,
+            )
         }
     }
 
@@ -218,12 +223,20 @@ public struct ContainerClientStatsManager: ComposeRuntimeStatsManaging {
     }
 
     /// Renders stats rows through a Docker-style field template.
-    private func renderStatsTemplate(_ records: [StatsSnapshot], template: String, table: Bool, noTrunc: Bool) throws -> String {
+    private func renderStatsTemplateData(
+        _ records: [StatsSnapshot],
+        template: String,
+        table: Bool,
+        noTrunc: Bool,
+    ) throws -> Data {
         let fields = dockerTemplateFields(in: template)
         try validateDockerTemplateActions(in: template)
         try validateDockerTemplateFields(fields, command: "stats", supported: composeStatsTemplateFields)
         let rows = try records.map { snapshot in
-            try renderDockerTemplate(template, values: statsTemplateValues(snapshot, noTrunc: noTrunc))
+            try renderDockerTemplateData(
+                template,
+                values: statsTemplateValues(snapshot, noTrunc: noTrunc),
+            )
         }
         let headers = [
             "BlockIO": "BLOCK I/O",
@@ -237,8 +250,12 @@ public struct ContainerClientStatsManager: ComposeRuntimeStatsManaging {
             "PIDs": "PIDS",
         ]
         return try table
-            ? renderDockerTemplateTable(template: template, headers: headers, rows: rows)
-            : rows.joined(separator: "\n")
+            ? renderDockerTemplateTableData(
+                template: template,
+                headers: headers,
+                rows: rows,
+            )
+            : joinedDockerTemplateData(rows)
     }
 
     /// Projects one stats snapshot pair into display values.
@@ -347,6 +364,49 @@ public struct ContainerClientStatsManager: ComposeRuntimeStatsManaging {
         }
         return String(format: "%.4g%@", value, units[index])
     }
+}
+
+public extension ContainerClientStatsManager {
+    // swiftlint:disable function_parameter_count
+    /// Emits exact bytes for templates while preserving the text callback for ordinary output.
+    func stats(
+        ids: [String],
+        format: String,
+        noStream: Bool,
+        noTrunc: Bool,
+        includeStopped: Bool,
+        emit: @escaping @Sendable (String) -> Void,
+        emitData: @escaping @Sendable (Data) -> Void,
+    ) async throws {
+        let parsedFormat = try composeStatsFormat(format)
+        if !parsedFormat.isStreamingTable || noStream {
+            let records = try await collectStats(ids: ids, includeStopped: includeStopped)
+            let output = try renderStatsData(
+                records,
+                format: parsedFormat,
+                noTrunc: noTrunc,
+            )
+            if let text = String(data: output, encoding: .utf8) {
+                emit(text)
+            } else {
+                emitData(output)
+            }
+            return
+        }
+
+        emit("\u{001B}[?1049h\u{001B}[?25l")
+        defer {
+            emit("\u{001B}[?25h\u{001B}[?1049l")
+        }
+
+        emit("\u{001B}[H\u{001B}[J" + renderStatsTable([], noTrunc: noTrunc))
+        while !Task.isCancelled {
+            let records = try await collectStats(ids: ids, includeStopped: includeStopped)
+            emit("\u{001B}[H\u{001B}[J" + renderStatsTable(records, noTrunc: noTrunc))
+            try await sleep(sampleInterval)
+        }
+    }
+    // swiftlint:enable function_parameter_count
 }
 
 private enum ComposeStatsFormat {

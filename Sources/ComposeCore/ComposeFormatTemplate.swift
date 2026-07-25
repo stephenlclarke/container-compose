@@ -26,9 +26,25 @@ public func renderDockerTemplate(_ template: String, values: [String: String]) t
     try renderStructuredDockerTemplate(template, values: values.mapValues(DockerTemplateData.string))
 }
 
+/// Renders a Docker-style output template without replacing invalid UTF-8 bytes.
+public func renderDockerTemplateData(_ template: String, values: [String: String]) throws -> Data {
+    try renderDockerTemplateData(
+        template,
+        values: values.mapValues(DockerTemplateData.string),
+    )
+}
+
 /// Renders a Docker-style output template against structured row data.
 public func renderDockerTemplate(_ template: String, values: [String: DockerTemplateData]) throws -> String {
     try renderStructuredDockerTemplate(template, values: values)
+}
+
+/// Renders a structured Docker-style template as its exact output bytes.
+public func renderDockerTemplateData(
+    _ template: String,
+    values: [String: DockerTemplateData],
+) throws -> Data {
+    try Data(renderStructuredDockerTemplateBytes(template, values: values))
 }
 
 /// Renders table template rows with Docker-style headers from referenced fields.
@@ -57,6 +73,24 @@ public func renderDockerTemplateTable(
     return renderDockerTemplateTable(header: header, rows: rows)
 }
 
+/// Renders exact-byte template rows with Docker-style table headers.
+public func renderDockerTemplateTableData(
+    template: String,
+    headers: [String: String],
+    rows: [Data],
+) throws -> Data {
+    var headerValues = headers.mapValues(DockerTemplateData.string)
+    if let labelsHeader = headers["Labels"] {
+        var labelValues: [String: DockerTemplateData] = [:]
+        for key in structuredDockerTemplateLabelKeys(in: template) {
+            labelValues[key.lookupKey] = .string(dockerTemplateLabelHeader(key.headerKey))
+        }
+        headerValues["Labels"] = .lookupObject(labelValues, display: labelsHeader)
+    }
+    let header = try renderDockerTemplateData(template, values: headerValues)
+    return Data(renderDockerTemplateTableBytes(header: Array(header), rows: rows.map(Array.init)))
+}
+
 private func renderDockerTemplateTable(header: String, rows: [String]) -> String {
     guard !rows.isEmpty else {
         return ""
@@ -70,6 +104,112 @@ private func renderDockerTemplateTable(header: String, rows: [String]) -> String
         return columns.count == headers.count ? columns : [row]
     }
     return renderTable(tableRows)
+}
+
+private func renderDockerTemplateTableBytes(
+    header: [UInt8],
+    rows: [[UInt8]],
+) -> [UInt8] {
+    guard !rows.isEmpty else {
+        return []
+    }
+    guard !header.isEmpty else {
+        return joinedDockerTemplateBytes(rows, separator: [UInt8(ascii: "\n")])
+    }
+    if let header = String(bytes: header, encoding: .utf8) {
+        let decodedRows = rows.compactMap { String(bytes: $0, encoding: .utf8) }
+        if decodedRows.count == rows.count {
+            return Array(renderDockerTemplateTable(header: header, rows: decodedRows).utf8)
+        }
+    }
+
+    let headers = splitDockerTemplateBytes(header, separator: UInt8(ascii: "\t"))
+    let tableRows = [headers] + rows.map { row in
+        let columns = splitDockerTemplateBytes(row, separator: UInt8(ascii: "\t"))
+        return columns.count == headers.count ? columns : [row]
+    }
+    let widths = tableRows.reduce(Array(repeating: 0, count: headers.count)) { current, row in
+        zip(current, row).map { max($0, structuredTemplateUTF8Sequences($1).count) }
+    }
+    let renderedRows = tableRows.map { row in
+        row.enumerated().reduce(into: [UInt8]()) { output, entry in
+            let (index, value) = entry
+            output.append(contentsOf: value)
+            guard index < row.count - 1 else { return }
+            let width = structuredTemplateUTF8Sequences(value).count
+            output.append(
+                contentsOf: Array(
+                    repeating: UInt8(ascii: " "),
+                    count: widths[index] - width + 2,
+                ),
+            )
+        }
+    }
+    return joinedDockerTemplateBytes(
+        renderedRows,
+        separator: [UInt8(ascii: "\n")],
+    )
+}
+
+private func splitDockerTemplateBytes(
+    _ value: [UInt8],
+    separator: UInt8,
+) -> [[UInt8]] {
+    var parts: [[UInt8]] = []
+    var start = 0
+    for index in value.indices where value[index] == separator {
+        parts.append(Array(value[start ..< index]))
+        start = index + 1
+    }
+    parts.append(Array(value[start...]))
+    return parts
+}
+
+/// Joins exact-byte template rows with one newline between rows.
+public func joinedDockerTemplateData(_ values: [Data]) -> Data {
+    Data(
+        joinedDockerTemplateBytes(
+            values.map(Array.init),
+            separator: [UInt8(ascii: "\n")],
+        ),
+    )
+}
+
+func emitDockerTemplateOutput(
+    _ output: Data,
+    emit: @Sendable (String) -> Void,
+    emitData: @Sendable (Data) -> Void,
+) {
+    if let text = String(data: output, encoding: .utf8) {
+        emit(text)
+    } else {
+        emitData(output)
+    }
+}
+
+func emitDockerTemplateOutput(
+    _ output: Data,
+    options: ComposeExecutionOptions,
+) {
+    emitDockerTemplateOutput(
+        output,
+        emit: options.emit,
+        emitData: options.emitData,
+    )
+}
+
+private func joinedDockerTemplateBytes(
+    _ values: [[UInt8]],
+    separator: [UInt8],
+) -> [UInt8] {
+    var output: [UInt8] = []
+    for (index, value) in values.enumerated() {
+        if index > 0 {
+            output.append(contentsOf: separator)
+        }
+        output.append(contentsOf: value)
+    }
+    return output
 }
 
 private func dockerTemplateLabelHeader(_ key: String) -> String {

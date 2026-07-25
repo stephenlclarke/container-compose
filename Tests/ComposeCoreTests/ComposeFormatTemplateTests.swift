@@ -39,7 +39,6 @@ struct ComposeFormatTemplateTests {
         #expect(try renderDockerTemplate("{{slice .Name 5}}", values: values) == "api")
         #expect(try renderDockerTemplate("{{len .Name}}", values: values) == "8")
         #expect(try renderDockerTemplate("{{println .Name}}", values: values) == "demo-api\n")
-        #expect(try renderDockerTemplate("{{table .Name}}", values: values) == "demo-api")
     }
 
     @Test
@@ -149,69 +148,6 @@ struct ComposeFormatTemplateTests {
     }
 
     @Test
-    func `structured values support deterministic object ranges`() throws {
-        let values: [String: DockerTemplateData] = [
-            "Array": .array([.string("alpha"), .string("beta"), .string("gamma")]),
-            "False": .boolean(false),
-            "Integer": .integer(7),
-            "Labels": .lookupObject(["x": .string("y")], display: "x=y"),
-            "Nothing": .null,
-            "Object": .object(["b": .integer(2), "a": .integer(1)]),
-            "Text": .string("abc"),
-            "True": .boolean(true),
-        ]
-
-        #expect(
-            try renderDockerTemplate(
-                "{{.False}}|{{.Integer}}|{{.Nothing}}|{{.Labels}}",
-                values: values,
-            ) == "false|7|<no value>|x=y",
-        )
-        #expect(
-            try renderDockerTemplate(
-                "{{range $key, $value := .Object}}{{$key}}={{$value}};{{end}}",
-                values: values,
-            ) == "a=1;b=2;",
-        )
-        #expect(
-            try renderDockerTemplate(
-                "{{if and .True (not .False)}}yes{{else if .Text}}text{{else}}no{{end}}",
-                values: values,
-            ) == "yes",
-        )
-        #expect(
-            try renderDockerTemplate(
-                "{{with .Nothing}}value{{else}}{{if or .False .Text}}fallback{{end}}{{end}}",
-                values: values,
-            ) == "fallback",
-        )
-        #expect(
-            try renderDockerTemplate(
-                "{{with .Nothing}}value{{else with(.Text)}}{{.}}{{end}}",
-                values: values,
-            ) == "abc",
-        )
-        #expect(
-            try renderDockerTemplate(
-                "{{with .Nothing}}first{{else with .False}}second{{else with .Integer}}{{.}}{{else}}none{{end}}",
-                values: values,
-            ) == "7",
-        )
-        #expect(throws: (any Error).self) {
-            try renderDockerTemplate(
-                "{{with .Nothing}}value{{else if .Text}}invalid{{end}}",
-                values: values,
-            )
-        }
-        #expect(throws: (any Error).self) {
-            try renderDockerTemplate(
-                "{{if .False}}value{{else with .Text}}invalid{{end}}",
-                values: values,
-            )
-        }
-    }
-
-    @Test
     func `collection JSON index slice and printf helpers preserve types`() throws {
         let values: [String: DockerTemplateData] = [
             "Array": .array([.string("alpha"), .string("beta"), .string("gamma")]),
@@ -231,15 +167,16 @@ struct ComposeFormatTemplateTests {
         )
         #expect(
             try renderDockerTemplate(
-                "{{index .Object \"a\"}}|{{index .Labels \"x\"}}|{{index .Text 1}}",
+                "{{index .Object \"a\"}}|{{index .Labels 0}}|{{index .Text 1}}",
                 values: values,
-            ) == "1|y|98",
+            ) == "1|120|98",
         )
         #expect(
             try renderDockerTemplate(
-                "{{slice .Array 1 3}}|{{slice .Text 1 3}}|{{len .Object}}|{{len .Array}}",
+                "{{slice .Array 1 3}}|{{slice .Text 1 3}}|{{slice .Labels 0 1}}"
+                    + "|{{len .Object}}|{{len .Array}}",
                 values: values,
-            ) == "[beta gamma]|bc|1|3",
+            ) == "[beta gamma]|bc|x|1|3",
         )
         #expect(
             try renderDockerTemplate(
@@ -290,6 +227,9 @@ struct ComposeFormatTemplateTests {
         }
         #expect(throws: (any Error).self) {
             try validateDockerTemplateActions(in: "{{unknown .Name}}")
+        }
+        #expect(throws: (any Error).self) {
+            try validateDockerTemplateActions(in: "{{table .Name}}")
         }
         #expect(throws: (any Error).self) {
             try validateDockerTemplateActions(in: "{{range $index, := .Name}}{{end}}")

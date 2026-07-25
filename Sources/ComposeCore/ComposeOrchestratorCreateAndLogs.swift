@@ -487,14 +487,14 @@ public extension ComposeOrchestrator {
                 options.emit(table)
             }
         case let .template(template, table):
-            let output = try renderComposeContainerTemplate(
+            let output = try renderComposeContainerTemplateData(
                 filteredContainers,
                 template: template,
                 table: table,
                 noTrunc: psOptions.noTrunc,
             )
             if !output.isEmpty {
-                options.emit(output)
+                emitDockerTemplateOutput(output, options: options)
             }
         }
     }

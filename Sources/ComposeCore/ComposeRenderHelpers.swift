@@ -142,6 +142,23 @@ func renderComposeContainerTemplate(
     table: Bool,
     noTrunc: Bool,
 ) throws -> String {
+    let data = try renderComposeContainerTemplateData(
+        containers,
+        template: template,
+        table: table,
+        noTrunc: noTrunc,
+    )
+    // Legacy String renderer intentionally replaces partial UTF-8.
+    // swiftlint:disable:next optional_data_string_conversion
+    return String(decoding: Array(data), as: UTF8.self)
+}
+
+func renderComposeContainerTemplateData(
+    _ containers: [ComposeContainerSummary],
+    template: String,
+    table: Bool,
+    noTrunc: Bool,
+) throws -> Data {
     let fields = dockerTemplateFields(in: template)
     try validateDockerTemplateActions(in: template)
     try validateDockerTemplateFields(
@@ -150,14 +167,18 @@ func renderComposeContainerTemplate(
         supported: composePsTemplateFields,
     )
     let rows = try containers.map { container in
-        try renderDockerTemplate(
+        try renderDockerTemplateData(
             template,
             values: composeContainerStructuredTemplateValues(container, noTrunc: noTrunc),
         )
     }
     return try table
-        ? renderDockerTemplateTable(template: template, headers: composePsTemplateHeaders, rows: rows)
-        : rows.joined(separator: "\n")
+        ? renderDockerTemplateTableData(
+            template: template,
+            headers: composePsTemplateHeaders,
+            rows: rows,
+        )
+        : joinedDockerTemplateData(rows)
 }
 
 private func composeContainerStructuredTemplateValues(
@@ -670,15 +691,37 @@ func renderComposeVolumeTable(_ records: [ComposeVolumeRecord]) -> String {
 
 /// Renders Compose volumes through a Docker-style field template.
 func renderComposeVolumeTemplate(_ records: [ComposeVolumeRecord], template: String, table: Bool) throws -> String {
+    let data = try renderComposeVolumeTemplateData(
+        records,
+        template: template,
+        table: table,
+    )
+    // Legacy String renderer intentionally replaces partial UTF-8.
+    // swiftlint:disable:next optional_data_string_conversion
+    return String(decoding: Array(data), as: UTF8.self)
+}
+
+func renderComposeVolumeTemplateData(
+    _ records: [ComposeVolumeRecord],
+    template: String,
+    table: Bool,
+) throws -> Data {
     let fields = dockerTemplateFields(in: template)
     try validateDockerTemplateActions(in: template)
     try validateDockerTemplateFields(fields, command: "volumes", supported: composeVolumesTemplateFields)
     let rows = try records.map { record in
-        try renderDockerTemplate(template, values: composeVolumeStructuredTemplateValues(record))
+        try renderDockerTemplateData(
+            template,
+            values: composeVolumeStructuredTemplateValues(record),
+        )
     }
     return try table
-        ? renderDockerTemplateTable(template: template, headers: composeVolumesTemplateHeaders, rows: rows)
-        : rows.joined(separator: "\n")
+        ? renderDockerTemplateTableData(
+            template: template,
+            headers: composeVolumesTemplateHeaders,
+            rows: rows,
+        )
+        : joinedDockerTemplateData(rows)
 }
 
 private func composeVolumeStructuredTemplateValues(

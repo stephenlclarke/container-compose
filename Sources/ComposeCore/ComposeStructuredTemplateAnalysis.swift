@@ -119,6 +119,81 @@ func validateStructuredTemplateVariables(
     }
 }
 
+func validateStructuredTemplateRootIndexing(
+    _ nodes: [StructuredTemplateNode],
+    dotIsRoot: Bool = true,
+) throws {
+    for node in nodes {
+        switch node {
+        case let .action(expression):
+            try validateStructuredExpressionRootIndexing(
+                expression,
+                dotIsRoot: dotIsRoot,
+            )
+        case let .conditional(expression, success, failure):
+            try validateStructuredExpressionRootIndexing(
+                expression,
+                dotIsRoot: dotIsRoot,
+            )
+            try validateStructuredTemplateRootIndexing(success, dotIsRoot: dotIsRoot)
+            try validateStructuredTemplateRootIndexing(failure, dotIsRoot: dotIsRoot)
+        case let .range(specification, success, failure):
+            try validateStructuredExpressionRootIndexing(
+                specification.expression,
+                dotIsRoot: dotIsRoot,
+            )
+            try validateStructuredTemplateRootIndexing(success, dotIsRoot: false)
+            try validateStructuredTemplateRootIndexing(failure, dotIsRoot: dotIsRoot)
+        case let .with(expression, success, failure):
+            try validateStructuredExpressionRootIndexing(
+                expression,
+                dotIsRoot: dotIsRoot,
+            )
+            try validateStructuredTemplateRootIndexing(
+                success,
+                dotIsRoot: structuredTemplateExpressionRetainsRoot(
+                    expression,
+                    dotIsRoot: dotIsRoot,
+                ),
+            )
+            try validateStructuredTemplateRootIndexing(failure, dotIsRoot: dotIsRoot)
+        case .text:
+            continue
+        }
+    }
+}
+
+private func validateStructuredExpressionRootIndexing(
+    _ expression: String,
+    dotIsRoot: Bool,
+) throws {
+    guard let segments = structuredTemplatePipelineSegments(expression) else {
+        throw structuredUnsupportedAction(expression)
+    }
+    for segment in segments {
+        guard let tokens = structuredTemplateTokens(segment) else {
+            throw structuredUnsupportedAction(expression)
+        }
+        if tokens.first == "index",
+           tokens.count > 1,
+           structuredTemplateValueRootFlow(
+               tokens[1],
+               dotIsRoot: dotIsRoot,
+           ).retainsRoot
+        {
+            throw structuredUnsupportedAction("index root value")
+        }
+        for token in tokens {
+            if let parenthesized = structuredTemplateParenthesizedValue(token) {
+                try validateStructuredExpressionRootIndexing(
+                    parenthesized.expression,
+                    dotIsRoot: dotIsRoot,
+                )
+            }
+        }
+    }
+}
+
 private func validateStructuredExpressionVariables(
     _ expression: String,
     variables: Set<String>,

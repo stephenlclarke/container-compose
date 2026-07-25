@@ -55,6 +55,47 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
         }
     }
 
+    var outputBytes: [UInt8] {
+        switch self {
+        case let .array(values):
+            return structuredTemplateJoinedBytes(
+                values.map(\.outputBytes),
+                prefix: "[",
+                separator: " ",
+                suffix: "]",
+            )
+        case let .boolean(value):
+            return Array((value ? "true" : "false").utf8)
+        case let .byteString(value):
+            return value
+        case let .integer(value):
+            return Array(String(value).utf8)
+        case let .lookupObject(_, display):
+            return Array(display.utf8)
+        case .null:
+            return Array("<no value>".utf8)
+        case let .object(values):
+            let entries = values.keys.sorted().map { key in
+                Array("\(key):".utf8) + (values[key]?.outputBytes ?? [])
+            }
+            return structuredTemplateJoinedBytes(
+                entries,
+                prefix: "map[",
+                separator: " ",
+                suffix: "]",
+            )
+        case let .record(values):
+            return structuredTemplateJoinedBytes(
+                structuredTemplateRecordValues(values).map(\.outputBytes),
+                prefix: "{",
+                separator: " ",
+                suffix: "}",
+            )
+        case let .string(value):
+            return Array(value.utf8)
+        }
+    }
+
     var isTruthy: Bool {
         switch self {
         case let .array(values):
@@ -104,6 +145,23 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
             value
         }
     }
+}
+
+private func structuredTemplateJoinedBytes(
+    _ values: [[UInt8]],
+    prefix: String,
+    separator: String,
+    suffix: String,
+) -> [UInt8] {
+    var output = Array(prefix.utf8)
+    for (index, value) in values.enumerated() {
+        if index > 0 {
+            output.append(contentsOf: separator.utf8)
+        }
+        output.append(contentsOf: value)
+    }
+    output.append(contentsOf: suffix.utf8)
+    return output
 }
 
 func structuredTemplateRecordValues(

@@ -31,10 +31,10 @@
 #
 # This script keeps Docker Compose V2 and container-compose aligned for
 # row-template functions, control actions, variables, whitespace trimming,
-# label lookup, and structured publisher traversal across `ps`, `stats`, and
-# `volumes`. It deliberately uses Compose-generated fields instead of image
-# references because runtimes may canonicalize equivalent image names
-# differently.
+# label lookup, raw Go-string output, root-value validation, and structured
+# publisher traversal across `ps`, `stats`, and `volumes`. It deliberately uses
+# Compose-generated fields instead of image references because runtimes may
+# canonicalize equivalent image names differently.
 
 set -euo pipefail
 
@@ -301,6 +301,12 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{truncate (upper .Labels) 0}}|{{join (slice (split .Labels ",") 0 0) ""}}|{{truncate .Labels 0}}|{{eq (index .Labels 0) (index .Labels 0)}}|{{slice .Labels 0 0}}'
+    )"
+    assert_equal "$actual" '|||true|' "$project Labels Go-string helper template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format '{{range .Publishers}}{{printf "%s|%d|%5s|%-5d" .TargetPort .Protocol .TargetPort .Protocol}}{{end}}'
     )"
     assert_equal "$actual" \
@@ -421,9 +427,36 @@ check_implementation() {
     )"
     assert_equal "$actual" '["\xc3"]' "$project partial UTF-8 split"
 
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{truncate "é" 1}}' \
+            | od -An -tx1 \
+            | tr -d ' \n'
+    )"
+    assert_equal "$actual" 'c30a' "$project exact raw UTF-8 byte output"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%s" (truncate "é" 1)}}' \
+            | od -An -tx1 \
+            | tr -d ' \n'
+    )"
+    assert_equal "$actual" 'c30a' "$project exact formatted UTF-8 byte output"
+
     assert_rejected "$project negative UTF-8 byte truncate" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{truncate "abc" -1}}'
+    # Root values are structs rather than maps in Docker's formatter context.
+    # shellcheck disable=SC2016
+    assert_rejected "$project root value index template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{index $ "Command"}}'
+    # `table` is a --format prefix and is not registered as a Go template
+    # function by Docker Compose.
+    # shellcheck disable=SC2016
+    assert_rejected "$project table function template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{with table $}}{{.Command}}{{end}}'
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \

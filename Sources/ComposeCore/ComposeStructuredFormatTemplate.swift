@@ -213,6 +213,19 @@ func renderStructuredDockerTemplate(
     _ template: String,
     values: [String: DockerTemplateData],
 ) throws -> String {
+    let bytes = try renderStructuredDockerTemplateBytes(
+        template,
+        values: values,
+    )
+    // Legacy String renderer intentionally replaces partial UTF-8.
+    // swiftlint:disable:next optional_data_string_conversion
+    return String(decoding: bytes, as: UTF8.self)
+}
+
+func renderStructuredDockerTemplateBytes(
+    _ template: String,
+    values: [String: DockerTemplateData],
+) throws -> [UInt8] {
     let nodes = try structuredDockerTemplateNodes(template)
     let root = DockerTemplateData.object(values)
     return try renderStructuredTemplateNodes(
@@ -229,6 +242,7 @@ func structuredDockerTemplateNodes(_ template: String) throws -> [StructuredTemp
     var parser = try StructuredTemplateParser(lexemes: structuredTemplateLexemes(template))
     let nodes = try parser.parse()
     try validateStructuredTemplateVariables(nodes)
+    try validateStructuredTemplateRootIndexing(nodes)
     return nodes
 }
 
@@ -384,31 +398,45 @@ private func structuredTemplateRange(_ value: String) throws -> StructuredTempla
 private func renderStructuredTemplateNodes(
     _ nodes: [StructuredTemplateNode],
     context: StructuredTemplateContext,
-) throws -> String {
-    var rendered = ""
+) throws -> [UInt8] {
+    var rendered: [UInt8] = []
     for node in nodes {
         switch node {
         case let .text(value):
-            rendered += structuredTemplateText(value)
+            rendered.append(contentsOf: structuredTemplateText(value).utf8)
         case let .action(action):
-            rendered += try evaluateStructuredTemplateExpression(action, context: context).display
+            try rendered.append(
+                contentsOf: evaluateStructuredTemplateExpression(
+                    action,
+                    context: context,
+                ).outputBytes,
+            )
         case let .conditional(expression, success, failure):
             let value = try evaluateStructuredTemplateExpression(expression, context: context)
-            rendered += try renderStructuredTemplateNodes(value.isTruthy ? success : failure, context: context)
+            try rendered.append(
+                contentsOf: renderStructuredTemplateNodes(
+                    value.isTruthy ? success : failure,
+                    context: context,
+                ),
+            )
         case let .with(expression, success, failure):
             let value = try evaluateStructuredTemplateExpression(expression, context: context)
             var nested = context
             nested.dot = value
-            rendered += try renderStructuredTemplateNodes(
-                value.isTruthy ? success : failure,
-                context: value.isTruthy ? nested : context,
+            try rendered.append(
+                contentsOf: renderStructuredTemplateNodes(
+                    value.isTruthy ? success : failure,
+                    context: value.isTruthy ? nested : context,
+                ),
             )
         case let .range(specification, success, failure):
-            rendered += try renderStructuredTemplateRange(
-                specification,
-                success: success,
-                failure: failure,
-                context: context,
+            try rendered.append(
+                contentsOf: renderStructuredTemplateRange(
+                    specification,
+                    success: success,
+                    failure: failure,
+                    context: context,
+                ),
             )
         }
     }
@@ -426,7 +454,7 @@ private func renderStructuredTemplateRange(
     success: [StructuredTemplateNode],
     failure: [StructuredTemplateNode],
     context: StructuredTemplateContext,
-) throws -> String {
+) throws -> [UInt8] {
     let value = try evaluateStructuredTemplateExpression(specification.expression, context: context)
     let entries = try structuredTemplateRangeEntries(value)
     guard !entries.isEmpty else {
@@ -439,7 +467,7 @@ private func renderStructuredTemplateRange(
         }
         return try renderStructuredTemplateNodes(failure, context: nested)
     }
-    var rendered = ""
+    var rendered: [UInt8] = []
     for entry in entries {
         var nested = context
         nested.dot = entry.value
@@ -449,7 +477,12 @@ private func renderStructuredTemplateRange(
         if let valueVariable = specification.valueVariable {
             nested.variables[valueVariable] = entry.value
         }
-        rendered += try renderStructuredTemplateNodes(success, context: nested)
+        try rendered.append(
+            contentsOf: renderStructuredTemplateNodes(
+                success,
+                context: nested,
+            ),
+        )
     }
     return rendered
 }
@@ -471,7 +504,6 @@ private let structuredTemplateFunctions: Set<String> = [
     "println",
     "slice",
     "split",
-    "table",
     "title",
     "truncate",
     "upper",
@@ -775,7 +807,7 @@ func applyStructuredTemplateFunction(
     switch function {
     case "and", "eq", "ne", "not", "or":
         return try applyStructuredLogicalFunction(function, inputs: inputs)
-    case "json", "len", "table":
+    case "json", "len":
         return try applyStructuredValueFunction(function, inputs: inputs)
     case "lower", "title", "upper":
         return try applyStructuredCaseFunction(function, inputs: inputs)
@@ -828,8 +860,6 @@ private func applyStructuredValueFunction(
         return try .string(input.json())
     case "len":
         return try .integer(structuredTemplateLength(input))
-    case "table":
-        return input
     default:
         throw structuredUnsupportedAction(function)
     }
@@ -849,51 +879,6 @@ private func applyStructuredCaseFunction(
         return .string(input.uppercased())
     default:
         throw structuredUnsupportedAction(function)
-    }
-}
-
-private func applyStructuredPrintFunction(
-    _ function: String,
-    inputs: [DockerTemplateData],
-) throws -> DockerTemplateData {
-    switch function {
-    case "print":
-        return .string(structuredTemplatePrint(inputs))
-    case "println":
-        return .string(inputs.map(\.display).joined(separator: " ") + "\n")
-    case "printf":
-        guard let format = inputs.first else { throw structuredUnsupportedAction(function) }
-        return try .string(
-            structuredTemplatePrintf(
-                structuredString(format, function: function),
-                values: Array(inputs.dropFirst()),
-            ),
-        )
-    default:
-        throw structuredUnsupportedAction(function)
-    }
-}
-
-private func structuredTemplatePrint(_ inputs: [DockerTemplateData]) -> String {
-    var rendered = ""
-    for (index, input) in inputs.enumerated() {
-        if index > 0,
-           !structuredTemplatePrintValueIsString(inputs[index - 1]),
-           !structuredTemplatePrintValueIsString(input)
-        {
-            rendered.append(" ")
-        }
-        rendered += input.display
-    }
-    return rendered
-}
-
-private func structuredTemplatePrintValueIsString(_ value: DockerTemplateData) -> Bool {
-    switch value {
-    case .byteString, .lookupObject, .string:
-        true
-    case .array, .boolean, .integer, .null, .object, .record:
-        false
     }
 }
 
@@ -948,13 +933,17 @@ private func structuredTemplateJoin(_ inputs: [DockerTemplateData]) throws -> Do
 }
 
 private func structuredTemplatePad(_ inputs: [DockerTemplateData]) throws -> DockerTemplateData {
-    guard inputs.count == 3 else { throw structuredUnsupportedAction("pad") }
-    let value = try structuredString(inputs[0], function: "pad")
+    guard inputs.count == 3,
+          let value = structuredTemplateGoStringBytes(inputs[0])
+    else {
+        throw structuredUnsupportedAction("pad")
+    }
     let left = try structuredInteger(inputs[1], function: "pad")
     let right = try structuredInteger(inputs[2], function: "pad")
-    return .string(
-        String(repeating: " ", count: max(0, left)) + value
-            + String(repeating: " ", count: max(0, right)),
+    return .byteString(
+        Array(repeating: UInt8(ascii: " "), count: max(0, left))
+            + value
+            + Array(repeating: UInt8(ascii: " "), count: max(0, right)),
     )
 }
 

@@ -21,7 +21,7 @@ func structuredTemplateArgumentsAreSupported(
 ) -> Bool {
     let total = count + (hasPipelineValue ? 1 : 0)
     switch function {
-    case "json", "len", "lower", "not", "table", "title", "upper":
+    case "json", "len", "lower", "not", "title", "upper":
         return total == 1
     case "pad":
         return total == 3
@@ -71,6 +71,8 @@ func structuredString(
             throw structuredUnsupportedAction(function)
         }
         return string
+    case let .lookupObject(_, display):
+        return display
     case let .string(string):
         return string
     default:
@@ -150,9 +152,8 @@ func structuredTemplateIndex(_ values: [DockerTemplateData]) throws -> DockerTem
     case let .object(object):
         guard let key = try structuredTemplateMapKey(values[1]) else { return .null }
         return object[key] ?? .null
-    case let .lookupObject(object, _):
-        guard let key = try structuredTemplateMapKey(values[1]) else { return .null }
-        return object[key] ?? .null
+    case let .lookupObject(_, display):
+        return try structuredTemplateByteIndex(Array(display.utf8), index: values[1])
     case let .byteString(bytes):
         return try structuredTemplateByteIndex(bytes, index: values[1])
     case let .string(string):
@@ -176,6 +177,8 @@ func structuredTemplateSlice(_ values: [DockerTemplateData]) throws -> DockerTem
         return .array(Array(elements[lower ..< upper]))
     case let .byteString(bytes):
         return try structuredTemplateByteSlice(bytes, lower: lower, values: values)
+    case let .lookupObject(_, display):
+        return try structuredTemplateByteSlice(Array(display.utf8), lower: lower, values: values)
     case let .string(string):
         return try structuredTemplateByteSlice(Array(string.utf8), lower: lower, values: values)
     default:

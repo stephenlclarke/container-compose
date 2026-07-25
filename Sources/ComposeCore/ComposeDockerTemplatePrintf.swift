@@ -26,13 +26,13 @@ private struct StructuredPrintfDirective {
 func structuredTemplatePrintf(
     _ format: String,
     values: [DockerTemplateData],
-) throws -> String {
-    var rendered = ""
+) throws -> [UInt8] {
+    var rendered: [UInt8] = []
     var cursor = format.startIndex
     var valueIndex = 0
     while cursor < format.endIndex {
         guard format[cursor] == "%" else {
-            rendered.append(format[cursor])
+            rendered.append(contentsOf: String(format[cursor]).utf8)
             cursor = format.index(after: cursor)
             continue
         }
@@ -41,7 +41,7 @@ func structuredTemplatePrintf(
             throw structuredUnsupportedAction("printf \(format)")
         }
         if format[next] == "%" {
-            rendered.append("%")
+            rendered.append(UInt8(ascii: "%"))
             cursor = format.index(after: next)
             continue
         }
@@ -54,7 +54,7 @@ func structuredTemplatePrintf(
             values[valueIndex],
             directive: directive,
         )
-        rendered += replacement
+        rendered.append(contentsOf: replacement)
         valueIndex += 1
         cursor = directive.nextCursor
     }
@@ -92,13 +92,18 @@ private func structuredPrintfDirective(
 private func structuredPrintfReplacement(
     _ value: DockerTemplateData,
     directive: StructuredPrintfDirective,
-) throws -> String {
+) throws -> [UInt8] {
     switch value {
     case let .array(values):
         let elements = try values.map {
             try structuredPrintfReplacement($0, directive: directive)
         }
-        return "[\(elements.joined(separator: " "))]"
+        return structuredPrintfJoinedBytes(
+            elements,
+            prefix: "[",
+            separator: " ",
+            suffix: "]",
+        )
     case let .object(values):
         let entries = try values.keys.sorted().map { key in
             let renderedKey = try structuredPrintfReplacement(.string(key), directive: directive)
@@ -106,14 +111,24 @@ private func structuredPrintfReplacement(
                 values[key] ?? .null,
                 directive: directive,
             )
-            return "\(renderedKey):\(renderedValue)"
+            return renderedKey + Array(":".utf8) + renderedValue
         }
-        return "map[\(entries.joined(separator: " "))]"
+        return structuredPrintfJoinedBytes(
+            entries,
+            prefix: "map[",
+            separator: " ",
+            suffix: "]",
+        )
     case let .record(values):
         let fields = try structuredTemplateRecordValues(values).map {
             try structuredPrintfReplacement($0, directive: directive)
         }
-        return "{\(fields.joined(separator: " "))}"
+        return structuredPrintfJoinedBytes(
+            fields,
+            prefix: "{",
+            separator: " ",
+            suffix: "}",
+        )
     case .boolean, .byteString, .integer, .lookupObject, .null, .string:
         return try structuredPrintfScalarReplacement(value, directive: directive)
     }
@@ -122,7 +137,7 @@ private func structuredPrintfReplacement(
 private func structuredPrintfScalarReplacement(
     _ value: DockerTemplateData,
     directive: StructuredPrintfDirective,
-) throws -> String {
+) throws -> [UInt8] {
     switch directive.verb {
     case "d":
         return structuredPrintfDecimalReplacement(value, directive: directive)
@@ -131,7 +146,7 @@ private func structuredPrintfScalarReplacement(
     case "s":
         return try structuredPrintfStringReplacement(value, directive: directive)
     case "v":
-        return structuredPrintfPadded(value.display, directive: directive)
+        return structuredPrintfPadded(value.outputBytes, directive: directive)
     default:
         throw structuredUnsupportedAction("printf")
     }
@@ -140,17 +155,17 @@ private func structuredPrintfScalarReplacement(
 private func structuredPrintfDecimalReplacement(
     _ value: DockerTemplateData,
     directive: StructuredPrintfDirective,
-) -> String {
+) -> [UInt8] {
     guard case let .integer(integer) = value else {
         return structuredPrintfTypeDiagnostic(value, directive: directive)
     }
-    return structuredPrintfPadded(String(integer), directive: directive)
+    return structuredPrintfPadded(Array(String(integer).utf8), directive: directive)
 }
 
 private func structuredPrintfQuotedReplacement(
     _ value: DockerTemplateData,
     directive: StructuredPrintfDirective,
-) throws -> String {
+) throws -> [UInt8] {
     let replacement: String
     switch value {
     case let .byteString(bytes):
@@ -166,21 +181,21 @@ private func structuredPrintfQuotedReplacement(
     case .array, .object, .record:
         throw structuredUnsupportedAction("printf")
     }
-    return structuredPrintfPadded(replacement, directive: directive)
+    return structuredPrintfPadded(Array(replacement.utf8), directive: directive)
 }
 
 private func structuredPrintfStringReplacement(
     _ value: DockerTemplateData,
     directive: StructuredPrintfDirective,
-) throws -> String {
-    let replacement: String
+) throws -> [UInt8] {
+    let replacement: [UInt8]
     switch value {
     case let .byteString(bytes):
-        replacement = String(bytes: bytes, encoding: .utf8) ?? "\u{FFFD}"
+        replacement = bytes
     case let .lookupObject(_, display):
-        replacement = display
+        replacement = Array(display.utf8)
     case let .string(string):
-        replacement = string
+        replacement = Array(string.utf8)
     case .boolean, .integer, .null:
         return structuredPrintfTypeDiagnostic(value, directive: directive)
     case .array, .object, .record:
@@ -192,12 +207,13 @@ private func structuredPrintfStringReplacement(
 private func structuredPrintfTypeDiagnostic(
     _ value: DockerTemplateData,
     directive: StructuredPrintfDirective,
-) -> String {
+) -> [UInt8] {
     if value == .null {
-        return "%!\(directive.verb)(<nil>)"
+        return Array("%!\(directive.verb)(<nil>)".utf8)
     }
-    let rendered = structuredPrintfPadded(value.display, directive: directive)
-    return "%!\(directive.verb)(\(structuredPrintfTypeName(value))=\(rendered))"
+    return Array("%!\(directive.verb)(\(structuredPrintfTypeName(value))=".utf8)
+        + structuredPrintfPadded(value.outputBytes, directive: directive)
+        + Array(")".utf8)
 }
 
 private func structuredPrintfTypeName(_ value: DockerTemplateData) -> String {
@@ -220,15 +236,32 @@ private func structuredPrintfTypeName(_ value: DockerTemplateData) -> String {
 }
 
 private func structuredPrintfPadded(
-    _ replacement: String,
+    _ replacement: [UInt8],
     directive: StructuredPrintfDirective,
-) -> String {
-    let replacementWidth = replacement.unicodeScalars.count
+) -> [UInt8] {
+    let replacementWidth = structuredTemplateUTF8Sequences(replacement).count
     guard let width = directive.width, replacementWidth < width else {
         return replacement
     }
-    let padding = String(repeating: " ", count: width - replacementWidth)
+    let padding = Array(repeating: UInt8(ascii: " "), count: width - replacementWidth)
     return directive.leftAligned ? replacement + padding : padding + replacement
+}
+
+private func structuredPrintfJoinedBytes(
+    _ values: [[UInt8]],
+    prefix: String,
+    separator: String,
+    suffix: String,
+) -> [UInt8] {
+    var output = Array(prefix.utf8)
+    for (index, value) in values.enumerated() {
+        if index > 0 {
+            output.append(contentsOf: separator.utf8)
+        }
+        output.append(contentsOf: value)
+    }
+    output.append(contentsOf: suffix.utf8)
+    return output
 }
 
 private func structuredGoQuotedBytes(_ bytes: [UInt8]) -> String {

@@ -28,12 +28,12 @@ struct ComposeStructuredFormatTemplateTests {
             "Object": .object(["1": .string("one")]),
         ]
 
+        #expect((try? renderDockerTemplate("{{index .Lookup 1}}", values: values)) == "61")
         for template in [
             "{{index .Array 2}}",
             "{{index .Object}}",
             "{{index .Object 1}}",
             "{{index .Object true}}",
-            "{{index .Lookup 1}}",
             "{{index .Lookup false}}",
             "{{slice .Array 1 0}}",
             "{{slice .Object 0}}",

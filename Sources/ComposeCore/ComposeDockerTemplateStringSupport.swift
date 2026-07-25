@@ -20,9 +20,11 @@ func structuredTemplateGoStringBytes(
     switch value {
     case let .byteString(bytes):
         bytes
+    case let .lookupObject(_, display):
+        Array(display.utf8)
     case let .string(string):
         Array(string.utf8)
-    case .array, .boolean, .integer, .lookupObject, .null, .object, .record:
+    case .array, .boolean, .integer, .null, .object, .record:
         nil
     }
 }

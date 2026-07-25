@@ -254,10 +254,10 @@ struct ComposeFormatCallCompatibilityTests {
         ]
 
         #expect(try renderDockerTemplate("{{printf .Bytes \"ok\"}}", values: values) == "ok")
+        #expect(try renderDockerTemplate("{{printf .Lookup \"ok\"}}", values: values) == "ok")
         for template in [
             "{{printf .Integer}}",
             "{{printf .InvalidBytes \"ok\"}}",
-            "{{printf .Lookup \"ok\"}}",
         ] {
             #expect(throws: (any Error).self) {
                 try renderDockerTemplate(template, values: values)
