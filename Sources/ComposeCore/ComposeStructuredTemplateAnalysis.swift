@@ -310,6 +310,7 @@ private func collectStructuredExpressionLabelKeys(
     into keys: inout [String],
 ) {
     guard let segments = structuredTemplatePipelineSegments(expression) else { return }
+    var pipelineLiteral: String?
     for segment in segments {
         guard let tokens = structuredTemplateTokens(segment) else { continue }
         for (index, token) in tokens.enumerated() {
@@ -318,6 +319,11 @@ private func collectStructuredExpressionLabelKeys(
                let key = structuredTemplateStringLiteral(tokens[index + 1])
             {
                 keys.append(key)
+            } else if isStructuredTemplateLabelFunction(token),
+                      tokens.count == 1,
+                      let pipelineLiteral
+            {
+                keys.append(pipelineLiteral)
             }
             if let parenthesized = structuredTemplateParenthesizedValue(token) {
                 collectStructuredExpressionLabelKeys(
@@ -326,5 +332,8 @@ private func collectStructuredExpressionLabelKeys(
                 )
             }
         }
+        pipelineLiteral = tokens.count == 1
+            ? structuredTemplateStringLiteral(tokens[0])
+            : nil
     }
 }

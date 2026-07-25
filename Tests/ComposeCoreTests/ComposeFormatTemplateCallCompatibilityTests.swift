@@ -31,12 +31,24 @@ struct ComposeFormatCallCompatibilityTests {
             ]),
         ]
         let template = "{{range .Publishers}}{{$.Label \"oracle.example/key\"}}{{end}}"
+        let pipelineTemplate =
+            "{{\"oracle.example/key\" | .Label | upper}}|"
+                + "{{range .Publishers}}{{\"oracle.example/key\" | $.Label}}{{end}}"
 
         #expect(try renderDockerTemplate(template, values: values) == "value")
         #expect(dockerTemplateFields(in: template) == ["Publishers", "Labels"])
+        #expect(try renderDockerTemplate(pipelineTemplate, values: values) == "VALUE|value")
+        #expect(dockerTemplateFields(in: pipelineTemplate) == ["Labels", "Publishers", "Labels"])
         #expect(
             try renderDockerTemplateTable(
                 template: "{{$.Label \"oracle.example/key\"}}",
+                headers: ["Labels": "LABELS"],
+                rows: ["value"],
+            ) == "example/key\nvalue",
+        )
+        #expect(
+            try renderDockerTemplateTable(
+                template: "{{\"oracle.example/key\" | .Label}}",
                 headers: ["Labels": "LABELS"],
                 rows: ["value"],
             ) == "example/key\nvalue",
@@ -59,6 +71,12 @@ struct ComposeFormatCallCompatibilityTests {
         #expect(try renderDockerTemplate("{{.Label .Bytes}}", values: values) == "value")
         #expect(throws: (any Error).self) {
             try renderDockerTemplate("{{.Label 1}}", values: values)
+        }
+        #expect(throws: (any Error).self) {
+            try renderDockerTemplate(
+                "{{\"oracle.example/key\" | .Label \"other\"}}",
+                values: values,
+            )
         }
         #expect(throws: (any Error).self) {
             try renderDockerTemplate(

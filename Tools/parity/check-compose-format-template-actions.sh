@@ -207,6 +207,12 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{"oracle.example/key" | .Label | upper}}|{{range .Publishers}}{{"oracle.example/key" | $.Label}}{{end}}'
+    )"
+    assert_equal "$actual" 'VALUE|value' "$project pipeline label template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format '{{printf "%d" .ExitCode}}|{{eq .ExitCode 0}}'
     )"
     assert_equal "$actual" '0|true' "$project typed default exit-code template"
@@ -420,6 +426,9 @@ check_implementation() {
     assert_rejected "$project integer label key template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{.Label 1}}'
+    assert_rejected "$project pipeline label arity template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{"oracle.example/key" | .Label "other"}}'
     assert_rejected "$project publisher label key template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{range .Publishers}}{{$.Label .TargetPort}}{{end}}'

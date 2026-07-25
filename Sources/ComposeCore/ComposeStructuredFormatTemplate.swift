@@ -477,10 +477,6 @@ private let structuredTemplateFunctions: Set<String> = [
     "upper",
 ]
 
-func isStructuredTemplateLabelFunction(_ token: String) -> Bool {
-    token == ".Label" || token == "$.Label"
-}
-
 private func validateStructuredExpression(_ expression: String) throws {
     guard let segments = structuredTemplatePipelineSegments(expression), !segments.isEmpty else {
         throw structuredUnsupportedAction(expression)
@@ -494,9 +490,9 @@ private func validateStructuredExpression(_ expression: String) throws {
             hasPipelineValue = true
             continue
         }
-        if index == 0, isStructuredTemplateLabelFunction(tokens.first ?? ""),
-           tokens.count == 2,
-           isStructuredTemplateValue(tokens[1])
+        if isStructuredTemplateLabelFunction(tokens.first ?? ""),
+           tokens.dropFirst().allSatisfy(isStructuredTemplateValue),
+           tokens.count - 1 + (hasPipelineValue ? 1 : 0) == 1
         {
             hasPipelineValue = true
             continue
@@ -644,11 +640,17 @@ private func evaluateStructuredTemplateExpression(
         }
         if index == 0, tokens.count == 1, isStructuredTemplateValue(head) {
             pipelineValue = try structuredTemplateValue(head, context: context)
-        } else if index == 0, isStructuredTemplateLabelFunction(head), tokens.count == 2 {
-            let key = try structuredString(
-                structuredTemplateValue(tokens[1], context: context),
-                function: "Label",
-            )
+        } else if isStructuredTemplateLabelFunction(head) {
+            var inputs = try tokens.dropFirst().map {
+                try structuredTemplateValue($0, context: context)
+            }
+            if let pipelineValue {
+                inputs.append(pipelineValue)
+            }
+            guard inputs.count == 1 else {
+                throw structuredUnsupportedAction("Label")
+            }
+            let key = try structuredString(inputs[0], function: "Label")
             let source = head == "$.Label" ? context.root : context.dot
             pipelineValue = try structuredTemplateLabel(key, source: source)
         } else {
@@ -762,49 +764,6 @@ private func structuredTemplateBase(
     default:
         context.variables[base] ?? .null
     }
-}
-
-private func structuredTemplateLookup(
-    _ value: DockerTemplateData,
-    _ field: String,
-) throws -> DockerTemplateData {
-    switch value {
-    case let .lookupObject(values, _), let .object(values):
-        return values[field] ?? .null
-    case let .record(values):
-        guard let value = values[field] else {
-            throw structuredUnsupportedAction("unknown record field .\(field)")
-        }
-        return value
-    case .array, .boolean, .byteString, .integer, .null, .string:
-        throw structuredUnsupportedAction("field .\(field)")
-    }
-}
-
-private func structuredTemplateLabel(
-    _ key: String,
-    source: DockerTemplateData,
-) throws -> DockerTemplateData {
-    let labels: DockerTemplateData
-    switch source {
-    case let .lookupObject(values, _), let .object(values):
-        guard let value = values["Labels"] else {
-            return .string("")
-        }
-        labels = value
-    case let .record(values):
-        guard let value = values["Labels"] else {
-            throw structuredUnsupportedAction("unknown record field .Labels")
-        }
-        labels = value
-    case .array, .boolean, .byteString, .integer, .null, .string:
-        throw structuredUnsupportedAction("field .Labels")
-    }
-    let value = try structuredTemplateLookup(labels, key)
-    if value == .null {
-        return .string("")
-    }
-    return value
 }
 
 private func applyStructuredTemplateFunction(
