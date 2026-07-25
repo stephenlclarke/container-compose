@@ -20,7 +20,7 @@ container model, sibling fork, or package pin changes.
   `fix(format): project runtime mount metadata`
 - `551710612d8ca9439029efb4596e7518c429f5e0`
   `fix(format): reject invalid scalar template operations`
-- `00279ef21f28b5244a94f236f4a3f4194fe171e7`
+- `00279ef2f323bb4a3e0b76360300a0a6e9fae008`
   `fix(format): preserve table header semantics`
 
 All implementation commits are signed and construct the complete code delta.
@@ -196,7 +196,7 @@ trim cases with focused template regressions. Commit
 projections with command-path regression coverage. Commit
 `551710612d8ca9439029efb4596e7518c429f5e0` fixes the three scalar-operation
 findings and extends the live Docker Compose v2 oracle to require matching
-execution failures. Commit `00279ef21f28b5244a94f236f4a3f4194fe171e7`
+execution failures. Commit `00279ef2f323bb4a3e0b76360300a0a6e9fae008`
 fixes variable validation and table-header execution, adds exact command header
 contexts, and extends the live oracle to duplicate, conditional, label, stats,
 and volume headers. No autobot finding was deferred, and every connector
