@@ -58,11 +58,13 @@ ranges, mixed-type comparisons, and scalar `len` calls fail exactly as the
 Docker Compose v2 oracle does.
 
 The remaining signed compatibility commits, through
-`fe952873826f3b2b896eb61bae4c52ba77b33e6a`
-(`fix(format): propagate constant label headers`), are enumerated in the paired
-pull-request handoff. That handoff records the complete code map, exact
-validation, coverage, Docker Compose dispositions for every connector review,
-runtime revisions, and promotion evidence.
+`6f5ab6aba03ba66eee8625db178af6e95eb16f8e`
+(`fix(format): align logical and UTF-8 helpers`), are enumerated in the paired
+pull-request handoff. The final follow-up proves root context across ordered
+logical outcomes, handles empty-separator splitting as Go UTF-8 sequences, and
+truncates strings by UTF-8 bytes. That handoff records the complete code map,
+exact validation, coverage, Docker Compose dispositions for every connector
+review, runtime revisions, and promotion evidence.
 
 ## Compatibility
 

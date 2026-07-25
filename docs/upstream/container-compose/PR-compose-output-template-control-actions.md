@@ -50,6 +50,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): preserve piped label headers`
 - `fe952873826f3b2b896eb61bae4c52ba77b33e6a`
   `fix(format): propagate constant label headers`
+- `6f5ab6aba03ba66eee8625db178af6e95eb16f8e`
+  `fix(format): align logical and UTF-8 helpers`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -75,6 +77,8 @@ This documentation commit is intentionally separate.
   - resolves root-scoped `$.Label` calls against the original formatter row
     after `range` or `with` changes dot;
   - traverses arrays in source order and objects in deterministic key order;
+  - splits empty separators after each Unicode scalar, matching Go's UTF-8
+    sequence behavior, and truncates string results by raw UTF-8 bytes;
   - validates root-row field references before command side effects.
 - `Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift`
   - validates lexical variable scope before command side effects;
@@ -82,8 +86,9 @@ This documentation commit is intentionally separate.
     validation;
   - retains the first selector appended to a parenthesized root expression so
     unsupported fields cannot bypass command validation;
-  - follows root values returned by `and`, `or`, and logical pipelines into
-    successful `with` bodies;
+  - follows ordered truthy-root, truthy-non-root, and falsey outcomes through
+    `and`, `or`, and logical pipelines so a successful `with` body is
+    root-scoped only when every reachable truthy result is the root;
   - discovers direct and pipeline-fed `.Label` keys used by Docker's dynamic
     table header context;
   - evaluates constant label-key pipelines through the same typed helper path
@@ -190,6 +195,8 @@ This documentation commit is intentionally separate.
     whitespace, plus root and nested pipeline-fed labels and invalid extra
     label arguments and table label keys carried through `print`, `printf`,
     `upper`, `lower`, `title`, `pad`, and `truncate`.
+  - verifies ordered logical publisher selection, empty-separator and
+    empty-input splitting, and partial UTF-8 byte truncation.
 
 ## Validation
 
@@ -199,37 +206,34 @@ The final local verification passed on the MacBook Pro:
 make swift-coverage
 make check
 swiftlint lint --strict --quiet \
-  Sources/ComposeCore/ComposeFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateCallCompatibilityTests.swift
+  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
+  Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift
 swiftformat --lint --swift-version 6.2 \
-  Sources/ComposeCore/ComposeFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateCallCompatibilityTests.swift
+  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
+  Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift
 shellcheck Tools/parity/check-compose-format-template-actions.sh
 CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
-CONTAINER_COMPOSE="$PWD/.build/debug/compose" \
-DOCKER_COMPOSE_REFERENCE='docker compose' \
-CONTAINER_COMPOSE_LIVE=1 \
   make docker-compose-format-template-actions-parity
 git diff --check
 ```
 
-- Swift: 1,161 tests in 31 suites passed.
-- Structured template engine: 1,681/1,779 lines, 94.49%.
-- `ComposeStructuredFormatTemplate.swift`: 722/762 lines, 94.75%.
-- `ComposeStructuredTemplateAnalysis.swift`: 350/362 lines, 96.69%.
-- `ComposeStructuredTemplateCompatibilitySyntax.swift`: 60/64 lines,
-  93.75%.
-- `ComposeStructuredTemplateLookup.swift`: 29/35 lines, 82.86%.
-- `ComposeStructuredTemplateWhitespace.swift`: 17/17 lines, 100%.
-- `ComposeDockerTemplateData.swift`: 83/90 lines, 92.22%.
-- `ComposeDockerTemplatePrintf.swift`: 265/277 lines, 95.67%.
-- `ComposeDockerTemplateFunctionSupport.swift`: 155/172 lines, 90.12%.
-- Formatter table boundary: 57/57 lines, 100%.
-- Command rendering helpers: 528/545 lines, 96.88%.
+- Swift: 1,165 tests in 31 suites passed.
+- Structured template engine: 1,855/1,983 lines, 93.55%.
+- `ComposeStructuredFormatTemplate.swift`: 771/825 lines, 93.45%.
+- `ComposeStructuredTemplateAnalysis.swift`: 443/459 lines, 96.51%.
+- `ComposeStructuredTemplateCompatibilitySyntax.swift`: 61/65 lines,
+  93.85%.
+- `ComposeStructuredTemplateLookup.swift`: 31/37 lines, 83.78%.
+- `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
+- `ComposeDockerTemplateData.swift`: 92/107 lines, 85.98%.
+- `ComposeDockerTemplatePrintf.swift`: 284/298 lines, 95.30%.
+- `ComposeDockerTemplateFunctionSupport.swift`: 155/174 lines, 89.08%.
+- Formatter table boundary: 67/68 lines, 98.53%.
+- Command rendering helpers: 751/780 lines, 96.28%.
 - Repository checks passed, including 167 release-controller tests, 14
   CI-helper tests, stack consistency, release consistency, licence validation,
   and credential scanning.
@@ -265,7 +269,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified thirty-seven actionable compatibility cases and two suggestions that
+identified forty actionable compatibility cases and two suggestions that
 were disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
@@ -343,6 +347,13 @@ were disproved against the exact Docker Compose 5.3.1 oracle:
 - constant string functions propagate the computed label lookup key while
   preserving Docker's source-literal table header, including `upper`, `lower`,
   `title`, `pad`, and `truncate`.
+- logical root analysis now retains root status only when every reachable
+  truthy result is root, so a publisher selected before a piped root remains
+  publisher-scoped;
+- empty-separator `split` emits one element per Go UTF-8 sequence and emits no
+  elements for an empty input;
+- `truncate` prefixes UTF-8 bytes and retains partial invalid strings for exact
+  Go quoting.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -404,6 +415,11 @@ computed lookup and source-literal header keys, and covers nested, invalid,
 and control-flow expressions. The committed live oracle confirms Docker's
 source-header spellings (`foo`, `FOO`, `foo`, `foo`, and `foo extra`) while
 the transformed keys select the expected label values.
+Commit `6f5ab6aba03ba66eee8625db178af6e95eb16f8e` tracks ordered logical
+root outcomes and aligns empty-separator splitting and truncation with Go's
+UTF-8 behavior. Focused analysis, rendering, and command-path coverage plus the
+committed Docker Compose 5.3.1 and Apple Current oracle protect all three
+reported cases.
 
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
@@ -413,7 +429,7 @@ unit and committed live-parity coverage. The suggestion to invent headers for
 `Publishers` was also not implemented: Docker Compose 5.3.1 emits
 `<no value>` for every one of those table headers. Focused unit coverage and
 the committed Docker/Apple live oracle now preserve that exact behavior. No
-actionable autobot finding was deferred, and all thirty-nine connector threads
+actionable autobot finding was deferred, and all forty-two connector threads
 are answered with their implementation or verified compatibility disposition.
 
 ## Documentation And Operations
