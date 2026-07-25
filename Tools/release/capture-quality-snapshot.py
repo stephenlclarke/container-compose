@@ -564,6 +564,56 @@ def sonar_measures_for_analysis(
     return result
 
 
+def wait_for_sonarqube_measures_or_retention(
+    *,
+    host: str,
+    project: str,
+    branch: str,
+    gh: str,
+    repository: str,
+    commit: str,
+    analysis: dict[str, Any],
+    poll_interval: int,
+    poll_timeout: int,
+) -> tuple[dict[str, str] | None, RetainedSonarEvidence | None]:
+    """Wait for exact metrics before classifying stable history as expired."""
+
+    if poll_interval <= 0 or poll_timeout <= 0:
+        raise ValueError("poll interval and timeout must be positive")
+
+    deadline = time.monotonic() + poll_timeout
+    while True:
+        try:
+            return (
+                sonar_measures_for_analysis(
+                    host=host,
+                    project=project,
+                    branch=branch,
+                    analysis=analysis,
+                ),
+                None,
+            )
+        except MissingSonarMetricsError as missing_error:
+            retained_evidence = find_retained_sonarqube_evidence(
+                gh=gh,
+                repository=repository,
+                commit=commit,
+            )
+            if retained_evidence is not None and sonarqube_has_analysis_after(
+                host=host,
+                project=project,
+                branch=branch,
+                commit=commit,
+                timestamp=retained_evidence.completed_at,
+            ):
+                return None, retained_evidence
+            if time.monotonic() >= deadline:
+                if retained_evidence is not None:
+                    return None, retained_evidence
+                raise missing_error
+        time.sleep(poll_interval)
+
+
 def rating(value: str) -> str:
     try:
         numeric = int(float(value))
@@ -966,24 +1016,30 @@ def main() -> None:
             )
         sonar_measures = None
         if sonar_analysis is not None:
-            try:
+            if args.allow_expired_sonarqube_metrics:
+                (
+                    sonar_measures,
+                    retained_sonar_evidence,
+                ) = wait_for_sonarqube_measures_or_retention(
+                    host=args.sonarqube_url,
+                    project=args.sonarqube_project,
+                    branch=args.sonarqube_branch,
+                    gh=args.gh,
+                    repository=args.repo,
+                    commit=args.commit,
+                    analysis=sonar_analysis,
+                    poll_interval=args.poll_interval,
+                    poll_timeout=args.poll_timeout,
+                )
+                if retained_sonar_evidence is not None:
+                    sonar_analysis = None
+            else:
                 sonar_measures = sonar_measures_for_analysis(
                     host=args.sonarqube_url,
                     project=args.sonarqube_project,
                     branch=args.sonarqube_branch,
                     analysis=sonar_analysis,
                 )
-            except MissingSonarMetricsError:
-                if not args.allow_expired_sonarqube_metrics:
-                    raise
-                retained_sonar_evidence = find_retained_sonarqube_evidence(
-                    gh=args.gh,
-                    repository=args.repo,
-                    commit=args.commit,
-                )
-                if retained_sonar_evidence is None:
-                    raise
-                sonar_analysis = None
         badges = resolved_badges(
             sonar_measures=sonar_measures,
             codeql_analysis=codeql_analysis,

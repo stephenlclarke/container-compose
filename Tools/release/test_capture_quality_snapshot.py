@@ -354,6 +354,106 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             )
         )
 
+    def test_incomplete_metrics_wait_for_indexing_before_retention(self) -> None:
+        module = load_module()
+        evidence = module.RetainedSonarEvidence(
+            check_url="https://sonarcloud.io/example",
+            ci_job_url="https://github.com/example/repo/actions/jobs/456",
+            completed_at="2026-07-24T11:41:07Z",
+        )
+        complete_measures = {
+            metric: "OK" if metric == "alert_status" else "0"
+            for metric in module.SONARQUBE_METRICS
+        }
+        module.sonar_measures_for_analysis = mock.Mock(
+            side_effect=(
+                module.MissingSonarMetricsError("metrics still indexing"),
+                complete_measures,
+            )
+        )
+        module.find_retained_sonarqube_evidence = lambda **_kwargs: evidence
+        module.sonarqube_has_analysis_after = lambda **_kwargs: False
+
+        with (
+            mock.patch.object(module.time, "monotonic", side_effect=(0, 0)),
+            mock.patch.object(module.time, "sleep") as sleep,
+        ):
+            result = module.wait_for_sonarqube_measures_or_retention(
+                host="https://example.invalid",
+                project="example",
+                branch="main",
+                gh="gh",
+                repository="example/repo",
+                commit="0123456789abcdef",
+                analysis={"date": "2026-07-24T11:41:07+0000"},
+                poll_interval=1,
+                poll_timeout=1,
+            )
+
+        self.assertEqual(result, (complete_measures, None))
+        sleep.assert_called_once_with(1)
+
+    def test_incomplete_metrics_use_retention_after_a_newer_analysis(self) -> None:
+        module = load_module()
+        evidence = module.RetainedSonarEvidence(
+            check_url="https://sonarcloud.io/example",
+            ci_job_url="https://github.com/example/repo/actions/jobs/456",
+            completed_at="2026-07-24T11:41:07Z",
+        )
+        module.sonar_measures_for_analysis = mock.Mock(
+            side_effect=module.MissingSonarMetricsError("metrics expired")
+        )
+        module.find_retained_sonarqube_evidence = lambda **_kwargs: evidence
+        module.sonarqube_has_analysis_after = lambda **_kwargs: True
+
+        with mock.patch.object(module.time, "sleep") as sleep:
+            result = module.wait_for_sonarqube_measures_or_retention(
+                host="https://example.invalid",
+                project="example",
+                branch="main",
+                gh="gh",
+                repository="example/repo",
+                commit="0123456789abcdef",
+                analysis={"date": "2026-07-24T11:41:07+0000"},
+                poll_interval=1,
+                poll_timeout=1,
+            )
+
+        self.assertEqual(result, (None, evidence))
+        sleep.assert_not_called()
+
+    def test_incomplete_metrics_use_retention_after_the_poll_deadline(self) -> None:
+        module = load_module()
+        evidence = module.RetainedSonarEvidence(
+            check_url="https://sonarcloud.io/example",
+            ci_job_url="https://github.com/example/repo/actions/jobs/456",
+            completed_at="2026-07-24T11:41:07Z",
+        )
+        module.sonar_measures_for_analysis = mock.Mock(
+            side_effect=module.MissingSonarMetricsError("metrics expired")
+        )
+        module.find_retained_sonarqube_evidence = lambda **_kwargs: evidence
+        module.sonarqube_has_analysis_after = lambda **_kwargs: False
+
+        with (
+            mock.patch.object(module.time, "monotonic", side_effect=(0, 1)),
+            mock.patch.object(module.time, "sleep") as sleep,
+        ):
+            result = module.wait_for_sonarqube_measures_or_retention(
+                host="https://example.invalid",
+                project="example",
+                branch="main",
+                gh="gh",
+                repository="example/repo",
+                commit="0123456789abcdef",
+                analysis={"date": "2026-07-24T11:41:07+0000"},
+                poll_interval=1,
+                poll_timeout=1,
+            )
+
+        self.assertEqual(result, (None, evidence))
+        sleep.assert_not_called()
+
     def test_prebuilt_workflow_requires_exact_main_sonarqube_evidence(self) -> None:
         workflow = (
             Path(__file__).parents[2] / ".github/workflows/prebuilt-binaries.yml"
@@ -381,7 +481,7 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn("--verify-static-badges", workflow)
         self.assertIn("${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}", workflow)
         self.assertIn(
-            "python3 release-tools/Tools/release/capture-quality-snapshot.py",
+            "python3 ../release-tools/Tools/release/capture-quality-snapshot.py",
             workflow,
         )
         self.assertLess(

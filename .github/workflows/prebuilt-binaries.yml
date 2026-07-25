@@ -1003,13 +1003,13 @@ jobs:
           if [[ "${quality_release_kind}" == "stable" ]]; then
             quality_snapshot_args+=(--allow-expired-sonarqube-metrics)
           fi
-          python3 release-tools/Tools/release/capture-quality-snapshot.py \
+          python3 ../release-tools/Tools/release/capture-quality-snapshot.py \
             "${quality_snapshot_args[@]}" \
             --svg-output "${quality_snapshot_svg}" \
             --asset-url "${quality_snapshot_asset_url}" > "${quality_snapshot}"
           printf '%s\n' "${quality_snapshot_svg}" >> "${extra_assets}"
           release_notes_args+=(--quality-snapshot "${quality_snapshot}")
-          python3 release-tools/Tools/release/release-notes.py \
+          python3 ../release-tools/Tools/release/release-notes.py \
             "${release_notes_args[@]}" > "${notes}"
 
           if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
@@ -1057,7 +1057,7 @@ jobs:
             PUBLISH_SHA="${PUBLISH_SHA}" \
             RELEASE_ASSET_PATH="${RUNNER_TEMP}/${ASSET}" \
             RELEASE_CHECKSUM_PATH="${RUNNER_TEMP}/${ASSET}.sha256" \
-            release-tools/Tools/release/publish-github-release.sh
+            ../release-tools/Tools/release/publish-github-release.sh
 
       - name: Checkout Homebrew tap
         if: steps.current-freshness.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true'
@@ -1159,7 +1159,7 @@ jobs:
             PUBLISH_SHA="${PUBLISH_SHA}" \
             RELEASE_ASSET_PATH="${RUNNER_TEMP}/${ASSET}" \
             RELEASE_CHECKSUM_PATH="${RUNNER_TEMP}/${ASSET}.sha256" \
-            Tools/release/publish-github-release.sh
+            ../release-tools/Tools/release/publish-github-release.sh
 
       - name: Retain only current release assets
         if: steps.current-freshness.outputs.publish == 'true'
@@ -1196,7 +1196,7 @@ jobs:
               --current-asset "${{ steps.lane.outputs.demo_asset }}"
             )
           fi
-          python3 release-tools/Tools/release/retain-release-assets.py \
+          python3 ../release-tools/Tools/release/retain-release-assets.py \
             "${retention_arguments[@]}"
 
   repair-stable-tap:
