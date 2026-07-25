@@ -47,6 +47,10 @@ Signed follow-up commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4`
 autobot finding with lazy boolean evaluation, Go-compatible comparison arity,
 and whitespace-sensitive trim markers.
 
+Signed follow-up commit `0fa6bafd119829df09da2b1555a5c463f1d41fc9`
+(`fix(format): project runtime mount metadata`) aligns `.Mounts` and
+`.LocalVolumes` with runtime-discovered named-volume and bind-mount records.
+
 The paired pull-request handoff records the code map, exact validation, coverage,
 runtime revisions, and promotion evidence.
 

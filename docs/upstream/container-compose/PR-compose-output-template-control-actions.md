@@ -16,6 +16,8 @@ container model, sibling fork, or package pin changes.
   `feat(format): support structured output templates`
 - `af1e012fb4fad4162a1841bd9a13f80be68d9fb4`
   `fix(format): match Go template control semantics`
+- `0fa6bafd119829df09da2b1555a5c463f1d41fc9`
+  `fix(format): project runtime mount metadata`
 
 Both implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -143,7 +145,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified three actionable Go-template compatibility cases:
+identified five actionable compatibility cases:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
   invalid collection access;
@@ -151,9 +153,15 @@ identified three actionable Go-template compatibility cases:
   two operands;
 - `{{-3}}` remains a signed integer action, while whitespace-delimited `{{- 3}}`
   and `{{3 -}}` retain trim behavior.
+- `.Mounts` now projects runtime volume and bind sources instead of
+  container-side destinations.
+- `.LocalVolumes` counts the runtime adapter's `external-volume` records as
+  local volumes.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes all three and adds focused
-regressions. No autobot finding was deferred.
+template regressions. Commit `0fa6bafd119829df09da2b1555a5c463f1d41fc9`
+fixes both runtime mount projections with command-path regression coverage. No
+autobot finding was deferred.
 
 ## Documentation And Operations
 
