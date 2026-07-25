@@ -46,6 +46,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): support else-with continuations`
 - `e6560365bc13e61a4d861a138fb5a8a753f7693f`
   `fix(format): support piped label calls`
+- `2c7b92c9677ec720f569156b4c111ecb595806d1`
+  `fix(format): preserve piped label headers`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -81,7 +83,9 @@ This documentation commit is intentionally separate.
   - follows root values returned by `and`, `or`, and logical pipelines into
     successful `with` bodies;
   - discovers direct and pipeline-fed `.Label` keys used by Docker's dynamic
-    table header context.
+    table header context;
+  - carries statically known string keys through single-value `print` and
+    exact `printf` stages before dynamic label-header lookup.
 - `Sources/ComposeCore/ComposeStructuredTemplateLookup.swift`
   - isolates Compose-owned field and label lookup policy from parsing and
     evaluation;
@@ -151,7 +155,8 @@ This documentation commit is intentionally separate.
   - covers root-scoped label rendering, field and table-key analysis, typed
     `printf` formats, compact range assignments, parenthesized selector
     chains, typed label operands, root and nested pipeline-fed labels, chained
-    helpers, exact label arity, and corresponding invalid-input rejection.
+    helpers, label headers after `print` and `printf`, exact label arity, and
+    corresponding invalid-input rejection.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateOperandCompatibilityTests.swift`
   - covers strict typed index and slice offsets, structured publisher joins,
     and scalar and recursive typed `printf` diagnostics.
@@ -177,7 +182,7 @@ This documentation commit is intentionally separate.
     deliberately omitted `ps` headers, non-string label-key rejection,
     `else with` output through `ps`, `stats`, and `volumes`, functions, and
     whitespace, plus root and nested pipeline-fed labels and invalid extra
-    label arguments.
+    label arguments and table label keys carried through `print` and `printf`.
 
 ## Validation
 
@@ -232,9 +237,9 @@ git diff --check
 ```
 
 - Swift: 1,158 tests in 31 suites passed.
-- Structured template engine: 1,662/1,796 lines, 92.54%.
+- Structured template engine: 1,695/1,832 lines, 92.52%.
 - `ComposeStructuredFormatTemplate.swift`: 762/817 lines, 93.27%.
-- `ComposeStructuredTemplateAnalysis.swift`: 259/280 lines, 92.50%.
+- `ComposeStructuredTemplateAnalysis.swift`: 292/316 lines, 92.41%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 61/65 lines,
   93.85%.
 - `ComposeStructuredTemplateLookup.swift`: 31/37 lines, 83.78%.
@@ -279,7 +284,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified thirty-five actionable compatibility cases and two suggestions that
+identified thirty-six actionable compatibility cases and two suggestions that
 were disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
@@ -352,6 +357,8 @@ were disproved against the exact Docker Compose 5.3.1 oracle:
 - `.Label` and root-scoped `$.Label` accept their key from the preceding
   pipeline value, retain dynamic table-key analysis, compose with later
   helpers, and reject an additional explicit argument.
+- statically known label keys remain available to dynamic table-header
+  rendering after single-value `print` and exact `printf` pipeline stages.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -403,6 +410,10 @@ Commit `e6560365bc13e61a4d861a138fb5a8a753f7693f` treats root and dot
 label methods as typed pipeline functions, isolates their lookup policy,
 covers rendering and field/header analysis, and extends the committed live
 oracle with successful chained calls and invalid extra-argument rejection.
+Commit `2c7b92c9677ec720f569156b4c111ecb595806d1` carries statically known
+string keys through compatible `print` and `printf` stages, covers dynamic
+table-header rendering, and extends the committed Docker Compose 5.3.1 and
+Apple Current live oracle with the reported pipeline.
 
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
