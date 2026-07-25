@@ -65,10 +65,17 @@ func structuredString(
     _ value: DockerTemplateData,
     function: String,
 ) throws -> String {
-    guard case let .string(string) = value else {
+    switch value {
+    case let .byteString(bytes):
+        guard let string = String(bytes: bytes, encoding: .utf8) else {
+            throw structuredUnsupportedAction(function)
+        }
+        return string
+    case let .string(string):
+        return string
+    default:
         throw structuredUnsupportedAction(function)
     }
-    return string
 }
 
 func structuredInteger(
@@ -90,12 +97,14 @@ func structuredTemplateLength(_ value: DockerTemplateData) throws -> Int {
     switch value {
     case let .array(values):
         values.count
+    case let .byteString(value):
+        value.count
     case let .lookupObject(_, display):
-        display.count
+        display.utf8.count
     case let .object(values):
         values.count
     case let .string(value):
-        value.count
+        value.utf8.count
     case .boolean, .integer, .null, .record:
         throw structuredUnsupportedAction("len")
     }
@@ -113,8 +122,14 @@ func structuredTemplateEqual(
         return lhs == rhs
     case let (.integer(lhs), .integer(rhs)):
         return lhs == rhs
+    case let (.byteString(lhs), .byteString(rhs)):
+        return lhs == rhs
+    case let (.byteString(lhs), .string(rhs)):
+        return lhs == Array(rhs.utf8)
     case let (.string(lhs), .string(rhs)):
         return lhs == rhs
+    case let (.string(lhs), .byteString(rhs)):
+        return Array(lhs.utf8) == rhs
     case (.null, .null):
         return true
     case (.null, _), (_, .null):
@@ -126,6 +141,72 @@ func structuredTemplateEqual(
     default:
         throw structuredUnsupportedAction(function)
     }
+}
+
+func structuredTemplateIndex(_ values: [DockerTemplateData]) throws -> DockerTemplateData {
+    guard values.count == 2 else { throw structuredUnsupportedAction("index") }
+    switch values[0] {
+    case let .array(elements):
+        let index = try structuredInteger(values[1], function: "index")
+        guard elements.indices.contains(index) else { throw structuredUnsupportedAction("index") }
+        return elements[index]
+    case let .object(object):
+        return object[values[1].display] ?? .null
+    case let .lookupObject(object, _):
+        return object[values[1].display] ?? .null
+    case let .byteString(bytes):
+        return try structuredTemplateByteIndex(bytes, index: values[1])
+    case let .string(string):
+        return try structuredTemplateByteIndex(Array(string.utf8), index: values[1])
+    default:
+        throw structuredUnsupportedAction("index")
+    }
+}
+
+func structuredTemplateSlice(_ values: [DockerTemplateData]) throws -> DockerTemplateData {
+    guard (2 ... 3).contains(values.count) else { throw structuredUnsupportedAction("slice") }
+    let lower = try structuredInteger(values[1], function: "slice")
+    switch values[0] {
+    case let .array(elements):
+        let upper = try values.count == 3
+            ? structuredInteger(values[2], function: "slice")
+            : elements.count
+        guard lower >= 0, lower <= upper, upper <= elements.count else {
+            throw structuredUnsupportedAction("slice")
+        }
+        return .array(Array(elements[lower ..< upper]))
+    case let .byteString(bytes):
+        return try structuredTemplateByteSlice(bytes, lower: lower, values: values)
+    case let .string(string):
+        return try structuredTemplateByteSlice(Array(string.utf8), lower: lower, values: values)
+    default:
+        throw structuredUnsupportedAction("slice")
+    }
+}
+
+private func structuredTemplateByteIndex(
+    _ bytes: [UInt8],
+    index value: DockerTemplateData,
+) throws -> DockerTemplateData {
+    let index = try structuredInteger(value, function: "index")
+    guard bytes.indices.contains(index) else {
+        throw structuredUnsupportedAction("index")
+    }
+    return .integer(Int(bytes[index]))
+}
+
+private func structuredTemplateByteSlice(
+    _ bytes: [UInt8],
+    lower: Int,
+    values: [DockerTemplateData],
+) throws -> DockerTemplateData {
+    let upper = try values.count == 3
+        ? structuredInteger(values[2], function: "slice")
+        : bytes.count
+    guard lower >= 0, lower <= upper, upper <= bytes.count else {
+        throw structuredUnsupportedAction("slice")
+    }
+    return .byteString(Array(bytes[lower ..< upper]))
 }
 
 private func structuredTemplateComparableValue(

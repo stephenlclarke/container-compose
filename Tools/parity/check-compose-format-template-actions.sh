@@ -210,6 +210,32 @@ check_implementation() {
     )"
     assert_equal "$actual" '8080|32768' "$project compact control template"
 
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{len "é"}}|{{index "é" 0}}|{{index "é" 1}}|{{printf "%q" (slice "é" 0 1)}}|{{printf "%q" (slice "é" 1 2)}}'
+    )"
+    assert_equal "$actual" '2|195|169|"\xc3"|"\xa9"' "$project UTF-8 byte helper template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{print 1 0}}|{{print true false}}|{{print 1 "x" 2}}|{{print "a" "b"}}|{{print "a" 1}}|{{print 1 "a"}}'
+    )"
+    assert_equal "$actual" '1 0|true false|1x2|ab|a1|1a' "$project print spacing template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%q" 7}}|{{printf "%q" true}}|{{printf "%q" "é"}}|{{printf "%q" 10}}'
+    )"
+    assert_equal "$actual" "'\\a'|%!q(bool=true)|\"é\"|'\\n'" "$project typed quote template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%q" .Publishers}}'
+    )"
+    assert_equal "$actual" \
+        '[{"127.0.0.1" '\''ᾐ'\'' '\''耀'\'' "tcp"}]' \
+        "$project structured quote template"
+
     # Go-template variables must reach Compose literally.
     # shellcheck disable=SC2016
     actual="$(

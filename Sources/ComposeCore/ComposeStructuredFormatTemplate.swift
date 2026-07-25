@@ -198,13 +198,10 @@ func renderStructuredDockerTemplate(
 ) throws -> String {
     let nodes = try structuredDockerTemplateNodes(template)
     let root = DockerTemplateData.object(values)
-    let rendered = try renderStructuredTemplateNodes(
+    return try renderStructuredTemplateNodes(
         nodes,
         context: StructuredTemplateContext(root: root, dot: root),
     )
-    return rendered
-        .replacingOccurrences(of: #"\t"#, with: "\t")
-        .replacingOccurrences(of: #"\n"#, with: "\n")
 }
 
 func validateStructuredDockerTemplate(_ template: String) throws {
@@ -374,7 +371,7 @@ private func renderStructuredTemplateNodes(
     for node in nodes {
         switch node {
         case let .text(value):
-            rendered += value
+            rendered += structuredTemplateText(value)
         case let .action(action):
             rendered += try evaluateStructuredTemplateExpression(action, context: context).display
         case let .conditional(expression, success, failure):
@@ -398,6 +395,12 @@ private func renderStructuredTemplateNodes(
         }
     }
     return rendered
+}
+
+private func structuredTemplateText(_ value: String) -> String {
+    value
+        .replacingOccurrences(of: #"\t"#, with: "\t")
+        .replacingOccurrences(of: #"\n"#, with: "\n")
 }
 
 private func renderStructuredTemplateRange(
@@ -747,7 +750,7 @@ private func structuredTemplateLookup(
             throw structuredUnsupportedAction("unknown record field .\(field)")
         }
         return value
-    case .array, .boolean, .integer, .null, .string:
+    case .array, .boolean, .byteString, .integer, .null, .string:
         throw structuredUnsupportedAction("field .\(field)")
     }
 }
@@ -768,7 +771,7 @@ private func structuredTemplateLabel(
             throw structuredUnsupportedAction("unknown record field .Labels")
         }
         labels = value
-    case .array, .boolean, .integer, .null, .string:
+    case .array, .boolean, .byteString, .integer, .null, .string:
         throw structuredUnsupportedAction("field .Labels")
     }
     let value = try structuredTemplateLookup(labels, key)
@@ -870,7 +873,7 @@ private func applyStructuredPrintFunction(
 ) throws -> DockerTemplateData {
     switch function {
     case "print":
-        return .string(inputs.map(\.display).joined())
+        return .string(structuredTemplatePrint(inputs))
     case "println":
         return .string(inputs.map(\.display).joined(separator: " ") + "\n")
     case "printf":
@@ -878,6 +881,29 @@ private func applyStructuredPrintFunction(
         return try .string(structuredTemplatePrintf(format.display, values: Array(inputs.dropFirst())))
     default:
         throw structuredUnsupportedAction(function)
+    }
+}
+
+private func structuredTemplatePrint(_ inputs: [DockerTemplateData]) -> String {
+    var rendered = ""
+    for (index, input) in inputs.enumerated() {
+        if index > 0,
+           !structuredTemplatePrintValueIsString(inputs[index - 1]),
+           !structuredTemplatePrintValueIsString(input)
+        {
+            rendered.append(" ")
+        }
+        rendered += input.display
+    }
+    return rendered
+}
+
+private func structuredTemplatePrintValueIsString(_ value: DockerTemplateData) -> Bool {
+    switch value {
+    case .byteString, .lookupObject, .string:
+        true
+    case .array, .boolean, .integer, .null, .object, .record:
+        false
     }
 }
 
@@ -944,51 +970,4 @@ private func structuredTemplateTruncate(_ inputs: [DockerTemplateData]) throws -
     let value = try structuredString(inputs[0], function: "truncate")
     let length = try structuredInteger(inputs[1], function: "truncate")
     return .string(String(value.prefix(max(0, length))))
-}
-
-private func structuredTemplateIndex(_ values: [DockerTemplateData]) throws -> DockerTemplateData {
-    guard values.count == 2 else { throw structuredUnsupportedAction("index") }
-    switch values[0] {
-    case let .array(elements):
-        let index = try structuredInteger(values[1], function: "index")
-        guard elements.indices.contains(index) else { throw structuredUnsupportedAction("index") }
-        return elements[index]
-    case let .object(object):
-        return object[values[1].display] ?? .null
-    case let .lookupObject(object, _):
-        return object[values[1].display] ?? .null
-    case let .string(string):
-        let index = try structuredInteger(values[1], function: "index")
-        guard index >= 0, index < string.count else { throw structuredUnsupportedAction("index") }
-        return .string(String(string[string.index(string.startIndex, offsetBy: index)]))
-    default:
-        throw structuredUnsupportedAction("index")
-    }
-}
-
-private func structuredTemplateSlice(_ values: [DockerTemplateData]) throws -> DockerTemplateData {
-    guard (2 ... 3).contains(values.count) else { throw structuredUnsupportedAction("slice") }
-    let lower = try structuredInteger(values[1], function: "slice")
-    switch values[0] {
-    case let .array(elements):
-        let upper = try values.count == 3
-            ? structuredInteger(values[2], function: "slice")
-            : elements.count
-        guard lower >= 0, lower <= upper, upper <= elements.count else {
-            throw structuredUnsupportedAction("slice")
-        }
-        return .array(Array(elements[lower ..< upper]))
-    case let .string(string):
-        let upper = try values.count == 3
-            ? structuredInteger(values[2], function: "slice")
-            : string.count
-        guard lower >= 0, lower <= upper, upper <= string.count else {
-            throw structuredUnsupportedAction("slice")
-        }
-        let start = string.index(string.startIndex, offsetBy: lower)
-        let end = string.index(string.startIndex, offsetBy: upper)
-        return .string(String(string[start ..< end]))
-    default:
-        throw structuredUnsupportedAction("slice")
-    }
 }

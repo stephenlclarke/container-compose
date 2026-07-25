@@ -55,7 +55,7 @@ func structuredTemplateRangeEntries(
         values.keys.sorted().map { (.string($0), values[$0] ?? .null) }
     case .null:
         []
-    case .boolean, .integer, .lookupObject, .record, .string:
+    case .boolean, .byteString, .integer, .lookupObject, .record, .string:
         throw structuredUnsupportedAction("range")
     }
 }

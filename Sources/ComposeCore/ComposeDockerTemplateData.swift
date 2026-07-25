@@ -20,6 +20,7 @@ import Foundation
 public indirect enum DockerTemplateData: Sendable, Equatable {
     case array([DockerTemplateData])
     case boolean(Bool)
+    case byteString([UInt8])
     case integer(Int)
     case lookupObject([String: DockerTemplateData], display: String)
     case null
@@ -33,6 +34,8 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
             return "[\(values.map(\.display).joined(separator: " "))]"
         case let .boolean(value):
             return value ? "true" : "false"
+        case let .byteString(value):
+            return String(bytes: value, encoding: .utf8) ?? "\u{FFFD}"
         case let .integer(value):
             return String(value)
         case let .lookupObject(_, display):
@@ -55,6 +58,8 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
             !values.isEmpty
         case let .boolean(value):
             value
+        case let .byteString(value):
+            !value.isEmpty
         case let .integer(value):
             value != 0
         case let .lookupObject(_, display):
@@ -82,6 +87,8 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
             values.map(\.foundationObject)
         case let .boolean(value):
             value
+        case let .byteString(value):
+            String(bytes: value, encoding: .utf8) ?? "\u{FFFD}"
         case let .integer(value):
             value
         case let .lookupObject(_, display):
