@@ -766,7 +766,7 @@ private func structuredTemplateBase(
     }
 }
 
-private func applyStructuredTemplateFunction(
+func applyStructuredTemplateFunction(
     _ function: String,
     arguments: [DockerTemplateData],
     pipelineValue: DockerTemplateData?,

@@ -49,7 +49,7 @@ public func renderDockerTemplateTable(
     if let labelsHeader = headers["Labels"] {
         var labelValues: [String: DockerTemplateData] = [:]
         for key in structuredDockerTemplateLabelKeys(in: template) {
-            labelValues[key] = .string(dockerTemplateLabelHeader(key))
+            labelValues[key.lookupKey] = .string(dockerTemplateLabelHeader(key.headerKey))
         }
         headerValues["Labels"] = .lookupObject(labelValues, display: labelsHeader)
     }

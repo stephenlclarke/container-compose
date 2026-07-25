@@ -63,6 +63,105 @@ struct ComposeFormatCallCompatibilityTests {
     }
 
     @Test
+    func `constant string functions preserve label headers`() throws {
+        let values: [String: DockerTemplateData] = [
+            "Labels": .lookupObject(
+                [
+                    "FOO": .string("upper"),
+                    "Foo": .string("title"),
+                    "foo": .string("lower"),
+                ],
+                display: "FOO=upper,Foo=title,foo=lower",
+            ),
+        ]
+        let cases = [
+            (template: "{{\"foo\" | upper | .Label}}", expected: "foo\nupper"),
+            (template: "{{\"FOO\" | lower | .Label}}", expected: "FOO\nlower"),
+            (template: "{{\"foo\" | title | .Label}}", expected: "foo\ntitle"),
+            (template: "{{pad \"foo\" 0 0 | .Label}}", expected: "foo\nlower"),
+            (
+                template: "{{truncate \"foo-extra\" 3 | .Label}}",
+                expected: "foo extra\nlower",
+            ),
+        ]
+
+        for testCase in cases {
+            let row = try renderDockerTemplate(testCase.template, values: values)
+            #expect(
+                try renderDockerTemplateTable(
+                    template: testCase.template,
+                    headers: ["Labels": "LABELS"],
+                    rows: [row],
+                ) == testCase.expected,
+            )
+        }
+    }
+
+    @Test
+    func `constant label header analysis handles nested and invalid expressions`() throws {
+        let values: [String: DockerTemplateData] = [
+            "Labels": .lookupObject(
+                [
+                    "FOO": .string("upper"),
+                    "bar": .string("alternate"),
+                    "foo": .string("lower"),
+                    "lower": .string("nested"),
+                    "true": .string("truth"),
+                ],
+                display: "FOO=upper,bar=alternate,foo=lower,lower=nested,true=truth",
+            ),
+        ]
+        let cases = [
+            (template: "{{.Label (\"foo\" | upper)}}", expected: "foo\nupper"),
+            (template: "{{print true | .Label}}", expected: "true\ntruth"),
+            (template: "{{print (.Label \"foo\")}}", expected: "foo\nlower"),
+            (template: "{{.Label (.Label \"foo\")}}", expected: "foo\nnested"),
+            (
+                template: "{{if true}}{{.Label \"foo\"}}{{else}}{{.Label \"bar\"}}{{end}}",
+                expected: "foo\nlower",
+            ),
+            (
+                template: "{{with \"x\"}}{{$.Label \"foo\"}}{{else}}{{$.Label \"bar\"}}{{end}}",
+                expected: "foo\nlower",
+            ),
+            (
+                template: "{{range split \"x\" \",\"}}{{$.Label \"foo\"}}"
+                    + "{{else}}{{$.Label \"bar\"}}{{end}}",
+                expected: "foo\nlower",
+            ),
+        ]
+
+        for testCase in cases {
+            let row = try renderDockerTemplate(testCase.template, values: values)
+            #expect(
+                try renderDockerTemplateTable(
+                    template: testCase.template,
+                    headers: ["Labels": "LABELS"],
+                    rows: [row],
+                ) == testCase.expected,
+            )
+        }
+    }
+
+    @Test
+    func `invalid constant label header expressions remain errors`() {
+        for invalid in [
+            "{{.Label .Missing}}",
+            "{{.Label 1}}",
+            "{{upper .Missing | .Label}}",
+            "{{join \"foo\" \",\" | .Label}}",
+        ] {
+            #expect(throws: (any Error).self) {
+                try renderDockerTemplateTable(
+                    template: invalid,
+                    headers: ["Labels": "LABELS"],
+                    rows: ["unused"],
+                )
+            }
+        }
+    }
+
+    @Test
     func `label calls require typed string keys`() throws {
         let values: [String: DockerTemplateData] = [
             "Bytes": .byteString(Array("oracle.example/key".utf8)),

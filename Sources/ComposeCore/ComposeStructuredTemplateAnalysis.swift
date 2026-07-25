@@ -80,11 +80,16 @@ func structuredDockerTemplateFields(in template: String) -> [String] {
     return fields
 }
 
-func structuredDockerTemplateLabelKeys(in template: String) -> [String] {
+struct StructuredDockerTemplateLabelKey {
+    let lookupKey: String
+    let headerKey: String
+}
+
+func structuredDockerTemplateLabelKeys(in template: String) -> [StructuredDockerTemplateLabelKey] {
     guard let nodes = try? structuredDockerTemplateNodes(template) else {
         return []
     }
-    var keys: [String] = []
+    var keys: [StructuredDockerTemplateLabelKey] = []
     collectStructuredTemplateLabelKeys(nodes, into: &keys)
     return keys
 }
@@ -284,7 +289,7 @@ private func collectStructuredValueFields(
 
 private func collectStructuredTemplateLabelKeys(
     _ nodes: [StructuredTemplateNode],
-    into keys: inout [String],
+    into keys: inout [StructuredDockerTemplateLabelKey],
 ) {
     for node in nodes {
         switch node {
@@ -307,24 +312,16 @@ private func collectStructuredTemplateLabelKeys(
 
 private func collectStructuredExpressionLabelKeys(
     _ expression: String,
-    into keys: inout [String],
+    into keys: inout [StructuredDockerTemplateLabelKey],
 ) {
     guard let segments = structuredTemplatePipelineSegments(expression) else { return }
-    var pipelineLiteral: String?
-    for segment in segments {
-        guard let tokens = structuredTemplateTokens(segment) else { continue }
-        for (index, token) in tokens.enumerated() {
-            if isStructuredTemplateLabelFunction(token),
-               tokens.indices.contains(index + 1),
-               let key = structuredTemplateStringLiteral(tokens[index + 1])
-            {
-                keys.append(key)
-            } else if isStructuredTemplateLabelFunction(token),
-                      tokens.count == 1,
-                      let pipelineLiteral
-            {
-                keys.append(pipelineLiteral)
-            }
+    var pipelineValue: StructuredTemplateStaticValue?
+    for (index, segment) in segments.enumerated() {
+        guard let tokens = structuredTemplateTokens(segment), let head = tokens.first else {
+            pipelineValue = nil
+            continue
+        }
+        for token in tokens {
             if let parenthesized = structuredTemplateParenthesizedValue(token) {
                 collectStructuredExpressionLabelKeys(
                     parenthesized.expression,
@@ -332,47 +329,138 @@ private func collectStructuredExpressionLabelKeys(
                 )
             }
         }
-        pipelineLiteral = structuredTemplateStaticStringOutput(
+        if isStructuredTemplateLabelFunction(head) {
+            collectStructuredStaticLabelKey(
+                tokens,
+                pipelineValue: pipelineValue,
+                into: &keys,
+            )
+            pipelineValue = nil
+            continue
+        }
+        pipelineValue = structuredTemplateStaticSegmentOutput(
             tokens,
-            pipelineLiteral: pipelineLiteral,
+            index: index,
+            pipelineValue: pipelineValue,
         )
     }
 }
 
-private func structuredTemplateStaticStringOutput(
+private func collectStructuredStaticLabelKey(
     _ tokens: [String],
-    pipelineLiteral: String?,
-) -> String? {
+    pipelineValue: StructuredTemplateStaticValue?,
+    into keys: inout [StructuredDockerTemplateLabelKey],
+) {
+    let explicitInputs = tokens.dropFirst().map(structuredTemplateStaticValue)
+    guard explicitInputs.allSatisfy({ $0 != nil }) else {
+        return
+    }
+    var inputs = explicitInputs.compactMap(\.self)
+    if let pipelineValue {
+        inputs.append(pipelineValue)
+    }
+    guard inputs.count == 1,
+          let key = try? structuredString(inputs[0].value, function: "Label")
+    else {
+        return
+    }
+    keys.append(
+        StructuredDockerTemplateLabelKey(
+            lookupKey: key,
+            headerKey: inputs[0].headerKey ?? key,
+        ),
+    )
+}
+
+private func structuredTemplateStaticSegmentOutput(
+    _ tokens: [String],
+    index: Int,
+    pipelineValue: StructuredTemplateStaticValue?,
+) -> StructuredTemplateStaticValue? {
     guard let head = tokens.first else {
         return nil
     }
-    if tokens.count == 1, let literal = structuredTemplateStringLiteral(head) {
-        return literal
+    if index == 0, tokens.count == 1 {
+        return structuredTemplateStaticValue(head)
     }
-    let explicitInputs = tokens.dropFirst().map(structuredTemplateStringLiteral)
+    let explicitInputs = tokens.dropFirst().map(structuredTemplateStaticValue)
     guard explicitInputs.allSatisfy({ $0 != nil }) else {
         return nil
     }
-    let inputs = explicitInputs.compactMap(\.self) + (pipelineLiteral.map { [$0] } ?? [])
-    return structuredTemplateStaticStringFunctionOutput(head, inputs: inputs)
-}
-
-private func structuredTemplateStaticStringFunctionOutput(
-    _ function: String,
-    inputs: [String],
-) -> String? {
-    switch function {
-    case "print":
-        return inputs.joined()
-    case "printf":
-        guard let format = inputs.first else {
-            return nil
-        }
-        return try? structuredTemplatePrintf(
-            format,
-            values: inputs.dropFirst().map(DockerTemplateData.string),
-        )
-    default:
+    let inputs = explicitInputs.compactMap(\.self) + (pipelineValue.map { [$0] } ?? [])
+    guard let output = try? applyStructuredTemplateFunction(
+        head,
+        arguments: explicitInputs.compactMap(\.self).map(\.value),
+        pipelineValue: pipelineValue?.value,
+    ) else {
         return nil
     }
+    return StructuredTemplateStaticValue(
+        value: output,
+        headerKey: structuredTemplateStaticHeaderKey(
+            function: head,
+            inputs: inputs,
+            output: output,
+        ),
+    )
+}
+
+private struct StructuredTemplateStaticValue {
+    let value: DockerTemplateData
+    let headerKey: String?
+}
+
+private func structuredTemplateStaticValue(_ token: String) -> StructuredTemplateStaticValue? {
+    if let literal = structuredTemplateStringLiteral(token) {
+        return StructuredTemplateStaticValue(value: .string(literal), headerKey: literal)
+    }
+    if let integer = Int(token) {
+        return StructuredTemplateStaticValue(value: .integer(integer), headerKey: nil)
+    }
+    if token == "true" || token == "false" {
+        return StructuredTemplateStaticValue(value: .boolean(token == "true"), headerKey: nil)
+    }
+    guard let parenthesized = structuredTemplateParenthesizedValue(token),
+          parenthesized.fields.isEmpty
+    else {
+        return nil
+    }
+    return structuredTemplateStaticExpressionOutput(parenthesized.expression)
+}
+
+private func structuredTemplateStaticExpressionOutput(
+    _ expression: String,
+) -> StructuredTemplateStaticValue? {
+    guard let segments = structuredTemplatePipelineSegments(expression) else {
+        return nil
+    }
+    var pipelineValue: StructuredTemplateStaticValue?
+    for (index, segment) in segments.enumerated() {
+        guard let tokens = structuredTemplateTokens(segment),
+              !isStructuredTemplateLabelFunction(tokens.first ?? "")
+        else {
+            return nil
+        }
+        guard let output = structuredTemplateStaticSegmentOutput(
+            tokens,
+            index: index,
+            pipelineValue: pipelineValue,
+        ) else {
+            return nil
+        }
+        pipelineValue = output
+    }
+    return pipelineValue
+}
+
+private func structuredTemplateStaticHeaderKey(
+    function: String,
+    inputs: [StructuredTemplateStaticValue],
+    output: DockerTemplateData,
+) -> String? {
+    let candidates = function == "printf" ? inputs.dropFirst() : inputs[...]
+    if let source = candidates.compactMap(\.headerKey).first {
+        return source
+    }
+    return try? structuredString(output, function: function)
 }

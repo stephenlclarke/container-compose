@@ -363,6 +363,36 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{"foo" | upper | .Label}}'
+    )"
+    assert_equal "$actual" $'foo\nupper' "$project upper label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{"FOO" | lower | .Label}}'
+    )"
+    assert_equal "$actual" $'FOO\nlower' "$project lower label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{"foo" | title | .Label}}'
+    )"
+    assert_equal "$actual" $'foo\ntitle' "$project title label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{pad "foo" 0 0 | .Label}}'
+    )"
+    assert_equal "$actual" $'foo\nlower' "$project pad label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{truncate "foo-extra" 3 | .Label}}'
+    )"
+    assert_equal "$actual" $'foo extra\nlower' "$project truncate label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format 'A {{- if .Name -}} B {{- end -}} C'
     )"
     assert_equal "$actual" 'ABC' "$project ps whitespace template"
