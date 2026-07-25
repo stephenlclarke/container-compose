@@ -40,6 +40,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): align remaining Go template semantics`
 - `0057f68ed3edb5f71f62b6e79ee4083e69a0a68e`
   `fix(format): validate parenthesized root selectors`
+- `b751f1951e23ddac7d223846073146e6c58f3cec`
+  `fix(format): preserve logical root analysis`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -67,6 +69,8 @@ This documentation commit is intentionally separate.
     validation;
   - retains the first selector appended to a parenthesized root expression so
     unsupported fields cannot bypass command validation;
+  - follows root values returned by `and`, `or`, and logical pipelines into
+    successful `with` bodies;
   - discovers `.Label` keys used by Docker's dynamic table header context.
 - `Sources/ComposeCore/ComposeStructuredTemplateCompatibilitySyntax.swift`
   - recognizes compact one- and two-variable `range` assignments without
@@ -152,9 +156,9 @@ This documentation commit is intentionally separate.
     rejection, structured joins, typed `printf` diagnostics, string-offset
     rejection, root-scoped labels, non-string `printf` format rejection,
     typed default exit codes, compact range declarations, parenthesized
-    selectors, parenthesized-root field validation, Docker's deliberately
-    omitted `ps` headers, non-string label-key rejection, functions, and
-    whitespace.
+    selectors, parenthesized and logical-root field validation, Docker's
+    deliberately omitted `ps` headers, non-string label-key rejection,
+    functions, and whitespace.
 
 ## Validation
 
@@ -207,9 +211,9 @@ git diff --check
 ```
 
 - Swift: 1,157 tests in 31 suites passed.
-- Structured template engine: 1,601/1,733 lines, 92.38%.
+- Structured template engine: 1,628/1,763 lines, 92.34%.
 - `ComposeStructuredFormatTemplate.swift`: 777/838 lines, 92.72%.
-- `ComposeStructuredTemplateAnalysis.swift`: 215/233 lines, 92.27%.
+- `ComposeStructuredTemplateAnalysis.swift`: 242/263 lines, 92.02%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 61/65 lines,
   93.85%.
 - `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
@@ -253,7 +257,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified thirty-two actionable compatibility cases and two suggestions that
+identified thirty-three actionable compatibility cases and two suggestions that
 were disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
@@ -318,6 +322,8 @@ were disproved against the exact Docker Compose 5.3.1 oracle:
   of coercing numeric operands through display text.
 - selectors appended to parenthesized root expressions remain visible to
   top-level field validation, including nested parenthesized root forms.
+- root values returned by `and`, `or`, or a logical pipeline keep successful
+  `with` bodies in top-level field validation.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -357,6 +363,10 @@ Commit `0057f68ed3edb5f71f62b6e79ee4083e69a0a68e` closes the
 parenthesized-root field-validation bypass before container discovery, covers
 single and nested parentheses in unit and command-path tests, and extends the
 committed live fixture with the restricted-field check.
+Commit `b751f1951e23ddac7d223846073146e6c58f3cec` propagates possible
+root results through short-circuit `and`/`or` expressions and pipelines,
+covers both root-returning and scalar-returning forms, and extends the command
+and live validation regressions.
 
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
