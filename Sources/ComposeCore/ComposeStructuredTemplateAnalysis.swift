@@ -113,10 +113,47 @@ private func collectStructuredTemplateFields(
             continue
         case let .with(expression, success, failure):
             collectStructuredExpressionFields(expression, dotIsRoot: dotIsRoot, into: &fields)
-            collectStructuredTemplateFields(success, dotIsRoot: false, into: &fields)
+            collectStructuredTemplateFields(
+                success,
+                dotIsRoot: structuredTemplateExpressionRetainsRoot(
+                    expression,
+                    dotIsRoot: dotIsRoot,
+                ),
+                into: &fields,
+            )
             collectStructuredTemplateFields(failure, dotIsRoot: dotIsRoot, into: &fields)
         }
     }
+}
+
+private func structuredTemplateExpressionRetainsRoot(
+    _ expression: String,
+    dotIsRoot: Bool,
+) -> Bool {
+    guard let segments = structuredTemplatePipelineSegments(expression),
+          segments.count == 1,
+          let tokens = structuredTemplateTokens(segments[0]),
+          tokens.count == 1
+    else {
+        return false
+    }
+    return structuredTemplateValueRetainsRoot(tokens[0], dotIsRoot: dotIsRoot)
+}
+
+private func structuredTemplateValueRetainsRoot(
+    _ token: String,
+    dotIsRoot: Bool,
+) -> Bool {
+    if token == "$" {
+        return true
+    }
+    if token == "." {
+        return dotIsRoot
+    }
+    guard let nested = structuredTemplateParenthesizedExpression(token) else {
+        return false
+    }
+    return structuredTemplateExpressionRetainsRoot(nested, dotIsRoot: dotIsRoot)
 }
 
 private func collectStructuredExpressionFields(

@@ -93,6 +93,13 @@ struct ComposeFormatTemplateTests {
             ) == "0=8080/32768/",
         )
         #expect(try renderDockerTemplate("{{.Label \"oracle.example/key\"}}", values: values) == "value")
+        #expect(try renderDockerTemplate("{{.Label \"oracle.example/missing\"}}", values: values) == "")
+        #expect(
+            try renderDockerTemplate(
+                "{{if .Label \"oracle.example/missing\"}}present{{else}}missing{{end}}",
+                values: values,
+            ) == "missing",
+        )
     }
 
     @Test
@@ -229,6 +236,8 @@ struct ComposeFormatTemplateTests {
         #expect(try renderDockerTemplate("A {{-3}} B", values: values) == "A -3 B")
         #expect(try renderDockerTemplate("A {{- 3}} B", values: values) == "A3 B")
         #expect(try renderDockerTemplate("A {{3 -}} B", values: values) == "A 3B")
+        #expect(try renderDockerTemplate("{{/* emitted as }} ( */}}OK", values: values) == "OK")
+        #expect(try renderDockerTemplate("A {{- /* }} ( */ -}} B", values: values) == "AB")
         #expect(
             try renderDockerTemplate(
                 "{{range $index, $value := split .Name \"-\"}}{{$index}}={{$value}};{{end}}",

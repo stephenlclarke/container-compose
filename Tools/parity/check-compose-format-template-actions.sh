@@ -192,6 +192,18 @@ check_implementation() {
     )"
     assert_equal "$actual" '127.0.0.1|8080|32768|tcp|value' "$project ps control template"
 
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'missing={{.Label "oracle.example/missing"}}'
+    )"
+    assert_equal "$actual" 'missing=' "$project missing label template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{/* emitted as }} ( */}}{{.Name}}'
+    )"
+    assert_equal "$actual" "$name" "$project comment delimiter template"
+
     # Go-template variables must reach Compose literally.
     # shellcheck disable=SC2016
     actual="$(

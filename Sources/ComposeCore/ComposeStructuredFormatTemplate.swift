@@ -256,23 +256,11 @@ private func structuredTemplateAction(
     in template: String,
     from contentStart: String.Index,
 ) throws -> StructuredTemplateAction {
-    var scan = StructuredTemplateScanState()
-    var index = contentStart
-    var closeStart: String.Index?
-    while index < template.endIndex {
-        if template[index] == "}", scan.isTopLevel {
-            let next = template.index(after: index)
-            if next < template.endIndex, template[next] == "}" {
-                closeStart = index
-                break
-            }
-        }
-        guard scan.consume(template[index]) else {
-            throw structuredUnsupportedAction("unbalanced template action")
-        }
-        index = template.index(after: index)
-    }
-    guard let closeStart, scan.isBalanced else {
+    let closeStart = try structuredTemplateCommentClose(
+        in: template,
+        from: contentStart,
+    ) ?? structuredTemplateExpressionClose(in: template, from: contentStart)
+    guard let closeStart else {
         throw structuredUnsupportedAction("unclosed template action")
     }
 
@@ -296,6 +284,52 @@ private func structuredTemplateAction(
         cursor: template.index(closeStart, offsetBy: 2),
         trimFollowingText: trimFollowingText,
     )
+}
+
+private func structuredTemplateCommentClose(
+    in template: String,
+    from contentStart: String.Index,
+) throws -> String.Index? {
+    let commentStart = template[contentStart...].firstIndex(where: { !$0.isWhitespace })
+        ?? template.endIndex
+    guard template[commentStart...].hasPrefix("/*") else {
+        return nil
+    }
+    let bodyStart = template.index(commentStart, offsetBy: 2)
+    guard let commentClose = template.range(
+        of: "*/",
+        range: bodyStart ..< template.endIndex,
+    ) else {
+        throw structuredUnsupportedAction("unclosed template comment")
+    }
+    guard let actionClose = template.range(
+        of: "}}",
+        range: commentClose.upperBound ..< template.endIndex,
+    ) else {
+        throw structuredUnsupportedAction("unclosed template action")
+    }
+    return actionClose.lowerBound
+}
+
+private func structuredTemplateExpressionClose(
+    in template: String,
+    from contentStart: String.Index,
+) -> String.Index? {
+    var scan = StructuredTemplateScanState()
+    var index = contentStart
+    while index < template.endIndex {
+        if template[index] == "}", scan.isTopLevel {
+            let next = template.index(after: index)
+            if next < template.endIndex, template[next] == "}" {
+                return scan.isBalanced ? index : nil
+            }
+        }
+        guard scan.consume(template[index]) else {
+            return nil
+        }
+        index = template.index(after: index)
+    }
+    return nil
 }
 
 private func structuredTemplateRange(_ value: String) throws -> StructuredTemplateRange {
@@ -707,7 +741,8 @@ private func structuredTemplateLabel(
     context: StructuredTemplateContext,
 ) -> DockerTemplateData {
     let labels = structuredTemplateLookup(context.dot, "Labels")
-    return structuredTemplateLookup(labels, key)
+    let value = structuredTemplateLookup(labels, key)
+    return value == .null ? .string("") : value
 }
 
 private func applyStructuredTemplateFunction(

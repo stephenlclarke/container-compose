@@ -20,7 +20,7 @@ import Testing
 @Suite("Docker output template tables")
 struct ComposeFormatTemplateTableTests {
     @Test
-    func `analysis and headers preserve fields and execute control flow`() throws {
+    func `analysis preserves fields and root context`() {
         #expect(dockerTemplateFields(in: "{{.Name}}\t{{.Name}}") == ["Name", "Name"])
         #expect(
             dockerTemplateFields(in: "{{if .Health}}{{.Health}}{{else}}{{.Status}}{{end}}")
@@ -30,8 +30,27 @@ struct ComposeFormatTemplateTableTests {
             dockerTemplateFields(in: "{{with .Publishers}}{{.Name}}{{else}}{{$.Status}}{{end}}")
                 == ["Publishers", "Status"],
         )
+        #expect(dockerTemplateFields(in: "{{with .}}{{.Command}}{{end}}") == ["Command"])
+        #expect(
+            dockerTemplateFields(in: "{{range .Publishers}}{{with $}}{{.Command}}{{end}}{{end}}")
+                == ["Publishers", "Command"],
+        )
+        #expect(
+            dockerTemplateFields(in: "{{with (.)}}{{.Command}}{{end}}")
+                == ["Command"],
+        )
+        #expect(throws: (any Error).self) {
+            try validateDockerTemplateFields(
+                dockerTemplateFields(in: "{{with .}}{{.Command}}{{end}}"),
+                command: "ps",
+                supported: ["Name"],
+            )
+        }
         #expect(dockerTemplateFields(in: "{{if .Name}}") == [])
+    }
 
+    @Test
+    func `headers preserve fields and execute control flow`() throws {
         let duplicate = try renderDockerTemplateTable(
             template: "{{.Name}}\t{{.Name}}",
             headers: ["Name": "NAME"],
