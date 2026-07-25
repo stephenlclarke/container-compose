@@ -151,9 +151,11 @@ func structuredTemplateIndex(_ values: [DockerTemplateData]) throws -> DockerTem
         guard elements.indices.contains(index) else { throw structuredUnsupportedAction("index") }
         return elements[index]
     case let .object(object):
-        return object[values[1].display] ?? .null
+        guard let key = try structuredTemplateMapKey(values[1]) else { return .null }
+        return object[key] ?? .null
     case let .lookupObject(object, _):
-        return object[values[1].display] ?? .null
+        guard let key = try structuredTemplateMapKey(values[1]) else { return .null }
+        return object[key] ?? .null
     case let .byteString(bytes):
         return try structuredTemplateByteIndex(bytes, index: values[1])
     case let .string(string):
@@ -181,6 +183,19 @@ func structuredTemplateSlice(_ values: [DockerTemplateData]) throws -> DockerTem
         return try structuredTemplateByteSlice(Array(string.utf8), lower: lower, values: values)
     default:
         throw structuredUnsupportedAction("slice")
+    }
+}
+
+private func structuredTemplateMapKey(
+    _ value: DockerTemplateData,
+) throws -> String? {
+    switch value {
+    case let .byteString(bytes):
+        return String(bytes: bytes, encoding: .utf8)
+    case let .string(key):
+        return key
+    default:
+        throw structuredUnsupportedAction("index")
     }
 }
 

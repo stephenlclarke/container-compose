@@ -23,13 +23,18 @@ struct ComposeStructuredFormatTemplateTests {
     func `invalid collection logical and printf operations fail explicitly`() {
         let values: [String: DockerTemplateData] = [
             "Array": .array([.string("alpha")]),
+            "Lookup": .lookupObject(["1": .string("one")], display: "1=one"),
             "Name": .string("demo-api"),
-            "Object": .object([:]),
+            "Object": .object(["1": .string("one")]),
         ]
 
         for template in [
             "{{index .Array 2}}",
             "{{index .Object}}",
+            "{{index .Object 1}}",
+            "{{index .Object true}}",
+            "{{index .Lookup 1}}",
+            "{{index .Lookup false}}",
             "{{slice .Array 1 0}}",
             "{{slice .Object 0}}",
             "{{and}}",

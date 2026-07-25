@@ -324,6 +324,9 @@ check_implementation() {
     assert_rejected "$project scalar length template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{range .Publishers}}{{len .TargetPort}}{{end}}'
+    assert_rejected "$project non-string map key template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{index .Labels true}}'
     assert_rejected "$project nested scalar field template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{range .Publishers}}{{.TargetPort.Bad}}{{end}}'
