@@ -357,6 +357,12 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{"oracle.example/key" | print | printf "%s" | .Label}}'
+    )"
+    assert_equal "$actual" $'example/key\nvalue' "$project pipeline label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format 'A {{- if .Name -}} B {{- end -}} C'
     )"
     assert_equal "$actual" 'ABC' "$project ps whitespace template"

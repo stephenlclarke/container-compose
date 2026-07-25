@@ -53,6 +53,13 @@ struct ComposeFormatCallCompatibilityTests {
                 rows: ["value"],
             ) == "example/key\nvalue",
         )
+        #expect(
+            try renderDockerTemplateTable(
+                template: "{{\"oracle.example/key\" | print | printf \"%s\" | .Label}}",
+                headers: ["Labels": "LABELS"],
+                rows: ["value"],
+            ) == "example/key\nvalue",
+        )
     }
 
     @Test

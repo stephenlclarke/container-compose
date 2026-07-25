@@ -332,8 +332,47 @@ private func collectStructuredExpressionLabelKeys(
                 )
             }
         }
-        pipelineLiteral = tokens.count == 1
-            ? structuredTemplateStringLiteral(tokens[0])
-            : nil
+        pipelineLiteral = structuredTemplateStaticStringOutput(
+            tokens,
+            pipelineLiteral: pipelineLiteral,
+        )
+    }
+}
+
+private func structuredTemplateStaticStringOutput(
+    _ tokens: [String],
+    pipelineLiteral: String?,
+) -> String? {
+    guard let head = tokens.first else {
+        return nil
+    }
+    if tokens.count == 1, let literal = structuredTemplateStringLiteral(head) {
+        return literal
+    }
+    let explicitInputs = tokens.dropFirst().map(structuredTemplateStringLiteral)
+    guard explicitInputs.allSatisfy({ $0 != nil }) else {
+        return nil
+    }
+    let inputs = explicitInputs.compactMap(\.self) + (pipelineLiteral.map { [$0] } ?? [])
+    return structuredTemplateStaticStringFunctionOutput(head, inputs: inputs)
+}
+
+private func structuredTemplateStaticStringFunctionOutput(
+    _ function: String,
+    inputs: [String],
+) -> String? {
+    switch function {
+    case "print":
+        return inputs.joined()
+    case "printf":
+        guard let format = inputs.first else {
+            return nil
+        }
+        return try? structuredTemplatePrintf(
+            format,
+            values: inputs.dropFirst().map(DockerTemplateData.string),
+        )
+    default:
+        return nil
     }
 }
