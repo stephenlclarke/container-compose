@@ -24,6 +24,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): preserve table header semantics`
 - `f9844e5bd3be0dce7da372cd69f9463c02ba6e2b`
   `fix(format): align labels roots and comments`
+- `194e25d3f9755b7481c62d34a373375c08f1a19e`
+  `fix(format): enforce structured record semantics`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -49,7 +51,9 @@ This documentation commit is intentionally separate.
     validation;
   - discovers `.Label` keys used by Docker's dynamic table header context.
 - `Sources/ComposeCore/ComposeDockerTemplateData.swift`
-  - supplies recursive array, object, lookup-object, scalar, and null values;
+  - supplies recursive array, map, record, lookup-object, scalar, and null
+    values;
+  - distinguishes strict publisher-record fields from lenient map-key lookup;
   - keeps display, truthiness, and JSON projection separate.
 - `Sources/ComposeCore/ComposeDockerTemplateFunctionSupport.swift` and
   `ComposeDockerTemplatePrintf.swift`
@@ -78,6 +82,10 @@ This documentation commit is intentionally separate.
 - `Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift`
   - isolates malformed collection, logical, trim-marker, and formatting cases
     from the successful structured evaluator suite.
+- `Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift`
+  - covers compact parenthesized control actions, empty-range declaration
+    variables, strict publisher fields, scalar traversal, and lenient map
+    misses.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift`
   - covers duplicate columns, conditional headers, label headers, empty
     tables, legacy callers, field analysis, and variable scope.
@@ -89,6 +97,7 @@ This documentation commit is intentionally separate.
   - provide the committed Docker Compose v2 oracle for container publishers,
     labels, stats control flow, volume labels, duplicate and conditional table
     headers, missing labels, comment delimiters, undefined variables,
+    compact control actions, empty-range variables, strict publisher fields,
     functions, and whitespace.
 
 ## Validation
@@ -108,6 +117,7 @@ swiftlint lint --strict --quiet \
   Sources/ComposeCore/ComposeRenderHelpers.swift \
   Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift \
+  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift
 swiftformat --lint --swift-version 6.2 --disable trailingCommas \
   Sources/ComposeCore/ComposeFormatTemplate.swift \
@@ -119,6 +129,7 @@ swiftformat --lint --swift-version 6.2 --disable trailingCommas \
   Sources/ComposeCore/ComposeRenderHelpers.swift \
   Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift \
+  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift
 CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
 CONTAINER_COMPOSE="$PWD/.build/debug/compose" \
@@ -128,14 +139,14 @@ CONTAINER_COMPOSE_LIVE=1 \
 git diff --check
 ```
 
-- Swift: 1,137 tests in 28 suites passed.
-- Structured template engine: 1,163/1,259 lines, 92.37%.
-- `ComposeStructuredFormatTemplate.swift`: 750/814 lines, 92.14%.
-- `ComposeStructuredTemplateAnalysis.swift`: 163/176 lines, 92.61%.
+- Swift: 1,140 tests in 29 suites passed.
+- Structured template engine: 1,227/1,331 lines, 92.19%.
+- `ComposeStructuredFormatTemplate.swift`: 777/844 lines, 92.06%.
+- `ComposeStructuredTemplateAnalysis.swift`: 200/216 lines, 92.59%.
 - `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
 - `ComposeDockerTemplateData.swift`: 81/85 lines, 95.3%.
 - `ComposeDockerTemplatePrintf.swift`: 73/75 lines, 97.3%.
-- `ComposeDockerTemplateFunctionSupport.swift`: 78/91 lines, 85.7%.
+- `ComposeDockerTemplateFunctionSupport.swift`: 78/93 lines, 83.87%.
 - Formatter table boundary: 67/68 lines, 98.53%.
 - Command rendering helpers: 752/781 lines, 96.29%.
 - Repository checks passed, including 167 release-controller tests, 14
@@ -160,8 +171,11 @@ Existing templates use the same public formatter entry points. Structured
 values are built by the command-specific presentation layer and do not escape
 into a runtime SPI. Unknown root fields are still rejected before discovery or
 stats sampling. Object ranges sort keys to make output deterministic across
-processes. The fixed published port in the committed fixture is loopback-only
-and is removed by both reference and Apple-runtime cleanup paths.
+processes. Publisher elements are strict records so invalid struct-field
+traversal fails like Docker's Go template values, while ordinary maps retain
+their existing missing-key behavior. The fixed published port in the committed
+fixture is loopback-only and is removed by both reference and Apple-runtime
+cleanup paths.
 
 The slice changes no sibling fork. It therefore needs no Apple-facing pull
 request and introduces no Apple review dependency.
@@ -170,7 +184,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified fourteen actionable compatibility cases:
+identified seventeen actionable compatibility cases:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
   invalid collection access;
@@ -197,6 +211,13 @@ identified fourteen actionable compatibility cases:
   validation when their successful branch still evaluates the root row;
 - full-action comments scan through `/* ... */`, so embedded `}}`, parentheses,
   and trim markers do not end the action early.
+- variables declared by an empty `range` retain the original pipeline value in
+  the `else` branch, matching Go template execution.
+- publisher elements use strict record-field lookup, so missing publisher
+  fields and attempts to traverse scalar fields fail instead of rendering
+  `<no value>`.
+- compact `if(...)`, `with(...)`, `range(...)`, and `else if(...)` controls are
+  accepted with the same parenthesized pipelines as Docker Compose.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -209,9 +230,12 @@ fixes variable validation and table-header execution, adds exact command header
 contexts, and extends the live oracle to duplicate, conditional, label, stats,
 and volume headers. Commit `f9844e5bd3be0dce7da372cd69f9463c02ba6e2b`
 fixes missing-label semantics, root-preserving `with` analysis, and comment
-scanning, with focused tests and live Docker Compose v2 checks. No autobot
-finding was deferred, and every connector comment is answered with its
-implementation and verification disposition.
+scanning, with focused tests and live Docker Compose v2 checks. Commit
+`194e25d3f9755b7481c62d34a373375c08f1a19e` fixes empty-range declaration
+variables, strict publisher-record traversal, and compact control syntax, with
+focused compatibility tests and exact Docker Compose v2 rejection and output
+oracles. No autobot finding was deferred, and every connector comment is
+answered with its implementation and verification disposition.
 
 ## Documentation And Operations
 
