@@ -195,6 +195,12 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range .Publishers}}{{$.Label "oracle.example/key"}}{{end}}'
+    )"
+    assert_equal "$actual" 'value' "$project root label template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format 'missing={{.Label "oracle.example/missing"}}'
     )"
     assert_equal "$actual" 'missing=' "$project missing label template"
@@ -352,6 +358,9 @@ check_implementation() {
     assert_rejected "$project string slice bound template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{slice .Name "0" 1}}'
+    assert_rejected "$project non-string printf format template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Publishers}}{{printf .TargetPort}}{{end}}'
     assert_rejected "$project nested scalar field template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{range .Publishers}}{{.TargetPort.Bad}}{{end}}'

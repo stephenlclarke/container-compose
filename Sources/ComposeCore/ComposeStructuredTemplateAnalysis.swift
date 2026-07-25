@@ -219,7 +219,7 @@ private func collectStructuredValueFields(
     dotIsRoot: Bool,
     into fields: inout [String],
 ) {
-    if token == ".Label", dotIsRoot {
+    if isStructuredTemplateLabelFunction(token), token == "$.Label" || dotIsRoot {
         fields.append("Labels")
         return
     }
@@ -267,7 +267,7 @@ private func collectStructuredExpressionLabelKeys(
     for segment in segments {
         guard let tokens = structuredTemplateTokens(segment) else { continue }
         for (index, token) in tokens.enumerated() {
-            if token == ".Label",
+            if isStructuredTemplateLabelFunction(token),
                tokens.indices.contains(index + 1),
                let key = structuredTemplateStringLiteral(tokens[index + 1])
             {

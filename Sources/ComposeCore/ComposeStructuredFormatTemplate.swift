@@ -459,6 +459,10 @@ private let structuredTemplateFunctions: Set<String> = [
     "upper",
 ]
 
+func isStructuredTemplateLabelFunction(_ token: String) -> Bool {
+    token == ".Label" || token == "$.Label"
+}
+
 private func validateStructuredExpression(_ expression: String) throws {
     guard let segments = structuredTemplatePipelineSegments(expression), !segments.isEmpty else {
         throw structuredUnsupportedAction(expression)
@@ -472,7 +476,8 @@ private func validateStructuredExpression(_ expression: String) throws {
             hasPipelineValue = true
             continue
         }
-        if index == 0, tokens.first == ".Label", tokens.count == 2,
+        if index == 0, isStructuredTemplateLabelFunction(tokens.first ?? ""),
+           tokens.count == 2,
            isStructuredTemplateValue(tokens[1])
         {
             hasPipelineValue = true
@@ -628,9 +633,10 @@ private func evaluateStructuredTemplateExpression(
         }
         if index == 0, tokens.count == 1, isStructuredTemplateValue(head) {
             pipelineValue = try structuredTemplateValue(head, context: context)
-        } else if index == 0, head == ".Label", tokens.count == 2 {
+        } else if index == 0, isStructuredTemplateLabelFunction(head), tokens.count == 2 {
             let key = try structuredTemplateValue(tokens[1], context: context).display
-            pipelineValue = try structuredTemplateLabel(key, context: context)
+            let source = head == "$.Label" ? context.root : context.dot
+            pipelineValue = try structuredTemplateLabel(key, source: source)
         } else {
             guard structuredTemplateFunctions.contains(head) else {
                 throw structuredUnsupportedAction(expression)
@@ -757,10 +763,10 @@ private func structuredTemplateLookup(
 
 private func structuredTemplateLabel(
     _ key: String,
-    context: StructuredTemplateContext,
+    source: DockerTemplateData,
 ) throws -> DockerTemplateData {
     let labels: DockerTemplateData
-    switch context.dot {
+    switch source {
     case let .lookupObject(values, _), let .object(values):
         guard let value = values["Labels"] else {
             return .string("")
@@ -878,7 +884,12 @@ private func applyStructuredPrintFunction(
         return .string(inputs.map(\.display).joined(separator: " ") + "\n")
     case "printf":
         guard let format = inputs.first else { throw structuredUnsupportedAction(function) }
-        return try .string(structuredTemplatePrintf(format.display, values: Array(inputs.dropFirst())))
+        return try .string(
+            structuredTemplatePrintf(
+                structuredString(format, function: function),
+                values: Array(inputs.dropFirst()),
+            ),
+        )
     default:
         throw structuredUnsupportedAction(function)
     }
