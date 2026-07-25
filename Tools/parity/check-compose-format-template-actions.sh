@@ -175,10 +175,11 @@ check_implementation() {
     local project="$1"
     shift
     local command=("$@")
-    local actual expected name volume_name
+    local actual combining expected name volume_name
 
     name="$project-api-1"
     volume_name="${project}_cache"
+    combining=$'e\u0301'
     "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
         up --detach --wait --wait-timeout 120 >/dev/null
 
@@ -235,6 +236,22 @@ check_implementation() {
     assert_equal "$actual" \
         '[{"127.0.0.1" '\''ᾐ'\'' '\''耀'\'' "tcp"}]' \
         "$project structured quote template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{.Publishers}}|{{printf "%v" .Publishers}}'
+    )"
+    assert_equal "$actual" \
+        '[{127.0.0.1 8080 32768 tcp}]|[{127.0.0.1 8080 32768 tcp}]' \
+        "$project publisher struct display template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format "{{printf \"[%2s]|[%3s]|[%-3s]\" \"$combining\" \"$combining\" \"$combining\"}}"
+    )"
+    assert_equal "$actual" \
+        "[$combining]|[ $combining]|[$combining ]" \
+        "$project printf rune width template"
 
     # Go-template variables must reach Compose literally.
     # shellcheck disable=SC2016

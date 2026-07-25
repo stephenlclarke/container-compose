@@ -159,6 +159,44 @@ struct ComposeFormatTemplateCompatibilityTests {
     }
 
     @Test
+    func `publisher records display in Go struct order`() throws {
+        let values: [String: DockerTemplateData] = [
+            "Publishers": .array([
+                .record([
+                    "Protocol": .string("tcp"),
+                    "PublishedPort": .integer(32768),
+                    "TargetPort": .integer(8080),
+                    "URL": .string("127.0.0.1"),
+                ]),
+            ]),
+        ]
+
+        #expect(
+            try renderDockerTemplate(
+                "{{.Publishers}}|{{printf \"%v\" .Publishers}}",
+                values: values,
+            ) == "[{127.0.0.1 8080 32768 tcp}]|[{127.0.0.1 8080 32768 tcp}]",
+        )
+    }
+
+    @Test
+    func `printf width counts Unicode scalars as Go runes`() throws {
+        let combining = "e\u{0301}"
+        let family = "👨‍👩‍👧‍👦"
+        let values: [String: DockerTemplateData] = [
+            "Combining": .string(combining),
+            "Family": .string(family),
+        ]
+
+        #expect(
+            try renderDockerTemplate(
+                "{{printf \"[%2s]|[%3s]|[%-3s]|[%7s]|[%8s]\" .Combining .Combining .Combining .Family .Family}}",
+                values: values,
+            ) == "[\(combining)]|[ \(combining)]|[\(combining) ]|[\(family)]|[ \(family)]",
+        )
+    }
+
+    @Test
     func `printf quote uses Go escapes for runes and raw bytes`() throws {
         let values: [String: DockerTemplateData] = [
             "Bytes": .byteString([0xC3, 0x07, 0x22, 0x5C]),

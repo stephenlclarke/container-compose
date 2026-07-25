@@ -42,11 +42,14 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
             return display
         case .null:
             return "<no value>"
-        case let .object(values), let .record(values):
+        case let .object(values):
             let entries = values.keys.sorted().map { key in
                 "\(key):\(values[key]?.display ?? "<no value>")"
             }
             return "map[\(entries.joined(separator: " "))]"
+        case let .record(values):
+            let fields = structuredTemplateRecordValues(values).map(\.display)
+            return "{\(fields.joined(separator: " "))}"
         case let .string(value):
             return value
         }
@@ -101,6 +104,15 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
             value
         }
     }
+}
+
+func structuredTemplateRecordValues(
+    _ values: [String: DockerTemplateData],
+) -> [DockerTemplateData] {
+    let preferredOrder = ["URL", "TargetPort", "PublishedPort", "Protocol"]
+    let orderedKeys = preferredOrder.filter { values[$0] != nil }
+        + values.keys.filter { !preferredOrder.contains($0) }.sorted()
+    return orderedKeys.map { values[$0] ?? .null }
 }
 
 extension String {

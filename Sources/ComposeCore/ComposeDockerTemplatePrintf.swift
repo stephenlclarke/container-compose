@@ -103,10 +103,11 @@ private func structuredPrintfReplacement(
     default:
         throw structuredUnsupportedAction("printf")
     }
-    guard let width = directive.width, replacement.count < width else {
+    let replacementWidth = replacement.unicodeScalars.count
+    guard let width = directive.width, replacementWidth < width else {
         return replacement
     }
-    let padding = String(repeating: " ", count: width - replacement.count)
+    let padding = String(repeating: " ", count: width - replacementWidth)
     return directive.leftAligned ? replacement + padding : padding + replacement
 }
 
@@ -130,10 +131,7 @@ private func structuredPrintfQuoted(_ value: DockerTemplateData) -> String {
         }
         return "map[\(entries.joined(separator: " "))]"
     case let .record(values):
-        let preferredOrder = ["URL", "TargetPort", "PublishedPort", "Protocol"]
-        let orderedKeys = preferredOrder.filter { values[$0] != nil }
-            + values.keys.filter { !preferredOrder.contains($0) }.sorted()
-        let fields = orderedKeys.map { structuredPrintfQuoted(values[$0] ?? .null) }
+        let fields = structuredTemplateRecordValues(values).map(structuredPrintfQuoted)
         return "{\(fields.joined(separator: " "))}"
     case let .string(value):
         return structuredGoQuotedString(value)

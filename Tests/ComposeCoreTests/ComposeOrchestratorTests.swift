@@ -13615,7 +13615,7 @@ struct ComposeOrchestratorTests {
 
         #expect(
             emitted.messages == [
-                "healthy\t0\t[map[Protocol:tcp PublishedPort:8080 TargetPort:80 URL:127.0.0.1]]",
+                "healthy\t0\t[{127.0.0.1 80 8080 tcp}]",
             ]
         )
     }
