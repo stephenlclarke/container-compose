@@ -177,14 +177,36 @@ private func structuredTemplateExpressionRetainsRoot(
     _ expression: String,
     dotIsRoot: Bool,
 ) -> Bool {
-    guard let segments = structuredTemplatePipelineSegments(expression),
-          segments.count == 1,
-          let tokens = structuredTemplateTokens(segments[0]),
-          tokens.count == 1
-    else {
+    guard let segments = structuredTemplatePipelineSegments(expression) else {
         return false
     }
-    return structuredTemplateValueRetainsRoot(tokens[0], dotIsRoot: dotIsRoot)
+    var pipelineRetainsRoot = false
+    for (index, segment) in segments.enumerated() {
+        guard let tokens = structuredTemplateTokens(segment), let head = tokens.first else {
+            return false
+        }
+        if index == 0, tokens.count == 1 {
+            pipelineRetainsRoot = structuredTemplateValueRetainsRoot(
+                head,
+                dotIsRoot: dotIsRoot,
+            )
+        } else if head == "or" {
+            // `or` can return any explicit operand or the prior pipeline value.
+            pipelineRetainsRoot = pipelineRetainsRoot || tokens.dropFirst().contains {
+                structuredTemplateValueRetainsRoot($0, dotIsRoot: dotIsRoot)
+            }
+        } else if head == "and" {
+            // A truthy `and` returns its last operand; a pipeline is appended last.
+            if index == 0 {
+                pipelineRetainsRoot = tokens.dropFirst().last.map {
+                    structuredTemplateValueRetainsRoot($0, dotIsRoot: dotIsRoot)
+                } ?? false
+            }
+        } else {
+            pipelineRetainsRoot = false
+        }
+    }
+    return pipelineRetainsRoot
 }
 
 private func structuredTemplateValueRetainsRoot(

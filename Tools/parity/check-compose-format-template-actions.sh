@@ -443,6 +443,11 @@ check_container_field_validation() {
     assert_rejected "$CONTAINER_PROJECT parenthesized unsupported ps field" \
         "$CONTAINER_COMPOSE" --project-name "$CONTAINER_PROJECT" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{($).Command}}'
+    "${DOCKER_COMPOSE_COMMAND[@]}" --project-name "$DOCKER_PROJECT" -f "$FIXTURE_DIR/compose.yaml" \
+        ps --format '{{with or $ .Name}}{{.Command}}{{end}}' >/dev/null
+    assert_rejected "$CONTAINER_PROJECT logical root unsupported ps field" \
+        "$CONTAINER_COMPOSE" --project-name "$CONTAINER_PROJECT" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{with or $ .Name}}{{.Command}}{{end}}'
 }
 
 # Runs Docker first so both implementations can use the same fixed host port.

@@ -13742,7 +13742,15 @@ struct ComposeOrchestratorTests {
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [])
         let orchestrator = ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
 
-        for template in ["{{.Command}}", "{{($).Command}}", "{{((.)).Command}}"] {
+        for template in [
+            "{{.Command}}",
+            "{{($).Command}}",
+            "{{((.)).Command}}",
+            "{{with or $ .Name}}{{.Command}}{{end}}",
+            "{{with .Name | or $}}{{.Command}}{{end}}",
+            "{{with $ | and .Name}}{{.Command}}{{end}}",
+            "{{with and .Name $}}{{.Command}}{{end}}",
+        ] {
             do {
                 try await orchestrator.ps(
                     project: ComposeProject(name: "demo", services: [:]),

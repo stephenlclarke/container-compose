@@ -43,6 +43,26 @@ struct ComposeFormatTemplateTableTests {
             dockerTemplateFields(in: "{{($).Command}}\t{{((.)).Name}}")
                 == ["Command", "Name"],
         )
+        #expect(
+            dockerTemplateFields(in: "{{with or $ .Name}}{{.Command}}{{end}}")
+                == ["Name", "Command"],
+        )
+        #expect(
+            dockerTemplateFields(in: "{{with .Name | or $}}{{.Command}}{{end}}")
+                == ["Name", "Command"],
+        )
+        #expect(
+            dockerTemplateFields(in: "{{with $ | and .Name}}{{.Command}}{{end}}")
+                == ["Name", "Command"],
+        )
+        #expect(
+            dockerTemplateFields(in: "{{with and .Name $}}{{.Command}}{{end}}")
+                == ["Name", "Command"],
+        )
+        #expect(
+            dockerTemplateFields(in: "{{with and $ .Name}}{{.Command}}{{end}}")
+                == ["Name"],
+        )
         #expect(throws: (any Error).self) {
             try validateDockerTemplateFields(
                 dockerTemplateFields(in: "{{with .}}{{.Command}}{{end}}"),
