@@ -119,10 +119,34 @@ struct ComposeFormatTemplateCompatibilityTests {
         )
         #expect(
             try renderDockerTemplate(
+                #"{{join (split "é" "") "-"}}|{{join (split "👨‍👩‍👧‍👦" "") "-"}}"#,
+                values: values,
+            ) == "e-́|👨-‍-👩-‍-👧-‍-👦",
+        )
+        #expect(
+            try renderDockerTemplate(
                 #"{{printf "%q" (truncate "é" 1)}}"#,
                 values: values,
             ) == #""\xc3""#,
         )
+        #expect(
+            try renderDockerTemplate(
+                #"{{printf "%q" (split (truncate "é" 1) "")}}"#,
+                values: values,
+            ) == #"["\xc3"]"#,
+        )
+        #expect(
+            try renderDockerTemplate(
+                #"{{printf "%q" (join (split (truncate "é" 1) "") "-")}}"#,
+                values: values,
+            ) == #""\xc3""#,
+        )
+        #expect(throws: (any Error).self) {
+            try renderDockerTemplate(
+                #"{{truncate "abc" -1}}"#,
+                values: values,
+            )
+        }
     }
 
     @Test

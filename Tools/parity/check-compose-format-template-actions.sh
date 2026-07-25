@@ -417,6 +417,16 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%q" (split (truncate "é" 1) "")}}'
+    )"
+    assert_equal "$actual" '["\xc3"]' "$project partial UTF-8 split"
+
+    assert_rejected "$project negative UTF-8 byte truncate" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{truncate "abc" -1}}'
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format 'A {{- if .Name -}} B {{- end -}} C'
     )"
     assert_equal "$actual" 'ABC' "$project ps whitespace template"

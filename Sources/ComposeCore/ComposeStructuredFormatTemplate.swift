@@ -933,6 +933,16 @@ private func structuredTemplateJoin(_ inputs: [DockerTemplateData]) throws -> Do
     guard inputs.count == 2, case let .array(values) = inputs[0] else {
         throw structuredUnsupportedAction("join")
     }
+    if let separator = structuredTemplateGoStringBytes(inputs[1]) {
+        let rawValues = values.compactMap(structuredTemplateGoStringBytes)
+        if rawValues.count == values.count {
+            return .byteString(
+                rawValues.enumerated().flatMap { index, value in
+                    (index == 0 ? [] : separator) + value
+                },
+            )
+        }
+    }
     let separator = try structuredString(inputs[1], function: "join")
     return .string(values.map(\.display).joined(separator: separator))
 }
@@ -949,20 +959,36 @@ private func structuredTemplatePad(_ inputs: [DockerTemplateData]) throws -> Doc
 }
 
 private func structuredTemplateSplit(_ inputs: [DockerTemplateData]) throws -> DockerTemplateData {
-    guard inputs.count == 2 else { throw structuredUnsupportedAction("split") }
-    let value = try structuredString(inputs[0], function: "split")
-    let separator = try structuredString(inputs[1], function: "split")
-    if separator.isEmpty {
-        return .array(value.unicodeScalars.map {
-            .string(String($0))
-        })
+    guard inputs.count == 2,
+          let value = structuredTemplateGoStringBytes(inputs[0]),
+          let separator = structuredTemplateGoStringBytes(inputs[1])
+    else {
+        throw structuredUnsupportedAction("split")
     }
-    return .array(value.components(separatedBy: separator).map(DockerTemplateData.string))
+    if separator.isEmpty {
+        return .array(structuredTemplateUTF8Sequences(value).map(DockerTemplateData.byteString))
+    }
+    var parts: [DockerTemplateData] = []
+    var start = 0
+    while let separatorStart = structuredTemplateSeparatorIndex(
+        in: value,
+        separator: separator,
+        from: start,
+    ) {
+        parts.append(.byteString(Array(value[start ..< separatorStart])))
+        start = separatorStart + separator.count
+    }
+    parts.append(.byteString(Array(value[start...])))
+    return .array(parts)
 }
 
 private func structuredTemplateTruncate(_ inputs: [DockerTemplateData]) throws -> DockerTemplateData {
-    guard inputs.count == 2 else { throw structuredUnsupportedAction("truncate") }
-    let value = try structuredString(inputs[0], function: "truncate")
+    guard inputs.count == 2,
+          let value = structuredTemplateGoStringBytes(inputs[0])
+    else {
+        throw structuredUnsupportedAction("truncate")
+    }
     let length = try structuredInteger(inputs[1], function: "truncate")
-    return .byteString(Array(value.utf8.prefix(max(0, length))))
+    guard length >= 0 else { throw structuredUnsupportedAction("truncate") }
+    return .byteString(Array(value.prefix(length)))
 }
