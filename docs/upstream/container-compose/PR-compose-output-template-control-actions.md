@@ -38,6 +38,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): preserve Go call semantics`
 - `40930031b2418d873778a7cb2b1011da672f9e85`
   `fix(format): align remaining Go template semantics`
+- `0057f68ed3edb5f71f62b6e79ee4083e69a0a68e`
+  `fix(format): validate parenthesized root selectors`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -63,6 +65,8 @@ This documentation commit is intentionally separate.
   - validates lexical variable scope before command side effects;
   - preserves repeated fields and walks all control-flow branches for command
     validation;
+  - retains the first selector appended to a parenthesized root expression so
+    unsupported fields cannot bypass command validation;
   - discovers `.Label` keys used by Docker's dynamic table header context.
 - `Sources/ComposeCore/ComposeStructuredTemplateCompatibilitySyntax.swift`
   - recognizes compact one- and two-variable `range` assignments without
@@ -132,7 +136,8 @@ This documentation commit is intentionally separate.
     and scalar and recursive typed `printf` diagnostics.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift`
   - covers duplicate columns, conditional headers, label headers, empty
-    tables, legacy callers, field analysis, and variable scope.
+    tables, deliberately omitted Docker headers, legacy callers, field
+    analysis, and variable scope.
 - `Tests/ComposeCoreTests/ComposeOrchestratorTests.swift` and
   `Tests/ComposePluginTests/ComposeCLIHelpTests.swift`
   - cover structured command rows and honest support metadata.
@@ -147,7 +152,9 @@ This documentation commit is intentionally separate.
     rejection, structured joins, typed `printf` diagnostics, string-offset
     rejection, root-scoped labels, non-string `printf` format rejection,
     typed default exit codes, compact range declarations, parenthesized
-    selectors, non-string label-key rejection, functions, and whitespace.
+    selectors, parenthesized-root field validation, Docker's deliberately
+    omitted `ps` headers, non-string label-key rejection, functions, and
+    whitespace.
 
 ## Validation
 
@@ -199,10 +206,10 @@ CONTAINER_COMPOSE_LIVE=1 \
 git diff --check
 ```
 
-- Swift: 1,156 tests in 31 suites passed.
-- Structured template engine: 1,594/1,727 lines, 92.30%.
+- Swift: 1,157 tests in 31 suites passed.
+- Structured template engine: 1,601/1,733 lines, 92.38%.
 - `ComposeStructuredFormatTemplate.swift`: 777/838 lines, 92.72%.
-- `ComposeStructuredTemplateAnalysis.swift`: 208/227 lines, 91.63%.
+- `ComposeStructuredTemplateAnalysis.swift`: 215/233 lines, 92.27%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 61/65 lines,
   93.85%.
 - `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
@@ -246,8 +253,8 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified thirty-one actionable compatibility cases and one suggestion that
-was disproved against the exact Docker Compose 5.3.1 oracle:
+identified thirty-two actionable compatibility cases and two suggestions that
+were disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
   invalid collection access;
@@ -309,6 +316,8 @@ was disproved against the exact Docker Compose 5.3.1 oracle:
   `(index .Publishers 0).TargetPort`, retain structured field lookup;
 - `.Label` and `$.Label` require a string or valid UTF-8 string slice instead
   of coercing numeric operands through display text.
+- selectors appended to parenthesized root expressions remain visible to
+  top-level field validation, including nested parenthesized root forms.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -344,12 +353,21 @@ Commit `40930031b2418d873778a7cb2b1011da672f9e85` fixes typed default exit
 codes, compact range declarations, selector chains after parenthesized
 pipelines, and typed label operands, with focused unit, command-path, malformed
 syntax, and exact Docker Compose 5.3.1 and Apple Current live-parity coverage.
+Commit `0057f68ed3edb5f71f62b6e79ee4083e69a0a68e` closes the
+parenthesized-root field-validation bypass before container discovery, covers
+single and nested parentheses in unit and command-path tests, and extends the
+committed live fixture with the restricted-field check.
+
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
 `{127.0.0.1 8080 32768 tcp}`. The same successful behavior is now protected by
-unit and committed live-parity coverage. No actionable autobot finding was
-deferred, and every connector comment is answered with its implementation or
-verified compatibility disposition.
+unit and committed live-parity coverage. The suggestion to invent headers for
+`ExitCode`, `Health`, `LocalVolumes`, `Mounts`, `Names`, `Networks`, and
+`Publishers` was also not implemented: Docker Compose 5.3.1 emits
+`<no value>` for every one of those table headers. Focused unit coverage and
+the committed Docker/Apple live oracle now preserve that exact behavior. No
+actionable autobot finding was deferred, and every connector comment is
+answered with its implementation or verified compatibility disposition.
 
 ## Documentation And Operations
 

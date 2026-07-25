@@ -56,7 +56,11 @@ Signed follow-up commit `551710612d8ca9439029efb4596e7518c429f5e0`
 ranges, mixed-type comparisons, and scalar `len` calls fail exactly as the
 Docker Compose v2 oracle does.
 
-The paired pull-request handoff records the code map, exact validation, coverage,
+The remaining signed compatibility commits, through
+`0057f68ed3edb5f71f62b6e79ee4083e69a0a68e`
+(`fix(format): validate parenthesized root selectors`), are enumerated in the
+paired pull-request handoff. That handoff records the complete code map, exact
+validation, coverage, Docker Compose dispositions for every connector review,
 runtime revisions, and promotion evidence.
 
 ## Compatibility
