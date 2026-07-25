@@ -16,6 +16,8 @@ missing or mismatched authority remains fail-closed.
   `fix(release): load stable controls before publication`
 - `7360fcf36d8238b2438d9a23c381819514fe9cb2`
   `fix(release): wait before expiring Sonar metrics`
+- `9b39f97fd512c70fe10cfb6599ca849d32b8a0c2`
+  `fix(release): harden stable evidence staging`
 
 All implementation commits are signed. Together they contain the evidence
 policy, immutable release-control boundary, workflow wiring, tests, and
@@ -35,6 +37,8 @@ operator documentation.
     statement;
   - waits for normal indexing unless a different, later SonarCloud analysis
     proves the exact scan has already been superseded;
+  - applies the same indexing wait when the analysis record exists but its
+    required measure history is incomplete;
   - distinguishes absent metric history from request or schema failures so
     transient service errors remain fatal.
 - `.github/workflows/prebuilt-binaries.yml` enables the retention policy only
@@ -43,6 +47,8 @@ operator documentation.
   snapshot capture, release notes, publication, and asset retention. Package
   content remains compiled from the signed source tag. Mutable Current
   publication retains the complete metric requirement.
+  Every invocation is sibling-relative from the tagged `container-compose`
+  working directory.
 - `Tools/release/test_capture_quality_snapshot.py` covers exact authority
   selection, cross-commit rejection, stable rendering, CLI policy isolation,
   workflow wiring, static SVG generation, and the original strict path.
@@ -78,7 +84,7 @@ python3 Tools/release/capture-quality-snapshot.py \
 
 Observed locally:
 
-- 164 release-tool tests passed.
+- 167 release-tool tests passed.
 - All coverage, release, CI-helper, consistency, and secret checks in
   `make check` passed.
 - The live command resolved CI run `30089845474`, CI job `89470421550`, the

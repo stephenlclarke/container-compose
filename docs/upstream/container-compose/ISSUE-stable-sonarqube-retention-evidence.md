@@ -36,12 +36,14 @@ path needs an explicit retention policy that does neither.
   no later metrics were substituted.
 - Retained evidence is used immediately only after SonarCloud exposes another
   analysis completed after the exact scan; otherwise the full polling window
-  remains available for normal analysis indexing.
+  remains available for normal analysis and measure-history indexing.
 - Missing, failed, mismatched, or unreadable authority blocks publication.
 - Transient SonarCloud metric API failures are not reclassified as retention.
 - A stable retry executes release-control scripts from the verified workflow
   commit while package source and contents remain bound to the immutable signed
   tag, so the policy can be corrected without retagging.
+- Release-control commands resolve the workflow checkout as a workspace sibling
+  of the tagged source checkout.
 - Unit tests and a live exact-commit release-tool invocation cover the policy.
 
 ## Scope and compatibility
