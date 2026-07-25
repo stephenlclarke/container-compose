@@ -26,6 +26,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): align labels roots and comments`
 - `194e25d3f9755b7481c62d34a373375c08f1a19e`
   `fix(format): enforce structured record semantics`
+- `4f28a4d5eacc301f44d65e5683a8e43f20a2510c`
+  `fix(format): match Go byte and print semantics`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -51,15 +53,19 @@ This documentation commit is intentionally separate.
     validation;
   - discovers `.Label` keys used by Docker's dynamic table header context.
 - `Sources/ComposeCore/ComposeDockerTemplateData.swift`
-  - supplies recursive array, map, record, lookup-object, scalar, and null
-    values;
+  - supplies recursive array, map, record, lookup-object, raw-byte, scalar,
+    and null values;
   - distinguishes strict publisher-record fields from lenient map-key lookup;
-  - keeps display, truthiness, and JSON projection separate.
+  - keeps display, truthiness, and JSON projection separate while retaining
+    partial UTF-8 slices for exact Go quoting.
 - `Sources/ComposeCore/ComposeDockerTemplateFunctionSupport.swift` and
   `ComposeDockerTemplatePrintf.swift`
   - implement typed arity checks, boolean helpers, string and collection
     helpers, JSON, and portable `%d`, `%s`, `%v`, `%q`, width, and
-    left-alignment behavior.
+    left-alignment behavior;
+  - preserve Go UTF-8 byte offsets for `len`, `index`, and `slice`, Go spacing
+    between adjacent non-string `print` operands, and type-aware quoted
+    strings, raw bytes, runes, scalars, maps, arrays, and publisher records.
 - `Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift`
   - distinguishes whitespace-delimited trim markers from signed integer
     literals on both action boundaries.
@@ -84,8 +90,8 @@ This documentation commit is intentionally separate.
     from the successful structured evaluator suite.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift`
   - covers compact parenthesized control actions, empty-range declaration
-    variables, strict publisher fields, scalar traversal, and lenient map
-    misses.
+    variables, strict publisher fields, scalar traversal, lenient map misses,
+    UTF-8 byte helpers, `print` spacing, and typed Go quoting.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift`
   - covers duplicate columns, conditional headers, label headers, empty
     tables, legacy callers, field analysis, and variable scope.
@@ -98,6 +104,7 @@ This documentation commit is intentionally separate.
     labels, stats control flow, volume labels, duplicate and conditional table
     headers, missing labels, comment delimiters, undefined variables,
     compact control actions, empty-range variables, strict publisher fields,
+    UTF-8 byte offsets, adjacent print operands, typed quoted values,
     functions, and whitespace.
 
 ## Validation
@@ -114,23 +121,28 @@ swiftlint lint --strict --quiet \
   Sources/ComposeCore/ComposeDockerTemplatePrintf.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
+  Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift \
   Sources/ComposeCore/ComposeRenderHelpers.swift \
   Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift
-swiftformat --lint --swift-version 6.2 --disable trailingCommas \
+  Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift \
+  Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift
+swiftformat --lint --swift-version 6.2 \
   Sources/ComposeCore/ComposeFormatTemplate.swift \
   Sources/ComposeCore/ComposeDockerTemplateData.swift \
   Sources/ComposeCore/ComposeDockerTemplateFunctionSupport.swift \
   Sources/ComposeCore/ComposeDockerTemplatePrintf.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
+  Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift \
   Sources/ComposeCore/ComposeRenderHelpers.swift \
   Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift
+  Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift \
+  Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift
+shellcheck Tools/parity/check-compose-format-template-actions.sh
 CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
 CONTAINER_COMPOSE="$PWD/.build/debug/compose" \
 DOCKER_COMPOSE_REFERENCE='docker compose' \
@@ -139,14 +151,14 @@ CONTAINER_COMPOSE_LIVE=1 \
 git diff --check
 ```
 
-- Swift: 1,140 tests in 29 suites passed.
-- Structured template engine: 1,227/1,331 lines, 92.19%.
-- `ComposeStructuredFormatTemplate.swift`: 777/844 lines, 92.06%.
+- Swift: 1,144 tests in 29 suites passed.
+- Structured template engine: 1,412/1,534 lines, 92.05%.
+- `ComposeStructuredFormatTemplate.swift`: 757/819 lines, 92.43%.
 - `ComposeStructuredTemplateAnalysis.swift`: 200/216 lines, 92.59%.
 - `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
-- `ComposeDockerTemplateData.swift`: 81/85 lines, 95.3%.
-- `ComposeDockerTemplatePrintf.swift`: 73/75 lines, 97.3%.
-- `ComposeDockerTemplateFunctionSupport.swift`: 78/93 lines, 83.87%.
+- `ComposeDockerTemplateData.swift`: 85/93 lines, 91.40%.
+- `ComposeDockerTemplatePrintf.swift`: 215/223 lines, 96.41%.
+- `ComposeDockerTemplateFunctionSupport.swift`: 137/165 lines, 83.03%.
 - Formatter table boundary: 67/68 lines, 98.53%.
 - Command rendering helpers: 752/781 lines, 96.29%.
 - Repository checks passed, including 167 release-controller tests, 14
@@ -184,7 +196,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified seventeen actionable compatibility cases:
+identified twenty actionable compatibility cases:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
   invalid collection access;
@@ -218,6 +230,12 @@ identified seventeen actionable compatibility cases:
   `<no value>`.
 - compact `if(...)`, `with(...)`, `range(...)`, and `else if(...)` controls are
   accepted with the same parenthesized pipelines as Docker Compose.
+- `len`, `index`, and `slice` use Go string byte offsets and retain invalid
+  partial UTF-8 strings for exact quoted output;
+- `print` inserts spaces only between adjacent non-string operands, matching
+  Go's `fmt.Sprint` behavior;
+- `%q` follows the operand type for strings, raw bytes, integer runes, booleans,
+  nil, arrays, maps, and publisher records, including exact Go escapes.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -234,7 +252,10 @@ scanning, with focused tests and live Docker Compose v2 checks. Commit
 `194e25d3f9755b7481c62d34a373375c08f1a19e` fixes empty-range declaration
 variables, strict publisher-record traversal, and compact control syntax, with
 focused compatibility tests and exact Docker Compose v2 rejection and output
-oracles. No autobot finding was deferred, and every connector comment is
+oracles. Commit `4f28a4d5eacc301f44d65e5683a8e43f20a2510c` fixes the
+three UTF-8, print, and typed-quote findings, preserves action-produced escape
+sequences, and extends both focused coverage and the live Docker Compose v2
+oracle. No autobot finding was deferred, and every connector comment is
 answered with its implementation and verification disposition.
 
 ## Documentation And Operations
