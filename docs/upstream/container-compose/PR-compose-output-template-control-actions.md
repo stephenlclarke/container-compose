@@ -52,6 +52,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): propagate constant label headers`
 - `6f5ab6aba03ba66eee8625db178af6e95eb16f8e`
   `fix(format): align logical and UTF-8 helpers`
+- `130ed4d91b2e3402e702d6d3ba3a265d92d8dd2b`
+  `fix(format): preserve raw Go string helpers`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -77,9 +79,15 @@ This documentation commit is intentionally separate.
   - resolves root-scoped `$.Label` calls against the original formatter row
     after `range` or `with` changes dot;
   - traverses arrays in source order and objects in deterministic key order;
-  - splits empty separators after each Unicode scalar, matching Go's UTF-8
-    sequence behavior, and truncates string results by raw UTF-8 bytes;
+  - delegates raw Go string operations without converting invalid UTF-8 byte
+    sequences back through Swift `String`;
   - validates root-row field references before command side effects.
+- `Sources/ComposeCore/ComposeDockerTemplateStringSupport.swift`
+  - isolates raw Go string and byte-string conversion from the evaluator;
+  - splits empty separators after each valid UTF-8 sequence and each invalid
+    byte, matching Go's `utf8.DecodeRune` progression;
+  - finds non-empty separators and preserves raw bytes through `split`,
+    `join`, and `truncate`.
 - `Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift`
   - validates lexical variable scope before command side effects;
   - preserves repeated fields and walks all control-flow branches for command
@@ -160,7 +168,8 @@ This documentation commit is intentionally separate.
   - covers compact parenthesized control actions, empty-range declaration
     variables, strict publisher fields, scalar traversal, lenient map misses,
     UTF-8 byte helpers, `print` spacing, typed Go quoting, publisher struct
-    display, decomposed and multi-scalar rune widths, and typed map keys.
+    display, decomposed and multi-scalar rune widths, invalid partial UTF-8
+    splitting and joining, negative truncation, and typed map keys.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateCallCompatibilityTests.swift`
   - covers root-scoped label rendering, field and table-key analysis, typed
     `printf` formats, compact range assignments, parenthesized selector
@@ -196,7 +205,8 @@ This documentation commit is intentionally separate.
     label arguments and table label keys carried through `print`, `printf`,
     `upper`, `lower`, `title`, `pad`, and `truncate`.
   - verifies ordered logical publisher selection, empty-separator and
-    empty-input splitting, and partial UTF-8 byte truncation.
+    empty-input splitting, partial UTF-8 byte truncation and splitting, and
+    negative truncation rejection.
 
 ## Validation
 
@@ -206,15 +216,13 @@ The final local verification passed on the MacBook Pro:
 make swift-coverage
 make check
 swiftlint lint --strict --quiet \
+  Sources/ComposeCore/ComposeDockerTemplateStringSupport.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
-  Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift
+  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift
 swiftformat --lint --swift-version 6.2 \
+  Sources/ComposeCore/ComposeDockerTemplateStringSupport.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
-  Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift
+  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift
 shellcheck Tools/parity/check-compose-format-template-actions.sh
 CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
   make docker-compose-format-template-actions-parity
@@ -222,8 +230,8 @@ git diff --check
 ```
 
 - Swift: 1,165 tests in 31 suites passed.
-- Structured template engine: 1,855/1,983 lines, 93.55%.
-- `ComposeStructuredFormatTemplate.swift`: 771/825 lines, 93.45%.
+- Structured template engine: 1,942/2,079 lines, 93.41%.
+- `ComposeStructuredFormatTemplate.swift`: 795/851 lines, 93.42%.
 - `ComposeStructuredTemplateAnalysis.swift`: 443/459 lines, 96.51%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 61/65 lines,
   93.85%.
@@ -232,6 +240,7 @@ git diff --check
 - `ComposeDockerTemplateData.swift`: 92/107 lines, 85.98%.
 - `ComposeDockerTemplatePrintf.swift`: 284/298 lines, 95.30%.
 - `ComposeDockerTemplateFunctionSupport.swift`: 155/174 lines, 89.08%.
+- `ComposeDockerTemplateStringSupport.swift`: 63/70 lines, 90.00%.
 - Formatter table boundary: 67/68 lines, 98.53%.
 - Command rendering helpers: 751/780 lines, 96.28%.
 - Repository checks passed, including 167 release-controller tests, 14
@@ -420,6 +429,14 @@ root outcomes and aligns empty-separator splitting and truncation with Go's
 UTF-8 behavior. Focused analysis, rendering, and command-path coverage plus the
 committed Docker Compose 5.3.1 and Apple Current oracle protect all three
 reported cases.
+
+After the connector findings were closed, an adjacent Docker Compose 5.3.1
+oracle audit reproduced two further edge cases: negative `truncate` lengths
+must fail, and `split` followed by `join` must preserve an invalid UTF-8 prefix
+created by byte truncation. Commit
+`130ed4d91b2e3402e702d6d3ba3a265d92d8dd2b` isolates raw Go string handling,
+rejects negative lengths, preserves byte strings across all three helpers, and
+adds focused and committed live-parity regressions.
 
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
