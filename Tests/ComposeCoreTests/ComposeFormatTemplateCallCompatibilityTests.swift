@@ -44,6 +44,83 @@ struct ComposeFormatCallCompatibilityTests {
     }
 
     @Test
+    func `label calls require typed string keys`() throws {
+        let values: [String: DockerTemplateData] = [
+            "Bytes": .byteString(Array("oracle.example/key".utf8)),
+            "Labels": .lookupObject(
+                ["oracle.example/key": .string("value")],
+                display: "oracle.example/key=value",
+            ),
+            "Publishers": .array([
+                .record(["TargetPort": .integer(8080)]),
+            ]),
+        ]
+
+        #expect(try renderDockerTemplate("{{.Label .Bytes}}", values: values) == "value")
+        #expect(throws: (any Error).self) {
+            try renderDockerTemplate("{{.Label 1}}", values: values)
+        }
+        #expect(throws: (any Error).self) {
+            try renderDockerTemplate(
+                "{{range .Publishers}}{{$.Label .TargetPort}}{{end}}",
+                values: values,
+            )
+        }
+    }
+
+    @Test
+    func `compact range assignments preserve declared variables`() throws {
+        let values: [String: DockerTemplateData] = [
+            "Publishers": .array([
+                .record(["TargetPort": .integer(8080)]),
+            ]),
+        ]
+
+        #expect(
+            try renderDockerTemplate(
+                "{{range $publisher:=.Publishers}}{{$publisher.TargetPort}}{{end}}",
+                values: values,
+            ) == "8080",
+        )
+        #expect(
+            try renderDockerTemplate(
+                "{{range $index,$publisher:=.Publishers}}{{$index}}={{$publisher.TargetPort}}{{end}}",
+                values: values,
+            ) == "0=8080",
+        )
+        #expect(
+            try renderDockerTemplate(
+                "{{range (split \"a:=b\" \":=\")}}{{.}};{{end}}",
+                values: values,
+            ) == "a;b;",
+        )
+    }
+
+    @Test
+    func `parenthesized expression selectors retain structured types`() throws {
+        let values: [String: DockerTemplateData] = [
+            "Publishers": .array([
+                .record(["TargetPort": .integer(8080)]),
+            ]),
+        ]
+        let template = "{{(index .Publishers 0).TargetPort}}"
+
+        #expect(try renderDockerTemplate(template, values: values) == "8080")
+        #expect(dockerTemplateFields(in: template) == ["Publishers"])
+        #expect(throws: (any Error).self) {
+            try renderDockerTemplate(
+                "{{(index .Publishers 0).Missing}}",
+                values: values,
+            )
+        }
+        for malformed in ["{{()}}", "{{(1)x}}", "{{(1).}}"] {
+            #expect(throws: (any Error).self) {
+                try renderDockerTemplate(malformed, values: values)
+            }
+        }
+    }
+
+    @Test
     func `printf requires a typed string format`() throws {
         let values: [String: DockerTemplateData] = [
             "Bytes": .byteString(Array("%s".utf8)),

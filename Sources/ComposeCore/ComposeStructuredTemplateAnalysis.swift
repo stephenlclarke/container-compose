@@ -131,8 +131,11 @@ private func validateStructuredValueVariables(
     {
         throw structuredUnsupportedAction("undefined variable \(path.base)")
     }
-    if let expression = structuredTemplateParenthesizedExpression(token) {
-        try validateStructuredExpressionVariables(expression, variables: variables)
+    if let parenthesized = structuredTemplateParenthesizedValue(token) {
+        try validateStructuredExpressionVariables(
+            parenthesized.expression,
+            variables: variables,
+        )
     }
 }
 
@@ -231,8 +234,12 @@ private func collectStructuredValueFields(
         }
         return
     }
-    if let expression = structuredTemplateParenthesizedExpression(token) {
-        collectStructuredExpressionFields(expression, dotIsRoot: dotIsRoot, into: &fields)
+    if let parenthesized = structuredTemplateParenthesizedValue(token) {
+        collectStructuredExpressionFields(
+            parenthesized.expression,
+            dotIsRoot: dotIsRoot,
+            into: &fields,
+        )
     }
 }
 
@@ -273,8 +280,11 @@ private func collectStructuredExpressionLabelKeys(
             {
                 keys.append(key)
             }
-            if let nested = structuredTemplateParenthesizedExpression(token) {
-                collectStructuredExpressionLabelKeys(nested, into: &keys)
+            if let parenthesized = structuredTemplateParenthesizedValue(token) {
+                collectStructuredExpressionLabelKeys(
+                    parenthesized.expression,
+                    into: &keys,
+                )
             }
         }
     }

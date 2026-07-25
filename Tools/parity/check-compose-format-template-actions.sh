@@ -201,6 +201,12 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%d" .ExitCode}}|{{eq .ExitCode 0}}'
+    )"
+    assert_equal "$actual" '0|true' "$project typed default exit-code template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format 'missing={{.Label "oracle.example/missing"}}'
     )"
     assert_equal "$actual" 'missing=' "$project missing label template"
@@ -216,6 +222,28 @@ check_implementation() {
             --format '{{if(.Name)}}{{with(index .Publishers 0)}}{{.TargetPort}}{{end}}|{{range(.Publishers)}}{{.PublishedPort}}{{end}}{{end}}'
     )"
     assert_equal "$actual" '8080|32768' "$project compact control template"
+
+    # Go-template variables must reach Compose literally.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range $publisher:=.Publishers}}{{$publisher.TargetPort}}{{end}}'
+    )"
+    assert_equal "$actual" '8080' "$project compact one-variable range template"
+
+    # Go-template variables must reach Compose literally.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range $index,$publisher:=.Publishers}}{{$index}}={{$publisher.TargetPort}}{{end}}'
+    )"
+    assert_equal "$actual" '0=8080' "$project compact two-variable range template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{(index .Publishers 0).TargetPort}}'
+    )"
+    assert_equal "$actual" '8080' "$project parenthesized selector template"
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
@@ -361,6 +389,12 @@ check_implementation() {
     assert_rejected "$project non-string printf format template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{range .Publishers}}{{printf .TargetPort}}{{end}}'
+    assert_rejected "$project integer label key template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{.Label 1}}'
+    assert_rejected "$project publisher label key template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Publishers}}{{$.Label .TargetPort}}{{end}}'
     assert_rejected "$project nested scalar field template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{range .Publishers}}{{.TargetPort.Bad}}{{end}}'

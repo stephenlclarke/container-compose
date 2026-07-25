@@ -183,7 +183,7 @@ private func composeContainerStructuredTemplateValues(
     let mounts = container.mounts.compactMap(\.source).joined(separator: ",")
     let networks = container.networks.map(\.network).joined(separator: ",")
     return [
-        "ExitCode": container.exitCode.map { .integer(Int($0)) } ?? .string(""),
+        "ExitCode": .integer(Int(container.exitCode ?? 0)),
         "Health": .string(container.health ?? ""),
         "ID": .string(noTrunc ? container.id : truncatedDockerIdentifier(container.id)),
         "Image": .string(container.imageReference),

@@ -13620,6 +13620,35 @@ struct ComposeOrchestratorTests {
         )
     }
 
+    @Test("ps format template defaults an absent exit code to typed zero")
+    func psFormatTemplateDefaultsAbsentExitCodeToTypedZero() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.format = #"{{printf "%d" .ExitCode}}\t{{eq .ExitCode 0}}"#
+            }
+        )
+
+        #expect(emitted.messages == ["0\ttrue"])
+    }
+
     @Test("ps format template ranges structured publishers and reads labels")
     func psFormatTemplateRangesStructuredPublishersAndReadsLabels() async throws {
         let emitted = MessageRecorder()

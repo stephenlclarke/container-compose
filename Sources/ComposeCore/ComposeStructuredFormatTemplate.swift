@@ -149,7 +149,7 @@ private struct StructuredTemplateParser {
     }
 }
 
-private struct StructuredTemplateScanState {
+struct StructuredTemplateScanState {
     private var quote: Character?
     private var escaped = false
     private var parentheses = 0
@@ -332,13 +332,13 @@ private func structuredTemplateExpressionClose(
 }
 
 private func structuredTemplateRange(_ value: String) throws -> StructuredTemplateRange {
-    guard let tokens = structuredTemplateTokens(value), !tokens.isEmpty else {
+    guard structuredTemplateTokens(value)?.isEmpty == false else {
         throw structuredUnsupportedAction("range \(value)")
     }
-    guard let assignmentIndex = tokens.firstIndex(of: ":=") else {
+    guard let assignmentRange = structuredTemplateAssignmentRange(in: value) else {
         return StructuredTemplateRange(expression: value, keyVariable: nil, valueVariable: nil)
     }
-    let declarationText = tokens[..<assignmentIndex].joined(separator: " ")
+    let declarationText = String(value[..<assignmentRange.lowerBound])
     guard !declarationText.trimmingCharacters(in: .whitespaces).hasSuffix(","),
           !declarationText.contains(",,")
     else {
@@ -352,12 +352,13 @@ private func structuredTemplateRange(_ value: String) throws -> StructuredTempla
     else {
         throw structuredUnsupportedAction("range \(value)")
     }
-    let expressionTokens = tokens[tokens.index(after: assignmentIndex)...]
-    guard !expressionTokens.isEmpty else {
+    let expression = String(value[assignmentRange.upperBound...])
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !expression.isEmpty else {
         throw structuredUnsupportedAction("range \(value)")
     }
     return StructuredTemplateRange(
-        expression: expressionTokens.joined(separator: " "),
+        expression: expression,
         keyVariable: declarations.count == 2 ? declarations[0] : nil,
         valueVariable: declarations.last,
     )
@@ -506,8 +507,8 @@ private func isStructuredTemplateValue(_ token: String) -> Bool {
         || token == "$"
         || structuredTemplatePath(token) != nil
         || structuredTemplateStringLiteral(token) != nil
-        || structuredTemplateParenthesizedExpression(token).map {
-            (try? validateStructuredExpression($0)) != nil
+        || structuredTemplateParenthesizedValue(token).map {
+            (try? validateStructuredExpression($0.expression)) != nil
         } == true
         || Int(token) != nil
         || token == "true"
@@ -543,7 +544,7 @@ func structuredTemplatePath(_ token: String) -> (base: String, fields: [String])
     return (variable, Array(components.dropFirst()))
 }
 
-private func isStructuredTemplateIdentifier(_ value: String) -> Bool {
+func isStructuredTemplateIdentifier(_ value: String) -> Bool {
     guard let first = value.first, first.isLetter || first == "_" else {
         return false
     }
@@ -567,13 +568,6 @@ func structuredTemplateStringLiteral(_ token: String) -> String? {
         return nil
     }
     return value as? String
-}
-
-func structuredTemplateParenthesizedExpression(_ token: String) -> String? {
-    guard token.count >= 3, token.first == "(", token.last == ")" else {
-        return nil
-    }
-    return String(token.dropFirst().dropLast())
 }
 
 func structuredTemplateTokens(_ value: String) -> [String]? {
@@ -634,7 +628,10 @@ private func evaluateStructuredTemplateExpression(
         if index == 0, tokens.count == 1, isStructuredTemplateValue(head) {
             pipelineValue = try structuredTemplateValue(head, context: context)
         } else if index == 0, isStructuredTemplateLabelFunction(head), tokens.count == 2 {
-            let key = try structuredTemplateValue(tokens[1], context: context).display
+            let key = try structuredString(
+                structuredTemplateValue(tokens[1], context: context),
+                function: "Label",
+            )
             let source = head == "$.Label" ? context.root : context.dot
             pipelineValue = try structuredTemplateLabel(key, source: source)
         } else {
@@ -721,8 +718,14 @@ private func structuredTemplateValue(
     if let value = structuredTemplateStringLiteral(token) {
         return .string(value)
     }
-    if let expression = structuredTemplateParenthesizedExpression(token) {
-        return try evaluateStructuredTemplateExpression(expression, context: context)
+    if let parenthesized = structuredTemplateParenthesizedValue(token) {
+        let base = try evaluateStructuredTemplateExpression(
+            parenthesized.expression,
+            context: context,
+        )
+        return try parenthesized.fields.reduce(base) { value, field in
+            try structuredTemplateLookup(value, field)
+        }
     }
     if let value = Int(token) {
         return .integer(value)
