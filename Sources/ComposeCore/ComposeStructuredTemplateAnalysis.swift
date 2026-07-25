@@ -240,6 +240,12 @@ private func collectStructuredValueFields(
             dotIsRoot: dotIsRoot,
             into: &fields,
         )
+        if structuredTemplateExpressionRetainsRoot(
+            parenthesized.expression,
+            dotIsRoot: dotIsRoot,
+        ), let field = parenthesized.fields.first {
+            fields.append(field == "Label" ? "Labels" : field)
+        }
     }
 }
 

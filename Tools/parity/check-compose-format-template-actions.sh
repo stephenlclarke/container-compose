@@ -327,6 +327,16 @@ check_implementation() {
     assert_equal "$(printf '%s\n' "$actual" | sed -n '1p' | awk '{$1=$1; print}')" \
         'STATUS' "$project conditional table header"
 
+    local field_name
+    for field_name in ExitCode Health LocalVolumes Mounts Names Networks Publishers; do
+        actual="$(
+            "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+                --format "table {{.$field_name}}" \
+                | sed -n '1p'
+        )"
+        assert_equal "$actual" '<no value>' "$project $field_name table header"
+    done
+
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format 'table {{.Label "oracle.example/key"}}'
@@ -423,10 +433,23 @@ check_implementation() {
         down --remove-orphans --volumes >/dev/null
 }
 
+# Confirms that selectors appended to a parenthesized root cannot bypass the
+# supported-field gate. Docker Compose accepts Command, while container-compose
+# deliberately rejects that unavailable field before asking the Apple runtime
+# to discover containers.
+check_container_field_validation() {
+    "${DOCKER_COMPOSE_COMMAND[@]}" --project-name "$DOCKER_PROJECT" -f "$FIXTURE_DIR/compose.yaml" \
+        ps --format '{{($).Command}}' >/dev/null
+    assert_rejected "$CONTAINER_PROJECT parenthesized unsupported ps field" \
+        "$CONTAINER_COMPOSE" --project-name "$CONTAINER_PROJECT" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{($).Command}}'
+}
+
 # Runs Docker first so both implementations can use the same fixed host port.
 run_checks() {
     check_implementation "$DOCKER_PROJECT" "${DOCKER_COMPOSE_COMMAND[@]}"
     check_implementation "$CONTAINER_PROJECT" "$CONTAINER_COMPOSE"
+    check_container_field_validation
 }
 
 # Runs the parity check.

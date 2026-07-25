@@ -13736,22 +13736,24 @@ struct ComposeOrchestratorTests {
         #expect(containers.compactMap { $0["health"] as? String } == ["healthy"])
     }
 
-    @Test("ps rejects unsupported template fields")
+    @Test("ps rejects unsupported template fields, including parenthesized root selectors")
     func psRejectsUnsupportedTemplateFields() async throws {
         let runner = RecordingRunner()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [])
         let orchestrator = ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
 
-        do {
-            try await orchestrator.ps(
-                project: ComposeProject(name: "demo", services: [:]),
-                options: ComposePsOptions { $0.format = "{{.Command}}" }
-            )
-            Issue.record("Expected unsupported ps template field error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("ps --format field '.Command'; supported fields are ExitCode, Health, ID, Image, Labels, LocalVolumes, Mounts, Name, Names, Networks, Ports, Project, Publishers, Service, State, Status"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
+        for template in ["{{.Command}}", "{{($).Command}}", "{{((.)).Command}}"] {
+            do {
+                try await orchestrator.ps(
+                    project: ComposeProject(name: "demo", services: [:]),
+                    options: ComposePsOptions { $0.format = template }
+                )
+                Issue.record("Expected unsupported ps template field error for \(template)")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported("ps --format field '.Command'; supported fields are ExitCode, Health, ID, Image, Labels, LocalVolumes, Mounts, Name, Names, Networks, Ports, Project, Publishers, Service, State, Status"))
+            } catch {
+                Issue.record("Unexpected error for \(template): \(error)")
+            }
         }
 
         #expect(runner.commands.isEmpty)

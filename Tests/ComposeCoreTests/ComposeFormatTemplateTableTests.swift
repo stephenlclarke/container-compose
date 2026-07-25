@@ -39,6 +39,10 @@ struct ComposeFormatTemplateTableTests {
             dockerTemplateFields(in: "{{with (.)}}{{.Command}}{{end}}")
                 == ["Command"],
         )
+        #expect(
+            dockerTemplateFields(in: "{{($).Command}}\t{{((.)).Name}}")
+                == ["Command", "Name"],
+        )
         #expect(throws: (any Error).self) {
             try validateDockerTemplateFields(
                 dockerTemplateFields(in: "{{with .}}{{.Command}}{{end}}"),
@@ -87,5 +91,26 @@ struct ComposeFormatTemplateTableTests {
             try renderDockerTemplateTable(template: "{{.Name}}", headers: ["Name": "NAME"], rows: [])
                 == "",
         )
+    }
+
+    @Test
+    func `omitted headers render Docker no value sentinel`() throws {
+        for field in [
+            "ExitCode",
+            "Health",
+            "LocalVolumes",
+            "Mounts",
+            "Names",
+            "Networks",
+            "Publishers",
+        ] {
+            #expect(
+                try renderDockerTemplateTable(
+                    template: "{{.\(field)}}",
+                    headers: [:],
+                    rows: ["value"],
+                ) == "<no value>\nvalue",
+            )
+        }
     }
 }
