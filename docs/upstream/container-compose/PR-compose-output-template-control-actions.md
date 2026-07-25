@@ -32,6 +32,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): preserve Go record and rune formatting`
 - `2628c6e32158028914c8d6e42257b877035cadad`
   `fix(format): enforce typed map index keys`
+- `bae81d53665d0309b96f771dea4aac18cfd1b2f2`
+  `fix(format): preserve Go operand types`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -72,9 +74,13 @@ This documentation commit is intentionally separate.
   - preserve Go UTF-8 byte offsets for `len`, `index`, and `slice`, Go spacing
     between adjacent non-string `print` operands, and type-aware quoted
     strings, raw bytes, runes, scalars, maps, arrays, and publisher records;
+  - require typed integer offsets for indexed collections instead of coercing
+    numeric strings;
   - require string or valid UTF-8 byte-string keys when indexing string-keyed
     objects and lookup objects;
-  - count Unicode scalars as Go runes when applying `printf` field widths.
+  - preserve operand types for `%s` and `%d`, recursively apply verbs to
+    collections and records, reproduce Go type diagnostics, and count Unicode
+    scalars as Go runes when applying `printf` field widths.
 - `Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift`
   - distinguishes whitespace-delimited trim markers from signed integer
     literals on both action boundaries.
@@ -102,6 +108,9 @@ This documentation commit is intentionally separate.
     variables, strict publisher fields, scalar traversal, lenient map misses,
     UTF-8 byte helpers, `print` spacing, typed Go quoting, publisher struct
     display, decomposed and multi-scalar rune widths, and typed map keys.
+- `Tests/ComposeCoreTests/ComposeFormatTemplateOperandCompatibilityTests.swift`
+  - covers strict typed index and slice offsets, structured publisher joins,
+    and scalar and recursive typed `printf` diagnostics.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift`
   - covers duplicate columns, conditional headers, label headers, empty
     tables, legacy callers, field analysis, and variable scope.
@@ -116,6 +125,7 @@ This documentation commit is intentionally separate.
     compact control actions, empty-range variables, strict publisher fields,
     UTF-8 byte offsets, adjacent print operands, typed quoted values,
     publisher struct display, decomposed rune widths, non-string map-key
+    rejection, structured joins, typed `printf` diagnostics, string-offset
     rejection, functions, and whitespace.
 
 ## Validation
@@ -137,6 +147,7 @@ swiftlint lint --strict --quiet \
   Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
+  Tests/ComposeCoreTests/ComposeFormatTemplateOperandCompatibilityTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift \
   Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift
 swiftformat --lint --swift-version 6.2 \
@@ -151,6 +162,7 @@ swiftformat --lint --swift-version 6.2 \
   Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
+  Tests/ComposeCoreTests/ComposeFormatTemplateOperandCompatibilityTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift \
   Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift
 shellcheck Tools/parity/check-compose-format-template-actions.sh
@@ -162,14 +174,14 @@ CONTAINER_COMPOSE_LIVE=1 \
 git diff --check
 ```
 
-- Swift: 1,147 tests in 29 suites passed.
-- Structured template engine: 1,426/1,554 lines, 91.76%.
+- Swift: 1,150 tests in 30 suites passed.
+- Structured template engine: 1,500/1,632 lines, 91.91%.
 - `ComposeStructuredFormatTemplate.swift`: 758/819 lines, 92.55%.
 - `ComposeStructuredTemplateAnalysis.swift`: 200/216 lines, 92.59%.
 - `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
 - `ComposeDockerTemplateData.swift`: 91/107 lines, 85.05%.
-- `ComposeDockerTemplatePrintf.swift`: 210/217 lines, 96.77%.
-- `ComposeDockerTemplateFunctionSupport.swift`: 149/177 lines, 84.18%.
+- `ComposeDockerTemplatePrintf.swift`: 284/298 lines, 95.30%.
+- `ComposeDockerTemplateFunctionSupport.swift`: 149/174 lines, 85.63%.
 - Formatter table boundary: 67/68 lines, 98.53%.
 - Command rendering helpers: 752/781 lines, 96.29%.
 - Repository checks passed, including 167 release-controller tests, 14
@@ -207,7 +219,8 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified twenty-three actionable compatibility cases:
+identified twenty-five actionable compatibility cases and one suggestion that
+was disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
   invalid collection access;
@@ -253,6 +266,10 @@ identified twenty-three actionable compatibility cases:
   clusters.
 - string-keyed maps reject integer and boolean index operands instead of
   coercing their display text into plausible keys.
+- indexed collections reject numeric string offsets instead of coercing them
+  to integers;
+- `%s` and `%d` preserve operand types, recurse through arrays, maps, and
+  records, and reproduce Go type diagnostics and field-width alignment.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -277,9 +294,16 @@ record display and Go rune-width semantics, with focused unit coverage and
 exact Docker Compose v2 and Apple Current parity. Commit
 `2628c6e32158028914c8d6e42257b877035cadad` enforces typed keys for
 string-keyed objects and lookup objects, with focused success and rejection
-coverage plus an exact live non-string-key rejection oracle. No autobot finding
-was deferred, and every connector comment is answered with its implementation
-and verification disposition.
+coverage plus an exact live non-string-key rejection oracle. Commit
+`bae81d53665d0309b96f771dea4aac18cfd1b2f2` enforces typed integer
+collection offsets and Go-compatible typed `printf` diagnostics, with focused
+unit coverage and exact Docker Compose 5.3.1 and Apple Current live oracles.
+The suggestion to reject `join` for publisher records was not implemented:
+Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
+`{127.0.0.1 8080 32768 tcp}`. The same successful behavior is now protected by
+unit and committed live-parity coverage. No actionable autobot finding was
+deferred, and every connector comment is answered with its implementation or
+verified compatibility disposition.
 
 ## Documentation And Operations
 
