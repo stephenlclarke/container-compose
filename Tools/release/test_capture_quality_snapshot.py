@@ -284,6 +284,14 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn("--badge-snapshot-id", workflow)
         self.assertIn("--verify-static-badges", workflow)
         self.assertIn("${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}", workflow)
+        self.assertIn(
+            "python3 release-tools/Tools/release/capture-quality-snapshot.py",
+            workflow,
+        )
+        self.assertLess(
+            workflow.index("- name: Checkout immutable release control tools"),
+            workflow.index("- name: Stage release assets and notes"),
+        )
         retention_step = workflow.split(
             "- name: Retain only current release assets", 1
         )[1].split("\n\n  repair-stable-tap:", 1)[0]

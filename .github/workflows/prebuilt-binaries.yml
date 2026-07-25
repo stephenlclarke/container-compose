@@ -912,6 +912,29 @@ jobs:
           fi
           printf 'publish=%s\n' "${publish}" >> "$GITHUB_OUTPUT"
 
+      - name: Checkout immutable release control tools
+        if: steps.current-freshness.outputs.publish == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: release-tools
+          fetch-depth: 1
+          ref: ${{ github.sha }}
+          token: ${{ github.token }}
+
+      - name: Verify immutable release control tools
+        if: steps.current-freshness.outputs.publish == 'true'
+        env:
+          RELEASE_CONTROL_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git -C release-tools rev-parse HEAD)"
+          if [[ "${actual}" != "${RELEASE_CONTROL_SHA}" ]]; then
+            printf 'release control checkout mismatch: expected %s, got %s\n' \
+              "${RELEASE_CONTROL_SHA}" "${actual}" >&2
+            exit 1
+          fi
+
       - name: Stage release assets and notes
         if: steps.current-freshness.outputs.publish == 'true'
         env:
@@ -980,13 +1003,14 @@ jobs:
           if [[ "${quality_release_kind}" == "stable" ]]; then
             quality_snapshot_args+=(--allow-expired-sonarqube-metrics)
           fi
-          python3 Tools/release/capture-quality-snapshot.py \
+          python3 release-tools/Tools/release/capture-quality-snapshot.py \
             "${quality_snapshot_args[@]}" \
             --svg-output "${quality_snapshot_svg}" \
             --asset-url "${quality_snapshot_asset_url}" > "${quality_snapshot}"
           printf '%s\n' "${quality_snapshot_svg}" >> "${extra_assets}"
           release_notes_args+=(--quality-snapshot "${quality_snapshot}")
-          python3 Tools/release/release-notes.py "${release_notes_args[@]}" > "${notes}"
+          python3 release-tools/Tools/release/release-notes.py \
+            "${release_notes_args[@]}" > "${notes}"
 
           if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
             tag_target="$(
@@ -1033,30 +1057,7 @@ jobs:
             PUBLISH_SHA="${PUBLISH_SHA}" \
             RELEASE_ASSET_PATH="${RUNNER_TEMP}/${ASSET}" \
             RELEASE_CHECKSUM_PATH="${RUNNER_TEMP}/${ASSET}.sha256" \
-            Tools/release/publish-github-release.sh
-
-      - name: Checkout immutable release control tools
-        if: steps.current-freshness.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          path: release-tools
-          fetch-depth: 1
-          ref: ${{ github.sha }}
-          token: ${{ github.token }}
-
-      - name: Verify immutable release control tools
-        if: steps.current-freshness.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true'
-        env:
-          RELEASE_CONTROL_SHA: ${{ github.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          actual="$(git -C release-tools rev-parse HEAD)"
-          if [[ "${actual}" != "${RELEASE_CONTROL_SHA}" ]]; then
-            printf 'release control checkout mismatch: expected %s, got %s\n' \
-              "${RELEASE_CONTROL_SHA}" "${actual}" >&2
-            exit 1
-          fi
+            release-tools/Tools/release/publish-github-release.sh
 
       - name: Checkout Homebrew tap
         if: steps.current-freshness.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true'
@@ -1195,7 +1196,8 @@ jobs:
               --current-asset "${{ steps.lane.outputs.demo_asset }}"
             )
           fi
-          python3 Tools/release/retain-release-assets.py "${retention_arguments[@]}"
+          python3 release-tools/Tools/release/retain-release-assets.py \
+            "${retention_arguments[@]}"
 
   repair-stable-tap:
     name: Repair Stable Homebrew Formulae
