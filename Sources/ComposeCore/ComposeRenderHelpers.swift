@@ -23,7 +23,12 @@ let composePsTemplateFields: Set<String> = [
     "Health",
     "ID",
     "Image",
+    "Labels",
+    "LocalVolumes",
+    "Mounts",
     "Name",
+    "Names",
+    "Networks",
     "Ports",
     "Project",
     "Publishers",
@@ -122,25 +127,53 @@ func renderComposeContainerTemplate(
         supported: composePsTemplateFields,
     )
     let rows = try containers.map { container in
-        try renderDockerTemplate(template, values: composeContainerTemplateValues(container, noTrunc: noTrunc))
+        try renderDockerTemplate(
+            template,
+            values: composeContainerStructuredTemplateValues(container, noTrunc: noTrunc),
+        )
     }
     return table ? renderDockerTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
 }
 
-private func composeContainerTemplateValues(_ container: ComposeContainerSummary, noTrunc: Bool) -> [String: String] {
+private func composeContainerStructuredTemplateValues(
+    _ container: ComposeContainerSummary,
+    noTrunc: Bool,
+) -> [String: DockerTemplateData] {
     let ports = renderComposePublishedPorts(container.publishedPorts)
+    let labels = container.labels
+        .sorted { $0.key < $1.key }
+        .map { "\($0.key)=\($0.value)" }
+        .joined(separator: ",")
+    let labelValues = container.labels.mapValues(DockerTemplateData.string)
+    let publishers = container.publishedPorts.flatMap { port in
+        (0 ..< Int(port.count)).map { offset in
+            DockerTemplateData.object([
+                "Protocol": .string(port.protocolName),
+                "PublishedPort": .integer(Int(port.hostPort) + offset),
+                "TargetPort": .integer(Int(port.containerPort) + offset),
+                "URL": .string(port.hostAddress),
+            ])
+        }
+    }
+    let mounts = container.mounts.compactMap(\.target).joined(separator: ",")
+    let networks = container.networks.map(\.network).joined(separator: ",")
     return [
-        "ExitCode": container.exitCode.map(String.init) ?? "",
-        "Health": container.health ?? "",
-        "ID": noTrunc ? container.id : truncatedDockerIdentifier(container.id),
-        "Image": container.imageReference,
-        "Name": container.id,
-        "Ports": ports,
-        "Project": container.projectName ?? "",
-        "Publishers": ports,
-        "Service": container.serviceName ?? "",
-        "State": container.status,
-        "Status": container.status,
+        "ExitCode": container.exitCode.map { .integer(Int($0)) } ?? .string(""),
+        "Health": .string(container.health ?? ""),
+        "ID": .string(noTrunc ? container.id : truncatedDockerIdentifier(container.id)),
+        "Image": .string(container.imageReference),
+        "Labels": .lookupObject(labelValues, display: labels),
+        "LocalVolumes": .integer(container.mounts.count { $0.type == "volume" }),
+        "Mounts": .string(mounts),
+        "Name": .string(container.id),
+        "Names": .string(container.id),
+        "Networks": .string(networks),
+        "Ports": .string(ports),
+        "Project": .string(container.projectName ?? ""),
+        "Publishers": .array(publishers),
+        "Service": .string(container.serviceName ?? ""),
+        "State": .string(container.status),
+        "Status": .string(container.status),
     ]
 }
 
@@ -473,6 +506,7 @@ struct ComposeVolumeRecord: Encodable, Equatable {
     let driver: String
     let group: String
     let labels: String
+    let labelValues: [String: String]
     let links: String
     let mountpoint: String
     let name: String
@@ -505,6 +539,7 @@ struct ComposeVolumeRecord: Encodable, Equatable {
             .sorted { $0.key < $1.key }
             .map { "\($0.key)=\($0.value)" }
             .joined(separator: ",")
+        labelValues = labels
         links = "N/A"
         self.mountpoint = mountpoint.isEmpty ? "N/A" : mountpoint
         self.name = name
@@ -612,23 +647,28 @@ func renderComposeVolumeTemplate(_ records: [ComposeVolumeRecord], template: Str
     try validateDockerTemplateActions(in: template)
     try validateDockerTemplateFields(fields, command: "volumes", supported: composeVolumesTemplateFields)
     let rows = try records.map { record in
-        try renderDockerTemplate(template, values: composeVolumeTemplateValues(record))
+        try renderDockerTemplate(template, values: composeVolumeStructuredTemplateValues(record))
     }
     return table ? renderComposeVolumeTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
 }
 
-private func composeVolumeTemplateValues(_ record: ComposeVolumeRecord) -> [String: String] {
+private func composeVolumeStructuredTemplateValues(
+    _ record: ComposeVolumeRecord,
+) -> [String: DockerTemplateData] {
     [
-        "Availability": record.availability,
-        "Driver": record.driver,
-        "Group": record.group,
-        "Labels": record.labels,
-        "Links": record.links,
-        "Mountpoint": record.mountpoint,
-        "Name": record.name,
-        "Scope": record.scope,
-        "Size": record.size,
-        "Status": record.status,
+        "Availability": .string(record.availability),
+        "Driver": .string(record.driver),
+        "Group": .string(record.group),
+        "Labels": .lookupObject(
+            record.labelValues.mapValues(DockerTemplateData.string),
+            display: record.labels,
+        ),
+        "Links": .string(record.links),
+        "Mountpoint": .string(record.mountpoint),
+        "Name": .string(record.name),
+        "Scope": .string(record.scope),
+        "Size": .string(record.size),
+        "Status": .string(record.status),
     ]
 }
 

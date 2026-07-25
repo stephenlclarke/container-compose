@@ -1,4 +1,8 @@
-# Support Docker row-format template actions
+# Support Docker row-format template actions (superseded)
+
+This functions-only slice is superseded by
+[the structured control-action completion](PR-compose-output-template-control-actions.md),
+which closes the residual output-template gap.
 
 ## Summary
 
@@ -45,18 +49,15 @@ documentation](https://docs.docker.com/engine/cli/formatting/).
   `Container`, `ID`, and `Name` preserve the existing display/truncation
   policy for custom templates.
 - Unknown fields still fail at command validation before discovery or stats
-  sampling, and unsupported control forms and nested property paths fail before
-  side effects.
+  sampling.
 
 ## Compatibility Notes
 
-This closes the documented row-function gap for `ps`, `stats`, and `volumes`.
-The full Go-template control language (`if`, `range`, `with`, nested object
-paths, and user-defined functions) is not yet represented by the flat
-Docker-shaped command rows, so it remains explicitly unsupported rather than
-silently producing incorrect output. `STATUS.md` records that residual gap.
-The optional `printf` helper intentionally accepts only the portable `%s`,
-`%v`, and `%q` verbs without width or precision modifiers.
+This historical slice closed the documented row-function gap for `ps`,
+`stats`, and `volumes`. The follow-up structured evaluator adds control
+actions, nested/root/variable paths, deterministic ranges, label lookup, and
+portable `%d`, width, and left-alignment support. User-defined template
+functions remain outside Docker CLI output-format behavior.
 
 ## Validation
 

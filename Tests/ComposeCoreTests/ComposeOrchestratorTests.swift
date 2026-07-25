@@ -12466,6 +12466,35 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests == [.listVolumes])
     }
 
+    @Test("volumes format template renders control actions and label lookup")
+    func volumesFormatTemplateRendersControlActionsAndLabelLookup() async throws {
+        let emitted = MessageRecorder()
+        let resourceManager = RecordingContainerResourceManager(volumes: [
+            ComposeVolumeSummary(
+                name: "demo_cache",
+                driver: "local",
+                source: "/volumes/demo_cache",
+                labels: ["oracle.example/key": "value", composeProjectLabel: "demo"]
+            ),
+        ])
+        let project = ComposeProject(name: "demo", services: [:])
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            resourceManager: resourceManager
+        )
+        .volumes(
+            project: project,
+            options: ComposeVolumesOptions(
+                format: #"{{if .Name}}{{.Name}}={{.Label "oracle.example/key"}}{{else}}missing{{end}}"#
+            )
+        )
+
+        #expect(emitted.messages == ["demo_cache=value"])
+        #expect(await resourceManager.requests == [.listVolumes])
+    }
+
     @Test("volumes format template rejects unknown fields without records")
     func volumesFormatTemplateRejectsUnknownFieldsWithoutRecords() async throws {
         let resourceManager = RecordingContainerResourceManager(volumes: [])
@@ -13584,7 +13613,62 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        #expect(emitted.messages == ["healthy\t0\t127.0.0.1:8080->80/tcp"])
+        #expect(
+            emitted.messages == [
+                "healthy\t0\t[map[Protocol:tcp PublishedPort:8080 TargetPort:80 URL:127.0.0.1]]",
+            ]
+        )
+    }
+
+    @Test("ps format template ranges structured publishers and reads labels")
+    func psFormatTemplateRangesStructuredPublishersAndReadsLabels() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                    "oracle.example/key": "value",
+                ],
+                resources: .init(
+                    publishedPorts: [
+                        ComposeContainerPublishedPort(
+                            hostAddress: "127.0.0.1",
+                            hostPort: 32_768,
+                            containerPort: 8_080,
+                            protocolName: "tcp"
+                        ),
+                    ],
+                    mounts: [
+                        ComposeMount(type: "volume", source: "demo_cache", target: "/cache"),
+                    ],
+                    networks: [
+                        ComposeContainerNetworkAttachment(network: "demo_default", ipv4Address: "192.0.2.2"),
+                    ]
+                )
+            ),
+        ])
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+        .ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.format =
+                    #"{{range $index, $publisher := .Publishers}}{{$index}}={{$publisher.URL}}|{{$publisher.TargetPort}}|{{$publisher.PublishedPort}}|{{$publisher.Protocol}}{{end}}\t{{.Label "oracle.example/key"}}\t{{.LocalVolumes}}\t{{.Mounts}}\t{{.Networks}}"#
+            }
+        )
+
+        #expect(
+            emitted.messages == [
+                "0=127.0.0.1|8080|32768|tcp\tvalue\t1\t/cache\tdemo_default",
+            ]
+        )
     }
 
     @Test("ps can exclude orphaned service containers")
@@ -13636,7 +13720,7 @@ struct ComposeOrchestratorTests {
             )
             Issue.record("Expected unsupported ps template field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("ps --format field '.Command'; supported fields are ExitCode, Health, ID, Image, Name, Ports, Project, Publishers, Service, State, Status"))
+            #expect(error == .unsupported("ps --format field '.Command'; supported fields are ExitCode, Health, ID, Image, Labels, LocalVolumes, Mounts, Name, Names, Networks, Ports, Project, Publishers, Service, State, Status"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -20115,6 +20199,37 @@ struct ComposeOrchestratorTests {
         )
 
         #expect(emitted.messages == ["0123456789ab\t0123456789ab\t0123456789ab"])
+    }
+
+    @Test("stats template renders control actions before emitting direct API rows")
+    func statsTemplateRendersControlActionsBeforeEmittingDirectAPIRows() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: "demo-api-1", status: "running")],
+            statsResponses: [
+                "demo-api-1": [
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_000_000),
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_250_000),
+                ],
+            ]
+        )
+        let manager = ContainerClientStatsManager(
+            client: client,
+            sampleInterval: .microseconds(1),
+            sampleIntervalMicroseconds: 1_000_000,
+            sleep: { _ in }
+        )
+
+        try await manager.stats(
+            ids: ["demo-api-1"],
+            format: #"{{if .Container}}{{upper .Container}}={{.CPUPerc}}{{else}}missing{{end}}"#,
+            noStream: true,
+            noTrunc: false,
+            includeStopped: false,
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages == ["DEMO-API-1=25.00%"])
     }
 
     @Test("stats manager honors no trunc table output")

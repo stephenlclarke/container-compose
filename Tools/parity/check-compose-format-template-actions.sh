@@ -29,11 +29,12 @@
 #   DOCKER_COMPOSE     Docker Compose command to compare with. Defaults to
 #                      "docker compose" when available, otherwise docker-compose.
 #
-# This script keeps Docker Compose V2 and container-compose aligned for the
-# documented row-template actions used by `ps`: `upper`, `truncate`, `json`,
-# `split`, and `join` with a parenthesized nested expression. It deliberately
-# uses Compose-generated fields instead of image references because runtimes
-# may canonicalize equivalent image names differently.
+# This script keeps Docker Compose V2 and container-compose aligned for
+# row-template functions, control actions, variables, whitespace trimming,
+# label lookup, and structured publisher traversal across `ps`, `stats`, and
+# `volumes`. It deliberately uses Compose-generated fields instead of image
+# references because runtimes may canonicalize equivalent image names
+# differently.
 
 set -euo pipefail
 
@@ -46,7 +47,7 @@ readonly REPO_ROOT
 STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 DOCKER_COMPOSE_COMMAND=()
-FIXTURE_DIR=""
+readonly FIXTURE_DIR="$REPO_ROOT/Tools/parity/fixtures/output-template"
 DOCKER_PROJECT="cc-format-docker-$RANDOM"
 CONTAINER_PROJECT="cc-format-container-$RANDOM"
 
@@ -128,26 +129,12 @@ check_tools() {
     fi
 }
 
-# Creates the isolated Compose project fixture.
-create_fixture() {
-    FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/compose-format-template-actions.XXXXXX")"
-    cat >"$FIXTURE_DIR/compose.yml" <<'YAML'
-services:
-  api:
-    image: alpine:3.20
-    command: ["sleep", "120"]
-YAML
-}
-
-# Removes only the isolated fixture and its two generated projects.
+# Removes only the two isolated generated projects.
 cleanup() {
-    if [[ -n "$FIXTURE_DIR" ]]; then
-        "${DOCKER_COMPOSE_COMMAND[@]}" --project-name "$DOCKER_PROJECT" -f "$FIXTURE_DIR/compose.yml" \
-            down --remove-orphans --volumes >/dev/null 2>&1 || true
-        "$CONTAINER_COMPOSE" --project-name "$CONTAINER_PROJECT" -f "$FIXTURE_DIR/compose.yml" \
-            down --remove-orphans --volumes >/dev/null 2>&1 || true
-        rm -rf "$FIXTURE_DIR"
-    fi
+    "${DOCKER_COMPOSE_COMMAND[@]}" --project-name "$DOCKER_PROJECT" -f "$FIXTURE_DIR/compose.yaml" \
+        down --remove-orphans --volumes >/dev/null 2>&1 || true
+    "$CONTAINER_COMPOSE" --project-name "$CONTAINER_PROJECT" -f "$FIXTURE_DIR/compose.yaml" \
+        down --remove-orphans --volumes >/dev/null 2>&1 || true
 }
 
 # Compares one formatter result with its expected value.
@@ -167,24 +154,66 @@ assert_equal() {
 template_output() {
     local project="$1"
     shift
-    "$@" --project-name "$project" -f "$FIXTURE_DIR/compose.yml" ps \
+    "$@" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{upper .Service}}\t{{truncate .Name 6}}\t{{json .Name}}\t{{join (split .Name "-") "/"}}'
 }
 
-# Starts both fixtures and checks their formatted ps rows.
-run_checks() {
-    local docker_output container_output expected name
-    name="$DOCKER_PROJECT-api-1"
-    expected="API"$'\t'"cc-for"$'\t'"\"$name\""$'\t'"${name//-/\/}"
-    "${DOCKER_COMPOSE_COMMAND[@]}" --project-name "$DOCKER_PROJECT" -f "$FIXTURE_DIR/compose.yml" up --detach >/dev/null
-    docker_output="$(template_output "$DOCKER_PROJECT" "${DOCKER_COMPOSE_COMMAND[@]}")"
-    assert_equal "$docker_output" "$expected" 'Docker Compose ps template'
+# Runs the control/nested formatter surface against one implementation.
+check_implementation() {
+    local project="$1"
+    shift
+    local command=("$@")
+    local actual expected name volume_name
 
-    name="$CONTAINER_PROJECT-api-1"
+    name="$project-api-1"
+    volume_name="${project}_cache"
+    "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
+        up --detach --wait --wait-timeout 120 >/dev/null
+
     expected="API"$'\t'"cc-for"$'\t'"\"$name\""$'\t'"${name//-/\/}"
-    "$CONTAINER_COMPOSE" --project-name "$CONTAINER_PROJECT" -f "$FIXTURE_DIR/compose.yml" up --detach >/dev/null
-    container_output="$(template_output "$CONTAINER_PROJECT" "$CONTAINER_COMPOSE")"
-    assert_equal "$container_output" "$expected" 'container-compose ps template'
+    actual="$(template_output "$project" "${command[@]}")"
+    assert_equal "$actual" "$expected" "$project ps function template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{if .Name}}{{with index .Publishers 0}}{{.URL}}|{{.TargetPort}}|{{.PublishedPort}}|{{.Protocol}}{{end}}|{{.Label "oracle.example/key"}}{{else}}missing{{end}}'
+    )"
+    assert_equal "$actual" '127.0.0.1|8080|32768|tcp|value' "$project ps control template"
+
+    # Go-template variables must reach Compose literally.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range $index, $publisher := .Publishers}}{{$index}}={{$publisher.TargetPort}}/{{$publisher.PublishedPort}}/{{end}}'
+    )"
+    assert_equal "$actual" '0=8080/32768/' "$project ps range template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'A {{- if .Name -}} B {{- end -}} C'
+    )"
+    assert_equal "$actual" 'ABC' "$project ps whitespace template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" stats \
+            --no-stream --no-trunc --format '{{if .Name}}{{.Name}}{{else}}missing{{end}}' api
+    )"
+    assert_equal "$actual" "$name" "$project stats control template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" volumes \
+            --format '{{if .Name}}{{.Name}}={{.Label "oracle.example/key"}}{{else}}missing{{end}}'
+    )"
+    assert_equal "$actual" "$volume_name=value" "$project volumes control template"
+
+    "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
+        down --remove-orphans --volumes >/dev/null
+}
+
+# Runs Docker first so both implementations can use the same fixed host port.
+run_checks() {
+    check_implementation "$DOCKER_PROJECT" "${DOCKER_COMPOSE_COMMAND[@]}"
+    check_implementation "$CONTAINER_PROJECT" "$CONTAINER_COMPOSE"
 }
 
 # Runs the parity check.
@@ -192,10 +221,9 @@ main() {
     parse_args "$@"
     detect_docker_compose
     check_tools
-    create_fixture
     trap cleanup EXIT
     run_checks
-    info 'Docker Compose format-template action parity passed.'
+    info 'Docker Compose structured format-template parity passed.'
 }
 
 main "$@"

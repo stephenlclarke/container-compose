@@ -47,8 +47,8 @@ The recommended order is:
    fixes.
 4. Deliver embedded DNS and network identity, which unlock several visible
    Compose gaps at once.
-5. Complete the remaining feasible lifecycle, state, security, storage,
-   output-template, build, and model work.
+5. Complete the remaining feasible lifecycle, state, security, storage, build,
+   and model work.
 
 ## Audit Baseline
 
@@ -489,7 +489,6 @@ This should be managed as an upstream-convergence programme:
 | Correctness | Unconfigured image volumes fail open; commit loses inherited volumes |
 | Process control | Task cancellation does not terminate children; compatibility preflight can deadlock |
 | Lifecycle | `pre_start`; interactive foreground `run` hooks using the already pinned reattach primitive |
-| Output | Go-template control actions, nested object traversal, map/range traversal for `ps`, `stats`, and `volumes` |
 | Deploy | Accept and preserve local-mode Deploy metadata that Docker Compose accepts but does not schedule |
 | Testing | Honest runtime skips; provider/plugin/aggregate coverage; metadata-complete commit and copy fixtures |
 | Diagnostics | Supported-lane messages currently blame missing Apple primitives that exist in the pins |
@@ -769,7 +768,7 @@ Phase gate:
 
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
-| OUT-501 | P2 | Compose | Implement Go-template control actions and nested/map traversal | `if`, `with`, `range`, nested paths, map order, functions, and error parity for `ps`, `stats`, `volumes` |
+| OUT-501 | Complete | Compose | Go-template control actions and nested/map traversal | Completed 2026-07-25 with typed rows, deterministic traversal, command/unit coverage, and a Docker Compose v2 `compose.yaml` oracle; see [the completion handoff](../upstream/container-compose/PR-compose-output-template-control-actions.md). |
 | DEPLOY-502 | P2 | Compose | Preserve Docker local-mode Deploy metadata | Config/convert round trips mode, placement, update, rollback, reservations, and limits without pretending to schedule |
 | MODEL-503 | P3 | Runtime/Compose | Select and integrate a model-runner backend | Model lifecycle, endpoint readiness, variable injection, failure cleanup, and secrets reviewed |
 | LOG-504 | P2 | Runtime/Compose | Add distinct local/json-file and extensible logging drivers | Rotation, buffering, blocking mode, options, and plugin failure semantics pass |
