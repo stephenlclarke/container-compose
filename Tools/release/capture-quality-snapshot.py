@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime
 import html
 from html.parser import HTMLParser
 import json
@@ -89,6 +90,19 @@ class SnapshotBadge:
     color: str
 
 
+@dataclass(frozen=True)
+class RetainedSonarEvidence:
+    """Exact-commit SonarQube evidence retained by GitHub after metric expiry."""
+
+    check_url: str
+    ci_job_url: str
+    completed_at: str
+
+
+class MissingSonarMetricsError(ValueError):
+    """SonarCloud retained an analysis record without its required metric history."""
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Capture a static SonarQube and CodeQL release-note snapshot."
@@ -127,6 +141,14 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Render every static badge through GitHub Markdown and require "
             "each exact proxied image to be valid SVG before printing notes"
+        ),
+    )
+    parser.add_argument(
+        "--allow-expired-sonarqube-metrics",
+        action="store_true",
+        help=(
+            "For stable releases only, accept exact successful SonarQube check "
+            "and CI scan evidence when SonarCloud no longer retains metric history"
         ),
     )
     parser.add_argument("--poll-interval", type=int, default=POLL_INTERVAL_SECONDS)
@@ -204,9 +226,9 @@ def gh_text(gh: str, *arguments: str) -> str:
     return gh_api_text(gh, *arguments)
 
 
-def find_sonarqube_analysis(
-    *, host: str, project: str, branch: str, commit: str
-) -> dict[str, Any] | None:
+def sonarqube_analyses(
+    *, host: str, project: str, branch: str
+) -> list[dict[str, Any]]:
     response = request_json(
         sonar_url(
             host,
@@ -217,10 +239,61 @@ def find_sonarqube_analysis(
     analyses = response.get("analyses")
     if not isinstance(analyses, list):
         raise ValueError("SonarQube did not return an analyses list")
+    result: list[dict[str, Any]] = []
     for analysis in analyses:
-        if isinstance(analysis, dict) and analysis.get("revision") == commit:
+        if not isinstance(analysis, dict):
+            raise ValueError("SonarQube returned an invalid analysis entry")
+        result.append(analysis)
+    return result
+
+
+def find_sonarqube_analysis(
+    *, host: str, project: str, branch: str, commit: str
+) -> dict[str, Any] | None:
+    for analysis in sonarqube_analyses(host=host, project=project, branch=branch):
+        if analysis.get("revision") == commit:
             return analysis
     return None
+
+
+def sonarqube_has_analysis_after(
+    *,
+    host: str,
+    project: str,
+    branch: str,
+    commit: str,
+    timestamp: str,
+) -> bool:
+    """Return whether a different retained analysis supersedes the exact scan."""
+
+    try:
+        threshold = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError(f"invalid retained SonarQube timestamp: {timestamp}") from error
+    if threshold.tzinfo is None:
+        raise ValueError(f"retained SonarQube timestamp lacks a time zone: {timestamp}")
+
+    for analysis in sonarqube_analyses(host=host, project=project, branch=branch):
+        if analysis.get("revision") == commit:
+            continue
+        analysis_date = analysis.get("date")
+        if not isinstance(analysis_date, str):
+            raise ValueError("SonarQube analysis did not include a timestamp")
+        try:
+            candidate = datetime.fromisoformat(
+                analysis_date.replace("Z", "+00:00")
+            )
+        except ValueError as error:
+            raise ValueError(
+                f"invalid SonarQube analysis timestamp: {analysis_date}"
+            ) from error
+        if candidate.tzinfo is None:
+            raise ValueError(
+                f"SonarQube analysis timestamp lacks a time zone: {analysis_date}"
+            )
+        if candidate > threshold:
+            return True
+    return False
 
 
 def find_codeql_analysis(
@@ -243,6 +316,117 @@ def find_codeql_analysis(
     return None
 
 
+def paginated_objects(response: Any, key: str, authority: str) -> list[dict[str, Any]]:
+    """Flatten one GitHub --paginate --slurp response containing object pages."""
+
+    if not isinstance(response, list):
+        raise ValueError(f"GitHub did not return {authority} pages")
+    values: list[dict[str, Any]] = []
+    for page in response:
+        if not isinstance(page, dict):
+            raise ValueError(f"GitHub returned an invalid {authority} page")
+        page_values = page.get(key)
+        if not isinstance(page_values, list):
+            raise ValueError(f"GitHub did not return a {key} list")
+        for value in page_values:
+            if not isinstance(value, dict):
+                raise ValueError(f"GitHub returned an invalid {authority} entry")
+            values.append(value)
+    return values
+
+
+def find_retained_sonarqube_evidence(
+    *, gh: str, repository: str, commit: str
+) -> RetainedSonarEvidence | None:
+    """Require exact successful SonarCloud and main-CI scan authority."""
+
+    encoded_commit = urllib.parse.quote(commit, safe="")
+    check_pages = gh_json(
+        gh,
+        "--paginate",
+        "--slurp",
+        f"repos/{repository}/commits/{encoded_commit}/check-runs?per_page=100",
+    )
+    checks = paginated_objects(check_pages, "check_runs", "check-run")
+    sonar_checks = [
+        check
+        for check in checks
+        if check.get("head_sha") == commit
+        and check.get("name") == "SonarCloud Code Analysis"
+        and check.get("status") == "completed"
+        and check.get("conclusion") == "success"
+        and isinstance(check.get("app"), dict)
+        and check["app"].get("slug") == "sonarqubecloud"
+        and isinstance(check.get("details_url"), str)
+        and check.get("details_url")
+    ]
+    if not sonar_checks:
+        return None
+
+    run_pages = gh_json(
+        gh,
+        "--paginate",
+        "--slurp",
+        (
+            f"repos/{repository}/actions/workflows/ci.yml/runs?"
+            + urllib.parse.urlencode(
+                {
+                    "branch": "main",
+                    "head_sha": commit,
+                    "status": "completed",
+                    "per_page": "100",
+                }
+            )
+        ),
+    )
+    runs = paginated_objects(run_pages, "workflow_runs", "workflow-run")
+    for run in runs:
+        run_id = run.get("id")
+        if (
+            not isinstance(run_id, int)
+            or run.get("head_sha") != commit
+            or run.get("head_branch") != "main"
+            or run.get("status") != "completed"
+            or run.get("conclusion") != "success"
+            or run.get("event") not in ("push", "workflow_dispatch")
+        ):
+            continue
+        job_pages = gh_json(
+            gh,
+            "--paginate",
+            "--slurp",
+            f"repos/{repository}/actions/runs/{run_id}/jobs?per_page=100",
+        )
+        jobs = paginated_objects(job_pages, "jobs", "workflow-job")
+        for job in jobs:
+            if (
+                job.get("name") != "Validate Runtime"
+                or job.get("status") != "completed"
+                or job.get("conclusion") != "success"
+                or not isinstance(job.get("html_url"), str)
+                or not job.get("html_url")
+            ):
+                continue
+            steps = job.get("steps")
+            if not isinstance(steps, list):
+                raise ValueError("GitHub did not return workflow-job steps")
+            for step in steps:
+                if (
+                    isinstance(step, dict)
+                    and step.get("name") == "SonarQube scan"
+                    and step.get("status") == "completed"
+                    and step.get("conclusion") == "success"
+                    and isinstance(step.get("completed_at"), str)
+                    and step.get("completed_at")
+                ):
+                    return RetainedSonarEvidence(
+                        check_url=sonar_checks[0]["details_url"],
+                        ci_job_url=job["html_url"],
+                        completed_at=step["completed_at"],
+                    )
+    return None
+
+
 def wait_for_analyses(
     *,
     host: str,
@@ -255,11 +439,46 @@ def wait_for_analyses(
     poll_interval: int,
     poll_timeout: int,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    sonar_analysis, codeql_analysis, retained_evidence = wait_for_quality_evidence(
+        host=host,
+        project=project,
+        branch=branch,
+        gh=gh,
+        repository=repository,
+        codeql_ref=codeql_ref,
+        commit=commit,
+        poll_interval=poll_interval,
+        poll_timeout=poll_timeout,
+        allow_retained_sonarqube=False,
+    )
+    assert sonar_analysis is not None
+    assert retained_evidence is None
+    return sonar_analysis, codeql_analysis
+
+
+def wait_for_quality_evidence(
+    *,
+    host: str,
+    project: str,
+    branch: str,
+    gh: str,
+    repository: str,
+    codeql_ref: str,
+    commit: str,
+    poll_interval: int,
+    poll_timeout: int,
+    allow_retained_sonarqube: bool,
+) -> tuple[
+    dict[str, Any] | None,
+    dict[str, Any],
+    RetainedSonarEvidence | None,
+]:
     if poll_interval <= 0 or poll_timeout <= 0:
         raise ValueError("poll interval and timeout must be positive")
 
     deadline = time.monotonic() + poll_timeout
     while True:
+        retained_evidence = None
         sonar_analysis = find_sonarqube_analysis(
             host=host, project=project, branch=branch, commit=commit
         )
@@ -270,8 +489,24 @@ def wait_for_analyses(
             commit=commit,
         )
         if codeql_analysis is not None and sonar_analysis is not None:
-            return sonar_analysis, codeql_analysis
+            return sonar_analysis, codeql_analysis, None
+        if codeql_analysis is not None and allow_retained_sonarqube:
+            retained_evidence = find_retained_sonarqube_evidence(
+                gh=gh,
+                repository=repository,
+                commit=commit,
+            )
+            if retained_evidence is not None and sonarqube_has_analysis_after(
+                host=host,
+                project=project,
+                branch=branch,
+                commit=commit,
+                timestamp=retained_evidence.completed_at,
+            ):
+                return None, codeql_analysis, retained_evidence
         if time.monotonic() >= deadline:
+            if codeql_analysis is not None and retained_evidence is not None:
+                return None, codeql_analysis, retained_evidence
             waiting_for = []
             if sonar_analysis is None:
                 waiting_for.append("SonarQube")
@@ -323,10 +558,60 @@ def sonar_measures_for_analysis(
 
     missing = [metric for metric in SONARQUBE_METRICS if metric not in result]
     if missing:
-        raise ValueError(
+        raise MissingSonarMetricsError(
             "SonarQube analysis is missing required metrics: " + ", ".join(missing)
         )
     return result
+
+
+def wait_for_sonarqube_measures_or_retention(
+    *,
+    host: str,
+    project: str,
+    branch: str,
+    gh: str,
+    repository: str,
+    commit: str,
+    analysis: dict[str, Any],
+    poll_interval: int,
+    poll_timeout: int,
+) -> tuple[dict[str, str] | None, RetainedSonarEvidence | None]:
+    """Wait for exact metrics before classifying stable history as expired."""
+
+    if poll_interval <= 0 or poll_timeout <= 0:
+        raise ValueError("poll interval and timeout must be positive")
+
+    deadline = time.monotonic() + poll_timeout
+    while True:
+        try:
+            return (
+                sonar_measures_for_analysis(
+                    host=host,
+                    project=project,
+                    branch=branch,
+                    analysis=analysis,
+                ),
+                None,
+            )
+        except MissingSonarMetricsError as missing_error:
+            retained_evidence = find_retained_sonarqube_evidence(
+                gh=gh,
+                repository=repository,
+                commit=commit,
+            )
+            if retained_evidence is not None and sonarqube_has_analysis_after(
+                host=host,
+                project=project,
+                branch=branch,
+                commit=commit,
+                timestamp=retained_evidence.completed_at,
+            ):
+                return None, retained_evidence
+            if time.monotonic() >= deadline:
+                if retained_evidence is not None:
+                    return None, retained_evidence
+                raise missing_error
+        time.sleep(poll_interval)
 
 
 def rating(value: str) -> str:
@@ -378,6 +663,15 @@ def codeql_badges(*, analysis: dict[str, Any]) -> Iterable[SnapshotBadge]:
     yield snapshot_badge("CodeQL Analysis", "Completed", "brightgreen")
     yield snapshot_badge("CodeQL Results", str(codeql_results), zero_color(codeql_results))
     yield snapshot_badge("CodeQL Rules", str(codeql_rules), "blue")
+
+
+def retained_sonar_badges(
+    *, evidence: RetainedSonarEvidence
+) -> Iterable[SnapshotBadge]:
+    if not evidence.completed_at:
+        raise ValueError("retained SonarQube evidence did not include a timestamp")
+    yield snapshot_badge("SonarQube Quality Gate", "Passed", "brightgreen")
+    yield snapshot_badge("SonarQube Metrics", "Expired", "orange")
 
 
 def snapshot_badges(
@@ -609,18 +903,29 @@ def validate_static_badge_delivery(
 
 def resolved_badges(
     *,
-    sonar_measures: dict[str, str],
+    sonar_measures: dict[str, str] | None,
     codeql_analysis: dict[str, Any],
+    retained_sonar_evidence: RetainedSonarEvidence | None = None,
 ) -> list[SnapshotBadge]:
+    if sonar_measures is None:
+        if retained_sonar_evidence is None:
+            raise ValueError("SonarQube metrics or retained evidence are required")
+        return [
+            *retained_sonar_badges(evidence=retained_sonar_evidence),
+            *codeql_badges(analysis=codeql_analysis),
+        ]
+    if retained_sonar_evidence is not None:
+        raise ValueError("SonarQube metrics and retained evidence are mutually exclusive")
     return list(snapshot_badges(sonar_measures=sonar_measures, codeql_analysis=codeql_analysis))
 
 
 def render_snapshot(
     *,
     commit: str,
-    sonar_analysis: dict[str, Any],
-    sonar_measures: dict[str, str],
+    sonar_analysis: dict[str, Any] | None,
+    sonar_measures: dict[str, str] | None,
     codeql_analysis: dict[str, Any],
+    retained_sonar_evidence: RetainedSonarEvidence | None = None,
     release_kind: str = "stable",
     asset_url: str = "quality-snapshot.svg",
     badge_snapshot_id: str | None = None,
@@ -631,13 +936,26 @@ def render_snapshot(
         retention = "These static badges describe this mutable Current build and are replaced when `current` moves."
     else:
         retention = "These static badges are retained as historical evidence; they do not update."
-    analysis_summary = (
-        f"- SonarQube `main` analysis `{sonar_analysis['date']}` and CodeQL "
-        f"analysis both cover `{commit}`."
-    )
+    if sonar_analysis is not None:
+        analysis_summary = (
+            f"- SonarQube `main` analysis `{sonar_analysis['date']}` and CodeQL "
+            f"analysis both cover `{commit}`."
+        )
+    elif retained_sonar_evidence is not None:
+        analysis_summary = (
+            f"- The exact-commit [SonarQube quality-gate check]"
+            f"({retained_sonar_evidence.check_url}) and [successful `main` CI scan]"
+            f"({retained_sonar_evidence.ci_job_url}) completed at "
+            f"`{retained_sonar_evidence.completed_at}` and cover `{commit}`. "
+            "SonarCloud no longer retains the per-metric history for this commit; "
+            "no later metrics were substituted. CodeQL analysis covers the same commit."
+        )
+    else:
+        raise ValueError("SonarQube analysis or retained evidence is required")
     badges = resolved_badges(
         sonar_measures=sonar_measures,
         codeql_analysis=codeql_analysis,
+        retained_sonar_evidence=retained_sonar_evidence,
     )
     return "\n".join(
         [
@@ -662,26 +980,70 @@ def main() -> None:
     try:
         if (args.svg_output is None) != (args.asset_url is None):
             raise ValueError("--svg-output and --asset-url must be supplied together")
-        sonar_analysis, codeql_analysis = wait_for_analyses(
-            host=args.sonarqube_url,
-            project=args.sonarqube_project,
-            branch=args.sonarqube_branch,
-            gh=args.gh,
-            repository=args.repo,
-            codeql_ref=args.codeql_ref,
-            commit=args.commit,
-            poll_interval=args.poll_interval,
-            poll_timeout=args.poll_timeout,
-        )
-        sonar_measures = sonar_measures_for_analysis(
-            host=args.sonarqube_url,
-            project=args.sonarqube_project,
-            branch=args.sonarqube_branch,
-            analysis=sonar_analysis,
-        )
+        if args.allow_expired_sonarqube_metrics and args.release_kind != "stable":
+            raise ValueError(
+                "expired SonarQube metric evidence is allowed only for stable releases"
+            )
+        retained_sonar_evidence = None
+        if args.allow_expired_sonarqube_metrics:
+            (
+                sonar_analysis,
+                codeql_analysis,
+                retained_sonar_evidence,
+            ) = wait_for_quality_evidence(
+                host=args.sonarqube_url,
+                project=args.sonarqube_project,
+                branch=args.sonarqube_branch,
+                gh=args.gh,
+                repository=args.repo,
+                codeql_ref=args.codeql_ref,
+                commit=args.commit,
+                poll_interval=args.poll_interval,
+                poll_timeout=args.poll_timeout,
+                allow_retained_sonarqube=True,
+            )
+        else:
+            sonar_analysis, codeql_analysis = wait_for_analyses(
+                host=args.sonarqube_url,
+                project=args.sonarqube_project,
+                branch=args.sonarqube_branch,
+                gh=args.gh,
+                repository=args.repo,
+                codeql_ref=args.codeql_ref,
+                commit=args.commit,
+                poll_interval=args.poll_interval,
+                poll_timeout=args.poll_timeout,
+            )
+        sonar_measures = None
+        if sonar_analysis is not None:
+            if args.allow_expired_sonarqube_metrics:
+                (
+                    sonar_measures,
+                    retained_sonar_evidence,
+                ) = wait_for_sonarqube_measures_or_retention(
+                    host=args.sonarqube_url,
+                    project=args.sonarqube_project,
+                    branch=args.sonarqube_branch,
+                    gh=args.gh,
+                    repository=args.repo,
+                    commit=args.commit,
+                    analysis=sonar_analysis,
+                    poll_interval=args.poll_interval,
+                    poll_timeout=args.poll_timeout,
+                )
+                if retained_sonar_evidence is not None:
+                    sonar_analysis = None
+            else:
+                sonar_measures = sonar_measures_for_analysis(
+                    host=args.sonarqube_url,
+                    project=args.sonarqube_project,
+                    branch=args.sonarqube_branch,
+                    analysis=sonar_analysis,
+                )
         badges = resolved_badges(
             sonar_measures=sonar_measures,
             codeql_analysis=codeql_analysis,
+            retained_sonar_evidence=retained_sonar_evidence,
         )
         badge_snapshot_id = args.badge_snapshot_id or args.commit
         if args.verify_static_badges:
@@ -700,6 +1062,7 @@ def main() -> None:
                 sonar_analysis=sonar_analysis,
                 sonar_measures=sonar_measures,
                 codeql_analysis=codeql_analysis,
+                retained_sonar_evidence=retained_sonar_evidence,
                 release_kind=args.release_kind,
                 asset_url=args.asset_url or "quality-snapshot.svg",
                 badge_snapshot_id=badge_snapshot_id,

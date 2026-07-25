@@ -562,7 +562,19 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('quality_release_kind="current"', workflow)
         self.assertIn('quality_release_kind="stable"', workflow)
         self.assertIn('--release-kind "${quality_release_kind}"', workflow)
-        self.assertIn('python3 Tools/release/release-notes.py "${release_notes_args[@]}"', workflow)
+        self.assertIn(
+            'python3 ../release-tools/Tools/release/release-notes.py \\\n'
+            '            "${release_notes_args[@]}"',
+            workflow,
+        )
+        self.assertIn(
+            "../release-tools/Tools/release/publish-github-release.sh",
+            workflow,
+        )
+        self.assertIn(
+            "../release-tools/Tools/release/retain-release-assets.py",
+            workflow,
+        )
         self.assertIn(
             "--component-repo container-builder-shim=../container-builder-shim",
             workflow,
