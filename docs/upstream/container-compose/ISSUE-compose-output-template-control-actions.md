@@ -76,6 +76,13 @@ bytes. The paired handoff records focused unit and command tests, Docker
 Compose 5.3.1/Apple Current parity, increased coverage, and the passing
 SonarQube pull-request quality gate.
 
+Signed follow-up commit `4fbd1b26023c873cc006c69a8de42e6c10979d1d`
+(`fix(format): preserve Go trim whitespace`) restricts trim-marker recognition
+and adjacent trimming to Go's ASCII whitespace set. Literal non-breaking spaces
+now survive both left and right markers, with focused unit coverage, committed
+Docker Compose 5.3.1/Apple Current parity, and a clean SonarQube pull-request
+quality gate.
+
 ## Compatibility
 
 Existing literal, field-only, JSON, table, and function templates remain

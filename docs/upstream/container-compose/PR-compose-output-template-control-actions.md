@@ -56,6 +56,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): preserve raw Go string helpers`
 - `fce7edbadf8acfc4bf7b410d2f116d4e5f5ca0fa`
   `fix(format): preserve exact Go output semantics`
+- `4fbd1b26023c873cc006c69a8de42e6c10979d1d`
+  `fix(format): preserve Go trim whitespace`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -151,7 +153,9 @@ This documentation commit is intentionally separate.
     retains Go spacing rules without converting through Swift `String`.
 - `Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift`
   - distinguishes whitespace-delimited trim markers from signed integer
-    literals on both action boundaries.
+    literals on both action boundaries;
+  - limits marker recognition and adjacent trimming to Go's ASCII space, tab,
+    carriage-return, and newline set so literal non-ASCII whitespace survives.
 - `Sources/ComposeCore/ComposeFormatTemplate.swift`
   - retains the public row-rendering boundary and evaluates table templates
     against Docker-style header values before rendering rows;
@@ -243,19 +247,25 @@ make go-test
 make coverage-check
 make check
 swiftlint lint --strict --quiet \
+  Sources/ComposeCore/ComposeDockerTemplateData.swift \
   Sources/ComposeCore/ComposeDockerTemplatePrintSupport.swift \
   Sources/ComposeCore/ComposeDockerTemplateStringSupport.swift \
   Sources/ComposeCore/ComposeFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
+  Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateRawOutputTests.swift
+  Tests/ComposeCoreTests/ComposeFormatTemplateRawOutputTests.swift \
+  Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift
 swiftformat --lint --swift-version 6.2 \
+  Sources/ComposeCore/ComposeDockerTemplateData.swift \
   Sources/ComposeCore/ComposeDockerTemplatePrintSupport.swift \
   Sources/ComposeCore/ComposeDockerTemplateStringSupport.swift \
   Sources/ComposeCore/ComposeFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
+  Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateRawOutputTests.swift
+  Tests/ComposeCoreTests/ComposeFormatTemplateRawOutputTests.swift \
+  Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift
 shellcheck Tools/parity/check-compose-format-template-actions.sh
 CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
   make docker-compose-format-template-actions-parity
@@ -263,16 +273,16 @@ git diff --check
 ```
 
 - Swift: 1,174 tests in 33 suites passed.
-- Swift repository coverage: 91.91%.
+- Swift repository coverage: 91.92%.
 - Go normalizer coverage: 89.88%.
-- Structured template engine and support: 2,134/2,281 lines, 93.56%.
+- Structured template engine and support: 2,141/2,288 lines, 93.58%.
 - `ComposeStructuredFormatTemplate.swift`: 786/842 lines, 93.35%.
 - `ComposeStructuredTemplateAnalysis.swift`: 508/526 lines, 96.58%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 61/65 lines,
   93.85%.
 - `ComposeStructuredTemplateLookup.swift`: 31/37 lines, 83.78%.
-- `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
-- `ComposeDockerTemplateData.swift`: 142/164 lines, 86.59%.
+- `ComposeStructuredTemplateWhitespace.swift`: 27/27 lines, 100%.
+- `ComposeDockerTemplateData.swift`: 140/162 lines, 86.42%.
 - `ComposeDockerTemplatePrintSupport.swift`: 53/57 lines, 92.98%.
 - `ComposeDockerTemplatePrintf.swift`: 311/324 lines, 95.99%.
 - `ComposeDockerTemplateFunctionSupport.swift`: 158/176 lines, 89.77%.
@@ -291,7 +301,7 @@ git diff --check
   - `container-compose` base
     `b644c71fd0f7dd665a2a74192ab55745faafa281`.
 - SonarQube pull-request analysis for implementation commit
-  `fce7edbadf8acfc4bf7b410d2f116d4e5f5ca0fa` passed with zero unresolved
+  `4fbd1b26023c873cc006c69a8de42e6c10979d1d` passed with zero unresolved
   issues, 91.6% new-code coverage, 0.0% new duplication, A ratings for
   reliability, security, and maintainability, and 100% hotspot review.
 
@@ -318,7 +328,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified forty-three actionable compatibility cases and three suggestions that
+identified forty-four actionable compatibility cases and three suggestions that
 were disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
@@ -409,6 +419,8 @@ were disproved against the exact Docker Compose 5.3.1 oracle:
   rather than bypassing unsupported-field validation.
 - direct, `%s`, `%v`, `print`, table, and command output retain partial UTF-8
   as exact bytes instead of inserting replacement characters.
+- trim markers remove only Go's four ASCII whitespace characters and preserve
+  adjacent non-breaking spaces and other literal Unicode whitespace.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -494,6 +506,16 @@ table renderer, command layer, and optional stats SPI. Focused unit,
 command-path, coverage, SonarQube, and live Docker Compose 5.3.1/Apple Current
 evidence covers all four findings.
 
+Two previously missed connector threads were then reconciled explicitly.
+The raw-output thread duplicated the exact-byte finding and received the same
+signed implementation disposition. Signed commit
+`4fbd1b26023c873cc006c69a8de42e6c10979d1d` closes the remaining actionable
+thread by limiting trim markers and adjacent trimming to Go's ASCII whitespace
+set. Focused left/right non-breaking-space tests and the committed Docker
+Compose 5.3.1/Apple Current oracle cover both directions. The oracle also
+checks map-backed `.Labels` byte indexing with an order-independent unsigned
+byte invariant, avoiding Docker's nondeterministic label iteration.
+
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
 `{127.0.0.1 8080 32768 tcp}`. The same successful behavior is now protected by
@@ -506,7 +528,7 @@ actionable autobot finding was deferred. The suggestion to propagate root
 identity through `table` was not implemented because Docker Compose 5.3.1
 rejects the template at parse time with `function "table" not defined`; the
 unsupported helper was removed and that exact rejection is protected instead.
-All forty-six connector threads are answered with their implementation or
+All forty-eight connector threads are answered with their implementation or
 verified compatibility disposition.
 
 ## Documentation And Operations
