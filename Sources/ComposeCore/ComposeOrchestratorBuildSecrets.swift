@@ -89,8 +89,7 @@ extension ComposeOrchestrator {
             var materialized: [ComposeBuildSecret] = []
             for (index, item) in resolved.enumerated() {
                 let secret = item.secret
-                switch item.source {
-                case let .external(name):
+                if case let .external(name) = item.source {
                     let contents: Data
                     do {
                         contents = try await secretReader.readSecret(name: name)
@@ -107,7 +106,7 @@ extension ComposeOrchestrator {
                         permissions: 0o400,
                     ).write()
                     materialized.append(ComposeBuildSecret(id: secret.id, file: file.path))
-                default:
+                } else {
                     materialized.append(normalizedBuildSecret(secret, source: item.source))
                 }
             }
@@ -134,15 +133,13 @@ extension ComposeOrchestrator {
             .appendingPathComponent("dry-run", isDirectory: true)
         return ComposeMaterializedBuildSecrets(
             secrets: resolved.enumerated().map { index, item in
-                switch item.source {
-                case .external:
-                    ComposeBuildSecret(
+                if case .external = item.source {
+                    return ComposeBuildSecret(
                         id: item.secret.id,
                         file: directory.appendingPathComponent("secret-\(index)").path,
                     )
-                default:
-                    normalizedBuildSecret(item.secret, source: item.source)
                 }
+                return normalizedBuildSecret(item.secret, source: item.source)
             },
             directory: nil,
         )
