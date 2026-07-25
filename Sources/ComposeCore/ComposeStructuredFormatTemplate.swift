@@ -952,6 +952,11 @@ private func structuredTemplateSplit(_ inputs: [DockerTemplateData]) throws -> D
     guard inputs.count == 2 else { throw structuredUnsupportedAction("split") }
     let value = try structuredString(inputs[0], function: "split")
     let separator = try structuredString(inputs[1], function: "split")
+    if separator.isEmpty {
+        return .array(value.unicodeScalars.map {
+            .string(String($0))
+        })
+    }
     return .array(value.components(separatedBy: separator).map(DockerTemplateData.string))
 }
 
@@ -959,5 +964,5 @@ private func structuredTemplateTruncate(_ inputs: [DockerTemplateData]) throws -
     guard inputs.count == 2 else { throw structuredUnsupportedAction("truncate") }
     let value = try structuredString(inputs[0], function: "truncate")
     let length = try structuredInteger(inputs[1], function: "truncate")
-    return .string(String(value.prefix(max(0, length))))
+    return .byteString(Array(value.utf8.prefix(max(0, length))))
 }

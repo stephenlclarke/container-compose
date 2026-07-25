@@ -74,6 +74,45 @@ struct ComposeFormatTemplateTableTests {
     }
 
     @Test
+    func `analysis respects logical root flow`() {
+        #expect(
+            dockerTemplateFields(
+                in: "{{with . | or (index .Publishers 0)}}{{.TargetPort}}{{end}}",
+            ) == ["Publishers"],
+        )
+        #expect(
+            dockerTemplateFields(in: "{{with or \"\" $}}{{.Command}}{{end}}")
+                == ["Command"],
+        )
+        #expect(
+            dockerTemplateFields(in: "{{with or .Name $}}{{.Command}}{{end}}")
+                == ["Name"],
+        )
+        #expect(
+            dockerTemplateFields(in: "{{with and false $}}{{.Command}}{{end}}")
+                == [],
+        )
+    }
+
+    @Test
+    func `with or pipeline selects publisher before root`() throws {
+        let values: [String: DockerTemplateData] = [
+            "Publishers": .array([
+                .record([
+                    "TargetPort": .integer(8080),
+                ]),
+            ]),
+        ]
+
+        #expect(
+            try renderDockerTemplate(
+                "{{with . | or (index .Publishers 0)}}{{.TargetPort}}{{end}}",
+                values: values,
+            ) == "8080",
+        )
+    }
+
+    @Test
     func `headers preserve fields and execute control flow`() throws {
         let duplicate = try renderDockerTemplateTable(
             template: "{{.Name}}\t{{.Name}}",

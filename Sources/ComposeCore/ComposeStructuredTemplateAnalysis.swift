@@ -193,52 +193,143 @@ private func structuredTemplateExpressionRetainsRoot(
     _ expression: String,
     dotIsRoot: Bool,
 ) -> Bool {
-    guard let segments = structuredTemplatePipelineSegments(expression) else {
-        return false
+    structuredTemplateExpressionRootFlow(
+        expression,
+        dotIsRoot: dotIsRoot,
+    ).retainsRoot
+}
+
+private struct StructuredTemplateRootFlow {
+    var canReturnTruthyRoot: Bool
+    var canReturnTruthyNonRoot: Bool
+    var canReturnFalsey: Bool
+
+    var canReturnTruthy: Bool {
+        canReturnTruthyRoot || canReturnTruthyNonRoot
     }
-    var pipelineRetainsRoot = false
+
+    var retainsRoot: Bool {
+        canReturnTruthyRoot && !canReturnTruthyNonRoot
+    }
+
+    static let other = StructuredTemplateRootFlow(
+        canReturnTruthyRoot: false,
+        canReturnTruthyNonRoot: true,
+        canReturnFalsey: true,
+    )
+}
+
+private func structuredTemplateExpressionRootFlow(
+    _ expression: String,
+    dotIsRoot: Bool,
+) -> StructuredTemplateRootFlow {
+    guard let segments = structuredTemplatePipelineSegments(expression) else {
+        return .other
+    }
+    var pipelineFlow = StructuredTemplateRootFlow.other
     for (index, segment) in segments.enumerated() {
         guard let tokens = structuredTemplateTokens(segment), let head = tokens.first else {
-            return false
+            return .other
         }
         if index == 0, tokens.count == 1 {
-            pipelineRetainsRoot = structuredTemplateValueRetainsRoot(
+            pipelineFlow = structuredTemplateValueRootFlow(
                 head,
                 dotIsRoot: dotIsRoot,
             )
-        } else if head == "or" {
-            // `or` can return any explicit operand or the prior pipeline value.
-            pipelineRetainsRoot = pipelineRetainsRoot || tokens.dropFirst().contains {
-                structuredTemplateValueRetainsRoot($0, dotIsRoot: dotIsRoot)
-            }
-        } else if head == "and" {
-            // A truthy `and` returns its last operand; a pipeline is appended last.
-            if index == 0 {
-                pipelineRetainsRoot = tokens.dropFirst().last.map {
-                    structuredTemplateValueRetainsRoot($0, dotIsRoot: dotIsRoot)
-                } ?? false
-            }
-        } else {
-            pipelineRetainsRoot = false
+            continue
+        }
+        var inputs = tokens.dropFirst().map {
+            structuredTemplateValueRootFlow($0, dotIsRoot: dotIsRoot)
+        }
+        if index > 0 {
+            inputs.append(pipelineFlow)
+        }
+        switch head {
+        case "or":
+            pipelineFlow = structuredTemplateOrRootFlow(inputs)
+        case "and":
+            pipelineFlow = structuredTemplateAndRootFlow(inputs)
+        default:
+            pipelineFlow = .other
         }
     }
-    return pipelineRetainsRoot
+    return pipelineFlow
 }
 
-private func structuredTemplateValueRetainsRoot(
+private func structuredTemplateOrRootFlow(
+    _ inputs: [StructuredTemplateRootFlow],
+) -> StructuredTemplateRootFlow {
+    var result = StructuredTemplateRootFlow(
+        canReturnTruthyRoot: false,
+        canReturnTruthyNonRoot: false,
+        canReturnFalsey: false,
+    )
+    var canReachInput = true
+    for input in inputs {
+        guard canReachInput else { break }
+        result.canReturnTruthyRoot =
+            result.canReturnTruthyRoot || input.canReturnTruthyRoot
+        result.canReturnTruthyNonRoot =
+            result.canReturnTruthyNonRoot || input.canReturnTruthyNonRoot
+        canReachInput = input.canReturnFalsey
+    }
+    result.canReturnFalsey = canReachInput
+    return result
+}
+
+private func structuredTemplateAndRootFlow(
+    _ inputs: [StructuredTemplateRootFlow],
+) -> StructuredTemplateRootFlow {
+    var result = StructuredTemplateRootFlow(
+        canReturnTruthyRoot: false,
+        canReturnTruthyNonRoot: false,
+        canReturnFalsey: false,
+    )
+    guard let lastInput = inputs.last else {
+        return result
+    }
+    var canReachLastInput = true
+    for input in inputs.dropLast() {
+        guard canReachLastInput else { break }
+        result.canReturnFalsey =
+            result.canReturnFalsey || input.canReturnFalsey
+        canReachLastInput = input.canReturnTruthy
+    }
+    guard canReachLastInput else {
+        return result
+    }
+    result.canReturnFalsey =
+        result.canReturnFalsey || lastInput.canReturnFalsey
+    result.canReturnTruthyRoot = lastInput.canReturnTruthyRoot
+    result.canReturnTruthyNonRoot = lastInput.canReturnTruthyNonRoot
+    return result
+}
+
+private func structuredTemplateValueRootFlow(
     _ token: String,
     dotIsRoot: Bool,
-) -> Bool {
-    if token == "$" {
-        return true
+) -> StructuredTemplateRootFlow {
+    if token == "$" || (token == "." && dotIsRoot) {
+        return StructuredTemplateRootFlow(
+            canReturnTruthyRoot: true,
+            canReturnTruthyNonRoot: false,
+            canReturnFalsey: false,
+        )
     }
-    if token == "." {
-        return dotIsRoot
+    if let staticValue = structuredTemplateStaticValue(token) {
+        return StructuredTemplateRootFlow(
+            canReturnTruthyRoot: false,
+            canReturnTruthyNonRoot: staticValue.value.isTruthy,
+            canReturnFalsey: !staticValue.value.isTruthy,
+        )
     }
-    guard let nested = structuredTemplateParenthesizedExpression(token) else {
-        return false
+    if let nested = structuredTemplateParenthesizedExpression(token) {
+        return structuredTemplateExpressionRootFlow(
+            nested,
+            dotIsRoot: dotIsRoot,
+        )
     }
-    return structuredTemplateExpressionRetainsRoot(nested, dotIsRoot: dotIsRoot)
+    return .other
 }
 
 private func collectStructuredExpressionFields(

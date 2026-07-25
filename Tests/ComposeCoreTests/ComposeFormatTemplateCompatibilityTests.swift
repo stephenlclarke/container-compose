@@ -108,6 +108,24 @@ struct ComposeFormatTemplateCompatibilityTests {
     }
 
     @Test
+    func `split and truncate match Go UTF8 string helpers`() throws {
+        let values: [String: DockerTemplateData] = [:]
+
+        #expect(
+            try renderDockerTemplate(
+                #"{{join (split "abc" "") "-"}}|{{printf "%q" (split "" "")}}"#,
+                values: values,
+            ) == "a-b-c|[]",
+        )
+        #expect(
+            try renderDockerTemplate(
+                #"{{printf "%q" (truncate "é" 1)}}"#,
+                values: values,
+            ) == #""\xc3""#,
+        )
+    }
+
+    @Test
     func `string keyed maps preserve key types`() throws {
         let values: [String: DockerTemplateData] = [
             "Lookup": .lookupObject(["1": .string("one")], display: "1=one"),

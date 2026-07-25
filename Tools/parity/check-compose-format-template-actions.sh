@@ -393,6 +393,30 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{with . | or (index .Publishers 0)}}{{.TargetPort}}{{end}}'
+    )"
+    assert_equal "$actual" '8080' "$project logical publisher context"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{join (split "abc" "") "-"}}'
+    )"
+    assert_equal "$actual" 'a-b-c' "$project empty separator split"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%q" (split "" "")}}'
+    )"
+    assert_equal "$actual" '[]' "$project empty input split"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%q" (truncate "é" 1)}}'
+    )"
+    assert_equal "$actual" '"\xc3"' "$project UTF-8 byte truncate"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format 'A {{- if .Name -}} B {{- end -}} C'
     )"
     assert_equal "$actual" 'ABC' "$project ps whitespace template"

@@ -13730,6 +13730,46 @@ struct ComposeOrchestratorTests {
         )
     }
 
+    @Test("ps with or pipeline selects publisher context")
+    func psWithOrPipelineSelectsPublisherContext() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ],
+                resources: .init(
+                    publishedPorts: [
+                        ComposeContainerPublishedPort(
+                            hostAddress: "127.0.0.1",
+                            hostPort: 32_768,
+                            containerPort: 8_080,
+                            protocolName: "tcp"
+                        ),
+                    ]
+                )
+            ),
+        ])
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+        .ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.format =
+                    "{{with . | or (index .Publishers 0)}}{{.TargetPort}}{{end}}"
+            }
+        )
+
+        #expect(emitted.messages == ["8080"])
+    }
+
     @Test("ps can exclude orphaned service containers")
     func psCanExcludeOrphanedServiceContainers() async throws {
         let emitted = MessageRecorder()
