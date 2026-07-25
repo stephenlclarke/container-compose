@@ -18,8 +18,10 @@ container model, sibling fork, or package pin changes.
   `fix(format): match Go template control semantics`
 - `0fa6bafd119829df09da2b1555a5c463f1d41fc9`
   `fix(format): project runtime mount metadata`
+- `551710612d8ca9439029efb4596e7518c429f5e0`
+  `fix(format): reject invalid scalar template operations`
 
-Both implementation commits are signed and construct the complete code delta.
+All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
 
 ## Type Of Change
@@ -145,7 +147,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified five actionable compatibility cases:
+identified eight actionable compatibility cases:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
   invalid collection access;
@@ -157,11 +159,19 @@ identified five actionable compatibility cases:
   container-side destinations.
 - `.LocalVolumes` counts the runtime adapter's `external-volume` records as
   local volumes.
+- `range` rejects strings instead of silently iterating their characters;
+- `eq` and `ne` preserve operand types and reject mixed integer/string
+  comparisons instead of comparing display text;
+- `len` rejects integer, boolean, and null scalars instead of fabricating
+  lengths.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes all three and adds focused
 template regressions. Commit `0fa6bafd119829df09da2b1555a5c463f1d41fc9`
 fixes both runtime mount projections with command-path regression coverage. No
-autobot finding was deferred.
+autobot finding was deferred. Commit
+`551710612d8ca9439029efb4596e7518c429f5e0` fixes the three scalar-operation
+findings and extends the live Docker Compose v2 oracle to require matching
+execution failures.
 
 ## Documentation And Operations
 

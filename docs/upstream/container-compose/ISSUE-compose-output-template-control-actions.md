@@ -51,6 +51,11 @@ Signed follow-up commit `0fa6bafd119829df09da2b1555a5c463f1d41fc9`
 (`fix(format): project runtime mount metadata`) aligns `.Mounts` and
 `.LocalVolumes` with runtime-discovered named-volume and bind-mount records.
 
+Signed follow-up commit `551710612d8ca9439029efb4596e7518c429f5e0`
+(`fix(format): reject invalid scalar template operations`) makes invalid string
+ranges, mixed-type comparisons, and scalar `len` calls fail exactly as the
+Docker Compose v2 oracle does.
+
 The paired pull-request handoff records the code map, exact validation, coverage,
 runtime revisions, and promotion evidence.
 
