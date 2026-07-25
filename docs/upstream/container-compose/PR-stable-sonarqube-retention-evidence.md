@@ -12,9 +12,12 @@ missing or mismatched authority remains fail-closed.
 
 - `154e70b80d52bb3bdf471afb40fbb3a92636b15a`
   `fix(release): preserve retained Sonar evidence`
+- `7761d7b251f268449bcaf214bb88c3e398d10510`
+  `fix(release): load stable controls before publication`
 
-The commit is signed and contains the implementation, workflow wiring, tests,
-and operator documentation.
+Both implementation commits are signed. Together they contain the evidence
+policy, immutable release-control boundary, workflow wiring, tests, and
+operator documentation.
 
 ## Implementation
 
@@ -31,8 +34,11 @@ and operator documentation.
   - distinguishes absent metric history from request or schema failures so
     transient service errors remain fatal.
 - `.github/workflows/prebuilt-binaries.yml` enables the retention policy only
-  for semantic stable tags. Mutable Current publication retains the complete
-  metric requirement.
+  for semantic stable tags. It checks out and verifies release-control tools
+  from the immutable workflow commit before staging, then uses those tools for
+  snapshot capture, release notes, publication, and asset retention. Package
+  content remains compiled from the signed source tag. Mutable Current
+  publication retains the complete metric requirement.
 - `Tools/release/test_capture_quality_snapshot.py` covers exact authority
   selection, cross-commit rejection, stable rendering, CLI policy isolation,
   workflow wiring, static SVG generation, and the original strict path.

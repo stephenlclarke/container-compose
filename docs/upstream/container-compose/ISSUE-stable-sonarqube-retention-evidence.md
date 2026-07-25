@@ -36,6 +36,9 @@ path needs an explicit retention policy that does neither.
   no later metrics were substituted.
 - Missing, failed, mismatched, or unreadable authority blocks publication.
 - Transient SonarCloud metric API failures are not reclassified as retention.
+- A stable retry executes release-control scripts from the verified workflow
+  commit while package source and contents remain bound to the immutable signed
+  tag, so the policy can be corrected without retagging.
 - Unit tests and a live exact-commit release-tool invocation cover the policy.
 
 ## Scope and compatibility
