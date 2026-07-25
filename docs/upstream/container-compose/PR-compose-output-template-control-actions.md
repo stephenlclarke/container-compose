@@ -106,15 +106,15 @@ CONTAINER_COMPOSE_LIVE=1 \
 git diff --check
 ```
 
-- Swift: 1,134 tests in 27 suites passed.
-- New structured formatter: 1,003/1,086 lines, 92.4%.
-- `ComposeStructuredFormatTemplate.swift`: 773/841 lines, 91.9%.
+- Swift: 1,135 tests in 27 suites passed.
+- New structured formatter: 1,022/1,109 lines, 92.2%.
+- `ComposeStructuredFormatTemplate.swift`: 772/840 lines, 91.9%.
 - `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
 - `ComposeDockerTemplateData.swift`: 81/85 lines, 95.3%.
 - `ComposeDockerTemplatePrintf.swift`: 73/75 lines, 97.3%.
-- `ComposeDockerTemplateFunctionSupport.swift`: 58/67 lines, 86.6%.
+- `ComposeDockerTemplateFunctionSupport.swift`: 78/91 lines, 85.7%.
 - Existing formatter boundary: 39/41 lines, 95.1%.
-- Command rendering helpers: 765/796 lines, 96.1%.
+- Command rendering helpers: 770/801 lines, 96.1%.
 - Repository checks passed, including 167 release-controller tests, 14
   CI-helper tests, stack consistency, release consistency, licence validation,
   and credential scanning.
