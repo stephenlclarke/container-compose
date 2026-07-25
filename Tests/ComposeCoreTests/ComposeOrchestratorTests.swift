@@ -13909,7 +13909,7 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.listRequests.isEmpty)
     }
 
-    @Test("ps rejects root indexing and the unsupported table function before discovery")
+    @Test("ps rejects root collection operations and unsupported functions before discovery")
     func psRejectsRootIndexingAndTableFunction() async throws {
         let runner = RecordingRunner()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [])
@@ -13917,6 +13917,9 @@ struct ComposeOrchestratorTests {
 
         for template in [
             "{{index $ \"Command\"}}",
+            "{{len $}}",
+            "{{range $}}{{.}}{{end}}",
+            "{{range $index, $value := 3}}{{$index}}={{$value}}{{end}}",
             "{{with table $}}{{.Command}}{{end}}",
         ] {
             await #expect(throws: (any Error).self) {

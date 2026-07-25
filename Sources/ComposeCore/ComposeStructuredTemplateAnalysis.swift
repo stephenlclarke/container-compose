@@ -62,11 +62,15 @@ func structuredTemplateRangeEntries(
     switch value {
     case let .array(values):
         values.enumerated().map { (.integer($0.offset), $0.element) }
+    case let .integer(value):
+        value > 0
+            ? (0 ..< value).map { (.integer($0), .integer($0)) }
+            : []
     case let .object(values):
         values.keys.sorted().map { (.string($0), values[$0] ?? .null) }
     case .null:
         []
-    case .boolean, .byteString, .integer, .lookupObject, .record, .string:
+    case .boolean, .byteString, .lookupObject, .record, .string:
         throw structuredUnsupportedAction("range")
     }
 }
@@ -142,6 +146,17 @@ func validateStructuredTemplateRootIndexing(
                 specification.expression,
                 dotIsRoot: dotIsRoot,
             )
+            if structuredTemplateExpressionRetainsRoot(
+                specification.expression,
+                dotIsRoot: dotIsRoot,
+            ) {
+                throw structuredUnsupportedAction("range root value")
+            }
+            if specification.keyVariable != nil,
+               case .integer = structuredTemplateStaticValue(specification.expression)?.value
+            {
+                throw structuredUnsupportedAction("range integer with two variables")
+            }
             try validateStructuredTemplateRootIndexing(success, dotIsRoot: false)
             try validateStructuredTemplateRootIndexing(failure, dotIsRoot: dotIsRoot)
         case let .with(expression, success, failure):
@@ -170,18 +185,19 @@ private func validateStructuredExpressionRootIndexing(
     guard let segments = structuredTemplatePipelineSegments(expression) else {
         throw structuredUnsupportedAction(expression)
     }
-    for segment in segments {
+    var pipelineFlow: StructuredTemplateRootFlow?
+    for (index, segment) in segments.enumerated() {
         guard let tokens = structuredTemplateTokens(segment) else {
             throw structuredUnsupportedAction(expression)
         }
-        if tokens.first == "index",
-           tokens.count > 1,
-           structuredTemplateValueRootFlow(
-               tokens[1],
-               dotIsRoot: dotIsRoot,
-           ).retainsRoot
+        let explicitInputs = tokens.dropFirst().map {
+            structuredTemplateValueRootFlow($0, dotIsRoot: dotIsRoot)
+        }
+        let inputs = explicitInputs + (pipelineFlow.map { [$0] } ?? [])
+        if tokens.first == "index" || tokens.first == "len",
+           inputs.first?.retainsRoot == true
         {
-            throw structuredUnsupportedAction("index root value")
+            throw structuredUnsupportedAction("\(tokens.first ?? "") root value")
         }
         for token in tokens {
             if let parenthesized = structuredTemplateParenthesizedValue(token) {
@@ -191,6 +207,11 @@ private func validateStructuredExpressionRootIndexing(
                 )
             }
         }
+        let prefix = segments.prefix(index + 1).joined(separator: " | ")
+        pipelineFlow = structuredTemplateExpressionRootFlow(
+            prefix,
+            dotIsRoot: dotIsRoot,
+        )
     }
 }
 

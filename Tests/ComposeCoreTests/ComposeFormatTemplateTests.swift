@@ -148,6 +148,37 @@ struct ComposeFormatTemplateTests {
     }
 
     @Test
+    func `integer ranges and struct root operations match Go templates`() throws {
+        let values = ["Name": DockerTemplateData.string("demo-api")]
+
+        #expect(try renderDockerTemplate("{{range 3}}{{.}}{{end}}", values: values) == "012")
+        #expect(
+            try renderDockerTemplate(
+                "{{range 0}}{{.}}{{else}}empty{{end}}|{{range -2}}{{.}}{{else}}empty{{end}}",
+                values: values,
+            ) == "empty|empty",
+        )
+        #expect(
+            try renderDockerTemplate(
+                "{{range $value := 3}}{{$value}};{{end}}",
+                values: values,
+            ) == "0;1;2;",
+        )
+        #expect(throws: (any Error).self) {
+            try renderDockerTemplate(
+                "{{range $index, $value := 3}}{{$index}}={{$value}}{{end}}",
+                values: values,
+            )
+        }
+        #expect(throws: (any Error).self) {
+            try renderDockerTemplate("{{len $}}", values: values)
+        }
+        #expect(throws: (any Error).self) {
+            try renderDockerTemplate("{{range $}}{{.}}{{end}}", values: values)
+        }
+    }
+
+    @Test
     func `collection JSON index slice and printf helpers preserve types`() throws {
         let values: [String: DockerTemplateData] = [
             "Array": .array([.string("alpha"), .string("beta"), .string("gamma")]),

@@ -425,6 +425,20 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range 3}}{{.}}{{end}}|{{range 0}}{{.}}{{else}}empty{{end}}|{{range -2}}{{.}}{{else}}empty{{end}}'
+    )"
+    assert_equal "$actual" '012|empty|empty' "$project integer range template"
+
+    # Go-template variables must reach Compose literally.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range $value := 3}}{{$value}};{{end}}'
+    )"
+    assert_equal "$actual" '0;1;2;' "$project integer range variable template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format '{{join (split "abc" "") "-"}}'
     )"
     assert_equal "$actual" 'a-b-c' "$project empty separator split"
@@ -471,6 +485,20 @@ check_implementation() {
     assert_rejected "$project root value index template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{index $ "Command"}}'
+    # Formatter roots are structs, not maps or other iterable collections.
+    # shellcheck disable=SC2016
+    assert_rejected "$project root value length template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{len $}}'
+    # shellcheck disable=SC2016
+    assert_rejected "$project root value range template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range $}}{{.}}{{end}}'
+    # Integer ranges accept at most one declaration in current Go templates.
+    # shellcheck disable=SC2016
+    assert_rejected "$project two-variable integer range template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range $index, $value := 3}}{{$index}}={{$value}}{{end}}'
     # `table` is a --format prefix and is not registered as a Go template
     # function by Docker Compose.
     # shellcheck disable=SC2016

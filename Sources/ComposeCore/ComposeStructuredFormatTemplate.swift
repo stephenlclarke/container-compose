@@ -456,6 +456,9 @@ private func renderStructuredTemplateRange(
     context: StructuredTemplateContext,
 ) throws -> [UInt8] {
     let value = try evaluateStructuredTemplateExpression(specification.expression, context: context)
+    if specification.keyVariable != nil, case .integer = value {
+        throw structuredUnsupportedAction("range integer with two variables")
+    }
     let entries = try structuredTemplateRangeEntries(value)
     guard !entries.isEmpty else {
         var nested = context
