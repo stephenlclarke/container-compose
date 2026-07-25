@@ -14,9 +14,11 @@ container model, sibling fork, or package pin changes.
 
 - `d2a4a426792f08826e0e816c80e6775e177ab7cc`
   `feat(format): support structured output templates`
+- `af1e012fb4fad4162a1841bd9a13f80be68d9fb4`
+  `fix(format): match Go template control semantics`
 
-The implementation commit is signed and independently constructible. This
-documentation commit is intentionally separate.
+Both implementation commits are signed and construct the complete code delta.
+This documentation commit is intentionally separate.
 
 ## Type Of Change
 
@@ -41,6 +43,9 @@ documentation commit is intentionally separate.
   - implement typed arity checks, boolean helpers, string and collection
     helpers, JSON, and portable `%d`, `%s`, `%v`, `%q`, width, and
     left-alignment behavior.
+- `Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift`
+  - distinguishes whitespace-delimited trim markers from signed integer
+    literals on both action boundaries.
 - `Sources/ComposeCore/ComposeFormatTemplate.swift`
   - retains the public row-rendering boundary and delegates to the structured
     engine.
@@ -54,6 +59,9 @@ documentation commit is intentionally separate.
   - covers control flow, nested/root/variable paths, deterministic traversal,
     functions, JSON, collections, `printf`, whitespace trimming, field
     extraction, malformed input, and typed failures.
+- `Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift`
+  - isolates malformed collection, logical, trim-marker, and formatting cases
+    from the successful structured evaluator suite.
 - `Tests/ComposeCoreTests/ComposeOrchestratorTests.swift` and
   `Tests/ComposePluginTests/ComposeCLIHelpTests.swift`
   - cover structured command rows and honest support metadata.
@@ -94,12 +102,13 @@ CONTAINER_COMPOSE_LIVE=1 \
 git diff --check
 ```
 
-- Swift: 1,134 tests in 26 suites passed.
-- New structured formatter: 949/1,022 lines, 92.9%.
-- `ComposeStructuredFormatTemplate.swift`: 742/799 lines, 92.9%.
-- `ComposeDockerTemplateData.swift`: 80/85 lines, 94.1%.
+- Swift: 1,134 tests in 27 suites passed.
+- New structured formatter: 1,003/1,086 lines, 92.4%.
+- `ComposeStructuredFormatTemplate.swift`: 773/841 lines, 91.9%.
+- `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
+- `ComposeDockerTemplateData.swift`: 81/85 lines, 95.3%.
 - `ComposeDockerTemplatePrintf.swift`: 73/75 lines, 97.3%.
-- `ComposeDockerTemplateFunctionSupport.swift`: 54/63 lines, 85.7%.
+- `ComposeDockerTemplateFunctionSupport.swift`: 58/67 lines, 86.6%.
 - Existing formatter boundary: 39/41 lines, 95.1%.
 - Command rendering helpers: 765/796 lines, 96.1%.
 - Repository checks passed, including 167 release-controller tests, 14
@@ -129,6 +138,22 @@ and is removed by both reference and Apple-runtime cleanup paths.
 
 The slice changes no sibling fork. It therefore needs no Apple-facing pull
 request and introduces no Apple review dependency.
+
+## Autobot Review
+
+The Codex review on
+[pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
+identified three actionable Go-template compatibility cases:
+
+- `and` and `or` now evaluate arguments left-to-right and stop before guarded
+  invalid collection access;
+- multi-operand `eq` now matches any trailing operand and `ne` requires exactly
+  two operands;
+- `{{-3}}` remains a signed integer action, while whitespace-delimited `{{- 3}}`
+  and `{{3 -}}` retain trim behavior.
+
+Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes all three and adds focused
+regressions. No autobot finding was deferred.
 
 ## Documentation And Operations
 

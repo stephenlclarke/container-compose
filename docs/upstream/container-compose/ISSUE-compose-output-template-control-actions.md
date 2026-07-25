@@ -42,6 +42,11 @@ Signed commit `d2a4a426792f08826e0e816c80e6775e177ab7cc`
 Compose-owned implementation, focused tests, committed integration fixture,
 Docker Compose v2 oracle, and status updates.
 
+Signed follow-up commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4`
+(`fix(format): match Go template control semantics`) addresses every actionable
+autobot finding with lazy boolean evaluation, Go-compatible comparison arity,
+and whitespace-sensitive trim markers.
+
 The paired pull-request handoff records the code map, exact validation, coverage,
 runtime revisions, and promotion evidence.
 
