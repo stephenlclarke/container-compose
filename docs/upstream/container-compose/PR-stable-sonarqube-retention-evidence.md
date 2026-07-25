@@ -14,8 +14,10 @@ missing or mismatched authority remains fail-closed.
   `fix(release): preserve retained Sonar evidence`
 - `7761d7b251f268449bcaf214bb88c3e398d10510`
   `fix(release): load stable controls before publication`
+- `7360fcf36d8238b2438d9a23c381819514fe9cb2`
+  `fix(release): wait before expiring Sonar metrics`
 
-Both implementation commits are signed. Together they contain the evidence
+All implementation commits are signed. Together they contain the evidence
 policy, immutable release-control boundary, workflow wiring, tests, and
 operator documentation.
 
@@ -31,6 +33,8 @@ operator documentation.
   - emits explicit `SonarQube Quality Gate: Passed` and
     `SonarQube Metrics: Expired` badges plus links and a no-substitution
     statement;
+  - waits for normal indexing unless a different, later SonarCloud analysis
+    proves the exact scan has already been superseded;
   - distinguishes absent metric history from request or schema failures so
     transient service errors remain fatal.
 - `.github/workflows/prebuilt-binaries.yml` enables the retention policy only

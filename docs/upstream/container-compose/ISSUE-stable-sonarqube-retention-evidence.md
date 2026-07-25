@@ -34,6 +34,9 @@ path needs an explicit retention policy that does neither.
 - The fallback snapshot labels the quality gate as passed and historical
   SonarQube metrics as expired, links the retained authorities, and states that
   no later metrics were substituted.
+- Retained evidence is used immediately only after SonarCloud exposes another
+  analysis completed after the exact scan; otherwise the full polling window
+  remains available for normal analysis indexing.
 - Missing, failed, mismatched, or unreadable authority blocks publication.
 - Transient SonarCloud metric API failures are not reclassified as retention.
 - A stable retry executes release-control scripts from the verified workflow
