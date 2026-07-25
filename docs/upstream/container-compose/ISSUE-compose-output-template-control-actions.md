@@ -104,12 +104,20 @@ Current oracle, increased coverage, and an exact-commit clean SonarQube quality
 gate protect both sides of the behavior.
 
 Signed follow-up commit `e63293cce41444f4e44e6aa6f2bf1ad8d099690b`
-(`fix(format): reject possible root ranges`) closes the final connector
+(`fix(format): reject possible root ranges`) closes the root-range connector
 finding. Range preflight now rejects every expression that can return the root
 formatter row, including `or` falling back from an empty publisher collection
 to `$`. Focused evaluator and pre-discovery command tests, a committed one-off
 Docker Compose 5.3.1/Apple Current live oracle, and an exact-commit clean
 SonarQube quality gate protect the behavior.
+
+Signed follow-up commit `65c03e127348fd3246d6f90f92428cb9583d2727`
+(`fix(format): accept CRLF action whitespace`) closes a delayed connector
+finding. Swift groups CRLF into one `Character`, so the Go whitespace predicate
+now recognizes that combined grapheme as its two valid constituent action
+whitespace runes. Focused field, control, and trim-marker coverage, the
+committed Docker Compose 5.3.1/Apple Current live oracle, and an exact-commit
+clean SonarQube quality gate protect the behavior.
 
 ## Compatibility
 

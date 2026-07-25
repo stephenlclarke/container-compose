@@ -64,6 +64,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): restrict action whitespace to Go syntax`
 - `e63293cce41444f4e44e6aa6f2bf1ad8d099690b`
   `fix(format): reject possible root ranges`
+- `65c03e127348fd3246d6f90f92428cb9583d2727`
+  `fix(format): accept CRLF action whitespace`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -166,6 +168,8 @@ This documentation commit is intentionally separate.
 - `Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift`
   - distinguishes whitespace-delimited trim markers from signed integer
     literals on both action boundaries;
+  - recognizes Swift's combined CRLF grapheme as the same two Go action
+    whitespace characters;
   - limits marker recognition and adjacent trimming to Go's ASCII space, tab,
     carriage-return, and newline set so literal non-ASCII whitespace survives;
   - applies the same four-character set to action boundaries, control
@@ -201,6 +205,7 @@ This documentation commit is intentionally separate.
 - `Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift`
   - isolates malformed collection, logical, trim-marker, and formatting cases
     from the successful structured evaluator suite;
+  - accepts CRLF between field and control tokens and around trim markers;
   - rejects logical range expressions that can fall back to the root formatter
     row;
   - rejects non-breaking spaces at action, control, and trailing-expression
@@ -258,6 +263,7 @@ This documentation commit is intentionally separate.
     two-variable integer ranges;
   - creates a one-off container with no publishers and rejects a logical
     publisher range that can therefore fall back to the root formatter row;
+  - verifies CRLF-separated field actions, control actions, and trim markers;
   - rejects non-breaking spaces as action and control separators exactly as Go
     does while retaining literal non-ASCII whitespace outside actions;
   - verifies `.Labels` through generic string helpers, rejects root `index`
@@ -303,7 +309,7 @@ CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
 git diff --check
 ```
 
-- Swift: 1,176 tests in 33 suites passed.
+- Swift: 1,177 tests in 33 suites passed.
 - Swift repository coverage: 91.94%.
 - Go normalizer coverage: 89.88%.
 - Structured template engine and support: 2,185/2,330 lines, 93.78%.
@@ -334,7 +340,7 @@ git diff --check
   - `container-compose` base
     `b644c71fd0f7dd665a2a74192ab55745faafa281`.
 - SonarQube pull-request analysis for implementation commit
-  `e63293cce41444f4e44e6aa6f2bf1ad8d099690b` passed with zero unresolved
+  `65c03e127348fd3246d6f90f92428cb9583d2727` passed with zero unresolved
   issues, 91.7% new-code coverage, 0.0% new duplication, A ratings for
   reliability, security, and maintainability, and 100% hotspot review.
 
@@ -361,7 +367,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified forty-eight actionable compatibility cases and three suggestions that
+identified forty-nine actionable compatibility cases and three suggestions that
 were disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
@@ -457,6 +463,8 @@ were disproved against the exact Docker Compose 5.3.1 oracle:
 - logical range expressions are rejected when any reachable result can be the
   root formatter row, including `.Publishers` falling back to `$` through
   `or`.
+- CRLF is accepted between action and control tokens and around trim markers
+  even though Swift represents the pair as one `Character`.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -573,7 +581,7 @@ pipelines, and range declarations. Focused evaluator and pre-discovery command
 tests plus the committed Docker Compose 5.3.1/Apple Current oracle protect both
 reported rejection forms.
 
-A final connector thread showed that range validation considered only
+A subsequent connector thread showed that range validation considered only
 expressions whose every truthy result was the root. A one-off Docker Compose
 5.3.1 container has no publishers, so
 `{{range or .Publishers $}}{{.}}{{end}}` falls back to the root struct and
@@ -582,6 +590,14 @@ fails with `range can't iterate over`. Signed commit
 can return a truthy root value before discovery. Focused evaluator and
 command-path coverage plus the same one-off Docker Compose 5.3.1/Apple Current
 live oracle protect the reported fallback.
+
+A delayed connector thread showed that Swift groups CRLF into one grapheme,
+while Go consumes the carriage return and line feed as two valid action
+whitespace runes. Signed commit
+`65c03e127348fd3246d6f90f92428cb9583d2727` recognizes that combined
+`Character` without broadening the accepted Go whitespace set. Focused field,
+control, and trim-marker tests plus the committed Docker Compose 5.3.1/Apple
+Current live oracle protect the reported forms.
 
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
@@ -595,7 +611,7 @@ actionable autobot finding was deferred. The suggestion to propagate root
 identity through `table` was not implemented because Docker Compose 5.3.1
 rejects the template at parse time with `function "table" not defined`; the
 unsupported helper was removed and that exact rejection is protected instead.
-All fifty-two connector threads are answered with their implementation or
+All fifty-three connector threads are answered with their implementation or
 verified compatibility disposition.
 
 ## Documentation And Operations
