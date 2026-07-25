@@ -22,6 +22,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): reject invalid scalar template operations`
 - `00279ef2f323bb4a3e0b76360300a0a6e9fae008`
   `fix(format): preserve table header semantics`
+- `f9844e5bd3be0dce7da372cd69f9463c02ba6e2b`
+  `fix(format): align labels roots and comments`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -86,7 +88,8 @@ This documentation commit is intentionally separate.
   `Tools/parity/check-compose-format-template-actions.sh`
   - provide the committed Docker Compose v2 oracle for container publishers,
     labels, stats control flow, volume labels, duplicate and conditional table
-    headers, undefined variables, functions, and whitespace.
+    headers, missing labels, comment delimiters, undefined variables,
+    functions, and whitespace.
 
 ## Validation
 
@@ -125,10 +128,10 @@ CONTAINER_COMPOSE_LIVE=1 \
 git diff --check
 ```
 
-- Swift: 1,136 tests in 28 suites passed.
-- Structured template engine: 1,106/1,200 lines, 92.17%.
-- `ComposeStructuredFormatTemplate.swift`: 721/784 lines, 91.96%.
-- `ComposeStructuredTemplateAnalysis.swift`: 135/147 lines, 91.84%.
+- Swift: 1,137 tests in 28 suites passed.
+- Structured template engine: 1,163/1,259 lines, 92.37%.
+- `ComposeStructuredFormatTemplate.swift`: 750/814 lines, 92.14%.
+- `ComposeStructuredTemplateAnalysis.swift`: 163/176 lines, 92.61%.
 - `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
 - `ComposeDockerTemplateData.swift`: 81/85 lines, 95.3%.
 - `ComposeDockerTemplatePrintf.swift`: 73/75 lines, 97.3%.
@@ -167,7 +170,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified eleven actionable compatibility cases:
+identified fourteen actionable compatibility cases:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
   invalid collection access;
@@ -189,6 +192,11 @@ identified eleven actionable compatibility cases:
 - duplicate table fields retain one header for every rendered column;
 - table headers execute the same conditional template as data rows instead of
   unioning fields from mutually exclusive branches.
+- missing labels render an empty string and remain false in conditionals;
+- `with .`, `with $`, and their parenthesized forms retain root-field
+  validation when their successful branch still evaluates the root row;
+- full-action comments scan through `/* ... */`, so embedded `}}`, parentheses,
+  and trim markers do not end the action early.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -199,8 +207,11 @@ findings and extends the live Docker Compose v2 oracle to require matching
 execution failures. Commit `00279ef2f323bb4a3e0b76360300a0a6e9fae008`
 fixes variable validation and table-header execution, adds exact command header
 contexts, and extends the live oracle to duplicate, conditional, label, stats,
-and volume headers. No autobot finding was deferred, and every connector
-comment is answered with its implementation and verification disposition.
+and volume headers. Commit `f9844e5bd3be0dce7da372cd69f9463c02ba6e2b`
+fixes missing-label semantics, root-preserving `with` analysis, and comment
+scanning, with focused tests and live Docker Compose v2 checks. No autobot
+finding was deferred, and every connector comment is answered with its
+implementation and verification disposition.
 
 ## Documentation And Operations
 
