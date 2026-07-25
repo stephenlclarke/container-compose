@@ -28,6 +28,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): enforce structured record semantics`
 - `4f28a4d5eacc301f44d65e5683a8e43f20a2510c`
   `fix(format): match Go byte and print semantics`
+- `2108c6cfbb3e0da84d5e2ce877846d2b40349bd7`
+  `fix(format): preserve Go record and rune formatting`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -56,6 +58,8 @@ This documentation commit is intentionally separate.
   - supplies recursive array, map, record, lookup-object, raw-byte, scalar,
     and null values;
   - distinguishes strict publisher-record fields from lenient map-key lookup;
+  - renders publisher records in Go struct-field order while retaining
+    `map[...]` display for ordinary objects;
   - keeps display, truthiness, and JSON projection separate while retaining
     partial UTF-8 slices for exact Go quoting.
 - `Sources/ComposeCore/ComposeDockerTemplateFunctionSupport.swift` and
@@ -65,7 +69,8 @@ This documentation commit is intentionally separate.
     left-alignment behavior;
   - preserve Go UTF-8 byte offsets for `len`, `index`, and `slice`, Go spacing
     between adjacent non-string `print` operands, and type-aware quoted
-    strings, raw bytes, runes, scalars, maps, arrays, and publisher records.
+    strings, raw bytes, runes, scalars, maps, arrays, and publisher records;
+  - count Unicode scalars as Go runes when applying `printf` field widths.
 - `Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift`
   - distinguishes whitespace-delimited trim markers from signed integer
     literals on both action boundaries.
@@ -91,7 +96,8 @@ This documentation commit is intentionally separate.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift`
   - covers compact parenthesized control actions, empty-range declaration
     variables, strict publisher fields, scalar traversal, lenient map misses,
-    UTF-8 byte helpers, `print` spacing, and typed Go quoting.
+    UTF-8 byte helpers, `print` spacing, typed Go quoting, publisher struct
+    display, and decomposed and multi-scalar rune widths.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift`
   - covers duplicate columns, conditional headers, label headers, empty
     tables, legacy callers, field analysis, and variable scope.
@@ -105,7 +111,8 @@ This documentation commit is intentionally separate.
     headers, missing labels, comment delimiters, undefined variables,
     compact control actions, empty-range variables, strict publisher fields,
     UTF-8 byte offsets, adjacent print operands, typed quoted values,
-    functions, and whitespace.
+    publisher struct display, decomposed rune widths, functions, and
+    whitespace.
 
 ## Validation
 
@@ -151,13 +158,13 @@ CONTAINER_COMPOSE_LIVE=1 \
 git diff --check
 ```
 
-- Swift: 1,144 tests in 29 suites passed.
-- Structured template engine: 1,412/1,534 lines, 92.05%.
+- Swift: 1,146 tests in 29 suites passed.
+- Structured template engine: 1,413/1,542 lines, 91.63%.
 - `ComposeStructuredFormatTemplate.swift`: 757/819 lines, 92.43%.
 - `ComposeStructuredTemplateAnalysis.swift`: 200/216 lines, 92.59%.
 - `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
-- `ComposeDockerTemplateData.swift`: 85/93 lines, 91.40%.
-- `ComposeDockerTemplatePrintf.swift`: 215/223 lines, 96.41%.
+- `ComposeDockerTemplateData.swift`: 91/107 lines, 85.05%.
+- `ComposeDockerTemplatePrintf.swift`: 210/217 lines, 96.77%.
 - `ComposeDockerTemplateFunctionSupport.swift`: 137/165 lines, 83.03%.
 - Formatter table boundary: 67/68 lines, 98.53%.
 - Command rendering helpers: 752/781 lines, 96.29%.
@@ -196,7 +203,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified twenty actionable compatibility cases:
+identified twenty-two actionable compatibility cases:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
   invalid collection access;
@@ -236,6 +243,10 @@ identified twenty actionable compatibility cases:
   Go's `fmt.Sprint` behavior;
 - `%q` follows the operand type for strings, raw bytes, integer runes, booleans,
   nil, arrays, maps, and publisher records, including exact Go escapes.
+- publisher records render in Go struct-field order for direct and `%v`
+  formatting, while ordinary objects retain map display;
+- `printf` widths count Unicode scalars as Go runes instead of Swift grapheme
+  clusters.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -255,8 +266,11 @@ focused compatibility tests and exact Docker Compose v2 rejection and output
 oracles. Commit `4f28a4d5eacc301f44d65e5683a8e43f20a2510c` fixes the
 three UTF-8, print, and typed-quote findings, preserves action-produced escape
 sequences, and extends both focused coverage and the live Docker Compose v2
-oracle. No autobot finding was deferred, and every connector comment is
-answered with its implementation and verification disposition.
+oracle. Commit `2108c6cfbb3e0da84d5e2ce877846d2b40349bd7` fixes publisher
+record display and Go rune-width semantics, with focused unit coverage and
+exact Docker Compose v2 and Apple Current parity. No autobot finding was
+deferred, and every connector comment is answered with its implementation and
+verification disposition.
 
 ## Documentation And Operations
 
@@ -273,7 +287,7 @@ answered with its implementation and verification disposition.
 
 ## Review Checklist
 
-- [x] The signed constructible implementation commit is identified.
+- [x] The signed constructible implementation commits are identified.
 - [x] The change is isolated to Compose presentation policy.
 - [x] Unit and command-path tests cover successful and failed evaluation.
 - [x] New structured formatter coverage exceeds 90%.
