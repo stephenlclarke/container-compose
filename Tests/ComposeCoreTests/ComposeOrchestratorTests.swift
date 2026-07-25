@@ -13920,6 +13920,7 @@ struct ComposeOrchestratorTests {
             "{{index $ \"Command\"}}",
             "{{len $}}",
             "{{range $}}{{.}}{{end}}",
+            "{{range or .Publishers $}}{{.}}{{end}}",
             "{{range $index, $value := 3}}{{$index}}={{$value}}{{end}}",
             "{{with table $}}{{.Command}}{{end}}",
             "{{\(nonBreakingSpace).Name}}",

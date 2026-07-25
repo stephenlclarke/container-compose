@@ -629,6 +629,12 @@ check_implementation() {
             --format '{{range $publisher := .Publishers}}{{else}}{{len $publisher}}{{end}}'
     )"
     assert_equal "$actual" '0' "$project empty range variable template"
+    # A one-off container has no publishers, so `or` falls back to the root
+    # formatter struct. Go rejects ranging over that possible root value.
+    # shellcheck disable=SC2016
+    assert_rejected "$project logical root range template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps --all \
+        --format '{{range or .Publishers $}}{{.}}{{end}}'
     "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
         down --remove-orphans --volumes >/dev/null
 }

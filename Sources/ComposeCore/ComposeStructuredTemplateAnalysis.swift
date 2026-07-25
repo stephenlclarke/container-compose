@@ -146,10 +146,10 @@ func validateStructuredTemplateRootIndexing(
                 specification.expression,
                 dotIsRoot: dotIsRoot,
             )
-            if structuredTemplateExpressionRetainsRoot(
+            if structuredTemplateExpressionRootFlow(
                 specification.expression,
                 dotIsRoot: dotIsRoot,
-            ) {
+            ).canReturnTruthyRoot {
                 throw structuredUnsupportedAction("range root value")
             }
             if specification.keyVariable != nil,

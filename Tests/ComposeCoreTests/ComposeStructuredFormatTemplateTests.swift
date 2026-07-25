@@ -62,6 +62,7 @@ struct ComposeStructuredFormatTemplateTests {
 
         for template in [
             "{{range .Text}}{{.}}{{end}}",
+            "{{range or .Publishers $}}{{.}}{{end}}",
             "{{len .Integer}}",
             "{{len .False}}",
             "{{len .Nothing}}",
