@@ -32,7 +32,12 @@ needed.
 Signed commit `d6318ec967a4a01c014f7542eabeb11fade18cb8`
 (`refactor(build): simplify external secret branches`) contains the two
 Compose-only refactors. The paired pull-request handoff records the code map,
-tests, and post-merge evidence.
+tests, and post-merge evidence. Pull request
+[#146](https://github.com/stephenlclarke/container-compose/pull/146) merged the
+change; exact `main` revision
+`b644c71fd0f7dd665a2a74192ab55745faafa281` passed SonarCloud with zero open
+issues and was published through the verified
+[`current` release](https://github.com/stephenlclarke/container-compose/releases/tag/current).
 
 ## Compatibility
 
