@@ -93,6 +93,16 @@ committed Docker Compose 5.3.1/Apple Current oracle, increased repository
 coverage, and an exact-commit clean SonarQube pull-request quality gate protect
 the behavior.
 
+Signed follow-up commit `555dfb0ec739bb2a745d02af000d3b3ddf1f5344`
+(`fix(format): restrict action whitespace to Go syntax`) addresses the remaining
+thread from that connector review batch. Action trimming, token and control
+separation, pipelines, and range declarations now accept only Go's ASCII space,
+tab, carriage return, and newline syntax. Non-breaking spaces at action or
+control boundaries fail before discovery, while quoted non-breaking spaces
+remain valid data. Focused tests, the committed Docker Compose 5.3.1/Apple
+Current oracle, increased coverage, and an exact-commit clean SonarQube quality
+gate protect both sides of the behavior.
+
 ## Compatibility
 
 Existing literal, field-only, JSON, table, and function templates remain

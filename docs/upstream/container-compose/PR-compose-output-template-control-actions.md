@@ -60,6 +60,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): preserve Go trim whitespace`
 - `3fe67c044ead24cca8e7c0ee2dd2afb125772a6c`
   `fix(format): preserve Go root and range semantics`
+- `555dfb0ec739bb2a745d02af000d3b3ddf1f5344`
+  `fix(format): restrict action whitespace to Go syntax`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -162,7 +164,10 @@ This documentation commit is intentionally separate.
   - distinguishes whitespace-delimited trim markers from signed integer
     literals on both action boundaries;
   - limits marker recognition and adjacent trimming to Go's ASCII space, tab,
-    carriage-return, and newline set so literal non-ASCII whitespace survives.
+    carriage-return, and newline set so literal non-ASCII whitespace survives;
+  - applies the same four-character set to action boundaries, control
+    separators, variables, pipeline segments, and range declarations so
+    non-Go whitespace is rejected as syntax while quoted values retain it.
 - `Sources/ComposeCore/ComposeFormatTemplate.swift`
   - retains the public row-rendering boundary and evaluates table templates
     against Docker-style header values before rendering rows;
@@ -192,7 +197,9 @@ This documentation commit is intentionally separate.
     invalid cross-control shorthand, malformed input, and typed failures.
 - `Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift`
   - isolates malformed collection, logical, trim-marker, and formatting cases
-    from the successful structured evaluator suite.
+    from the successful structured evaluator suite;
+  - rejects non-breaking spaces at action, control, and trailing-expression
+    boundaries while preserving the same character inside quoted Go strings.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift`
   - covers compact parenthesized control actions, empty-range declaration
     variables, strict publisher fields, scalar traversal, lenient map misses,
@@ -244,6 +251,8 @@ This documentation commit is intentionally separate.
   - verifies positive, zero, and negative integer ranges, one-variable integer
     range declarations, and exact rejection of root `len`, root `range`, and
     two-variable integer ranges;
+  - rejects non-breaking spaces as action and control separators exactly as Go
+    does while retaining literal non-ASCII whitespace outside actions;
   - verifies `.Labels` through generic string helpers, rejects root `index`
     and the unsupported `table` template function, and compares direct and
     `%s` partial UTF-8 output byte-for-byte.
@@ -283,16 +292,16 @@ CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
 git diff --check
 ```
 
-- Swift: 1,175 tests in 33 suites passed.
-- Swift repository coverage: 91.93%.
+- Swift: 1,176 tests in 33 suites passed.
+- Swift repository coverage: 91.94%.
 - Go normalizer coverage: 89.88%.
-- Structured template engine and support: 2,172/2,320 lines, 93.62%.
-- `ComposeStructuredFormatTemplate.swift`: 788/845 lines, 93.25%.
-- `ComposeStructuredTemplateAnalysis.swift`: 536/555 lines, 96.58%.
+- Structured template engine and support: 2,185/2,330 lines, 93.78%.
+- `ComposeStructuredFormatTemplate.swift`: 795/850 lines, 93.53%.
+- `ComposeStructuredTemplateAnalysis.swift`: 537/555 lines, 96.76%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 61/65 lines,
   93.85%.
 - `ComposeStructuredTemplateLookup.swift`: 31/37 lines, 83.78%.
-- `ComposeStructuredTemplateWhitespace.swift`: 27/27 lines, 100%.
+- `ComposeStructuredTemplateWhitespace.swift`: 32/32 lines, 100%.
 - `ComposeDockerTemplateData.swift`: 141/162 lines, 87.04%.
 - `ComposeDockerTemplatePrintSupport.swift`: 53/57 lines, 92.98%.
 - `ComposeDockerTemplatePrintf.swift`: 311/324 lines, 95.99%.
@@ -312,7 +321,7 @@ git diff --check
   - `container-compose` base
     `b644c71fd0f7dd665a2a74192ab55745faafa281`.
 - SonarQube pull-request analysis for implementation commit
-  `3fe67c044ead24cca8e7c0ee2dd2afb125772a6c` passed with zero unresolved
+  `555dfb0ec739bb2a745d02af000d3b3ddf1f5344` passed with zero unresolved
   issues, 91.7% new-code coverage, 0.0% new duplication, A ratings for
   reliability, security, and maintainability, and 100% hotspot review.
 
@@ -538,6 +547,16 @@ and integer-range semantics before runtime discovery, with focused evaluator
 and command-path tests plus the committed Docker Compose 5.3.1/Apple Current
 oracle.
 
+The same review batch contained a further connector thread that was reconciled
+before merge. Docker Compose 5.3.1 rejects non-breaking spaces at action and
+control boundaries with `U+00A0` parse errors, while allowing the character
+inside quoted string values. Signed commit
+`555dfb0ec739bb2a745d02af000d3b3ddf1f5344` applies Go's four-character
+whitespace set consistently to action trimming, token and control separation,
+pipelines, and range declarations. Focused evaluator and pre-discovery command
+tests plus the committed Docker Compose 5.3.1/Apple Current oracle protect both
+reported rejection forms.
+
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
 `{127.0.0.1 8080 32768 tcp}`. The same successful behavior is now protected by
@@ -550,7 +569,7 @@ actionable autobot finding was deferred. The suggestion to propagate root
 identity through `table` was not implemented because Docker Compose 5.3.1
 rejects the template at parse time with `function "table" not defined`; the
 unsupported helper was removed and that exact rejection is protected instead.
-All fifty connector threads are answered with their implementation or
+All fifty-one connector threads are answered with their implementation or
 verified compatibility disposition.
 
 ## Documentation And Operations
