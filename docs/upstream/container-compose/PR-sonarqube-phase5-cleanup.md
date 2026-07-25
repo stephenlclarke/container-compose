@@ -7,6 +7,8 @@ SonarCloud with equivalent pattern-matching conditionals. The code remains
 entirely in the Compose layer, preserves every secret-lifetime invariant, and
 does not require an Apple runtime change.
 
+Review: [stephenlclarke/container-compose#146](https://github.com/stephenlclarke/container-compose/pull/146)
+
 ## Constructible commit
 
 - `d6318ec967a4a01c014f7542eabeb11fade18cb8`
