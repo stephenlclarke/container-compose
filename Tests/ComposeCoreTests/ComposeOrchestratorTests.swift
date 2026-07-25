@@ -13555,6 +13555,36 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["API\texample\t\"demo-api-1\"\texample/api/latest"])
     }
 
+    @Test("ps format template renders else-with continuations")
+    func psFormatTemplateRendersElseWithContinuations() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.format = "{{with .Health}}healthy{{else with .Status}}{{.}}{{end}}"
+            }
+        )
+
+        #expect(emitted.messages == ["running"])
+        #expect(await discoveryManager.listRequests == [false])
+    }
+
     @Test("ps format template truncates IDs by default")
     func psFormatTemplateTruncatesIDsByDefault() async throws {
         let emitted = MessageRecorder()

@@ -185,6 +185,30 @@ struct ComposeFormatTemplateTests {
                 values: values,
             ) == "fallback",
         )
+        #expect(
+            try renderDockerTemplate(
+                "{{with .Nothing}}value{{else with(.Text)}}{{.}}{{end}}",
+                values: values,
+            ) == "abc",
+        )
+        #expect(
+            try renderDockerTemplate(
+                "{{with .Nothing}}first{{else with .False}}second{{else with .Integer}}{{.}}{{else}}none{{end}}",
+                values: values,
+            ) == "7",
+        )
+        #expect(throws: (any Error).self) {
+            try renderDockerTemplate(
+                "{{with .Nothing}}value{{else if .Text}}invalid{{end}}",
+                values: values,
+            )
+        }
+        #expect(throws: (any Error).self) {
+            try renderDockerTemplate(
+                "{{if .False}}value{{else with .Text}}invalid{{end}}",
+                values: values,
+            )
+        }
     }
 
     @Test

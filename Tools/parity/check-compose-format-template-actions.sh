@@ -195,6 +195,12 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{with ""}}missing{{else with .Service}}{{.}}{{end}}'
+    )"
+    assert_equal "$actual" 'api' "$project ps else-with template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format '{{range .Publishers}}{{$.Label "oracle.example/key"}}{{end}}'
     )"
     assert_equal "$actual" 'value' "$project root label template"
@@ -357,6 +363,12 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" stats \
+            --no-stream --no-trunc --format '{{with ""}}missing{{else with .Name}}{{.}}{{end}}' api
+    )"
+    assert_equal "$actual" "$name" "$project stats else-with template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" stats \
             --no-stream --no-trunc --format 'table {{.Name}}\t{{.CPUPerc}}' api
     )"
     assert_equal "$(printf '%s\n' "$actual" | sed -n '1p' | awk '{$1=$1; print}')" \
@@ -367,6 +379,12 @@ check_implementation() {
             --format '{{if .Name}}{{.Name}}={{.Label "oracle.example/key"}}{{else}}missing{{end}}'
     )"
     assert_equal "$actual" "$volume_name=value" "$project volumes control template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" volumes \
+            --format '{{with ""}}missing{{else with .Name}}{{.}}{{end}}'
+    )"
+    assert_equal "$actual" "$volume_name" "$project volumes else-with template"
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" volumes \

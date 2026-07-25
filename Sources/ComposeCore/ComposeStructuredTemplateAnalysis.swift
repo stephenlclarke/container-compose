@@ -32,6 +32,17 @@ func structuredTemplateControlExpression(
 }
 
 func structuredTemplateElseIfExpression(_ action: String) -> String? {
+    structuredTemplateElseControlExpression(action, keyword: "if")
+}
+
+func structuredTemplateElseWithExpression(_ action: String) -> String? {
+    structuredTemplateElseControlExpression(action, keyword: "with")
+}
+
+private func structuredTemplateElseControlExpression(
+    _ action: String,
+    keyword: String,
+) -> String? {
     guard action.hasPrefix("else") else {
         return nil
     }
@@ -41,7 +52,7 @@ func structuredTemplateElseIfExpression(_ action: String) -> String? {
     }
     return structuredTemplateControlExpression(
         suffix.trimmingCharacters(in: .whitespacesAndNewlines),
-        keyword: "if",
+        keyword: keyword,
     )
 }
 

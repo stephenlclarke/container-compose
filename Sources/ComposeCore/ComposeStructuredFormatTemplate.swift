@@ -84,6 +84,7 @@ private struct StructuredTemplateParser {
             case let .action(action):
                 if action == "else" || action == "end"
                     || structuredTemplateElseIfExpression(action) != nil
+                    || structuredTemplateElseWithExpression(action) != nil
                 {
                     guard acceptStops else { throw structuredUnsupportedAction(action) }
                     return (nodes, action)
@@ -108,14 +109,14 @@ private struct StructuredTemplateParser {
     private mutating func parseConditional(_ expression: String) throws -> StructuredTemplateNode {
         try validateStructuredExpression(expression)
         let success = try parseNodes(acceptStops: true)
-        let failure = try parseFailure(stop: success.stop)
+        let failure = try parseConditionalFailure(stop: success.stop)
         return .conditional(expression: expression, success: success.nodes, failure: failure)
     }
 
     private mutating func parseWith(_ expression: String) throws -> StructuredTemplateNode {
         try validateStructuredExpression(expression)
         let success = try parseNodes(acceptStops: true)
-        let failure = try parseFailure(stop: success.stop)
+        let failure = try parseWithFailure(stop: success.stop)
         return .with(expression: expression, success: success.nodes, failure: failure)
     }
 
@@ -123,20 +124,36 @@ private struct StructuredTemplateParser {
         let specification = try structuredTemplateRange(value)
         try validateStructuredExpression(specification.expression)
         let success = try parseNodes(acceptStops: true)
-        let failure = try parseFailure(stop: success.stop)
+        let failure = try parsePlainFailure(stop: success.stop)
         return .range(specification: specification, success: success.nodes, failure: failure)
     }
 
-    private mutating func parseFailure(stop: String?) throws -> [StructuredTemplateNode] {
+    private mutating func parseConditionalFailure(
+        stop: String?,
+    ) throws -> [StructuredTemplateNode] {
+        if let stop, let expression = structuredTemplateElseIfExpression(stop) {
+            return try [parseConditional(expression)]
+        }
+        return try parsePlainFailure(stop: stop)
+    }
+
+    private mutating func parseWithFailure(
+        stop: String?,
+    ) throws -> [StructuredTemplateNode] {
+        if let stop, let expression = structuredTemplateElseWithExpression(stop) {
+            return try [parseWith(expression)]
+        }
+        return try parsePlainFailure(stop: stop)
+    }
+
+    private mutating func parsePlainFailure(
+        stop: String?,
+    ) throws -> [StructuredTemplateNode] {
         guard let stop else {
             throw structuredUnsupportedAction("unclosed control action")
         }
         if stop == "end" {
             return []
-        }
-        if let expression = structuredTemplateElseIfExpression(stop) {
-            let nested = try parseConditional(expression)
-            return [nested]
         }
         guard stop == "else" else {
             throw structuredUnsupportedAction(stop)
