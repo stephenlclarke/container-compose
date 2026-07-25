@@ -44,6 +44,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): preserve logical root analysis`
 - `53a3bcf7253bc0ac30550731f92c8437a1c31c56`
   `fix(format): support else-with continuations`
+- `e6560365bc13e61a4d861a138fb5a8a753f7693f`
+  `fix(format): support piped label calls`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -64,6 +66,8 @@ This documentation commit is intentionally separate.
     variables;
   - accepts shorthand continuations only for their matching Go control
     actions: `else if` after `if` and `else with` after `with`;
+  - accepts `.Label` and root-scoped `$.Label` as ordinary pipeline functions
+    while preserving typed argument and exact arity validation;
   - resolves root-scoped `$.Label` calls against the original formatter row
     after `range` or `with` changes dot;
   - traverses arrays in source order and objects in deterministic key order;
@@ -76,7 +80,13 @@ This documentation commit is intentionally separate.
     unsupported fields cannot bypass command validation;
   - follows root values returned by `and`, `or`, and logical pipelines into
     successful `with` bodies;
-  - discovers `.Label` keys used by Docker's dynamic table header context.
+  - discovers direct and pipeline-fed `.Label` keys used by Docker's dynamic
+    table header context.
+- `Sources/ComposeCore/ComposeStructuredTemplateLookup.swift`
+  - isolates Compose-owned field and label lookup policy from parsing and
+    evaluation;
+  - preserves strict record fields, lenient map keys, missing-label empty
+    strings, and root-versus-dot label selection.
 - `Sources/ComposeCore/ComposeStructuredTemplateCompatibilitySyntax.swift`
   - recognizes compact one- and two-variable `range` assignments without
     treating `:=` inside quoted or parenthesized expressions as declarations;
@@ -140,7 +150,8 @@ This documentation commit is intentionally separate.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateCallCompatibilityTests.swift`
   - covers root-scoped label rendering, field and table-key analysis, typed
     `printf` formats, compact range assignments, parenthesized selector
-    chains, typed label operands, and corresponding invalid-input rejection.
+    chains, typed label operands, root and nested pipeline-fed labels, chained
+    helpers, exact label arity, and corresponding invalid-input rejection.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateOperandCompatibilityTests.swift`
   - covers strict typed index and slice offsets, structured publisher joins,
     and scalar and recursive typed `printf` diagnostics.
@@ -165,7 +176,8 @@ This documentation commit is intentionally separate.
     selectors, parenthesized and logical-root field validation, Docker's
     deliberately omitted `ps` headers, non-string label-key rejection,
     `else with` output through `ps`, `stats`, and `volumes`, functions, and
-    whitespace.
+    whitespace, plus root and nested pipeline-fed labels and invalid extra
+    label arguments.
 
 ## Validation
 
@@ -182,6 +194,7 @@ swiftlint lint --strict --quiet \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
   Sources/ComposeCore/ComposeStructuredTemplateCompatibilitySyntax.swift \
+  Sources/ComposeCore/ComposeStructuredTemplateLookup.swift \
   Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift \
   Sources/ComposeCore/ComposeRenderHelpers.swift \
   Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift \
@@ -199,6 +212,7 @@ swiftformat --lint --swift-version 6.2 \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
   Sources/ComposeCore/ComposeStructuredTemplateCompatibilitySyntax.swift \
+  Sources/ComposeCore/ComposeStructuredTemplateLookup.swift \
   Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift \
   Sources/ComposeCore/ComposeRenderHelpers.swift \
   Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift \
@@ -218,11 +232,12 @@ git diff --check
 ```
 
 - Swift: 1,158 tests in 31 suites passed.
-- Structured template engine: 1,648/1,781 lines, 92.53%.
-- `ComposeStructuredFormatTemplate.swift`: 788/848 lines, 92.92%.
-- `ComposeStructuredTemplateAnalysis.swift`: 250/271 lines, 92.25%.
+- Structured template engine: 1,662/1,796 lines, 92.54%.
+- `ComposeStructuredFormatTemplate.swift`: 762/817 lines, 93.27%.
+- `ComposeStructuredTemplateAnalysis.swift`: 259/280 lines, 92.50%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 61/65 lines,
   93.85%.
+- `ComposeStructuredTemplateLookup.swift`: 31/37 lines, 83.78%.
 - `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
 - `ComposeDockerTemplateData.swift`: 92/107 lines, 85.98%.
 - `ComposeDockerTemplatePrintf.swift`: 284/298 lines, 95.30%.
@@ -264,7 +279,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified thirty-four actionable compatibility cases and two suggestions that
+identified thirty-five actionable compatibility cases and two suggestions that
 were disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
@@ -334,6 +349,9 @@ were disproved against the exact Docker Compose 5.3.1 oracle:
 - Go's `else with` shorthand is parsed as a nested `with` continuation, while
   invalid `else if` after `with` and `else with` after `if` or `range` remain
   rejected.
+- `.Label` and root-scoped `$.Label` accept their key from the preceding
+  pipeline value, retain dynamic table-key analysis, compose with later
+  helpers, and reject an additional explicit argument.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -381,6 +399,10 @@ Commit `53a3bcf7253bc0ac30550731f92c8437a1c31c56` adds control-specific
 continuation parsing, covers successful, chained, compact, and invalid
 shorthand forms, and extends the committed live oracle across all three
 formatter command paths.
+Commit `e6560365bc13e61a4d861a138fb5a8a753f7693f` treats root and dot
+label methods as typed pipeline functions, isolates their lookup policy,
+covers rendering and field/header analysis, and extends the committed live
+oracle with successful chained calls and invalid extra-argument rejection.
 
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
