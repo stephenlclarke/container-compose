@@ -157,6 +157,107 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
                 poll_timeout=1,
             )
 
+    def test_retained_evidence_requires_exact_successful_check_and_main_ci_scan(
+        self,
+    ) -> None:
+        module = load_module()
+        commit = "0123456789abcdef"
+
+        def github_response(_gh, *_arguments):
+            endpoint = _arguments[-1]
+            if "/check-runs?" in endpoint:
+                return [
+                    {
+                        "check_runs": [
+                            {
+                                "head_sha": commit,
+                                "name": "SonarCloud Code Analysis",
+                                "status": "completed",
+                                "conclusion": "success",
+                                "details_url": "https://sonarcloud.io/example",
+                                "app": {"slug": "sonarqubecloud"},
+                            }
+                        ]
+                    }
+                ]
+            if "/actions/workflows/ci.yml/runs?" in endpoint:
+                return [
+                    {
+                        "workflow_runs": [
+                            {
+                                "id": 123,
+                                "head_sha": commit,
+                                "head_branch": "main",
+                                "status": "completed",
+                                "conclusion": "success",
+                                "event": "push",
+                            }
+                        ]
+                    }
+                ]
+            if "/actions/runs/123/jobs?" in endpoint:
+                return [
+                    {
+                        "jobs": [
+                            {
+                                "name": "Validate Runtime",
+                                "status": "completed",
+                                "conclusion": "success",
+                                "html_url": "https://github.com/example/repo/actions/jobs/456",
+                                "steps": [
+                                    {
+                                        "name": "SonarQube scan",
+                                        "status": "completed",
+                                        "conclusion": "success",
+                                        "completed_at": "2026-07-24T11:41:07Z",
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ]
+            self.fail(f"unexpected GitHub endpoint: {endpoint}")
+
+        module.gh_json = github_response
+
+        self.assertEqual(
+            module.find_retained_sonarqube_evidence(
+                gh="gh",
+                repository="example/repo",
+                commit=commit,
+            ),
+            module.RetainedSonarEvidence(
+                check_url="https://sonarcloud.io/example",
+                ci_job_url="https://github.com/example/repo/actions/jobs/456",
+                completed_at="2026-07-24T11:41:07Z",
+            ),
+        )
+
+    def test_retained_evidence_rejects_success_from_a_different_commit(self) -> None:
+        module = load_module()
+        module.gh_json = lambda *_args: [
+            {
+                "check_runs": [
+                    {
+                        "head_sha": "newer-commit",
+                        "name": "SonarCloud Code Analysis",
+                        "status": "completed",
+                        "conclusion": "success",
+                        "details_url": "https://sonarcloud.io/example",
+                        "app": {"slug": "sonarqubecloud"},
+                    }
+                ]
+            }
+        ]
+
+        self.assertIsNone(
+            module.find_retained_sonarqube_evidence(
+                gh="gh",
+                repository="example/repo",
+                commit="0123456789abcdef",
+            )
+        )
+
     def test_prebuilt_workflow_requires_exact_main_sonarqube_evidence(self) -> None:
         workflow = (
             Path(__file__).parents[2] / ".github/workflows/prebuilt-binaries.yml"
@@ -170,6 +271,11 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn('Skipping current package for %s until successful exact-main CI includes a SonarQube scan.', workflow)
         self.assertIn('Refusing Current package for %s without successful exact-main CI including a SonarQube scan.', workflow)
         self.assertNotIn("--allow-missing-sonarqube", workflow)
+        self.assertIn("--allow-expired-sonarqube-metrics", workflow)
+        self.assertIn(
+            'if [[ "${quality_release_kind}" == "stable" ]]; then',
+            workflow,
+        )
         self.assertNotIn("sonar_snapshot_available", workflow)
         self.assertNotIn("SonarQube unavailable", workflow)
         self.assertIn("quality_snapshot_asset", workflow)
@@ -456,6 +562,37 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn("img.shields.io/static/v1", stable)
         self.assertIn("(quality-snapshot.svg)", stable)
 
+    def test_stable_snapshot_labels_expired_metrics_without_substitution(self) -> None:
+        module = load_module()
+        evidence = module.RetainedSonarEvidence(
+            check_url="https://sonarcloud.io/example",
+            ci_job_url="https://github.com/example/repo/actions/jobs/456",
+            completed_at="2026-07-24T11:41:07Z",
+        )
+
+        snapshot = module.render_snapshot(
+            commit="0123456789abcdef",
+            sonar_analysis=None,
+            sonar_measures=None,
+            retained_sonar_evidence=evidence,
+            codeql_analysis={
+                "results_count": 0,
+                "rules_count": 34,
+                "error": "",
+                "warning": "",
+            },
+            release_kind="stable",
+        )
+
+        self.assertIn("SonarQube Quality Gate", snapshot)
+        self.assertIn("SonarQube Metrics", snapshot)
+        self.assertIn("Expired", snapshot)
+        self.assertIn("no later metrics were substituted", snapshot)
+        self.assertIn(evidence.check_url, snapshot)
+        self.assertIn(evidence.ci_job_url, snapshot)
+        self.assertEqual(snapshot.count("!["), 5)
+        self.assertNotIn("Coverage", snapshot)
+
     def test_static_badge_delivery_requires_every_github_proxied_svg(self) -> None:
         module = load_module()
         badges = [
@@ -556,6 +693,63 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(SystemExit, "supplied together"):
                 module.main()
+
+    def test_cli_rejects_expired_metric_policy_for_current(self) -> None:
+        module = load_module()
+
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                "capture-quality-snapshot.py",
+                "--repo",
+                "example/repo",
+                "--commit",
+                "0123456789abcdef",
+                "--release-kind",
+                "current",
+                "--allow-expired-sonarqube-metrics",
+            ],
+        ):
+            with self.assertRaisesRegex(SystemExit, "only for stable releases"):
+                module.main()
+
+    def test_cli_uses_retained_exact_sonar_evidence_for_stable(self) -> None:
+        module = load_module()
+        evidence = module.RetainedSonarEvidence(
+            check_url="https://sonarcloud.io/example",
+            ci_job_url="https://github.com/example/repo/actions/jobs/456",
+            completed_at="2026-07-24T11:41:07Z",
+        )
+        module.find_sonarqube_analysis = lambda **_kwargs: None
+        module.find_codeql_analysis = lambda **_kwargs: {
+            "results_count": 0,
+            "rules_count": 34,
+            "error": "",
+            "warning": "",
+        }
+        module.find_retained_sonarqube_evidence = lambda **_kwargs: evidence
+
+        output = io.StringIO()
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                "capture-quality-snapshot.py",
+                "--repo",
+                "example/repo",
+                "--commit",
+                "0123456789abcdef",
+                "--release-kind",
+                "stable",
+                "--allow-expired-sonarqube-metrics",
+            ],
+        ), redirect_stdout(output):
+            module.main()
+
+        self.assertIn("SonarQube Metrics", output.getvalue())
+        self.assertIn("Expired", output.getvalue())
+        self.assertIn("no later metrics were substituted", output.getvalue())
 
     def test_cli_writes_self_contained_svg_and_verified_static_badges(self) -> None:
         module = load_module()
