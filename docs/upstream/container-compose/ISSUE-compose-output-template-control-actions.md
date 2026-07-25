@@ -105,11 +105,11 @@ gate protect both sides of the behavior.
 
 Signed follow-up commit `e63293cce41444f4e44e6aa6f2bf1ad8d099690b`
 (`fix(format): reject possible root ranges`) closes the root-range connector
-finding. Range preflight now rejects every expression that can return the root
-formatter row, including `or` falling back from an empty publisher collection
-to `$`. Focused evaluator and pre-discovery command tests, a committed one-off
-Docker Compose 5.3.1/Apple Current live oracle, and an exact-commit clean
-SonarQube quality gate protect the behavior.
+finding. Range preflight conservatively rejects expressions that can return the
+root formatter row, including `or` falling back from an empty publisher
+collection to `$`. Focused evaluator and pre-discovery command tests, a
+committed one-off Docker Compose 5.3.1/Apple Current live oracle, and an
+exact-commit clean SonarQube quality gate protect the behavior.
 
 Signed follow-up commit `65c03e127348fd3246d6f90f92428cb9583d2727`
 (`fix(format): accept CRLF action whitespace`) closes a delayed connector
@@ -118,6 +118,23 @@ now recognizes that combined grapheme as its two valid constituent action
 whitespace runes. Focused field, control, and trim-marker coverage, the
 committed Docker Compose 5.3.1/Apple Current live oracle, and an exact-commit
 clean SonarQube quality gate protect the behavior.
+
+Signed follow-up commit `004ed0a65e53d90b06861c67e30cdaff5f05dcb7`
+(`fix(format): defer conditional root range rejection`) closes the fresh
+connector finding that the conservative preflight over-rejected a nonempty
+publisher collection merely because another row could select the root
+fallback. Evaluation now carries root provenance through logical,
+parenthesized, pipeline, and `with` expressions. The committed Docker Compose
+5.3.1/Apple Current oracle requires the publisher branch to render and the
+one-off no-publisher fallback to fail.
+
+Signed follow-up commit `0390a85d2952bd82e50fb98219c9207a39664377`
+(`fix(format): preserve valid bytes in template JSON`) closes the paired fresh
+connector finding. JSON normalization now decodes byte strings incrementally,
+retains valid UTF-8 scalars, emits `\ufffd` only for invalid subsequences, and
+keeps a valid replacement scalar literal. Focused unit and committed live
+parity coverage, 91.99% repository Swift coverage, and the exact-head clean
+SonarQube quality gate protect both cases.
 
 ## Compatibility
 
