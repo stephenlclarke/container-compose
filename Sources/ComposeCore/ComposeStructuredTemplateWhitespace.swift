@@ -22,7 +22,8 @@ func structuredTemplateHasLeftTrimMarker(
         return false
     }
     let whitespace = template.index(after: marker)
-    return whitespace < template.endIndex && template[whitespace].isWhitespace
+    return whitespace < template.endIndex
+        && structuredTemplateIsGoWhitespace(template[whitespace])
 }
 
 func structuredTemplateHasRightTrimMarker(
@@ -37,5 +38,14 @@ func structuredTemplateHasRightTrimMarker(
     guard template[marker] == "-", marker > contentStart else {
         return false
     }
-    return template[template.index(before: marker)].isWhitespace
+    return structuredTemplateIsGoWhitespace(template[template.index(before: marker)])
+}
+
+func structuredTemplateIsGoWhitespace(_ character: Character) -> Bool {
+    switch character {
+    case " ", "\t", "\r", "\n":
+        true
+    default:
+        false
+    }
 }

@@ -150,6 +150,19 @@ assert_equal() {
     fi
 }
 
+# Confirms byte-index helpers return an unsigned byte even when the source
+# string itself has intentionally nondeterministic map-backed label ordering.
+assert_unsigned_byte() {
+    local actual="$1"
+    local label="$2"
+
+    if [[ ! "$actual" =~ ^[0-9]+$ ]] || ((actual < 0 || actual > 255)); then
+        printf 'actual:   %q\nexpected: an unsigned byte\n' "$actual" >&2
+        error "$label did not match Docker Compose V2"
+        return 1
+    fi
+}
+
 # Verifies that malformed Go-template execution fails instead of producing
 # plausible but incompatible output.
 assert_rejected() {
@@ -175,11 +188,12 @@ check_implementation() {
     local project="$1"
     shift
     local command=("$@")
-    local actual combining expected name volume_name
+    local actual combining expected name non_breaking_space volume_name
 
     name="$project-api-1"
     volume_name="${project}_cache"
     combining=$'e\u0301'
+    non_breaking_space=$'\u00a0'
     "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
         up --detach --wait --wait-timeout 120 >/dev/null
 
@@ -301,9 +315,15 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
-            --format '{{truncate (upper .Labels) 0}}|{{join (slice (split .Labels ",") 0 0) ""}}|{{truncate .Labels 0}}|{{eq (index .Labels 0) (index .Labels 0)}}|{{slice .Labels 0 0}}'
+            --format '{{truncate (upper .Labels) 0}}|{{join (slice (split .Labels ",") 0 0) ""}}|{{truncate .Labels 0}}|{{slice .Labels 0 0}}'
     )"
-    assert_equal "$actual" '|||true|' "$project Labels Go-string helper template"
+    assert_equal "$actual" '|||' "$project Labels Go-string helper template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{index .Labels 0}}'
+    )"
+    assert_unsigned_byte "$actual" "$project Labels Go-string index template"
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
@@ -463,6 +483,22 @@ check_implementation() {
             --format 'A {{- if .Name -}} B {{- end -}} C'
     )"
     assert_equal "$actual" 'ABC' "$project ps whitespace template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format "A${non_breaking_space}{{- .Name}}"
+    )"
+    assert_equal "$actual" \
+        "A${non_breaking_space}${name}" \
+        "$project non-ASCII left trim template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format "{{.Name -}} ${non_breaking_space}B"
+    )"
+    assert_equal "$actual" \
+        "${name}${non_breaking_space}B" \
+        "$project non-ASCII right trim template"
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" stats \

@@ -175,11 +175,11 @@ func structuredTemplateRecordValues(
 
 extension String {
     func trimmingPrefixWhitespace() -> String {
-        String(drop(while: \.isWhitespace))
+        String(drop(while: structuredTemplateIsGoWhitespace))
     }
 
     func trimmingSuffixWhitespace() -> String {
-        String(reversed().drop(while: \.isWhitespace).reversed())
+        String(reversed().drop(while: structuredTemplateIsGoWhitespace).reversed())
     }
 }
 

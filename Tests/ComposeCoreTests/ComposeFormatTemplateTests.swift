@@ -197,6 +197,11 @@ struct ComposeFormatTemplateTests {
         #expect(try renderDockerTemplate("A {{-3}} B", values: values) == "A -3 B")
         #expect(try renderDockerTemplate("A {{- 3}} B", values: values) == "A3 B")
         #expect(try renderDockerTemplate("A {{3 -}} B", values: values) == "A 3B")
+        #expect(try renderDockerTemplate("A\u{00A0}{{- .Name}}", values: values) == "A\u{00A0}demo-api")
+        #expect(
+            try renderDockerTemplate("{{.Name -}} \u{00A0}B", values: values)
+                == "demo-api\u{00A0}B",
+        )
         #expect(try renderDockerTemplate("{{/* emitted as }} ( */}}OK", values: values) == "OK")
         #expect(try renderDockerTemplate("A {{- /* }} ( */ -}} B", values: values) == "AB")
         #expect(
