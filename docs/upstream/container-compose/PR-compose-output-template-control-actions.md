@@ -48,6 +48,8 @@ container model, sibling fork, or package pin changes.
   `fix(format): support piped label calls`
 - `2c7b92c9677ec720f569156b4c111ecb595806d1`
   `fix(format): preserve piped label headers`
+- `fe952873826f3b2b896eb61bae4c52ba77b33e6a`
+  `fix(format): propagate constant label headers`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -84,8 +86,11 @@ This documentation commit is intentionally separate.
     successful `with` bodies;
   - discovers direct and pipeline-fed `.Label` keys used by Docker's dynamic
     table header context;
-  - carries statically known string keys through single-value `print` and
-    exact `printf` stages before dynamic label-header lookup.
+  - evaluates constant label-key pipelines through the same typed helper path
+    as row rendering, including `print`, `printf`, `upper`, `lower`, `title`,
+    `pad`, and `truncate`;
+  - retains separate computed lookup keys and source-literal display keys so
+    transformed label lookup and Docker's table-header spelling both match.
 - `Sources/ComposeCore/ComposeStructuredTemplateLookup.swift`
   - isolates Compose-owned field and label lookup policy from parsing and
     evaluation;
@@ -155,8 +160,9 @@ This documentation commit is intentionally separate.
   - covers root-scoped label rendering, field and table-key analysis, typed
     `printf` formats, compact range assignments, parenthesized selector
     chains, typed label operands, root and nested pipeline-fed labels, chained
-    helpers, label headers after `print` and `printf`, exact label arity, and
-    corresponding invalid-input rejection.
+    helpers, label headers after constant string functions, nested constant
+    expressions, control-flow traversal, invalid static expressions, exact
+    label arity, and corresponding invalid-input rejection.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateOperandCompatibilityTests.swift`
   - covers strict typed index and slice offsets, structured publisher joins,
     and scalar and recursive typed `printf` diagnostics.
@@ -182,7 +188,8 @@ This documentation commit is intentionally separate.
     deliberately omitted `ps` headers, non-string label-key rejection,
     `else with` output through `ps`, `stats`, and `volumes`, functions, and
     whitespace, plus root and nested pipeline-fed labels and invalid extra
-    label arguments and table label keys carried through `print` and `printf`.
+    label arguments and table label keys carried through `print`, `printf`,
+    `upper`, `lower`, `title`, `pad`, and `truncate`.
 
 ## Validation
 
@@ -193,40 +200,14 @@ make swift-coverage
 make check
 swiftlint lint --strict --quiet \
   Sources/ComposeCore/ComposeFormatTemplate.swift \
-  Sources/ComposeCore/ComposeDockerTemplateData.swift \
-  Sources/ComposeCore/ComposeDockerTemplateFunctionSupport.swift \
-  Sources/ComposeCore/ComposeDockerTemplatePrintf.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
-  Sources/ComposeCore/ComposeStructuredTemplateCompatibilitySyntax.swift \
-  Sources/ComposeCore/ComposeStructuredTemplateLookup.swift \
-  Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift \
-  Sources/ComposeCore/ComposeRenderHelpers.swift \
-  Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateCallCompatibilityTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateOperandCompatibilityTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift \
-  Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift
+  Tests/ComposeCoreTests/ComposeFormatTemplateCallCompatibilityTests.swift
 swiftformat --lint --swift-version 6.2 \
   Sources/ComposeCore/ComposeFormatTemplate.swift \
-  Sources/ComposeCore/ComposeDockerTemplateData.swift \
-  Sources/ComposeCore/ComposeDockerTemplateFunctionSupport.swift \
-  Sources/ComposeCore/ComposeDockerTemplatePrintf.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
-  Sources/ComposeCore/ComposeStructuredTemplateCompatibilitySyntax.swift \
-  Sources/ComposeCore/ComposeStructuredTemplateLookup.swift \
-  Sources/ComposeCore/ComposeStructuredTemplateWhitespace.swift \
-  Sources/ComposeCore/ComposeRenderHelpers.swift \
-  Sources/ComposeContainerRuntime/ContainerStatsAdapter.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateCallCompatibilityTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateOperandCompatibilityTests.swift \
-  Tests/ComposeCoreTests/ComposeFormatTemplateTableTests.swift \
-  Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift
+  Tests/ComposeCoreTests/ComposeFormatTemplateCallCompatibilityTests.swift
 shellcheck Tools/parity/check-compose-format-template-actions.sh
 CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
 CONTAINER_COMPOSE="$PWD/.build/debug/compose" \
@@ -236,19 +217,19 @@ CONTAINER_COMPOSE_LIVE=1 \
 git diff --check
 ```
 
-- Swift: 1,158 tests in 31 suites passed.
-- Structured template engine: 1,695/1,832 lines, 92.52%.
-- `ComposeStructuredFormatTemplate.swift`: 762/817 lines, 93.27%.
-- `ComposeStructuredTemplateAnalysis.swift`: 292/316 lines, 92.41%.
-- `ComposeStructuredTemplateCompatibilitySyntax.swift`: 61/65 lines,
-  93.85%.
-- `ComposeStructuredTemplateLookup.swift`: 31/37 lines, 83.78%.
-- `ComposeStructuredTemplateWhitespace.swift`: 18/18 lines, 100%.
-- `ComposeDockerTemplateData.swift`: 92/107 lines, 85.98%.
-- `ComposeDockerTemplatePrintf.swift`: 284/298 lines, 95.30%.
-- `ComposeDockerTemplateFunctionSupport.swift`: 155/174 lines, 89.08%.
-- Formatter table boundary: 67/68 lines, 98.53%.
-- Command rendering helpers: 751/780 lines, 96.28%.
+- Swift: 1,161 tests in 31 suites passed.
+- Structured template engine: 1,681/1,779 lines, 94.49%.
+- `ComposeStructuredFormatTemplate.swift`: 722/762 lines, 94.75%.
+- `ComposeStructuredTemplateAnalysis.swift`: 350/362 lines, 96.69%.
+- `ComposeStructuredTemplateCompatibilitySyntax.swift`: 60/64 lines,
+  93.75%.
+- `ComposeStructuredTemplateLookup.swift`: 29/35 lines, 82.86%.
+- `ComposeStructuredTemplateWhitespace.swift`: 17/17 lines, 100%.
+- `ComposeDockerTemplateData.swift`: 83/90 lines, 92.22%.
+- `ComposeDockerTemplatePrintf.swift`: 265/277 lines, 95.67%.
+- `ComposeDockerTemplateFunctionSupport.swift`: 155/172 lines, 90.12%.
+- Formatter table boundary: 57/57 lines, 100%.
+- Command rendering helpers: 528/545 lines, 96.88%.
 - Repository checks passed, including 167 release-controller tests, 14
   CI-helper tests, stack consistency, release consistency, licence validation,
   and credential scanning.
@@ -284,7 +265,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified thirty-six actionable compatibility cases and two suggestions that
+identified thirty-seven actionable compatibility cases and two suggestions that
 were disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
@@ -359,6 +340,9 @@ were disproved against the exact Docker Compose 5.3.1 oracle:
   helpers, and reject an additional explicit argument.
 - statically known label keys remain available to dynamic table-header
   rendering after single-value `print` and exact `printf` pipeline stages.
+- constant string functions propagate the computed label lookup key while
+  preserving Docker's source-literal table header, including `upper`, `lower`,
+  `title`, `pad`, and `truncate`.
 
 Commit `af1e012fb4fad4162a1841bd9a13f80be68d9fb4` fixes the first three control and
 trim cases with focused template regressions. Commit
@@ -414,6 +398,12 @@ Commit `2c7b92c9677ec720f569156b4c111ecb595806d1` carries statically known
 string keys through compatible `print` and `printf` stages, covers dynamic
 table-header rendering, and extends the committed Docker Compose 5.3.1 and
 Apple Current live oracle with the reported pipeline.
+Commit `fe952873826f3b2b896eb61bae4c52ba77b33e6a` reuses the typed
+runtime helper evaluator for constant label-key analysis, carries separate
+computed lookup and source-literal header keys, and covers nested, invalid,
+and control-flow expressions. The committed live oracle confirms Docker's
+source-header spellings (`foo`, `FOO`, `foo`, `foo`, and `foo extra`) while
+the transformed keys select the expected label values.
 
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
@@ -423,8 +413,8 @@ unit and committed live-parity coverage. The suggestion to invent headers for
 `Publishers` was also not implemented: Docker Compose 5.3.1 emits
 `<no value>` for every one of those table headers. Focused unit coverage and
 the committed Docker/Apple live oracle now preserve that exact behavior. No
-actionable autobot finding was deferred, and every connector comment is
-answered with its implementation or verified compatibility disposition.
+actionable autobot finding was deferred, and all thirty-nine connector threads
+are answered with their implementation or verified compatibility disposition.
 
 ## Documentation And Operations
 

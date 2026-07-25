@@ -58,8 +58,8 @@ ranges, mixed-type comparisons, and scalar `len` calls fail exactly as the
 Docker Compose v2 oracle does.
 
 The remaining signed compatibility commits, through
-`2c7b92c9677ec720f569156b4c111ecb595806d1`
-(`fix(format): preserve piped label headers`), are enumerated in the paired
+`fe952873826f3b2b896eb61bae4c52ba77b33e6a`
+(`fix(format): propagate constant label headers`), are enumerated in the paired
 pull-request handoff. That handoff records the complete code map, exact
 validation, coverage, Docker Compose dispositions for every connector review,
 runtime revisions, and promotion evidence.
