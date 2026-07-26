@@ -63,6 +63,29 @@ new volume-subpath source field. Its direct subpath failure is host/guest
 version skew, not a failure of this Compose change; the documented
 source-matched harness is the valid fork integration gate.
 
+## Publication evidence
+
+- Pull request
+  [`stephenlclarke/container-compose#151`](https://github.com/stephenlclarke/container-compose/pull/151)
+  merged as
+  [`8096c45a29d180acdf85af0bb691e1eb567d0087`](https://github.com/stephenlclarke/container-compose/commit/8096c45a29d180acdf85af0bb691e1eb567d0087).
+- The connector reviewed exact head
+  `1f9ed9fc8093da714c7daadbe6e8d971d02804e4`, reported no major issues,
+  and created no review threads.
+- Exact-main CI, CodeQL, Quality, and Documentation workflows passed. The
+  SonarCloud gate reported 0 issues with 82.6% overall and 82.5% new-code
+  coverage.
+- The mutable `current` prerelease targets the signed exact-main commit and
+  contains seven release assets. Both primary archives match their SHA-256
+  sidecars and verify against GitHub artifact attestations.
+- Homebrew formulae `container-current` and `container-compose-current` are
+  installed at `current.882.8096c45a29d1`; the installed Compose provenance
+  reports commit `8096c45a29d180acdf85af0bb691e1eb567d0087`.
+- A post-install, post-reboot focused run repeated all 7 provider tests
+  successfully. The installed strict parity run repeated the Docker Compose
+  V2 reference and Apple host paths; its sole Apple failure was the documented
+  stock-guest volume-subpath skew above.
+
 ## Compatibility and risk
 
 - Configured providers are unchanged.
@@ -79,6 +102,6 @@ source-matched harness is the valid fork integration gate.
 - [x] Complete coverage gate
 - [x] Docker Compose V2 and source-matched Apple runtime parity
 - [x] Signed Conventional documentation commit
-- [ ] Pull-request checks and connector review
-- [ ] Exact-main CI, CodeQL, and SonarCloud gate
-- [ ] Slice prerelease, checksums, attestations, and Homebrew update
+- [x] Pull-request checks and connector review
+- [x] Exact-main CI, CodeQL, and SonarCloud gate
+- [x] Slice prerelease, checksums, attestations, and Homebrew update
