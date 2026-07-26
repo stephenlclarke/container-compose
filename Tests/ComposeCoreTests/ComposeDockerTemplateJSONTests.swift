@@ -36,4 +36,25 @@ struct ComposeDockerTemplateJSONTests {
             ) == #""a�""#,
         )
     }
+
+    @Test
+    func `JSON preserves publisher record field order`() throws {
+        let values: [String: DockerTemplateData] = [
+            "Publishers": .array([
+                .record([
+                    "Protocol": .string("tcp"),
+                    "PublishedPort": .integer(32768),
+                    "TargetPort": .integer(8080),
+                    "URL": .string("127.0.0.1"),
+                ]),
+            ]),
+        ]
+
+        #expect(
+            try renderDockerTemplate(
+                "{{json .Publishers}}",
+                values: values,
+            ) == #"[{"URL":"127.0.0.1","TargetPort":8080,"PublishedPort":32768,"Protocol":"tcp"}]"#,
+        )
+    }
 }

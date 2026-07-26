@@ -131,8 +131,15 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
             return try structuredTemplateJSONString(display)
         case .null:
             return "null"
-        case let .object(values), let .record(values):
+        case let .object(values):
             let entries = try values.keys.sorted().map { key in
+                let encodedKey = try structuredTemplateJSONString(key)
+                let encodedValue = try values[key]?.json() ?? "null"
+                return "\(encodedKey):\(encodedValue)"
+            }
+            return "{\(entries.joined(separator: ","))}"
+        case let .record(values):
+            let entries = try structuredTemplateRecordKeys(values).map { key in
                 let encodedKey = try structuredTemplateJSONString(key)
                 let encodedValue = try values[key]?.json() ?? "null"
                 return "\(encodedKey):\(encodedValue)"
@@ -200,10 +207,15 @@ private func structuredTemplateJoinedBytes(
 func structuredTemplateRecordValues(
     _ values: [String: DockerTemplateData],
 ) -> [DockerTemplateData] {
+    structuredTemplateRecordKeys(values).map { values[$0] ?? .null }
+}
+
+private func structuredTemplateRecordKeys(
+    _ values: [String: DockerTemplateData],
+) -> [String] {
     let preferredOrder = ["URL", "TargetPort", "PublishedPort", "Protocol"]
-    let orderedKeys = preferredOrder.filter { values[$0] != nil }
+    return preferredOrder.filter { values[$0] != nil }
         + values.keys.filter { !preferredOrder.contains($0) }.sorted()
-    return orderedKeys.map { values[$0] ?? .null }
 }
 
 extension String {
