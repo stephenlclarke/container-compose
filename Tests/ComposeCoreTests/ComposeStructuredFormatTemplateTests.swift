@@ -99,6 +99,45 @@ struct ComposeStructuredFormatTemplateTests {
     }
 
     @Test
+    func `range defers a possible root until a logical and selects it`() throws {
+        let template = "{{range and .Publishers $}}{{.}}{{else}}empty{{end}}"
+        let publisher = DockerTemplateData.record([
+            "Protocol": .string("tcp"),
+            "PublishedPort": .integer(32768),
+            "TargetPort": .integer(8080),
+            "URL": .string("127.0.0.1"),
+        ])
+
+        #expect(
+            try renderDockerTemplate(
+                template,
+                values: ["Publishers": .array([])],
+            ) == "empty",
+        )
+        #expect(throws: (any Error).self) {
+            try renderDockerTemplate(
+                template,
+                values: ["Publishers": .array([publisher])],
+            )
+        }
+    }
+
+    @Test
+    func `with rejects root indexing only when a logical fallback selects it`() {
+        let template = #"{{with or .Health $}}{{index . "Name"}}{{end}}"#
+
+        #expect(throws: (any Error).self) {
+            try renderDockerTemplate(
+                template,
+                values: [
+                    "Health": .string(""),
+                    "Name": .string("demo-api"),
+                ],
+            )
+        }
+    }
+
+    @Test
     func `quoted field-like literals do not become field references`() {
         #expect(dockerTemplateFields(in: "{{printf \".NotAField\" .Name}}") == ["Name"])
     }

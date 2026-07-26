@@ -146,7 +146,7 @@ func validateStructuredTemplateRootIndexing(
                 specification.expression,
                 dotIsRoot: dotIsRoot,
             )
-            if structuredTemplateExpressionRetainsRoot(
+            if structuredTemplateExpressionAlwaysReturnsRoot(
                 specification.expression,
                 dotIsRoot: dotIsRoot,
             ) {
@@ -295,6 +295,16 @@ private func structuredTemplateExpressionRetainsRoot(
     ).retainsRoot
 }
 
+private func structuredTemplateExpressionAlwaysReturnsRoot(
+    _ expression: String,
+    dotIsRoot: Bool,
+) -> Bool {
+    structuredTemplateExpressionRootFlow(
+        expression,
+        dotIsRoot: dotIsRoot,
+    ).alwaysReturnsRoot
+}
+
 private struct StructuredTemplateRootFlow {
     var canReturnTruthyRoot: Bool
     var canReturnTruthyNonRoot: Bool
@@ -306,6 +316,10 @@ private struct StructuredTemplateRootFlow {
 
     var retainsRoot: Bool {
         canReturnTruthyRoot && !canReturnTruthyNonRoot
+    }
+
+    var alwaysReturnsRoot: Bool {
+        retainsRoot && !canReturnFalsey
     }
 
     static let other = StructuredTemplateRootFlow(

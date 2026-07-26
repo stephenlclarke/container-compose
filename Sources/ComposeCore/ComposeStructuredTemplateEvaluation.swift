@@ -105,14 +105,22 @@ private func evaluateStructuredTemplateFunction(
             context: context,
         )
     }
-    let arguments = try argumentTokens.map {
-        try structuredTemplateValue($0, context: context)
+    var argumentEvaluations = try argumentTokens.map {
+        try structuredTemplateEvaluation($0, context: context)
+    }
+    if let pipelineEvaluation {
+        argumentEvaluations.append(pipelineEvaluation)
+    }
+    if function == "index" || function == "len",
+       argumentEvaluations.first?.isRoot == true
+    {
+        throw structuredUnsupportedAction("\(function) root value")
     }
     return try StructuredTemplateEvaluation(
         value: applyStructuredTemplateFunction(
             function,
-            arguments: arguments,
-            pipelineValue: pipelineEvaluation?.value,
+            arguments: argumentEvaluations.map(\.value),
+            pipelineValue: nil,
         ),
         isRoot: false,
     )
