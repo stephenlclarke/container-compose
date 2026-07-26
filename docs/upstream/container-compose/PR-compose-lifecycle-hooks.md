@@ -47,6 +47,9 @@ boundary makes the change minimally invasive and suitable for upstream review.
 - Hosted CI cache repair and regression coverage:
   `835b3c8a73b1397681de2d89267b58fa0bbebff2`
   (`fix(ci): repair incomplete SwiftPM caches`).
+- Connector-review follow-up for dependency helper image preparation:
+  `06213c015179ff5dae11d86d43f36f09c7f23479`
+  (`fix(lifecycle): prepare dependency hook images`).
 - `apple/container` code commit: not required.
 - `apple/containerization` code commit: not required.
 - Package-pin change: not required.
@@ -71,6 +74,8 @@ boundary makes the change minimally invasive and suitable for upstream review.
 - `up`, `start`, and dependency starts share the same helper path. An
   idempotent `up`, scale while any replica remains started, and `restart` do not
   rerun `pre_start`.
+- `compose run` applies the default missing-image preparation to explicit
+  dependency hook images before it creates any dependency container.
 
 ### Foreground `run`
 
@@ -134,7 +139,7 @@ shellcheck Tools/parity/check-compose-lifecycle-hooks.sh
 
 Results:
 
-- 1,217 Swift tests passed.
+- 1,218 Swift tests passed.
 - Swift coverage: 92.14%, increased from the 92.10% main baseline.
 - Go coverage: 89.88%.
 - Release/CI tooling, Markdown, stack consistency, license, SwiftLint, and
@@ -169,6 +174,11 @@ without five referenced checkout manifests and failed before compilation.
 `swift package edit`; focused fake-Swift regression coverage proves repair
 precedes graph editing and that a missing container checkout still fails
 closed.
+
+The `chatgpt-codex-connector` review identified a clean-host dependency edge
+case after the initial PR head. The focused follow-up reuses
+`applyPullPolicy(nil, ...)` for `compose run` dependencies and adds a regression
+that proves helper-image preparation fails before any container is created.
 
 ## Compatibility
 
