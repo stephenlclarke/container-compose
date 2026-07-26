@@ -416,7 +416,9 @@ jobs:
           steps.sonar_api.outputs.available == 'true' &&
           steps.sonar_install.outcome == 'success'
         continue-on-error: true
-        timeout-minutes: 10
+        # make sonar-scan permits three 300-second quality-gate waits plus
+        # scanner work and two 20-second retry delays.
+        timeout-minutes: 25
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_QUALITYGATE_WAIT: "true"

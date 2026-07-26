@@ -429,8 +429,9 @@ exists from `make ci`, run only the scanner with:
 SONAR_BRANCH=main make sonar-scan
 ```
 
-Local scans do not wait for the quality gate by default. Set
-`SONAR_QUALITYGATE_WAIT=true` when the token can read quality-gate status.
+Local scans do not wait for the quality gate by default. Set `SONAR_QUALITYGATE_WAIT=true` when the token can read quality-gate status.
+
+Main-branch CI keeps the scanner's three-attempt fail-closed policy and gives the step enough time for all three 300-second quality-gate waits, scanner work, and retry delays. A reachable SonarCloud service therefore still blocks CI when every attempt fails, without an outer workflow timeout killing a valid later attempt.
 
 ## Maintenance
 
