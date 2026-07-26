@@ -158,6 +158,29 @@ live-oracle commits `9b3483f1db156a135c7dd95f43229c1c24061f17`
 and `82248ab69b641ad2d6dd1c573060469bf76b438a` confirm the exact output against
 Docker Compose 5.3.1 and Apple Current. Repository Swift coverage is 92.00%.
 
+Signed follow-up commit `341b1f93cafcdf89775e62af1d68c6863d2cd562`
+(`fix(format): enforce Go comment placement`) closes the next connector
+finding by rejecting whitespace between an action delimiter and a comment
+while retaining the valid whitespace required after a left trim marker.
+
+Signed follow-up commit `245cfe4f8a320c4f79b38069a5b3b5536f8f684c`
+(`fix(format): decode Go string literal escapes`) closes the interpreted-string
+finding. Named, octal, hexadecimal, `\u`, and `\U` escapes now produce exact Go
+bytes, including non-UTF-8 byte literals, while invalid forms remain explicit.
+
+Signed follow-up commit `11f7ed484cee8b33cbdbaa2e65e5b72240b362ac`
+(`fix(format): preserve Go title casing`) closes the title-helper finding.
+Existing uppercase letters and underscores now retain Docker's
+`strings.Title` behavior, including simple Unicode title mappings.
+
+Focused unit coverage and signed live-oracle commit
+`34443acf3e6f36236bb0b81d1ef089aa94e6935d` protect all three findings against
+Docker Compose 5.3.1 and Apple Current. The complete suite passes 1,188 tests
+in 37 suites with 92.05% repository Swift coverage and 95.46% structured
+template coverage. SonarQube passes at the exact implementation commit with
+zero new or accepted issues, zero security hotspots, 92.4% new-code coverage,
+and 0.0% new duplication.
+
 ## Compatibility
 
 Existing literal, field-only, JSON, table, and function templates remain
