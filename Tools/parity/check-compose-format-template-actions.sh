@@ -253,6 +253,25 @@ check_implementation() {
             --format '{{/* emitted as }} ( */}}{{.Name}}'
     )"
     assert_equal "$actual" "$name" "$project comment delimiter template"
+    assert_rejected "$project spaced comment template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{ /* note */}}{{.Name}}'
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "\x1b[31m%s\x1b[0m" .Name}}'
+    )"
+    assert_equal "$actual" \
+        $'\x1b[31m'"$name"$'\x1b[0m' \
+        "$project interpreted string escape template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{title "FOO BAR"}}|{{title "foo_bar"}}|{{title "foo-bar baz"}}'
+    )"
+    assert_equal "$actual" \
+        'FOO BAR|Foo_bar|Foo-Bar Baz' \
+        "$project title casing template"
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
