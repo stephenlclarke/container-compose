@@ -151,7 +151,10 @@ func structuredTemplateCompare(
     let rhs = structuredTemplateComparableValue(rhs)
     switch (lhs, rhs) {
     case let (.integer(lhs), .integer(rhs)):
-        return lhs == rhs ? 0 : (lhs < rhs ? -1 : 1)
+        if lhs == rhs {
+            return 0
+        }
+        return lhs < rhs ? -1 : 1
     case let (.byteString(lhs), .byteString(rhs)):
         return structuredTemplateCompareBytes(lhs, rhs)
     case let (.byteString(lhs), .string(rhs)):
