@@ -754,7 +754,7 @@ private func applyStructuredCaseFunction(
     case "lower":
         return .string(input.lowercased())
     case "title":
-        return .string(input.capitalized)
+        return .string(structuredTemplateTitle(input))
     case "upper":
         return .string(input.uppercased())
     default:
