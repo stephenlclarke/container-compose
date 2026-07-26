@@ -200,6 +200,9 @@ start_attach() {
             attach "--sig-proxy=$signal_proxy" "$service" <&"$ATTACH_INPUT_FD" >"$output_file" 2>&1 &
     fi
     ATTACH_PROCESS_ID=$!
+    # Release the fixture only through the attached stdin path. Fixed sleeps
+    # can emit the first record before a cold installed plugin has subscribed.
+    printf '\n' >&"$ATTACH_INPUT_FD"
 }
 
 # Resolves the leaf attach client below wrapper and plugin processes.

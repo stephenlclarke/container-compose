@@ -14,7 +14,7 @@ This is the current disposition of Apple work that affects the five-repository c
 | --- | --- |
 | [apple/container#1934](https://github.com/apple/container/pull/1934) | Ready-for-review fix that preserves the complete `unspecified` version placeholder. |
 | [apple/container#1935](https://github.com/apple/container/pull/1935) | Ready-for-review root-help responsiveness fix for [apple/container#1459](https://github.com/apple/container/issues/1459), stacked on [apple/container#1862](https://github.com/apple/container/pull/1862). |
-| [apple/container#1965](https://github.com/apple/container/pull/1965) | Draft request-timeout correction; retain as an independent generic XPC lifecycle proposal while it awaits maintainer review. |
+| [apple/container#1965](https://github.com/apple/container/pull/1965) | Ready-for-review request-timeout correction; retain as an independent generic XPC lifecycle proposal while it awaits maintainer review. |
 | [apple/containerization#799](https://github.com/apple/containerization/pull/799) | Ready-for-review fix for [apple/container#1927](https://github.com/apple/container/issues/1927): missing copy sources fail promptly, preserve the guest error, and no longer block later container lifecycle operations. |
 
 The exact current heads of these proposals, plus
@@ -94,6 +94,11 @@ fails if any snapshot is deleted or retargeted.
 ## Open Follow-up
 
 - Keep `apple/container#1934`, `#1935`, and `#1965`, `apple/containerization#799`, and `apple/container-builder-shim#87` open until Apple merges, replaces, or explicitly rejects their current changes.
+- The 26 July refresh found those four Stephen-authored Apple pull requests
+  mergeable with no actionable author review. The account-wide connector
+  audit also confirmed that every actionable connector thread has a Stephen
+  response; historical merged threads remain open until their current-main
+  fix or verification is linked.
 - Rebase `apple/container#1935` after `apple/container#1862` lands so the preferred upstream XPC commit is not duplicated.
 - Generic log-retrieval runtime primitives still need minimal Apple proposals; Docker timestamp parsing remains owned by `container-compose`.
 - [apple/container#378](https://github.com/apple/container/issues/378) needs a running-process stream reattach primitive before Compose can support interactive `attach`; the required runtime contract and the deliberate output-only fallback are documented in [ISSUE-attach-stream-reattach.md](apple-container/ISSUE-attach-stream-reattach.md).

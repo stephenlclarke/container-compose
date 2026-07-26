@@ -8,7 +8,7 @@ services:
       - >-
         trap 'printf "SIGNAL:INT\n"; exit 42' INT;
         printf 'SIGNAL:BOOT\n';
-        sleep 2;
+        read -r _;
         printf 'SIGNAL:READY\n';
         while :; do sleep 1; done
 
@@ -45,7 +45,7 @@ services:
       - sh
       - -c
       - >-
-        sleep 2;
+        read -r _;
         printf 'STREAM:BEFORE\n';
         sleep 3;
         printf 'STREAM:AFTER\n'
