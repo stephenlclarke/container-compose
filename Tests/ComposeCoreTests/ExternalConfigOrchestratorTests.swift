@@ -59,6 +59,7 @@ struct ExternalConfigOrchestratorTests {
             runner: runner,
             options: options,
             runtime: runtime,
+            imageManager: NoDeclaredVolumeImageManager(),
         )
 
         try await ComposeOrchestrator(
@@ -112,6 +113,7 @@ struct ExternalConfigOrchestratorTests {
             runner: runner,
             options: options,
             runtime: runtime,
+            imageManager: NoDeclaredVolumeImageManager(),
         )
 
         try await ComposeOrchestrator(
@@ -143,6 +145,7 @@ struct ExternalConfigOrchestratorTests {
             runner: runner,
             options: options,
             runtime: runtime,
+            imageManager: NoDeclaredVolumeImageManager(),
         )
 
         try await ComposeOrchestrator(
