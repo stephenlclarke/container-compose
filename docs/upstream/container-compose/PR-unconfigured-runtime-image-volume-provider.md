@@ -75,9 +75,9 @@ source-matched harness is the valid fork integration gate.
 - Exact-main CI, CodeQL, Quality, and Documentation workflows passed. The
   SonarCloud gate reported 0 issues with 82.6% overall and 82.5% new-code
   coverage.
-- The signed `current` prerelease targets exact main and contains seven
-  release assets. Both primary archives match their SHA-256 sidecars and
-  verify against GitHub artifact attestations.
+- The mutable `current` prerelease targets the signed exact-main commit and
+  contains seven release assets. Both primary archives match their SHA-256
+  sidecars and verify against GitHub artifact attestations.
 - Homebrew formulae `container-current` and `container-compose-current` are
   installed at `current.882.8096c45a29d1`; the installed Compose provenance
   reports commit `8096c45a29d180acdf85af0bb691e1eb567d0087`.
