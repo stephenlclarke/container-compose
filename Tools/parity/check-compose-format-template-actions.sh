@@ -368,6 +368,14 @@ check_implementation() {
         "${name}%!s(MISSING)" \
         "$project printf missing argument template"
 
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%s" .Name .Name}}'
+    )"
+    assert_equal "$actual" \
+        "${name}%!(EXTRA string=${name})" \
+        "$project printf extra argument template"
+
     # Go-template variables must reach Compose literally.
     # shellcheck disable=SC2016
     actual="$(
