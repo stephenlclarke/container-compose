@@ -65,21 +65,30 @@ prepare_runtime_root() {
         ! -name "$runtime_root_marker" ! -name kernels -exec rm -rf {} +
 }
 
-configure_matched_init_image() {
+resolve_matched_init_image() {
     [[ -n "$runtime_init_block_repo" ]] || return
-    [[ -n "$runtime_app_root" ]] || return
 
     if [[ -z "$matched_init_image" ]]; then
         matched_init_image="vminit:container-compose"
     fi
+}
+
+prepare_runtime_config_home() {
+    [[ -n "$runtime_init_block_repo" ]] || return
+    [[ -n "$runtime_app_root" ]] || return
+
     runtime_config_home="$runtime_app_root/xdg-config"
+    mkdir -p "$runtime_config_home"
+    export XDG_CONFIG_HOME="$runtime_config_home"
+}
+
+configure_matched_init_image() {
+    [[ -n "$runtime_config_home" ]] || return
+
     local container_config_dir="$runtime_config_home/container"
     mkdir -p "$container_config_dir"
-    cat >"$container_config_dir/config.toml" <<EOF
-[vminit]
-image = "$matched_init_image"
-EOF
-    export XDG_CONFIG_HOME="$runtime_config_home"
+    printf '[vminit]\nimage = "%s"\n' "$matched_init_image" \
+        >"$container_config_dir/config.toml"
     export CONTAINER_COMPOSE_INIT_IMAGE="$matched_init_image"
 }
 
@@ -121,7 +130,8 @@ printf 'Stopping stale container services...\n'
 stop_runtime
 sleep 3
 prepare_runtime_root
-configure_matched_init_image
+resolve_matched_init_image
+prepare_runtime_config_home
 
 printf 'Starting matched container runtime...\n'
 start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
@@ -130,5 +140,6 @@ if [[ -n "$runtime_app_root" ]]; then
 fi
 "$container_binary" "${start_arguments[@]}"
 install_matched_init_image
+configure_matched_init_image
 
 "$@"

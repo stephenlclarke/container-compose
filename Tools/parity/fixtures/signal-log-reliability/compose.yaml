@@ -1,0 +1,51 @@
+services:
+  signal:
+    image: alpine:3.21
+    stdin_open: true
+    command:
+      - sh
+      - -c
+      - >-
+        trap 'printf "SIGNAL:INT\n"; exit 42' INT;
+        printf 'SIGNAL:BOOT\n';
+        sleep 2;
+        printf 'SIGNAL:READY\n';
+        while :; do sleep 1; done
+
+  tail-single:
+    image: alpine:3.21
+    command:
+      - sh
+      - -c
+      - >-
+        awk 'BEGIN {
+          printf "START";
+          for (i = 0; i < 3000; i++) printf "X";
+          print "END"
+        }'
+
+  tail-multiple:
+    image: alpine:3.21
+    command:
+      - sh
+      - -c
+      - >-
+        awk 'BEGIN {
+          for (line = 0; line < 3; line++) {
+            value = sprintf("%c", 65 + line);
+            for (i = 0; i < 800; i++) printf "%s", value;
+            print ""
+          }
+        }'
+
+  disconnect:
+    image: alpine:3.21
+    stdin_open: true
+    command:
+      - sh
+      - -c
+      - >-
+        sleep 2;
+        printf 'STREAM:BEFORE\n';
+        sleep 3;
+        printf 'STREAM:AFTER\n'
