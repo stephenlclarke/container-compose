@@ -25,7 +25,7 @@ func structuredTemplateArgumentsAreSupported(
         return total == 1
     case "pad":
         return total == 3
-    case "truncate", "split", "join", "index":
+    case "ge", "gt", "le", "lt", "truncate", "split", "join", "index":
         return total == 2
     case "slice":
         return (2 ... 3).contains(total)
@@ -142,6 +142,29 @@ func structuredTemplateEqual(
     }
 }
 
+func structuredTemplateCompare(
+    _ lhs: DockerTemplateData,
+    _ rhs: DockerTemplateData,
+    function: String,
+) throws -> Int {
+    let lhs = structuredTemplateComparableValue(lhs)
+    let rhs = structuredTemplateComparableValue(rhs)
+    switch (lhs, rhs) {
+    case let (.integer(lhs), .integer(rhs)):
+        return lhs == rhs ? 0 : (lhs < rhs ? -1 : 1)
+    case let (.byteString(lhs), .byteString(rhs)):
+        return structuredTemplateCompareBytes(lhs, rhs)
+    case let (.byteString(lhs), .string(rhs)):
+        return structuredTemplateCompareBytes(lhs, Array(rhs.utf8))
+    case let (.string(lhs), .byteString(rhs)):
+        return structuredTemplateCompareBytes(Array(lhs.utf8), rhs)
+    case let (.string(lhs), .string(rhs)):
+        return structuredTemplateCompareBytes(Array(lhs.utf8), Array(rhs.utf8))
+    default:
+        throw structuredUnsupportedAction(function)
+    }
+}
+
 func structuredTemplateIndex(_ values: [DockerTemplateData]) throws -> DockerTemplateData {
     guard values.count == 2 else { throw structuredUnsupportedAction("index") }
     switch values[0] {
@@ -231,4 +254,14 @@ private func structuredTemplateComparableValue(
         return value
     }
     return .string(display)
+}
+
+private func structuredTemplateCompareBytes(
+    _ lhs: [UInt8],
+    _ rhs: [UInt8],
+) -> Int {
+    if lhs == rhs {
+        return 0
+    }
+    return lhs.lexicographicallyPrecedes(rhs) ? -1 : 1
 }

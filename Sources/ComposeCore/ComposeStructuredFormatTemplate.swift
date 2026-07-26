@@ -23,11 +23,13 @@ private enum StructuredTemplateLexeme {
 
 indirect enum StructuredTemplateNode {
     case action(String)
+    case breakRange
     case conditional(
         expression: String,
         success: [StructuredTemplateNode],
         failure: [StructuredTemplateNode],
     )
+    case continueRange
     case range(
         specification: StructuredTemplateRange,
         success: [StructuredTemplateNode],
@@ -65,7 +67,7 @@ private struct StructuredTemplateParser {
     var index = 0
 
     mutating func parse() throws -> [StructuredTemplateNode] {
-        let result = try parseNodes(acceptStops: false)
+        let result = try parseNodes(acceptStops: false, rangeDepth: 0)
         guard result.stop == nil else {
             throw structuredUnsupportedAction(result.stop ?? "")
         }
@@ -74,6 +76,7 @@ private struct StructuredTemplateParser {
 
     private mutating func parseNodes(
         acceptStops: Bool,
+        rangeDepth: Int,
     ) throws -> (nodes: [StructuredTemplateNode], stop: String?) {
         var nodes: [StructuredTemplateNode] = []
         while index < lexemes.count {
@@ -83,72 +86,102 @@ private struct StructuredTemplateParser {
             case let .text(value):
                 nodes.append(.text(value))
             case let .action(action):
-                if action == "else" || action == "end"
-                    || structuredTemplateElseIfExpression(action) != nil
-                    || structuredTemplateElseWithExpression(action) != nil
-                {
+                if structuredTemplateIsStopAction(action) {
                     guard acceptStops else { throw structuredUnsupportedAction(action) }
                     return (nodes, action)
                 }
-                if let expression = structuredTemplateControlExpression(action, keyword: "if") {
-                    try nodes.append(parseConditional(expression))
-                } else if let expression = structuredTemplateControlExpression(action, keyword: "with") {
-                    try nodes.append(parseWith(expression))
-                } else if let expression = structuredTemplateControlExpression(action, keyword: "range") {
-                    try nodes.append(parseRange(expression))
-                } else if action.hasPrefix("/*"), action.hasSuffix("*/") {
+                if action.hasPrefix("/*"), action.hasSuffix("*/") {
                     continue
-                } else {
-                    try validateStructuredExpression(action)
-                    nodes.append(.action(action))
                 }
+                if let control = try parseControlAction(action, rangeDepth: rangeDepth) {
+                    nodes.append(control)
+                    continue
+                }
+                try validateStructuredExpression(action)
+                nodes.append(.action(action))
             }
         }
         return (nodes, nil)
     }
 
-    private mutating func parseConditional(_ expression: String) throws -> StructuredTemplateNode {
+    private mutating func parseControlAction(
+        _ action: String,
+        rangeDepth: Int,
+    ) throws -> StructuredTemplateNode? {
+        if let expression = structuredTemplateControlExpression(action, keyword: "if") {
+            return try parseConditional(expression, rangeDepth: rangeDepth)
+        }
+        if let expression = structuredTemplateControlExpression(action, keyword: "with") {
+            return try parseWith(expression, rangeDepth: rangeDepth)
+        }
+        if let expression = structuredTemplateControlExpression(action, keyword: "range") {
+            return try parseRange(expression, rangeDepth: rangeDepth)
+        }
+        if action == "break" {
+            guard rangeDepth > 0 else { throw structuredUnsupportedAction(action) }
+            return .breakRange
+        }
+        if action == "continue" {
+            guard rangeDepth > 0 else { throw structuredUnsupportedAction(action) }
+            return .continueRange
+        }
+        return nil
+    }
+
+    private mutating func parseConditional(
+        _ expression: String,
+        rangeDepth: Int,
+    ) throws -> StructuredTemplateNode {
         try validateStructuredExpression(expression)
-        let success = try parseNodes(acceptStops: true)
-        let failure = try parseConditionalFailure(stop: success.stop)
+        let success = try parseNodes(acceptStops: true, rangeDepth: rangeDepth)
+        let failure = try parseConditionalFailure(stop: success.stop, rangeDepth: rangeDepth)
         return .conditional(expression: expression, success: success.nodes, failure: failure)
     }
 
-    private mutating func parseWith(_ expression: String) throws -> StructuredTemplateNode {
+    private mutating func parseWith(
+        _ expression: String,
+        rangeDepth: Int,
+    ) throws -> StructuredTemplateNode {
         try validateStructuredExpression(expression)
-        let success = try parseNodes(acceptStops: true)
-        let failure = try parseWithFailure(stop: success.stop)
+        let success = try parseNodes(acceptStops: true, rangeDepth: rangeDepth)
+        let failure = try parseWithFailure(stop: success.stop, rangeDepth: rangeDepth)
         return .with(expression: expression, success: success.nodes, failure: failure)
     }
 
-    private mutating func parseRange(_ value: String) throws -> StructuredTemplateNode {
+    private mutating func parseRange(
+        _ value: String,
+        rangeDepth: Int,
+    ) throws -> StructuredTemplateNode {
         let specification = try structuredTemplateRange(value)
         try validateStructuredExpression(specification.expression)
-        let success = try parseNodes(acceptStops: true)
-        let failure = try parsePlainFailure(stop: success.stop)
+        let success = try parseNodes(acceptStops: true, rangeDepth: rangeDepth + 1)
+        let failure = try parsePlainFailure(stop: success.stop, rangeDepth: rangeDepth)
         return .range(specification: specification, success: success.nodes, failure: failure)
     }
 
     private mutating func parseConditionalFailure(
         stop: String?,
+        rangeDepth: Int,
     ) throws -> [StructuredTemplateNode] {
         if let stop, let expression = structuredTemplateElseIfExpression(stop) {
-            return try [parseConditional(expression)]
+            return try [parseConditional(expression, rangeDepth: rangeDepth)]
         }
-        return try parsePlainFailure(stop: stop)
+        return try parsePlainFailure(stop: stop, rangeDepth: rangeDepth)
     }
 
     private mutating func parseWithFailure(
         stop: String?,
+        rangeDepth: Int,
     ) throws -> [StructuredTemplateNode] {
         if let stop, let expression = structuredTemplateElseWithExpression(stop) {
-            return try [parseWith(expression)]
+            return try [parseWith(expression, rangeDepth: rangeDepth)]
         }
-        return try parsePlainFailure(stop: stop)
+        return try parsePlainFailure(stop: stop, rangeDepth: rangeDepth)
     }
 
     private mutating func parsePlainFailure(
         stop: String?,
+        rangeDepth: Int,
     ) throws -> [StructuredTemplateNode] {
         guard let stop else {
             throw structuredUnsupportedAction("unclosed control action")
@@ -159,12 +192,30 @@ private struct StructuredTemplateParser {
         guard stop == "else" else {
             throw structuredUnsupportedAction(stop)
         }
-        let failure = try parseNodes(acceptStops: true)
+        let failure = try parseNodes(acceptStops: true, rangeDepth: rangeDepth)
         guard failure.stop == "end" else {
             throw structuredUnsupportedAction(failure.stop ?? "unclosed control action")
         }
         return failure.nodes
     }
+}
+
+private func structuredTemplateIsStopAction(_ action: String) -> Bool {
+    action == "else"
+        || action == "end"
+        || structuredTemplateElseIfExpression(action) != nil
+        || structuredTemplateElseWithExpression(action) != nil
+}
+
+private enum StructuredTemplateRangeControl {
+    case breakRange
+    case continueRange
+    case none
+}
+
+private struct StructuredTemplateRender {
+    var bytes: [UInt8]
+    var rangeControl: StructuredTemplateRangeControl = .none
 }
 
 struct StructuredTemplateScanState {
@@ -232,7 +283,7 @@ func renderStructuredDockerTemplateBytes(
     return try renderStructuredTemplateNodes(
         nodes,
         context: StructuredTemplateContext(root: root, dot: root),
-    )
+    ).bytes
 }
 
 func validateStructuredDockerTemplate(_ template: String) throws {
@@ -417,53 +468,73 @@ private func structuredTemplateRange(_ value: String) throws -> StructuredTempla
 private func renderStructuredTemplateNodes(
     _ nodes: [StructuredTemplateNode],
     context: StructuredTemplateContext,
-) throws -> [UInt8] {
+) throws -> StructuredTemplateRender {
     var rendered: [UInt8] = []
     for node in nodes {
-        switch node {
-        case let .text(value):
-            rendered.append(contentsOf: structuredTemplateText(value).utf8)
-        case let .action(action):
-            try rendered.append(
-                contentsOf: evaluateStructuredTemplateExpression(
-                    action,
-                    context: context,
-                ).outputBytes,
-            )
-        case let .conditional(expression, success, failure):
-            let value = try evaluateStructuredTemplateExpression(expression, context: context)
-            try rendered.append(
-                contentsOf: renderStructuredTemplateNodes(
-                    value.isTruthy ? success : failure,
-                    context: context,
-                ),
-            )
-        case let .with(expression, success, failure):
-            let evaluation = try evaluateStructuredTemplateExpressionWithRoot(
-                expression,
-                context: context,
-            )
-            var nested = context
-            nested.dot = evaluation.value
-            nested.dotIsRoot = evaluation.isRoot
-            try rendered.append(
-                contentsOf: renderStructuredTemplateNodes(
-                    evaluation.value.isTruthy ? success : failure,
-                    context: evaluation.value.isTruthy ? nested : context,
-                ),
-            )
-        case let .range(specification, success, failure):
-            try rendered.append(
-                contentsOf: renderStructuredTemplateRange(
-                    specification,
-                    success: success,
-                    failure: failure,
-                    context: context,
-                ),
-            )
+        let nested = try renderStructuredTemplateNode(node, context: context)
+        rendered.append(contentsOf: nested.bytes)
+        guard case .none = nested.rangeControl else {
+            return StructuredTemplateRender(bytes: rendered, rangeControl: nested.rangeControl)
         }
     }
-    return rendered
+    return StructuredTemplateRender(bytes: rendered)
+}
+
+private func renderStructuredTemplateNode(
+    _ node: StructuredTemplateNode,
+    context: StructuredTemplateContext,
+) throws -> StructuredTemplateRender {
+    switch node {
+    case let .text(value):
+        return StructuredTemplateRender(bytes: Array(structuredTemplateText(value).utf8))
+    case let .action(action):
+        return try StructuredTemplateRender(
+            bytes: evaluateStructuredTemplateExpression(action, context: context).outputBytes,
+        )
+    case .breakRange:
+        return StructuredTemplateRender(bytes: [], rangeControl: .breakRange)
+    case let .conditional(expression, success, failure):
+        let value = try evaluateStructuredTemplateExpression(expression, context: context)
+        return try renderStructuredTemplateNodes(
+            value.isTruthy ? success : failure,
+            context: context,
+        )
+    case .continueRange:
+        return StructuredTemplateRender(bytes: [], rangeControl: .continueRange)
+    case let .range(specification, success, failure):
+        return try renderStructuredTemplateRange(
+            specification,
+            success: success,
+            failure: failure,
+            context: context,
+        )
+    case let .with(expression, success, failure):
+        return try renderStructuredTemplateWith(
+            expression,
+            success: success,
+            failure: failure,
+            context: context,
+        )
+    }
+}
+
+private func renderStructuredTemplateWith(
+    _ expression: String,
+    success: [StructuredTemplateNode],
+    failure: [StructuredTemplateNode],
+    context: StructuredTemplateContext,
+) throws -> StructuredTemplateRender {
+    let evaluation = try evaluateStructuredTemplateExpressionWithRoot(
+        expression,
+        context: context,
+    )
+    var nested = context
+    nested.dot = evaluation.value
+    nested.dotIsRoot = evaluation.isRoot
+    return try renderStructuredTemplateNodes(
+        evaluation.value.isTruthy ? success : failure,
+        context: evaluation.value.isTruthy ? nested : context,
+    )
 }
 
 private func structuredTemplateText(_ value: String) -> String {
@@ -477,7 +548,7 @@ private func renderStructuredTemplateRange(
     success: [StructuredTemplateNode],
     failure: [StructuredTemplateNode],
     context: StructuredTemplateContext,
-) throws -> [UInt8] {
+) throws -> StructuredTemplateRender {
     let evaluation = try evaluateStructuredTemplateExpressionWithRoot(
         specification.expression,
         context: context,
@@ -491,44 +562,66 @@ private func renderStructuredTemplateRange(
     }
     let entries = try structuredTemplateRangeEntries(value)
     guard !entries.isEmpty else {
-        var nested = context
-        if let keyVariable = specification.keyVariable {
-            nested.variables[keyVariable] = value
-        }
-        if let valueVariable = specification.valueVariable {
-            nested.variables[valueVariable] = value
-        }
+        let nested = structuredTemplateRangeContext(
+            specification,
+            key: value,
+            value: value,
+            context: context,
+        )
         return try renderStructuredTemplateNodes(failure, context: nested)
     }
     var rendered: [UInt8] = []
     for entry in entries {
-        var nested = context
+        var nested = structuredTemplateRangeContext(
+            specification,
+            key: entry.key,
+            value: entry.value,
+            context: context,
+        )
         nested.dot = entry.value
         nested.dotIsRoot = false
-        if let keyVariable = specification.keyVariable {
-            nested.variables[keyVariable] = entry.key
+        let nestedRender = try renderStructuredTemplateNodes(success, context: nested)
+        rendered.append(contentsOf: nestedRender.bytes)
+        switch nestedRender.rangeControl {
+        case .breakRange:
+            return StructuredTemplateRender(bytes: rendered)
+        case .continueRange:
+            continue
+        case .none:
+            break
         }
-        if let valueVariable = specification.valueVariable {
-            nested.variables[valueVariable] = entry.value
-        }
-        try rendered.append(
-            contentsOf: renderStructuredTemplateNodes(
-                success,
-                context: nested,
-            ),
-        )
     }
-    return rendered
+    return StructuredTemplateRender(bytes: rendered)
+}
+
+private func structuredTemplateRangeContext(
+    _ specification: StructuredTemplateRange,
+    key: DockerTemplateData,
+    value: DockerTemplateData,
+    context: StructuredTemplateContext,
+) -> StructuredTemplateContext {
+    var nested = context
+    if let keyVariable = specification.keyVariable {
+        nested.variables[keyVariable] = key
+    }
+    if let valueVariable = specification.valueVariable {
+        nested.variables[valueVariable] = value
+    }
+    return nested
 }
 
 let structuredTemplateFunctions: Set<String> = [
     "and",
     "eq",
+    "ge",
+    "gt",
     "index",
     "join",
     "json",
     "len",
     "lower",
+    "le",
+    "lt",
     "ne",
     "not",
     "or",
@@ -685,7 +778,7 @@ func applyStructuredTemplateFunction(
 ) throws -> DockerTemplateData {
     let inputs = arguments + (pipelineValue.map { [$0] } ?? [])
     switch function {
-    case "and", "eq", "ne", "not", "or":
+    case "and", "eq", "ge", "gt", "le", "lt", "ne", "not", "or":
         return try applyStructuredLogicalFunction(function, inputs: inputs)
     case "json", "len":
         return try applyStructuredValueFunction(function, inputs: inputs)
@@ -714,17 +807,53 @@ private func applyStructuredLogicalFunction(
     case "not":
         guard inputs.count == 1 else { throw structuredUnsupportedAction(function) }
         return .boolean(!inputs[0].isTruthy)
-    case "eq":
-        guard inputs.count >= 2 else { throw structuredUnsupportedAction(function) }
-        for input in inputs.dropFirst()
-            where try structuredTemplateEqual(inputs[0], input, function: function)
-        {
-            return .boolean(true)
-        }
-        return .boolean(false)
-    case "ne":
+    case "eq", "ne":
+        return try applyStructuredEqualityFunction(function, inputs: inputs)
+    case "ge", "gt", "le", "lt":
+        return try applyStructuredOrderingFunction(function, inputs: inputs)
+    default:
+        throw structuredUnsupportedAction(function)
+    }
+}
+
+private func applyStructuredEqualityFunction(
+    _ function: String,
+    inputs: [DockerTemplateData],
+) throws -> DockerTemplateData {
+    if function == "ne" {
         guard inputs.count == 2 else { throw structuredUnsupportedAction(function) }
         return try .boolean(!structuredTemplateEqual(inputs[0], inputs[1], function: function))
+    }
+    guard function == "eq", inputs.count >= 2 else {
+        throw structuredUnsupportedAction(function)
+    }
+    for input in inputs.dropFirst()
+        where try structuredTemplateEqual(inputs[0], input, function: function)
+    {
+        return .boolean(true)
+    }
+    return .boolean(false)
+}
+
+private func applyStructuredOrderingFunction(
+    _ function: String,
+    inputs: [DockerTemplateData],
+) throws -> DockerTemplateData {
+    guard inputs.count == 2 else { throw structuredUnsupportedAction(function) }
+    let comparison = try structuredTemplateCompare(
+        inputs[0],
+        inputs[1],
+        function: function,
+    )
+    switch function {
+    case "ge":
+        return .boolean(comparison >= 0)
+    case "gt":
+        return .boolean(comparison > 0)
+    case "le":
+        return .boolean(comparison <= 0)
+    case "lt":
+        return .boolean(comparison < 0)
     default:
         throw structuredUnsupportedAction(function)
     }

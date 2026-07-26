@@ -117,7 +117,7 @@ func validateStructuredTemplateVariables(
             let nestedVariables = variables.union(declared)
             try validateStructuredTemplateVariables(success, variables: nestedVariables)
             try validateStructuredTemplateVariables(failure, variables: nestedVariables)
-        case .text:
+        case .breakRange, .continueRange, .text:
             continue
         }
     }
@@ -172,7 +172,7 @@ func validateStructuredTemplateRootIndexing(
                 ),
             )
             try validateStructuredTemplateRootIndexing(failure, dotIsRoot: dotIsRoot)
-        case .text:
+        case .breakRange, .continueRange, .text:
             continue
         }
     }
@@ -268,7 +268,7 @@ private func collectStructuredTemplateFields(
             collectStructuredExpressionFields(specification.expression, dotIsRoot: dotIsRoot, into: &fields)
             collectStructuredTemplateFields(success, dotIsRoot: false, into: &fields)
             collectStructuredTemplateFields(failure, dotIsRoot: dotIsRoot, into: &fields)
-        case .text:
+        case .breakRange, .continueRange, .text:
             continue
         case let .with(expression, success, failure):
             collectStructuredExpressionFields(expression, dotIsRoot: dotIsRoot, into: &fields)
@@ -505,7 +505,7 @@ private func collectStructuredTemplateLabelKeys(
             collectStructuredExpressionLabelKeys(specification.expression, into: &keys)
             collectStructuredTemplateLabelKeys(success, into: &keys)
             collectStructuredTemplateLabelKeys(failure, into: &keys)
-        case .text:
+        case .breakRange, .continueRange, .text:
             continue
         }
     }
