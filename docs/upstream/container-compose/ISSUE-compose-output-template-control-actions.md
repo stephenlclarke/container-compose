@@ -136,6 +136,28 @@ keeps a valid replacement scalar literal. Focused unit and committed live
 parity coverage, 91.99% repository Swift coverage, and the exact-head clean
 SonarQube quality gate protect both cases.
 
+Signed follow-up commit `827847474a6bef0247dc4708986f343bc8f4cc93`
+(`fix(format): defer dynamic root validation`) closes the next two connector
+findings. Static range validation now rejects only expressions that always
+return the root; falsey non-root `and` results reach their empty branch, while
+runtime operand provenance still rejects a root-selected range, `index`, or
+`len`. Focused unit coverage and signed live-oracle commit
+`9b3483f1db156a135c7dd95f43229c1c24061f17` protect both findings.
+
+Signed follow-up commit `958e246634420ca5eb006af073952d7d744e58c7`
+(`fix(format): preserve publisher JSON order`) closes the publisher JSON
+finding by encoding records in `URL`, `TargetPort`, `PublishedPort`,
+`Protocol` order rather than map-key order.
+
+Signed follow-up commits `e692ad365801944676f67f70b4e1ea08f951d657`
+(`fix(format): render missing printf arguments`) and
+`efabb05df4fe98c376a68aedf4f5375f31e2ce96`
+(`fix(format): render extra printf arguments`) preserve Go's visible
+`MISSING` and typed `EXTRA` diagnostics. Focused unit coverage and signed
+live-oracle commits `9b3483f1db156a135c7dd95f43229c1c24061f17`
+and `82248ab69b641ad2d6dd1c573060469bf76b438a` confirm the exact output against
+Docker Compose 5.3.1 and Apple Current. Repository Swift coverage is 92.00%.
+
 ## Compatibility
 
 Existing literal, field-only, JSON, table, and function templates remain

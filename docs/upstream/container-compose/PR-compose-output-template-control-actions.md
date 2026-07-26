@@ -70,6 +70,18 @@ container model, sibling fork, or package pin changes.
   `fix(format): defer conditional root range rejection`
 - `0390a85d2952bd82e50fb98219c9207a39664377`
   `fix(format): preserve valid bytes in template JSON`
+- `827847474a6bef0247dc4708986f343bc8f4cc93`
+  `fix(format): defer dynamic root validation`
+- `958e246634420ca5eb006af073952d7d744e58c7`
+  `fix(format): preserve publisher JSON order`
+- `e692ad365801944676f67f70b4e1ea08f951d657`
+  `fix(format): render missing printf arguments`
+- `9b3483f1db156a135c7dd95f43229c1c24061f17`
+  `test(format): cover final template parity gaps`
+- `efabb05df4fe98c376a68aedf4f5375f31e2ce96`
+  `fix(format): render extra printf arguments`
+- `82248ab69b641ad2d6dd1c573060469bf76b438a`
+  `test(format): cover extra printf diagnostics`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -106,6 +118,8 @@ This documentation commit is intentionally separate.
     parenthesized expressions, `and`, `or`, pipelines, and `with`;
   - rejects a range only when row evaluation actually selects the root,
     allowing a nonempty publisher collection to win before a root fallback;
+  - preserves operand provenance until `index` and `len` execute, rejecting a
+    logical `with` only when that row actually selects the root;
   - marks collection entries and declared range variables as non-root without
     relying on structural equality with the formatter row.
 - `Sources/ComposeCore/ComposeDockerTemplateStringSupport.swift`
@@ -134,8 +148,9 @@ This documentation commit is intentionally separate.
     formatter row, so root map-like access cannot bypass command field
     validation;
   - rejects attempts to range over expressions whose only reachable truthy
-    result is the root formatter row before command side effects, while
-    deferring mixed logical fallbacks until row evaluation selects a result;
+    result is the root formatter row and cannot return a falsey non-root value
+    before command side effects, while deferring mixed logical results until
+    row evaluation selects a result;
   - rejects statically known two-variable integer ranges.
 - `Sources/ComposeCore/ComposeStructuredTemplateLookup.swift`
   - isolates Compose-owned field and label lookup policy from parsing and
@@ -155,6 +170,8 @@ This documentation commit is intentionally separate.
     `map[...]` display for ordinary objects;
   - keeps display, truthiness, and JSON projection separate while retaining
     partial UTF-8 slices for exact Go quoting and exact output bytes;
+  - JSON-encodes publisher records in their declared Go struct-field order,
+    independently of deterministic alphabetic map ordering;
   - JSON-encodes byte strings incrementally so valid UTF-8 scalars survive
     while each invalid subsequence becomes Docker's `\ufffd` escape.
 - `Sources/ComposeCore/ComposeDockerTemplateFunctionSupport.swift` and
@@ -175,6 +192,8 @@ This documentation commit is intentionally separate.
   - treat the lookup-object display used by `.Labels` as its generic Go string
     while preserving `.Label` as the dedicated key-lookup surface;
   - preserve invalid UTF-8 bytes through direct `%s` and `%v` output;
+  - emit Go's `%!verb(MISSING)` and `%!(EXTRA type=value)` diagnostics for
+    absent and surplus `printf` operands instead of aborting template output;
   - require a typed string or valid UTF-8 byte-string `printf` format instead
     of coercing arbitrary values through display text.
 - `Sources/ComposeCore/ComposeDockerTemplatePrintSupport.swift`
@@ -224,6 +243,9 @@ This documentation commit is intentionally separate.
   - renders a logical publisher range when the collection is nonempty and
     rejects the same expression when an empty collection selects its root
     fallback;
+  - renders the `else` branch when logical `and` selects an empty non-root
+    publisher collection, rejects its root-selected branch, and rejects root
+    `index` after a mixed logical `with` selects the root;
   - rejects non-breaking spaces at action, control, and trailing-expression
     boundaries while preserving the same character inside quoted Go strings.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift`
@@ -234,7 +256,12 @@ This documentation commit is intentionally separate.
     splitting and joining, negative truncation, and typed map keys.
 - `Tests/ComposeCoreTests/ComposeDockerTemplateJSONTests.swift`
   - proves partial invalid UTF-8 retains its valid prefix and emits `\ufffd`;
-  - proves an already-valid replacement scalar remains literal JSON text.
+  - proves an already-valid replacement scalar remains literal JSON text;
+  - proves publisher JSON retains `URL`, `TargetPort`, `PublishedPort`,
+    `Protocol` field order.
+- `Tests/ComposeCoreTests/ComposeDockerTemplatePrintfDiagnosticsTests.swift`
+  - proves missing `%s`, `%d`, `%q`, and `%v` operands render Go diagnostics;
+  - proves surplus string operands render Go's typed `EXTRA` diagnostic.
 - `Tests/ComposeCoreTests/ComposeFormatTemplateCallCompatibilityTests.swift`
   - covers root-scoped label rendering, field and table-key analysis, typed
     `printf` formats, compact range assignments, parenthesized selector
@@ -277,6 +304,9 @@ This documentation commit is intentionally separate.
   - verifies ordered logical publisher selection, empty-separator and
     empty-input splitting, partial UTF-8 byte truncation and splitting, and
     negative truncation rejection;
+  - verifies falsey non-root `and` ranges, root-selected logical `with`
+    rejection, publisher JSON field order, and missing and surplus `printf`
+    diagnostics;
   - verifies positive, zero, and negative integer ranges, one-variable integer
     range declarations, and exact rejection of root `len`, root `range`, and
     two-variable integer ranges;
@@ -303,18 +333,22 @@ make coverage-check
 make check
 swiftlint lint --strict --quiet \
   Sources/ComposeCore/ComposeDockerTemplateData.swift \
+  Sources/ComposeCore/ComposeDockerTemplatePrintf.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
   Sources/ComposeCore/ComposeStructuredTemplateEvaluation.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateJSONTests.swift \
+  Tests/ComposeCoreTests/ComposeDockerTemplatePrintfDiagnosticsTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
   Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift
 swiftformat --lint --swift-version 6.2 \
   Sources/ComposeCore/ComposeDockerTemplateData.swift \
+  Sources/ComposeCore/ComposeDockerTemplatePrintf.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
   Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift \
   Sources/ComposeCore/ComposeStructuredTemplateEvaluation.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateJSONTests.swift \
+  Tests/ComposeCoreTests/ComposeDockerTemplatePrintfDiagnosticsTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
   Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift
 shellcheck Tools/parity/check-compose-format-template-actions.sh
@@ -323,20 +357,20 @@ CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
 git diff --check
 ```
 
-- Swift: 1,179 tests in 34 suites passed.
-- Swift repository coverage: 91.99%.
+- Swift: 1,183 tests in 35 suites passed.
+- Swift repository coverage: 92.00%.
 - Go normalizer coverage: 89.88%.
-- Structured template engine and support: 2,155/2,263 lines, 95.23%.
+- Structured template engine and support: 2,190/2,298 lines, 95.30%.
 - `ComposeStructuredFormatTemplate.swift`: 654/683 lines, 95.75%.
-- `ComposeStructuredTemplateAnalysis.swift`: 504/517 lines, 97.49%.
+- `ComposeStructuredTemplateAnalysis.swift`: 513/526 lines, 97.53%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 60/64 lines,
   93.75%.
-- `ComposeStructuredTemplateEvaluation.swift`: 157/170 lines, 92.35%.
+- `ComposeStructuredTemplateEvaluation.swift`: 165/178 lines, 92.70%.
 - `ComposeStructuredTemplateLookup.swift`: 29/35 lines, 82.86%.
 - `ComposeStructuredTemplateWhitespace.swift`: 32/32 lines, 100%.
-- `ComposeDockerTemplateData.swift`: 160/170 lines, 94.12%.
+- `ComposeDockerTemplateData.swift`: 169/179 lines, 94.41%.
 - `ComposeDockerTemplatePrintSupport.swift`: 52/56 lines, 92.86%.
-- `ComposeDockerTemplatePrintf.swift`: 292/304 lines, 96.05%.
+- `ComposeDockerTemplatePrintf.swift`: 301/313 lines, 96.17%.
 - `ComposeDockerTemplateFunctionSupport.swift`: 158/175 lines, 90.29%.
 - `ComposeDockerTemplateStringSupport.swift`: 57/57 lines, 100%.
 - Formatter table boundary: 177/178 lines, 99.44%.
@@ -355,8 +389,8 @@ git diff --check
   - `container-compose` base
     `b644c71fd0f7dd665a2a74192ab55745faafa281`.
 - SonarQube pull-request analysis for implementation commit
-  `0390a85d2952bd82e50fb98219c9207a39664377` passed with zero unresolved
-  issues, 92.0% new-code coverage, 0.0% new duplication, A ratings for
+  `82248ab69b641ad2d6dd1c573060469bf76b438a` passed with zero unresolved
+  issues, 92.1% new-code coverage, 0.0% new duplication, A ratings for
   reliability, security, and maintainability, and 100% hotspot review.
 
 The user explicitly waived the soak gate for this slice. Hosted CI, CodeQL,
@@ -634,6 +668,25 @@ for invalid subsequences, and keeps an already-valid replacement scalar
 literal. Focused unit coverage and the committed live oracle protect both
 forms.
 
+The exact-head review then found four more Docker-visible edge cases. Signed
+commit `827847474a6bef0247dc4708986f343bc8f4cc93` distinguishes an `and`
+expression that can return a falsey non-root collection from one that always
+returns the root, and preserves actual operand provenance until `index` or
+`len` executes. This allows
+`{{range and .Publishers $}}{{.}}{{else}}empty{{end}}` to take the empty branch
+for a no-publisher row while still rejecting a root-selected range or
+`with`-body index. Signed commit
+`958e246634420ca5eb006af073952d7d744e58c7` preserves Docker's publisher JSON
+field order. Signed commit `e692ad365801944676f67f70b4e1ea08f951d657`
+emits `%!verb(MISSING)` for missing `printf` operands. A paired Docker Compose
+5.3.1 reproduction also exposed the complementary surplus-operand behavior, so
+signed commit `efabb05df4fe98c376a68aedf4f5375f31e2ce96` emits
+`%!(EXTRA type=value)` rather than rejecting valid Go output. Focused unit
+coverage and signed live-oracle commits
+`9b3483f1db156a135c7dd95f43229c1c24061f17` and
+`82248ab69b641ad2d6dd1c573060469bf76b438a` protect all five outcomes against
+Docker Compose 5.3.1 and Apple Current.
+
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
 `{127.0.0.1 8080 32768 tcp}`. The same successful behavior is now protected by
@@ -646,7 +699,7 @@ actionable autobot finding was deferred. The suggestion to propagate root
 identity through `table` was not implemented because Docker Compose 5.3.1
 rejects the template at parse time with `function "table" not defined`; the
 unsupported helper was removed and that exact rejection is protected instead.
-All fifty-five connector threads are answered with their implementation or
+All fifty-nine connector threads are answered with their implementation or
 verified compatibility disposition.
 
 ## Documentation And Operations
