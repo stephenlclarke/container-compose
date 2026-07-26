@@ -196,11 +196,17 @@ blocks, while the nearest active range consumes the action and a range
 `5c8fc13818496ce28af1a40709b390234f6b5ae3` covers successful, nested, and
 rejected behavior against Docker Compose 5.3.1 and Apple Current.
 
+Signed follow-up commit `cc9cb0dd8a3b97ede2b0b6789be28a52c8cbb12c`
+(`fix(format): simplify integer ordering comparison`) removes the sole new
+SonarQube maintainability issue from the ordering implementation without
+changing its typed result. Focused ordering tests and the fresh full coverage
+run remain green.
+
 The complete suite passes 1,199 tests in 40 suites with 92.10% repository
-Swift coverage and 95.66% structured template coverage. The prior exact
-implementation SonarQube analysis has zero new or accepted issues, zero
-security hotspots, 92.5% new-code coverage, and 0.0% new duplication; the
-new exact-head analysis remains a promotion requirement.
+Swift coverage and 95.66% structured template coverage. The exact
+implementation SonarQube analysis for
+`cc9cb0dd8a3b97ede2b0b6789be28a52c8cbb12c` has zero new or accepted issues,
+zero security hotspots, 92.7% new-code coverage, and 0.0% new duplication.
 
 ## Compatibility
 

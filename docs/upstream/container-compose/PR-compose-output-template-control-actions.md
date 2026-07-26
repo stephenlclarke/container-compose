@@ -100,6 +100,8 @@ container model, sibling fork, or package pin changes.
   `feat(format): add Go ordering and range control`
 - `5c8fc13818496ce28af1a40709b390234f6b5ae3`
   `test(format): cover ordering and range control parity`
+- `cc9cb0dd8a3b97ede2b0b6789be28a52c8cbb12c`
+  `fix(format): simplify integer ordering comparison`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -448,7 +450,7 @@ git diff --check
 - Swift: 1,199 tests in 40 suites passed.
 - Swift repository coverage: 92.10%.
 - Go normalizer coverage: 89.88%.
-- Structured template engine and support: 2,512/2,626 lines, 95.66%.
+- Structured template engine and support: 2,515/2,629 lines, 95.66%.
 - `ComposeStructuredFormatTemplate.swift`: 727/753 lines, 96.55%.
 - `ComposeStructuredTemplateAnalysis.swift`: 516/529 lines, 97.54%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 60/64 lines,
@@ -461,7 +463,7 @@ git diff --check
 - `ComposeDockerTemplateData.swift`: 190/200 lines, 95%.
 - `ComposeDockerTemplatePrintSupport.swift`: 52/56 lines, 92.86%.
 - `ComposeDockerTemplatePrintf.swift`: 302/313 lines, 96.49%.
-- `ComposeDockerTemplateFunctionSupport.swift`: 182/199 lines, 91.46%.
+- `ComposeDockerTemplateFunctionSupport.swift`: 185/202 lines, 91.58%.
 - `ComposeDockerTemplateStringSupport.swift`: 57/57 lines, 100%.
 - `ComposeDockerTemplateTitle.swift`: 38/39 lines, 97.44%.
 - Formatter table boundary: 161/161 lines, 100%.
@@ -480,12 +482,12 @@ git diff --check
   - `container-compose` base
     `b644c71fd0f7dd665a2a74192ab55745faafa281`;
   - local `container-compose`
-    `5c8fc13818496ce28af1a40709b390234f6b5ae3`.
-- SonarQube branch analysis for the preceding exact implementation commit
-  `dfb9d534962365ff4a99eccc54b89a9e318765a1` passed its quality gate with
-  zero new or accepted issues, zero security hotspots, 92.5% new-code
-  coverage, and 0.0% new duplication. The new exact-head analysis remains a
-  promotion requirement.
+    `cc9cb0dd8a3b97ede2b0b6789be28a52c8cbb12c`.
+- SonarQube branch analysis for the exact implementation commit
+  `cc9cb0dd8a3b97ede2b0b6789be28a52c8cbb12c` passed its quality gate with
+  zero new or accepted issues, zero security hotspots, 92.7% new-code
+  coverage, and 0.0% new duplication. The implementation removes the sole new
+  maintainability issue reported against its predecessor.
 
 The user explicitly waived the soak gate for this slice. Hosted CI, CodeQL,
 quality, Current publication, and exact-release verification remain promotion
@@ -816,6 +818,13 @@ while an inner range `else` can still target an enclosing range. Signed
 live-oracle commit `5c8fc13818496ce28af1a40709b390234f6b5ae3`
 protects the successful, nested, pipeline, type-error, arity, and lexical-depth
 boundaries against Docker Compose 5.3.1 and Apple Current.
+
+The first SonarQube analysis of that implementation reported one new
+maintainability issue in a nested integer-comparison conditional. Signed commit
+`cc9cb0dd8a3b97ede2b0b6789be28a52c8cbb12c` expresses the same typed comparison
+as a direct equality branch followed by a single ordering conditional. Focused
+ordering tests and the fresh full suite remain green, and the exact-commit
+SonarQube analysis reports zero new issues.
 
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
