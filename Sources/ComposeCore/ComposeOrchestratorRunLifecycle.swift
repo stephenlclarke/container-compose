@@ -21,6 +21,11 @@ private enum ComposeRunLifecycleOperationResult {
     case exitCode(Int32)
 }
 
+enum ComposeRunAttachmentResult: Equatable {
+    case exited(Int32)
+    case detached
+}
+
 private actor ComposeRunLifecycleExitCode {
     private var storage: Int32?
 
@@ -33,12 +38,75 @@ private actor ComposeRunLifecycleExitCode {
     }
 }
 
+private actor ComposeRunLifecycleSignalStopGate {
+    private var claimed = false
+
+    func claim() -> Bool {
+        guard !claimed else {
+            return false
+        }
+        claimed = true
+        return true
+    }
+}
+
 private struct ComposeRunLifecycleSignalContext: @unchecked Sendable {
     let service: ComposeService
     let containerName: String
 }
 
 extension ComposeOrchestrator {
+    /// Reattaches an interactive lifecycle-managed one-off container while
+    /// keeping Compose in-process so signal handling can run `pre_stop`.
+    func attachForegroundOneOffRun(
+        service: ComposeService,
+        containerName: String,
+    ) async throws -> ComposeRunAttachmentResult {
+        let arguments = ["attach", "--sig-proxy=false", containerName]
+        if options.dryRun {
+            let status = try await runContainer(
+                arguments,
+                check: false,
+                inheritedIO: true,
+            ).status
+            return .exited(status)
+        }
+
+        let signalContext = ComposeRunLifecycleSignalContext(
+            service: service,
+            containerName: containerName,
+        )
+        let exitCode = ComposeRunLifecycleExitCode()
+        let stopGate = ComposeRunLifecycleSignalStopGate()
+        try await signalProxy.withSignalProxy(
+            signals: ["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"],
+            handler: { [self, signalContext, stopGate] _ in
+                guard await stopGate.claim() else {
+                    return
+                }
+                await stopLifecycleManagedRunOnSignal(
+                    context: signalContext,
+                )
+            },
+            operation: { [self, exitCode] in
+                let result = try await runContainer(
+                    arguments,
+                    check: false,
+                    inheritedIO: true,
+                )
+                await exitCode.set(result.status)
+            },
+        )
+        guard let status = await exitCode.value else {
+            throw ComposeError.invalidProject("interactive foreground compose run did not produce an exit status")
+        }
+        let container = try await discoveryManager.getContainer(id: containerName)
+        if let container, ["running", "paused"].contains(container.status.lowercased()) {
+            return .detached
+        }
+        return .exited(status)
+    }
+
     /// Follows a non-interactive one-off run and returns its container exit status.
     func followForegroundOneOffRun(
         service: ComposeService,
@@ -46,12 +114,15 @@ extension ComposeOrchestrator {
     ) async throws -> Int32 {
         let signalContext = ComposeRunLifecycleSignalContext(service: service, containerName: containerName)
         let exitCode = ComposeRunLifecycleExitCode()
+        let stopGate = ComposeRunLifecycleSignalStopGate()
         try await signalProxy.withSignalProxy(
             signals: ["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"],
-            handler: { [self, signalContext] _ in
-                try? await stopContainer(
-                    service: signalContext.service,
-                    containerName: signalContext.containerName,
+            handler: { [self, signalContext, stopGate] _ in
+                guard await stopGate.claim() else {
+                    return
+                }
+                await stopLifecycleManagedRunOnSignal(
+                    context: signalContext,
                 )
             },
             operation: { [self, exitCode] in
@@ -63,6 +134,25 @@ extension ComposeOrchestrator {
             throw ComposeError.invalidProject("foreground compose run did not produce an exit status")
         }
         return status
+    }
+
+    /// Runs `pre_stop` before signal-driven stop, then falls back to a direct
+    /// runtime stop so a failed hook cannot strand an attached one-off.
+    private func stopLifecycleManagedRunOnSignal(
+        context: ComposeRunLifecycleSignalContext,
+    ) async {
+        do {
+            try await stopContainer(
+                service: context.service,
+                containerName: context.containerName,
+            )
+        } catch {
+            try? await lifecycleManager.stopContainer(
+                id: context.containerName,
+                signal: context.service.stopSignal,
+                timeoutInSeconds: context.service.stopGracePeriodSeconds,
+            )
+        }
     }
 
     /// Streams raw one-off output while waiting for the direct runtime exit status.

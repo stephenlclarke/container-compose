@@ -497,7 +497,10 @@ extension ComposeOrchestrator {
         guard let container = try await discoveryManager.getContainer(id: name) else {
             return nil
         }
-        return ExistingContainer(configHash: container.configHash)
+        return ExistingContainer(
+            configHash: container.configHash,
+            status: container.status,
+        )
     }
 
     /// Removes project-scoped containers that are not in the declared set.

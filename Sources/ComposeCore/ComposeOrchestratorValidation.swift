@@ -292,10 +292,8 @@ extension ComposeOrchestrator {
 
     /// Validates lifecycle hook metadata before runtime side effects.
     func validateLifecycleHookSupport(service: ComposeService) throws {
-        if let preStart = service.preStart, !preStart.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses pre_start; Docker Compose init containers need an apple/container ephemeral-container lifecycle primitive")
-        }
         let hookSets: [(composeName: String, hooks: [ComposeServiceHook]?)] = [
+            ("pre_start", service.preStart),
             ("post_start", service.postStart),
             ("pre_stop", service.preStop),
         ]
@@ -304,6 +302,9 @@ extension ComposeOrchestrator {
                 guard let command = hook.command, !command.isEmpty else {
                     throw ComposeError.invalidProject("service '\(service.name)' \(hookSet.composeName)[\(index)] requires a command")
                 }
+                if hookSet.composeName == "pre_start", hook.perReplica == true {
+                    throw ComposeError.unsupported("service '\(service.name)' pre_start[\(index)] uses per_replica; Docker Compose supports only false")
+                }
             }
         }
     }
@@ -311,14 +312,10 @@ extension ComposeOrchestrator {
     /// Validates lifecycle hooks for one-off containers.
     func validateOneOffRunLifecycleHooks(
         service: ComposeService,
-        options run: ComposeRunOptions,
-        foregroundInteractiveRun: Bool,
+        options _: ComposeRunOptions,
+        foregroundInteractiveRun _: Bool,
     ) throws {
         try validateLifecycleHookSupport(service: service)
-        guard !run.detach, hasLifecycleHooks(service), foregroundInteractiveRun else {
-            return
-        }
-        throw ComposeError.unsupported("service '\(service.name)' uses lifecycle hooks; interactive foreground compose run requires Apple runtime stdio reattach support")
     }
 
     /// Validates normalized develop.watch trigger metadata for command-level

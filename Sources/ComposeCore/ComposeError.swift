@@ -16,6 +16,15 @@
 
 import Foundation
 
+/// Carries the terminal status of a foreground one-off service process.
+public struct ComposeRunExitError: Error, Equatable, Sendable {
+    public let status: Int32
+
+    public init(status: Int32) {
+        self.status = status
+    }
+}
+
 /// Errors surfaced by Compose normalization and container orchestration.
 public enum ComposeError: Error, CustomStringConvertible, Equatable {
     case commandFailed(command: String, status: Int32, stderr: String)

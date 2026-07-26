@@ -26,6 +26,11 @@ import ContainerResource
 import Foundation
 
 extension ComposeOrchestrator {
+    /// Returns whether a service declares `pre_start` hooks.
+    func hasPreStartHooks(_ service: ComposeService) -> Bool {
+        !(service.preStart ?? []).isEmpty
+    }
+
     /// Returns whether a service declares `post_start` hooks.
     func hasPostStartHooks(_ service: ComposeService) -> Bool {
         !(service.postStart ?? []).isEmpty
@@ -242,9 +247,11 @@ extension ComposeOrchestrator {
             let replicaCount = try serviceReplicaCount(service, scaleOverrides: scaleOverrides)
             var serviceChanged = false
             var jobTargets: [ServiceContainerTarget] = []
+            var preStartTargets: [ServiceContainerTarget] = []
             if replicaCount > 0 {
                 for replicaIndex in 1 ... replicaCount {
                     let name = try serviceContainerName(project: workingProject, service: service, index: replicaIndex)
+                    let existing = try await inspectContainer(name)
                     if isDeployJobService(service) {
                         jobTargets.append(ServiceContainerTarget(service: service, index: replicaIndex, name: name))
                     }
@@ -253,8 +260,11 @@ extension ComposeOrchestrator {
                         service: service,
                         request: ServiceContainerReconcileRequest(
                             name: name,
+                            existing: existing,
                             runOptions: RunArgumentOptions {
-                                $0.detach = detachStartedContainers || isDeployJobService(service)
+                                $0.command = hasPreStartHooks(service) ? "create" : "run"
+                                $0.detach = !hasPreStartHooks(service)
+                                    && (detachStartedContainers || isDeployJobService(service))
                                 $0.containerIndex = replicaIndex
                                 $0.replicaCount = replicaCount
                             },
@@ -268,10 +278,25 @@ extension ComposeOrchestrator {
                         ),
                     )
                     serviceChanged = serviceChanged || reconcileOutcome.changed
+                    if hasPreStartHooks(service) {
+                        preStartTargets.append(ServiceContainerTarget(
+                            service: service,
+                            index: replicaIndex,
+                            name: name,
+                            status: reconcileOutcome.changed ? "created" : existing?.status,
+                        ))
+                    }
                     if up.wait, !isDeployJobService(service) {
                         waitTargets.append(ServiceContainerTarget(service: service, index: replicaIndex, name: name))
                     }
                 }
+            }
+            if !preStartTargets.isEmpty {
+                try await startServiceTargets(
+                    project: workingProject,
+                    service: service,
+                    targets: preStartTargets,
+                )
             }
             if shouldPruneServiceReplicas(service, scaleOverrides: scaleOverrides) {
                 try await removeServiceReplicasAbove(project: workingProject, service: service, desiredCount: replicaCount, timeout: up.timeout)
@@ -807,7 +832,7 @@ extension ComposeOrchestrator {
         request: ServiceContainerReconcileRequest,
     ) async throws -> ServiceContainerReconcileOutcome {
         let name = request.name
-        let existing = try await inspectContainer(name)
+        let existing = request.existing
         var didRecreate = false
         if let existing {
             if request.noRecreate {

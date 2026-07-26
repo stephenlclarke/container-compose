@@ -15,7 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 import ComposeContainerRuntime
-import ComposeCore
+@testable import ComposeCore
 import ContainerizationArchive
 import ContainerizationError
 import ContainerizationExtras
@@ -17663,12 +17663,14 @@ struct ComposeOrchestratorTests {
 
     @Test("restart runs pre stop and post start hooks around lifecycle calls")
     func restartRunsPreStopAndPostStartHooksAroundLifecycleCalls() async throws {
+        let runner = RecordingRunner()
         let execManager = RecordingContainerExecManager()
         let lifecycleManager = RecordingContainerLifecycleManager()
         let project = ComposeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
+                    $0.preStart = [ComposeServiceHook(command: ["sh", "-c", "prepare"])]
                     $0.postStart = [ComposeServiceHook(command: ["sh", "-c", "touch /tmp/ready"])]
                     $0.preStop = [ComposeServiceHook(command: ["sh", "-c", "rm -f /tmp/ready"])]
                 },
@@ -17676,7 +17678,7 @@ struct ComposeOrchestratorTests {
         )
 
         try await ComposeOrchestrator(
-            runner: RecordingRunner(),
+            runner: runner,
             dependencies: orchestratorDependencies {
                 $0.execManager = execManager
                 $0.lifecycleManager = lifecycleManager
@@ -17699,6 +17701,7 @@ struct ComposeOrchestratorTests {
             .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
             .start(id: "demo-api-1"),
         ])
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("restart includes dependencies unless no-deps is set")
@@ -17785,10 +17788,10 @@ struct ComposeOrchestratorTests {
         let cases: [(service: ComposeService, options: ComposeUpOptions, error: ComposeError)] = [
             (
                 composeService(name: "api", image: "example/api") {
-                    $0.preStart = [ComposeServiceHook(command: ["true"])]
+                    $0.preStart = [ComposeServiceHook(command: ["true"], perReplica: true)]
                 },
                 ComposeUpOptions { $0.detach = true },
-                .unsupported("service 'api' uses pre_start; Docker Compose init containers need an apple/container ephemeral-container lifecycle primitive")
+                .unsupported("service 'api' pre_start[0] uses per_replica; Docker Compose supports only false")
             ),
             (
                 composeService(name: "api", image: "example/api") {
@@ -17814,6 +17817,542 @@ struct ComposeOrchestratorTests {
 
             #expect(runner.commands.isEmpty)
         }
+    }
+
+    @Test("pre start helper projects hook runtime options and target mounts")
+    func preStartHelperProjectsHookRuntimeOptionsAndTargetMounts() async throws {
+        let runner = RecordingRunner()
+        let helperName = "demo-api-pre-start-0-abc123"
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            getResponses: [
+                "demo-api-1": [
+                    nil,
+                    ComposeContainerSummary(
+                        id: "demo-api-1",
+                        status: "created",
+                        mounts: [
+                            ComposeMount(
+                                type: "external-volume",
+                                source: "legacy_cache",
+                                target: "/cache",
+                                readOnly: true
+                            ),
+                        ]
+                    ),
+                ],
+            ]
+        )
+        let lifecycleManager = RecordingContainerLifecycleManager(
+            waitExitCodes: [helperName: 0]
+        )
+        let logManager = RecordingContainerLogManager(outputs: ["prepared\n"])
+        let imageManager = RecordingContainerImageManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.environment = ["BASE": "1", "OVERRIDE": "old"]
+                    $0.networks = ["backend"]
+                    $0.preStart = [
+                        ComposeServiceHook(
+                            command: ["sh", "-c", "prepare"],
+                            image: "example/init:1",
+                            user: "1000",
+                            privileged: true,
+                            workingDir: "/work",
+                            environment: ["OVERRIDE": "new", "READY": "1"]
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "demo_backend")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.imageManager = imageManager
+                $0.lifecycleManager = lifecycleManager
+                $0.logManager = logManager
+            }
+        ).up(
+            project: project,
+            options: ComposeUpOptions { $0.detach = true }
+        )
+
+        let command = try #require(runner.commands.last?.arguments)
+        #expect(runner.commands.count == 2)
+        #expect(command.starts(with: ["container", "create", "--name", helperName]))
+        #expect(command.containsSequence(["--env", "BASE=1"]))
+        #expect(command.containsSequence(["--env", "OVERRIDE=new"]))
+        #expect(command.containsSequence(["--env", "READY=1"]))
+        #expect(!command.contains("OVERRIDE=old"))
+        #expect(command.containsSequence(["--user", "1000"]))
+        #expect(command.containsSequence(["--workdir", "/work"]))
+        #expect(command.contains("--privileged"))
+        #expect(command.containsSequence(["--network", "demo_backend"]))
+        #expect(command.containsSequence(["--volume", "legacy_cache:/cache:ro"]))
+        #expect(Array(command.suffix(4)) == ["example/init:1", "sh", "-c", "prepare"])
+        #expect(await discoveryManager.getRequests == [
+            "demo-api-1",
+            "demo-api-1",
+        ])
+        let preStartImageRequests = await imageManager.requests
+        #expect(preStartImageRequests == [
+            .pullMissing("example/init:1"),
+            .healthCheck(reference: "example/api", platform: nil),
+            .healthCheck(reference: "example/init:1", platform: nil),
+        ])
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: helperName, tail: nil, follow: true),
+        ])
+        #expect(await lifecycleManager.requests == [
+            .start(id: helperName),
+            .wait(id: helperName),
+            .delete(id: helperName, force: false),
+            .start(id: "demo-api-1"),
+        ])
+    }
+
+    @Test("pre start helper image planning handles hook-only services")
+    func preStartHelperImagePlanningHandlesHookOnlyServices() {
+        let orchestrator = ComposeOrchestrator()
+        let service = composeService(name: "prepare") {
+            $0.preStart = [
+                ComposeServiceHook(command: ["first"], image: "example/init:2"),
+                ComposeServiceHook(command: ["duplicate"], image: "example/init:2"),
+                ComposeServiceHook(command: ["second"], image: "example/init:1"),
+            ]
+        }
+
+        #expect(orchestrator.serviceRuntimeImages(service) == [
+            "example/init:1",
+            "example/init:2",
+        ])
+    }
+
+    @Test("pre start target planning handles empty and unknown state")
+    func preStartTargetPlanningHandlesEmptyAndUnknownState() async throws {
+        let orchestrator = ComposeOrchestrator()
+        let service = composeService(name: "api", image: "example/api")
+        let project = ComposeProject(name: "demo", services: ["api": service])
+
+        try await orchestrator.startServiceTargets(
+            project: project,
+            service: service,
+            targets: []
+        )
+        #expect(!orchestrator.isStartedServiceTarget(
+            ServiceContainerTarget(
+                service: service,
+                index: 1,
+                name: "demo-api-1",
+                status: nil
+            )
+        ))
+    }
+
+    @Test("pre start helper validates command and image invariants")
+    func preStartHelperValidatesCommandAndImageInvariants() async throws {
+        let orchestrator = ComposeOrchestrator()
+        let targetService = composeService(name: "api")
+        let target = ServiceContainerTarget(
+            service: targetService,
+            index: 1,
+            name: "demo-api-1",
+            status: "created"
+        )
+        let cases: [(hook: ComposeServiceHook, expected: ComposeError)] = [
+            (
+                ComposeServiceHook(command: []),
+                .invalidProject("service 'api' pre_start[0] requires a command")
+            ),
+            (
+                ComposeServiceHook(command: ["prepare"]),
+                .invalidProject("service 'api' pre_start[0] has no image")
+            ),
+        ]
+
+        for testCase in cases {
+            do {
+                try await orchestrator.runPreStartHook(
+                    project: ComposeProject(name: "demo", services: ["api": targetService]),
+                    service: targetService,
+                    target: target,
+                    index: 0,
+                    hook: testCase.hook
+                )
+                Issue.record("Expected pre_start invariant failure")
+            } catch let error as ComposeError {
+                #expect(error == testCase.expected)
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    @Test("pre start helper cleanup runs when output streaming fails")
+    func preStartHelperCleanupRunsWhenOutputStreamingFails() async throws {
+        let expected = ComposeError.invalidProject("log stream failed")
+        let helperName = "demo-api-pre-start-0-abc123"
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            containers: [
+                ComposeContainerSummary(
+                    id: "demo-api-1",
+                    status: "created"
+                ),
+            ]
+        )
+        let service = composeService(name: "api", image: "example/api") {
+            $0.preStart = [ComposeServiceHook(command: ["prepare"])]
+        }
+        let project = ComposeProject(name: "demo", services: ["api": service])
+
+        do {
+            try await ComposeOrchestrator(
+                runner: RecordingRunner(),
+                options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
+                dependencies: orchestratorDependencies {
+                    $0.discoveryManager = discoveryManager
+                    $0.lifecycleManager = lifecycleManager
+                    $0.logManager = RecordingContainerLogManager(error: expected)
+                }
+            ).runPreStartHook(
+                project: project,
+                service: service,
+                target: ServiceContainerTarget(
+                    service: service,
+                    index: 1,
+                    name: "demo-api-1",
+                    status: "created"
+                ),
+                index: 0,
+                hook: try #require(service.preStart?.first)
+            )
+            Issue.record("Expected log streaming failure")
+        } catch let error as ComposeError {
+            #expect(error == expected)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await lifecycleManager.requests == [
+            .start(id: helperName),
+            .wait(id: helperName),
+            .delete(id: helperName, force: true),
+        ])
+    }
+
+    @Test("pre start helper names fit the Apple container name boundary")
+    func preStartHelperNamesFitAppleContainerNameBoundary() async throws {
+        let emitted = MessageRecorder()
+        let project = ComposeProject(
+            name: "container-compose-lifecycle-long-project",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.preStart = [ComposeServiceHook(command: ["true"])]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions {
+                $0.dryRun = true
+                $0.emit = { emitted.append($0) }
+                $0.oneOffIdentifier = { "abcdef123456" }
+            }
+        ).up(
+            project: project,
+            options: ComposeUpOptions { $0.detach = true }
+        )
+
+        let helperCommand = try #require(emitted.messages.first {
+            $0.hasPrefix("+ container create --name ")
+                && $0.contains("pre-start")
+        })
+        let arguments = helperCommand.split(separator: " ").map(String.init)
+        let nameIndex = try #require(arguments.firstIndex(of: "--name"))
+        let helperName = arguments[arguments.index(after: nameIndex)]
+        #expect(helperName.count <= 63)
+        #expect(helperName.contains("-pre-start-0-"))
+    }
+
+    @Test("up creates every replica before one pre start hook and service starts")
+    func upCreatesEveryReplicaBeforeOnePreStartHookAndServiceStarts() async throws {
+        let runner = RecordingRunner()
+        let helperName = "demo-api-pre-start-0-abc123"
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            getResponses: [
+                "demo-api-1": [
+                    nil,
+                    ComposeContainerSummary(id: "demo-api-1", status: "created"),
+                ],
+                "demo-api-2": [nil],
+            ]
+        )
+        let execManager = RecordingContainerExecManager()
+        let imageManager = RecordingContainerImageManager()
+        let lifecycleManager = RecordingContainerLifecycleManager(
+            waitExitCodes: [helperName: 0]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.scale = 2
+                    $0.preStart = [
+                        ComposeServiceHook(
+                            command: ["sh", "-c", "prepare"],
+                            image: "example/init:1"
+                        ),
+                    ]
+                    $0.postStart = [ComposeServiceHook(command: ["sh", "-c", "ready"])]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.execManager = execManager
+                $0.imageManager = imageManager
+                $0.lifecycleManager = lifecycleManager
+                $0.logManager = RecordingContainerLogManager()
+            }
+        ).up(
+            project: project,
+            options: ComposeUpOptions { $0.detach = true }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 3)
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-2"]))
+        #expect(commands[2].starts(with: ["container", "create", "--name", helperName]))
+        let preStartImageRequests = await imageManager.requests
+        #expect(preStartImageRequests == [
+            .pullMissing("example/init:1"),
+            .healthCheck(reference: "example/api", platform: nil),
+            .healthCheck(reference: "example/init:1", platform: nil),
+        ])
+        #expect(await lifecycleManager.requests == [
+            .start(id: helperName),
+            .wait(id: helperName),
+            .delete(id: helperName, force: false),
+            .start(id: "demo-api-1"),
+            .start(id: "demo-api-2"),
+        ])
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["sh", "-c", "ready"],
+                terminal: .init(interactive: false, tty: false)
+            ),
+            ContainerAttachedExecRequest(
+                id: "demo-api-2",
+                command: ["sh", "-c", "ready"],
+                terminal: .init(interactive: false, tty: false)
+            ),
+        ])
+    }
+
+    @Test("pre start does not rerun while one service replica remains running")
+    func preStartDoesNotRerunWhileOneServiceReplicaRemainsRunning() async throws {
+        let runner = RecordingRunner()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let service = composeService(name: "api", image: "example/api") {
+            $0.preStart = [ComposeServiceHook(command: ["prepare"])]
+        }
+        let project = ComposeProject(name: "demo", services: ["api": service])
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = RecordingContainerDiscoveryManager(
+                    containers: [
+                        ComposeContainerSummary(
+                            id: "demo-api-1",
+                            status: "running",
+                            labels: [
+                                composeProjectLabel: "demo",
+                                composeServiceLabel: "api",
+                                composeOneOffLabel: "false",
+                            ]
+                        ),
+                        ComposeContainerSummary(
+                            id: "demo-api-2",
+                            status: "stopped",
+                            labels: [
+                                composeProjectLabel: "demo",
+                                composeServiceLabel: "api",
+                                composeOneOffLabel: "false",
+                            ]
+                        ),
+                    ]
+                )
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).start(
+            project: project,
+            services: ["api"]
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .start(id: "demo-api-2"),
+        ])
+    }
+
+    @Test("pre start treats a paused replica as already running")
+    func preStartTreatsPausedReplicaAsAlreadyRunning() async throws {
+        let runner = RecordingRunner()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let service = composeService(name: "api", image: "example/api") {
+            $0.preStart = [ComposeServiceHook(command: ["prepare"])]
+        }
+        let project = ComposeProject(name: "demo", services: ["api": service])
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = RecordingContainerDiscoveryManager(
+                    containers: [
+                        ComposeContainerSummary(
+                            id: "demo-api-1",
+                            status: "paused",
+                            labels: [
+                                composeProjectLabel: "demo",
+                                composeServiceLabel: "api",
+                                composeOneOffLabel: "false",
+                            ]
+                        ),
+                        ComposeContainerSummary(
+                            id: "demo-api-2",
+                            status: "stopped",
+                            labels: [
+                                composeProjectLabel: "demo",
+                                composeServiceLabel: "api",
+                                composeOneOffLabel: "false",
+                            ]
+                        ),
+                    ]
+                )
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).start(
+            project: project,
+            services: ["api"]
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .start(id: "demo-api-2"),
+        ])
+    }
+
+    @Test("pre start failure gates service startup and cleans helper")
+    func preStartFailureGatesServiceStartupAndCleansHelper() async throws {
+        let runner = RecordingRunner()
+        let helperName = "demo-api-pre-start-0-abc123"
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            getResponses: [
+                "demo-api-1": [
+                    nil,
+                    ComposeContainerSummary(id: "demo-api-1", status: "created"),
+                ],
+            ]
+        )
+        let lifecycleManager = RecordingContainerLifecycleManager(
+            waitExitCodes: [helperName: 7]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.preStart = [ComposeServiceHook(command: ["false"])]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
+                dependencies: orchestratorDependencies {
+                    $0.discoveryManager = discoveryManager
+                    $0.lifecycleManager = lifecycleManager
+                    $0.logManager = RecordingContainerLogManager()
+                }
+            ).up(
+                project: project,
+                options: ComposeUpOptions { $0.detach = true }
+            )
+            Issue.record("Expected pre_start failure")
+        } catch let error as ComposeError {
+            guard case let .commandFailed(_, status, stderr) = error else {
+                Issue.record("Unexpected error: \(error)")
+                return
+            }
+            #expect(status == 7)
+            #expect(stderr == "pre_start hook failed for service 'api'")
+        }
+
+        #expect(runner.commands.map(\.arguments).count == 2)
+        #expect(await lifecycleManager.requests == [
+            .start(id: helperName),
+            .wait(id: helperName),
+            .delete(id: helperName, force: false),
+        ])
+    }
+
+    @Test("pre start images stay out of service image projections and explicit pull")
+    func preStartImagesStayOutOfServiceImageProjectionsAndExplicitPull() async throws {
+        let imageManager = RecordingContainerImageManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:1") {
+                    $0.preStart = [
+                        ComposeServiceHook(command: ["prepare"], image: "example/init:1"),
+                        ComposeServiceHook(command: ["reuse"], image: "example/init:1"),
+                    ]
+                },
+                "worker": composeService(name: "worker", image: "example/worker:1") {
+                    $0.pullPolicy = "never"
+                    $0.preStart = [
+                        ComposeServiceHook(command: ["prepare"], image: "example/skip:1"),
+                    ]
+                },
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+            }
+        )
+
+        #expect(try orchestrator.config(
+            project: project,
+            options: ComposeConfigOptions { $0.images = true }
+        ) == """
+        example/api:1
+        example/worker:1
+        """)
+
+        try await orchestrator.pull(
+            project: project,
+            options: ComposePullOptions()
+        )
+        let requests = await imageManager.requests
+        #expect(requests.count == 2)
+        #expect(requests.contains(.pull("example/api:1")))
+        #expect(requests.contains(.pull("example/worker:1")))
     }
 
     @Test("run foreground executes post start hooks before following raw output")
@@ -17920,12 +18459,37 @@ struct ComposeOrchestratorTests {
                 }
             ).run(project: project, serviceName: "job", command: ["false"], remove: false)
             Issue.record("Expected lifecycle-managed run exit status")
-        } catch let error as ComposeError {
-            guard case let .commandFailed(_, status, _) = error else {
-                Issue.record("Unexpected error: \(error)")
-                return
-            }
-            #expect(status == 7)
+        } catch let error as ComposeRunExitError {
+            #expect(error.status == 7)
+        }
+    }
+
+    @Test("run foreground preserves a direct container exit status")
+    func runForegroundPreservesDirectContainerExitStatus() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 7, stdout: "failed\n", stderr: ""),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": ComposeService(name: "job", image: "alpine"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" })
+            ).run(
+                project: project,
+                serviceName: "job",
+                options: composeRunOptions(command: ["false"]) {
+                    $0.noTty = true
+                }
+            )
+            Issue.record("Expected direct run exit status")
+        } catch let error as ComposeRunExitError {
+            #expect(error.status == 7)
         }
     }
 
@@ -17959,7 +18523,7 @@ struct ComposeOrchestratorTests {
         #expect(command.contains("--detach"))
         #expect(!command.contains("--rm"))
         #expect(await lifecycleManager.requests == [
-            .delete(id: "demo-job-run-abc123", force: false),
+            .delete(id: "demo-job-run-abc123", force: true),
         ])
     }
 
@@ -18010,9 +18574,53 @@ struct ComposeOrchestratorTests {
         ])
     }
 
-    @Test("run rejects interactive lifecycle hooks before creating one off containers")
-    func runRejectsInteractiveLifecycleHooksBeforeCreatingOneOffContainers() async throws {
-        let runner = RecordingRunner()
+    @Test("run interruption stops once even when pre stop fails")
+    func runInterruptionStopsOnceEvenWhenPreStopFails() async throws {
+        let execManager = RecordingContainerExecManager(attachedStatus: 1)
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let signalProxy = RecordingComposeSignalProxy(
+            forwardedSignals: ["SIGINT", "SIGTERM"]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.preStop = [ComposeServiceHook(command: ["false"])]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
+            dependencies: orchestratorDependencies {
+                $0.execManager = execManager
+                $0.lifecycleManager = lifecycleManager
+                $0.logManager = RecordingContainerLogManager()
+                $0.signalProxy = signalProxy
+            }
+        ).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["sleep", "60"])
+        )
+
+        #expect(await execManager.attachedRequests.count == 1)
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-job-run-abc123", signal: nil, timeoutInSeconds: nil),
+            .wait(id: "demo-job-run-abc123"),
+        ])
+    }
+
+    @Test("run reattaches interactive lifecycle-managed one off containers")
+    func runReattachesInteractiveLifecycleManagedOneOffContainers() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            CommandResult(status: 0, stdout: "", stderr: ""),
+        ])
+        let execManager = RecordingContainerExecManager()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let signalProxy = RecordingComposeSignalProxy(forwardedSignals: ["SIGINT"])
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -18024,20 +18632,146 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(
-                project: project,
-                serviceName: "job",
-                options: composeRunOptions(command: ["sh"])
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
+            dependencies: orchestratorDependencies {
+                $0.execManager = execManager
+                $0.lifecycleManager = lifecycleManager
+                $0.signalProxy = signalProxy
+            }
+        ).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["sh"])
+        )
+
+        #expect(runner.commands.count == 2)
+        #expect(runner.commands[0].arguments.contains("--detach"))
+        #expect(runner.commands[0].arguments.contains("--tty"))
+        #expect(runner.commands[0].arguments.contains("--interactive"))
+        #expect(runner.commands[0].io == .captured(input: nil))
+        #expect(runner.commands[1].arguments == [
+            "container", "attach", "--sig-proxy=false", "demo-job-run-abc123",
+        ])
+        #expect(runner.commands[1].io == .inherited)
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-job-run-abc123",
+                command: ["true"],
+                terminal: .init(interactive: false, tty: false)
+            ),
+        ])
+        #expect(await signalProxy.requests == [["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"]])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-job-run-abc123", signal: nil, timeoutInSeconds: nil),
+        ])
+    }
+
+    @Test("interactive lifecycle attachment renders its dry run")
+    func interactiveLifecycleAttachmentRendersItsDryRun() async throws {
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(
+                dryRun: true,
+                emit: { emitted.append($0) }
             )
-            Issue.record("Expected interactive lifecycle hook error")
+        )
+
+        let result = try await orchestrator.attachForegroundOneOffRun(
+            service: ComposeService(name: "job", image: "alpine"),
+            containerName: "demo-job-run-abc123"
+        )
+
+        #expect(result == .exited(0))
+        #expect(emitted.messages == [
+            "+ container attach --sig-proxy=false demo-job-run-abc123",
+        ])
+    }
+
+    @Test("foreground lifecycle guards missing signal proxy operations")
+    func foregroundLifecycleGuardsMissingSignalProxyOperations() async throws {
+        let signalProxy = RecordingComposeSignalProxy(runsOperation: false)
+        let orchestrator = ComposeOrchestrator(
+            dependencies: orchestratorDependencies {
+                $0.signalProxy = signalProxy
+            }
+        )
+        let service = ComposeService(name: "job", image: "alpine")
+
+        do {
+            _ = try await orchestrator.attachForegroundOneOffRun(
+                service: service,
+                containerName: "demo-job-run-abc123"
+            )
+            Issue.record("Expected missing interactive exit status")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses lifecycle hooks; interactive foreground compose run requires Apple runtime stdio reattach support"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
+            #expect(error == .invalidProject(
+                "interactive foreground compose run did not produce an exit status"
+            ))
         }
 
-        #expect(runner.commands.isEmpty)
+        do {
+            _ = try await orchestrator.followForegroundOneOffRun(
+                service: service,
+                containerName: "demo-job-run-abc123"
+            )
+            Issue.record("Expected missing foreground exit status")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject(
+                "foreground compose run did not produce an exit status"
+            ))
+        }
+    }
+
+    @Test("interactive run detach keys preserve running auto remove containers")
+    func interactiveRunDetachKeysPreserveRunningAutoRemoveContainers() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            CommandResult(status: 0, stdout: "", stderr: ""),
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            containers: [
+                ComposeContainerSummary(
+                    id: "demo-job-run-abc123",
+                    status: "running"
+                ),
+            ]
+        )
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.tty = true
+                    $0.stdinOpen = true
+                    $0.postStart = [ComposeServiceHook(command: ["true"])]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["sh"]) {
+                $0.remove = true
+            }
+        )
+
+        #expect(runner.commands[0].arguments.contains("--rm"))
+        #expect(runner.commands[1].arguments == [
+            "container", "attach", "--sig-proxy=false", "demo-job-run-abc123",
+        ])
+        #expect(await discoveryManager.getRequests == ["demo-job-run-abc123"])
+        #expect(await lifecycleManager.requests.isEmpty)
     }
 
     @Test("up remove orphans runs pre stop hooks for detached one off containers")
@@ -26064,6 +26798,46 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-db-1"])
     }
 
+    @Test("run prepares default-policy dependency pre start images before creation")
+    func runPreparesDefaultPolicyDependencyPreStartImagesBeforeCreation() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager(
+            pullMissingFailures: ["example/db-init"],
+        )
+        let dependency = composeService(name: "db", image: "postgres") {
+            $0.preStart = [
+                ComposeServiceHook(
+                    command: ["sh", "-c", "prepare"],
+                    image: "example/db-init",
+                ),
+            ]
+        }
+        let project = ComposeProject(
+            name: "demo",
+            services: ["db": dependency],
+        )
+
+        do {
+            _ = try await ComposeOrchestrator(
+                runner: runner,
+                imageManager: imageManager,
+            ).startDependencyServices(
+                project: project,
+                services: [dependency],
+            )
+            Issue.record("Expected dependency pre_start image preparation failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("pull failed: example/db-init"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await imageManager.requests == [
+            .pullMissing("example/db-init"),
+        ])
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run waits for healthy dependencies before one-off container")
     func runWaitsForHealthyDependenciesBeforeOneOffContainer() async throws {
         let runner = RecordingRunner(responses: [
@@ -30639,10 +31413,15 @@ private enum ContainerResourceAPIRequest: Equatable {
 
 private actor RecordingComposeSignalProxy: ComposeSignalProxying {
     private let forwardedSignals: [String]
+    private let runsOperation: Bool
     private var storage: [[String]] = []
 
-    init(forwardedSignals: [String] = []) {
+    init(
+        forwardedSignals: [String] = [],
+        runsOperation: Bool = true
+    ) {
         self.forwardedSignals = forwardedSignals
+        self.runsOperation = runsOperation
     }
 
     var requests: [[String]] {
@@ -30658,7 +31437,9 @@ private actor RecordingComposeSignalProxy: ComposeSignalProxying {
         for signal in forwardedSignals {
             await handler(signal)
         }
-        try await operation()
+        if runsOperation {
+            try await operation()
+        }
     }
 }
 

@@ -26,5 +26,9 @@ if [[ ! -f "$repo/Package.swift" ]]; then
     exit 1
 fi
 
+# Repair an incomplete restored SwiftPM cache before loading the package graph.
+# `swift package edit` otherwise fails when workspace-state metadata references
+# a checkout whose manifest was not retained by the cache archive.
+swift package resolve
 swift package unedit container --force >/dev/null 2>&1 || true
 swift package edit container --path "$repo"

@@ -404,7 +404,7 @@ extension ComposeOrchestrator {
         imageHealthCheckCache: ComposeImageHealthCheckCache = ComposeImageHealthCheckCache()
     ) async throws -> ComposeProject {
         var workingProject = project
-        try await applyServicePullPolicies(project: workingProject, services: services)
+        try await applyPullPolicy(nil, project: workingProject, services: services)
         for serviceReference in services {
             var service = workingProject.services[serviceReference.name] ?? serviceReference
             if service.provider != nil {
@@ -439,6 +439,20 @@ extension ComposeOrchestrator {
                 materializedConfigSecretRoot: options.materializedConfigSecretDirectory
             ) {
                 options.emit("compose: reusing existing container \(name)")
+                if hasPreStartHooks(service) {
+                    try await startServiceTargets(
+                        project: workingProject,
+                        service: service,
+                        targets: [
+                            ServiceContainerTarget(
+                                service: service,
+                                index: 1,
+                                name: name,
+                                status: existing.status,
+                            ),
+                        ],
+                    )
+                }
                 continue
             }
             if existing != nil {
@@ -451,13 +465,29 @@ extension ComposeOrchestrator {
                     project: workingProject,
                     service: service,
                     options: RunArgumentOptions {
-                        $0.detach = true
+                        $0.command = hasPreStartHooks(service) ? "create" : "run"
+                        $0.detach = !hasPreStartHooks(service)
                     },
                     externalVolumeMounts: externalVolumeMounts,
                     imageHealthCheckCache: imageHealthCheckCache
                 )
             )
-            try await runPostStartHooks(service: service, containerID: name)
+            if hasPreStartHooks(service) {
+                try await startServiceTargets(
+                    project: workingProject,
+                    service: service,
+                    targets: [
+                        ServiceContainerTarget(
+                            service: service,
+                            index: 1,
+                            name: name,
+                            status: "created",
+                        ),
+                    ],
+                )
+            } else {
+                try await runPostStartHooks(service: service, containerID: name)
+            }
         }
         return workingProject
     }

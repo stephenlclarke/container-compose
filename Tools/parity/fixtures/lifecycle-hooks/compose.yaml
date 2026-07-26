@@ -1,0 +1,67 @@
+services:
+  app:
+    profiles: [success]
+    image: alpine:3.21
+    command: ["sh", "-c", "sleep 300"]
+    environment:
+      BASE: service
+      INHERITED: inherited
+    networks: [backend]
+    volumes:
+      - /shared
+    pre_start:
+      - image: alpine:3.20
+        command:
+          - sh
+          - -c
+          - >-
+            printf 'first|%s|%s|%s|%s|%s\n'
+            "$$BASE" "$$INHERITED" "$$(id -u)" "$$(pwd)" "$$(hostname -i)"
+            >> /shared/pre-start.log
+        user: "0:0"
+        working_dir: /tmp
+        environment:
+          BASE: hook
+      - command: ["sh", "-c", "printf 'second\n' >> /shared/pre-start.log"]
+    post_start:
+      - command: ["sh", "-c", "printf 'post-start\n' >> /shared/service-hooks.log"]
+    pre_stop:
+      - command: ["sh", "-c", "printf 'pre-stop\n' >> /shared/service-hooks.log"]
+
+  failure:
+    profiles: [failure]
+    image: alpine:3.21
+    command: ["sh", "-c", "sleep 300"]
+    volumes:
+      - failure-data:/shared
+    pre_start:
+      - command: ["sh", "-c", "printf 'failure\n' >> /shared/failure.log; exit 17"]
+
+  failure-reader:
+    profiles: [failure]
+    image: alpine:3.21
+    volumes:
+      - failure-data:/shared
+
+  runner:
+    profiles: [run]
+    image: alpine:3.21
+    volumes:
+      - run-data:/shared
+    post_start:
+      - command: ["sh", "-c", "printf 'run-post-start\n' >> /shared/run-hooks.log"]
+    pre_stop:
+      - command: ["sh", "-c", "printf 'run-pre-stop\n' >> /shared/run-hooks.log"]
+
+  reader:
+    profiles: [run]
+    image: alpine:3.21
+    volumes:
+      - run-data:/shared
+
+networks:
+  backend: {}
+
+volumes:
+  failure-data: {}
+  run-data: {}
