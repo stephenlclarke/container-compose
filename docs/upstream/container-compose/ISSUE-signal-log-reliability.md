@@ -50,6 +50,8 @@ making its builder depend on a not-yet-installed image.
 - Matched-runtime harness correction:
   `ae05538dc40e3e6e2698a1be06b1d01063482faf`.
 - Compose parity fixture: `a0576253e25ab472eeb8c929ead304479a845c4a`.
+- Connector review correction:
+  `10423ea7d34d43596cfb99730aa4677112ae0b3b`.
 - Apple handoff: [PR-1997.md](../apple-container/PR-1997.md).
 
 The exact Container merge revision, Compose commits, hosted checks, Sonar

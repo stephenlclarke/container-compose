@@ -62,7 +62,9 @@ Completed locally on macOS arm64:
 - Both implementations returned the exact 3,009-byte single-record tail and
   two exact 801-byte multi-record tail lines.
 - Both implementations retained the records before and after their attach
-  clients were terminated.
+  clients were terminated. The client process trees were reaped before the
+  second record existed, preventing a natural workload exit from satisfying
+  the assertion.
 - The isolated runtime wrapper ordering regression passed.
 - 13 focused Compose attach/log adapter tests passed.
 - 1,218 Swift tests in 41 suites passed.
@@ -109,6 +111,14 @@ runtime root, image name, and invoked validation command remain unchanged.
 
 Review the Container production change separately from the Compose pin. Its stable patch ID matches the existing Apple pull request. The additional runtime test commit changes no production behavior. The Compose fixture deliberately signals the leaf attach client below command wrappers because that process owns signal proxying.
 
+The connector review identified and corrected two validation-harness races:
+
+- the Apple service waiter is reaped in the parent shell and returns its exit
+  code through explicit state rather than command substitution;
+- the disconnected-client case terminates and reaps the complete client
+  process tree, then proves `STREAM:AFTER` does not exist before waiting for
+  the workload to write it.
+
 ## Commit and Release Tracking
 
 - Container fork merge: `221fafc24ebd19502f4553e0b5d38c14be3f2b22`
@@ -119,4 +129,6 @@ Review the Container production change separately from the Compose pin. Its stab
   `a0576253e25ab472eeb8c929ead304479a845c4a`
 - Documentation/quality commit:
   `cf2a83a5f7d2ef6ebe5aa966b6eddf9c5ece5800`
+- Connector review correction:
+  `10423ea7d34d43596cfb99730aa4677112ae0b3b`
 - Current release: pending
