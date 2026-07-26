@@ -752,11 +752,11 @@ private func applyStructuredCaseFunction(
     let input = try structuredStringInput(function, inputs)
     switch function {
     case "lower":
-        return .string(input.lowercased())
+        return .string(structuredTemplateLower(input))
     case "title":
         return .string(structuredTemplateTitle(input))
     case "upper":
-        return .string(input.uppercased())
+        return .string(structuredTemplateUpper(input))
     default:
         throw structuredUnsupportedAction(function)
     }

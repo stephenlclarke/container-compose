@@ -14,8 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import Foundation
-
 /// Structured values exposed to Docker-compatible output templates.
 public indirect enum DockerTemplateData: Sendable, Equatable {
     case array([DockerTemplateData])
@@ -152,11 +150,32 @@ public indirect enum DockerTemplateData: Sendable, Equatable {
 }
 
 private func structuredTemplateJSONString(_ value: String) throws -> String {
-    let data = try JSONSerialization.data(
-        withJSONObject: value,
-        options: [.fragmentsAllowed],
-    )
-    return String(bytes: data, encoding: .utf8) ?? ""
+    var encoded = "\""
+    for scalar in value.unicodeScalars {
+        switch scalar.value {
+        case 0x08:
+            encoded += "\\b"
+        case 0x09:
+            encoded += "\\t"
+        case 0x0A:
+            encoded += "\\n"
+        case 0x0C:
+            encoded += "\\f"
+        case 0x0D:
+            encoded += "\\r"
+        case 0x22:
+            encoded += "\\\""
+        case 0x5C:
+            encoded += "\\\\"
+        case 0x00 ... 0x1F, 0x2028, 0x2029:
+            let hexadecimal = String(scalar.value, radix: 16)
+            encoded += "\\u\(String(repeating: "0", count: 4 - hexadecimal.count))\(hexadecimal)"
+        default:
+            encoded.unicodeScalars.append(scalar)
+        }
+    }
+    encoded += "\""
+    return encoded
 }
 
 private func structuredTemplateJSONString(bytes: [UInt8]) throws -> String {

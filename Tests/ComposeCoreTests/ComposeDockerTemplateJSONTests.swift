@@ -20,6 +20,22 @@ import Testing
 @Suite("Docker output template JSON")
 struct ComposeDockerTemplateJSONTests {
     @Test
+    func `JSON uses Go string escaping`() throws {
+        let values: [String: DockerTemplateData] = [
+            "Control": .string("\u{0000}\u{0008}\u{0009}\u{000A}\u{000C}\u{000D}"),
+            "Special": .string("<>&/\u{2028}\u{2029}"),
+            "Syntax": .string("\"\\"),
+        ]
+
+        #expect(
+            try renderDockerTemplate(
+                "{{json .Special}}|{{json .Syntax}}|{{json .Control}}",
+                values: values,
+            ) == #""<>&/\u2028\u2029"|"\"\\"|"\u0000\b\t\n\f\r""#,
+        )
+    }
+
+    @Test
     func `JSON repairs only invalid UTF8 bytes`() throws {
         let values: [String: DockerTemplateData] = [:]
 
