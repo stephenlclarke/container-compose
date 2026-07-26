@@ -26798,6 +26798,46 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-db-1"])
     }
 
+    @Test("run prepares default-policy dependency pre start images before creation")
+    func runPreparesDefaultPolicyDependencyPreStartImagesBeforeCreation() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager(
+            pullMissingFailures: ["example/db-init"],
+        )
+        let dependency = composeService(name: "db", image: "postgres") {
+            $0.preStart = [
+                ComposeServiceHook(
+                    command: ["sh", "-c", "prepare"],
+                    image: "example/db-init",
+                ),
+            ]
+        }
+        let project = ComposeProject(
+            name: "demo",
+            services: ["db": dependency],
+        )
+
+        do {
+            _ = try await ComposeOrchestrator(
+                runner: runner,
+                imageManager: imageManager,
+            ).startDependencyServices(
+                project: project,
+                services: [dependency],
+            )
+            Issue.record("Expected dependency pre_start image preparation failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("pull failed: example/db-init"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await imageManager.requests == [
+            .pullMissing("example/db-init"),
+        ])
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run waits for healthy dependencies before one-off container")
     func runWaitsForHealthyDependenciesBeforeOneOffContainer() async throws {
         let runner = RecordingRunner(responses: [

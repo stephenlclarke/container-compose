@@ -404,7 +404,7 @@ extension ComposeOrchestrator {
         imageHealthCheckCache: ComposeImageHealthCheckCache = ComposeImageHealthCheckCache()
     ) async throws -> ComposeProject {
         var workingProject = project
-        try await applyServicePullPolicies(project: workingProject, services: services)
+        try await applyPullPolicy(nil, project: workingProject, services: services)
         for serviceReference in services {
             var service = workingProject.services[serviceReference.name] ?? serviceReference
             if service.provider != nil {
