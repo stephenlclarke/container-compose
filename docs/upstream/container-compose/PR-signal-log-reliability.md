@@ -114,8 +114,9 @@ Review the Container production change separately from the Compose pin. Its stab
 - Container fork merge: `221fafc24ebd19502f4553e0b5d38c14be3f2b22`
 - Compose pin commit: `e9a9c13f5f6664583f9e43fceede74ba579b9f4c`
 - Matched-runtime harness commit:
-  `ae05538d121474406685cdf272a899552e1bd8a1`
+  `ae05538dc40e3e6e2698a1be06b1d01063482faf`
 - Compose integration/parity commit:
-  `a05762532ac70cfd210433f27c520be7d00a908b`
-- Documentation/quality commit: pending
+  `a0576253e25ab472eeb8c929ead304479a845c4a`
+- Documentation/quality commit:
+  `cf2a83a5f7d2ef6ebe5aa966b6eddf9c5ece5800`
 - Current release: pending

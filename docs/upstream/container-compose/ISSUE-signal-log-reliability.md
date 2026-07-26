@@ -48,8 +48,10 @@ making its builder depend on a not-yet-installed image.
 - Signed fork merge: `221fafc24ebd19502f4553e0b5d38c14be3f2b22`.
 - Compose runtime pin: `e9a9c13f5f6664583f9e43fceede74ba579b9f4c`.
 - Matched-runtime harness correction:
-  `ae05538d121474406685cdf272a899552e1bd8a1`.
-- Compose parity fixture: `a05762532ac70cfd210433f27c520be7d00a908b`.
+  `ae05538dc40e3e6e2698a1be06b1d01063482faf`.
+- Compose parity fixture: `a0576253e25ab472eeb8c929ead304479a845c4a`.
 - Apple handoff: [PR-1997.md](../apple-container/PR-1997.md).
 
-The exact Container merge revision, Compose pin commit, hosted checks, Sonar result, and Current release evidence are recorded in the paired pull-request handoff when the slice closes.
+The exact Container merge revision, Compose commits, hosted checks, Sonar
+result, and Current release evidence are recorded in the paired pull-request
+handoff when the slice closes.
