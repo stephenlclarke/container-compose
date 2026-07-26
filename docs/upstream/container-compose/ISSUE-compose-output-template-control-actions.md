@@ -18,13 +18,13 @@ primitive. The fix must stay in `container-compose` and must not widen the
 
 - Represent formatter input as recursive typed values rather than flattening
   nested objects and collections into strings.
-- Support `if`, `else`, `else if`, `with`, `else with`, `range`, range
-  variables, comments, pipelines, root paths, nested paths, and action
-  whitespace trimming.
+- Support `if`, `else`, `else if`, `with`, `else with`, `range`, `break`,
+  `continue`, range variables, comments, pipelines, root paths, nested paths,
+  and action whitespace trimming.
 - Preserve deterministic object traversal and Docker-shaped display behavior.
 - Support Docker/Go row helpers used by Compose output, including boolean
-  helpers, `json`, string helpers, collection helpers, and portable `printf`
-  verbs, width, and left alignment.
+  helpers, ordered comparisons, `json`, string helpers, collection helpers,
+  and portable `printf` verbs, width, and left alignment.
 - Expose structured publisher, label, mount, network, and volume-label data to
   the commands that own it.
 - Reject malformed templates, unknown root fields, invalid arity, invalid
@@ -178,7 +178,7 @@ Focused unit coverage and signed live-oracle commit
 Docker Compose 5.3.1 and Apple Current.
 
 Signed follow-up commit `e807130d1d09e19371c2d9276165fb267a64f609`
-(`fix(format): preserve Go JSON and case semantics`) closes the final JSON and
+(`fix(format): preserve Go JSON and case semantics`) closes the JSON and
 Unicode-case findings. Docker's JSON helper leaves `<`, `>`, `&`, and `/`
 literal while escaping U+2028/U+2029, and upper/lower apply simple one-scalar
 Unicode mappings instead of Swift's expanding mappings. Signed live-oracle
@@ -186,10 +186,21 @@ commit `dfb9d534962365ff4a99eccc54b89a9e318765a1` covers both dispositions
 against Docker Compose 5.3.1 and Apple Current through the committed YAML
 fixture.
 
-The complete suite passes 1,191 tests in 38 suites with 92.06% repository
-Swift coverage and 95.57% structured template coverage. SonarQube passes at
-the exact implementation commit with zero new or accepted issues, zero
-security hotspots, 92.5% new-code coverage, and 0.0% new duplication.
+Signed follow-up commit `a85307f826450c84cad7e72f0c25597b7f3a9cfb`
+(`feat(format): add Go ordering and range control`) closes the ordered
+comparison and loop-control findings. `lt`, `le`, `gt`, and `ge` compare
+typed integers or raw Go string bytes with exact arity and pipeline-last
+semantics. `break` and `continue` propagate through nested `if` and `with`
+blocks, while the nearest active range consumes the action and a range
+`else` retains its enclosing lexical depth. Signed live-oracle commit
+`5c8fc13818496ce28af1a40709b390234f6b5ae3` covers successful, nested, and
+rejected behavior against Docker Compose 5.3.1 and Apple Current.
+
+The complete suite passes 1,199 tests in 40 suites with 92.10% repository
+Swift coverage and 95.66% structured template coverage. The prior exact
+implementation SonarQube analysis has zero new or accepted issues, zero
+security hotspots, 92.5% new-code coverage, and 0.0% new duplication; the
+new exact-head analysis remains a promotion requirement.
 
 ## Compatibility
 

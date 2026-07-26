@@ -96,6 +96,10 @@ container model, sibling fork, or package pin changes.
   `fix(format): preserve Go JSON and case semantics`
 - `dfb9d534962365ff4a99eccc54b89a9e318765a1`
   `test(format): cover JSON and Unicode parity`
+- `a85307f826450c84cad7e72f0c25597b7f3a9cfb`
+  `feat(format): add Go ordering and range control`
+- `5c8fc13818496ce28af1a40709b390234f6b5ae3`
+  `test(format): cover ordering and range control parity`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -123,6 +127,11 @@ This documentation commit is intentionally separate.
   - traverses arrays in source order and objects in deterministic key order;
   - traverses positive integer ranges as `0..<value`, treats non-positive
     integer ranges as empty, and rejects their unsupported two-variable form;
+  - parses `break` and `continue` only at an active lexical range depth,
+    propagates them through nested conditionals and `with`, and lets the
+    nearest range consume the action while retaining prior output;
+  - implements typed `lt`, `le`, `gt`, and `ge` using integer or raw Go
+    string-byte ordering with exact arity and pipeline-last semantics;
   - delegates raw Go string operations without converting invalid UTF-8 byte
     sequences back through Swift `String`;
   - validates root-row field references before command side effects.
@@ -297,6 +306,14 @@ This documentation commit is intentionally separate.
 - `Tests/ComposeCoreTests/ComposeDockerTemplateCaseTests.swift`
   - proves upper and lower use one-scalar mappings for sharp S, dotted I,
     ligatures, and the Greek mapping ranges that Swift otherwise expands.
+- `Tests/ComposeCoreTests/ComposeDockerTemplateOrderingTests.swift`
+  - proves integer, UTF-8, byte-string, lookup-display, Unicode, and pipeline
+    ordering while rejecting mixed types, unsupported operands, and invalid
+    arity.
+- `Tests/ComposeCoreTests/ComposeDockerTemplateRangeControlTests.swift`
+  - proves `break` and `continue` retain prior output, propagate through
+    nested controls, stop at the nearest range, target an enclosing range from
+    an inner range `else`, and fail outside an active range body.
 - `Tests/ComposeCoreTests/ComposeDockerTemplatePrintfDiagnosticsTests.swift`
   - proves missing `%s`, `%d`, `%q`, and `%v` operands render Go diagnostics;
   - proves surplus string operands render Go's typed `EXTRA` diagnostic.
@@ -368,7 +385,10 @@ This documentation commit is intentionally separate.
     and the unsupported `table` template function, and compares direct and
     `%s` partial UTF-8 output byte-for-byte;
   - verifies YAML-backed label JSON leaves `<>&/` literal, escapes U+2028 and
-    U+2029, and matches Docker's simple Unicode upper/lower output.
+    U+2029, and matches Docker's simple Unicode upper/lower output;
+  - verifies typed `lt`, `le`, `gt`, and `ge`, pipeline-last comparison,
+    range `break`, range `continue`, nested range control, mixed-type
+    rejection, and rejection from a top-level range `else`.
 
 ## Validation
 
@@ -382,6 +402,7 @@ make check
 swiftlint lint --strict --quiet \
   Sources/ComposeCore/ComposeDockerTemplateCase.swift \
   Sources/ComposeCore/ComposeDockerTemplateData.swift \
+  Sources/ComposeCore/ComposeDockerTemplateFunctionSupport.swift \
   Sources/ComposeCore/ComposeDockerTemplatePrintf.swift \
   Sources/ComposeCore/ComposeDockerTemplateTitle.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
@@ -391,7 +412,9 @@ swiftlint lint --strict --quiet \
   Tests/ComposeCoreTests/ComposeDockerTemplateCommentTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateCaseTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateJSONTests.swift \
+  Tests/ComposeCoreTests/ComposeDockerTemplateOrderingTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplatePrintfDiagnosticsTests.swift \
+  Tests/ComposeCoreTests/ComposeDockerTemplateRangeControlTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateTitleTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateRawOutputTests.swift \
@@ -399,6 +422,7 @@ swiftlint lint --strict --quiet \
 swiftformat --lint --swift-version 6.2 \
   Sources/ComposeCore/ComposeDockerTemplateCase.swift \
   Sources/ComposeCore/ComposeDockerTemplateData.swift \
+  Sources/ComposeCore/ComposeDockerTemplateFunctionSupport.swift \
   Sources/ComposeCore/ComposeDockerTemplatePrintf.swift \
   Sources/ComposeCore/ComposeDockerTemplateTitle.swift \
   Sources/ComposeCore/ComposeStructuredFormatTemplate.swift \
@@ -408,7 +432,9 @@ swiftformat --lint --swift-version 6.2 \
   Tests/ComposeCoreTests/ComposeDockerTemplateCommentTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateCaseTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateJSONTests.swift \
+  Tests/ComposeCoreTests/ComposeDockerTemplateOrderingTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplatePrintfDiagnosticsTests.swift \
+  Tests/ComposeCoreTests/ComposeDockerTemplateRangeControlTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateTitleTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateCompatibilityTests.swift \
   Tests/ComposeCoreTests/ComposeFormatTemplateRawOutputTests.swift \
@@ -419,11 +445,11 @@ CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
 git diff --check
 ```
 
-- Swift: 1,191 tests in 38 suites passed.
-- Swift repository coverage: 92.06%.
+- Swift: 1,199 tests in 40 suites passed.
+- Swift repository coverage: 92.10%.
 - Go normalizer coverage: 89.88%.
-- Structured template engine and support: 2,419/2,531 lines, 95.57%.
-- `ComposeStructuredFormatTemplate.swift`: 658/682 lines, 96.48%.
+- Structured template engine and support: 2,512/2,626 lines, 95.66%.
+- `ComposeStructuredFormatTemplate.swift`: 727/753 lines, 96.55%.
 - `ComposeStructuredTemplateAnalysis.swift`: 516/529 lines, 97.54%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 60/64 lines,
   93.75%.
@@ -435,10 +461,10 @@ git diff --check
 - `ComposeDockerTemplateData.swift`: 190/200 lines, 95%.
 - `ComposeDockerTemplatePrintSupport.swift`: 52/56 lines, 92.86%.
 - `ComposeDockerTemplatePrintf.swift`: 302/313 lines, 96.49%.
-- `ComposeDockerTemplateFunctionSupport.swift`: 158/175 lines, 90.29%.
+- `ComposeDockerTemplateFunctionSupport.swift`: 182/199 lines, 91.46%.
 - `ComposeDockerTemplateStringSupport.swift`: 57/57 lines, 100%.
 - `ComposeDockerTemplateTitle.swift`: 38/39 lines, 97.44%.
-- Formatter table boundary: 177/178 lines, 99.44%.
+- Formatter table boundary: 161/161 lines, 100%.
 - Command rendering helpers: 539/577 lines, 93.41%.
 - Repository checks passed, including 167 release-controller tests, 14
   CI-helper tests, stack consistency, release consistency, licence validation,
@@ -452,11 +478,14 @@ git diff --check
   - `containerization`
     `164088e02e16ed80e536d0c59822b09931d213df`;
   - `container-compose` base
-    `b644c71fd0f7dd665a2a74192ab55745faafa281`.
-- SonarQube branch analysis for implementation commit
+    `b644c71fd0f7dd665a2a74192ab55745faafa281`;
+  - local `container-compose`
+    `5c8fc13818496ce28af1a40709b390234f6b5ae3`.
+- SonarQube branch analysis for the preceding exact implementation commit
   `dfb9d534962365ff4a99eccc54b89a9e318765a1` passed its quality gate with
   zero new or accepted issues, zero security hotspots, 92.5% new-code
-  coverage, and 0.0% new duplication.
+  coverage, and 0.0% new duplication. The new exact-head analysis remains a
+  promotion requirement.
 
 The user explicitly waived the soak gate for this slice. Hosted CI, CodeQL,
 quality, Current publication, and exact-release verification remain promotion
@@ -481,7 +510,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified sixty-one actionable compatibility cases and three suggestions that
+identified sixty-three actionable compatibility cases and three suggestions that
 were disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
@@ -775,6 +804,19 @@ simple Greek mappings. Signed live-oracle commit
 `dfb9d534962365ff4a99eccc54b89a9e318765a1` protects both outcomes through a
 committed YAML label against Docker Compose 5.3.1 and Apple Current.
 
+The next exact-head review found the remaining standard ordering and range
+control surfaces. Signed commit
+`a85307f826450c84cad7e72f0c25597b7f3a9cfb` implements typed, exact-arity
+`lt`, `le`, `gt`, and `ge` with Go pipeline-last and raw string-byte ordering.
+The same commit adds lexical `break` and `continue`, propagates them through
+nested `if` and `with` blocks, and makes each range consume only its own
+control action. The Docker Compose 5.3.1 reproduction also proved that a
+top-level range `else` has no active range depth and must reject both actions,
+while an inner range `else` can still target an enclosing range. Signed
+live-oracle commit `5c8fc13818496ce28af1a40709b390234f6b5ae3`
+protects the successful, nested, pipeline, type-error, arity, and lexical-depth
+boundaries against Docker Compose 5.3.1 and Apple Current.
+
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
 `{127.0.0.1 8080 32768 tcp}`. The same successful behavior is now protected by
@@ -787,7 +829,7 @@ actionable autobot finding was deferred. The suggestion to propagate root
 identity through `table` was not implemented because Docker Compose 5.3.1
 rejects the template at parse time with `function "table" not defined`; the
 unsupported helper was removed and that exact rejection is protected instead.
-All sixty-four connector threads are answered with their implementation or
+All sixty-six connector threads are answered with their implementation or
 verified compatibility disposition.
 
 ## Documentation And Operations
