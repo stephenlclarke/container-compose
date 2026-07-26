@@ -154,7 +154,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.heavy == 'true'
     runs-on: macos-26
-    timeout-minutes: 75
+    # Cover the 45-minute validation/coverage budget, 10-minute CLI smoke,
+    # 25-minute Sonar retry budget, and dependency/setup overhead.
+    timeout-minutes: 105
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

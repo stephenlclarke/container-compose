@@ -20,7 +20,7 @@ Exact source [`eabc04736d83bf62c06781ee4b0cf2d612c40af2`](https://github.com/ste
 
 The scanner target permits three attempts. Each attempt can spend 300 seconds waiting for the quality gate, in addition to scanner analysis and upload time, and the target waits 20 seconds between attempts. The workflow instead allows only ten minutes for the complete target. That outer deadline cannot represent the retry policy it invokes, so a reachable but delayed SonarCloud service can kill a valid later attempt and block exact-main prerelease publication for the wrong reason.
 
-The workflow step needs a 25-minute budget that covers the three waits, scanner work, and both retry delays. The existing API-aware enforcement step must remain unchanged: if SonarCloud is reachable and every scanner attempt fails, CI must still fail closed.
+The workflow step needs a 25-minute budget that covers the three waits, scanner work, and both retry delays. Its enclosing job also needs enough time for the earlier 45-minute coverage gate, 10-minute CLI smoke, Sonar budget, and dependency/setup overhead; a 105-minute job budget preserves all of those declared limits. The existing API-aware enforcement step must remain unchanged: if SonarCloud is reachable and every scanner attempt fails, CI must still fail closed.
 
 ## Environment
 

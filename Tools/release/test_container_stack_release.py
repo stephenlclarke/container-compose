@@ -691,11 +691,17 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_main_sonar_step_preserves_the_complete_retry_budget(self) -> None:
         ci = CI_WORKFLOW.read_text(encoding="utf-8")
+        runtime_job = ci[
+            ci.index("  validate_runtime:") : ci.index(
+                "    steps:", ci.index("  validate_runtime:")
+            )
+        ]
         sonar = ci[
             ci.index("- name: SonarQube scan") : ci.index(
                 "- name: Enforce SonarQube failures when the service is available"
             )
         ]
+        self.assertIn("timeout-minutes: 105", runtime_job)
         self.assertIn("continue-on-error: true", sonar)
         self.assertIn("timeout-minutes: 25", sonar)
         self.assertIn('SONAR_QUALITYGATE_WAIT: "true"', sonar)
