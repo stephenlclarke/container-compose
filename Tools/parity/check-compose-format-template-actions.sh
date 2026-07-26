@@ -29,11 +29,13 @@
 #   DOCKER_COMPOSE     Docker Compose command to compare with. Defaults to
 #                      "docker compose" when available, otherwise docker-compose.
 #
-# This script keeps Docker Compose V2 and container-compose aligned for the
-# documented row-template actions used by `ps`: `upper`, `truncate`, `json`,
-# `split`, and `join` with a parenthesized nested expression. It deliberately
-# uses Compose-generated fields instead of image references because runtimes
-# may canonicalize equivalent image names differently.
+# This script keeps Docker Compose V2 and container-compose aligned for
+# row-template functions, comparisons, range control actions, variables,
+# whitespace trimming, label lookup, raw Go-string output, root-value
+# validation, and structured publisher traversal across `ps`, `stats`, and
+# `volumes`. It deliberately uses Compose-generated fields instead of image
+# references because runtimes may canonicalize equivalent image names
+# differently.
 
 set -euo pipefail
 
@@ -46,7 +48,7 @@ readonly REPO_ROOT
 STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 DOCKER_COMPOSE_COMMAND=()
-FIXTURE_DIR=""
+readonly FIXTURE_DIR="$REPO_ROOT/Tools/parity/fixtures/output-template"
 DOCKER_PROJECT="cc-format-docker-$RANDOM"
 CONTAINER_PROJECT="cc-format-container-$RANDOM"
 
@@ -128,26 +130,12 @@ check_tools() {
     fi
 }
 
-# Creates the isolated Compose project fixture.
-create_fixture() {
-    FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/compose-format-template-actions.XXXXXX")"
-    cat >"$FIXTURE_DIR/compose.yml" <<'YAML'
-services:
-  api:
-    image: alpine:3.20
-    command: ["sleep", "120"]
-YAML
-}
-
-# Removes only the isolated fixture and its two generated projects.
+# Removes only the two isolated generated projects.
 cleanup() {
-    if [[ -n "$FIXTURE_DIR" ]]; then
-        "${DOCKER_COMPOSE_COMMAND[@]}" --project-name "$DOCKER_PROJECT" -f "$FIXTURE_DIR/compose.yml" \
-            down --remove-orphans --volumes >/dev/null 2>&1 || true
-        "$CONTAINER_COMPOSE" --project-name "$CONTAINER_PROJECT" -f "$FIXTURE_DIR/compose.yml" \
-            down --remove-orphans --volumes >/dev/null 2>&1 || true
-        rm -rf "$FIXTURE_DIR"
-    fi
+    "${DOCKER_COMPOSE_COMMAND[@]}" --project-name "$DOCKER_PROJECT" -f "$FIXTURE_DIR/compose.yaml" \
+        down --remove-orphans --volumes >/dev/null 2>&1 || true
+    "$CONTAINER_COMPOSE" --project-name "$CONTAINER_PROJECT" -f "$FIXTURE_DIR/compose.yaml" \
+        down --remove-orphans --volumes >/dev/null 2>&1 || true
 }
 
 # Compares one formatter result with its expected value.
@@ -163,28 +151,645 @@ assert_equal() {
     fi
 }
 
+# Confirms byte-index helpers return an unsigned byte even when the source
+# string itself has intentionally nondeterministic map-backed label ordering.
+assert_unsigned_byte() {
+    local actual="$1"
+    local label="$2"
+
+    if [[ ! "$actual" =~ ^[0-9]+$ ]] || ((actual < 0 || actual > 255)); then
+        printf 'actual:   %q\nexpected: an unsigned byte\n' "$actual" >&2
+        error "$label did not match Docker Compose V2"
+        return 1
+    fi
+}
+
+# Verifies that malformed Go-template execution fails instead of producing
+# plausible but incompatible output.
+assert_rejected() {
+    local label="$1"
+    shift
+
+    if "$@" >/dev/null 2>&1; then
+        error "$label unexpectedly succeeded"
+        return 1
+    fi
+}
+
 # Runs the shared ps template against one Compose implementation.
 template_output() {
     local project="$1"
     shift
-    "$@" --project-name "$project" -f "$FIXTURE_DIR/compose.yml" ps \
+    "$@" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{upper .Service}}\t{{truncate .Name 6}}\t{{json .Name}}\t{{join (split .Name "-") "/"}}'
 }
 
-# Starts both fixtures and checks their formatted ps rows.
-run_checks() {
-    local docker_output container_output expected name
-    name="$DOCKER_PROJECT-api-1"
-    expected="API"$'\t'"cc-for"$'\t'"\"$name\""$'\t'"${name//-/\/}"
-    "${DOCKER_COMPOSE_COMMAND[@]}" --project-name "$DOCKER_PROJECT" -f "$FIXTURE_DIR/compose.yml" up --detach >/dev/null
-    docker_output="$(template_output "$DOCKER_PROJECT" "${DOCKER_COMPOSE_COMMAND[@]}")"
-    assert_equal "$docker_output" "$expected" 'Docker Compose ps template'
+# Runs the control/nested formatter surface against one implementation.
+check_implementation() {
+    local project="$1"
+    shift
+    local command=("$@")
+    local actual combining crlf expected name non_breaking_space volume_name
 
-    name="$CONTAINER_PROJECT-api-1"
+    name="$project-api-1"
+    volume_name="${project}_cache"
+    combining=$'e\u0301'
+    crlf=$'\r\n'
+    non_breaking_space=$'\u00a0'
+    "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
+        up --detach --wait --wait-timeout 120 >/dev/null
+
     expected="API"$'\t'"cc-for"$'\t'"\"$name\""$'\t'"${name//-/\/}"
-    "$CONTAINER_COMPOSE" --project-name "$CONTAINER_PROJECT" -f "$FIXTURE_DIR/compose.yml" up --detach >/dev/null
-    container_output="$(template_output "$CONTAINER_PROJECT" "$CONTAINER_COMPOSE")"
-    assert_equal "$container_output" "$expected" 'container-compose ps template'
+    actual="$(template_output "$project" "${command[@]}")"
+    assert_equal "$actual" "$expected" "$project ps function template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{if .Name}}{{with index .Publishers 0}}{{.URL}}|{{.TargetPort}}|{{.PublishedPort}}|{{.Protocol}}{{end}}|{{.Label "oracle.example/key"}}{{else}}missing{{end}}'
+    )"
+    assert_equal "$actual" '127.0.0.1|8080|32768|tcp|value' "$project ps control template"
+
+    # Go-template root references must reach Compose literally.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range or .Publishers $}}{{.}}{{end}}'
+    )"
+    assert_equal "$actual" \
+        '{127.0.0.1 8080 32768 tcp}' \
+        "$project logical publisher range template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{with ""}}missing{{else with .Service}}{{.}}{{end}}'
+    )"
+    assert_equal "$actual" 'api' "$project ps else-with template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range .Publishers}}{{$.Label "oracle.example/key"}}{{end}}'
+    )"
+    assert_equal "$actual" 'value' "$project root label template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{"oracle.example/key" | .Label | upper}}|{{range .Publishers}}{{"oracle.example/key" | $.Label}}{{end}}'
+    )"
+    assert_equal "$actual" 'VALUE|value' "$project pipeline label template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%d" .ExitCode}}|{{eq .ExitCode 0}}'
+    )"
+    assert_equal "$actual" '0|true' "$project typed default exit-code template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'missing={{.Label "oracle.example/missing"}}'
+    )"
+    assert_equal "$actual" 'missing=' "$project missing label template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{/* emitted as }} ( */}}{{.Name}}'
+    )"
+    assert_equal "$actual" "$name" "$project comment delimiter template"
+    assert_rejected "$project spaced comment template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{ /* note */}}{{.Name}}'
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "\x1b[31m%s\x1b[0m" .Name}}'
+    )"
+    assert_equal "$actual" \
+        $'\x1b[31m'"$name"$'\x1b[0m' \
+        "$project interpreted string escape template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{title "FOO BAR"}}|{{title "foo_bar"}}|{{title "foo-bar baz"}}'
+    )"
+    assert_equal "$actual" \
+        'FOO BAR|Foo_bar|Foo-Bar Baz' \
+        "$project title casing template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{if(.Name)}}{{with(index .Publishers 0)}}{{.TargetPort}}{{end}}|{{range(.Publishers)}}{{.PublishedPort}}{{end}}{{end}}'
+    )"
+    assert_equal "$actual" '8080|32768' "$project compact control template"
+
+    # Go-template variables must reach Compose literally.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range $publisher:=.Publishers}}{{$publisher.TargetPort}}{{end}}'
+    )"
+    assert_equal "$actual" '8080' "$project compact one-variable range template"
+
+    # Go-template variables must reach Compose literally.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range $index,$publisher:=.Publishers}}{{$index}}={{$publisher.TargetPort}}{{end}}'
+    )"
+    assert_equal "$actual" '0=8080' "$project compact two-variable range template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{(index .Publishers 0).TargetPort}}'
+    )"
+    assert_equal "$actual" '8080' "$project parenthesized selector template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{len "é"}}|{{index "é" 0}}|{{index "é" 1}}|{{printf "%q" (slice "é" 0 1)}}|{{printf "%q" (slice "é" 1 2)}}'
+    )"
+    assert_equal "$actual" '2|195|169|"\xc3"|"\xa9"' "$project UTF-8 byte helper template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{print 1 0}}|{{print true false}}|{{print 1 "x" 2}}|{{print "a" "b"}}|{{print "a" 1}}|{{print 1 "a"}}'
+    )"
+    assert_equal "$actual" '1 0|true false|1x2|ab|a1|1a' "$project print spacing template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%q" 7}}|{{printf "%q" true}}|{{printf "%q" "é"}}|{{printf "%q" 10}}'
+    )"
+    assert_equal "$actual" "'\\a'|%!q(bool=true)|\"é\"|'\\n'" "$project typed quote template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%q" .Publishers}}'
+    )"
+    assert_equal "$actual" \
+        '[{"127.0.0.1" '\''ᾐ'\'' '\''耀'\'' "tcp"}]' \
+        "$project structured quote template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{json .Publishers}}'
+    )"
+    assert_equal "$actual" \
+        '[{"URL":"127.0.0.1","TargetPort":8080,"PublishedPort":32768,"Protocol":"tcp"}]' \
+        "$project publisher JSON field order"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{.Publishers}}|{{printf "%v" .Publishers}}'
+    )"
+    assert_equal "$actual" \
+        '[{127.0.0.1 8080 32768 tcp}]|[{127.0.0.1 8080 32768 tcp}]' \
+        "$project publisher struct display template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{join .Publishers ","}}'
+    )"
+    assert_equal "$actual" \
+        '{127.0.0.1 8080 32768 tcp}' \
+        "$project structured join template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{truncate (upper .Labels) 0}}|{{join (slice (split .Labels ",") 0 0) ""}}|{{truncate .Labels 0}}|{{slice .Labels 0 0}}'
+    )"
+    assert_equal "$actual" '|||' "$project Labels Go-string helper template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{index .Labels 0}}'
+    )"
+    assert_unsigned_byte "$actual" "$project Labels Go-string index template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range .Publishers}}{{printf "%s|%d|%5s|%-5d" .TargetPort .Protocol .TargetPort .Protocol}}{{end}}'
+    )"
+    assert_equal "$actual" \
+        '%!s(int=8080)|%!d(string=tcp)|%!s(int= 8080)|%!d(string=tcp  )' \
+        "$project typed printf verb template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format "{{printf \"[%2s]|[%3s]|[%-3s]\" \"$combining\" \"$combining\" \"$combining\"}}"
+    )"
+    assert_equal "$actual" \
+        "[$combining]|[ $combining]|[$combining ]" \
+        "$project printf rune width template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%s%s" .Name}}'
+    )"
+    assert_equal "$actual" \
+        "${name}%!s(MISSING)" \
+        "$project printf missing argument template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%s" .Name .Name}}'
+    )"
+    assert_equal "$actual" \
+        "${name}%!(EXTRA string=${name})" \
+        "$project printf extra argument template"
+
+    # Go-template variables must reach Compose literally.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range $index, $publisher := .Publishers}}{{$index}}={{$publisher.TargetPort}}/{{$publisher.PublishedPort}}/{{end}}'
+    )"
+    assert_equal "$actual" '0=8080/32768/' "$project ps range template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{.Name}}\t{{.Name}}'
+    )"
+    assert_equal "$(printf '%s\n' "$actual" | sed -n '1p' | awk '{$1=$1; print}')" \
+        'NAME NAME' "$project duplicate table headers"
+    assert_equal "$(printf '%s\n' "$actual" | sed -n '2p' | awk '{$1=$1; print}')" \
+        "$name $name" "$project duplicate table row"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{if .Health}}{{.Health}}{{else}}{{.Status}}{{end}}'
+    )"
+    assert_equal "$(printf '%s\n' "$actual" | sed -n '1p' | awk '{$1=$1; print}')" \
+        'STATUS' "$project conditional table header"
+
+    local field_name
+    for field_name in ExitCode Health LocalVolumes Mounts Names Networks Publishers; do
+        actual="$(
+            "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+                --format "table {{.$field_name}}" \
+                | sed -n '1p'
+        )"
+        assert_equal "$actual" '<no value>' "$project $field_name table header"
+    done
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{.Label "oracle.example/key"}}'
+    )"
+    assert_equal "$actual" $'example/key\nvalue' "$project label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{"oracle.example/key" | print | printf "%s" | .Label}}'
+    )"
+    assert_equal "$actual" $'example/key\nvalue' "$project pipeline label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{"foo" | upper | .Label}}'
+    )"
+    assert_equal "$actual" $'foo\nupper' "$project upper label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{"FOO" | lower | .Label}}'
+    )"
+    assert_equal "$actual" $'FOO\nlower' "$project lower label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{"foo" | title | .Label}}'
+    )"
+    assert_equal "$actual" $'foo\ntitle' "$project title label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{pad "foo" 0 0 | .Label}}'
+    )"
+    assert_equal "$actual" $'foo\nlower' "$project pad label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'table {{truncate "foo-extra" 3 | .Label}}'
+    )"
+    assert_equal "$actual" $'foo extra\nlower' "$project truncate label table header"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{with . | or (index .Publishers 0)}}{{.TargetPort}}{{end}}'
+    )"
+    assert_equal "$actual" '8080' "$project logical publisher context"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range 3}}{{.}}{{end}}|{{range 0}}{{.}}{{else}}empty{{end}}|{{range -2}}{{.}}{{else}}empty{{end}}'
+    )"
+    assert_equal "$actual" '012|empty|empty' "$project integer range template"
+
+    # Go-template variables must reach Compose literally.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range $value := 3}}{{$value}};{{end}}'
+    )"
+    assert_equal "$actual" '0;1;2;' "$project integer range variable template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{join (split "abc" "") "-"}}'
+    )"
+    assert_equal "$actual" 'a-b-c' "$project empty separator split"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%q" (split "" "")}}'
+    )"
+    assert_equal "$actual" '[]' "$project empty input split"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%q" (truncate "é" 1)}}'
+    )"
+    assert_equal "$actual" '"\xc3"' "$project UTF-8 byte truncate"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{json (truncate "aéz" 2)}}'
+    )"
+    assert_equal "$actual" '"a\ufffd"' "$project partial UTF-8 JSON template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{json (.Label "oracle.example/json")}}'
+    )"
+    assert_equal "$actual" '"<>&/\u2028\u2029"' "$project Go JSON string escaping"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{upper "ß"}}|{{lower "İ"}}|{{upper "ﬃ"}}|{{lower "ẞ"}}'
+    )"
+    assert_equal "$actual" 'ß|i|ﬃ|ß' "$project simple Unicode case mapping"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{lt 1 2}}|{{le 1 1}}|{{gt 2 1}}|{{ge 1 1}}|{{lt "é" "z"}}|{{gt "é" "z"}}|{{1 | lt 2}}'
+    )"
+    assert_equal "$actual" \
+        'true|true|true|true|false|true|false' \
+        "$project typed ordering comparison"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range 3}}{{.}}A{{if eq . 1}}{{break}}{{end}}B{{end}}'
+    )"
+    assert_equal "$actual" '0AB1A' "$project range break template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range 3}}A{{if eq . 1}}{{continue}}{{end}}{{.}}B{{end}}'
+    )"
+    assert_equal "$actual" 'A0BAA2B' "$project range continue template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range 2}}O{{range 2}}I{{break}}X{{end}}Z{{end}}'
+    )"
+    assert_equal "$actual" 'OIZOIZ' "$project nested range break template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%q" (split (truncate "é" 1) "")}}'
+    )"
+    assert_equal "$actual" '["\xc3"]' "$project partial UTF-8 split"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{truncate "é" 1}}' \
+            | od -An -tx1 \
+            | tr -d ' \n'
+    )"
+    assert_equal "$actual" 'c30a' "$project exact raw UTF-8 byte output"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%s" (truncate "é" 1)}}' \
+            | od -An -tx1 \
+            | tr -d ' \n'
+    )"
+    assert_equal "$actual" 'c30a' "$project exact formatted UTF-8 byte output"
+
+    assert_rejected "$project negative UTF-8 byte truncate" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{truncate "abc" -1}}'
+    assert_rejected "$project mixed ordering comparison" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{lt 1 "2"}}'
+    assert_rejected "$project break outside range body" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range 0}}{{else}}{{break}}{{end}}'
+    assert_rejected "$project continue outside range body" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range 0}}{{else}}{{continue}}{{end}}'
+    # Root values are structs rather than maps in Docker's formatter context.
+    # shellcheck disable=SC2016
+    assert_rejected "$project root value index template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{index $ "Command"}}'
+    # Formatter roots are structs, not maps or other iterable collections.
+    # shellcheck disable=SC2016
+    assert_rejected "$project root value length template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{len $}}'
+    # shellcheck disable=SC2016
+    assert_rejected "$project root value range template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range $}}{{.}}{{end}}'
+    # A logical `with` can select the root for one row even when another branch
+    # can select a non-root value.
+    # shellcheck disable=SC2016
+    assert_rejected "$project logical with root index template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{with or .Health $}}{{index . "Name"}}{{end}}'
+    # Integer ranges accept at most one declaration in current Go templates.
+    # shellcheck disable=SC2016
+    assert_rejected "$project two-variable integer range template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range $index, $value := 3}}{{$index}}={{$value}}{{end}}'
+    assert_rejected "$project non-Go leading action whitespace" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format "{{${non_breaking_space}.Name}}"
+    assert_rejected "$project non-Go control whitespace" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format "{{if${non_breaking_space}.Name}}{{.Name}}{{end}}"
+    # `table` is a --format prefix and is not registered as a Go template
+    # function by Docker Compose.
+    # shellcheck disable=SC2016
+    assert_rejected "$project table function template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{with table $}}{{.Command}}{{end}}'
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format 'A {{- if .Name -}} B {{- end -}} C'
+    )"
+    assert_equal "$actual" 'ABC' "$project ps whitespace template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format "A${non_breaking_space}{{- .Name}}"
+    )"
+    assert_equal "$actual" \
+        "A${non_breaking_space}${name}" \
+        "$project non-ASCII left trim template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format "{{.Name -}} ${non_breaking_space}B"
+    )"
+    assert_equal "$actual" \
+        "${name}${non_breaking_space}B" \
+        "$project non-ASCII right trim template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format "{{${crlf}.Name}}|{{if${crlf}.Name}}{{.Service}}{{end}}|A {{-${crlf}.Name${crlf}-}} B"
+    )"
+    assert_equal "$actual" \
+        "${name}|api|A${name}B" \
+        "$project CRLF action whitespace template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" stats \
+            --no-stream --no-trunc --format '{{if .Name}}{{.Name}}{{else}}missing{{end}}' api
+    )"
+    assert_equal "$actual" "$name" "$project stats control template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" stats \
+            --no-stream --no-trunc --format '{{with ""}}missing{{else with .Name}}{{.}}{{end}}' api
+    )"
+    assert_equal "$actual" "$name" "$project stats else-with template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" stats \
+            --no-stream --no-trunc --format 'table {{.Name}}\t{{.CPUPerc}}' api
+    )"
+    assert_equal "$(printf '%s\n' "$actual" | sed -n '1p' | awk '{$1=$1; print}')" \
+        'NAME CPU %' "$project stats table headers"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" volumes \
+            --format '{{if .Name}}{{.Name}}={{.Label "oracle.example/key"}}{{else}}missing{{end}}'
+    )"
+    assert_equal "$actual" "$volume_name=value" "$project volumes control template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" volumes \
+            --format '{{with ""}}missing{{else with .Name}}{{.}}{{end}}'
+    )"
+    assert_equal "$actual" "$volume_name" "$project volumes else-with template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" volumes \
+            --format 'table {{.Name}}\t{{.Driver}}'
+    )"
+    assert_equal "$(printf '%s\n' "$actual" | sed -n '1p' | awk '{$1=$1; print}')" \
+        'VOLUME NAME DRIVER' "$project volume table headers"
+
+    assert_rejected "$project string range template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Name}}{{.}}{{end}}'
+    assert_rejected "$project mixed comparison template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Publishers}}{{if eq .TargetPort "8080"}}invalid{{end}}{{end}}'
+    assert_rejected "$project scalar length template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Publishers}}{{len .TargetPort}}{{end}}'
+    assert_rejected "$project non-string map key template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{index .Labels true}}'
+    assert_rejected "$project string array index template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{index .Publishers "0"}}'
+    assert_rejected "$project string byte index template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{index .Name "1"}}'
+    assert_rejected "$project string slice bound template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{slice .Name "0" 1}}'
+    assert_rejected "$project non-string printf format template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Publishers}}{{printf .TargetPort}}{{end}}'
+    assert_rejected "$project integer label key template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{.Label 1}}'
+    assert_rejected "$project pipeline label arity template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{"oracle.example/key" | .Label "other"}}'
+    assert_rejected "$project publisher label key template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Publishers}}{{$.Label .TargetPort}}{{end}}'
+    assert_rejected "$project nested scalar field template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Publishers}}{{.TargetPort.Bad}}{{end}}'
+    assert_rejected "$project missing publisher field template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range .Publishers}}{{.Unknown}}{{end}}'
+    # Go-template variables must reach Compose literally.
+    # shellcheck disable=SC2016
+    assert_rejected "$project undefined variable template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range $index, $publisher := .Publishers}}{{$missing.TargetPort}}{{end}}'
+
+    "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
+        down --remove-orphans --volumes >/dev/null
+
+    "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
+        run --detach --no-deps api >/dev/null
+    # Go-template variables must reach Compose literally.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps --all \
+            --format '{{range $publisher := .Publishers}}{{else}}{{len $publisher}}{{end}}'
+    )"
+    assert_equal "$actual" '0' "$project empty range variable template"
+    # `and` returns the falsey publisher collection without selecting the root.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps --all \
+            --format '{{range and .Publishers $}}{{.}}{{else}}empty{{end}}'
+    )"
+    assert_equal "$actual" 'empty' "$project logical falsey publisher range template"
+    # A one-off container has no publishers, so `or` falls back to the root
+    # formatter struct. Go rejects ranging over that possible root value.
+    # shellcheck disable=SC2016
+    assert_rejected "$project logical root range template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps --all \
+        --format '{{range or .Publishers $}}{{.}}{{end}}'
+    "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" \
+        down --remove-orphans --volumes >/dev/null
+}
+
+# Confirms that selectors appended to a parenthesized root cannot bypass the
+# supported-field gate. Docker Compose accepts Command, while container-compose
+# deliberately rejects that unavailable field before asking the Apple runtime
+# to discover containers.
+check_container_field_validation() {
+    "${DOCKER_COMPOSE_COMMAND[@]}" --project-name "$DOCKER_PROJECT" -f "$FIXTURE_DIR/compose.yaml" \
+        ps --format '{{($).Command}}' >/dev/null
+    assert_rejected "$CONTAINER_PROJECT parenthesized unsupported ps field" \
+        "$CONTAINER_COMPOSE" --project-name "$CONTAINER_PROJECT" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{($).Command}}'
+    "${DOCKER_COMPOSE_COMMAND[@]}" --project-name "$DOCKER_PROJECT" -f "$FIXTURE_DIR/compose.yaml" \
+        ps --format '{{with or $ .Name}}{{.Command}}{{end}}' >/dev/null
+    assert_rejected "$CONTAINER_PROJECT logical root unsupported ps field" \
+        "$CONTAINER_COMPOSE" --project-name "$CONTAINER_PROJECT" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{with or $ .Name}}{{.Command}}{{end}}'
+}
+
+# Runs Docker first so both implementations can use the same fixed host port.
+run_checks() {
+    check_implementation "$DOCKER_PROJECT" "${DOCKER_COMPOSE_COMMAND[@]}"
+    check_implementation "$CONTAINER_PROJECT" "$CONTAINER_COMPOSE"
+    check_container_field_validation
 }
 
 # Runs the parity check.
@@ -192,10 +797,9 @@ main() {
     parse_args "$@"
     detect_docker_compose
     check_tools
-    create_fixture
     trap cleanup EXIT
     run_checks
-    info 'Docker Compose format-template action parity passed.'
+    info 'Docker Compose structured format-template parity passed.'
 }
 
 main "$@"

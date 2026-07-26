@@ -239,6 +239,21 @@ public protocol ComposeRuntimeStatsManaging: Sendable {
     // swiftlint:enable function_parameter_count
 }
 
+/// Optional exact-byte stats output used by format templates with partial UTF-8.
+public protocol ComposeRuntimeStatsDataManaging: ComposeRuntimeStatsManaging {
+    // swiftlint:disable function_parameter_count
+    func stats(
+        ids: [String],
+        format: String,
+        noStream: Bool,
+        noTrunc: Bool,
+        includeStopped: Bool,
+        emit: @escaping @Sendable (String) -> Void,
+        emitData: @escaping @Sendable (Data) -> Void,
+    ) async throws
+    // swiftlint:enable function_parameter_count
+}
+
 /// Service container selected for Compose process listing.
 public struct ComposeTopTarget: Sendable, Equatable {
     public var service: String

@@ -103,7 +103,7 @@ struct ComposeCLIHelpTests {
         let commitHelp = try #require(ComposeCLIHelp.commandHelpText(command: "commit"))
         let eventsHelp = try #require(ComposeCLIHelp.commandHelpText(command: "events"))
 
-        #expect(partialCommands == [["events"], ["exec"], ["ps"], ["run"], ["stats"], ["up"], ["volumes"]])
+        #expect(partialCommands == [["events"], ["exec"], ["run"], ["up"]])
         #expect(commitHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(commitHelp.contains("best-effort snapshot"))
         #expect(commitHelp.contains("\u{001B}[32m--pause\u{001B}[0m"))
@@ -388,11 +388,11 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--resolve-image-digests\u{001B}[0m"))
     }
 
-    @Test("ps command is shown as partially supported while its options are supported")
-    func psCommandIsShownAsPartiallySupportedWhileOptionsAreSupported() throws {
+    @Test("ps command and its options are supported")
+    func psCommandAndOptionsAreSupported() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "ps"))
 
-        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--filter\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--format\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--services\u{001B}[0m"))

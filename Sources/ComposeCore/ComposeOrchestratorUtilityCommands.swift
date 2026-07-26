@@ -116,9 +116,13 @@ public extension ComposeOrchestrator {
                 options.emit(output)
             }
         case let .template(template, table):
-            let output = try renderComposeVolumeTemplate(records, template: template, table: table)
+            let output = try renderComposeVolumeTemplateData(
+                records,
+                template: template,
+                table: table,
+            )
             if !output.isEmpty {
-                options.emit(output)
+                emitDockerTemplateOutput(output, options: options)
             }
         }
     }
@@ -152,13 +156,12 @@ public extension ComposeOrchestrator {
         let noTrunc = stats.noTrunc
         let includeStopped = stats.all
         let collectStats: @Sendable () async throws -> Void = {
-            try await self.statsManager.stats(
+            try await self.emitStats(
                 ids: ids,
                 format: format,
                 noStream: noStream,
                 noTrunc: noTrunc,
                 includeStopped: includeStopped,
-                emit: self.options.emit,
             )
         }
         guard !noStream else {
@@ -167,6 +170,35 @@ public extension ComposeOrchestrator {
         }
 
         try await runInterruptibleStats(collectStats)
+    }
+
+    private func emitStats(
+        ids: [String],
+        format: String,
+        noStream: Bool,
+        noTrunc: Bool,
+        includeStopped: Bool,
+    ) async throws {
+        if let dataManager = statsManager as? any ComposeRuntimeStatsDataManaging {
+            try await dataManager.stats(
+                ids: ids,
+                format: format,
+                noStream: noStream,
+                noTrunc: noTrunc,
+                includeStopped: includeStopped,
+                emit: options.emit,
+                emitData: options.emitData,
+            )
+        } else {
+            try await statsManager.stats(
+                ids: ids,
+                format: format,
+                noStream: noStream,
+                noTrunc: noTrunc,
+                includeStopped: includeStopped,
+                emit: options.emit,
+            )
+        }
     }
 
     /// Runs a local stats stream and converts terminal interrupts into task cancellation.

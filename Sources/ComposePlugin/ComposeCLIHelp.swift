@@ -320,7 +320,7 @@ enum ComposeCLIHelp {
         "ls": .supported,
         "pause": .supported,
         "port": .supported,
-        "ps": .partiallySupported,
+        "ps": .supported,
         "publish": .supported,
         "pull": .supported,
         "push": .supported,
@@ -329,13 +329,13 @@ enum ComposeCLIHelp {
         "run": .partiallySupported,
         "scale": .supported,
         "start": .supported,
-        "stats": .partiallySupported,
+        "stats": .supported,
         "stop": .supported,
         "top": .supported,
         "unpause": .supported,
         "up": .partiallySupported,
         "version": .supported,
-        "volumes": .partiallySupported,
+        "volumes": .supported,
         "wait": .supported,
         "watch": .supported,
     ]
@@ -343,11 +343,8 @@ enum ComposeCLIHelp {
     private static let supportDetails: [String: String] = [
         "events": "OOM, explicit restart, rename, resize, update, and attach/detach actions are unavailable; automatic policy restarts emit die then start, and exec lifecycle actions are supported.",
         "exec": "Docker-complete privileged execution is unavailable.",
-        "ps": "Go-template control blocks and nested object paths are unavailable.",
         "run": "Container-facing DNS aliases and interactive lifecycle hooks are incomplete.",
-        "stats": "Go-template control blocks and nested object paths are unavailable.",
         "up": "pre_start and container-facing DNS aliases are unavailable.",
-        "volumes": "Go-template control blocks and nested object paths are unavailable.",
     ]
 
     private static let supportByOption: [String: [String: SupportLevel]] = [

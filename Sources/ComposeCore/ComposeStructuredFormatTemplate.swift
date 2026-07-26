@@ -1,0 +1,992 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2026 container-compose project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
+import Foundation
+
+private enum StructuredTemplateLexeme {
+    case action(String)
+    case text(String)
+}
+
+indirect enum StructuredTemplateNode {
+    case action(String)
+    case breakRange
+    case conditional(
+        expression: String,
+        success: [StructuredTemplateNode],
+        failure: [StructuredTemplateNode],
+    )
+    case continueRange
+    case range(
+        specification: StructuredTemplateRange,
+        success: [StructuredTemplateNode],
+        failure: [StructuredTemplateNode],
+    )
+    case text(String)
+    case with(
+        expression: String,
+        success: [StructuredTemplateNode],
+        failure: [StructuredTemplateNode],
+    )
+}
+
+struct StructuredTemplateRange {
+    var expression: String
+    var keyVariable: String?
+    var valueVariable: String?
+}
+
+private struct StructuredTemplateAction {
+    var value: String
+    var cursor: String.Index
+    var trimFollowingText: Bool
+}
+
+struct StructuredTemplateContext {
+    var root: DockerTemplateData
+    var dot: DockerTemplateData
+    var dotIsRoot = true
+    var variables: [String: DockerTemplateData] = [:]
+}
+
+private struct StructuredTemplateParser {
+    var lexemes: [StructuredTemplateLexeme]
+    var index = 0
+
+    mutating func parse() throws -> [StructuredTemplateNode] {
+        let result = try parseNodes(acceptStops: false, rangeDepth: 0)
+        guard result.stop == nil else {
+            throw structuredUnsupportedAction(result.stop ?? "")
+        }
+        return result.nodes
+    }
+
+    private mutating func parseNodes(
+        acceptStops: Bool,
+        rangeDepth: Int,
+    ) throws -> (nodes: [StructuredTemplateNode], stop: String?) {
+        var nodes: [StructuredTemplateNode] = []
+        while index < lexemes.count {
+            let lexeme = lexemes[index]
+            index += 1
+            switch lexeme {
+            case let .text(value):
+                nodes.append(.text(value))
+            case let .action(action):
+                if structuredTemplateIsStopAction(action) {
+                    guard acceptStops else { throw structuredUnsupportedAction(action) }
+                    return (nodes, action)
+                }
+                if action.hasPrefix("/*"), action.hasSuffix("*/") {
+                    continue
+                }
+                if let control = try parseControlAction(action, rangeDepth: rangeDepth) {
+                    nodes.append(control)
+                    continue
+                }
+                try validateStructuredExpression(action)
+                nodes.append(.action(action))
+            }
+        }
+        return (nodes, nil)
+    }
+
+    private mutating func parseControlAction(
+        _ action: String,
+        rangeDepth: Int,
+    ) throws -> StructuredTemplateNode? {
+        if let expression = structuredTemplateControlExpression(action, keyword: "if") {
+            return try parseConditional(expression, rangeDepth: rangeDepth)
+        }
+        if let expression = structuredTemplateControlExpression(action, keyword: "with") {
+            return try parseWith(expression, rangeDepth: rangeDepth)
+        }
+        if let expression = structuredTemplateControlExpression(action, keyword: "range") {
+            return try parseRange(expression, rangeDepth: rangeDepth)
+        }
+        if action == "break" {
+            guard rangeDepth > 0 else { throw structuredUnsupportedAction(action) }
+            return .breakRange
+        }
+        if action == "continue" {
+            guard rangeDepth > 0 else { throw structuredUnsupportedAction(action) }
+            return .continueRange
+        }
+        return nil
+    }
+
+    private mutating func parseConditional(
+        _ expression: String,
+        rangeDepth: Int,
+    ) throws -> StructuredTemplateNode {
+        try validateStructuredExpression(expression)
+        let success = try parseNodes(acceptStops: true, rangeDepth: rangeDepth)
+        let failure = try parseConditionalFailure(stop: success.stop, rangeDepth: rangeDepth)
+        return .conditional(expression: expression, success: success.nodes, failure: failure)
+    }
+
+    private mutating func parseWith(
+        _ expression: String,
+        rangeDepth: Int,
+    ) throws -> StructuredTemplateNode {
+        try validateStructuredExpression(expression)
+        let success = try parseNodes(acceptStops: true, rangeDepth: rangeDepth)
+        let failure = try parseWithFailure(stop: success.stop, rangeDepth: rangeDepth)
+        return .with(expression: expression, success: success.nodes, failure: failure)
+    }
+
+    private mutating func parseRange(
+        _ value: String,
+        rangeDepth: Int,
+    ) throws -> StructuredTemplateNode {
+        let specification = try structuredTemplateRange(value)
+        try validateStructuredExpression(specification.expression)
+        let success = try parseNodes(acceptStops: true, rangeDepth: rangeDepth + 1)
+        let failure = try parsePlainFailure(stop: success.stop, rangeDepth: rangeDepth)
+        return .range(specification: specification, success: success.nodes, failure: failure)
+    }
+
+    private mutating func parseConditionalFailure(
+        stop: String?,
+        rangeDepth: Int,
+    ) throws -> [StructuredTemplateNode] {
+        if let stop, let expression = structuredTemplateElseIfExpression(stop) {
+            return try [parseConditional(expression, rangeDepth: rangeDepth)]
+        }
+        return try parsePlainFailure(stop: stop, rangeDepth: rangeDepth)
+    }
+
+    private mutating func parseWithFailure(
+        stop: String?,
+        rangeDepth: Int,
+    ) throws -> [StructuredTemplateNode] {
+        if let stop, let expression = structuredTemplateElseWithExpression(stop) {
+            return try [parseWith(expression, rangeDepth: rangeDepth)]
+        }
+        return try parsePlainFailure(stop: stop, rangeDepth: rangeDepth)
+    }
+
+    private mutating func parsePlainFailure(
+        stop: String?,
+        rangeDepth: Int,
+    ) throws -> [StructuredTemplateNode] {
+        guard let stop else {
+            throw structuredUnsupportedAction("unclosed control action")
+        }
+        if stop == "end" {
+            return []
+        }
+        guard stop == "else" else {
+            throw structuredUnsupportedAction(stop)
+        }
+        let failure = try parseNodes(acceptStops: true, rangeDepth: rangeDepth)
+        guard failure.stop == "end" else {
+            throw structuredUnsupportedAction(failure.stop ?? "unclosed control action")
+        }
+        return failure.nodes
+    }
+}
+
+private func structuredTemplateIsStopAction(_ action: String) -> Bool {
+    action == "else"
+        || action == "end"
+        || structuredTemplateElseIfExpression(action) != nil
+        || structuredTemplateElseWithExpression(action) != nil
+}
+
+private enum StructuredTemplateRangeControl {
+    case breakRange
+    case continueRange
+    case none
+}
+
+private struct StructuredTemplateRender {
+    var bytes: [UInt8]
+    var rangeControl: StructuredTemplateRangeControl = .none
+}
+
+struct StructuredTemplateScanState {
+    private var quote: Character?
+    private var escaped = false
+    private var parentheses = 0
+
+    var isTopLevel: Bool {
+        quote == nil && parentheses == 0
+    }
+
+    var isBalanced: Bool {
+        isTopLevel && !escaped
+    }
+
+    mutating func consume(_ character: Character) -> Bool {
+        if let quote {
+            if escaped {
+                escaped = false
+                return true
+            }
+            if quote == "\"", character == "\\" {
+                escaped = true
+                return true
+            }
+            if character == quote {
+                self.quote = nil
+            }
+            return true
+        }
+        switch character {
+        case "\"", "`":
+            quote = character
+        case "(":
+            parentheses += 1
+        case ")":
+            guard parentheses > 0 else { return false }
+            parentheses -= 1
+        default:
+            break
+        }
+        return true
+    }
+}
+
+func renderStructuredDockerTemplate(
+    _ template: String,
+    values: [String: DockerTemplateData],
+) throws -> String {
+    let bytes = try renderStructuredDockerTemplateBytes(
+        template,
+        values: values,
+    )
+    // Legacy String renderer intentionally replaces partial UTF-8.
+    // swiftlint:disable:next optional_data_string_conversion
+    return String(decoding: bytes, as: UTF8.self)
+}
+
+func renderStructuredDockerTemplateBytes(
+    _ template: String,
+    values: [String: DockerTemplateData],
+) throws -> [UInt8] {
+    let nodes = try structuredDockerTemplateNodes(template)
+    let root = DockerTemplateData.object(values)
+    return try renderStructuredTemplateNodes(
+        nodes,
+        context: StructuredTemplateContext(root: root, dot: root),
+    ).bytes
+}
+
+func validateStructuredDockerTemplate(_ template: String) throws {
+    _ = try structuredDockerTemplateNodes(template)
+}
+
+func structuredDockerTemplateNodes(_ template: String) throws -> [StructuredTemplateNode] {
+    var parser = try StructuredTemplateParser(lexemes: structuredTemplateLexemes(template))
+    let nodes = try parser.parse()
+    try validateStructuredTemplateVariables(nodes)
+    try validateStructuredTemplateRootIndexing(nodes)
+    return nodes
+}
+
+private func structuredTemplateLexemes(_ template: String) throws -> [StructuredTemplateLexeme] {
+    var lexemes: [StructuredTemplateLexeme] = []
+    var cursor = template.startIndex
+    var trimLeadingText = false
+
+    while let open = template.range(of: "{{", range: cursor ..< template.endIndex) {
+        var text = String(template[cursor ..< open.lowerBound])
+        if trimLeadingText {
+            text = text.trimmingPrefixWhitespace()
+        }
+
+        var contentStart = open.upperBound
+        let hasLeftTrimMarker = structuredTemplateHasLeftTrimMarker(
+            template,
+            at: contentStart,
+        )
+        if hasLeftTrimMarker {
+            text = text.trimmingSuffixWhitespace()
+            contentStart = template.index(after: contentStart)
+        }
+        if !text.isEmpty {
+            lexemes.append(.text(text))
+        }
+
+        let action = try structuredTemplateAction(
+            in: template,
+            from: contentStart,
+            commentMayFollowTrimMarker: hasLeftTrimMarker,
+        )
+        lexemes.append(.action(action.value))
+        cursor = action.cursor
+        trimLeadingText = action.trimFollowingText
+    }
+
+    var tail = String(template[cursor...])
+    if trimLeadingText {
+        tail = tail.trimmingPrefixWhitespace()
+    }
+    if !tail.isEmpty {
+        lexemes.append(.text(tail))
+    }
+    return lexemes
+}
+
+private func structuredTemplateAction(
+    in template: String,
+    from contentStart: String.Index,
+    commentMayFollowTrimMarker: Bool,
+) throws -> StructuredTemplateAction {
+    let closeStart = try structuredTemplateCommentClose(
+        in: template,
+        from: contentStart,
+        mayFollowTrimMarker: commentMayFollowTrimMarker,
+    ) ?? structuredTemplateExpressionClose(in: template, from: contentStart)
+    guard let closeStart else {
+        throw structuredUnsupportedAction("unclosed template action")
+    }
+
+    var contentEnd = closeStart
+    var trimFollowingText = false
+    if structuredTemplateHasRightTrimMarker(
+        template,
+        contentStart: contentStart,
+        contentEnd: contentEnd,
+    ) {
+        trimFollowingText = true
+        contentEnd = template.index(before: contentEnd)
+    }
+    let action = structuredTemplateTrimGoWhitespace(
+        template[contentStart ..< contentEnd],
+    )
+    guard !action.isEmpty else {
+        throw structuredUnsupportedAction("")
+    }
+    return StructuredTemplateAction(
+        value: action,
+        cursor: template.index(closeStart, offsetBy: 2),
+        trimFollowingText: trimFollowingText,
+    )
+}
+
+private func structuredTemplateCommentClose(
+    in template: String,
+    from contentStart: String.Index,
+    mayFollowTrimMarker: Bool,
+) throws -> String.Index? {
+    let commentStart = template[contentStart...].firstIndex {
+        !structuredTemplateIsGoWhitespace($0)
+    }
+        ?? template.endIndex
+    guard template[commentStart...].hasPrefix("/*") else {
+        return nil
+    }
+    guard commentStart == contentStart || mayFollowTrimMarker else {
+        throw structuredUnsupportedAction("comment must start at the action delimiter")
+    }
+    let bodyStart = template.index(commentStart, offsetBy: 2)
+    guard let commentClose = template.range(
+        of: "*/",
+        range: bodyStart ..< template.endIndex,
+    ) else {
+        throw structuredUnsupportedAction("unclosed template comment")
+    }
+    guard let actionClose = template.range(
+        of: "}}",
+        range: commentClose.upperBound ..< template.endIndex,
+    ) else {
+        throw structuredUnsupportedAction("unclosed template action")
+    }
+    return actionClose.lowerBound
+}
+
+private func structuredTemplateExpressionClose(
+    in template: String,
+    from contentStart: String.Index,
+) -> String.Index? {
+    var scan = StructuredTemplateScanState()
+    var index = contentStart
+    while index < template.endIndex {
+        if template[index] == "}", scan.isTopLevel {
+            let next = template.index(after: index)
+            if next < template.endIndex, template[next] == "}" {
+                return scan.isBalanced ? index : nil
+            }
+        }
+        guard scan.consume(template[index]) else {
+            return nil
+        }
+        index = template.index(after: index)
+    }
+    return nil
+}
+
+private func structuredTemplateRange(_ value: String) throws -> StructuredTemplateRange {
+    guard structuredTemplateTokens(value)?.isEmpty == false else {
+        throw structuredUnsupportedAction("range \(value)")
+    }
+    guard let assignmentRange = structuredTemplateAssignmentRange(in: value) else {
+        return StructuredTemplateRange(expression: value, keyVariable: nil, valueVariable: nil)
+    }
+    let declarationText = String(value[..<assignmentRange.lowerBound])
+    guard !structuredTemplateTrimGoWhitespace(declarationText).hasSuffix(","),
+          !declarationText.contains(",,")
+    else {
+        throw structuredUnsupportedAction("range \(value)")
+    }
+    let declarations = declarationText
+        .split(separator: ",", omittingEmptySubsequences: true)
+        .map(structuredTemplateTrimGoWhitespace)
+    guard (1 ... 2).contains(declarations.count),
+          declarations.allSatisfy(isStructuredTemplateVariable)
+    else {
+        throw structuredUnsupportedAction("range \(value)")
+    }
+    let expression = structuredTemplateTrimGoWhitespace(
+        value[assignmentRange.upperBound...],
+    )
+    guard !expression.isEmpty else {
+        throw structuredUnsupportedAction("range \(value)")
+    }
+    return StructuredTemplateRange(
+        expression: expression,
+        keyVariable: declarations.count == 2 ? declarations[0] : nil,
+        valueVariable: declarations.last,
+    )
+}
+
+private func renderStructuredTemplateNodes(
+    _ nodes: [StructuredTemplateNode],
+    context: StructuredTemplateContext,
+) throws -> StructuredTemplateRender {
+    var rendered: [UInt8] = []
+    for node in nodes {
+        let nested = try renderStructuredTemplateNode(node, context: context)
+        rendered.append(contentsOf: nested.bytes)
+        guard case .none = nested.rangeControl else {
+            return StructuredTemplateRender(bytes: rendered, rangeControl: nested.rangeControl)
+        }
+    }
+    return StructuredTemplateRender(bytes: rendered)
+}
+
+private func renderStructuredTemplateNode(
+    _ node: StructuredTemplateNode,
+    context: StructuredTemplateContext,
+) throws -> StructuredTemplateRender {
+    switch node {
+    case let .text(value):
+        return StructuredTemplateRender(bytes: Array(structuredTemplateText(value).utf8))
+    case let .action(action):
+        return try StructuredTemplateRender(
+            bytes: evaluateStructuredTemplateExpression(action, context: context).outputBytes,
+        )
+    case .breakRange:
+        return StructuredTemplateRender(bytes: [], rangeControl: .breakRange)
+    case let .conditional(expression, success, failure):
+        let value = try evaluateStructuredTemplateExpression(expression, context: context)
+        return try renderStructuredTemplateNodes(
+            value.isTruthy ? success : failure,
+            context: context,
+        )
+    case .continueRange:
+        return StructuredTemplateRender(bytes: [], rangeControl: .continueRange)
+    case let .range(specification, success, failure):
+        return try renderStructuredTemplateRange(
+            specification,
+            success: success,
+            failure: failure,
+            context: context,
+        )
+    case let .with(expression, success, failure):
+        return try renderStructuredTemplateWith(
+            expression,
+            success: success,
+            failure: failure,
+            context: context,
+        )
+    }
+}
+
+private func renderStructuredTemplateWith(
+    _ expression: String,
+    success: [StructuredTemplateNode],
+    failure: [StructuredTemplateNode],
+    context: StructuredTemplateContext,
+) throws -> StructuredTemplateRender {
+    let evaluation = try evaluateStructuredTemplateExpressionWithRoot(
+        expression,
+        context: context,
+    )
+    var nested = context
+    nested.dot = evaluation.value
+    nested.dotIsRoot = evaluation.isRoot
+    return try renderStructuredTemplateNodes(
+        evaluation.value.isTruthy ? success : failure,
+        context: evaluation.value.isTruthy ? nested : context,
+    )
+}
+
+private func structuredTemplateText(_ value: String) -> String {
+    value
+        .replacingOccurrences(of: #"\t"#, with: "\t")
+        .replacingOccurrences(of: #"\n"#, with: "\n")
+}
+
+private func renderStructuredTemplateRange(
+    _ specification: StructuredTemplateRange,
+    success: [StructuredTemplateNode],
+    failure: [StructuredTemplateNode],
+    context: StructuredTemplateContext,
+) throws -> StructuredTemplateRender {
+    let evaluation = try evaluateStructuredTemplateExpressionWithRoot(
+        specification.expression,
+        context: context,
+    )
+    if evaluation.isRoot {
+        throw structuredUnsupportedAction("range root value")
+    }
+    let value = evaluation.value
+    if specification.keyVariable != nil, case .integer = value {
+        throw structuredUnsupportedAction("range integer with two variables")
+    }
+    let entries = try structuredTemplateRangeEntries(value)
+    guard !entries.isEmpty else {
+        let nested = structuredTemplateRangeContext(
+            specification,
+            key: value,
+            value: value,
+            context: context,
+        )
+        return try renderStructuredTemplateNodes(failure, context: nested)
+    }
+    var rendered: [UInt8] = []
+    for entry in entries {
+        var nested = structuredTemplateRangeContext(
+            specification,
+            key: entry.key,
+            value: entry.value,
+            context: context,
+        )
+        nested.dot = entry.value
+        nested.dotIsRoot = false
+        let nestedRender = try renderStructuredTemplateNodes(success, context: nested)
+        rendered.append(contentsOf: nestedRender.bytes)
+        switch nestedRender.rangeControl {
+        case .breakRange:
+            return StructuredTemplateRender(bytes: rendered)
+        case .continueRange:
+            continue
+        case .none:
+            break
+        }
+    }
+    return StructuredTemplateRender(bytes: rendered)
+}
+
+private func structuredTemplateRangeContext(
+    _ specification: StructuredTemplateRange,
+    key: DockerTemplateData,
+    value: DockerTemplateData,
+    context: StructuredTemplateContext,
+) -> StructuredTemplateContext {
+    var nested = context
+    if let keyVariable = specification.keyVariable {
+        nested.variables[keyVariable] = key
+    }
+    if let valueVariable = specification.valueVariable {
+        nested.variables[valueVariable] = value
+    }
+    return nested
+}
+
+let structuredTemplateFunctions: Set<String> = [
+    "and",
+    "eq",
+    "ge",
+    "gt",
+    "index",
+    "join",
+    "json",
+    "len",
+    "lower",
+    "le",
+    "lt",
+    "ne",
+    "not",
+    "or",
+    "pad",
+    "print",
+    "printf",
+    "println",
+    "slice",
+    "split",
+    "title",
+    "truncate",
+    "upper",
+]
+
+private func validateStructuredExpression(_ expression: String) throws {
+    guard let segments = structuredTemplatePipelineSegments(expression), !segments.isEmpty else {
+        throw structuredUnsupportedAction(expression)
+    }
+    var hasPipelineValue = false
+    for (index, segment) in segments.enumerated() {
+        guard let tokens = structuredTemplateTokens(segment), !tokens.isEmpty else {
+            throw structuredUnsupportedAction(expression)
+        }
+        if index == 0, tokens.count == 1, isStructuredTemplateValue(tokens[0]) {
+            hasPipelineValue = true
+            continue
+        }
+        if isStructuredTemplateLabelFunction(tokens.first ?? ""),
+           tokens.dropFirst().allSatisfy(isStructuredTemplateValue),
+           tokens.count - 1 + (hasPipelineValue ? 1 : 0) == 1
+        {
+            hasPipelineValue = true
+            continue
+        }
+        guard let function = tokens.first,
+              structuredTemplateFunctions.contains(function),
+              tokens.dropFirst().allSatisfy(isStructuredTemplateValue),
+              structuredTemplateArgumentsAreSupported(
+                  function,
+                  count: tokens.count - 1,
+                  hasPipelineValue: hasPipelineValue,
+              )
+        else {
+            throw structuredUnsupportedAction(expression)
+        }
+        hasPipelineValue = true
+    }
+    guard hasPipelineValue else {
+        throw structuredUnsupportedAction(expression)
+    }
+}
+
+func isStructuredTemplateValue(_ token: String) -> Bool {
+    token == "."
+        || token == "$"
+        || structuredTemplatePath(token) != nil
+        || structuredTemplateStringLiteral(token) != nil
+        || structuredTemplateParenthesizedValue(token).map {
+            (try? validateStructuredExpression($0.expression)) != nil
+        } == true
+        || Int(token) != nil
+        || token == "true"
+        || token == "false"
+}
+
+func structuredTemplatePath(_ token: String) -> (base: String, fields: [String])? {
+    guard token.hasPrefix(".") || token.hasPrefix("$") else {
+        return nil
+    }
+    let components = token.split(separator: ".", omittingEmptySubsequences: true).map(String.init)
+    if token.hasPrefix(".") {
+        guard !components.isEmpty, components.allSatisfy(isStructuredTemplateIdentifier) else {
+            return nil
+        }
+        return (".", components)
+    }
+    if token.hasPrefix("$.") {
+        let fields = Array(components.dropFirst())
+        guard components.first == "$", !fields.isEmpty,
+              fields.allSatisfy(isStructuredTemplateIdentifier)
+        else {
+            return nil
+        }
+        return ("$", fields)
+    }
+    guard let variable = components.first,
+          isStructuredTemplateVariable(variable),
+          components.dropFirst().allSatisfy(isStructuredTemplateIdentifier)
+    else {
+        return nil
+    }
+    return (variable, Array(components.dropFirst()))
+}
+
+func isStructuredTemplateIdentifier(_ value: String) -> Bool {
+    guard let first = value.first, first.isLetter || first == "_" else {
+        return false
+    }
+    return value.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
+}
+
+private func isStructuredTemplateVariable(_ value: String) -> Bool {
+    guard value.hasPrefix("$"), value.count > 1 else { return false }
+    return isStructuredTemplateIdentifier(String(value.dropFirst()))
+}
+
+func structuredTemplateTokens(_ value: String) -> [String]? {
+    var tokens: [String] = []
+    var token = ""
+    var scan = StructuredTemplateScanState()
+    for character in structuredTemplateTrimGoWhitespace(value) {
+        guard scan.consume(character) else { return nil }
+        if structuredTemplateIsGoWhitespace(character), scan.isTopLevel {
+            if !token.isEmpty {
+                tokens.append(token)
+                token = ""
+            }
+        } else {
+            token.append(character)
+        }
+    }
+    guard scan.isBalanced else { return nil }
+    if !token.isEmpty {
+        tokens.append(token)
+    }
+    return tokens
+}
+
+func structuredTemplatePipelineSegments(_ expression: String) -> [String]? {
+    var segments: [String] = []
+    var segment = ""
+    var scan = StructuredTemplateScanState()
+    for character in expression {
+        guard scan.consume(character) else { return nil }
+        if character == "|", scan.isTopLevel {
+            let trimmed = structuredTemplateTrimGoWhitespace(segment)
+            guard !trimmed.isEmpty else { return nil }
+            segments.append(trimmed)
+            segment = ""
+        } else {
+            segment.append(character)
+        }
+    }
+    let trimmed = structuredTemplateTrimGoWhitespace(segment)
+    guard scan.isBalanced, !trimmed.isEmpty else { return nil }
+    segments.append(trimmed)
+    return segments
+}
+
+func applyStructuredTemplateFunction(
+    _ function: String,
+    arguments: [DockerTemplateData],
+    pipelineValue: DockerTemplateData?,
+) throws -> DockerTemplateData {
+    let inputs = arguments + (pipelineValue.map { [$0] } ?? [])
+    switch function {
+    case "and", "eq", "ge", "gt", "le", "lt", "ne", "not", "or":
+        return try applyStructuredLogicalFunction(function, inputs: inputs)
+    case "json", "len":
+        return try applyStructuredValueFunction(function, inputs: inputs)
+    case "lower", "title", "upper":
+        return try applyStructuredCaseFunction(function, inputs: inputs)
+    case "print", "printf", "println":
+        return try applyStructuredPrintFunction(function, inputs: inputs)
+    case "join", "pad", "split", "truncate":
+        return try applyStructuredStringFunction(function, inputs: inputs)
+    case "index", "slice":
+        return try applyStructuredCollectionFunction(function, inputs: inputs)
+    default:
+        throw structuredUnsupportedAction(function)
+    }
+}
+
+private func applyStructuredLogicalFunction(
+    _ function: String,
+    inputs: [DockerTemplateData],
+) throws -> DockerTemplateData {
+    switch function {
+    case "and":
+        return inputs.first(where: { !$0.isTruthy }) ?? inputs.last ?? .boolean(false)
+    case "or":
+        return inputs.first(where: \.isTruthy) ?? inputs.last ?? .boolean(false)
+    case "not":
+        guard inputs.count == 1 else { throw structuredUnsupportedAction(function) }
+        return .boolean(!inputs[0].isTruthy)
+    case "eq", "ne":
+        return try applyStructuredEqualityFunction(function, inputs: inputs)
+    case "ge", "gt", "le", "lt":
+        return try applyStructuredOrderingFunction(function, inputs: inputs)
+    default:
+        throw structuredUnsupportedAction(function)
+    }
+}
+
+private func applyStructuredEqualityFunction(
+    _ function: String,
+    inputs: [DockerTemplateData],
+) throws -> DockerTemplateData {
+    if function == "ne" {
+        guard inputs.count == 2 else { throw structuredUnsupportedAction(function) }
+        return try .boolean(!structuredTemplateEqual(inputs[0], inputs[1], function: function))
+    }
+    guard function == "eq", inputs.count >= 2 else {
+        throw structuredUnsupportedAction(function)
+    }
+    for input in inputs.dropFirst()
+        where try structuredTemplateEqual(inputs[0], input, function: function)
+    {
+        return .boolean(true)
+    }
+    return .boolean(false)
+}
+
+private func applyStructuredOrderingFunction(
+    _ function: String,
+    inputs: [DockerTemplateData],
+) throws -> DockerTemplateData {
+    guard inputs.count == 2 else { throw structuredUnsupportedAction(function) }
+    let comparison = try structuredTemplateCompare(
+        inputs[0],
+        inputs[1],
+        function: function,
+    )
+    switch function {
+    case "ge":
+        return .boolean(comparison >= 0)
+    case "gt":
+        return .boolean(comparison > 0)
+    case "le":
+        return .boolean(comparison <= 0)
+    case "lt":
+        return .boolean(comparison < 0)
+    default:
+        throw structuredUnsupportedAction(function)
+    }
+}
+
+private func applyStructuredValueFunction(
+    _ function: String,
+    inputs: [DockerTemplateData],
+) throws -> DockerTemplateData {
+    let input = try structuredSingleInput(function, inputs)
+    switch function {
+    case "json":
+        return try .string(input.json())
+    case "len":
+        return try .integer(structuredTemplateLength(input))
+    default:
+        throw structuredUnsupportedAction(function)
+    }
+}
+
+private func applyStructuredCaseFunction(
+    _ function: String,
+    inputs: [DockerTemplateData],
+) throws -> DockerTemplateData {
+    let input = try structuredStringInput(function, inputs)
+    switch function {
+    case "lower":
+        return .string(structuredTemplateLower(input))
+    case "title":
+        return .string(structuredTemplateTitle(input))
+    case "upper":
+        return .string(structuredTemplateUpper(input))
+    default:
+        throw structuredUnsupportedAction(function)
+    }
+}
+
+private func applyStructuredStringFunction(
+    _ function: String,
+    inputs: [DockerTemplateData],
+) throws -> DockerTemplateData {
+    switch function {
+    case "join":
+        return try structuredTemplateJoin(inputs)
+    case "pad":
+        return try structuredTemplatePad(inputs)
+    case "split":
+        return try structuredTemplateSplit(inputs)
+    case "truncate":
+        return try structuredTemplateTruncate(inputs)
+    default:
+        throw structuredUnsupportedAction(function)
+    }
+}
+
+private func applyStructuredCollectionFunction(
+    _ function: String,
+    inputs: [DockerTemplateData],
+) throws -> DockerTemplateData {
+    switch function {
+    case "index":
+        return try structuredTemplateIndex(inputs)
+    case "slice":
+        return try structuredTemplateSlice(inputs)
+    default:
+        throw structuredUnsupportedAction(function)
+    }
+}
+
+private func structuredTemplateJoin(_ inputs: [DockerTemplateData]) throws -> DockerTemplateData {
+    guard inputs.count == 2, case let .array(values) = inputs[0] else {
+        throw structuredUnsupportedAction("join")
+    }
+    if let separator = structuredTemplateGoStringBytes(inputs[1]) {
+        let rawValues = values.compactMap(structuredTemplateGoStringBytes)
+        if rawValues.count == values.count {
+            return .byteString(
+                rawValues.enumerated().flatMap { index, value in
+                    (index == 0 ? [] : separator) + value
+                },
+            )
+        }
+    }
+    let separator = try structuredString(inputs[1], function: "join")
+    return .string(values.map(\.display).joined(separator: separator))
+}
+
+private func structuredTemplatePad(_ inputs: [DockerTemplateData]) throws -> DockerTemplateData {
+    guard inputs.count == 3,
+          let value = structuredTemplateGoStringBytes(inputs[0])
+    else {
+        throw structuredUnsupportedAction("pad")
+    }
+    let left = try structuredInteger(inputs[1], function: "pad")
+    let right = try structuredInteger(inputs[2], function: "pad")
+    return .byteString(
+        Array(repeating: UInt8(ascii: " "), count: max(0, left))
+            + value
+            + Array(repeating: UInt8(ascii: " "), count: max(0, right)),
+    )
+}
+
+private func structuredTemplateSplit(_ inputs: [DockerTemplateData]) throws -> DockerTemplateData {
+    guard inputs.count == 2,
+          let value = structuredTemplateGoStringBytes(inputs[0]),
+          let separator = structuredTemplateGoStringBytes(inputs[1])
+    else {
+        throw structuredUnsupportedAction("split")
+    }
+    if separator.isEmpty {
+        return .array(structuredTemplateUTF8Sequences(value).map(DockerTemplateData.byteString))
+    }
+    var parts: [DockerTemplateData] = []
+    var start = 0
+    while let separatorStart = structuredTemplateSeparatorIndex(
+        in: value,
+        separator: separator,
+        from: start,
+    ) {
+        parts.append(.byteString(Array(value[start ..< separatorStart])))
+        start = separatorStart + separator.count
+    }
+    parts.append(.byteString(Array(value[start...])))
+    return .array(parts)
+}
+
+private func structuredTemplateTruncate(_ inputs: [DockerTemplateData]) throws -> DockerTemplateData {
+    guard inputs.count == 2,
+          let value = structuredTemplateGoStringBytes(inputs[0])
+    else {
+        throw structuredUnsupportedAction("truncate")
+    }
+    let length = try structuredInteger(inputs[1], function: "truncate")
+    guard length >= 0 else { throw structuredUnsupportedAction("truncate") }
+    return .byteString(Array(value.prefix(length)))
+}

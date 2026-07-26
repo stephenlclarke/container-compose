@@ -33,11 +33,11 @@ orchestration and maps supported Compose behavior to the matched runtime stack.
 > [!WARNING]
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
-> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 24 July 2026 snapshot, the three support forks are **435 commits ahead of Apple upstream**:
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 25 July 2026 snapshot, the three support forks are **442 commits ahead of Apple upstream**:
 >
-> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 126 ahead** at [`6aa6e803539c`](https://github.com/stephenlclarke/containerization/commit/6aa6e803539c59ce754c55628e5417356216b297).
-> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 278 ahead** at [`302e31e71821`](https://github.com/stephenlclarke/container/commit/302e31e71821f5dd3b395da2f299fc42a5bd6150).
-> - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 31 ahead** at [`5939a91ec0dd`](https://github.com/stephenlclarke/container-builder-shim/commit/5939a91ec0dd).
+> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 127 ahead** at [`164088e02e16`](https://github.com/stephenlclarke/containerization/commit/164088e02e16ed80e536d0c59822b09931d213df).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 282 ahead** at [`c65687b084b0`](https://github.com/stephenlclarke/container/commit/c65687b084b08cf4ca5fe0d7d9b5225e1843d55f).
+> - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 33 ahead** at [`f97cddf5b3aa`](https://github.com/stephenlclarke/container-builder-shim/commit/f97cddf5b3aae2426a094613793c11c41b1d2e53).
 > - [`container-compose`](https://github.com/stephenlclarke/container-compose): the integration repository's current `main` branch, with no Apple repository to compare against.
 >
 > What looks like a local Compose change can therefore require coordinated conflict resolution, pin updates, builds, tests, packaging, and release validation across the entire stack. The pinned revisions must move together.

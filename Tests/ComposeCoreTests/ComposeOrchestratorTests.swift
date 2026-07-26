@@ -12466,6 +12466,35 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests == [.listVolumes])
     }
 
+    @Test("volumes format template renders control actions and label lookup")
+    func volumesFormatTemplateRendersControlActionsAndLabelLookup() async throws {
+        let emitted = MessageRecorder()
+        let resourceManager = RecordingContainerResourceManager(volumes: [
+            ComposeVolumeSummary(
+                name: "demo_cache",
+                driver: "local",
+                source: "/volumes/demo_cache",
+                labels: ["oracle.example/key": "value", composeProjectLabel: "demo"]
+            ),
+        ])
+        let project = ComposeProject(name: "demo", services: [:])
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            resourceManager: resourceManager
+        )
+        .volumes(
+            project: project,
+            options: ComposeVolumesOptions(
+                format: #"{{if .Name}}{{.Name}}={{.Label "oracle.example/key"}}{{else}}missing{{end}}"#
+            )
+        )
+
+        #expect(emitted.messages == ["demo_cache=value"])
+        #expect(await resourceManager.requests == [.listVolumes])
+    }
+
     @Test("volumes format template rejects unknown fields without records")
     func volumesFormatTemplateRejectsUnknownFieldsWithoutRecords() async throws {
         let resourceManager = RecordingContainerResourceManager(volumes: [])
@@ -12571,6 +12600,43 @@ struct ComposeOrchestratorTests {
             "stats-output",
             "stats-output",
             "stats-output",
+        ])
+    }
+
+    @Test("stats forwards exact bytes from capable runtime managers")
+    func statsForwardsExactBytesFromCapableRuntimeManagers() async throws {
+        let emittedText = MessageRecorder()
+        let emittedData = DataRecorder()
+        let statsManager = RecordingContainerStatsDataManager(output: Data([0xC3]))
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(
+                runtimeHooks: .init(
+                    emit: { emittedText.append($0) },
+                    emitData: { emittedData.append($0) }
+                )
+            ),
+            statsManager: statsManager
+        ).stats(
+            project: project,
+            options: ComposeStatsOptions(services: ["api"], noStream: true)
+        )
+
+        #expect(emittedText.messages.isEmpty)
+        #expect(emittedData.data == [Data([0xC3])])
+        #expect(await statsManager.requests == [
+            ContainerStatsRequest(
+                ids: ["demo-api-1"],
+                format: "table",
+                noStream: true,
+                noTrunc: false,
+                includeStopped: false
+            ),
         ])
     }
 
@@ -13526,6 +13592,36 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["API\texample\t\"demo-api-1\"\texample/api/latest"])
     }
 
+    @Test("ps format template renders else-with continuations")
+    func psFormatTemplateRendersElseWithContinuations() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.format = "{{with .Health}}healthy{{else with .Status}}{{.}}{{end}}"
+            }
+        )
+
+        #expect(emitted.messages == ["running"])
+        #expect(await discoveryManager.listRequests == [false])
+    }
+
     @Test("ps format template truncates IDs by default")
     func psFormatTemplateTruncatesIDsByDefault() async throws {
         let emitted = MessageRecorder()
@@ -13584,7 +13680,165 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        #expect(emitted.messages == ["healthy\t0\t127.0.0.1:8080->80/tcp"])
+        #expect(
+            emitted.messages == [
+                "healthy\t0\t[{127.0.0.1 80 8080 tcp}]",
+            ]
+        )
+    }
+
+    @Test("ps format template defaults an absent exit code to typed zero")
+    func psFormatTemplateDefaultsAbsentExitCodeToTypedZero() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.format = #"{{printf "%d" .ExitCode}}\t{{eq .ExitCode 0}}"#
+            }
+        )
+
+        #expect(emitted.messages == ["0\ttrue"])
+    }
+
+    @Test("ps format template emits partial UTF-8 as exact bytes")
+    func psFormatTemplateEmitsPartialUTF8AsExactBytes() async throws {
+        let emittedText = MessageRecorder()
+        let emittedData = DataRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(
+                runtimeHooks: .init(
+                    emit: { emittedText.append($0) },
+                    emitData: { emittedData.append($0) }
+                )
+            ),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions { $0.format = #"{{printf "%s" (truncate "é" 1)}}"# }
+        )
+
+        #expect(emittedText.messages.isEmpty)
+        #expect(emittedData.data == [Data([0xC3])])
+    }
+
+    @Test("ps format template ranges structured publishers and reads labels")
+    func psFormatTemplateRangesStructuredPublishersAndReadsLabels() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                    "oracle.example/key": "value",
+                ],
+                resources: .init(
+                    publishedPorts: [
+                        ComposeContainerPublishedPort(
+                            hostAddress: "127.0.0.1",
+                            hostPort: 32_768,
+                            containerPort: 8_080,
+                            protocolName: "tcp"
+                        ),
+                    ],
+                    mounts: [
+                        ComposeMount(type: "external-volume", source: "demo_cache", target: "/cache"),
+                    ],
+                    networks: [
+                        ComposeContainerNetworkAttachment(network: "demo_default", ipv4Address: "192.0.2.2"),
+                    ]
+                )
+            ),
+        ])
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+        .ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.format =
+                    #"{{range $index, $publisher := .Publishers}}{{$index}}={{$publisher.URL}}|{{$publisher.TargetPort}}|{{$publisher.PublishedPort}}|{{$publisher.Protocol}}{{end}}\t{{.Label "oracle.example/key"}}\t{{.LocalVolumes}}\t{{.Mounts}}\t{{.Networks}}"#
+            }
+        )
+
+        #expect(
+            emitted.messages == [
+                "0=127.0.0.1|8080|32768|tcp\tvalue\t1\tdemo_cache\tdemo_default",
+            ]
+        )
+    }
+
+    @Test("ps with or pipeline selects publisher context")
+    func psWithOrPipelineSelectsPublisherContext() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ],
+                resources: .init(
+                    publishedPorts: [
+                        ComposeContainerPublishedPort(
+                            hostAddress: "127.0.0.1",
+                            hostPort: 32_768,
+                            containerPort: 8_080,
+                            protocolName: "tcp"
+                        ),
+                    ]
+                )
+            ),
+        ])
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+        .ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.format =
+                    "{{with . | or (index .Publishers 0)}}{{.TargetPort}}{{end}}"
+            }
+        )
+
+        #expect(emitted.messages == ["8080"])
     }
 
     @Test("ps can exclude orphaned service containers")
@@ -13623,22 +13877,60 @@ struct ComposeOrchestratorTests {
         #expect(containers.compactMap { $0["health"] as? String } == ["healthy"])
     }
 
-    @Test("ps rejects unsupported template fields")
+    @Test("ps rejects unsupported template fields, including parenthesized root selectors")
     func psRejectsUnsupportedTemplateFields() async throws {
         let runner = RecordingRunner()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [])
         let orchestrator = ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
 
-        do {
-            try await orchestrator.ps(
-                project: ComposeProject(name: "demo", services: [:]),
-                options: ComposePsOptions { $0.format = "{{.Command}}" }
-            )
-            Issue.record("Expected unsupported ps template field error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("ps --format field '.Command'; supported fields are ExitCode, Health, ID, Image, Name, Ports, Project, Publishers, Service, State, Status"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
+        for template in [
+            "{{.Command}}",
+            "{{($).Command}}",
+            "{{((.)).Command}}",
+            "{{with or $ .Name}}{{.Command}}{{end}}",
+            "{{with .Name | or $}}{{.Command}}{{end}}",
+            "{{with $ | and .Name}}{{.Command}}{{end}}",
+            "{{with and .Name $}}{{.Command}}{{end}}",
+        ] {
+            do {
+                try await orchestrator.ps(
+                    project: ComposeProject(name: "demo", services: [:]),
+                    options: ComposePsOptions { $0.format = template }
+                )
+                Issue.record("Expected unsupported ps template field error for \(template)")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported("ps --format field '.Command'; supported fields are ExitCode, Health, ID, Image, Labels, LocalVolumes, Mounts, Name, Names, Networks, Ports, Project, Publishers, Service, State, Status"))
+            } catch {
+                Issue.record("Unexpected error for \(template): \(error)")
+            }
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests.isEmpty)
+    }
+
+    @Test("ps rejects root collection operations and unsupported functions before discovery")
+    func psRejectsRootIndexingAndTableFunction() async throws {
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [])
+        let orchestrator = ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+        let nonBreakingSpace = "\u{00A0}"
+
+        for template in [
+            "{{index $ \"Command\"}}",
+            "{{len $}}",
+            "{{range $}}{{.}}{{end}}",
+            "{{range $index, $value := 3}}{{$index}}={{$value}}{{end}}",
+            "{{with table $}}{{.Command}}{{end}}",
+            "{{\(nonBreakingSpace).Name}}",
+            "{{if\(nonBreakingSpace).Name}}{{.Name}}{{end}}",
+        ] {
+            await #expect(throws: (any Error).self) {
+                try await orchestrator.ps(
+                    project: ComposeProject(name: "demo", services: [:]),
+                    options: ComposePsOptions { $0.format = template }
+                )
+            }
         }
 
         #expect(runner.commands.isEmpty)
@@ -20075,14 +20367,48 @@ struct ComposeOrchestratorTests {
         )
 
         #expect(emitted.messages.count == 1)
-        #expect(emitted.messages[0].contains("CONTAINER"))
-        #expect(emitted.messages[0].contains("CPUPERC"))
-        #expect(emitted.messages[0].contains("MEMUSAGE"))
-        #expect(emitted.messages[0].contains("MEMPERC"))
+        #expect(emitted.messages[0].contains("CONTAINER ID"))
+        #expect(emitted.messages[0].contains("CPU %"))
+        #expect(emitted.messages[0].contains("MEM USAGE / LIMIT"))
+        #expect(emitted.messages[0].contains("MEM %"))
         #expect(emitted.messages[0].contains("demo-api-1"))
         #expect(emitted.messages[0].contains("25.00%"))
         #expect(emitted.messages[0].contains("1MiB / 2MiB"))
         #expect(emitted.messages[0].contains("50.00%"))
+    }
+
+    @Test("stats template emits partial UTF-8 as exact bytes")
+    func statsTemplateEmitsPartialUTF8AsExactBytes() async throws {
+        let emittedText = MessageRecorder()
+        let emittedData = DataRecorder()
+        let client = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: "demo-api-1", status: "running")],
+            statsResponses: [
+                "demo-api-1": [
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_000_000),
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_250_000),
+                ],
+            ]
+        )
+        let manager = ContainerClientStatsManager(
+            client: client,
+            sampleInterval: .microseconds(1),
+            sampleIntervalMicroseconds: 1_000_000,
+            sleep: { _ in }
+        )
+
+        try await manager.stats(
+            ids: ["demo-api-1"],
+            format: #"{{printf "%s" (truncate "é" 1)}}"#,
+            noStream: true,
+            noTrunc: false,
+            includeStopped: false,
+            emit: { emittedText.append($0) },
+            emitData: { emittedData.append($0) }
+        )
+
+        #expect(emittedText.messages.isEmpty)
+        #expect(emittedData.data == [Data([0xC3])])
     }
 
     @Test("stats template keeps display identifier aliases")
@@ -20115,6 +20441,37 @@ struct ComposeOrchestratorTests {
         )
 
         #expect(emitted.messages == ["0123456789ab\t0123456789ab\t0123456789ab"])
+    }
+
+    @Test("stats template renders control actions before emitting direct API rows")
+    func statsTemplateRendersControlActionsBeforeEmittingDirectAPIRows() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: "demo-api-1", status: "running")],
+            statsResponses: [
+                "demo-api-1": [
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_000_000),
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_250_000),
+                ],
+            ]
+        )
+        let manager = ContainerClientStatsManager(
+            client: client,
+            sampleInterval: .microseconds(1),
+            sampleIntervalMicroseconds: 1_000_000,
+            sleep: { _ in }
+        )
+
+        try await manager.stats(
+            ids: ["demo-api-1"],
+            format: #"{{if .Container}}{{upper .Container}}={{.CPUPerc}}{{else}}missing{{end}}"#,
+            noStream: true,
+            noTrunc: false,
+            includeStopped: false,
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages == ["DEMO-API-1=25.00%"])
     }
 
     @Test("stats manager honors no trunc table output")
@@ -31143,6 +31500,47 @@ private actor RecordingContainerStatsManager: ContainerStatsManaging {
         for output in outputs {
             emit(output)
         }
+    }
+}
+
+private actor RecordingContainerStatsDataManager: ComposeRuntimeStatsDataManaging {
+    private let output: Data
+    private var storage: [ContainerStatsRequest] = []
+
+    init(output: Data) {
+        self.output = output
+    }
+
+    var requests: [ContainerStatsRequest] {
+        storage
+    }
+
+    func stats(
+        ids _: [String],
+        format _: String,
+        noStream _: Bool,
+        noTrunc _: Bool,
+        includeStopped _: Bool,
+        emit _: @escaping @Sendable (String) -> Void
+    ) async throws {}
+
+    func stats(
+        ids: [String],
+        format: String,
+        noStream: Bool,
+        noTrunc: Bool,
+        includeStopped: Bool,
+        emit _: @escaping @Sendable (String) -> Void,
+        emitData: @escaping @Sendable (Data) -> Void
+    ) async throws {
+        storage.append(ContainerStatsRequest(
+            ids: ids,
+            format: format,
+            noStream: noStream,
+            noTrunc: noTrunc,
+            includeStopped: includeStopped
+        ))
+        emitData(output)
     }
 }
 

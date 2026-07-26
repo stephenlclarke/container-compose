@@ -1,0 +1,25 @@
+name: compose-template-parity
+
+services:
+  api:
+    image: alpine:3.20
+    command: ["sh", "-c", "sleep 300"]
+    labels:
+      FOO: upper
+      Foo: title
+      foo: lower
+      oracle.example/json: "<>&/\u2028\u2029"
+      oracle.example/key: value
+    ports:
+      - name: http
+        target: 8080
+        published: "32768"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    volumes:
+      - cache:/cache
+
+volumes:
+  cache:
+    labels:
+      oracle.example/key: value

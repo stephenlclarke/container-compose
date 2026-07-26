@@ -42,9 +42,22 @@ git diff --check
 Focused verification passed locally with three tests in one suite.
 `make check` also passed, including 167 release-controller tests, 14 CI-helper
 tests, coverage policy, stack consistency, release consistency, and
-credential scanning. Hosted checks, the exact-revision Sonar result, Current
-publication, and live Docker Compose v2 parity are promotion requirements and
-will be recorded here before the phase handoff.
+credential scanning.
+
+Hosted verification also passed:
+
+- [pull request #146](https://github.com/stephenlclarke/container-compose/pull/146)
+  merged the signed implementation and documentation;
+- [hosted run 30152400569](https://github.com/stephenlclarke/container-compose/actions/runs/30152400569)
+  passed for the pull-request revision;
+- exact `main` revision
+  `b644c71fd0f7dd665a2a74192ab55745faafa281` passed SonarCloud with zero
+  open issues, 80.5% new-code coverage, 0.2% duplication, A ratings, and 100%
+  hotspot review;
+- [Current run 30152678280](https://github.com/stephenlclarke/container-compose/actions/runs/30152678280)
+  published and verified that exact revision in the mutable
+  [`current` release](https://github.com/stephenlclarke/container-compose/releases/tag/current),
+  including the live VHS recording.
 
 ## Compatibility and risk
 
@@ -59,6 +72,6 @@ permissions, cleanup, engine arguments, or dry-run output. The stable
 - [x] Live and dry-run external-secret branches retain focused unit coverage.
 - [x] File and environment fallback behavior remains covered.
 - [x] Complete local quality gate passes.
-- [ ] Hosted CI and CodeQL pass for the exact revision.
-- [ ] Exact-revision SonarCloud quality gate passes with zero open issues.
-- [ ] Current prerelease and Docker Compose v2 parity are verified.
+- [x] Hosted CI and CodeQL pass for the exact revision.
+- [x] Exact-revision SonarCloud quality gate passes with zero open issues.
+- [x] Current prerelease and Docker Compose v2 parity are verified.
