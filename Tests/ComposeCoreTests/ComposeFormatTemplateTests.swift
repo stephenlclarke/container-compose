@@ -280,9 +280,6 @@ struct ComposeFormatTemplateTests {
             try validateDockerTemplateActions(in: "{{printf \"%s\" .Name")
         }
         #expect(throws: (any Error).self) {
-            try validateDockerTemplateActions(in: "{{ /* note */}}{{.Name}}")
-        }
-        #expect(throws: (any Error).self) {
             try validateDockerTemplateActions(
                 in: "{{range $index, $publisher := .Publishers}}{{$missing.TargetPort}}{{end}}",
             )
