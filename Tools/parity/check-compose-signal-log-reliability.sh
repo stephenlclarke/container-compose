@@ -60,8 +60,10 @@ ACTIVE_IMPLEMENTATION=""
 ACTIVE_PROJECT=""
 ATTACH_PROCESS_ID=""
 ATTACH_INPUT_FD=""
+ATTACH_EXIT=""
 SERVICE_WAIT_PROCESS_ID=""
 SERVICE_WAIT_OUTPUT=""
+SERVICE_EXIT=""
 WORK_DIR=""
 
 # Writes an informational message to stdout.
@@ -227,15 +229,29 @@ signal_attach() {
 
 # Terminates an attach process tree without widening cleanup scope.
 terminate_attach() {
-    local leaf
+    local -a process_ids=()
+    local process_id
+    local child
+    local index
 
     [[ -n "$ATTACH_PROCESS_ID" ]] || return
-    leaf="$(attach_leaf_process_id)"
-    kill -KILL "$leaf" >/dev/null 2>&1 || true
-    if [[ "$leaf" != "$ATTACH_PROCESS_ID" ]]; then
-        kill -KILL "$ATTACH_PROCESS_ID" >/dev/null 2>&1 || true
-    fi
-    wait "$ATTACH_PROCESS_ID" >/dev/null 2>&1 || true
+    ATTACH_EXIT=""
+    process_ids=("$ATTACH_PROCESS_ID")
+    for ((index = 0; index < ${#process_ids[@]}; index++)); do
+        process_id="${process_ids[$index]}"
+        while IFS= read -r child; do
+            [[ -n "$child" ]] && process_ids+=("$child")
+        done < <(pgrep -P "$process_id" || true)
+    done
+    for ((index = ${#process_ids[@]} - 1; index >= 0; index--)); do
+        kill -KILL "${process_ids[$index]}" >/dev/null 2>&1 || true
+    done
+    wait_for_attach_exit 20
+    set +e
+    wait "$ATTACH_PROCESS_ID" >/dev/null 2>&1
+    ATTACH_EXIT=$?
+    set -e
+    ATTACH_PROCESS_ID=""
 }
 
 # Waits for a captured output file to contain one marker.
@@ -260,10 +276,16 @@ wait_for_pattern() {
 
 # Waits for the active attach child to exit.
 wait_for_attach_exit() {
+    local maximum_attempts="${1:-100}"
+    local process_state
     local _attempt
 
-    for _attempt in {1..100}; do
+    for ((_attempt = 1; _attempt <= maximum_attempts; _attempt++)); do
         if ! kill -0 "$ATTACH_PROCESS_ID" >/dev/null 2>&1; then
+            return
+        fi
+        process_state="$(ps -o state= -p "$ATTACH_PROCESS_ID" 2>/dev/null | tr -d '[:space:]' || true)"
+        if [[ -z "$process_state" || "$process_state" == Z* ]]; then
             return
         fi
         sleep 0.1
@@ -322,6 +344,7 @@ wait_for_service_exit() {
     local service_exit
     local _attempt
 
+    SERVICE_EXIT=""
     if [[ "$ACTIVE_IMPLEMENTATION" == "container" ]]; then
         if [[ -z "$SERVICE_WAIT_PROCESS_ID" || -z "$SERVICE_WAIT_OUTPUT" ]]; then
             error "$ACTIVE_IMPLEMENTATION service '$service' has no active exit observer"
@@ -341,7 +364,7 @@ wait_for_service_exit() {
                 fi
                 service_exit="$(sed -n '/^[0-9][0-9]*$/p' "$SERVICE_WAIT_OUTPUT" | tail -n 1)"
                 if [[ "$service_exit" =~ ^[0-9]+$ ]]; then
-                    printf '%s\n' "$service_exit"
+                    SERVICE_EXIT="$service_exit"
                     return
                 fi
                 error "$ACTIVE_IMPLEMENTATION service '$service' exit observer produced no exit code"
@@ -376,7 +399,7 @@ raise SystemExit(1)
 PY
         )" || true
         if [[ "$service_exit" =~ ^[0-9]+$ ]]; then
-            printf '%s\n' "$service_exit"
+            SERVICE_EXIT="$service_exit"
             return
         fi
         sleep 0.1
@@ -436,7 +459,8 @@ check_attach_signal() {
     wait "$ATTACH_PROCESS_ID"
     attach_exit=$?
     set -e
-    service_exit="$(wait_for_service_exit signal)"
+    wait_for_service_exit signal
+    service_exit="$SERVICE_EXIT"
 
     if ((service_exit != 42)); then
         error "$ACTIVE_IMPLEMENTATION signal service exited $service_exit, expected 42"
@@ -456,13 +480,16 @@ check_disconnected_client_logging() {
     start_service_exit_observer disconnect
     start_attach false "$attach_output" disconnect
     wait_for_pattern "$attach_output" "STREAM:BEFORE"
-    signal_attach TERM
-    set +e
-    wait "$ATTACH_PROCESS_ID"
-    attach_exit=$?
-    set -e
+    terminate_attach
+    attach_exit="$ATTACH_EXIT"
+    compose logs --no-color --no-log-prefix disconnect >"$service_output"
+    if grep -Fq "STREAM:AFTER" "$service_output"; then
+        error "$ACTIVE_IMPLEMENTATION service emitted its second record before the attach client exited"
+        return 1
+    fi
     wait_for_service_log disconnect "STREAM:AFTER" "$service_output"
-    service_exit="$(wait_for_service_exit disconnect)"
+    wait_for_service_exit disconnect
+    service_exit="$SERVICE_EXIT"
 
     if ((service_exit != 0)); then
         error "$ACTIVE_IMPLEMENTATION disconnect service exited $service_exit, expected 0"
