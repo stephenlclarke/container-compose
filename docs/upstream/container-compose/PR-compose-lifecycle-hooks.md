@@ -163,10 +163,12 @@ Sonar:
 SONAR_QUALITYGATE_WAIT=false make sonar-scan
 ```
 
-The branch analysis was accepted and processed successfully. The locally
-available analysis token cannot read quality-gate or issue endpoints; the
-repository-bound PR Sonar check remains blocking and must be green with all
-actionable findings resolved before merge.
+The exact-head branch analysis for
+`4e9c545041699a66618923f25571976bc6b5ef3f` was accepted and processed
+successfully. The repository-bound `SonarCloud Code Analysis` check on
+[PR #148](https://github.com/stephenlclarke/container-compose/pull/148) passed.
+The locally available analysis token cannot read quality-gate or issue
+endpoints, so the bound check is the authoritative quality-gate result.
 
 The first hosted runtime-validation attempt restored SwiftPM workspace metadata
 without five referenced checkout manifests and failed before compilation.
@@ -179,6 +181,8 @@ The `chatgpt-codex-connector` review identified a clean-host dependency edge
 case after the initial PR head. The focused follow-up reuses
 `applyPullPolicy(nil, ...)` for `compose run` dependencies and adds a regression
 that proves helper-image preparation fails before any container is created.
+The finding was answered with the fix and validation evidence, then its review
+thread was resolved.
 
 ## Compatibility
 
@@ -205,6 +209,8 @@ that proves helper-image preparation fails before any container is created.
 
 - `README.md`, `STATUS.md`, and the 2026-07-24 critical review are current for
   this slice.
+- Review and hosted-gate evidence is attached to
+  [PR #148](https://github.com/stephenlclarke/container-compose/pull/148).
 - The README VHS demo remains a live recording: commands are visibly typed and
   their real output is captured. This slice does not reintroduce replay or
   marker-only presentation.
