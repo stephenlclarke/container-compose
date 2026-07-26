@@ -559,8 +559,8 @@ affects this stack.
 
 | Upstream work | Current disposition |
 | --- | --- |
-| [container #1997](https://github.com/apple/container/pull/1997) | Signal payload is sent as a string, fixing the pinned `ClientProcess.kill` mismatch. Open, non-draft, merge state `BLOCKED`. Required for reliable Compose signal proxying. |
-| [container #2000](https://github.com/apple/container/pull/2000) | Fixes `logs -n N` truncation at backward-read chunk boundaries. Open, non-draft, `BLOCKED`. Add Compose tail parity after adoption. |
+| [container #1997](https://github.com/apple/container/pull/1997) | Signal payload is sent as a string, fixing the `ClientProcess.kill` mismatch. Open and under Apple review; its content-identical signed fork port is tracked by `stephenlclarke/container#29`. |
+| [container #2000](https://github.com/apple/container/pull/2000) | Fixes `logs -n N` truncation at backward-read chunk boundaries. The supported fork already had equivalent complete-record behavior; explicit 3 KB and multi-record regressions now guard it. |
 | [containerization #799](https://github.com/apple/containerization/pull/799) | Fixes missing-source copy deadlock. The fork already carries equivalent behaviour. Replace the local port when Apple merges it. |
 | [containerization #813](https://github.com/apple/containerization/pull/813) | Redacts environment values in debug logs. The fork already carries an equivalent fix. Open, non-draft, `BLOCKED`. |
 | [containerization #812](https://github.com/apple/containerization/pull/812) and [container #1947](https://github.com/apple/container/pull/1947) | Direct tar-stream copy. Both are draft/blocked and need API, metadata, cancellation, and backpressure review before adoption. |
@@ -570,22 +570,29 @@ affects this stack.
 
 ### Current Runtime Bugs That Affect Compose
 
-The relevant reports are also visible in the exact pinned source:
+Resolution update (2026-07-26):
 
-- `container/Sources/Services/ContainerAPIService/Client/ClientProcess.swift:81-85`
-  writes the signal as `Int64`, while the runtime route expects the string form
-  described by #1941/#1997.
-- `container/Sources/ContainerCommands/LogFileOutput.swift:101-129` reads
-  backwards in 1,024-byte chunks with the boundary condition reported in
-  #1967/#2000.
-- `container/Sources/Services/RuntimeLinux/Server/RuntimeService.swift:1899-1920`
-  stops `MultiWriter.write` on the first writer error, matching #2009.
+- The supported Container fork port now sends `ClientProcess.kill(_:)` signals
+  by Linux-resolvable name, with focused coverage for common, divergent, and
+  unnamed signals.
+- `LogFileOutput` already read backward until the retained records were
+  complete. Explicit 3 KB single-record and multi-record regressions confirm
+  the #1967/#2000 boundary behavior.
+- The supported init-process stream path uses `AttachableOutput`: persistent
+  writers run first, failed client handles are removed, and later writes
+  continue. A focused regression confirms both persistent records survive a
+  failed client sink. The older `MultiWriter` remains outside that supported
+  reattach path and is not treated as proof that Apple main has resolved
+  #2009.
+- `Tools/parity/check-compose-signal-log-reliability.sh` exercises those three
+  boundaries through one committed Compose file against Docker Compose V2 and
+  the exact matched runtime.
 
 | Report | Stack impact |
 | --- | --- |
-| [container #1941](https://github.com/apple/container/issues/1941) | Signal payload mismatch can break foreground stop/kill and Ctrl-C forwarding. |
-| [container #1967](https://github.com/apple/container/issues/1967) | Log tails can truncate the oldest returned line. |
-| [container #2009](https://github.com/apple/container/issues/2009) | `MultiWriter` stops fan-out after the first dead attached client returns `EPIPE`, so persisted logs can stop permanently. No reviewed fix was available. |
+| [container #1941](https://github.com/apple/container/issues/1941) | Resolved in the supported fork by the content-identical #1997 port; Apple convergence remains open. |
+| [container #1967](https://github.com/apple/container/issues/1967) | Equivalent complete-tail behavior was already present in the supported fork and now has explicit chunk-boundary regressions; Apple #2000 remains the upstream path. |
+| [container #2009](https://github.com/apple/container/issues/2009) | The supported init-process reattach path isolates failed clients through `AttachableOutput`, with a persistent-log regression. Apple main still needs its own reviewed correction. |
 | [container #2007](https://github.com/apple/container/issues/2007) | Delayed XPC replies can cause checked-continuation misuse and process crash. |
 | [container #2008](https://github.com/apple/container/issues/2008) | `container system start` can hide launchd bootstrap failure and report a misleading XPC error in CI/non-login sessions. |
 | [container #2003](https://github.com/apple/container/issues/2003) | Runtime startup remains susceptible to reported intermittent failure. |
@@ -726,7 +733,7 @@ Goal: make long-running and interactive workloads predictable.
 | --- | --- | --- | --- | --- |
 | LIFE-301 | ✅ Complete | Compose | Orchestrate `pre_start` helpers using pinned primitives | Inherited mounts/networks/env/user/workdir, failure propagation, cleanup, idempotence/scaling, and Docker parity pass |
 | LIFE-302 | ✅ Complete | Compose | Run lifecycle hooks around interactive foreground `run` | Reattach, one-shot signal proxy, detach keys, hook order, exact exit status, auto-removal, and cancellation pass |
-| LOG-303 | P1 | Runtime | Stabilise signal payload, tail boundaries, and multiwriter fan-out | #1941, #1967, #2009 regressions pass under Compose attach/log/kill |
+| LOG-303 | ✅ Complete | Runtime/Compose | Stabilise signal payload, tail boundaries, and attached-client fan-out | #1941, #1967, and #2009 regressions pass under the committed Compose attach/log fixture; Apple convergence remains tracked separately |
 | XPC-304 | P1 | Apple/runtime | Resolve delayed-reply continuation crash and startup error masking | No continuation misuse; bootstrap root cause preserved; repeated start/stop soak passes |
 | STATE-305 | P2 | Runtime/Compose | Add feasible `dead`, `restarting`, and `removing` states | Inspect, `ps`, filters, wait, and transition parity pass |
 | EVT-306 | P2 | Runtime/Compose | Add oom, explicit restart, rename, resize, update, attach/detach events | Event order, attributes, JSON/text rendering, filters, and no duplicate remove action |
