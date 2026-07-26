@@ -259,7 +259,11 @@ private func structuredTemplateLexemes(_ template: String) throws -> [Structured
         }
 
         var contentStart = open.upperBound
-        if structuredTemplateHasLeftTrimMarker(template, at: contentStart) {
+        let hasLeftTrimMarker = structuredTemplateHasLeftTrimMarker(
+            template,
+            at: contentStart,
+        )
+        if hasLeftTrimMarker {
             text = text.trimmingSuffixWhitespace()
             contentStart = template.index(after: contentStart)
         }
@@ -267,7 +271,11 @@ private func structuredTemplateLexemes(_ template: String) throws -> [Structured
             lexemes.append(.text(text))
         }
 
-        let action = try structuredTemplateAction(in: template, from: contentStart)
+        let action = try structuredTemplateAction(
+            in: template,
+            from: contentStart,
+            commentMayFollowTrimMarker: hasLeftTrimMarker,
+        )
         lexemes.append(.action(action.value))
         cursor = action.cursor
         trimLeadingText = action.trimFollowingText
@@ -286,10 +294,12 @@ private func structuredTemplateLexemes(_ template: String) throws -> [Structured
 private func structuredTemplateAction(
     in template: String,
     from contentStart: String.Index,
+    commentMayFollowTrimMarker: Bool,
 ) throws -> StructuredTemplateAction {
     let closeStart = try structuredTemplateCommentClose(
         in: template,
         from: contentStart,
+        mayFollowTrimMarker: commentMayFollowTrimMarker,
     ) ?? structuredTemplateExpressionClose(in: template, from: contentStart)
     guard let closeStart else {
         throw structuredUnsupportedAction("unclosed template action")
@@ -321,6 +331,7 @@ private func structuredTemplateAction(
 private func structuredTemplateCommentClose(
     in template: String,
     from contentStart: String.Index,
+    mayFollowTrimMarker: Bool,
 ) throws -> String.Index? {
     let commentStart = template[contentStart...].firstIndex {
         !structuredTemplateIsGoWhitespace($0)
@@ -328,6 +339,9 @@ private func structuredTemplateCommentClose(
         ?? template.endIndex
     guard template[commentStart...].hasPrefix("/*") else {
         return nil
+    }
+    guard commentStart == contentStart || mayFollowTrimMarker else {
+        throw structuredUnsupportedAction("comment must start at the action delimiter")
     }
     let bodyStart = template.index(commentStart, offsetBy: 2)
     guard let commentClose = template.range(
