@@ -30,11 +30,12 @@
 #                      "docker compose" when available, otherwise docker-compose.
 #
 # This script keeps Docker Compose V2 and container-compose aligned for
-# row-template functions, control actions, variables, whitespace trimming,
-# label lookup, raw Go-string output, root-value validation, and structured
-# publisher traversal across `ps`, `stats`, and `volumes`. It deliberately uses
-# Compose-generated fields instead of image references because runtimes may
-# canonicalize equivalent image names differently.
+# row-template functions, comparisons, range control actions, variables,
+# whitespace trimming, label lookup, raw Go-string output, root-value
+# validation, and structured publisher traversal across `ps`, `stats`, and
+# `volumes`. It deliberately uses Compose-generated fields instead of image
+# references because runtimes may canonicalize equivalent image names
+# differently.
 
 set -euo pipefail
 
@@ -529,6 +530,32 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{lt 1 2}}|{{le 1 1}}|{{gt 2 1}}|{{ge 1 1}}|{{lt "é" "z"}}|{{gt "é" "z"}}|{{1 | lt 2}}'
+    )"
+    assert_equal "$actual" \
+        'true|true|true|true|false|true|false' \
+        "$project typed ordering comparison"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range 3}}{{.}}A{{if eq . 1}}{{break}}{{end}}B{{end}}'
+    )"
+    assert_equal "$actual" '0AB1A' "$project range break template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range 3}}A{{if eq . 1}}{{continue}}{{end}}{{.}}B{{end}}'
+    )"
+    assert_equal "$actual" 'A0BAA2B' "$project range continue template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{range 2}}O{{range 2}}I{{break}}X{{end}}Z{{end}}'
+    )"
+    assert_equal "$actual" 'OIZOIZ' "$project nested range break template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format '{{printf "%q" (split (truncate "é" 1) "")}}'
     )"
     assert_equal "$actual" '["\xc3"]' "$project partial UTF-8 split"
@@ -552,6 +579,15 @@ check_implementation() {
     assert_rejected "$project negative UTF-8 byte truncate" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{truncate "abc" -1}}'
+    assert_rejected "$project mixed ordering comparison" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{lt 1 "2"}}'
+    assert_rejected "$project break outside range body" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range 0}}{{else}}{{break}}{{end}}'
+    assert_rejected "$project continue outside range body" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{range 0}}{{else}}{{continue}}{{end}}'
     # Root values are structs rather than maps in Docker's formatter context.
     # shellcheck disable=SC2016
     assert_rejected "$project root value index template" \
