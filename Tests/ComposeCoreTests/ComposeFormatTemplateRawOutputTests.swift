@@ -79,6 +79,47 @@ struct ComposeFormatTemplateRawOutputTests {
     }
 
     @Test
+    func `go interpreted literals preserve escapes as exact bytes`() throws {
+        let values = ["Name": DockerTemplateData.string("demo-api")]
+
+        #expect(
+            try renderDockerTemplateData(
+                #"{{printf "\x1b[31m%s\x1b[0m" .Name}}"#,
+                values: values,
+            ) == Data([0x1B]) + Data("[31mdemo-api".utf8) + Data([0x1B]) + Data("[0m".utf8),
+        )
+        #expect(
+            try renderDockerTemplateData(
+                #"{{print "\a\b\f\n\r\t\v\033\x1b\u263a\U0001f642\\\""}}"#,
+                values: values,
+            ) == Data([
+                0x07, 0x08, 0x0C, 0x0A, 0x0D, 0x09, 0x0B, 0x1B, 0x1B,
+            ]) + Data("☺🙂\\\"".utf8),
+        )
+        #expect(
+            try renderDockerTemplateData(#"{{"\xff"}}"#, values: values)
+                == Data([0xFF]),
+        )
+    }
+
+    @Test
+    func `invalid go interpreted escapes are rejected`() {
+        let templates = [
+            #"{{"\e"}}"#,
+            #"{{"\x1"}}"#,
+            #"{{"\400"}}"#,
+            #"{{"\uD800"}}"#,
+            #"{{"\U00110000"}}"#,
+        ]
+
+        for template in templates {
+            #expect(throws: (any Error).self) {
+                try validateDockerTemplateActions(in: template)
+            }
+        }
+    }
+
+    @Test
     func `raw table output preserves bytes and row structure`() throws {
         #expect(
             try renderDockerTemplateTableData(

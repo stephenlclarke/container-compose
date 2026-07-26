@@ -613,7 +613,10 @@ private struct StructuredTemplateStaticValue {
 
 private func structuredTemplateStaticValue(_ token: String) -> StructuredTemplateStaticValue? {
     if let literal = structuredTemplateStringLiteral(token) {
-        return StructuredTemplateStaticValue(value: .string(literal), headerKey: literal)
+        return StructuredTemplateStaticValue(
+            value: literal,
+            headerKey: try? structuredString(literal, function: "literal"),
+        )
     }
     if let integer = Int(token) {
         return StructuredTemplateStaticValue(value: .integer(integer), headerKey: nil)

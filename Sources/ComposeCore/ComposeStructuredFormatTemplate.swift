@@ -635,20 +635,6 @@ private func isStructuredTemplateVariable(_ value: String) -> Bool {
     return isStructuredTemplateIdentifier(String(value.dropFirst()))
 }
 
-func structuredTemplateStringLiteral(_ token: String) -> String? {
-    guard token.count >= 2 else { return nil }
-    if token.first == "`", token.last == "`" {
-        return String(token.dropFirst().dropLast())
-    }
-    guard token.first == "\"", token.last == "\"",
-          let data = token.data(using: .utf8),
-          let value = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
-    else {
-        return nil
-    }
-    return value as? String
-}
-
 func structuredTemplateTokens(_ value: String) -> [String]? {
     var tokens: [String] = []
     var token = ""

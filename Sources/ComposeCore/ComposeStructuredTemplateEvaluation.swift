@@ -195,7 +195,7 @@ private func structuredTemplateEvaluation(
         )
     }
     if let value = structuredTemplateStringLiteral(token) {
-        return StructuredTemplateEvaluation(value: .string(value), isRoot: false)
+        return StructuredTemplateEvaluation(value: value, isRoot: false)
     }
     if let parenthesized = structuredTemplateParenthesizedValue(token) {
         let base = try evaluateStructuredTemplateExpressionWithRoot(
