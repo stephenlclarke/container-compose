@@ -175,11 +175,21 @@ Existing uppercase letters and underscores now retain Docker's
 
 Focused unit coverage and signed live-oracle commit
 `34443acf3e6f36236bb0b81d1ef089aa94e6935d` protect all three findings against
-Docker Compose 5.3.1 and Apple Current. The complete suite passes 1,188 tests
-in 37 suites with 92.05% repository Swift coverage and 95.46% structured
-template coverage. SonarQube passes at the exact implementation commit with
-zero new or accepted issues, zero security hotspots, 92.4% new-code coverage,
-and 0.0% new duplication.
+Docker Compose 5.3.1 and Apple Current.
+
+Signed follow-up commit `e807130d1d09e19371c2d9276165fb267a64f609`
+(`fix(format): preserve Go JSON and case semantics`) closes the final JSON and
+Unicode-case findings. Docker's JSON helper leaves `<`, `>`, `&`, and `/`
+literal while escaping U+2028/U+2029, and upper/lower apply simple one-scalar
+Unicode mappings instead of Swift's expanding mappings. Signed live-oracle
+commit `dfb9d534962365ff4a99eccc54b89a9e318765a1` covers both dispositions
+against Docker Compose 5.3.1 and Apple Current through the committed YAML
+fixture.
+
+The complete suite passes 1,191 tests in 38 suites with 92.06% repository
+Swift coverage and 95.57% structured template coverage. SonarQube passes at
+the exact implementation commit with zero new or accepted issues, zero
+security hotspots, 92.5% new-code coverage, and 0.0% new duplication.
 
 ## Compatibility
 

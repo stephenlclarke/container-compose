@@ -92,6 +92,10 @@ container model, sibling fork, or package pin changes.
   `fix(format): preserve Go title casing`
 - `34443acf3e6f36236bb0b81d1ef089aa94e6935d`
   `test(format): cover reviewed template parity gaps`
+- `e807130d1d09e19371c2d9276165fb267a64f609`
+  `fix(format): preserve Go JSON and case semantics`
+- `dfb9d534962365ff4a99eccc54b89a9e318765a1`
+  `test(format): cover JSON and Unicode parity`
 
 All implementation commits are signed and construct the complete code delta.
 This documentation commit is intentionally separate.
@@ -150,6 +154,11 @@ This documentation commit is intentionally separate.
     punctuation as separators;
   - applies simple Unicode title mappings without expanding one rune into
     multiple scalars.
+- `Sources/ComposeCore/ComposeDockerTemplateCase.swift`
+  - applies one-scalar upper and lower mappings like Go's Unicode helpers
+    instead of Swift's full-string expansions;
+  - retains the simple dotted-I and Greek mappings that differ from Swift's
+    multi-scalar Unicode properties.
 - `Sources/ComposeCore/ComposeStructuredTemplateAnalysis.swift`
   - validates lexical variable scope before command side effects;
   - preserves repeated fields and walks all control-flow branches for command
@@ -195,7 +204,9 @@ This documentation commit is intentionally separate.
   - JSON-encodes publisher records in their declared Go struct-field order,
     independently of deterministic alphabetic map ordering;
   - JSON-encodes byte strings incrementally so valid UTF-8 scalars survive
-    while each invalid subsequence becomes Docker's `\ufffd` escape.
+    while each invalid subsequence becomes Docker's `\ufffd` escape;
+  - JSON-escapes controls and U+2028/U+2029 while retaining literal `<`, `>`,
+    `&`, and `/`, matching Docker's Go encoder with HTML escaping disabled.
 - `Sources/ComposeCore/ComposeDockerTemplateFunctionSupport.swift` and
   `ComposeDockerTemplatePrintf.swift`
   - implement typed arity checks, boolean helpers, string and collection
@@ -277,10 +288,15 @@ This documentation commit is intentionally separate.
     display, decomposed and multi-scalar rune widths, invalid partial UTF-8
     splitting and joining, negative truncation, and typed map keys.
 - `Tests/ComposeCoreTests/ComposeDockerTemplateJSONTests.swift`
+  - proves Go-compatible control, syntax, slash, HTML-character, U+2028, and
+    U+2029 escaping;
   - proves partial invalid UTF-8 retains its valid prefix and emits `\ufffd`;
   - proves an already-valid replacement scalar remains literal JSON text;
   - proves publisher JSON retains `URL`, `TargetPort`, `PublishedPort`,
     `Protocol` field order.
+- `Tests/ComposeCoreTests/ComposeDockerTemplateCaseTests.swift`
+  - proves upper and lower use one-scalar mappings for sharp S, dotted I,
+    ligatures, and the Greek mapping ranges that Swift otherwise expands.
 - `Tests/ComposeCoreTests/ComposeDockerTemplatePrintfDiagnosticsTests.swift`
   - proves missing `%s`, `%d`, `%q`, and `%v` operands render Go diagnostics;
   - proves surplus string operands render Go's typed `EXTRA` diagnostic.
@@ -350,7 +366,9 @@ This documentation commit is intentionally separate.
     does while retaining literal non-ASCII whitespace outside actions;
   - verifies `.Labels` through generic string helpers, rejects root `index`
     and the unsupported `table` template function, and compares direct and
-    `%s` partial UTF-8 output byte-for-byte.
+    `%s` partial UTF-8 output byte-for-byte;
+  - verifies YAML-backed label JSON leaves `<>&/` literal, escapes U+2028 and
+    U+2029, and matches Docker's simple Unicode upper/lower output.
 
 ## Validation
 
@@ -362,6 +380,7 @@ make go-test
 make coverage-check
 make check
 swiftlint lint --strict --quiet \
+  Sources/ComposeCore/ComposeDockerTemplateCase.swift \
   Sources/ComposeCore/ComposeDockerTemplateData.swift \
   Sources/ComposeCore/ComposeDockerTemplatePrintf.swift \
   Sources/ComposeCore/ComposeDockerTemplateTitle.swift \
@@ -370,6 +389,7 @@ swiftlint lint --strict --quiet \
   Sources/ComposeCore/ComposeStructuredTemplateEvaluation.swift \
   Sources/ComposeCore/ComposeStructuredTemplateStringLiteral.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateCommentTests.swift \
+  Tests/ComposeCoreTests/ComposeDockerTemplateCaseTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateJSONTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplatePrintfDiagnosticsTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateTitleTests.swift \
@@ -377,6 +397,7 @@ swiftlint lint --strict --quiet \
   Tests/ComposeCoreTests/ComposeFormatTemplateRawOutputTests.swift \
   Tests/ComposeCoreTests/ComposeStructuredFormatTemplateTests.swift
 swiftformat --lint --swift-version 6.2 \
+  Sources/ComposeCore/ComposeDockerTemplateCase.swift \
   Sources/ComposeCore/ComposeDockerTemplateData.swift \
   Sources/ComposeCore/ComposeDockerTemplatePrintf.swift \
   Sources/ComposeCore/ComposeDockerTemplateTitle.swift \
@@ -385,6 +406,7 @@ swiftformat --lint --swift-version 6.2 \
   Sources/ComposeCore/ComposeStructuredTemplateEvaluation.swift \
   Sources/ComposeCore/ComposeStructuredTemplateStringLiteral.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateCommentTests.swift \
+  Tests/ComposeCoreTests/ComposeDockerTemplateCaseTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateJSONTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplatePrintfDiagnosticsTests.swift \
   Tests/ComposeCoreTests/ComposeDockerTemplateTitleTests.swift \
@@ -397,10 +419,10 @@ CONTAINER_COMPOSE_CONTAINER=/opt/homebrew/opt/container-current/bin/container \
 git diff --check
 ```
 
-- Swift: 1,188 tests in 37 suites passed.
-- Swift repository coverage: 92.05%.
+- Swift: 1,191 tests in 38 suites passed.
+- Swift repository coverage: 92.06%.
 - Go normalizer coverage: 89.88%.
-- Structured template engine and support: 2,356/2,468 lines, 95.46%.
+- Structured template engine and support: 2,419/2,531 lines, 95.57%.
 - `ComposeStructuredFormatTemplate.swift`: 658/682 lines, 96.48%.
 - `ComposeStructuredTemplateAnalysis.swift`: 516/529 lines, 97.54%.
 - `ComposeStructuredTemplateCompatibilitySyntax.swift`: 60/64 lines,
@@ -409,7 +431,8 @@ git diff --check
 - `ComposeStructuredTemplateLookup.swift`: 29/35 lines, 82.86%.
 - `ComposeStructuredTemplateStringLiteral.swift`: 120/129 lines, 93.02%.
 - `ComposeStructuredTemplateWhitespace.swift`: 32/32 lines, 100%.
-- `ComposeDockerTemplateData.swift`: 169/179 lines, 94.41%.
+- `ComposeDockerTemplateCase.swift`: 42/42 lines, 100%.
+- `ComposeDockerTemplateData.swift`: 190/200 lines, 95%.
 - `ComposeDockerTemplatePrintSupport.swift`: 52/56 lines, 92.86%.
 - `ComposeDockerTemplatePrintf.swift`: 302/313 lines, 96.49%.
 - `ComposeDockerTemplateFunctionSupport.swift`: 158/175 lines, 90.29%.
@@ -431,8 +454,8 @@ git diff --check
   - `container-compose` base
     `b644c71fd0f7dd665a2a74192ab55745faafa281`.
 - SonarQube branch analysis for implementation commit
-  `34443acf3e6f36236bb0b81d1ef089aa94e6935d` passed its quality gate with
-  zero new or accepted issues, zero security hotspots, 92.4% new-code
+  `dfb9d534962365ff4a99eccc54b89a9e318765a1` passed its quality gate with
+  zero new or accepted issues, zero security hotspots, 92.5% new-code
   coverage, and 0.0% new duplication.
 
 The user explicitly waived the soak gate for this slice. Hosted CI, CodeQL,
@@ -458,7 +481,7 @@ request and introduces no Apple review dependency.
 
 The Codex review on
 [pull request #147](https://github.com/stephenlclarke/container-compose/pull/147)
-identified fifty-one actionable compatibility cases and three suggestions that
+identified sixty-one actionable compatibility cases and three suggestions that
 were disproved against the exact Docker Compose 5.3.1 oracle:
 
 - `and` and `or` now evaluate arguments left-to-right and stop before guarded
@@ -741,6 +764,17 @@ Foundation sentence capitalization. Focused unit coverage and signed
 live-oracle commit `34443acf3e6f36236bb0b81d1ef089aa94e6935d`
 protect the reported examples against Docker Compose 5.3.1 and Apple Current.
 
+The subsequent exact-head review found two further string-byte gaps. Signed
+commit `e807130d1d09e19371c2d9276165fb267a64f609` replaces Foundation JSON
+serialization with Docker's observed Go behavior: syntax and control
+characters are escaped, U+2028 and U+2029 remain explicit escapes, `/` is not
+escaped, and Docker's deliberate no-HTML-escaping behavior leaves `<`, `>`,
+and `&` literal. The same commit replaces Swift's expanding upper/lower
+operations with one-scalar Unicode mappings, including dotted I and the
+simple Greek mappings. Signed live-oracle commit
+`dfb9d534962365ff4a99eccc54b89a9e318765a1` protects both outcomes through a
+committed YAML label against Docker Compose 5.3.1 and Apple Current.
+
 The suggestion to reject `join` for publisher records was not implemented:
 Docker Compose 5.3.1 accepts `{{join .Publishers ","}}` and renders
 `{127.0.0.1 8080 32768 tcp}`. The same successful behavior is now protected by
@@ -753,7 +787,7 @@ actionable autobot finding was deferred. The suggestion to propagate root
 identity through `table` was not implemented because Docker Compose 5.3.1
 rejects the template at parse time with `function "table" not defined`; the
 unsupported helper was removed and that exact rejection is protected instead.
-All sixty-two connector threads are answered with their implementation or
+All sixty-four connector threads are answered with their implementation or
 verified compatibility disposition.
 
 ## Documentation And Operations
