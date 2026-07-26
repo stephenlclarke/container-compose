@@ -35,5 +35,11 @@ struct DockerTemplatePrintfDiagnosticsTests {
                 values: values,
             ) == "%!d(MISSING)|%!q(MISSING)|%!v(MISSING)",
         )
+        #expect(
+            try renderDockerTemplate(
+                #"{{printf "%s" .Name .Name}}"#,
+                values: values,
+            ) == "demo-api%!(EXTRA string=demo-api)",
+        )
     }
 }

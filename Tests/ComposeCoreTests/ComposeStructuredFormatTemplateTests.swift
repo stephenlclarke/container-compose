@@ -42,7 +42,6 @@ struct ComposeStructuredFormatTemplateTests {
             "{{ne .Name .Name .Name}}",
             "{{3-}}",
             "{{printf \"%\"}}",
-            "{{printf \"%s\" .Name .Name}}",
             "{{printf \"%f\" .Name}}",
         ] {
             #expect(throws: (any Error).self) {

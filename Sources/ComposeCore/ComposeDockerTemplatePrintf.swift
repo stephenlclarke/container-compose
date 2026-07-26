@@ -59,8 +59,8 @@ func structuredTemplatePrintf(
         }
         cursor = directive.nextCursor
     }
-    guard valueIndex == values.count else {
-        throw structuredUnsupportedAction("printf \(format)")
+    for value in values.dropFirst(valueIndex) {
+        rendered.append(contentsOf: structuredPrintfExtraDiagnostic(value))
     }
     return rendered
 }
@@ -234,6 +234,17 @@ private func structuredPrintfTypeName(_ value: DockerTemplateData) -> String {
     case .record:
         "formatter.Port"
     }
+}
+
+private func structuredPrintfExtraDiagnostic(
+    _ value: DockerTemplateData,
+) -> [UInt8] {
+    if value == .null {
+        return Array("%!(EXTRA <nil>)".utf8)
+    }
+    return Array("%!(EXTRA \(structuredPrintfTypeName(value))=".utf8)
+        + value.outputBytes
+        + Array(")".utf8)
 }
 
 private func structuredPrintfPadded(
