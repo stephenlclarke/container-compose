@@ -47,15 +47,16 @@ func structuredTemplatePrintf(
         }
 
         let directive = try structuredPrintfDirective(in: format, from: next)
-        guard valueIndex < values.count else {
-            throw structuredUnsupportedAction("printf \(format)")
+        if valueIndex < values.count {
+            let replacement = try structuredPrintfReplacement(
+                values[valueIndex],
+                directive: directive,
+            )
+            rendered.append(contentsOf: replacement)
+            valueIndex += 1
+        } else {
+            rendered.append(contentsOf: "%!\(directive.verb)(MISSING)".utf8)
         }
-        let replacement = try structuredPrintfReplacement(
-            values[valueIndex],
-            directive: directive,
-        )
-        rendered.append(contentsOf: replacement)
-        valueIndex += 1
         cursor = directive.nextCursor
     }
     guard valueIndex == values.count else {
