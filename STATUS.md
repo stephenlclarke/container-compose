@@ -26,6 +26,12 @@ Use this validation floor when parity or runtime behavior changes:
 
 Runtime-backed commands preflight the installed stack and service readiness before work begins. Apple stock or mismatched Homebrew installs fail with [INSTALL.md](INSTALL.md) guidance instead of a late unsupported-feature or runtime error, and stopped services fail before Compose model loading or build/create side effects with `container system start` and Homebrew restart guidance.
 
+Library consumers must supply runtime collaborators before executing
+runtime-backed orchestration. The public unconfigured provider fails closed
+for every operation, including image-volume metadata preparation and declared
+volume discovery, so a missing provider cannot silently omit Dockerfile
+`VOLUME` planning or copy-up.
+
 Surface names follow the current Docker Docs [Compose file reference](https://docs.docker.com/reference/compose-file/), [Services reference](https://docs.docker.com/reference/compose-file/services/), [Build Specification](https://docs.docker.com/reference/compose-file/build/), [Deploy Specification](https://docs.docker.com/reference/compose-file/deploy/), [Develop Specification](https://docs.docker.com/reference/compose-file/develop/), [Dockerfile reference](https://docs.docker.com/reference/dockerfile/), and [Compose CLI reference](https://docs.docker.com/reference/cli/docker/compose/). This file records current state only; it is not a release history.
 
 ## Compose Surface Matrix

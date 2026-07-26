@@ -149,31 +149,23 @@ The direction aligns with
 which asks for a dependency-minimal client SDK because Apple API types
 currently pull a large implementation graph into front ends.
 
-### P1: Unconfigured Image-Volume Discovery Fails Open
+### P1: Unconfigured Image-Volume Discovery Fails Open — Resolved
 
-`Sources/ComposeCore/ComposeUnconfiguredRuntime.swift:148-178` makes nearly
-every runtime operation throw a clear unavailable error. The exception is
-`imageDeclaredVolumeTargets`, which returns an empty array at lines 164-166.
+Signed Compose commit
+[`5d5327904ee38d0db7ad8faddbbd8fd448750abc`](https://github.com/stephenlclarke/container-compose/commit/5d5327904ee38d0db7ad8faddbbd8fd448750abc)
+removes the exceptional fail-open behavior. Both image-volume metadata
+preparation and declared-volume lookup now report the same explicit missing
+provider error as the other unconfigured operations.
 
-The SPI already has the correct default:
-`Sources/ComposeRuntimeSPI/ComposeRuntimeImages.swift:254-256` calls
-`imageMetadata` and therefore propagates an unavailable-runtime error.
-`ComposeOrchestratorImageVolumes.swift:70` treats the empty array as
-authoritative and silently skips image-declared anonymous volumes and copy-up.
+Seven contract tests exercise all 38 concrete operations exposed by the
+public unconfigured provider. A direct declared-volume planning test also
+proves the library-only path fails before resource creation. Existing
+orchestration tests now inject an explicit no-declared-volume image provider
+instead of depending on the old silent fallback.
 
-Impact: a library consumer can receive an apparently valid plan with missing
-Dockerfile `VOLUME` semantics instead of a configuration failure.
-
-Ownership: Compose.
-
-Required correction:
-
-- delete the fail-open override or make it throw the same unavailable error as
-  the other image operations;
-- add a contract test for every unconfigured SPI method, not only
-  `imageExists`;
-- add a service fixture whose image has a declared volume and prove the
-  library-only path fails explicitly.
+The full local gate passed 1,224 Swift tests at 92.66% line coverage and
+89.88% Go statement coverage. The existing image-volume Compose fixture also
+passed Docker Compose V2 and source-matched Apple runtime execution.
 
 ### P1: Child Processes Survive Swift Task Cancellation
 
@@ -658,7 +650,7 @@ new Apple design work.
 
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
-| CC-001 | P1 | Compose | Make unconfigured image-volume lookup fail closed | Every unconfigured SPI method has a contract test; declared-volume planning reports a clear provider error |
+| CC-001 | P1 | Compose | **Complete:** make unconfigured image-volume lookup fail closed | Every unconfigured SPI method has a contract test; declared-volume planning reports a clear provider error |
 | CC-002 | P1 | Compose | Add task-cancellation ownership to `ProcessRunner` | Cancelled captured/inherited/input child exits within bound; no continuation double-resume; no surviving PID |
 | CC-003 | P1 | Plugin | Replace wait-before-drain compatibility preflight | Fake command writes >256 KiB to stdout and stderr without deadlock; cancellation and error text tested |
 | CC-004 | P1 | Compose | Preserve inherited volumes during `commit` | Unit and live Docker parity cover inherited/additive/multiple `VOLUME`; status claim restored only after passing |
