@@ -310,6 +310,14 @@ check_implementation() {
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{json .Publishers}}'
+    )"
+    assert_equal "$actual" \
+        '[{"URL":"127.0.0.1","TargetPort":8080,"PublishedPort":32768,"Protocol":"tcp"}]' \
+        "$project publisher JSON field order"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format '{{.Publishers}}|{{printf "%v" .Publishers}}'
     )"
     assert_equal "$actual" \
@@ -351,6 +359,14 @@ check_implementation() {
     assert_equal "$actual" \
         "[$combining]|[ $combining]|[$combining ]" \
         "$project printf rune width template"
+
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+            --format '{{printf "%s%s" .Name}}'
+    )"
+    assert_equal "$actual" \
+        "${name}%!s(MISSING)" \
+        "$project printf missing argument template"
 
     # Go-template variables must reach Compose literally.
     # shellcheck disable=SC2016
@@ -511,6 +527,12 @@ check_implementation() {
     assert_rejected "$project root value range template" \
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
         --format '{{range $}}{{.}}{{end}}'
+    # A logical `with` can select the root for one row even when another branch
+    # can select a non-root value.
+    # shellcheck disable=SC2016
+    assert_rejected "$project logical with root index template" \
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
+        --format '{{with or .Health $}}{{index . "Name"}}{{end}}'
     # Integer ranges accept at most one declaration in current Go templates.
     # shellcheck disable=SC2016
     assert_rejected "$project two-variable integer range template" \
@@ -654,6 +676,13 @@ check_implementation() {
             --format '{{range $publisher := .Publishers}}{{else}}{{len $publisher}}{{end}}'
     )"
     assert_equal "$actual" '0' "$project empty range variable template"
+    # `and` returns the falsey publisher collection without selecting the root.
+    # shellcheck disable=SC2016
+    actual="$(
+        "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps --all \
+            --format '{{range and .Publishers $}}{{.}}{{else}}empty{{end}}'
+    )"
+    assert_equal "$actual" 'empty' "$project logical falsey publisher range template"
     # A one-off container has no publishers, so `or` falls back to the root
     # formatter struct. Go rejects ranging over that possible root value.
     # shellcheck disable=SC2016
