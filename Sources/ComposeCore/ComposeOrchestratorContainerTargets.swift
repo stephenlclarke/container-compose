@@ -128,6 +128,7 @@ extension ComposeOrchestrator {
                     service: service,
                     index: index,
                     name: container.id,
+                    status: container.status,
                 )
             }
         }

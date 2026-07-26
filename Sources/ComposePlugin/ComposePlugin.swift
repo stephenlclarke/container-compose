@@ -1646,38 +1646,50 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     /// Runs a one-off service container with an optional command override.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().run(
-            project: loadedProject,
-            serviceName: service,
-            options: ComposeRunOptions {
-                $0.command = command
-                $0.build = build
-                $0.remove = remove
-                $0.detach = detach
-                $0.interactive = interactive
-                $0.noTty = noTty
-                $0.noDeps = noDeps
-                $0.servicePorts = servicePorts
-                $0.publish = publish
-                $0.pullPolicy = pull
-                $0.quietBuild = quietBuild
-                $0.quietPull = quietPull
-                $0.quiet = quiet
-                $0.removeOrphans = global.effectiveRemoveOrphans(removeOrphans)
-                $0.containerName = name
-                $0.entrypoint = entrypoint
-                $0.workingDirectory = workdir
-                $0.user = user
-                $0.environment = environment
-                $0.envFiles = envFiles
-                $0.labels = labels
-                $0.volumes = volumes
-                $0.capAdd = capAdd
-                $0.capDrop = capDrop
-                $0.useAliases = useAliases
-            }
-        )
+        do {
+            try await orchestrator().run(
+                project: loadedProject,
+                serviceName: service,
+                options: ComposeRunOptions {
+                    $0.command = command
+                    $0.build = build
+                    $0.remove = remove
+                    $0.detach = detach
+                    $0.interactive = interactive
+                    $0.noTty = noTty
+                    $0.noDeps = noDeps
+                    $0.servicePorts = servicePorts
+                    $0.publish = publish
+                    $0.pullPolicy = pull
+                    $0.quietBuild = quietBuild
+                    $0.quietPull = quietPull
+                    $0.quiet = quiet
+                    $0.removeOrphans = global.effectiveRemoveOrphans(removeOrphans)
+                    $0.containerName = name
+                    $0.entrypoint = entrypoint
+                    $0.workingDirectory = workdir
+                    $0.user = user
+                    $0.environment = environment
+                    $0.envFiles = envFiles
+                    $0.labels = labels
+                    $0.volumes = volumes
+                    $0.capAdd = capAdd
+                    $0.capDrop = capDrop
+                    $0.useAliases = useAliases
+                }
+            )
+        } catch {
+            try throwRunCommandError(error)
+        }
     }
+}
+
+/// Preserves a foreground `run` process status without adding error output.
+func throwRunCommandError(_ error: Error) throws -> Never {
+    guard let runExit = error as? ComposeRunExitError else {
+        throw error
+    }
+    throw ExitCode(runExit.status)
 }
 
 /// Implements `compose start`.

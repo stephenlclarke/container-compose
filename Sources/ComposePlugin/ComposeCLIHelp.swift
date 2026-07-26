@@ -343,8 +343,8 @@ enum ComposeCLIHelp {
     private static let supportDetails: [String: String] = [
         "events": "OOM, explicit restart, rename, resize, update, and attach/detach actions are unavailable; automatic policy restarts emit die then start, and exec lifecycle actions are supported.",
         "exec": "Docker-complete privileged execution is unavailable.",
-        "run": "Container-facing DNS aliases and interactive lifecycle hooks are incomplete.",
-        "up": "pre_start and container-facing DNS aliases are unavailable.",
+        "run": "Container-facing DNS aliases are unavailable.",
+        "up": "Container-facing DNS aliases are unavailable.",
     ]
 
     private static let supportByOption: [String: [String: SupportLevel]] = [

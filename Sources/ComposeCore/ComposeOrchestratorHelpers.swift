@@ -27,6 +27,7 @@ func reconcileProgressMessage(service: ComposeService, command: String) -> Strin
 /// container can be reused.
 struct ExistingContainer {
     var configHash: String?
+    var status: String?
 }
 
 extension ComposeNetworkOptions {

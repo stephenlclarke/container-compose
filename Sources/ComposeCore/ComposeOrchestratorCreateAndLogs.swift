@@ -101,6 +101,7 @@ public extension ComposeOrchestrator {
                         service: service,
                         request: ServiceContainerReconcileRequest(
                             name: name,
+                            existing: try await inspectContainer(name),
                             runOptions: RunArgumentOptions {
                                 $0.command = "create"
                                 $0.containerIndex = replicaIndex

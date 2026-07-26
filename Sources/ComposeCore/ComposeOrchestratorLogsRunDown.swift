@@ -60,6 +60,16 @@ private struct ComposeOneOffRunInvocation {
     let publishedPorts: [String]
     let containerName: String
     let managedLifecycleRun: Bool
+    let automaticRemove: Bool
+    let foregroundInteractive: Bool
+}
+
+private struct ComposeManagedLifecycleRunRequest {
+    let service: ComposeService
+    let containerName: String
+    let requestedRemove: Bool
+    let automaticRemove: Bool
+    let interactive: Bool
 }
 
 public extension ComposeOrchestrator {
@@ -514,6 +524,7 @@ public extension ComposeOrchestrator {
             options: run,
         )
         let managedLifecycleRun = !run.detach && hasLifecycleHooks(preparation.service)
+        let automaticRemove = run.remove && managedLifecycleRun && foregroundInteractiveRun
         try await removeRunOrphans(
             project: preparation.project,
             requested: run.removeOrphans,
@@ -525,34 +536,79 @@ public extension ComposeOrchestrator {
             publishedPorts: publishedPorts,
             containerName: containerName,
             managedLifecycleRun: managedLifecycleRun,
+            automaticRemove: automaticRemove,
+            foregroundInteractive: foregroundInteractiveRun,
         )
         let arguments = try await oneOffRunArguments(
             preparation: preparation,
             invocation: invocation,
             options: run,
         )
-        try await runContainerWithProgress(
-            arguments,
-            message: "Running \(preparation.service.name)",
-            quiet: run.quiet,
-            inheritedIO: foregroundInteractiveRun,
-            replaceProcess: foregroundInteractiveRun,
-        )
-        if run.detach {
-            try await runPostStartHooks(service: preparation.service, containerID: containerName)
-        }
-        try await finishManagedLifecycleRun(
-            service: preparation.service,
-            containerName: containerName,
+        let launchWithInheritedIO = foregroundInteractiveRun && !managedLifecycleRun
+        try await launchOneOffRun(
             arguments: arguments,
-            managed: managedLifecycleRun,
-            remove: run.remove,
+            serviceName: preparation.service.name,
+            options: run,
+            inheritedIO: launchWithInheritedIO,
         )
+        try await finishOneOffRun(
+            preparation: preparation,
+            invocation: invocation,
+            options: run,
+        )
+    }
+
+    /// Runs post-launch hooks, cleanup, and orphan reconciliation.
+    private func finishOneOffRun(
+        preparation: ComposeRunServicePreparation,
+        invocation: ComposeOneOffRunInvocation,
+        options run: ComposeRunOptions,
+    ) async throws {
+        if run.detach {
+            try await runPostStartHooks(
+                service: preparation.service,
+                containerID: invocation.containerName,
+            )
+        }
+        if invocation.managedLifecycleRun {
+            try await finishManagedLifecycleRun(
+                ComposeManagedLifecycleRunRequest(
+                    service: preparation.service,
+                    containerName: invocation.containerName,
+                    requestedRemove: run.remove,
+                    automaticRemove: invocation.automaticRemove,
+                    interactive: invocation.foregroundInteractive,
+                ),
+            )
+        }
         try await removeRunOrphansAfterOneOffRun(
             preparation: preparation,
             options: run,
-            foregroundInteractive: foregroundInteractiveRun,
+            foregroundInteractive: invocation.foregroundInteractive,
         )
+    }
+
+    /// Launches the runtime process and preserves a one-off process exit status.
+    private func launchOneOffRun(
+        arguments: [String],
+        serviceName: String,
+        options run: ComposeRunOptions,
+        inheritedIO: Bool,
+    ) async throws {
+        do {
+            try await runContainerWithProgress(
+                arguments,
+                message: "Running \(serviceName)",
+                quiet: run.quiet,
+                inheritedIO: inheritedIO,
+                replaceProcess: inheritedIO,
+            )
+        } catch let error as ComposeError {
+            guard case let .commandFailed(_, status, _) = error else {
+                throw error
+            }
+            throw ComposeRunExitError(status: status)
+        }
     }
 
     /// Determines whether the runtime should inherit terminal input and output for a run.
@@ -594,11 +650,16 @@ public extension ComposeOrchestrator {
             options: RunArgumentOptions {
                 $0.detach = run.detach || invocation.managedLifecycleRun
                 // A lifecycle-managed foreground run starts detached so it can
-                // run hooks before following output. Keep `--rm` out of that
-                // invocation: runtimes can reject `--detach --rm`, and removal
-                // could otherwise race log collection. Cleanup runs after the
-                // one-off process and its log stream both finish.
-                $0.remove = run.remove && !invocation.managedLifecycleRun
+                // run hooks before following output. Non-interactive cleanup
+                // stays manual to avoid racing log collection. Interactive
+                // runs retain runtime auto-remove so a detach-key exit can
+                // leave the process running and still clean it up later.
+                $0.remove = run.remove
+                    && (!invocation.managedLifecycleRun
+                        || isForegroundInteractiveRun(
+                            service: preparation.service,
+                            options: run,
+                        ))
                 $0.oneOff = true
                 $0.publishedPorts = invocation.publishedPorts
                 $0.containerNameOverride = invocation.containerName
@@ -611,33 +672,37 @@ public extension ComposeOrchestrator {
     }
 
     /// Runs hooks and collects the exit status for a lifecycle-managed one-off run.
-    private func finishManagedLifecycleRun(
-        service: ComposeService,
-        containerName: String,
-        arguments: [String],
-        managed: Bool,
-        remove: Bool,
-    ) async throws {
-        guard managed else { return }
-        let status: Int32
+    private func finishManagedLifecycleRun(_ request: ComposeManagedLifecycleRunRequest) async throws {
+        let attachmentResult: ComposeRunAttachmentResult
         do {
-            try await runPostStartHooks(service: service, containerID: containerName)
-            status = try await followForegroundOneOffRun(service: service, containerName: containerName)
+            try await runPostStartHooks(service: request.service, containerID: request.containerName)
+            if request.interactive {
+                attachmentResult = try await attachForegroundOneOffRun(
+                    service: request.service,
+                    containerName: request.containerName,
+                )
+            } else {
+                let status = try await followForegroundOneOffRun(
+                    service: request.service,
+                    containerName: request.containerName,
+                )
+                attachmentResult = .exited(status)
+            }
         } catch {
-            if remove {
-                try? await lifecycleManager.deleteContainer(id: containerName, force: false)
+            if request.requestedRemove {
+                try? await lifecycleManager.deleteContainer(id: request.containerName, force: true)
             }
             throw error
         }
-        if remove {
-            try await lifecycleManager.deleteContainer(id: containerName, force: false)
+        if attachmentResult == .detached {
+            return
         }
+        if request.requestedRemove, !request.automaticRemove {
+            try await lifecycleManager.deleteContainer(id: request.containerName, force: false)
+        }
+        guard case let .exited(status) = attachmentResult else { return }
         guard status == 0 else {
-            throw ComposeError.commandFailed(
-                command: shellQuoted([options.containerBinary] + arguments),
-                status: status,
-                stderr: "",
-            )
+            throw ComposeRunExitError(status: status)
         }
     }
 
@@ -789,9 +854,18 @@ public extension ComposeOrchestrator {
         let services = try start.services.isEmpty
             ? orderedServices(project: project, selected: [])
             : selectedServices(project: project, selected: start.services)
-        let targets = try await serviceContainerTargets(project: project, services: services)
-        for target in targets {
-            try await startContainer(service: target.service, containerName: target.name)
+        var targets: [ServiceContainerTarget] = []
+        for service in services {
+            let serviceTargets = try await serviceContainerTargets(
+                project: project,
+                services: [service],
+            )
+            try await startServiceTargets(
+                project: project,
+                service: service,
+                targets: serviceTargets,
+            )
+            targets.append(contentsOf: serviceTargets)
         }
         if start.wait {
             try await waitForReadyServiceTargets(targets, timeout: start.waitTimeout, command: "start --wait")

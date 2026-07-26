@@ -425,7 +425,7 @@ struct ComposeCLIHelpTests {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "run"))
 
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(help.contains("Container-facing DNS aliases and interactive lifecycle hooks are incomplete."))
+        #expect(help.contains("Container-facing DNS aliases are unavailable."))
         #expect(help.contains("\u{001B}[32m--build\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--no-deps\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--service-ports\u{001B}[0m"))
@@ -513,7 +513,7 @@ struct ComposeCLIHelpTests {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
 
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(help.contains("pre_start and container-facing DNS aliases are unavailable."))
+        #expect(help.contains("Container-facing DNS aliases are unavailable."))
         #expect(help.contains("\u{001B}[32m--wait\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--wait-timeout\u{001B}[0m"))
     }

@@ -610,6 +610,12 @@ extension ComposeOrchestrator {
                 quietBuild: quietBuild,
                 allowBuild: allowBuild,
             )
+            let defaultPolicyHookImages = explicitPreStartImages(
+                services: services.filter { nonEmpty($0.pullPolicy) == nil },
+            )
+            for image in defaultPolicyHookImages {
+                try await pullMissingImage(image, quiet: quiet)
+            }
             return
         }
 
@@ -622,6 +628,12 @@ extension ComposeOrchestrator {
                     $0.quiet = quiet
                 },
             )
+            let serviceImages = Set(services.compactMap(\.image))
+            for image in explicitPreStartImages(services: services)
+                where !serviceImages.contains(image)
+            {
+                try await pullImage(image, quiet: quiet)
+            }
         case "missing", "if_not_present":
             try await pullMissingImages(services: services, quiet: quiet, skipBuildable: skipBuildableMissingImages)
         case "never":
@@ -634,10 +646,12 @@ extension ComposeOrchestrator {
     /// Applies `compose create` image preparation before creating containers.
     func applyCreateImagePolicy(_ create: ComposeCreateOptions, project: ComposeProject, services: [ComposeService]) async throws {
         if create.pullPolicy == "build" {
-            guard !create.noBuild else {
-                return
+            if !create.noBuild {
+                try await build(project: project, services: services.map(\.name), noCache: false, quiet: create.quietBuild)
             }
-            try await build(project: project, services: services.map(\.name), noCache: false, quiet: create.quietBuild)
+            for image in explicitPreStartImages(services: services) {
+                try await pullMissingImage(image, quiet: create.quietPull)
+            }
             return
         }
 
@@ -709,26 +723,29 @@ extension ComposeOrchestrator {
         quietBuild: Bool = false,
         allowBuild: Bool = true,
     ) async throws {
-        guard let image = service.image else {
-            if policy == "build", allowBuild, service.build != nil {
-                try await build(project: project, services: [service.name], noCache: false, quiet: quietBuild)
-            }
-            return
-        }
         switch policy {
         case "always":
-            try await pullImage(image, quiet: quiet)
+            for image in serviceRuntimeImages(service) {
+                try await pullImage(image, quiet: quiet)
+            }
         case "missing", "if_not_present":
-            try await pullMissingImage(image, quiet: quiet)
+            for image in serviceRuntimeImages(service) {
+                try await pullMissingImage(image, quiet: quiet)
+            }
         case "never":
             return
         case "build":
             if allowBuild, service.build != nil {
                 try await build(project: project, services: [service.name], noCache: false, quiet: quietBuild)
             }
+            for image in explicitPreStartImages(services: [service]) {
+                try await pullMissingImage(image, quiet: quiet)
+            }
         default:
             if let interval = stalePullPolicyInterval(policy) {
-                try await pullImageIfStale(image, interval: interval, quiet: quiet)
+                for image in serviceRuntimeImages(service) {
+                    try await pullImageIfStale(image, interval: interval, quiet: quiet)
+                }
                 return
             }
             throw ComposeError.invalidProject("unsupported pull policy '\(policy)' for service '\(service.name)'")
@@ -880,13 +897,16 @@ extension ComposeOrchestrator {
 
     /// Pulls only service images not already present in the local image store.
     func pullMissingImages(services: [ComposeService], quiet: Bool = false, skipBuildable: Bool = false) async throws {
+        var images = Set(explicitPreStartImages(services: services))
         for service in services {
             if skipBuildable, service.build != nil {
                 continue
             }
-            guard let image = service.image else {
-                continue
+            if let image = service.image {
+                images.insert(image)
             }
+        }
+        for image in images.sorted() {
             try await pullMissingImage(image, quiet: quiet)
         }
     }

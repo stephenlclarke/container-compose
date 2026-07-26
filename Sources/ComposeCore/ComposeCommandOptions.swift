@@ -945,6 +945,7 @@ struct ServiceContainerWaitResult {
 
 struct ServiceContainerReconcileRequest {
     var name: String
+    var existing: ExistingContainer?
     var runOptions: RunArgumentOptions
     var externalVolumeMounts: ExternalVolumeMounts = [:]
     var imageHealthCheckCache: ComposeImageHealthCheckCache?
