@@ -11,12 +11,14 @@
 - Keeps the change in the Compose layer; no runtime fork or package-pin change
   is required.
 - Adds focused unit coverage and a live Docker Compose V2 parity fixture.
+- Repairs incomplete restored SwiftPM checkouts before CI edits the local stack
+  dependency.
 - Updates generated help, README, the parity ledger, and the current critical
   review.
 
 ## Type of Change
 
-- [ ] Bug fix
+- [x] Bug fix
 - [x] New feature
 - [ ] Breaking change
 - [x] Documentation update
@@ -42,6 +44,9 @@ boundary makes the change minimally invasive and suitable for upstream review.
 - Compose V2 parity fixture:
   `498a5381c7052c9e06f9887896b590a81c482c6e`
   (`test(lifecycle): add Compose v2 parity fixture`).
+- Hosted CI cache repair and regression coverage:
+  `835b3c8a73b1397681de2d89267b58fa0bbebff2`
+  (`fix(ci): repair incomplete SwiftPM caches`).
 - `apple/container` code commit: not required.
 - `apple/containerization` code commit: not required.
 - Package-pin change: not required.
@@ -134,6 +139,7 @@ Results:
 - Go coverage: 89.88%.
 - Release/CI tooling, Markdown, stack consistency, license, SwiftLint, and
   SwiftFormat checks passed.
+- The CI tooling suite increased from 14 to 16 tests.
 
 Live parity:
 
@@ -156,6 +162,13 @@ The branch analysis was accepted and processed successfully. The locally
 available analysis token cannot read quality-gate or issue endpoints; the
 repository-bound PR Sonar check remains blocking and must be green with all
 actionable findings resolved before merge.
+
+The first hosted runtime-validation attempt restored SwiftPM workspace metadata
+without five referenced checkout manifests and failed before compilation.
+`Tools/ci/use-stack-container.sh` now runs `swift package resolve` before
+`swift package edit`; focused fake-Swift regression coverage proves repair
+precedes graph editing and that a missing container checkout still fails
+closed.
 
 ## Compatibility
 
