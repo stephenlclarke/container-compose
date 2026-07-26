@@ -355,29 +355,28 @@ Required correction:
 - separate bounded liveness tests from benchmarks and soak tests;
 - retain `go test -race` as a release gate.
 
-### P2: Lifecycle Diagnostics Misassign Existing Gaps
+### P2: Lifecycle Diagnostics Misassign Existing Gaps — Resolved
 
-`Sources/ComposeCore/ComposeOrchestratorValidation.swift:295-296` says
-`pre_start` needs a new Apple ephemeral-container primitive. The current
-runtime gap ledger correctly says the pinned fork already has the required
-volumes-from, network, attach, wait, and log primitives; orchestration is
-missing in Compose.
+The reviewed implementation previously said `pre_start` needed a new Apple
+ephemeral-container primitive even though the pinned fork already had the
+required volumes-from, network, attach, wait, and log primitives. It likewise
+attributed interactive foreground lifecycle hooks to missing reattach support
+even though that primitive was present in the supported fork lane.
 
-Lines 319-321 similarly say interactive lifecycle hooks need Apple stdio
-reattach support, although the pinned runtime already supplies it. Stock Apple
-still lacks the primitive, but that is not the cause in the supported fork
-lane.
+Resolution (2026-07-26):
 
-Impact: users and maintainers are sent to the wrong repository, and work may
-be duplicated in Apple forks.
-
-Ownership: Compose.
-
-Required correction:
-
-- change supported-lane diagnostics to identify missing Compose orchestration;
-- reserve stock-Apple diagnostics for version/capability negotiation;
-- add tests that assert owner, dependency, and remediation text.
+- `pre_start` is now Compose-owned orchestration over the existing create,
+  volumes-from, network, log, wait, and delete primitives.
+- Interactive foreground `run` starts lifecycle-managed one-offs detached,
+  executes `post_start`, reattaches through the pinned init-process stream,
+  runs `pre_stop` before signal-driven stop, distinguishes detach keys from
+  process exit, and preserves the exact exit status.
+- The stale unsupported diagnostics and CLI help limitations were removed.
+- Focused unit coverage and
+  `Tools/parity/check-compose-lifecycle-hooks.sh` validate the committed
+  Compose file against Docker Compose V2 and the matching Apple runtime.
+- Stock Apple reattach remains an upstream convergence item, not a supported
+  fork-lane implementation blocker.
 
 ### P3: Temporary Copy and Commit Data Needs Explicit Permissions
 
@@ -488,7 +487,6 @@ This should be managed as an upstream-convergence programme:
 | --- | --- |
 | Correctness | Unconfigured image volumes fail open; commit loses inherited volumes |
 | Process control | Task cancellation does not terminate children; compatibility preflight can deadlock |
-| Lifecycle | `pre_start`; interactive foreground `run` hooks using the already pinned reattach primitive |
 | Deploy | Accept and preserve local-mode Deploy metadata that Docker Compose accepts but does not schedule |
 | Testing | Honest runtime skips; provider/plugin/aggregate coverage; metadata-complete commit and copy fixtures |
 | Diagnostics | Supported-lane messages currently blame missing Apple primitives that exist in the pins |
@@ -726,8 +724,8 @@ Goal: make long-running and interactive workloads predictable.
 
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
-| LIFE-301 | P1 | Compose | Orchestrate `pre_start` helpers using pinned primitives | Inherited mounts/networks/env/user/workdir, failure propagation, cleanup, and Docker parity pass |
-| LIFE-302 | P1 | Compose | Run lifecycle hooks around interactive foreground `run` | Reattach, signal proxy, detach keys, hook order, exit status, and cancellation pass |
+| LIFE-301 | ✅ Complete | Compose | Orchestrate `pre_start` helpers using pinned primitives | Inherited mounts/networks/env/user/workdir, failure propagation, cleanup, idempotence/scaling, and Docker parity pass |
+| LIFE-302 | ✅ Complete | Compose | Run lifecycle hooks around interactive foreground `run` | Reattach, one-shot signal proxy, detach keys, hook order, exact exit status, auto-removal, and cancellation pass |
 | LOG-303 | P1 | Runtime | Stabilise signal payload, tail boundaries, and multiwriter fan-out | #1941, #1967, #2009 regressions pass under Compose attach/log/kill |
 | XPC-304 | P1 | Apple/runtime | Resolve delayed-reply continuation crash and startup error masking | No continuation misuse; bootstrap root cause preserved; repeated start/stop soak passes |
 | STATE-305 | P2 | Runtime/Compose | Add feasible `dead`, `restarting`, and `removing` states | Inspect, `ps`, filters, wait, and transition parity pass |
