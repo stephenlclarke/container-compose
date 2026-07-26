@@ -8,6 +8,7 @@ services:
       FOO: upper
       Foo: title
       foo: lower
+      oracle.example/json: "<>&/\u2028\u2029"
       oracle.example/key: value
     ports:
       - name: http
