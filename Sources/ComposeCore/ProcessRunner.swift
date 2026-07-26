@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ContainerizationOS
 import Foundation
 #if canImport(Darwin)
     import Darwin
@@ -27,6 +28,120 @@ private func processOutputString(_ data: Data) -> String {
     // useful than discarding the complete output when one byte is invalid.
     // swiftlint:disable:next optional_data_string_conversion
     String(decoding: data, as: UTF8.self)
+}
+
+/// Matches Foundation.Process status semantics for exits and uncaught signals.
+private func processTerminationStatus(_ waitStatus: Int32) -> Int32 {
+    let signal = waitStatus & 0x7F
+    return signal == 0 ? waitStatus >> 8 & 0xFF : signal
+}
+
+/// Makes closed pipe writes fail with EPIPE instead of terminating the process.
+private func suppressBrokenPipeSignal(for handle: FileHandle) {
+    #if canImport(Darwin)
+        _ = fcntl(handle.fileDescriptor, F_SETNOSIGPIPE, 1)
+    #endif
+}
+
+/// A command prepared with an isolated process group and terminal ownership.
+private struct PreparedProcessCommand {
+    var command: Command
+    let jobControlProcessGroup: pid_t?
+}
+
+/// Parent-side pipes and optional bytes for one captured command.
+private struct CapturedProcessCommandIO {
+    let stdin: Pipe?
+    let stdout: Pipe
+    let stderr: Pipe
+    let input: Data?
+}
+
+/// Returns the signal that stopped a child, or nil for a terminal wait status.
+func processStoppedSignal(_ waitStatus: Int32) -> Int32? {
+    guard waitStatus & 0xFF == 0x7F else {
+        return nil
+    }
+    return waitStatus >> 8 & 0xFF
+}
+
+/// Creates an Apple command whose descendants share one owned process group.
+private func prepareProcessCommand(
+    _ executable: String,
+    _ arguments: [String],
+    workingDirectory: URL?,
+    environment: [String: String]?,
+    inheritsStandardInput: Bool,
+) -> PreparedProcessCommand {
+    let resolvedEnvironment = ProcessInfo.processInfo.environment
+        .merging(environment ?? [:]) { _, new in new }
+        .sorted { $0.key < $1.key }
+        .map { "\($0.key)=\($0.value)" }
+    var command = Command(
+        executable,
+        arguments: arguments,
+        environment: resolvedEnvironment,
+        directory: workingDirectory?.path,
+    )
+    command.attrs.setPGroup = true
+
+    let foreground = processForegroundConfiguration(
+        inheritsStandardInput: inheritsStandardInput,
+        standardInputIsTerminal: isatty(STDIN_FILENO) == 1,
+        currentForegroundProcessGroup: tcgetpgrp(STDIN_FILENO),
+        currentProcessGroup: getpgrp(),
+    )
+    command.attrs.setForegroundPGroup = foreground.makeChildForeground
+    return PreparedProcessCommand(
+        command: command,
+        jobControlProcessGroup: foreground.jobControlProcessGroup,
+    )
+}
+
+/// Launches one captured command and transfers every pipe to its owner.
+private func launchCapturedCommand(
+    _ prepared: PreparedProcessCommand,
+    io: CapturedProcessCommandIO,
+    state: ProcessRunState,
+    processDidStart: @Sendable (@escaping @Sendable () -> Void) -> Void,
+) {
+    var didLaunch = false
+    do {
+        if let stdin = io.stdin {
+            suppressBrokenPipeSignal(for: stdin.fileHandleForWriting)
+        }
+        try prepared.command.start()
+        didLaunch = true
+        processDidStart {
+            state.cancel()
+        }
+        state.didLaunch(
+            prepared.command,
+            jobControlProcessGroup: prepared.jobControlProcessGroup,
+        )
+        state.waitForExit(prepared.command)
+        try? io.stdin?.fileHandleForReading.close()
+        try? io.stdout.fileHandleForWriting.close()
+        try? io.stderr.fileHandleForWriting.close()
+        state.drain(io.stdout.fileHandleForReading, stream: .stdout)
+        state.drain(io.stderr.fileHandleForReading, stream: .stderr)
+        if let input = io.input, let stdin = io.stdin {
+            try stdin.fileHandleForWriting.write(contentsOf: input)
+            try stdin.fileHandleForWriting.close()
+        }
+    } catch {
+        try? io.stdin?.fileHandleForReading.close()
+        try? io.stdin?.fileHandleForWriting.close()
+        try? io.stdout.fileHandleForWriting.close()
+        try? io.stderr.fileHandleForWriting.close()
+        if didLaunch {
+            state.failAfterLaunch(error)
+        } else {
+            try? io.stdout.fileHandleForReading.close()
+            try? io.stderr.fileHandleForReading.close()
+            state.failBeforeLaunch(error)
+        }
+    }
 }
 
 /// Captured result from an external command.
@@ -85,12 +200,24 @@ public extension CommandRunning {
     }
 }
 
-/// Production command runner backed by Foundation `Process`.
+/// Production command runner backed by Apple's process command primitive.
 public struct ProcessRunner: CommandRunning {
     private static let isStateless = true
+    private let processDidStart: @Sendable (
+        @escaping @Sendable () -> Void,
+    ) -> Void
 
     public init() {
+        processDidStart = { _ in }
         _ = Self.isStateless
+    }
+
+    init(
+        processDidStart: @escaping @Sendable (
+            @escaping @Sendable () -> Void,
+        ) -> Void,
+    ) {
+        self.processDidStart = processDidStart
     }
 
     /// Executes a command with either captured or inherited process streams.
@@ -141,36 +268,47 @@ public struct ProcessRunner: CommandRunning {
         workingDirectory: URL?,
         environment: [String: String]?,
     ) async throws -> CommandResult {
-        try await withCheckedThrowingContinuation { continuation in
-            let process = Process()
-            let stdout = Pipe()
+        let state = ProcessRunState(capturesStdout: true, capturesStderr: false)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let stdout = Pipe()
+                var prepared = prepareProcessCommand(
+                    executable,
+                    arguments,
+                    workingDirectory: workingDirectory,
+                    environment: environment,
+                    inheritsStandardInput: true,
+                )
+                prepared.command.stdin = FileHandle.standardInput
+                prepared.command.stdout = stdout.fileHandleForWriting
+                prepared.command.stderr = FileHandle.standardError
 
-            process.executableURL = URL(fileURLWithPath: executable)
-            process.arguments = arguments
-            process.standardInput = FileHandle.standardInput
-            process.standardOutput = stdout
-            process.standardError = FileHandle.standardError
-            if let workingDirectory {
-                process.currentDirectoryURL = workingDirectory
-            }
-            if let environment {
-                process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
-            }
-
-            let state = StdoutProcessRunState(continuation: continuation)
-            process.terminationHandler = { process in
-                state.completeProcess(status: process.terminationStatus)
-            }
-
-            do {
-                try process.run()
-                state.drain(stdout.fileHandleForReading)
-            } catch {
-                if process.isRunning {
-                    process.terminate()
+                guard state.prepareForLaunch(continuation: continuation) else {
+                    try? stdout.fileHandleForReading.close()
+                    try? stdout.fileHandleForWriting.close()
+                    return
                 }
-                state.fail(error)
+
+                do {
+                    try prepared.command.start()
+                    processDidStart {
+                        state.cancel()
+                    }
+                    state.didLaunch(
+                        prepared.command,
+                        jobControlProcessGroup: prepared.jobControlProcessGroup,
+                    )
+                    state.waitForExit(prepared.command)
+                    try? stdout.fileHandleForWriting.close()
+                    state.drain(stdout.fileHandleForReading)
+                } catch {
+                    try? stdout.fileHandleForReading.close()
+                    try? stdout.fileHandleForWriting.close()
+                    state.failBeforeLaunch(error)
+                }
             }
+        } onCancel: {
+            state.cancel()
         }
     }
 
@@ -182,46 +320,47 @@ public struct ProcessRunner: CommandRunning {
         environment: [String: String]?,
         input: Data?,
     ) async throws -> CommandResult {
-        try await withCheckedThrowingContinuation { continuation in
-            let process = Process()
-            let stdout = Pipe()
-            let stderr = Pipe()
-            let stdin = Pipe()
+        let state = ProcessRunState(capturesStdout: true, capturesStderr: true)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let stdout = Pipe()
+                let stderr = Pipe()
+                let stdin = input == nil ? nil : Pipe()
+                var prepared = prepareProcessCommand(
+                    executable,
+                    arguments,
+                    workingDirectory: workingDirectory,
+                    environment: environment,
+                    inheritsStandardInput: input == nil,
+                )
+                prepared.command.stdin = stdin?.fileHandleForReading ?? FileHandle.standardInput
+                prepared.command.stdout = stdout.fileHandleForWriting
+                prepared.command.stderr = stderr.fileHandleForWriting
 
-            process.executableURL = URL(fileURLWithPath: executable)
-            process.arguments = arguments
-            process.standardOutput = stdout
-            process.standardError = stderr
-            if input != nil {
-                process.standardInput = stdin
-            }
-            if let workingDirectory {
-                process.currentDirectoryURL = workingDirectory
-            }
-            if let environment {
-                process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
-            }
-
-            let state = ProcessRunState(continuation: continuation)
-            process.terminationHandler = { process in
-                state.completeProcess(status: process.terminationStatus)
-            }
-
-            do {
-                try process.run()
-                state.drain(stdout.fileHandleForReading, stream: .stdout)
-                state.drain(stderr.fileHandleForReading, stream: .stderr)
-                if let input {
-                    try stdin.fileHandleForWriting.write(contentsOf: input)
-                    try stdin.fileHandleForWriting.close()
+                guard state.prepareForLaunch(continuation: continuation) else {
+                    try? stdin?.fileHandleForReading.close()
+                    try? stdin?.fileHandleForWriting.close()
+                    try? stdout.fileHandleForReading.close()
+                    try? stdout.fileHandleForWriting.close()
+                    try? stderr.fileHandleForReading.close()
+                    try? stderr.fileHandleForWriting.close()
+                    return
                 }
-            } catch {
-                if process.isRunning {
-                    process.terminate()
-                }
-                try? stdin.fileHandleForWriting.close()
-                state.fail(error)
+
+                launchCapturedCommand(
+                    prepared,
+                    io: CapturedProcessCommandIO(
+                        stdin: stdin,
+                        stdout: stdout,
+                        stderr: stderr,
+                        input: input,
+                    ),
+                    state: state,
+                    processDidStart: processDidStart,
+                )
             }
+        } onCancel: {
+            state.cancel()
         }
     }
 
@@ -232,34 +371,40 @@ public struct ProcessRunner: CommandRunning {
         workingDirectory: URL?,
         environment: [String: String]?,
     ) async throws -> CommandResult {
-        try await withCheckedThrowingContinuation { continuation in
-            let process = Process()
+        let state = ProcessRunState(capturesStdout: false, capturesStderr: false)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                var prepared = prepareProcessCommand(
+                    executable,
+                    arguments,
+                    workingDirectory: workingDirectory,
+                    environment: environment,
+                    inheritsStandardInput: true,
+                )
+                prepared.command.stdin = FileHandle.standardInput
+                prepared.command.stdout = FileHandle.standardOutput
+                prepared.command.stderr = FileHandle.standardError
 
-            process.executableURL = URL(fileURLWithPath: executable)
-            process.arguments = arguments
-            process.standardInput = FileHandle.standardInput
-            process.standardOutput = FileHandle.standardOutput
-            process.standardError = FileHandle.standardError
-            if let workingDirectory {
-                process.currentDirectoryURL = workingDirectory
-            }
-            if let environment {
-                process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
-            }
-
-            let state = InheritedProcessRunState(continuation: continuation)
-            process.terminationHandler = { process in
-                state.complete(status: process.terminationStatus)
-            }
-
-            do {
-                try process.run()
-            } catch {
-                if process.isRunning {
-                    process.terminate()
+                guard state.prepareForLaunch(continuation: continuation) else {
+                    return
                 }
-                state.fail(error)
+
+                do {
+                    try prepared.command.start()
+                    processDidStart {
+                        state.cancel()
+                    }
+                    state.didLaunch(
+                        prepared.command,
+                        jobControlProcessGroup: prepared.jobControlProcessGroup,
+                    )
+                    state.waitForExit(prepared.command)
+                } catch {
+                    state.failBeforeLaunch(error)
+                }
             }
+        } onCancel: {
+            state.cancel()
         }
     }
 
@@ -294,112 +439,7 @@ public struct ProcessRunner: CommandRunning {
     }
 }
 
-/// Completes inherited-IO process continuations exactly once.
-private final class InheritedProcessRunState: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<CommandResult, Error>?
-
-    init(continuation: CheckedContinuation<CommandResult, Error>) {
-        self.continuation = continuation
-    }
-
-    /// Resumes the pending command with the child process exit status.
-    func complete(status: Int32) {
-        let continuation = takeContinuation()
-        continuation?.resume(returning: CommandResult(status: status, stdout: "", stderr: ""))
-    }
-
-    /// Resumes the pending command with a process launch error.
-    func fail(_ error: Error) {
-        let continuation = takeContinuation()
-        continuation?.resume(throwing: error)
-    }
-
-    /// Removes and returns the continuation while holding the state lock.
-    private func takeContinuation() -> CheckedContinuation<CommandResult, Error>? {
-        lock.lock()
-        defer { lock.unlock() }
-        let continuation = continuation
-        self.continuation = nil
-        return continuation
-    }
-}
-
-/// Coordinates process termination with stdout pipe drainage.
-private final class StdoutProcessRunState: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<CommandResult, Error>?
-    private var stdout = Data()
-    private var stdoutFinished = false
-    private var status: Int32?
-
-    init(continuation: CheckedContinuation<CommandResult, Error>) {
-        self.continuation = continuation
-    }
-
-    /// Starts asynchronous stdout drainage.
-    func drain(_ handle: FileHandle) {
-        DispatchQueue.global(qos: .utility).async {
-            let data = handle.readDataToEndOfFile()
-            self.finish { state in
-                state.stdout = data
-                state.stdoutFinished = true
-            }
-        }
-    }
-
-    /// Records the child process exit status and completes if stdout finished.
-    func completeProcess(status: Int32) {
-        finish { state in
-            state.status = status
-        }
-    }
-
-    /// Fails the pending command immediately after a process launch error.
-    func fail(_ error: Error) {
-        let continuation = takeContinuation()
-        continuation?.resume(throwing: error)
-    }
-
-    /// Applies a state update under lock and resumes outside the lock if done.
-    private func finish(_ update: (StdoutProcessRunState) -> Void) {
-        let completion: (continuation: CheckedContinuation<CommandResult, Error>, result: CommandResult)?
-        lock.lock()
-        update(self)
-        completion = completedResultLocked()
-        lock.unlock()
-        if let completion {
-            completion.continuation.resume(returning: completion.result)
-        }
-    }
-
-    /// Returns a command result only after process and stdout end.
-    private func completedResultLocked() -> (continuation: CheckedContinuation<CommandResult, Error>, result: CommandResult)? {
-        guard let status, stdoutFinished, let continuation else {
-            return nil
-        }
-        self.continuation = nil
-        return (
-            continuation,
-            CommandResult(
-                status: status,
-                stdout: processOutputString(stdout),
-                stderr: "",
-            ),
-        )
-    }
-
-    /// Removes and returns the continuation while holding the state lock.
-    private func takeContinuation() -> CheckedContinuation<CommandResult, Error>? {
-        lock.lock()
-        defer { lock.unlock() }
-        let continuation = continuation
-        self.continuation = nil
-        return continuation
-    }
-}
-
-/// Coordinates process termination with stdout and stderr pipe drainage.
+/// Owns one child process, its captured streams, and exact-once completion.
 private final class ProcessRunState: @unchecked Sendable {
     /// Captured output stream whose pipe completed.
     enum Stream {
@@ -407,20 +447,107 @@ private final class ProcessRunState: @unchecked Sendable {
         case stderr
     }
 
+    private typealias Completion = (
+        continuation: CheckedContinuation<CommandResult, Error>,
+        result: Result<CommandResult, Error>,
+    )
+
+    private static let terminationGracePeriod = DispatchTimeInterval.milliseconds(250)
+
     private let lock = NSLock()
+    private var cancellationRequested = false
+    private var completionError: Error?
     private var continuation: CheckedContinuation<CommandResult, Error>?
+    private var escalation: DispatchWorkItem?
+    private var jobControlProcessGroup: pid_t?
+    private var ownedProcessGroup: pid_t?
     private var stdout = Data()
     private var stderr = Data()
-    private var stdoutFinished = false
-    private var stderrFinished = false
+    private var stdoutFinished: Bool
+    private var stderrFinished: Bool
     private var status: Int32?
+    private var terminationFinished = false
+    private var terminationRequested = false
 
-    init(continuation: CheckedContinuation<CommandResult, Error>) {
-        self.continuation = continuation
+    init(capturesStdout: Bool, capturesStderr: Bool) {
+        stdoutFinished = !capturesStdout
+        stderrFinished = !capturesStderr
+    }
+
+    /// Installs the continuation and atomically reserves permission to launch.
+    func prepareForLaunch(continuation: CheckedContinuation<CommandResult, Error>) -> Bool {
+        let cancellationError: Error?
+        lock.lock()
+        if cancellationRequested {
+            cancellationError = completionError ?? CancellationError()
+        } else {
+            self.continuation = continuation
+            cancellationError = nil
+        }
+        lock.unlock()
+
+        if let cancellationError {
+            continuation.resume(throwing: cancellationError)
+            return false
+        }
+        return true
+    }
+
+    /// Records a successful launch and terminates immediately if cancellation raced it.
+    func didLaunch(
+        _ command: Command,
+        jobControlProcessGroup: pid_t?,
+    ) {
+        let processGroup = command.pid
+        let terminationWorkItem: DispatchWorkItem?
+        lock.lock()
+        ownedProcessGroup = processGroup
+        self.jobControlProcessGroup = jobControlProcessGroup
+        terminationWorkItem = cancellationRequested
+            ? beginTerminationLocked(of: processGroup)
+            : nil
+        lock.unlock()
+
+        if let terminationWorkItem {
+            startTermination(
+                of: processGroup,
+                escalation: terminationWorkItem,
+            )
+        }
+    }
+
+    /// Reaps the child leader without blocking the caller's async executor.
+    func waitForExit(_ command: Command) {
+        let processIdentifier = command.pid
+        DispatchQueue.global(qos: .utility).async {
+            while true {
+                var waitStatus = Int32()
+                let result = waitpid(processIdentifier, &waitStatus, WUNTRACED)
+                if result == processIdentifier {
+                    if let stopSignal = processStoppedSignal(waitStatus) {
+                        self.relayStop(
+                            processGroup: processIdentifier,
+                            signal: stopSignal,
+                        )
+                        continue
+                    }
+                    self.completeProcess(status: processTerminationStatus(waitStatus))
+                    return
+                }
+                if result == -1, errno == EINTR {
+                    continue
+                }
+                self.completeProcess(
+                    status: -1,
+                    error: POSIXError(POSIXErrorCode(rawValue: errno) ?? .ECHILD),
+                )
+                return
+            }
+        }
     }
 
     /// Starts asynchronous pipe drainage for one captured stream.
-    func drain(_ handle: FileHandle, stream: Stream) {
+    func drain(_ handle: FileHandle, stream: Stream = .stdout) {
         // Drain pipes while the process is running. Waiting until termination
         // can deadlock when a child writes more than the pipe buffer.
         DispatchQueue.global(qos: .utility).async {
@@ -428,69 +555,232 @@ private final class ProcessRunState: @unchecked Sendable {
             self.complete(stream: stream, data: data)
         }
     }
+}
 
-    /// Records the child process exit status and completes if streams finished.
-    func completeProcess(status: Int32) {
-        finish { state in
-            state.status = status
+private extension ProcessRunState {
+    /// Hands a stopped foreground child back through the parent shell job.
+    func relayStop(
+        processGroup: pid_t,
+        signal: Int32,
+    ) {
+        let parentProcessGroup: pid_t?
+        lock.lock()
+        if
+            ownedProcessGroup == processGroup,
+            !terminationRequested
+        {
+            parentProcessGroup = jobControlProcessGroup
+        } else {
+            parentProcessGroup = nil
+        }
+        lock.unlock()
+
+        let error = relayStoppedProcessGroup(
+            childProcessGroup: processGroup,
+            parentProcessGroup: parentProcessGroup,
+            stopSignal: signal,
+            actions: liveProcessJobControlActions(),
+        )
+        if let error {
+            failAfterLaunch(error)
         }
     }
 
-    /// Fails the pending command immediately after a process launch error.
-    func fail(_ error: Error) {
-        let continuation = takeContinuation()
-        continuation?.resume(throwing: error)
+    /// Records the child process exit status and completes if streams finished.
+    func completeProcess(status: Int32, error: Error? = nil) {
+        let childProcessGroup: pid_t?
+        let completion: Completion?
+        let parentProcessGroup: pid_t?
+        lock.lock()
+        childProcessGroup = ownedProcessGroup
+        parentProcessGroup = jobControlProcessGroup
+        jobControlProcessGroup = nil
+        lock.unlock()
+
+        let foregroundProcessGroup = terminalForegroundProcessGroupToRestore(
+            childProcessGroup: childProcessGroup,
+            parentProcessGroup: parentProcessGroup,
+            currentForegroundProcessGroup: tcgetpgrp(STDIN_FILENO),
+        )
+        let foregroundRestorationError = restoreForegroundProcessGroup(foregroundProcessGroup)
+
+        lock.lock()
+        if completionError == nil {
+            completionError = error ?? foregroundRestorationError
+        }
+        self.status = status
+        completion = completedResultLocked()
+        lock.unlock()
+        resume(completion)
+    }
+
+    /// Makes cancellation terminal and starts bounded child termination.
+    func cancel() {
+        let completion: Completion?
+        let processGroup: pid_t?
+        let terminationWorkItem: DispatchWorkItem?
+        lock.lock()
+        guard !cancellationRequested else {
+            lock.unlock()
+            return
+        }
+        cancellationRequested = true
+        completionError = CancellationError()
+        processGroup = ownedProcessGroup
+        terminationWorkItem = processGroup.flatMap(beginTerminationLocked)
+        completion = completedResultLocked()
+        lock.unlock()
+        resume(completion)
+
+        if let processGroup, let terminationWorkItem {
+            startTermination(
+                of: processGroup,
+                escalation: terminationWorkItem,
+            )
+        }
+    }
+
+    /// Fails immediately when no child process was launched.
+    func failBeforeLaunch(_ error: Error) {
+        let continuation: CheckedContinuation<CommandResult, Error>?
+        let completionError: Error
+        lock.lock()
+        continuation = self.continuation
+        self.continuation = nil
+        completionError = self.completionError ?? error
+        lock.unlock()
+        continuation?.resume(throwing: completionError)
+    }
+
+    /// Records an I/O failure and terminates the launched child.
+    func failAfterLaunch(_ error: Error) {
+        let completion: Completion?
+        let processGroup: pid_t?
+        let terminationWorkItem: DispatchWorkItem?
+        lock.lock()
+        if completionError == nil {
+            completionError = error
+        }
+        processGroup = ownedProcessGroup
+        terminationWorkItem = processGroup.flatMap(beginTerminationLocked)
+        completion = completedResultLocked()
+        lock.unlock()
+        resume(completion)
+
+        if let processGroup, let terminationWorkItem {
+            startTermination(
+                of: processGroup,
+                escalation: terminationWorkItem,
+            )
+        }
     }
 
     /// Records one completed pipe read and completes if the process exited.
     private func complete(stream: Stream, data: Data) {
-        finish { state in
-            switch stream {
-            case .stdout:
-                state.stdout = data
-                state.stdoutFinished = true
-            case .stderr:
-                state.stderr = data
-                state.stderrFinished = true
-            }
-        }
-    }
-
-    /// Applies a state update under lock and resumes outside the lock if done.
-    private func finish(_ update: (ProcessRunState) -> Void) {
-        let completion: (continuation: CheckedContinuation<CommandResult, Error>, result: CommandResult)?
+        let completion: Completion?
         lock.lock()
-        update(self)
+        switch stream {
+        case .stdout:
+            stdout = data
+            stdoutFinished = true
+        case .stderr:
+            stderr = data
+            stderrFinished = true
+        }
         completion = completedResultLocked()
         lock.unlock()
+        resume(completion)
+    }
+
+    /// Latches termination while the caller owns the state lock.
+    private func beginTerminationLocked(
+        of processGroup: pid_t,
+    ) -> DispatchWorkItem? {
+        guard
+            ownedProcessGroup == processGroup,
+            !terminationRequested
+        else {
+            return nil
+        }
+        terminationRequested = true
+        let item = DispatchWorkItem {
+            self.forceTerminate(processGroup)
+        }
+        escalation = item
+        return item
+    }
+
+    /// Sends SIGTERM and schedules SIGKILL after termination is latched.
+    private func startTermination(
+        of processGroup: pid_t,
+        escalation: DispatchWorkItem,
+    ) {
+        _ = kill(-processGroup, SIGTERM)
+        DispatchQueue.global(qos: .utility).asyncAfter(
+            deadline: .now() + Self.terminationGracePeriod,
+            execute: escalation,
+        )
+    }
+
+    /// Sends SIGKILL and waits until the owned group no longer exists.
+    private func forceTerminate(_ processGroup: pid_t) {
+        _ = kill(-processGroup, SIGKILL)
+        for _ in 0 ..< 100 {
+            errno = 0
+            if kill(-processGroup, 0) == -1, errno == ESRCH {
+                break
+            }
+            usleep(10000)
+        }
+
+        let completion: Completion?
+        lock.lock()
+        terminationFinished = true
+        escalation = nil
+        completion = completedResultLocked()
+        lock.unlock()
+        resume(completion)
+    }
+
+    /// Restores terminal foreground ownership after an inherited child exits.
+    private func restoreForegroundProcessGroup(_ processGroup: pid_t?) -> Error? {
+        restoreTerminalForegroundProcessGroup(
+            processGroup,
+            fileDescriptor: STDIN_FILENO,
+        )
+    }
+
+    /// Resumes a terminal process result outside the state lock.
+    private func resume(_ completion: Completion?) {
         if let completion {
-            completion.continuation.resume(returning: completion.result)
+            completion.continuation.resume(with: completion.result)
         }
     }
 
     /// Returns a command result only after process and both output streams end.
-    private func completedResultLocked() -> (continuation: CheckedContinuation<CommandResult, Error>, result: CommandResult)? {
-        guard let status, stdoutFinished, stderrFinished, let continuation else {
+    private func completedResultLocked() -> Completion? {
+        guard
+            let status,
+            stdoutFinished,
+            stderrFinished,
+            !terminationRequested || terminationFinished,
+            let continuation
+        else {
             return nil
         }
         self.continuation = nil
+        ownedProcessGroup = nil
+        if let completionError {
+            return (continuation, .failure(completionError))
+        }
         return (
             continuation,
-            CommandResult(
+            .success(CommandResult(
                 status: status,
                 stdout: processOutputString(stdout),
                 stderr: processOutputString(stderr),
-            ),
+            )),
         )
-    }
-
-    /// Removes and returns the continuation while holding the state lock.
-    private func takeContinuation() -> CheckedContinuation<CommandResult, Error>? {
-        lock.lock()
-        defer { lock.unlock() }
-        let continuation = continuation
-        self.continuation = nil
-        return continuation
     }
 }
 

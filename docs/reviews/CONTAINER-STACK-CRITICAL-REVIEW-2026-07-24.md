@@ -10,19 +10,19 @@ Compose v5.3.1 use `compose-go/v2` v2.13.0. Its current CLI help surface has no
 unexpected command or long-option differences from Docker Compose v5.3.1.
 
 It is not yet safe to describe the implementation as complete Docker Compose
-parity. Five confirmed Compose defects affect runtime correctness or process
-reliability:
+parity. Three remaining confirmed Compose defects affect runtime correctness
+or process reliability:
 
-1. Library-only image-volume discovery silently returns no declared volumes
-   instead of reporting that no runtime is configured.
-2. Foundation child processes are not terminated when their owning Swift task
-   is cancelled.
-3. The package-compatibility preflight can deadlock while waiting for a child
+1. The package-compatibility preflight can deadlock while waiting for a child
    whose stdout or stderr pipe fills.
-4. `compose commit` drops inherited OCI `VOLUME` declarations.
-5. Tar-stream `cp` stages through the host filesystem and cannot reliably
+2. `compose commit` drops inherited OCI `VOLUME` declarations.
+3. Tar-stream `cp` stages through the host filesystem and cannot reliably
    preserve container ownership metadata. Fixing this completely needs the
    direct stream primitive proposed in `apple/containerization`.
+
+The former unconfigured image-volume and child-process cancellation defects
+are resolved in signed, Compose-owned commits with focused contract,
+Docker Compose YAML integration, and no-surviving-process coverage.
 
 The largest engineering risk is now the runtime dependency model, not Compose
 file parsing. `ComposeRuntimeSPI` is presented as a clean provider boundary,
@@ -167,34 +167,59 @@ The full local gate passed 1,224 Swift tests at 92.66% line coverage and
 89.88% Go statement coverage. The existing image-volume Compose fixture also
 passed Docker Compose V2 and source-matched Apple runtime execution.
 
-### P1: Child Processes Survive Swift Task Cancellation
+### P1: Child Processes Survive Swift Task Cancellation — Resolved
 
-`Sources/ComposeCore/ProcessRunner.swift:137-263` wraps three Foundation
-`Process` modes in checked continuations. None uses a task cancellation
-handler, and no cancellation path terminates the child.
+Signed Compose commit
+[`044d836d1faae9e58e577afe0e4860d9decca95c`](https://github.com/stephenlclarke/container-compose/commit/044d836d1faae9e58e577afe0e4860d9decca95c)
+adds one private process-run state that owns launch, task cancellation, child
+termination, captured-pipe drainage, and continuation completion for all three
+asynchronous `ProcessRunner` modes.
 
-Impact:
+Cancellation before launch returns `CancellationError` without executing the
+child. Cancellation after launch sends `SIGTERM`, escalates to `SIGKILL` after
+a 250 ms grace period, and latches termination under the completion-state lock
+before any concurrent leader-exit or final-pipe callback can clear ownership.
+It does not resume the caller until the owned process group has ended, its
+leader has been reaped, and every captured pipe has reached EOF. The locked
+state selects one terminal result and removes its continuation before resuming,
+so late process and pipe callbacks cannot double-resume it.
 
-- cancelling a build, pull, push, normaliser, or helper task can leave its
-  process running;
-- failure of one task-group member does not promptly stop sibling processes;
-- Ctrl-C can appear to hang while orphaned children retain pipes or locks;
-- a later command can observe side effects from work the caller believes was
-  cancelled.
+Focused tests cover captured output, captured output with inherited prompt
+streams, inherited I/O, explicit stdin, repeated cancellation, pre-cancelled
+launch suppression, and TERM-ignoring process trees. Every leader and
+descendant publishes its PID and process group; the tests require bounded
+`CancellationError` completion and verify `kill(pid, 0)` reports `ESRCH` for
+both. A Compose integration test runs the real normalizer boundary against a
+tracked `docker-compose.yml` fixture and proves the same bounded tree teardown.
+An inherited terminal is handed off only when Compose's process group already
+owns it, so a shell-backgrounded Compose invocation cannot steal the shell's
+foreground terminal. Cleanup blocks `SIGTTOU` while returning foreground
+ownership to Compose, restores the calling thread's original signal mask on
+every attempted handoff, and reports terminal or signal-mask syscall failures
+through the same single completion path.
 
-`Tests/ComposeCoreTests/ProcessRunnerTests.swift` covers launch errors and
-large output, but not cancellation or child-process exit.
+Foreground child stops are observed with `WUNTRACED`. Compose first returns the
+terminal, relays the stop signal to its complete shell job, and on `fg` restores
+the child process group before sending `SIGCONT`. A `bg` resume continues the
+child without stealing the shell-owned terminal. Compose retains its own
+job-control process group independently of terminal ownership, so a child that
+receives `SIGTTIN` after Compose was launched in the background can relay that
+stop through the complete shell job. Process exit restores the original
+parent job-control group only while the exiting child still owns the terminal,
+so a background-resumed child cannot steal terminal ownership from the shell
+and an `fg`-resumed background launch returns ownership to Compose.
 
-Ownership: Compose.
+The focused gate passed 37 tests in one serialized suite, including a
+ThreadSanitizer run. The full local gate passed 1,249 Swift tests at 92.79%
+line coverage and 89.88% Go statement coverage,
+raising Swift coverage from the preceding slice's 92.66%. The failure-path
+coverage also found and fixed Darwin's process-wide `SIGPIPE` behavior for a
+child that closes explicit stdin: the pipe now returns `EPIPE`, after which
+the same state terminates and reaps the child.
 
-Required correction:
-
-- introduce cancellation-aware process state;
-- send termination on cancellation, wait for a bounded grace period, then
-  kill if required;
-- make continuation completion single-owner and race-safe;
-- test captured, inherited, and input-bearing modes by recording the child PID
-  and proving it exits after cancellation.
+Ownership remains entirely in Compose and reuses Apple
+`ContainerizationOS.Command` for process-group creation. No Apple runtime fork
+or platform-specific Windows path changed.
 
 ### P1: Compatibility Preflight Can Deadlock on Full Pipes
 
@@ -651,7 +676,7 @@ new Apple design work.
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
 | CC-001 | P1 | Compose | **Complete:** make unconfigured image-volume lookup fail closed | Every unconfigured SPI method has a contract test; declared-volume planning reports a clear provider error |
-| CC-002 | P1 | Compose | Add task-cancellation ownership to `ProcessRunner` | Cancelled captured/inherited/input child exits within bound; no continuation double-resume; no surviving PID |
+| CC-002 | P1 | Compose | **Complete:** add task-cancellation ownership to `ProcessRunner` | Cancelled captured/inherited/input child exits within bound; no continuation double-resume; no surviving PID |
 | CC-003 | P1 | Plugin | Replace wait-before-drain compatibility preflight | Fake command writes >256 KiB to stdout and stderr without deadlock; cancellation and error text tested |
 | CC-004 | P1 | Compose | Preserve inherited volumes during `commit` | Unit and live Docker parity cover inherited/additive/multiple `VOLUME`; status claim restored only after passing |
 | CC-005 | P1 | Compose/docs | Downgrade tar-stream `cp` parity pending direct runtime streams | Status and help describe content support versus metadata limits; metadata fixture fails for the expected tracked reason |
