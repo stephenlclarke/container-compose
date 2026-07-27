@@ -51,8 +51,37 @@ Results on the designated Apple silicon MacBook Pro:
   same project, service, image, command, and default-network semantics;
 - SwiftFormat, strict SwiftLint, Markdownlint, and `git diff --check` pass.
 
-Hosted review, exact-main SonarCloud, and final publication evidence are added
-before this follow-up closes.
+## Publication evidence
+
+- Pull request
+  [`stephenlclarke/container-compose#159`](https://github.com/stephenlclarke/container-compose/pull/159)
+  merged as
+  [`617c2036f14c34ece761536cddc3d0311a45da2b`](https://github.com/stephenlclarke/container-compose/commit/617c2036f14c34ece761536cddc3d0311a45da2b),
+  preserving signed implementation
+  `7939874a8fd0dc29097a871c92f319a8f25de402` and signed documentation
+  `f1b2c67689682700dd346b4e83d65a69d95016c0`.
+- Exact-head
+  [CI](https://github.com/stephenlclarke/container-compose/actions/runs/30226922151),
+  [CodeQL](https://github.com/stephenlclarke/container-compose/actions/runs/30226922235),
+  [Quality](https://github.com/stephenlclarke/container-compose/actions/runs/30226922146),
+  and
+  [Documentation](https://github.com/stephenlclarke/container-compose/actions/runs/30226922181)
+  passed, including ASan.
+- The connector reviewed exact head
+  `f1b2c67689682700dd346b4e83d65a69d95016c0`, reported no major issues,
+  and the final thread-aware audit found zero review threads.
+- Exact-main
+  [CI](https://github.com/stephenlclarke/container-compose/actions/runs/30228021928),
+  [CodeQL](https://github.com/stephenlclarke/container-compose/actions/runs/30228021958),
+  and
+  [Quality](https://github.com/stephenlclarke/container-compose/actions/runs/30228021947),
+  plus
+  [Documentation](https://github.com/stephenlclarke/container-compose/actions/runs/30228021922)
+  passed. SonarCloud analysis
+  `fe1e52b4-9674-4da6-90f8-ce4b0155909d` is for exact revision
+  `617c2036f14c34ece761536cddc3d0311a45da2b`; its gate is `OK` with
+  82.9% overall coverage, 82.8% new-code coverage, all ratings A, and zero
+  unresolved bugs, vulnerabilities, code smells, issues, or hotspots.
 
 ## Compatibility and risk
 
@@ -64,10 +93,10 @@ before this follow-up closes.
 ## Checklist
 
 - [x] Signed Conventional implementation commit
-- [ ] Signed Conventional documentation commit
+- [x] Signed Conventional documentation commit
 - [x] Normal focused suite
 - [x] Complete Swift and Go coverage gate
 - [x] Docker Compose V2 semantic parity
 - [x] ThreadSanitizer focused suite
-- [ ] Pull-request checks and connector review
-- [ ] Exact-main SonarCloud gate with zero unresolved issues
+- [x] Pull-request checks and connector review
+- [x] Exact-main SonarCloud gate with zero unresolved issues

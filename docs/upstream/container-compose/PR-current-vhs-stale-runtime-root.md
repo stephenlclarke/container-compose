@@ -55,8 +55,9 @@ make check
 - Repository check after implementation and all eight handoffs: passed,
   including 1,119 Swift tests, 91.42% Swift coverage, 90.06% Go coverage,
   release-policy tests, and stack consistency.
-- Exact-main Current workflow and rendered GIF: pending until the signed branch
-  is merged.
+- Exact-main Current run
+  [`30216305679`](https://github.com/stephenlclarke/container-compose/actions/runs/30216305679)
+  published the matched archives and rendered live GIF.
 - Tape instructions: 16 `Type`, 16 `Enter`, 14 `Wait`, 27 `Sleep`, zero
   `Replay`, and zero `Marker`.
 
@@ -68,3 +69,6 @@ make check
 - The final trap still stops the exact newly extracted runtime.
 - The workflow does not pre-render command output; the published GIF remains a
   real typed terminal session.
+- The distinct post-stop XPC interruption found by run `30228427993` is
+  handled by
+  [PR-current-vhs-start-recovery.md](PR-current-vhs-start-recovery.md).

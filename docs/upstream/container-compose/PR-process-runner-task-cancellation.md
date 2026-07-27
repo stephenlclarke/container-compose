@@ -124,7 +124,7 @@ Results on the designated Apple silicon MacBook Pro:
   `cee556716519fa98a827f1578031155bdc67adb8`, reported no major issues,
   and left zero unresolved review threads after every earlier finding received
   a direct author response.
-- The first exact-main
+- The initial exact-main
   [CI](https://github.com/stephenlclarke/container-compose/actions/runs/30225979068),
   [CodeQL](https://github.com/stephenlclarke/container-compose/actions/runs/30225979078),
   [Quality](https://github.com/stephenlclarke/container-compose/actions/runs/30225979070),
@@ -137,6 +137,23 @@ Results on the designated Apple silicon MacBook Pro:
   corrected by the linked
   [process-start observer follow-up](PR-process-start-observer-maintainability.md)
   before prerelease publication.
+- Follow-up
+  [`stephenlclarke/container-compose#159`](https://github.com/stephenlclarke/container-compose/pull/159)
+  merged as
+  [`617c2036f14c34ece761536cddc3d0311a45da2b`](https://github.com/stephenlclarke/container-compose/commit/617c2036f14c34ece761536cddc3d0311a45da2b),
+  preserving signed implementation `7939874a...` and its signed handoff.
+  Exact-main
+  [CI](https://github.com/stephenlclarke/container-compose/actions/runs/30228021928),
+  [CodeQL](https://github.com/stephenlclarke/container-compose/actions/runs/30228021958),
+  and
+  [Quality](https://github.com/stephenlclarke/container-compose/actions/runs/30228021947),
+  plus
+  [Documentation](https://github.com/stephenlclarke/container-compose/actions/runs/30228021922)
+  passed. SonarCloud analysis
+  `fe1e52b4-9674-4da6-90f8-ce4b0155909d` accepted that exact revision with
+  gate `OK`, 82.9% overall coverage, 82.8% new-code coverage, all ratings A,
+  and zero unresolved bugs, vulnerabilities, code smells, issues, or
+  hotspots.
 
 ## Compatibility and risk
 
@@ -177,6 +194,6 @@ Results on the designated Apple silicon MacBook Pro:
 - [x] Docker Compose V2 and source-built normalization confirmation
 - [x] Complete Swift and Go coverage gate
 - [x] Signed Conventional documentation commit
-- [ ] Pull-request checks and connector review
-- [ ] Exact-main CI, CodeQL, and SonarCloud gate
+- [x] Pull-request checks and connector review
+- [x] Exact-main CI, CodeQL, and SonarCloud gate
 - [ ] Slice prerelease, checksums, attestations, and Homebrew update
