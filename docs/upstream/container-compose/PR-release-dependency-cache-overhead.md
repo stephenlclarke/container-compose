@@ -61,15 +61,50 @@ The Go cache failed authentication after receiving about 1.29 GB; the build
 then succeeded. This makes the no-cache behavior directly equivalent to the
 successful portion of the observed run.
 
+## Publication comparison
+
+Exact-main Current run
+[`30255646679`](https://github.com/stephenlclarke/container-compose/actions/runs/30255646679)
+published merge `4fe88b796fe2b4b3008ccc7da8d284cedd4235c4` successfully.
+
+| Step | Duration | Cache transfer |
+| --- | ---: | ---: |
+| Cache SwiftPM build artifacts | removed | none |
+| Build matched runtime package | 2m 50s | none |
+| Set up Go | 0s | none; `setup-go` cache disabled |
+| Build release package | 2m 31s | none |
+| Generate Current build VHS recording | 6m 38s | none |
+| Package job total | 14m 18s | none from the removed release caches |
+
+The baseline package job took 43m 01s. The Current job that contains this
+change avoided the prior 2,134,173,923-byte SwiftPM cache transfer and the
+1,624,881,811-byte Go cache restore attempt while preserving the same release
+authority, package, attestation, Homebrew, and live VHS stages.
+
+The refreshed `current` prerelease is not a draft, is marked prerelease, targets
+`4fe88b796fe2b4b3008ccc7da8d284cedd4235c4`, and was published at
+2026-07-27 10:05:13 UTC. Both package archives have verified SHA-256 sidecars
+and locally verified GitHub attestations:
+
+- `container-compose-plugin-current-4fe88b796fe2-arm64.tar.gz`:
+  `cc51d5dea4feabf84a66fc024a22b067b61a307f078bf23a48fa3ea1d32771ac`
+- `container-current-4fe88b796fe2-arm64.tar.gz`:
+  `64b47eb5377b7f60c70381008510656d2a88dee1b4c625e349da2eba6ab840b2`
+
+Homebrew tap commit
+`5d53619c83bd8a2b1b47638d8d99d0c817d1ed17` updates
+`container-current.rb` and `container-compose-current.rb` to
+`current.895.4fe88b796fe2` with the matching asset names and SHA-256 values.
+
 ## Compatibility and risk
 
 - The clean job already checks out every exact source revision and SwiftPM
   resolves from tracked manifests.
 - `setup-go` still installs/selects the version pinned by `go.mod`; only its
   cache restore/save behavior changes.
-- Cold build duration can vary, so the next Current run is the authoritative
-  end-to-end timing. The change removes a deterministic 3.76 GB transfer
-  obligation observed to exceed the builds it was intended to accelerate.
+- Cold build duration can vary, but the exact-main Current run confirms the
+  release path no longer pays the deterministic 3.76 GB transfer obligation
+  observed to exceed the builds it was intended to accelerate.
 - CI, CodeQL, Quality, and stable-gate caches are unchanged.
 - Archive contents, checksums, attestations, formulae, and release identity are
   unchanged.
@@ -80,5 +115,5 @@ successful portion of the observed run.
 - [x] Focused workflow-policy tests
 - [x] YAML parse and actionlint
 - [x] Complete release test suite
-- [ ] Pull-request checks and connector review
-- [ ] Exact-main Current publication and timing comparison
+- [x] Pull-request checks and connector review
+- [x] Exact-main Current publication and timing comparison

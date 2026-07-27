@@ -33,14 +33,16 @@ orchestration and maps supported Compose behavior to the matched runtime stack.
 > [!WARNING]
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
-> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 26 July 2026 snapshot, the three support forks are **445 commits ahead of Apple upstream**:
+> <!-- upstream-metrics:start -->
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 27 July 2026 snapshot, the three support forks are **463 commits ahead of Apple upstream**:
 >
 > - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 127 ahead** at [`164088e02e16`](https://github.com/stephenlclarke/containerization/commit/164088e02e16ed80e536d0c59822b09931d213df).
-> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 285 ahead** at [`221fafc24ebd`](https://github.com/stephenlclarke/container/commit/221fafc24ebd19502f4553e0b5d38c14be3f2b22).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 303 ahead** at [`5796a79ee3e5`](https://github.com/stephenlclarke/container/commit/5796a79ee3e59c16098d086278c072740d519ee8).
 > - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 33 ahead** at [`f97cddf5b3aa`](https://github.com/stephenlclarke/container-builder-shim/commit/f97cddf5b3aae2426a094613793c11c41b1d2e53).
 > - [`container-compose`](https://github.com/stephenlclarke/container-compose): the integration repository's current `main` branch, with no Apple repository to compare against.
 >
 > What looks like a local Compose change can therefore require coordinated conflict resolution, pin updates, builds, tests, packaging, and release validation across the entire stack. The pinned revisions must move together.
+> <!-- upstream-metrics:end -->
 >
 > Apple's [#1769 proposal](https://github.com/apple/container/pull/1769) and [stated direction](https://github.com/apple/container/pull/1769#issuecomment-4781645360) are that Docker CLI compatibility is **NOT** a project objective, because of UX, naming, and maintenance trade-offs; its preferred route is Docker CLI access through [Socktainer](https://github.com/socktainer/socktainer) and a separate API bridge or service plugin. The missing primitives and fixes may therefore remain long-lived fork responsibilities rather than work Apple adopts upstream.
 

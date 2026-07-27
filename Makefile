@@ -17,7 +17,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := all
-.PHONY: upstream-divergence-report upstream-divergence-check upstream-divergence-release-check docs serve-docs
+.PHONY: upstream-divergence-report upstream-divergence-check upstream-divergence-release-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
 
 SWIFT ?= swift
 SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
@@ -1562,6 +1562,12 @@ upstream-divergence-check:
 
 upstream-divergence-release-check:
 	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --strict --require-upstream-current --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
+
+readme-upstream-metrics-update:
+	$(PYTHON) Tools/ci/update-readme-upstream-metrics.py --fetch
+
+readme-upstream-metrics-check:
+	$(PYTHON) Tools/ci/update-readme-upstream-metrics.py --fetch --check
 
 docs:
 	@printf 'Building DocC API documentation...\n'
