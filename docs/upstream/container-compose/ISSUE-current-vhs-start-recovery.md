@@ -56,3 +56,19 @@ runtime source, public API, Windows path, or Docker-shaped Compose primitive.
   pass.
 - Exact-main Current packaging publishes the matched archives and a nonempty
   live GIF with zero Replay or Marker instructions.
+
+## Resolution
+
+Four signed commits merged through
+[`stephenlclarke/container-compose#161`](https://github.com/stephenlclarke/container-compose/pull/161)
+as exact source `4b4a4cff5398a3089ce531842fd10f5e4756da8f`. Exact-main CI,
+CodeQL, and SonarCloud passed; SonarCloud reported all ratings A, 82.9%
+overall coverage, 82.8% new-code coverage, and zero unresolved issues or
+hotspots.
+
+Current workflow
+[`30231378606`](https://github.com/stephenlclarke/container-compose/actions/runs/30231378606)
+published seven matched, checksummed, and SLSA-attested assets from that exact
+source. The live 303.92-second GIF visibly types commands and then shows their
+real output, with 16 `Type`, 16 `Enter`, 14 `Wait`, zero Replay, and zero
+Marker instructions.

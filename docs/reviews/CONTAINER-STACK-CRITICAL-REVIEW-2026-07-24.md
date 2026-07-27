@@ -241,11 +241,25 @@ teardown race before it could publish: the exact runtime start typed by VHS
 received an interrupted XPC connection immediately after a long retained-state
 stop. Release-layer correction `f0e1fbbd` requires the complete Container
 launchd namespace to remain absent before recording and visibly types one
-bounded exact-start retry. The
+bounded exact-start retry. Connector follow-up `18652f78` applies the same
+fail-closed quiescence guard after a transport-only recording reset stops a
+partially booted runtime. The four signed commits merged through PR #161 as
+`4b4a4cff...`; exact-main CI and CodeQL passed, and SonarCloud analysis
+`b31c11e9-089a-4c1e-b3c6-44967b74ad79` reported gate `OK`, all ratings A,
+82.9% overall coverage, 82.8% new-code coverage, and zero unresolved issues
+or hotspots. Current workflow `30231378606` then published seven matched,
+checksummed, and SLSA-attested assets from that exact source. Homebrew
+installed the exact Compose and Apple runtime revisions, the tracked
+cancellation fixture matched Docker Compose V2 `5.3.1` after normalized
+comparison, and the 303.92-second live GIF visibly types commands before their
+real output with 16 `Type`, 16 `Enter`, 14 `Wait`, zero Replay, and zero Marker
+instructions. The final focused source rerun passed all 37 process-runner
+tests. The
 [issue](../upstream/container-compose/ISSUE-current-vhs-start-recovery.md)
 and
 [pull-request handoff](../upstream/container-compose/PR-current-vhs-start-recovery.md)
-retain the failed-run evidence and the zero-Replay/zero-Marker boundary.
+retain the failed-run evidence and the completed zero-Replay/zero-Marker
+publication boundary.
 
 ### P1: Compatibility Preflight Can Deadlock on Full Pipes
 

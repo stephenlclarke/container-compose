@@ -154,6 +154,25 @@ Results on the designated Apple silicon MacBook Pro:
   gate `OK`, 82.9% overall coverage, 82.8% new-code coverage, all ratings A,
   and zero unresolved bugs, vulnerabilities, code smells, issues, or
   hotspots.
+- Current workflow
+  [`30231378606`](https://github.com/stephenlclarke/container-compose/actions/runs/30231378606)
+  published the seven-asset
+  [`current`](https://github.com/stephenlclarke/container-compose/releases/tag/current)
+  prerelease from exact source
+  `4b4a4cff5398a3089ce531842fd10f5e4756da8f`. Its matched Compose and
+  runtime archive digests are respectively
+  `c11c52b192133cdb64e11ce9a1fb1ded2aea0bd5cb141c5a9dbde9269007e622`
+  and
+  `1252743fb9baac10c90b8a3a2caf1b3e6422af880783d9d6b3f925c8fec6ef67`;
+  both sidecars and both GitHub SLSA v1 attestations verify. Homebrew installed
+  Compose `current.891.4b4a4cff5398` with the matched Apple runtime, and the
+  tracked cancellation fixture matched Docker Compose V2 `5.3.1` after
+  normalizing the object-versus-array network representation.
+- The published 1600 by 720 live GIF visibly types commands and then records
+  their real output across 303.92 seconds. Its tape has 16 `Type`, 16 `Enter`,
+  and 14 `Wait` instructions with zero Replay and zero Marker instructions.
+  The final focused source rerun passed all 37 process-runner tests, including
+  Docker Compose YAML child cancellation.
 
 ## Compatibility and risk
 
@@ -196,4 +215,4 @@ Results on the designated Apple silicon MacBook Pro:
 - [x] Signed Conventional documentation commit
 - [x] Pull-request checks and connector review
 - [x] Exact-main CI, CodeQL, and SonarCloud gate
-- [ ] Slice prerelease, checksums, attestations, and Homebrew update
+- [x] Slice prerelease, checksums, attestations, and Homebrew update
