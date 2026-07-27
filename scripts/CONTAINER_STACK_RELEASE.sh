@@ -433,12 +433,22 @@ refresh_mutable_current_tag() {
 
 fetch_release_remote() {
   local repo="$1" path remote url fallback_url
+  local fetch_args=()
   path="$(repo_path "${repo}")"
   remote="$(push_remote "${repo}")"
   url="$(git -C "${path}" remote get-url "${remote}")"
+  fetch_args=(git -C "${path}" fetch --prune --tags "${remote}")
+  if [[ "${repo}" == "${CONTAINER_REPO}" ]]; then
+    # The legacy Homebrew lane retargets this pointer on every runtime build.
+    # Stable release preparation does not consume it, so exclude it while
+    # fetching immutable package and semantic tags.
+    fetch_args+=("^refs/tags/homebrew-main")
+  fi
 
   if [[ "${EXECUTE}" != "1" ]]; then
-    printf 'would run: git -C %s fetch --prune --tags %s\n' "${path}" "${remote}"
+    printf 'would run:'
+    printf ' %s' "${fetch_args[@]}"
+    printf '\n'
     return 0
   fi
 
@@ -449,16 +459,20 @@ fetch_release_remote() {
   fi
 
   refresh_mutable_current_tag "${repo}" "${path}" "${remote}"
-  printf '+ git -C %s fetch --prune --tags %s\n' "${path}" "${remote}"
-  if git -C "${path}" fetch --prune --tags "${remote}"; then
+  printf '+'
+  printf ' %s' "${fetch_args[@]}"
+  printf '\n'
+  if "${fetch_args[@]}"; then
     return 0
   fi
 
   if fallback_url="$(stephen_https_url "${url}")"; then
     printf 'fetch from %s failed for %s; switching %s to %s and retrying\n' "${url}" "${repo}" "${remote}" "${fallback_url}" >&2
     git -C "${path}" remote set-url "${remote}" "${fallback_url}"
-    printf '+ git -C %s fetch --prune --tags %s\n' "${path}" "${remote}"
-    git -C "${path}" fetch --prune --tags "${remote}"
+    printf '+'
+    printf ' %s' "${fetch_args[@]}"
+    printf '\n'
+    "${fetch_args[@]}"
     return 0
   fi
 

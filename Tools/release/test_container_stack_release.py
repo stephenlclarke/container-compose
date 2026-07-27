@@ -1115,6 +1115,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def test_release_helper_fetches_tags_before_resolving_versions(self) -> None:
         self.assertIn("fetch --prune --tags", self.script)
         self.assertIn("+refs/tags/current:refs/tags/current", self.script)
+        self.assertIn("^refs/tags/homebrew-main", self.script)
         self.assertNotIn("fetch --prune --tags --force", self.script)
 
     def test_git_fixtures_never_launch_an_editor(self) -> None:
@@ -1139,7 +1140,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.run_command("git", "-C", str(updater), "tag", "--no-sign", "-f", "current")
             self.run_command("git", "-C", str(updater), "push", "origin", "+refs/tags/current")
 
-            result = self.run_release_function(root / "github", "fetch_release_remote container-compose")
+            result = self.run_release_function(
+                root / "github",
+                "fetch_release_remote container-compose",
+                shell="/bin/bash",
+            )
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("refreshing mutable current tag", result.stdout)
@@ -1148,6 +1153,70 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "git", "ls-remote", "--tags", "--refs", str(remote), "refs/tags/current"
             ).stdout.split()[0]
             self.assertEqual(local_current, remote_current)
+
+    def test_release_fetch_excludes_mutable_homebrew_main_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote = root / "remote.git"
+            local = root / "github" / "container"
+            self.run_command("git", "init", "--bare", str(remote))
+            local.parent.mkdir(parents=True)
+            self.run_command("git", "init", "-b", "main", str(local))
+            self.configure_repo(local)
+            self.run_command("git", "-C", str(local), "remote", "add", "fork", str(remote))
+            self.commit_file(local, "README.md", "base\n", "chore: initial runtime")
+            self.run_command("git", "-C", str(local), "tag", "--no-sign", "homebrew-main")
+            self.run_command(
+                "git",
+                "-C",
+                str(local),
+                "push",
+                "-u",
+                "fork",
+                "main",
+                "refs/tags/homebrew-main",
+            )
+            local_tag = self.git(local, "rev-parse", "refs/tags/homebrew-main")
+
+            updater = root / "updater"
+            self.run_command("git", "clone", "--branch", "main", str(remote), str(updater))
+            self.configure_repo(updater)
+            self.commit_file(updater, "CURRENT.md", "current\n", "chore: advance runtime")
+            self.run_command("git", "-C", str(updater), "push", "origin", "main")
+            self.run_command(
+                "git",
+                "-C",
+                str(updater),
+                "tag",
+                "--no-sign",
+                "-f",
+                "homebrew-main",
+            )
+            self.run_command(
+                "git",
+                "-C",
+                str(updater),
+                "push",
+                "origin",
+                "+refs/tags/homebrew-main",
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "fetch_release_remote container",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.git(local, "rev-parse", "refs/tags/homebrew-main"), local_tag)
+            remote_tag = self.run_command(
+                "git",
+                "ls-remote",
+                "--tags",
+                "--refs",
+                str(remote),
+                "refs/tags/homebrew-main",
+            ).stdout.split()[0]
+            self.assertNotEqual(local_tag, remote_tag)
 
     def test_release_helper_reconstructs_an_unpublished_prepared_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1231,7 +1300,6 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_release_helper_does_not_refresh_legacy_mutable_package_pointers(self) -> None:
         self.assertNotIn("+refs/tags/homebrew-main:refs/tags/homebrew-main", self.script)
-        self.assertNotIn("legacy mutable pointer", self.script)
         self.assertNotIn("fetch --prune --tags --force", self.script)
 
     def test_equivalent_squash_promotion_aligns_local_main(self) -> None:
@@ -1637,6 +1705,7 @@ gh() {
         root: Path,
         function_call: str,
         shell_setup: str | None = None,
+        shell: str = "bash",
     ) -> subprocess.CompletedProcess[str]:
         lines = [
             "set -euo pipefail",
@@ -1653,7 +1722,7 @@ gh() {
         command = "\n".join(lines)
         environment = self.non_interactive_environment()
         return subprocess.run(
-            ["bash", "-c", command],
+            [shell, "-c", command],
             capture_output=True,
             text=True,
             check=False,
