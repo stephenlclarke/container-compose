@@ -27,7 +27,7 @@ Docker Compose YAML integration, and no-surviving-process coverage.
 The largest engineering risk is now the runtime dependency model, not Compose
 file parsing. `ComposeRuntimeSPI` is presented as a clean provider boundary,
 but `ComposeCore` still imports and publicly exposes Apple package types. The
-three support forks contain 394 non-merge commits beyond current Apple
+three support forks contain 414 non-merge commits beyond current Apple
 upstream heads. That gives the project valuable capabilities, but creates a
 large review, release, and convergence burden.
 
@@ -78,6 +78,46 @@ Current Apple heads at the final source review were:
 | `apple/container` | `d1d763530df3c6a326dbae7f0c0a59a335808045` |
 | `apple/containerization` | `450d44ecb6d690b7a50250b87d4a40e467d805b8` |
 | `apple/container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` |
+
+### 27 July 2026 Maintenance Refresh
+
+Every configured Apple and Stephen-owned remote was fetched again before the
+maintenance slice. The supported fork mains contained every Apple main commit:
+
+| Repository | Apple main | Supported main | Apple-only | Fork-only |
+| --- | --- | --- | ---: | ---: |
+| `container` | `d1d7635` | `5796a79` | 0 | 276 |
+| `containerization` | `74ace14` | `164088e` | 0 | 110 |
+| `container-builder-shim` | `267b5ab` | `f97cddf` | 0 | 28 |
+
+The Compose and release-support repositories had no open Dependabot or
+Renovate pull requests. The four Stephen-authored Apple proposals remained
+mergeable with no requested author change:
+
+- `apple/container#1934`
+- `apple/container#1935`
+- `apple/container#1965`
+- `apple/containerization#799`
+
+The fork reproduced the four performance findings in
+`apple/container#2022`. Support PR
+[`stephenlclarke/container#30`](https://github.com/stephenlclarke/container/pull/30)
+keeps their corrections independently cherry-pickable, adds source-matched
+unit and integration evidence, and directly addresses every exact-head
+connector review thread. The long-line `logs -n` correctness case already
+passes, while `apple/container#2021` remains an Apple
+Virtualization.framework virtio-fs primitive and has no safe fork workaround.
+The reviewed head `281208b1a8` passed hosted build and tests and merged without
+tree changes as `5796a79ee3e59c16098d086278c072740d519ee8`.
+
+The release audit also found that Current restored a 2.13 GB SwiftPM cache and
+attempted a 1.62 GB Go cache before builds that completed in a few minutes.
+Signed Compose commit `6cae9a84` removes only those package-lane caches and
+retains validation-workflow caches.
+
+This refresh does not close the three confirmed release blockers in the
+executive verdict: compatibility-preflight pipe drainage, inherited commit
+volumes, and direct archive copy streaming remain required.
 
 All repositories were fetched with `git fetch --all --prune --no-tags`.
 The review covered:
@@ -535,8 +575,8 @@ debt at this snapshot. The fork-only surface is nevertheless large:
 
 | Fork | Behind Apple | Ahead of Apple | Non-merge ahead | Diff from Apple |
 | --- | ---: | ---: | ---: | --- |
-| `container` | 0 | 281 | 256 | 329 files, +30,184/-1,147 |
-| `containerization` | 0 | 126 | 110 | 110 files, +8,547/-505 |
+| `container` | 0 | 303 | 276 | 340 files, +31,154/-1,197 |
+| `containerization` | 0 | 127 | 110 | 110 files, +8,523/-492 |
 | `container-builder-shim` | 0 | 33 | 28 | 60 files, +2,533/-881 |
 
 This should be managed as an upstream-convergence programme:

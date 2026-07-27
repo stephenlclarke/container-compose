@@ -8,6 +8,24 @@ This is the current disposition of Apple work that affects the five-repository c
 - `apple/containerization`
 - `apple/container-builder-shim`
 
+## Fetched Main Baselines
+
+The 27 July 2026 refresh fetched every configured Apple and Stephen-owned
+remote before comparison. Each supported fork contains its complete Apple
+`main` history:
+
+| Repository | Apple `main` | Supported fork `main` | Apple-only commits |
+| --- | --- | --- | ---: |
+| `container` | `d1d763530df3c6a326dbae7f0c0a59a335808045` | `5796a79ee3e59c16098d086278c072740d519ee8` | 0 |
+| `containerization` | `74ace148ded72f7bb3c878b142e4962ae668adf4` | `164088e02e16ed80e536d0c59822b09931d213df` | 0 |
+| `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `f97cddf5b3aae2426a094613793c11c41b1d2e53` | 0 |
+
+No Apple commit needed merging in this refresh. The runtime maintenance head
+`281208b1a8db06c92348afdeb1c163e043637c16` passed exact-head review and
+hosted checks, then merged without tree changes as
+`5796a79ee3e59c16098d086278c072740d519ee8`. The Compose and Homebrew support
+repositories also had no open dependency-bot pull requests.
+
 ## Open stephenlclarke Proposals
 
 | Pull request | Current purpose |
@@ -39,6 +57,10 @@ fails if any snapshot is deleted or retargeted.
 | `apple/container` | [IPv4 network address reservations](apple-container/PR-network-ipv4-reserved-addresses.md) carry validated generic reservations through persisted network configuration, helper startup, and attachment allocation. |
 | `apple/container` | [Numeric supplemental process groups](apple-container/PR-supplemental-groups.md) expose the runtime's existing typed GID support through the generic process CLI surface. |
 | `apple/container` | [Owned regular-file bind snapshots](apple-container/PR-file-mount-ownership.md) expose optional UID/GID mapping without mutating the host source. |
+| `apple/container` | [Compiled build glob caching](apple-container/PR-build-glob-cache.md) compiles each Docker ignore pattern once per context while retaining the existing Swift regex semantics. |
+| `apple/container` | [Hashed build-context membership](apple-container/PR-build-context-membership.md) uses the existing `Set<DirEntry>` contract instead of scanning it linearly for each archive candidate. |
+| `apple/container` | [Concurrent stats sampling](apple-container/PR-stats-concurrent-sampling.md) fans out independent runtime samples while preserving list order and failure semantics. |
+| `apple/container` | [Disk-usage lock scope](apple-container/PR-disk-usage-lock-scope.md) snapshots metadata under service locks and traverses resource trees on detached utility tasks. |
 | `apple/containerization` | [Fork CI validation](apple-containerization/PR-fork-ci-validation.md) runs supported checks in contributor forks while retaining official guest image and integration work. |
 | `apple/containerization` | [Additional guest interface addresses](apple-containerization/PR-additional-interface-addresses.md) configure generic supplemental IPv4/IPv6 CIDRs before link-up. |
 | `apple/containerization` | [Owned regular-file bind snapshots](apple-containerization/PR-file-mount-ownership.md) create private guest copies only when ownership metadata is requested. |
@@ -91,15 +113,18 @@ fails if any snapshot is deleted or retargeted.
 | Compose process-start observation | The exact-main SonarCloud analysis for child-process cancellation identified one undocumented no-op observer and two nested launch-observer closures. Compose-only correction `7939874a` names the private callback contract, invokes it through one helper outside the asynchronous continuation bodies, and explains the production no-op without changing launch or cancellation behavior. Follow-up merge `617c2036` passed exact-main analysis `fe1e52b4-9674-4da6-90f8-ce4b0155909d` with zero unresolved issues or hotspots. See [ISSUE-process-start-observer-maintainability.md](container-compose/ISSUE-process-start-observer-maintainability.md) and [PR-process-start-observer-maintainability.md](container-compose/PR-process-start-observer-maintainability.md). |
 | Current VHS runtime startup | The self-hosted Current release runner now requires the global Container launchd namespace to remain absent before recording, repeats that guard after a transport-only reset, and visibly types one bounded retry of the exact packaged-runtime start. This is Compose release-layer recovery for an XPC interruption after a long retained-runtime stop; it changes no Apple runtime source and introduces no Replay, Marker, or transcript path. Four signed commits merged as `4b4a4cff`; exact-main CI, CodeQL, and SonarCloud analysis `b31c11e9-089a-4c1e-b3c6-44967b74ad79` passed with zero unresolved issues or hotspots. Current run `30231378606` published matched checksummed and SLSA-attested archives plus a 303.92-second GIF whose commands and real output are live, with 16 `Type`, 16 `Enter`, 14 `Wait`, zero Replay, and zero Marker instructions. See [ISSUE-current-vhs-start-recovery.md](container-compose/ISSUE-current-vhs-start-recovery.md) and [PR-current-vhs-start-recovery.md](container-compose/PR-current-vhs-start-recovery.md). |
 | Current full-dispatch authority | A docs-only main merge requires explicit full-validation CI to establish runtime, coverage, and SonarCloud authority. Current's controller accepted that exact successful `workflow_dispatch`, but its independent package-time guard pre-filtered to push events and rejected the same run after cache restoration. Compose-only correction `c8524d36` accepts successful exact-main CI from the existing trusted `push` or `workflow_dispatch` set and continues to exclude all other events. See [ISSUE-current-dispatch-release-authority.md](container-compose/ISSUE-current-dispatch-release-authority.md) and [PR-current-dispatch-release-authority.md](container-compose/PR-current-dispatch-release-authority.md). |
+| Current dependency cache overhead | Current run `30235634675` spent 10 minutes restoring a 2.13 GB SwiftPM cache and 19 minutes 19 seconds attempting a 1.62 GB Go cache restore, versus 2 minutes 25 seconds and 2 minutes 17 seconds for the respective runtime and Compose builds. Compose-only correction `6cae9a84` removes the release SwiftPM cache and disables release `setup-go` caching while retaining all validation-workflow caches. See [ISSUE-release-dependency-cache-overhead.md](container-compose/ISSUE-release-dependency-cache-overhead.md) and [PR-release-dependency-cache-overhead.md](container-compose/PR-release-dependency-cache-overhead.md). |
 | [apple/container#1941](https://github.com/apple/container/issues/1941) | The supported fork ports the content-identical signal-name correction from [apple/container#1997](https://github.com/apple/container/pull/1997) in `bb2438c`, with regression coverage in `26cc778` and handoff details in [PR-1997.md](apple-container/PR-1997.md). Drop the port when Apple merges an equivalent fix. |
 | [apple/container#1967](https://github.com/apple/container/issues/1967) | The supported `LogFileOutput` already retains complete records across backward-read chunks. Explicit 3 KB and multi-record tests in `26cc778` cover the behavior proposed by [apple/container#2000](https://github.com/apple/container/pull/2000). |
 | [apple/container#2009](https://github.com/apple/container/issues/2009) | The supported init-process reattach path writes persistent sinks first and removes failed clients through `AttachableOutput`; `26cc778` proves later persistent writes continue. Apple main still needs its own reviewed fix. |
 | [apple/containerization#798](https://github.com/apple/containerization/pull/798) | Merged upstream. Its SwiftPM manifest correction is included in the current Apple baseline, so it no longer needs fork-side review or a local port. |
+| [apple/container#2021](https://github.com/apple/container/issues/2021) | Host disk-space retention after deleting guest files is owned by the macOS Virtualization.framework virtio-fs implementation and is released when the container stops. The supported stack must not add a divergent copy, remount, or guest-filesystem workaround for an Apple OS primitive. Track the upstream platform resolution. |
+| [apple/container#2022](https://github.com/apple/container/issues/2022) | The reported long-line `logs -n` correctness case passes on the installed supported runtime with a 2,001-byte first record and exact final three records. The four reported hot-path inefficiencies reproduce in the fork and are corrected as independent signed commits: glob cache `abab498f` plus Unicode-semantics correction `4436afe`, hashed context membership `41e31f7`, concurrent stats `600fde2`, and off-lock disk sizing `b15ac4a`. Review follow-up `c7d05f1` keeps active-volume accounting consistent with the sizing snapshot. Matching issue/PR handoffs are linked above. |
 
 ## Open Follow-up
 
 - Keep `apple/container#1934`, `#1935`, and `#1965`, `apple/containerization#799`, and `apple/container-builder-shim#87` open until Apple merges, replaces, or explicitly rejects their current changes.
-- The 26 July refresh found those four Stephen-authored Apple pull requests
+- The 27 July refresh found those four Stephen-authored Apple pull requests
   mergeable with no actionable author review. The account-wide connector
   audit also confirmed that every actionable connector thread has a Stephen
   response; historical merged threads remain open until their current-main
