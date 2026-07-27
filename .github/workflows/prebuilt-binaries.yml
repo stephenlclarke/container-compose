@@ -630,34 +630,6 @@ jobs:
             exit 1
           fi
 
-      - name: Compute SwiftPM cache fingerprint
-        id: swiftpm-cache
-        shell: bash
-        run: |
-          set -euo pipefail
-          {
-            swift --version 2>&1
-            printf 'container_ref=%s\n' "${{ steps.container-ref.outputs.ref }}"
-            printf 'containerization_ref=%s\n' "${{ steps.stack-refs.outputs.containerization_ref }}"
-            shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
-            shasum -a 256 container/Package.swift container/Package.resolved
-            if [[ -f containerization/Package.swift ]]; then
-              shasum -a 256 containerization/Package.swift containerization/Package.resolved
-            fi
-          } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
-
-      - name: Cache SwiftPM build artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            container-compose/.build
-            container/.build
-            containerization/.build
-            ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-${{ runner.arch }}-macos26-stack-swiftpm-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-macos26-stack-swiftpm-v1-
-
       - name: Require the hosted release authority
         env:
           GH_TOKEN: ${{ github.token }}
@@ -793,7 +765,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
-          cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
+          cache: false
 
       - name: Build release package
         run: make package-release PLUGIN_ARCHIVE="${RUNNER_TEMP}/${{ steps.lane.outputs.asset }}"
