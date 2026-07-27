@@ -1140,7 +1140,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.run_command("git", "-C", str(updater), "tag", "--no-sign", "-f", "current")
             self.run_command("git", "-C", str(updater), "push", "origin", "+refs/tags/current")
 
-            result = self.run_release_function(root / "github", "fetch_release_remote container-compose")
+            result = self.run_release_function(
+                root / "github",
+                "fetch_release_remote container-compose",
+                shell="/bin/bash",
+            )
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("refreshing mutable current tag", result.stdout)
@@ -1701,6 +1705,7 @@ gh() {
         root: Path,
         function_call: str,
         shell_setup: str | None = None,
+        shell: str = "bash",
     ) -> subprocess.CompletedProcess[str]:
         lines = [
             "set -euo pipefail",
@@ -1717,7 +1722,7 @@ gh() {
         command = "\n".join(lines)
         environment = self.non_interactive_environment()
         return subprocess.run(
-            ["bash", "-c", command],
+            [shell, "-c", command],
             capture_output=True,
             text=True,
             check=False,
