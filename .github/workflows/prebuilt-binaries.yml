@@ -838,6 +838,7 @@ jobs:
           elif command -v container >/dev/null 2>&1; then
             container system stop || true
           fi
+          bash Tools/release/wait-for-container-system-stop.sh
           rm -rf "${demo_root}"
 
           mkdir -p "${demo_root}/libexec/container-plugins"

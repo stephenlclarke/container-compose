@@ -424,8 +424,16 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('"${container_binary}" system stop || true', workflow)
         self.assertIn('"${demo_root}/bin/container" system stop || true', workflow)
         self.assertIn("elif command -v container >/dev/null 2>&1; then", workflow)
+        self.assertIn(
+            "bash Tools/release/wait-for-container-system-stop.sh",
+            workflow,
+        )
         self.assertLess(
             workflow.index('"${demo_root}/bin/container" system stop || true'),
+            workflow.index("bash Tools/release/wait-for-container-system-stop.sh"),
+        )
+        self.assertLess(
+            workflow.index("bash Tools/release/wait-for-container-system-stop.sh"),
             workflow.index('rm -rf "${demo_root}"'),
         )
         self.assertLess(
@@ -453,15 +461,17 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('Set TypingSpeed 48ms', tape)
         self.assertIn('Set Width 1600', tape)
         self.assertIn('$CONTAINER_COMPOSE_DEMO_ROOT', tape)
-        self.assertIn('Type "container system start', tape)
+        self.assertIn('Type "(container system start', tape)
         self.assertIn('&& container system status', tape)
         self.assertIn('--app-root $CONTAINER_APP_ROOT', tape)
         self.assertIn('--install-root $CONTAINER_INSTALL_ROOT', tape)
         self.assertLess(
-            tape.index('Type "container system start'),
+            tape.index('Type "(container system start'),
             tape.index('Type "container compose version"'),
         )
-        self.assertEqual(tape.count('Wait+Screen@900s /status +running/'), 1)
+        self.assertEqual(tape.count("container system start"), 2)
+        self.assertEqual(tape.count('Wait+Screen@180s /status +running/'), 1)
+        self.assertNotIn('Wait+Screen@900s /status +running/', tape)
         self.assertIn('Type "container compose version"', tape)
         live_up = (
             "container compose --ansi never --progress plain "
