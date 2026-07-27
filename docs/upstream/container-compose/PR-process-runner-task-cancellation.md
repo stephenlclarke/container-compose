@@ -106,8 +106,37 @@ Results on the designated Apple silicon MacBook Pro:
   89.88% Go statement coverage;
 - SwiftFormat and strict SwiftLint pass on every changed Swift file.
 
-Pull-request checks, exact-main SonarCloud, prerelease, and installed-binary
-evidence are added to this handoff before the slice closes.
+## Publication evidence
+
+- Pull request
+  [`stephenlclarke/container-compose#157`](https://github.com/stephenlclarke/container-compose/pull/157)
+  merged as
+  [`41d1e542ea3cbd83b27fb3ae0aab0a5bd857d706`](https://github.com/stephenlclarke/container-compose/commit/41d1e542ea3cbd83b27fb3ae0aab0a5bd857d706),
+  preserving the signed implementation and handoff commits.
+- Exact-head
+  [CI](https://github.com/stephenlclarke/container-compose/actions/runs/30225185496),
+  [CodeQL](https://github.com/stephenlclarke/container-compose/actions/runs/30225185529),
+  [Quality](https://github.com/stephenlclarke/container-compose/actions/runs/30225185588),
+  and
+  [Documentation](https://github.com/stephenlclarke/container-compose/actions/runs/30225185484)
+  passed, including ASan.
+- The connector reviewed exact head
+  `cee556716519fa98a827f1578031155bdc67adb8`, reported no major issues,
+  and left zero unresolved review threads after every earlier finding received
+  a direct author response.
+- The first exact-main
+  [CI](https://github.com/stephenlclarke/container-compose/actions/runs/30225979068),
+  [CodeQL](https://github.com/stephenlclarke/container-compose/actions/runs/30225979078),
+  [Quality](https://github.com/stephenlclarke/container-compose/actions/runs/30225979070),
+  and
+  [Documentation](https://github.com/stephenlclarke/container-compose/actions/runs/30225979071)
+  passed for merge `41d1e542...`. SonarCloud analysis
+  `f1987b60-7da4-4ee8-941f-2094d4019eaf` accepted that exact revision with
+  gate `OK`, 82.9% overall coverage, 82.7% new-code coverage, and zero bugs,
+  vulnerabilities, or hotspots. Its three new maintainability findings are
+  corrected by the linked
+  [process-start observer follow-up](PR-process-start-observer-maintainability.md)
+  before prerelease publication.
 
 ## Compatibility and risk
 

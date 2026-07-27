@@ -57,6 +57,10 @@ private struct CapturedProcessCommandIO {
     let input: Data?
 }
 
+private typealias ProcessStartObserver = @Sendable (
+    @escaping @Sendable () -> Void,
+) -> Void
+
 /// Returns the signal that stopped a child, or nil for a terminal wait status.
 func processStoppedSignal(_ waitStatus: Int32) -> Int32? {
     guard waitStatus & 0xFF == 0x7F else {
@@ -103,7 +107,7 @@ private func launchCapturedCommand(
     _ prepared: PreparedProcessCommand,
     io: CapturedProcessCommandIO,
     state: ProcessRunState,
-    processDidStart: @Sendable (@escaping @Sendable () -> Void) -> Void,
+    processDidStart: ProcessStartObserver,
 ) {
     var didLaunch = false
     do {
@@ -112,9 +116,7 @@ private func launchCapturedCommand(
         }
         try prepared.command.start()
         didLaunch = true
-        processDidStart {
-            state.cancel()
-        }
+        notifyProcessDidStart(processDidStart, state: state)
         state.didLaunch(
             prepared.command,
             jobControlProcessGroup: prepared.jobControlProcessGroup,
@@ -141,6 +143,16 @@ private func launchCapturedCommand(
             try? io.stderr.fileHandleForReading.close()
             state.failBeforeLaunch(error)
         }
+    }
+}
+
+/// Invokes the launch-race test hook without nesting it inside run continuations.
+private func notifyProcessDidStart(
+    _ observer: ProcessStartObserver,
+    state: ProcessRunState,
+) {
+    observer {
+        state.cancel()
     }
 }
 
@@ -203,12 +215,12 @@ public extension CommandRunning {
 /// Production command runner backed by Apple's process command primitive.
 public struct ProcessRunner: CommandRunning {
     private static let isStateless = true
-    private let processDidStart: @Sendable (
-        @escaping @Sendable () -> Void,
-    ) -> Void
+    private let processDidStart: ProcessStartObserver
 
     public init() {
-        processDidStart = { _ in }
+        processDidStart = { _ in
+            // Production runs do not install the launch-race test hook.
+        }
         _ = Self.isStateless
     }
 
@@ -291,9 +303,7 @@ public struct ProcessRunner: CommandRunning {
 
                 do {
                     try prepared.command.start()
-                    processDidStart {
-                        state.cancel()
-                    }
+                    notifyProcessDidStart(processDidStart, state: state)
                     state.didLaunch(
                         prepared.command,
                         jobControlProcessGroup: prepared.jobControlProcessGroup,
@@ -391,9 +401,7 @@ public struct ProcessRunner: CommandRunning {
 
                 do {
                     try prepared.command.start()
-                    processDidStart {
-                        state.cancel()
-                    }
+                    notifyProcessDidStart(processDidStart, state: state)
                     state.didLaunch(
                         prepared.command,
                         jobControlProcessGroup: prepared.jobControlProcessGroup,
