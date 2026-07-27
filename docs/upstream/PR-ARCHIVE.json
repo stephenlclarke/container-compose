@@ -15,14 +15,14 @@
       "upstream": "apple/container#1933"
     },
     {
-      "archiveRef": "refs/heads/upstream-pr-1934-25311b21bb46",
-      "commit": "25311b21bb469ac546a8a1f3c494d104d81a4dfe",
+      "archiveRef": "refs/heads/upstream-pr-1934-d5d73ef1a95c",
+      "commit": "d5d73ef1a95ca9f78ffa287b7c2e5204bfd9d569",
       "repository": "stephenlclarke/container",
       "upstream": "apple/container#1934"
     },
     {
-      "archiveRef": "refs/heads/upstream-pr-1935-fc55c18a9888",
-      "commit": "fc55c18a98883c578e57c6acc9b3042d743e004d",
+      "archiveRef": "refs/heads/upstream-pr-1935-f4f908606d4a",
+      "commit": "f4f908606d4a7693f9bfc958593f7671b35caa0f",
       "repository": "stephenlclarke/container",
       "upstream": "apple/container#1935"
     },

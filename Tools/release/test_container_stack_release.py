@@ -669,11 +669,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('.event == "workflow_dispatch"', workflow)
         self.assertIn("Skipping current package for %s until successful exact-main CI", workflow)
         self.assertIn("timeout-minutes: 120", workflow)
-        self.assertIn("name: Cache SwiftPM build artifacts", workflow)
-        self.assertIn("container-compose/.build", workflow)
-        self.assertIn("container/.build", workflow)
         self.assertIn('.headBranch == "main"', workflow)
         self.assertIn('.status == "completed"', workflow)
+
+    def test_current_package_avoids_oversized_dependency_caches(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotIn("name: Cache SwiftPM build artifacts", workflow)
+        self.assertNotIn("id: swiftpm-cache", workflow)
+        setup_go = workflow[
+            workflow.index("- name: Set up Go") : workflow.index(
+                "- name: Build release package"
+            )
+        ]
+        self.assertIn("cache: false", setup_go)
+        self.assertNotIn("cache-dependency-path:", setup_go)
 
     def test_stable_and_current_release_authority_select_main_ci(self) -> None:
         stable_gate = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
