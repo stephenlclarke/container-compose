@@ -32,7 +32,12 @@ SCRIPT = ROOT / "Tools" / "release" / "record-vhs-live-demo.sh"
 class RecordVHSLiveDemoTests(unittest.TestCase):
     """Only a pre-command ttyd reset may receive a fresh live session."""
 
-    def run_recorder(self, vhs_body: str) -> tuple[subprocess.CompletedProcess[str], Path]:
+    def run_recorder(
+        self,
+        vhs_body: str,
+        *,
+        environment: dict[str, str] | None = None,
+    ) -> tuple[subprocess.CompletedProcess[str], Path]:
         temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(temporary_directory.cleanup)
         root = Path(temporary_directory.name)
@@ -40,8 +45,10 @@ class RecordVHSLiveDemoTests(unittest.TestCase):
         output = root / "demo.gif"
         counter = root / "attempts"
         stop_log = root / "stops"
+        wait_log = root / "waits"
         fake_vhs = root / "vhs"
         fake_container = root / "container"
+        fake_waiter = root / "wait-for-container-system-stop.sh"
         tape.write_text("Output demo.gif\n", encoding="utf-8")
         fake_vhs.write_text(
             "#!/usr/bin/env bash\nset -euo pipefail\n" + textwrap.dedent(vhs_body),
@@ -51,8 +58,18 @@ class RecordVHSLiveDemoTests(unittest.TestCase):
             "#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >> \"${FAKE_STOP_LOG}\"\n",
             encoding="utf-8",
         )
+        fake_waiter.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf 'wait\\n' >> \"${FAKE_WAIT_LOG}\"\n"
+            "if [[ \"${FAKE_WAITER_FAIL:-0}\" == \"1\" ]]; then\n"
+            "  exit 1\n"
+            "fi\n",
+            encoding="utf-8",
+        )
         fake_vhs.chmod(0o755)
         fake_container.chmod(0o755)
+        fake_waiter.chmod(0o755)
 
         environment = os.environ | {
             "VHS_BIN": str(fake_vhs),
@@ -61,7 +78,9 @@ class RecordVHSLiveDemoTests(unittest.TestCase):
             "FAKE_ATTEMPT_COUNTER": str(counter),
             "FAKE_VHS_OUTPUT": str(output),
             "FAKE_STOP_LOG": str(stop_log),
-        }
+            "FAKE_WAIT_LOG": str(wait_log),
+            "CONTAINER_SYSTEM_STOP_WAITER": str(fake_waiter),
+        } | (environment or {})
         result = subprocess.run(
             ["bash", str(SCRIPT), str(tape), str(output), str(fake_container)],
             capture_output=True,
@@ -92,6 +111,7 @@ class RecordVHSLiveDemoTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((root / "attempts").read_text(encoding="utf-8"), "2")
         self.assertEqual((root / "stops").read_text(encoding="utf-8"), "system stop\n")
+        self.assertEqual((root / "waits").read_text(encoding="utf-8"), "wait\n")
         self.assertTrue((root / "demo.gif").is_file())
         self.assertIn("typed command and live output", result.stdout)
 
@@ -107,6 +127,7 @@ class RecordVHSLiveDemoTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((root / "attempts").read_text(encoding="utf-8"), "1")
         self.assertFalse((root / "stops").exists())
+        self.assertFalse((root / "waits").exists())
         self.assertIn("refusing to retry a live-demo failure", result.stderr)
 
     def test_does_not_accept_a_successful_recorder_without_an_asset(self) -> None:
@@ -120,6 +141,7 @@ class RecordVHSLiveDemoTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((root / "attempts").read_text(encoding="utf-8"), "1")
         self.assertFalse((root / "stops").exists())
+        self.assertFalse((root / "waits").exists())
         self.assertIn("VHS completed without producing", result.stderr)
 
     def test_stops_after_the_bounded_transport_retry_count(self) -> None:
@@ -142,7 +164,26 @@ class RecordVHSLiveDemoTests(unittest.TestCase):
             (root / "stops").read_text(encoding="utf-8"),
             "system stop\nsystem stop\n",
         )
+        self.assertEqual(
+            (root / "waits").read_text(encoding="utf-8"),
+            "wait\nwait\n",
+        )
         self.assertIn("VHS terminal transport did not recover after 3 attempts", result.stderr)
+
+    def test_fails_closed_when_transport_retry_teardown_does_not_settle(self) -> None:
+        result, root = self.run_recorder(
+            """
+            printf '1' > "${FAKE_ATTEMPT_COUNTER}"
+            printf 'could not open ttyd: navigation failed: net::ERR_CONNECTION_RESET\\n' >&2
+            exit 1
+            """,
+            environment={"FAKE_WAITER_FAIL": "1"},
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((root / "attempts").read_text(encoding="utf-8"), "1")
+        self.assertEqual((root / "stops").read_text(encoding="utf-8"), "system stop\n")
+        self.assertEqual((root / "waits").read_text(encoding="utf-8"), "wait\n")
 
     def test_rejects_invalid_retry_count(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
