@@ -247,14 +247,14 @@ partially booted runtime. The four signed commits merged through PR #161 as
 `4b4a4cff...`; exact-main CI and CodeQL passed, and SonarCloud analysis
 `b31c11e9-089a-4c1e-b3c6-44967b74ad79` reported gate `OK`, all ratings A,
 82.9% overall coverage, 82.8% new-code coverage, and zero unresolved issues
-or hotspots. Current workflow `30231378606` then published seven matched,
-checksummed, and SLSA-attested assets from that exact source. Homebrew
-installed the exact Compose and Apple runtime revisions, the tracked
-cancellation fixture matched Docker Compose V2 `5.3.1` after normalized
-comparison, and the 303.92-second live GIF visibly types commands before their
-real output with 16 `Type`, 16 `Enter`, 14 `Wait`, zero Replay, and zero Marker
-instructions. The final focused source rerun passed all 37 process-runner
-tests. The
+or hotspots. Current workflow `30231378606` then published seven assets from
+that exact source, including two matched archives with verified checksums and
+SLSA attestations. Homebrew installed the exact Compose and Apple runtime
+revisions, the tracked cancellation fixture matched Docker Compose V2 `5.3.1`
+after normalized comparison, and the 303.92-second live GIF visibly types
+commands before their real output with 16 `Type`, 16 `Enter`, 14 `Wait`, zero
+Replay, and zero Marker instructions. The final focused source rerun passed
+all 37 process-runner tests. The
 [issue](../upstream/container-compose/ISSUE-current-vhs-start-recovery.md)
 and
 [pull-request handoff](../upstream/container-compose/PR-current-vhs-start-recovery.md)

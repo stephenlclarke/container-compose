@@ -68,7 +68,7 @@ hotspots.
 
 Current workflow
 [`30231378606`](https://github.com/stephenlclarke/container-compose/actions/runs/30231378606)
-published seven matched, checksummed, and SLSA-attested assets from that exact
-source. The live 303.92-second GIF visibly types commands and then shows their
-real output, with 16 `Type`, 16 `Enter`, 14 `Wait`, zero Replay, and zero
-Marker instructions.
+published seven assets from that exact source, including two matched archives
+with verified checksums and SLSA attestations. The live 303.92-second GIF
+visibly types commands and then shows their real output, with 16 `Type`, 16
+`Enter`, 14 `Wait`, zero Replay, and zero Marker instructions.
