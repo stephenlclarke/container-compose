@@ -1,13 +1,17 @@
 # Cross-MBP handoff: upstream maintenance
 
-Updated: 2026-07-27 10:40 BST
+Updated: 2026-07-27 11:56 BST
 
 ## Stop point
 
-The source changes for this slice are merged. Exact-main validation and
-documentation are still running, the `current` prerelease has not yet moved to
-the merge, and the final documentation/Slack closeout has not been completed.
-Do not begin the next parity slice until these publication gates are closed.
+The source changes for this slice are merged and the exact-main publication
+gates have closed green. The mutable `current` prerelease now points at the
+merge, the package artefacts and Homebrew formulas are aligned, and SonarCloud
+has indexed the exact revision.
+
+The remaining closeout work is documentation review/merge and the final Slack
+END notification. Do not begin the next parity slice until that closeout is
+complete.
 
 The durable goal remains:
 
@@ -171,14 +175,15 @@ PR #166 hosted evidence:
   green
 - exact-head connector review: no major issues and zero review threads
 
-## Exact-main work in flight
+## Exact-main publication evidence
 
 All runs target exact merge
 `4fe88b796fe2b4b3008ccc7da8d284cedd4235c4`.
 
 - CI
   [30253458586](https://github.com/stephenlclarke/container-compose/actions/runs/30253458586):
-  in progress in `Run coverage gate`
+  green. `Run coverage gate`, `Run built CLI smoke`, and `SonarQube scan`
+  passed. The `SonarQube scan` step ran from 09:48:54 to 09:49:50 UTC.
 - CodeQL
   [30253458549](https://github.com/stephenlclarke/container-compose/actions/runs/30253458549):
   green
@@ -187,66 +192,93 @@ All runs target exact merge
   green
 - Documentation
   [30253458571](https://github.com/stephenlclarke/container-compose/actions/runs/30253458571):
-  in progress in `Build static API documentation`
+  green
 - immutable archive verification
   [30253458622](https://github.com/stephenlclarke/container-compose/actions/runs/30253458622):
   green
 
-CI must finish coverage, CLI smoke, and an exact-revision Sonar scan. Its
-successful completion automatically starts the `Prebuilt Binaries` workflow.
-Do not dispatch a duplicate package run while the automatic run is viable.
+The automatic `Prebuilt Binaries` workflow from CI finished green:
 
-The `current` prerelease is still the previous publication:
+- [30255646679](https://github.com/stephenlclarke/container-compose/actions/runs/30255646679),
+  event `workflow_run`, head
+  `4fe88b796fe2b4b3008ccc7da8d284cedd4235c4`
+- Package job [89943524792](https://github.com/stephenlclarke/container-compose/actions/runs/30255646679/job/89943524792):
+  14m18s total, from 09:51:06 to 10:05:24 UTC
+- Compared with baseline package run
+  [30235634675](https://github.com/stephenlclarke/container-compose/actions/runs/30235634675),
+  the SwiftPM package cache restore step was removed and the Go setup cache was
+  disabled. Baseline package duration was 43m01s, including a 10m00s
+  2,134,173,923-byte SwiftPM cache transfer and a 19m19s
+  1,624,881,811-byte Go cache restore attempt. Current `Set up Go` completed in
+  0s, `Build matched runtime package` completed in 2m50s, `Build release
+  package` completed in 2m31s, and the live VHS recording completed in 6m38s.
+
+SonarCloud project `stephenlclarke_container-compose2` is aligned:
+
+- latest analysis: `2026-07-27T09:49:07+0000`
+- revision: `4fe88b796fe2b4b3008ccc7da8d284cedd4235c4`
+- quality gate: `OK`
+- unresolved issues: 0
+- unresolved security hotspots: 0
+- reliability, security, and maintainability ratings: A
+- bugs, vulnerabilities, code smells, and security hotspots: 0
+
+The refreshed `current` prerelease is valid slice evidence:
 
 - target:
-  `e0e076c930e15828cd4d94f4d312a72ab8283846`
-- published: 2026-07-27 04:35:15 UTC
+  `4fe88b796fe2b4b3008ccc7da8d284cedd4235c4`
+- published: 2026-07-27 10:05:13 UTC
 - release:
   <https://github.com/stephenlclarke/container-compose/releases/tag/current>
+- prerelease: true
+- draft: false
+- seven release assets:
+  - `container-compose-demo-current.gif`,
+    GitHub asset digest
+    `sha256:a7e2821befbd1be4c6a2c7e0d807322aa18dd76d240d62233b32620dd2a9840a`
+  - `container-compose-plugin-current-4fe88b796fe2-arm64.tar.gz`,
+    GitHub asset digest and checked artefact SHA-256
+    `cc51d5dea4feabf84a66fc024a22b067b61a307f078bf23a48fa3ea1d32771ac`
+  - `container-compose-plugin-current-4fe88b796fe2-arm64.tar.gz.sha256`
+  - `container-current-4fe88b796fe2-arm64.tar.gz`,
+    GitHub asset digest and checked artefact SHA-256
+    `64b47eb5377b7f60c70381008510656d2a88dee1b4c625e349da2eba6ab840b2`
+  - `container-current-4fe88b796fe2-arm64.tar.gz.sha256`
+  - `quality-snapshot-current.svg`,
+    GitHub asset digest
+    `sha256:cdc66f407cc8c883bf09e1b4efcad056908e577354a47611d36119e337dcbcf5`
+  - `release-highlights-current-4fe88b796fe2.json`,
+    GitHub asset digest
+    `sha256:2fd2a2ca64f2cce34d5abc20892d0284ea469c6a7d4748ab0a5a0f05c1a444bb`
+- checksum sidecars verified locally with `shasum -a 256 -c`
+- both package attestations verified locally with `gh attestation verify` after
+  selecting the keyring-backed GitHub token:
+  - `container-compose-plugin-current-4fe88b796fe2-arm64.tar.gz`
+  - `container-current-4fe88b796fe2-arm64.tar.gz`
+- Homebrew tap commit
+  `5d53619c83bd8a2b1b47638d8d99d0c817d1ed17` updates
+  `container-current.rb` and `container-compose-current.rb` to
+  `current.895.4fe88b796fe2`, with matched asset names and SHA-256 values
+- downloaded release-highlight JSON contains the expected top-level keys:
+  `base`, `components`, `composeVersion`, `head`, `highlights`,
+  `releaseLabel`, `releaseTag`, and `schemaVersion`
+- downloaded live GIF is GIF89a, 1600 x 720, 3,306,908 bytes, SHA-256
+  `a7e2821befbd1be4c6a2c7e0d807322aa18dd76d240d62233b32620dd2a9840a`
+- checked-in README tape contains 16 `Type`, 16 `Enter`, 14 `Wait+Screen`,
+  zero `Replay`, and zero `Marker` directives
 
-It is not evidence for this slice.
+## Remaining closeout
 
-## Required closeout on the replacement MBP
-
-1. Fetch `origin` and confirm `main` still contains
-   `4fe88b796fe2b4b3008ccc7da8d284cedd4235c4`.
-2. Monitor exact-main runs `30253458586` and `30253458571`; confirm all five
-   workflows above finish green.
-3. Inspect CI `30253458586` and require the `SonarQube scan` step to pass.
-4. Query SonarCloud project `stephenlclarke_container-compose2` and require:
-   - analysis revision equal to exact validated main;
-   - quality gate `OK`;
-   - zero unresolved issues;
-   - zero unresolved security hotspots;
-   - A reliability, security, and maintainability ratings.
-5. Find the automatic `Prebuilt Binaries` run created from CI `30253458586`
-   and wait for it to finish.
-6. Compare its Package timings with baseline run `30235634675`:
-   - old SwiftPM cache transfer: 10m00s / 2,134,173,923 bytes;
-   - old `setup-go` cache path: 19m19s / 1,624,881,811-byte attempted restore.
-7. Verify the refreshed `current` prerelease:
-   - exact target commit;
-   - prerelease, not draft;
-   - seven assets;
-   - both checksum sidecars;
-   - both GitHub attestations;
-   - Homebrew tap commit and matched formula version;
-   - release-highlight JSON and quality snapshot;
-   - live GIF metadata/hash and the tape instruction counts above.
-8. Update these checked-in documents with the actual evidence:
-   - this handoff;
-   - `PR-upstream-maintenance-20260727.md`;
-   - `PR-release-dependency-cache-overhead.md`.
-9. Commit the evidence as a signed documentation commit on
+1. Commit this evidence as a signed documentation commit on
    `docs/upstream-maintenance-closeout-20260727`, push it, open a PR, obtain an
    exact-head connector review, run the thread-aware fetcher, and merge.
-10. If the docs-only merge becomes newer than the released target, dispatch
-    full CI for exact final `main` and republish `current` from that exact
-    revision. Do not leave the mutable prerelease behind final `main`.
-11. Refresh this handoff with final run, Sonar, release, tap, GIF, and Slack END
-    identities.
-12. Fully reread the Slack skills, send the detailed slice END, then begin a
-    new slice only after a new Slack START.
+2. If the docs-only merge becomes newer than the released target, dispatch full
+   CI for exact final `main` and republish `current` from that exact revision.
+   Do not leave the mutable prerelease behind final `main`.
+3. Refresh this handoff with final run, Sonar, release, tap, GIF, and Slack END
+   identities.
+4. Fully reread the Slack skills, send the detailed slice END, then begin a new
+   slice only after a new Slack START.
 
 ## Upstream state at merge
 
@@ -280,15 +312,10 @@ moving hosts; this snapshot is not a substitute for a fresh audit.
 
 ## Worktrees and shared-runtime boundary
 
-Preserve these user changes:
-
-- `/Users/sclarke/github/container-compose`
-  - modified `Package.resolved`
-  - untracked `Packages/`
-- `/Users/sclarke/github/containerization`
-  - untracked `.vscode/`
-
-Do not clean, reset, overwrite, or fold them into this slice.
+The replacement MBP now has `/Users/sclarke/github/container-compose` clean on
+this closeout branch after fast-forwarding `main`. `/Users/sclarke/github/homebrew-tap`
+was also fast-forwarded cleanly to the published formula commit above. Continue
+to inspect status before any runtime install, reset, or live parity run.
 
 The previous MBP shared its global Container service with a devcontainer
 session. Immediately before PR #166 merged, all visible devcontainer BuildKit

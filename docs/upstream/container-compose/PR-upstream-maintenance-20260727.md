@@ -112,7 +112,35 @@ reviewed exact final runtime head `281208b1a8` with no major issue. Runtime
 hosted run
 [30249659444](https://github.com/stephenlclarke/container/actions/runs/30249659444)
 then passed signatures, build, package, and project tests before merge.
-Compose hosted checks and SonarCloud remain publication gates.
+Exact-main Compose publication gates are complete:
+
+- CI
+  [30253458586](https://github.com/stephenlclarke/container-compose/actions/runs/30253458586):
+  green, including coverage, built CLI smoke, and `SonarQube scan`
+- CodeQL
+  [30253458549](https://github.com/stephenlclarke/container-compose/actions/runs/30253458549):
+  green
+- Quality
+  [30253458554](https://github.com/stephenlclarke/container-compose/actions/runs/30253458554):
+  green
+- Documentation
+  [30253458571](https://github.com/stephenlclarke/container-compose/actions/runs/30253458571):
+  green
+- Verify Upstream PR Archives
+  [30253458622](https://github.com/stephenlclarke/container-compose/actions/runs/30253458622):
+  green
+- Prebuilt Binaries
+  [30255646679](https://github.com/stephenlclarke/container-compose/actions/runs/30255646679):
+  green, publishing `current` at
+  `4fe88b796fe2b4b3008ccc7da8d284cedd4235c4`
+
+SonarCloud analysis `2026-07-27T09:49:07+0000` covers exact revision
+`4fe88b796fe2b4b3008ccc7da8d284cedd4235c4`, quality gate `OK`, zero
+unresolved issues, zero unresolved security hotspots, and A reliability,
+security, and maintainability ratings. The refreshed `current` prerelease is
+not a draft, has seven assets, verified checksum sidecars, locally verified
+GitHub attestations for both package archives, and matching Homebrew tap commit
+`5d53619c83bd8a2b1b47638d8d99d0c817d1ed17`.
 
 ## Compatibility and risk
 
@@ -138,5 +166,5 @@ Compose hosted checks and SonarCloud remain publication gates.
 - [x] Complete Compose release-policy tests
 - [x] Exact final-head connector review
 - [x] Docker Compose v5.3.1 live parity
-- [ ] Hosted CI, CodeQL, Quality, documentation, and SonarCloud
-- [ ] Signed prerelease and typed/live VHS evidence
+- [x] Hosted CI, CodeQL, Quality, documentation, and SonarCloud
+- [x] Signed prerelease and typed/live VHS evidence
