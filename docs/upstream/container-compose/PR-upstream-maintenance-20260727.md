@@ -13,6 +13,8 @@
 
 The companion report is
 [ISSUE-upstream-maintenance-20260727.md](ISSUE-upstream-maintenance-20260727.md).
+Closes
+[stephenlclarke/container-compose#165](https://github.com/stephenlclarke/container-compose/issues/165).
 
 ## Intended review delta
 
