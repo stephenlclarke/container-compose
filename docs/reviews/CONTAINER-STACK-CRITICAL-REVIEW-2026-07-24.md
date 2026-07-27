@@ -221,6 +221,17 @@ Ownership remains entirely in Compose and reuses Apple
 `ContainerizationOS.Command` for process-group creation. No Apple runtime fork
 or platform-specific Windows path changed.
 
+The first exact-main SonarCloud analysis passed its quality gate with zero
+bugs, vulnerabilities, or hotspots, but identified three maintainability
+findings in the new private launch observer. The CC-002 closeout therefore
+includes a behavior-preserving follow-up that names the callback contract,
+moves its invocation outside the nested asynchronous continuations, and
+documents the intentional production no-op. The companion
+[issue](../upstream/container-compose/ISSUE-process-start-observer-maintainability.md)
+and
+[pull-request handoff](../upstream/container-compose/PR-process-start-observer-maintainability.md)
+record the exact analysis and validation boundary.
+
 ### P1: Compatibility Preflight Can Deadlock on Full Pipes
 
 `Sources/ComposePlugin/ContainerPackageCompatibility.swift:260-280` attaches
