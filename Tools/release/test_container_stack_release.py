@@ -672,15 +672,26 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("name: Cache SwiftPM build artifacts", workflow)
         self.assertIn("container-compose/.build", workflow)
         self.assertIn("container/.build", workflow)
-        self.assertIn('select(.headBranch == "main" and .status == "completed"', workflow)
+        self.assertIn('.headBranch == "main"', workflow)
+        self.assertIn('.status == "completed"', workflow)
 
     def test_stable_and_current_release_authority_select_main_ci(self) -> None:
         stable_gate = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
         package = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        package_authority = package[
+            package.index("- name: Require the hosted release authority") : package.index(
+                "- name: Build matched runtime package"
+            )
+        ]
+        current_authority = package_authority[
+            package_authority.index("branch)") : package_authority.index("tag)")
+        ]
         self.assertIn("--json databaseId,status,conclusion,headBranch", stable_gate)
         self.assertIn('select(.headBranch == "main")', stable_gate)
-        self.assertIn("--json status,conclusion,headBranch", package)
-        self.assertIn('select(.headBranch == "main" and .status == "completed"', package)
+        self.assertIn("--json event,status,conclusion,headBranch", current_authority)
+        self.assertIn('.headBranch == "main"', current_authority)
+        self.assertIn('(.event == "push" or .event == "workflow_dispatch")', current_authority)
+        self.assertNotIn("--event push", current_authority)
 
     def test_main_codeql_analysis_is_not_skipped_and_validate_context_is_stable(self) -> None:
         codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
