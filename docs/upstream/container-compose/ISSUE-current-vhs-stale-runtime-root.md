@@ -32,7 +32,7 @@ status. The publication attempt was cancelled because the required
 - [x] A focused workflow-policy test proves the ordering.
 - [x] The tape still contains typed commands and live screen waits only.
 - [x] `Replay` and `Marker` remain absent.
-- [ ] Exact-main Current packaging publishes the rendered GIF and matched
+- [x] Exact-main Current packaging publishes the rendered GIF and matched
   runtime after this fix.
 
 ## Implementation
@@ -44,3 +44,9 @@ Signed implementation:
 
 This is Compose release-runner ownership. No Apple Container,
 Containerization, or builder-shim change is needed.
+
+Exact-main Current run
+[`30216305679`](https://github.com/stephenlclarke/container-compose/actions/runs/30216305679)
+later published the matched archives and live typed-command GIF. The distinct
+post-stop XPC interruption found by run `30228427993` is tracked separately in
+[ISSUE-current-vhs-start-recovery.md](ISSUE-current-vhs-start-recovery.md).

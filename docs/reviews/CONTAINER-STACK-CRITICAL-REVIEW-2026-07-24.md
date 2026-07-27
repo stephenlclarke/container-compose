@@ -226,11 +226,26 @@ bugs, vulnerabilities, or hotspots, but identified three maintainability
 findings in the new private launch observer. The CC-002 closeout therefore
 includes a behavior-preserving follow-up that names the callback contract,
 moves its invocation outside the nested asynchronous continuations, and
-documents the intentional production no-op. The companion
+documents the intentional production no-op. Signed correction
+`7939874a8fd0dc29097a871c92f319a8f25de402` merged as `617c2036...`;
+exact-main SonarCloud analysis `fe1e52b4-9674-4da6-90f8-ce4b0155909d`
+reported gate `OK`, all ratings A, and zero unresolved issues or hotspots.
+The companion
 [issue](../upstream/container-compose/ISSUE-process-start-observer-maintainability.md)
 and
 [pull-request handoff](../upstream/container-compose/PR-process-start-observer-maintainability.md)
 record the exact analysis and validation boundary.
+
+Current prerelease run `30228427993` then exposed a self-hosted launchd
+teardown race before it could publish: the exact runtime start typed by VHS
+received an interrupted XPC connection immediately after a long retained-state
+stop. Release-layer correction `f0e1fbbd` requires the complete Container
+launchd namespace to remain absent before recording and visibly types one
+bounded exact-start retry. The
+[issue](../upstream/container-compose/ISSUE-current-vhs-start-recovery.md)
+and
+[pull-request handoff](../upstream/container-compose/PR-current-vhs-start-recovery.md)
+retain the failed-run evidence and the zero-Replay/zero-Marker boundary.
 
 ### P1: Compatibility Preflight Can Deadlock on Full Pipes
 

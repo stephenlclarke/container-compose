@@ -30,6 +30,9 @@ container_binary="$3"
 vhs_bin="${VHS_BIN:-vhs}"
 retry_count="${VHS_TRANSPORT_RETRIES:-3}"
 log_directory="${RUNNER_TEMP:-$(dirname "${output}")}"
+stop_waiter="${CONTAINER_SYSTEM_STOP_WAITER:-$(
+  dirname "${BASH_SOURCE[0]}"
+)/wait-for-container-system-stop.sh}"
 
 if ! [[ "${retry_count}" =~ ^[1-9][0-9]*$ ]]; then
   printf 'VHS_TRANSPORT_RETRIES must be a positive integer, got: %s\n' \
@@ -65,6 +68,7 @@ for attempt in $(seq 1 "${retry_count}"); do
   # A transport-only failure may leave an isolated service booted before the
   # browser connects. Return the next typed session to a clean runtime.
   "${container_binary}" system stop || true
+  bash "${stop_waiter}"
   sleep "${attempt}"
 done
 
