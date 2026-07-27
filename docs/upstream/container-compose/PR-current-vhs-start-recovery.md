@@ -17,8 +17,10 @@ Resolves
 
 Apply signed implementation commit
 [`f0e1fbbd12e2af63b5cb643aa00287c8f1820d33`](https://github.com/stephenlclarke/container-compose/commit/f0e1fbbd12e2af63b5cb643aa00287c8f1820d33)
-and its documentation commit from `fix/current-vhs-start-recovery`. See the
-companion [issue handoff](ISSUE-current-vhs-start-recovery.md).
+and connector follow-up
+[`18652f78bf523504bd2e76cb7f58f5c1ad79b658`](https://github.com/stephenlclarke/container-compose/commit/18652f78bf523504bd2e76cb7f58f5c1ad79b658),
+plus their documentation commits from `fix/current-vhs-start-recovery`. See
+the companion [issue handoff](ISSUE-current-vhs-start-recovery.md).
 
 ## Code map
 
@@ -32,6 +34,10 @@ companion [issue handoff](ISSUE-current-vhs-start-recovery.md).
   status.
 - `Tools/release/test_wait_for_container_system_stop.py` covers quiescence and
   failure boundaries with an injected launchctl executable.
+- `Tools/release/record-vhs-live-demo.sh` reapplies stable quiescence after a
+  transport-only recorder reset stops a partially booted service.
+- `Tools/release/test_record_vhs_live_demo.py` proves that waiter invocation
+  precedes a fresh recorder session and fails closed if teardown never settles.
 - `Tools/release/test_container_stack_release.py` locks workflow ordering,
   bounded waiting, and typed-command source shape.
 
@@ -53,10 +59,13 @@ git diff --check
 
 Results:
 
-- 72 release and recorder tests pass.
+- 73 release and recorder tests pass.
 - Five new tests cover stable absence, reappearance, persistent services,
   launchctl failure, and impossible wait bounds.
-- The complete release suite passes 173 tests; `make lint` also passes all
+- A connector P2 identified that transport-only retries bypassed the new
+  pre-recording waiter. The direct fix and its new fail-closed regression test
+  pass all 11 focused recorder/quiescence tests.
+- The complete release suite passes 174 tests; `make lint` also passes all
   coverage-tool, CI-policy, shell-syntax, Markdown, and Go-format checks.
 - The actual stopped launchd namespace on the designated MBP passed the
   default three-observation stability window.
@@ -72,6 +81,8 @@ before this recovery closes.
 - The quiescence helper observes only the existing release cleanup; it does
   not stop services itself.
 - A recorder never begins while matching launchd services are still visible.
+- A transport-only VHS reset cannot start another recorder session until the
+  service it stopped passes the same stability window.
 - The typed retry uses the same exact package, app root, install root, kernel
   installation, and timeout options.
 - Both start attempts must fail before the existing live status assertion can

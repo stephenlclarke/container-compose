@@ -26,6 +26,8 @@ recording while launchd teardown is still observable.
   absent across consecutive observations after the old runtime stops.
 - Fail before recording if launchd cannot be queried or the namespace never
   quiesces.
+- Reapply the same stable quiescence check after a transport-only recorder
+  failure stops a partially booted service.
 - Visibly type at most one retry of the same exact packaged-runtime start
   command after a short delay.
 - Require live `status running` output after the start or its retry.
@@ -43,6 +45,8 @@ runtime source, public API, Windows path, or Docker-shaped Compose primitive.
 
 - Launchd quiescence tests cover delayed stop, service reappearance, a
   permanently active namespace, launchctl failure, and invalid bounds.
+- Recorder retry tests prove teardown quiescence runs before a fresh session
+  and a waiter failure blocks that retry.
 - Release-policy tests require stop, stable quiescence, demo-root deletion,
   and exact archive extraction in that order.
 - The VHS source contains two visible occurrences of the exact start command,
