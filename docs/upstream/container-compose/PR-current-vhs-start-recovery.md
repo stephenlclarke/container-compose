@@ -73,8 +73,55 @@ Results:
 - The tape retains 16 `Type` and 16 `Enter` instructions, with zero Replay and
   zero Marker instructions.
 
-Hosted review, exact-main gates, and Current publication evidence are added
-before this recovery closes.
+Hosted implementation evidence:
+
+- Pull request
+  [`stephenlclarke/container-compose#161`](https://github.com/stephenlclarke/container-compose/pull/161)
+  merged all four signed commits as
+  [`4b4a4cff5398a3089ce531842fd10f5e4756da8f`](https://github.com/stephenlclarke/container-compose/commit/4b4a4cff5398a3089ce531842fd10f5e4756da8f).
+- Exact-head CI
+  [`30230580880`](https://github.com/stephenlclarke/container-compose/actions/runs/30230580880)
+  and CodeQL
+  [`30230580854`](https://github.com/stephenlclarke/container-compose/actions/runs/30230580854)
+  passed. The connector's actionable P2 has a direct response and resolved
+  thread; its fresh review of exact head `1db5c7d3e0` reported no major issues.
+- Exact-main CI
+  [`30230956639`](https://github.com/stephenlclarke/container-compose/actions/runs/30230956639)
+  and CodeQL
+  [`30230956649`](https://github.com/stephenlclarke/container-compose/actions/runs/30230956649)
+  passed. The full gate repeated 1,249 Swift tests in 41 suites, 92.80% Swift
+  coverage, and 89.88% Go coverage.
+- SonarCloud analysis `b31c11e9-089a-4c1e-b3c6-44967b74ad79` targets the
+  exact merge, reports gate `OK`, 82.9% overall coverage, 82.8% new-code
+  coverage, all ratings A, and zero unresolved issues or hotspots.
+
+Current prerelease publication:
+
+- Workflow
+  [`30231378606`](https://github.com/stephenlclarke/container-compose/actions/runs/30231378606)
+  published
+  [`current`](https://github.com/stephenlclarke/container-compose/releases/tag/current)
+  from exact source `4b4a4cff5398a3089ce531842fd10f5e4756da8f`.
+- The release contains seven assets: matched Compose and runtime archives,
+  their SHA-256 sidecars, the live GIF, the native quality snapshot, and the
+  machine-readable release highlights. The Compose archive digest is
+  `c11c52b192133cdb64e11ce9a1fb1ded2aea0bd5cb141c5a9dbde9269007e622`;
+  the runtime archive digest is
+  `1252743fb9baac10c90b8a3a2caf1b3e6422af880783d9d6b3f925c8fec6ef67`.
+  Both sidecars and both GitHub SLSA v1 attestations verify against that exact
+  source.
+- The 1600 by 720 live GIF is 3,767,183 bytes, runs for 303.92 seconds, and
+  contains 7,598 frames at 25 fps. Its source has 16 `Type`, 16 `Enter`, and
+  14 `Wait` instructions with zero Replay and zero Marker instructions.
+  Visual inspection confirms partially typed commands followed by real kernel
+  download, Compose model/start, `ps`, `stats`, health-check, volume reuse,
+  teardown, and runtime-stop output.
+- Homebrew installed Compose version `0.10.0`, lane `current`, at exact commit
+  `4b4a4cff5398a3089ce531842fd10f5e4756da8f` with Container
+  `221fafc24ebd19502f4553e0b5d38c14be3f2b22` and Containerization
+  `164088e02e16ed80e536d0c59822b09931d213df`. Docker Compose V2 `5.3.1`
+  produced the same normalized project, image, command, service network, and
+  project network for the tracked cancellation fixture.
 
 ## Compatibility and risk
 
@@ -96,5 +143,5 @@ before this recovery closes.
 - [x] Focused release and recorder tests
 - [x] Complete release test suite
 - [x] VHS validation
-- [ ] Pull-request checks and connector review
-- [ ] Exact-main Current publication and live GIF
+- [x] Pull-request checks and connector review
+- [x] Exact-main Current publication and live GIF
