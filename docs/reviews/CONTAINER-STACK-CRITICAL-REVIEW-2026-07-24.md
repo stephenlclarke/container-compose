@@ -261,6 +261,21 @@ and
 retain the failed-run evidence and the completed zero-Replay/zero-Marker
 publication boundary.
 
+The docs-closeout merge then required an explicit full-validation dispatch
+because its normal docs-only CI correctly skipped runtime and SonarCloud work.
+Exact-main run `30233497821` passed 1,249 Swift tests in 41 suites, 92.80%
+Swift coverage, 89.88% Go coverage, CLI smoke, and SonarCloud analysis
+`efc57a0a-ec0f-4032-aafb-39e918a387f1` at exact `181c40c6...`. Current run
+`30234078316` accepted that authority in its controller but rejected it after
+cache restoration because the package-time duplicate guard pre-filtered to
+push events. Compose-only correction `c8524d36` makes that independent guard
+accept the same exact-main successful `push` or `workflow_dispatch` set while
+continuing to exclude every other event. The
+[issue](../upstream/container-compose/ISSUE-current-dispatch-release-authority.md)
+and
+[pull-request handoff](../upstream/container-compose/PR-current-dispatch-release-authority.md)
+record the failed-run boundary and regression coverage.
+
 ### P1: Compatibility Preflight Can Deadlock on Full Pipes
 
 `Sources/ComposePlugin/ContainerPackageCompatibility.swift:260-280` attaches

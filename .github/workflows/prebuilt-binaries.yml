@@ -671,9 +671,14 @@ jobs:
             branch)
               conclusion="$(
                 gh run list --repo "${GITHUB_REPOSITORY}" --workflow ci.yml \
-                  --commit "${PUBLISH_SHA}" --event push --limit 50 \
-                  --json status,conclusion,headBranch \
-                  --jq 'map(select(.headBranch == "main" and .status == "completed" and .conclusion == "success")) | .[0].conclusion // empty'
+                  --commit "${PUBLISH_SHA}" --limit 50 \
+                  --json event,status,conclusion,headBranch \
+                  --jq 'map(select(
+                    .headBranch == "main" and
+                    .status == "completed" and
+                    .conclusion == "success" and
+                    (.event == "push" or .event == "workflow_dispatch")
+                  )) | .[0].conclusion // empty'
               )"
               if [[ "${conclusion}" != "success" ]]; then
                 printf 'refusing to package %s without green main CI (including SonarQube) at %s\n' \
