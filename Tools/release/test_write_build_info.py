@@ -17,6 +17,7 @@
 
 """Unit tests for the container-compose build metadata writer."""
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -28,8 +29,8 @@ from pathlib import Path
 class BuildInfoWriterTests(unittest.TestCase):
     """Package provenance must include every externally relevant component."""
 
-    def test_write_build_info_includes_compose_go_version(self) -> None:
-        """Release archives need the compose-go module version in build-info.json."""
+    def test_write_build_info_includes_dependency_and_runtime_contracts(self) -> None:
+        """Release archives need all independently versioned dependency contracts."""
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "build-info.json"
 
@@ -67,6 +68,33 @@ class BuildInfoWriterTests(unittest.TestCase):
 
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(payload["composeGoVersion"], "v2.12.1")
+            self.assertEqual(payload["runtimeCapabilitySchemaVersion"], 1)
+            self.assertEqual(
+                payload["runtimeCapabilities"],
+                [
+                    "io.github.stephenlclarke.container.compose.archive-copy.v1",
+                    "io.github.stephenlclarke.container.compose.build-extensions.v1",
+                    "io.github.stephenlclarke.container.compose.create-configuration.v1",
+                    "io.github.stephenlclarke.container.compose.image-filesystem.v1",
+                    "io.github.stephenlclarke.container.compose.lifecycle.v1",
+                    "io.github.stephenlclarke.container.compose.observation.v1",
+                ],
+            )
+
+    def test_rejects_non_object_runtime_capability_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "runtime-capabilities.json"
+            manifest.write_text("[]\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(SystemExit, "must be a JSON object"):
+                spec = importlib.util.spec_from_file_location(
+                    "write_build_info",
+                    Path(__file__).with_name("write-build-info.py"),
+                )
+                assert spec is not None and spec.loader is not None
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                module.load_runtime_capability_manifest(manifest)
 
 
 if __name__ == "__main__":

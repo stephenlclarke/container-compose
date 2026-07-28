@@ -48,6 +48,15 @@ private let matchingSystemVersionJSON = """
       "commit": "matched-container",
       "containerization": "stephenlclarke/containerization@matched-containerization",
       "distribution": "custom",
+      "runtimeCapabilitySchemaVersion": 1,
+      "runtimeCapabilities": [
+        "io.github.stephenlclarke.container.compose.archive-copy.v1",
+        "io.github.stephenlclarke.container.compose.build-extensions.v1",
+        "io.github.stephenlclarke.container.compose.create-configuration.v1",
+        "io.github.stephenlclarke.container.compose.image-filesystem.v1",
+        "io.github.stephenlclarke.container.compose.lifecycle.v1",
+        "io.github.stephenlclarke.container.compose.observation.v1"
+      ],
       "source": "stephenlclarke/container",
       "version": "homebrew-main"
     }
@@ -87,6 +96,8 @@ struct ContainerPackageCompatibilityTests {
         commit: "abc123",
         containerization: "stephenlclarke/containerization@main",
         distribution: "custom",
+        runtimeCapabilitySchemaVersion: ComposeRuntimeCapabilityManifest.required.schemaVersion,
+        runtimeCapabilities: ComposeRuntimeCapabilityManifest.required.identifiers,
         source: "stephenlclarke/container",
         version: "homebrew-main"
       )
@@ -130,6 +141,58 @@ struct ContainerPackageCompatibilityTests {
     #expect(message.contains("- containerization: stephenlclarke/containerization"))
     #expect(message.contains("- container: apple/container (distribution: apple)"))
     #expect(message.contains("- containerization: apple/containerization@main"))
+    #expect(message.contains("- runtime capability schema: missing (expected 1)"))
+    for capability in ComposeRuntimeCapabilityManifest.required.identifiers {
+      #expect(message.contains("- runtime capability: \(capability) (missing)"))
+    }
+  }
+
+  @Test("missing, duplicate, and wrong-schema capabilities are reported exactly")
+  func malformedRuntimeCapabilityManifestReportsExactFailures() throws {
+    let capabilities = ComposeRuntimeCapabilityManifest.required.identifiers
+    let missing = try #require(capabilities.last)
+    let duplicate = try #require(capabilities.first)
+    let components = [
+      ContainerSystemVersionComponent(
+        appName: "container",
+        buildType: "release",
+        commit: "abc123",
+        containerization: "stephenlclarke/containerization@main",
+        distribution: "custom",
+        runtimeCapabilitySchemaVersion: 2,
+        runtimeCapabilities: Array(capabilities.dropLast()) + [duplicate],
+        source: "stephenlclarke/container",
+        version: "homebrew-main"
+      )
+    ]
+
+    let message = try #require(
+      ContainerPackageCompatibility.compatibilityFailure(components: components, lane: "main"))
+    #expect(message.contains("- runtime capability schema: 2 (expected 1)"))
+    #expect(message.contains("- runtime capability: \(duplicate) (duplicate)"))
+    #expect(message.contains("- runtime capability: \(missing) (missing)"))
+  }
+
+  @Test("unknown runtime capabilities are forward compatible")
+  func unknownRuntimeCapabilitiesAreForwardCompatible() {
+    let components = [
+      ContainerSystemVersionComponent(
+        appName: "container",
+        buildType: "release",
+        commit: "abc123",
+        containerization: "stephenlclarke/containerization@main",
+        distribution: "custom",
+        runtimeCapabilitySchemaVersion: ComposeRuntimeCapabilityManifest.required.schemaVersion,
+        runtimeCapabilities: ComposeRuntimeCapabilityManifest.required.identifiers
+          + ["io.github.stephenlclarke.container.compose.future.v1"],
+        source: "stephenlclarke/container",
+        version: "homebrew-main"
+      )
+    ]
+
+    #expect(
+      ContainerPackageCompatibility.compatibilityFailure(components: components, lane: "main")
+        == nil)
   }
 
   @Test("mismatched package pins report install guidance")
@@ -141,6 +204,8 @@ struct ContainerPackageCompatibilityTests {
         commit: "new-container",
         containerization: "stephenlclarke/containerization@new-containerization",
         distribution: "custom",
+        runtimeCapabilitySchemaVersion: ComposeRuntimeCapabilityManifest.required.schemaVersion,
+        runtimeCapabilities: ComposeRuntimeCapabilityManifest.required.identifiers,
         source: "stephenlclarke/container",
         version: "homebrew-main"
       )
@@ -178,6 +243,8 @@ struct ContainerPackageCompatibilityTests {
         containerization:
           "stephenlclarke/containerization@d8b9585a9855b1c0958d423a2d08b564eb6f8626",
         distribution: "custom",
+        runtimeCapabilitySchemaVersion: ComposeRuntimeCapabilityManifest.required.schemaVersion,
+        runtimeCapabilities: ComposeRuntimeCapabilityManifest.required.identifiers,
         source: "stephenlclarke/container",
         version: "homebrew-main-114-d82fc5c24d48-1-gd03f81b"
       )
@@ -201,6 +268,8 @@ struct ContainerPackageCompatibilityTests {
         commit: "matched-container",
         containerization: "stephenlclarke/containerization@matched-containerization",
         distribution: "custom",
+        runtimeCapabilitySchemaVersion: ComposeRuntimeCapabilityManifest.required.schemaVersion,
+        runtimeCapabilities: ComposeRuntimeCapabilityManifest.required.identifiers,
         source: "stephenlclarke/container",
         version: "homebrew-main"
       ),

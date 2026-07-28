@@ -38,11 +38,49 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--containerization-source", required=True)
     parser.add_argument("--containerization-ref", required=True)
     parser.add_argument("--compose-go-version", required=True)
+    parser.add_argument(
+        "--runtime-capability-manifest",
+        type=Path,
+        default=Path(__file__).with_name("runtime-capabilities.json"),
+    )
     return parser.parse_args()
+
+
+def load_runtime_capability_manifest(path: Path) -> tuple[int, list[str]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise SystemExit(f"runtime capability manifest does not exist: {path}") from error
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"invalid runtime capability manifest {path}: {error}") from error
+
+    if not isinstance(payload, dict):
+        raise SystemExit("runtime capability manifest must be a JSON object")
+    schema_version = payload.get("schemaVersion")
+    capabilities = payload.get("capabilities")
+    if type(schema_version) is not int or schema_version < 1:
+        raise SystemExit("runtime capability manifest schemaVersion must be a positive integer")
+    if not isinstance(capabilities, list) or not capabilities:
+        raise SystemExit("runtime capability manifest capabilities must be a non-empty list")
+    if not all(
+        isinstance(capability, str)
+        and capability
+        and capability == capability.strip()
+        for capability in capabilities
+    ):
+        raise SystemExit("runtime capability manifest capability identifiers must be non-empty strings")
+    if capabilities != sorted(capabilities):
+        raise SystemExit("runtime capability manifest capabilities must be sorted")
+    if len(capabilities) != len(set(capabilities)):
+        raise SystemExit("runtime capability manifest capabilities must be unique")
+    return schema_version, capabilities
 
 
 def main() -> int:
     args = parse_args()
+    runtime_capability_schema_version, runtime_capabilities = (
+        load_runtime_capability_manifest(args.runtime_capability_manifest)
+    )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -57,6 +95,8 @@ def main() -> int:
         "containerizationSource": args.containerization_source,
         "containerizationRef": args.containerization_ref,
         "composeGoVersion": args.compose_go_version,
+        "runtimeCapabilitySchemaVersion": runtime_capability_schema_version,
+        "runtimeCapabilities": runtime_capabilities,
     }
     output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0

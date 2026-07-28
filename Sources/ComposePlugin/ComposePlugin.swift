@@ -40,6 +40,8 @@ private struct ComposeBuildInfo: Codable {
     var containerizationSource: String = "unspecified"
     var containerizationRef: String = "unspecified"
     var composeGoVersion: String?
+    var runtimeCapabilitySchemaVersion: Int?
+    var runtimeCapabilities: [String]?
 
     var containerDistribution: String {
         distribution(source: containerSource, appleSource: "apple/container")
@@ -114,7 +116,9 @@ private struct ComposeBuildInfo: Codable {
             containerRef: packageResolvedState(root: root, identity: "container") ?? localContainerRef(root: root) ?? "unspecified",
             containerizationSource: normalizedSource(packageResolvedValue(root: root, identity: "containerization", key: "location") ?? "unspecified"),
             containerizationRef: packageResolvedState(root: root, identity: "containerization") ?? "unspecified",
-            composeGoVersion: goModuleVersion(root: root, module: "github.com/compose-spec/compose-go/v2")
+            composeGoVersion: goModuleVersion(root: root, module: "github.com/compose-spec/compose-go/v2"),
+            runtimeCapabilitySchemaVersion: ComposeRuntimeCapabilityManifest.required.schemaVersion,
+            runtimeCapabilities: ComposeRuntimeCapabilityManifest.required.identifiers
         )
     }
 
@@ -153,6 +157,8 @@ private struct ComposeVersionOutput: Encodable {
     let containerizationRef: String
     let containerizationDistribution: String
     let composeGoVersion: String
+    let runtimeCapabilitySchemaVersion: Int
+    let runtimeCapabilities: [String]
 
     init(_ info: ComposeBuildInfo) {
         self.version = info.version
@@ -168,6 +174,12 @@ private struct ComposeVersionOutput: Encodable {
         self.containerizationRef = info.containerizationRef
         self.containerizationDistribution = info.containerizationDistribution
         self.composeGoVersion = info.composeGoVersion ?? "unspecified"
+        self.runtimeCapabilitySchemaVersion =
+            info.runtimeCapabilitySchemaVersion
+            ?? ComposeRuntimeCapabilityManifest.required.schemaVersion
+        self.runtimeCapabilities =
+            info.runtimeCapabilities
+            ?? ComposeRuntimeCapabilityManifest.required.identifiers
     }
 }
 
@@ -2263,6 +2275,14 @@ struct Version: ParsableCommand {
             print("  container: \(composeBuildInfo.containerSource)@\(composeBuildInfo.containerRef) (\(composeBuildInfo.containerDistribution))")
             print("  containerization: \(composeBuildInfo.containerizationSource)@\(composeBuildInfo.containerizationRef) (\(composeBuildInfo.containerizationDistribution))")
             print("  compose-go: \(composeBuildInfo.composeGoVersion ?? "unspecified")")
+            print(
+                "  runtime-capability-schema: \(composeBuildInfo.runtimeCapabilitySchemaVersion ?? ComposeRuntimeCapabilityManifest.required.schemaVersion)"
+            )
+            for capability in composeBuildInfo.runtimeCapabilities
+                ?? ComposeRuntimeCapabilityManifest.required.identifiers
+            {
+                print("  runtime-capability: \(capability)")
+            }
         case "json":
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]

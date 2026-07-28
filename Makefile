@@ -386,6 +386,8 @@ cli-smoke-built:
 	[[ "$$version_pretty_output" == *"container:"*" (custom)"* ]]; \
 	[[ "$$version_pretty_output" == *"containerization:"*" (custom)"* ]]; \
 	[[ "$$version_pretty_output" == *"compose-go: $(COMPOSE_GO_VERSION)"* ]]; \
+	[[ "$$version_pretty_output" == *"runtime-capability-schema: 1"* ]]; \
+	[[ "$$version_pretty_output" == *"runtime-capability: io.github.stephenlclarke.container.compose.archive-copy.v1"* ]]; \
 	version_json_output="$$(".build/debug/compose" version --format json)"; \
 	[[ "$$version_json_output" == *'"version":"0.10.1"'* ]]; \
 	[[ "$$version_json_output" == *'"containerSource":"stephenlclarke/container"'* ]]; \
@@ -394,6 +396,8 @@ cli-smoke-built:
 	[[ "$$version_json_output" == *'"containerizationSource":'* ]]; \
 	[[ "$$version_json_output" == *'"containerizationDistribution":"custom"'* ]]; \
 	[[ "$$version_json_output" == *'"composeGoVersion":"$(COMPOSE_GO_VERSION)"'* ]]; \
+	[[ "$$version_json_output" == *'"runtimeCapabilitySchemaVersion":1'* ]]; \
+	[[ "$$version_json_output" == *'"runtimeCapabilities":["io.github.stephenlclarke.container.compose.archive-copy.v1"'* ]]; \
 	version_short_format_output="$$(".build/debug/compose" version -f json)"; \
 	[[ "$$version_short_format_output" == *'"version":"0.10.1"'* ]]; \
 	version_compact_format_output="$$(".build/debug/compose" version -fjson)"; \
@@ -429,7 +433,7 @@ cli-smoke-built:
 	service_tmp="$$(mktemp -d)"; \
 	trap 'rm -rf "$$service_tmp"' EXIT; \
 	printf '%s\n' '{"version":"0.10.1","source":"stephenlclarke/container-compose","branch":"service-smoke","lane":"stable","commit":"service-smoke","buildType":"release","containerSource":"stephenlclarke/container","containerRef":"matched-container","containerizationSource":"stephenlclarke/containerization","containerizationRef":"matched-containerization","composeGoVersion":"$(COMPOSE_GO_VERSION)"}' > "$$service_tmp/build-info.json"; \
-	printf '%s\n' '#!/usr/bin/env bash' 'if [[ "$$*" == "system version --format json" ]]; then' '  printf '\''[{"appName":"container","buildType":"release","commit":"matched-container","containerization":"stephenlclarke/containerization@matched-containerization","distribution":"custom","source":"stephenlclarke/container","version":"homebrew-main"}]\n'\''' '  exit 0' 'fi' 'if [[ "$$*" == "system status" ]]; then' '  printf '\''apiserver is not running and not registered with launchd\n'\'' >&2' '  exit 1' 'fi' 'exit 2' > "$$service_tmp/container"; \
+	printf '%s\n' '#!/usr/bin/env bash' 'if [[ "$$*" == "system version --format json" ]]; then' '  printf '\''[{"appName":"container","buildType":"release","commit":"matched-container","containerization":"stephenlclarke/containerization@matched-containerization","distribution":"custom","runtimeCapabilitySchemaVersion":1,"runtimeCapabilities":["io.github.stephenlclarke.container.compose.archive-copy.v1","io.github.stephenlclarke.container.compose.build-extensions.v1","io.github.stephenlclarke.container.compose.create-configuration.v1","io.github.stephenlclarke.container.compose.image-filesystem.v1","io.github.stephenlclarke.container.compose.lifecycle.v1","io.github.stephenlclarke.container.compose.observation.v1"],"source":"stephenlclarke/container","version":"homebrew-main"}]\n'\''' '  exit 0' 'fi' 'if [[ "$$*" == "system status" ]]; then' '  printf '\''apiserver is not running and not registered with launchd\n'\'' >&2' '  exit 1' 'fi' 'exit 2' > "$$service_tmp/container"; \
 	chmod +x "$$service_tmp/container"; \
 	set +e; \
 	service_output="$$(CONTAINER_COMPOSE_BUILD_INFO="$$service_tmp/build-info.json" CONTAINER_COMPOSE_CONTAINER="$$service_tmp/container" ".build/debug/compose" ps 2>&1)"; \

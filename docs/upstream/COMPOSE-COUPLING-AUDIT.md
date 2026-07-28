@@ -66,6 +66,15 @@ separate properties. The matched stack is still the supported release lane,
 and the retained lower-runtime primitives above still require their explicit
 fork and upstream convergence work.
 
+The capability boundary is now executable rather than inferred from source
+names. The typed version 1 manifest covers archive/copy, build extensions,
+create configuration, image/filesystem, lifecycle, and observation contracts.
+Stock Apple and stale fork builds report the exact missing identifiers before a
+runtime command starts; a matched or forward-compatible fork reports the
+versioned contract deterministically. The schema, identifiers, ownership, and
+change procedure are documented in
+[Runtime Capability Contract](../runtime-capabilities.md).
+
 ## Reproducible Package Evidence
 
 Inspect the declared Core dependencies:

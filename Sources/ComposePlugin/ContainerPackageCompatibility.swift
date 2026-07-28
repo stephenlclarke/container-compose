@@ -215,13 +215,21 @@ extension ContainerPackageCompatibility {
       && container.distribution == "custom"
     let isForkBackedContainerization = containerizationSource == requiredContainerizationSource
 
-    guard isForkBackedContainer, isForkBackedContainerization else {
+    var incompatibilities: [String] = []
+    if !isForkBackedContainer || !isForkBackedContainerization {
+      incompatibilities.append(
+        "container: \(container.source ?? "unknown") (distribution: \(container.distribution ?? "unknown"))"
+      )
+      incompatibilities.append(
+        "containerization: \(container.containerization ?? "unknown")"
+      )
+    }
+    incompatibilities.append(contentsOf: runtimeCapabilityMismatchDetails(container: container))
+
+    if !incompatibilities.isEmpty {
       return installGuidance(
         lane: lane,
-        detected: [
-          "container: \(container.source ?? "unknown") (distribution: \(container.distribution ?? "unknown"))",
-          "containerization: \(container.containerization ?? "unknown")",
-        ]
+        detected: incompatibilities
       )
     }
 
@@ -240,6 +248,43 @@ extension ContainerPackageCompatibility {
     }
 
     return nil
+  }
+
+  private static func runtimeCapabilityMismatchDetails(
+    container: ContainerSystemVersionComponent
+  ) -> [String] {
+    let required = ComposeRuntimeCapabilityManifest.required
+    var detected: [String] = []
+
+    if let schemaVersion = container.runtimeCapabilitySchemaVersion {
+      if schemaVersion != required.schemaVersion {
+        detected.append(
+          "runtime capability schema: \(schemaVersion) (expected \(required.schemaVersion))"
+        )
+      }
+    } else {
+      detected.append(
+        "runtime capability schema: missing (expected \(required.schemaVersion))"
+      )
+    }
+
+    let installed = container.runtimeCapabilities ?? []
+    let installedSet = Set(installed)
+    let duplicates = Dictionary(grouping: installed, by: { $0 })
+      .filter { $0.value.count > 1 }
+      .keys
+      .sorted()
+    detected.append(
+      contentsOf: duplicates.map {
+        "runtime capability: \($0) (duplicate)"
+      }
+    )
+    detected.append(
+      contentsOf: required.identifiers.filter { !installedSet.contains($0) }.map {
+        "runtime capability: \($0) (missing)"
+      }
+    )
+    return detected
   }
 
   private static func packageMismatchDetails(
@@ -603,6 +648,8 @@ struct ContainerSystemVersionComponent: Decodable, Equatable {
   var commit: String?
   var containerization: String?
   var distribution: String?
+  var runtimeCapabilitySchemaVersion: Int? = nil
+  var runtimeCapabilities: [String]? = nil
   var source: String?
   var version: String?
 

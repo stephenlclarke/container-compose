@@ -501,4 +501,55 @@ meaningfully changed Swift files pass SwiftFormat 0/18 unchanged, `make docs`
 generates the Core DocC archive without warnings, and `git diff --check`
 passes.
 
-Continue with ARCH-103 and FORK-104 from the ordered critical-review inventory.
+ARCH-103 is complete. Container and Compose now publish the same typed,
+schema-versioned runtime capability manifest for archive/copy, build
+extensions, create configuration, image/filesystem, lifecycle, and observation
+contracts. Runtime preflight fails closed on an absent or incompatible schema,
+duplicate identifiers, or any missing required identifier. It accepts unknown
+additional identifiers under the same schema. Service and host readiness remain
+separate checks.
+
+The supported lower-runtime graph is:
+
+- Containerization `52386838456a431d24bed6c38a9e84fb0ad28997`, the copy-stream
+  branch 11 commits on top of `043193efa5f1a2e21a240041d6edd71d7673739e`.
+- Container branch `feat/compose-runtime-capability-manifest` at signed
+  `fceb3cf0e40029b4caa1443f9b5011152c90114c`, built on the existing
+  copy-stream head `f5e25b12ed074e7e5fb09933d86a27652034f3e5`.
+- Compose branch `feat/runtime-capability-manifest`, with `Package.swift`,
+  `Package.resolved`, and `Tools/release/stack-refs.json` pinned to those exact
+  Container and Containerization commits.
+
+Do not pin Container `05fc925aec4f166e92252b29a81672b5120fd63d`.
+Strict stack review found that the first manifest branch was based on fork
+`main` rather than the 27-commit Compose copy-stream branch, so the complete
+Compose provider could not compile against its missing archive APIs. The
+published history was not rewritten. The manifest was replayed onto the
+correct branch and the full dependency graph was resolved from GitHub.
+
+The same review exposed a parallel-test false positive in the local XPC file
+handle ownership regressions. Numeric descriptor reuse could make a released
+descriptor appear open. Signed Container correction
+`fceb3cf0e40029b4caa1443f9b5011152c90114c` now compares the descriptor with
+the unique device/inode identity of an opened, unlinked temporary file. The
+12-test XPC suite, 94 XCTest cases, and 1,224 Swift Testing cases in the non-VM
+Container gate pass. The original test also passed 10 consecutive isolated
+attempts, confirming that the parallel failure was in the assertion rather
+than ownership behaviour.
+
+`make stack-consistency` checks the release JSON against both typed Swift
+definitions and the exact package pins. The build-info writer validates and
+embeds the same schema and identifiers. Focused malformed, stock Apple,
+matched-fork, duplicate, missing, wrong-schema, and forward-compatible tests
+pass. Final `HAWKEYE_AUTO_INSTALL=1 make ci` passed in 246.60 seconds with
+1,297 Swift tests: `executed=1272 skipped=25`. Coverage was 92.84%
+`ComposeCore`, 99.05% `ComposeRuntimeSPI`, 79.74%
+`ComposeContainerRuntime`, 57.13% `ComposePlugin`, 87.80% aggregate
+first-party Swift, and 89.88% Go. The gate also passed 5 coverage-tool tests,
+177 release-tool tests, 37 CI-tool tests, runtime-neutrality, stack
+consistency, dependency resolution, Go build/tests, and the capability-aware
+CLI smoke matrix. The 25 Compose live-runtime tests were explicit skips, so
+this is the ARCH-103 code and packaging gate rather than the later live
+release-acceptance gate.
+
+Continue with FORK-104 from the ordered critical-review inventory.

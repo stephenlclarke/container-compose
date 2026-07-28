@@ -45,6 +45,7 @@ def load_module():
 CONTAINERIZATION_REF = "41252f26870bc875ea0b3e97e1bb656456f02288"
 CONTAINER_REF = "a" * 40
 BUILDER_DIGEST = "sha256:e4a1294b27c9602c3b7b26b1af753cbe5b688d91f1880e5990ed45ce5c711cc9"
+RUNTIME_CAPABILITY = "io.github.stephenlclarke.container.compose.test.v1"
 
 
 def write_stack_refs(path: Path, containerization_ref: str = CONTAINERIZATION_REF) -> None:
@@ -72,6 +73,30 @@ def write_stack_refs(path: Path, containerization_ref: str = CONTAINERIZATION_RE
                     },
                 },
             }
+        ),
+        encoding="utf-8",
+    )
+
+
+def write_runtime_capability_manifest(path: Path, capability: str = RUNTIME_CAPABILITY) -> None:
+    path.write_text(
+        json.dumps({"schemaVersion": 1, "capabilities": [capability]}),
+        encoding="utf-8",
+    )
+
+
+def write_runtime_capability_swift(path: Path, capability: str = RUNTIME_CAPABILITY) -> None:
+    path.write_text(
+        textwrap.dedent(
+            f"""
+            enum RuntimeCapability: String, CaseIterable {{
+                case test = "{capability}"
+            }}
+
+            struct RuntimeCapabilityManifest {{
+                static let currentSchemaVersion = 1
+            }}
+            """
         ),
         encoding="utf-8",
     )
@@ -194,6 +219,50 @@ class StackConsistencyTests(unittest.TestCase):
 
             self.assertEqual(module.CONTAINER_REPO, container_repo)
             self.assertEqual(module.CONTAINER_PACKAGE, container_repo / "Package.swift")
+
+    def test_runtime_capability_manifest_matches_both_typed_definitions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = root / "runtime-capabilities.json"
+            compose_swift = root / "ComposeRuntimeCapabilityManifest.swift"
+            container_swift = root / "ContainerRuntimeCapabilityManifest.swift"
+            write_runtime_capability_manifest(manifest)
+            write_runtime_capability_swift(compose_swift)
+            write_runtime_capability_swift(container_swift)
+
+            with mock.patch.object(checker, "RUNTIME_CAPABILITIES", manifest), mock.patch.object(
+                checker, "COMPOSE_RUNTIME_CAPABILITIES", compose_swift
+            ), mock.patch.object(
+                checker, "CONTAINER_RUNTIME_CAPABILITIES", container_swift
+            ):
+                checker.validate_runtime_capabilities()
+
+    def test_runtime_capability_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = root / "runtime-capabilities.json"
+            compose_swift = root / "ComposeRuntimeCapabilityManifest.swift"
+            container_swift = root / "ContainerRuntimeCapabilityManifest.swift"
+            write_runtime_capability_manifest(manifest)
+            write_runtime_capability_swift(compose_swift)
+            write_runtime_capability_swift(container_swift, capability=f"{RUNTIME_CAPABILITY}.drift")
+
+            with mock.patch.object(checker, "RUNTIME_CAPABILITIES", manifest), mock.patch.object(
+                checker, "COMPOSE_RUNTIME_CAPABILITIES", compose_swift
+            ), mock.patch.object(
+                checker, "CONTAINER_RUNTIME_CAPABILITIES", container_swift
+            ), self.assertRaisesRegex(SystemExit, "container typed runtime capabilities"):
+                checker.validate_runtime_capabilities()
+
+    def test_non_object_runtime_capability_manifest_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "runtime-capabilities.json"
+            manifest.write_text("[]\n", encoding="utf-8")
+
+            with mock.patch.object(
+                checker, "RUNTIME_CAPABILITIES", manifest
+            ), self.assertRaisesRegex(SystemExit, "must contain a JSON object"):
+                checker.validate_runtime_capabilities()
 
     def test_accepts_revision_manifest_and_lockfile_pins(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

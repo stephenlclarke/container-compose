@@ -833,7 +833,7 @@ Goal: make ownership enforceable and reduce the cost of every later feature.
 | --- | --- | --- | --- | --- |
 | ARCH-101 | P1 | Compose | **Complete:** remove Apple products from `ComposeCore` | `Package.swift` and source-import gate prove Core depends only on model/SPI targets |
 | ARCH-102 | P2 | Compose/runtime | **Complete:** move DTO/archive/live API translation into provider | Public Core API contains no Apple types; existing CLI behaviour and tests remain stable |
-| ARCH-103 | P2 | Stack | Generate a typed runtime capability/version manifest | Startup reports exact missing capability; stock Apple and matched-fork behaviour are deterministic |
+| ARCH-103 | P2 | Stack | **Complete:** generate a typed runtime capability/version manifest | Startup reports exact missing capability; stock Apple and matched-fork behaviour are deterministic |
 | FORK-104 | P1 | Stack | Reclassify all 394 non-merge fork commits against current Apple heads | Every commit is bug fix, generic primitive, temporary port, or rejected Compose policy; no unowned delta |
 | FORK-105 | P2 | Stack | Upstream generic slices and remove merged ports | Each retained slice has focused tests, Apple issue/PR, and deletion condition |
 | FORK-106 | P2 | Stack | Converge local #799, #813, #87 equivalents | Apple merge or explicit replacement is recorded; duplicate code is removed without behaviour loss |
