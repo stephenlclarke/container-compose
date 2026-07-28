@@ -384,12 +384,12 @@ record the boundary and validation evidence.
 and JSON-form `--change VOLUME` instructions. Dictionary-key union preserves
 inherited and additive targets without duplicates.
 
-Focused archive tests cover inherited targets plus repeated, duplicate, and
-multi-path changes. `Tools/parity/check-compose-commit.sh` now builds matched
-Docker and Container base images with two declared volumes, applies two further
-volume changes with one duplicate, and requires the same exact four-target
-result from Docker Compose v5.3.1 and the installed Container-backed Compose
-binary. Issue
+Focused archive tests cover inherited targets, service-platform image variants,
+and repeated, duplicate, and multi-path changes.
+`Tools/parity/check-compose-commit.sh` now builds matched Docker and Container
+base images with two declared volumes, applies two further volume changes with
+one duplicate, and requires the same exact four-target result from Docker
+Compose v5.3.1 and the installed Container-backed Compose binary. Issue
 [`#172`](https://github.com/stephenlclarke/container-compose/issues/172)
 tracks the exact-head implementation, validation, review, and publication
 evidence.
