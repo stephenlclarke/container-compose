@@ -3,7 +3,8 @@
 This is the current disposition of Apple work that affects the five-repository container stack. Re-check GitHub before changing an Apple-backed component because issue, review, and merge state can change independently.
 
 Updated: 28 July 2026 after fetching every configured Apple and
-Stephen-owned remote and querying the live pull-request state.
+Stephen-owned remote, querying the live pull-request state, and completing the
+31-pull-request stock-Apple port audit.
 
 ## Scope
 
@@ -115,6 +116,123 @@ stock-shaped proposals: one focused XPC `FileHandle` ownership correction
 with a stock-compatible descriptor-reuse regression, and one ProcessIO input
 pump/backpressure correction adapted to Apple's simpler API. No Apple issue or
 pull request has been filed for either slice.
+
+## Audited Open Apple Pull Requests Carried Locally
+
+The 28 July stock-Apple audit reviewed 31 open third-party pull requests and
+published the compatible changes only to Stephen-owned cumulative branches:
+
+- `stephenlclarke/container:fix/apple-open-pr-bugfixes-20260728` at
+  `be702536bbc166821798e5952c3948e194d95617`
+- `stephenlclarke/containerization:fix/apple-open-pr-bugfixes-20260728` at
+  `1e5d2c89d0f7056fe48b0b9091abdb3d20cdf7a0`
+
+No Apple pull request was created or modified by this audit. All entries below
+remain open upstream. `Blocked` is GitHub's live merge state, not a local test
+failure.
+
+### `apple/container`
+
+Of the 23 carried pull requests, 20 are ready and mergeable but report a
+blocked merge state, #1847 is a mergeable draft, and #1719 and #1944 currently
+conflict with Apple `main`.
+
+| Apple pull request | Live head and state | Local disposition |
+| --- | --- | --- |
+| [#1719](https://github.com/apple/container/pull/1719) | `e5440c85a591`, open, conflicting | `1a486c5`: sanitise the sudoers filename and also correct the upstream variable spelling and shell syntax. |
+| [#1773](https://github.com/apple/container/pull/1773) | `77196fce3d2d`, open, mergeable, blocked | `0cd7209`: close the failed watch descriptor; `be70253` replaces the weak total-descriptor test with exact path-specific leak detection. |
+| [#1832](https://github.com/apple/container/pull/1832) | `ce8d26b0572d`, open, mergeable, blocked | `521f9b7`: stage non-regular image inputs while retaining direct regular-file paths. |
+| [#1847](https://github.com/apple/container/pull/1847) | `7506d68bb852`, open draft, mergeable, blocked | `6472d82`: carry only the verified guest-platform kernel selection; the unproved vminit change remains excluded. |
+| [#1854](https://github.com/apple/container/pull/1854) | `9a0db6f8507b`, open, mergeable, blocked | `ca6edcc`: keep `SIGWINCH` off the generic process-kill path. |
+| [#1859](https://github.com/apple/container/pull/1859) | `f99feb3c1276`, open, mergeable, blocked | `fda2787`: preserve unloadable bundles, make all bundle metadata writes atomic, and validate the runtime before exposing state; `e451b6d` corrects the malformed-data regression. |
+| [#1860](https://github.com/apple/container/pull/1860) | `df165045ee94`, open, mergeable, blocked | `72a89a0`: revalidate state while holding the lifecycle lock before deletion. |
+| [#1861](https://github.com/apple/container/pull/1861) | `27c2b929c4d1`, open, mergeable, blocked | `e8c0d3e`: carry functional commit `c3c7e218a021`; the newer live head only merges Apple `main`, and the functional diff retains stable patch ID `8303849cfd37`. |
+| [#1864](https://github.com/apple/container/pull/1864) | `929a03c4d1fb`, open, mergeable, blocked | `e29bd26`: reject IPv4 subnets with no allocatable host addresses using widened arithmetic. |
+| [#1870](https://github.com/apple/container/pull/1870) | `4442a27bc699`, open, mergeable, blocked | `bd77f3a`: retain exact references and reject ambiguous displayed names and digest prefixes. |
+| [#1891](https://github.com/apple/container/pull/1891) | `a18abb2c1b4d`, open, mergeable, blocked | `30743f0`: retain a separately fetched machine setup-script layer. |
+| [#1893](https://github.com/apple/container/pull/1893) | `fb0b879e7450`, open, mergeable, blocked | `4634a80`: use unaligned-safe DNS wire loads and stores with every-offset coverage. |
+| [#1896](https://github.com/apple/container/pull/1896) | `8c9bab4d818b`, open, mergeable, blocked | `c7c4282`: reject empty mount keys without losing legal equals signs in values. |
+| [#1904](https://github.com/apple/container/pull/1904) | `dfaa3660f131`, open, mergeable, blocked | `8ba4d39`: preserve accepted fractional memory values without byte-rounding loss. |
+| [#1909](https://github.com/apple/container/pull/1909) | `9821ca5cebe1`, open, mergeable, blocked | `6d522a0`: cancel terminal resize forwarding when a build completes. |
+| [#1944](https://github.com/apple/container/pull/1944) | `8c6903c0d0c7`, open, conflicting | `1f7f0c7`: resolve symlinked configuration sources while retaining atomic replacement and destination-symlink protection. |
+| [#1963](https://github.com/apple/container/pull/1963) | `9624e8c86186`, open, mergeable, blocked | `6f49926`: resolve local digest references before normalising names or pulling. |
+| [#2016](https://github.com/apple/container/pull/2016) | `49dfdd87e138`, open, mergeable, blocked | `38e1572`: split mount directives only on the first equals sign. |
+| [#2017](https://github.com/apple/container/pull/2017) | `3fdcc573a6d4`, open, mergeable, blocked | `cb2dceb`: normalise a trailing equals sign to an empty value. |
+| [#2018](https://github.com/apple/container/pull/2018) | `dfa60b167af8`, open, mergeable, blocked | `522a2b3`: accept valid TCP and UDP port 1 while retaining port 0 rejection. |
+| [#2019](https://github.com/apple/container/pull/2019) | `0467f2429755`, open, mergeable, blocked | `6d21802`: close a UDP backend that becomes active after eviction. |
+| [#2025](https://github.com/apple/container/pull/2025) | `85dd2a92c7b1`, open, mergeable, blocked | `544f8a7`: require an executable regular `/sbin/init` and clean up failed machine creation. |
+| [#2027](https://github.com/apple/container/pull/2027) | `16bec754b36b`, open, mergeable, blocked | `42bc06e`: retain the complete verified security set plus fork named-context, interface-binding, path-normalisation, and regression requirements. |
+
+### `apple/containerization`
+
+Seven of the eight carried pull requests are mergeable with a blocked merge
+state. #748 currently conflicts with Apple `main`.
+
+| Apple pull request | Live head and state | Local disposition |
+| --- | --- | --- |
+| [#715](https://github.com/apple/containerization/pull/715) | `29dfe1b9e847`, open, mergeable, blocked | `ad950d4`: bound the manifest GET fallback and derive its descriptor from returned bytes. |
+| [#716](https://github.com/apple/containerization/pull/716) | `77da467c16d8`, open, mergeable, blocked | `2f96c02`: defer directory attributes with component-wise no-symlink traversal; `1e5d2c8` proves an intermediate symlink cannot escape the extraction root. |
+| [#717](https://github.com/apple/containerization/pull/717) | `5c0fe3668529`, open, mergeable, blocked | `b992252`: retain requested size for ordinary partial groups and round only tiny metadata-constrained final groups. |
+| [#748](https://github.com/apple/containerization/pull/748) | `79f4658de009`, open, conflicting | `5184c6e`: allow Swift Crypto 3 or 4 and resolve the fork to 4.5.1. |
+| [#768](https://github.com/apple/containerization/pull/768) | `5835a86b3bc0`, open, mergeable, blocked | `d6322d3`: classify Basic-auth registry failures as credential errors. |
+| [#783](https://github.com/apple/containerization/pull/783) | `7eb0c7df41ee`, open, mergeable, blocked | `6a1370e`: canonicalise arm64 platform descriptions without redundant `v8`. |
+| [#796](https://github.com/apple/containerization/pull/796) | `6c46194ca394`, open, mergeable, blocked | `310932e`: reject invalid bridge interface names before indexing or allocation. |
+| [#813](https://github.com/apple/containerization/pull/813) | `542463261721`, open, mergeable, blocked | `1cec794`: redact environment values while retaining useful variable names in debug logs. |
+
+### Strengthened Changes Worth Giving Back
+
+The later changes for #1859, #1773, and #716 are all worth returning to Apple.
+They are not Compose compatibility additions:
+
+| Pull request | Assessment |
+| --- | --- |
+| [apple/container#1859](https://github.com/apple/container/pull/1859) | **Yes.** The submitted ordering inserts a container into the returned state before runtime validation. Its catch then preserves the bundle but also leaves unusable in-memory state. Runtime validation must precede insertion. The separate root-filesystem metadata write should use the same atomic durability rule as the other bundle JSON. The corrected malformed-data and missing-runtime tests prove both behaviours. |
+| [apple/container#1773](https://github.com/apple/container/pull/1773) | **Yes.** The submitted production close is correct, but its four-second, process-wide “fewer than 100 descriptors” assertion can pass while leaking. The path-specific test deterministically proves 32 watched-directory descriptors leak without the fix and zero leak with it. This should replace the current regression test rather than form a competing behaviour patch. |
+| [apple/containerization#716](https://github.com/apple/containerization/pull/716) | **Yes, highest priority.** `O_NOFOLLOW` on one `openat` call protects only the final path component. A replaced intermediate directory can still redirect deferred ownership or permission changes outside the extraction root. Component-wise descriptor traversal and the archive-level intermediate-symlink regression should be incorporated before #716 merges. |
+
+No strengthened patch has yet been submitted to Apple. Prefer updates to the
+existing pull requests, coordinated with their authors, over duplicate pull
+requests. If a separate follow-up is required, build it on current stock Apple
+`main` and keep the original author and issue references explicit.
+
+### Recorded Validation Timings
+
+Timings are behavioural evidence and optimisation baselines, not pass/fail
+thresholds by themselves. The positive and negative command times include
+different incremental rebuild costs, so test-level timings are the comparable
+signal here.
+
+- #1859 missing-runtime negative control: failed as expected in 0.017 seconds
+  and retained invalid state; command wall time 7.95 seconds. Hardened ordering:
+  passed in 0.009 seconds; command wall time 8.30 seconds.
+- #1773 descriptor-leak negative control: failed with 32 leaked descriptors in
+  0.015 seconds; command wall time 33.57 seconds including rebuild. Hardened
+  path: passed with zero leaked descriptors in 0.018 seconds; command wall time
+  6.57 seconds.
+- #716 intermediate-symlink negative control: failed by changing an external
+  directory from mode 0700 to 0755 in 0.010 seconds; command wall time 29.44
+  seconds including rebuild. Hardened traversal preserved mode 0700 and passed
+  in 0.011 seconds; command wall time 7.45 seconds.
+- Container focused #1859/#1773 validation: 7 tests in 2 suites passed in
+  1.877 seconds; command wall time 4.07 seconds.
+- Container full supported gate: 1,223 tests in 146 suites passed in 12.314
+  seconds; cold configured build and test wall time 231.96 seconds.
+- Containerization focused archive and secure-path gate: 56 tests in 2 suites
+  passed in 55.056 seconds; command wall time 56.84 seconds. Existing deliberate
+  deep-nesting tests dominate this duration; the new exploit regression passed
+  in 0.097 seconds.
+- Containerization full supported gate: 669 tests in 86 suites passed in
+  151.545 seconds; cold configured build and test wall time 280.11 seconds.
+- `make check` passed in both repositories. A raw container `swift test`
+  invocation also selected live CLI integration suites and failed because the
+  harness could not locate its installed `container` binary. The supported
+  `make test` gate installs its test image and excludes those live suites; its
+  complete unit result is the 1,223-test pass above.
+
+No test hung and no material slowdown attributable to these hardenings was
+observed. Preserve these timings with future parity and optimisation runs;
+slower completion is not itself a parity failure unless it is materially
+slower in practical use or does not complete.
 
 ## Unsubmitted Review Candidates
 
