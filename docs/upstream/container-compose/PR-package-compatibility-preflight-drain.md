@@ -44,6 +44,9 @@ preflight task before returning the corresponding shell status. Signed
 connector-review correction `fbe0ce05`, `fix(plugin): bound preflight stream
 capture`, installs that proxy before child-task creation and adds
 package-private process-runner prefix capture with exact omitted-byte counts.
+Signed final correction `b65d18a6`, `fix(plugin): preserve truncated stderr
+priority`, emits an exact truncation marker when the retained stderr prefix is
+whitespace but omitted bytes remain.
 
 The production change is limited to the package preflight implementation, its
 single asynchronous call site and executable interruption boundary, and
@@ -104,6 +107,8 @@ Results on the designated Apple silicon MacBook Pro:
 - `CommandResult` values with identical public status and decoded strings remain
   equal even when their package-private raw bytes differ;
 - malformed UTF-8 retains its original byte count through bounded diagnostics;
+- whitespace-only retained stderr with omitted bytes reports an exact
+  65,552-byte truncation marker and remains preferred over stdout;
 - an isolated packaged CLI writes 16 MiB to stderr, exits below 320 MiB maximum
   resident memory, and renders a diagnostic below 67,000 bytes;
 - the isolated 16 MiB memory regression also passes with Address Sanitizer;
@@ -118,7 +123,7 @@ Results on the designated Apple silicon MacBook Pro:
 - six metrics-generator regression tests and Python compilation pass;
 - the generated 28 July 2026 snapshot reports all three support forks zero
   behind Apple and 493 commits ahead in total; and
-- `HAWKEYE_AUTO_INSTALL=1 make ci` passes 1,262 Swift tests in 45 suites,
+- `HAWKEYE_AUTO_INSTALL=1 make ci` passes 1,263 Swift tests in 46 suites,
   92.79% Swift coverage, 89.88% Go coverage, and the complete CLI, lint,
   dependency, licence, and smoke gates.
 
@@ -155,6 +160,7 @@ slice `current` prerelease remain pending until this branch is published.
 - [x] Host-signal forwarding and conventional exit-status coverage
 - [x] Signal-proxy-before-child-launch coverage
 - [x] Bounded process-capture and exact omitted-byte coverage
+- [x] Whitespace-prefix stderr-priority coverage
 - [x] Worktree-safe generated metrics regression coverage
 - [x] Complete local repository gate
 - [x] Signed Conventional documentation commit

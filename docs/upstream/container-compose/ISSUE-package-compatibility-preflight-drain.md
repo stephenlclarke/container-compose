@@ -37,7 +37,10 @@ and reaps the isolated preflight group, and retains the signal until the
 executable returns its conventional shell status. Signed connector-review
 correction `fbe0ce05` installs that proxy before creating the child task and
 adds a package-private process-runner mode that drains each stream while
-retaining only a bounded prefix and the exact omitted-byte count.
+retaining only a bounded prefix and the exact omitted-byte count. Signed final
+correction `b65d18a6` represents an all-whitespace retained prefix as truncated
+when omitted bytes remain, preserving stderr priority without claiming the
+unretained content.
 
 The corrected path:
 
@@ -51,6 +54,8 @@ The corrected path:
   shell status;
 - waits for process exit and complete pipe drainage before returning;
 - preserves stderr precedence for a failed command;
+- preserves that stderr precedence when its retained prefix contains only
+  whitespace but its exact omitted-byte count proves more stderr exists;
 - falls back to stdout when stderr is empty;
 - limits a displayed failure diagnostic at a 64 KiB raw-stream boundary,
   preserves complete valid UTF-8 scalars, and reports the exact omitted source
@@ -112,6 +117,9 @@ No Apple runtime fork or new compatibility primitive is required.
   with status 130.
 - A delayed signal proxy observes that the preflight child cannot start before
   proxy installation completes.
+- A failed child that writes stdout plus 65,539 retained whitespace bytes and
+  omitted stderr reports `[truncated 65552 bytes]` from stderr rather than
+  falling back to stdout.
 - Existing package mismatch, missing executable, and service readiness
   diagnostics remain covered.
 - Repository build, test, format, lint, dependency, and diff gates pass.

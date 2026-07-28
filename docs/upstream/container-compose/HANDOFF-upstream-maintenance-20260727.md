@@ -339,8 +339,11 @@ bounded rendered prefix and offsets without changing public `CommandResult`
 equality or the unbounded public runner API. Test commit `592266a7` runs a
 16 MiB packaged-CLI failure in an isolated process, enforces a 320 MiB maximum
 resident-memory ceiling, and passes with Address Sanitizer. The final focused
-sanitizer run passes 23 tests across five suites; the complete local gate passes
-1,262 Swift tests in 45 suites.
+sanitizer run before the final formatter-only correction passes 23 tests across
+five suites. Final signed correction `b65d18a6` preserves stderr priority when
+the retained prefix is whitespace but omitted bytes remain, with an exact
+65,552-byte real-child regression. The complete local gate passes 1,263 Swift
+tests in 46 suites.
 
 The next parity blockers are:
 
