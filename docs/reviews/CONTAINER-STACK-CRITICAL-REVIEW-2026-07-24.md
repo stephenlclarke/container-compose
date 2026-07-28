@@ -10,19 +10,15 @@ Compose v5.3.1 use `compose-go/v2` v2.13.0. Its current CLI help surface has no
 unexpected command or long-option differences from Docker Compose v5.3.1.
 
 It is not yet safe to describe the implementation as complete Docker Compose
-parity. Three remaining confirmed Compose defects affect runtime correctness
-or process reliability:
+parity. One remaining confirmed Compose defect affects runtime correctness:
+tar-stream `cp` stages through the host filesystem and cannot reliably preserve
+container ownership metadata. Fixing this completely needs the direct stream
+primitive proposed in `apple/containerization`.
 
-1. The package-compatibility preflight can deadlock while waiting for a child
-   whose stdout or stderr pipe fills.
-2. `compose commit` drops inherited OCI `VOLUME` declarations.
-3. Tar-stream `cp` stages through the host filesystem and cannot reliably
-   preserve container ownership metadata. Fixing this completely needs the
-   direct stream primitive proposed in `apple/containerization`.
-
-The former unconfigured image-volume and child-process cancellation defects
-are resolved in signed, Compose-owned commits with focused contract,
-Docker Compose YAML integration, and no-surviving-process coverage.
+The former unconfigured image-volume, child-process cancellation,
+package-compatibility preflight, and inherited commit-volume defects are
+resolved in Compose-owned changes with focused contract, Docker Compose parity,
+bounded process, and no-surviving-process coverage.
 
 The largest engineering risk is now the runtime dependency model, not Compose
 file parsing. `ComposeRuntimeSPI` is presented as a clean provider boundary,
@@ -381,34 +377,26 @@ and
 [pull-request handoff](../upstream/container-compose/PR-package-compatibility-preflight-drain.md)
 record the boundary and validation evidence.
 
-### P1: `compose commit` Drops Inherited OCI Volumes
+### Resolved P1: `compose commit` Preserves Inherited OCI Volumes
 
-`Sources/ComposeCore/ComposeCommitImageArchive.swift:217-235` reconstructs an
-image config from the base image and service. It preserves user, environment,
-entrypoint, command, working directory, labels, ports, stop signal, and
-healthcheck, but unconditionally sets `volumes = nil`.
+`ComposeCommitImageArchive` now seeds the committed image's `Volumes` map from
+`ComposeImageMetadata.declaredVolumeTargets` before applying repeated shell-form
+and JSON-form `--change VOLUME` instructions. Dictionary-key union preserves
+inherited and additive targets without duplicates.
 
-`ComposeImageMetadata` already contains `declaredVolumeTargets`
-(`Sources/ComposeRuntimeSPI/ComposeRuntimeImages.swift:49-88`), so the data is
-available. Docker Compose delegates commit to the engine's container commit
-operation and retains the effective container config.
+Focused archive tests cover inherited targets, service-platform image variants,
+and repeated, duplicate, and multi-path changes.
+`Tools/parity/check-compose-commit.sh` now builds matched Docker and Container
+base images with two declared volumes, applies two further volume changes with
+one duplicate, and requires the same exact four-target result from Docker
+Compose v5.3.1 and the installed Container-backed Compose binary. Issue
+[`#172`](https://github.com/stephenlclarke/container-compose/issues/172)
+tracks the exact-head implementation, validation, review, and publication
+evidence.
 
-The current parity probe uses `alpine:3.20`, which has no declared volume, and
-checks other metadata. It therefore cannot catch this defect.
-
-Impact: an image produced by `compose commit` can lose storage semantics from
-its base image even though `STATUS.md` marks the command fully supported.
-
-Ownership: Compose.
-
-Required correction:
-
-- seed the output volume map from `base.declaredVolumeTargets`;
-- apply additive and replacement `--change VOLUME` behaviour according to the
-  Docker commit parser;
-- add unit tests for inherited, added, and multiple volumes;
-- add a live parity fixture based on an image with a `VOLUME` instruction;
-- mark `commit` partial until the regression test passes.
+Impact: committed images retain the base image's storage declarations while
+accepting Docker-compatible additive volume changes. Ownership remains
+Compose; no Apple runtime or stack-pin change is required.
 
 ### P1: Tar-Stream `cp` Cannot Preserve Full Container Metadata
 
@@ -641,13 +629,13 @@ This should be managed as an upstream-convergence programme:
 
 | Area | Gap |
 | --- | --- |
-| Correctness | Unconfigured image volumes fail open; commit loses inherited volumes |
-| Process control | Task cancellation does not terminate children; compatibility preflight can deadlock |
+| Correctness | Tar-stream `cp` cannot preserve complete container ownership metadata until direct runtime streams exist |
+| Process control | Cancellation and bounded concurrent package-preflight drainage are implemented; remaining runtime process work is tracked separately |
 | Deploy | Accept and preserve local-mode Deploy metadata that Docker Compose accepts but does not schedule |
 | Testing | Honest runtime skips; provider/plugin/aggregate coverage; metadata-complete commit and copy fixtures |
 | Diagnostics | Supported-lane messages currently blame missing Apple primitives that exist in the pins |
 | Security | Explicit private permissions for temporary copy, commit, and secret material |
-| Documentation | Correct overclaims for `commit`, tar-stream `cp`, runtime CI, and the SPI boundary |
+| Documentation | Correct overclaims for tar-stream `cp`, runtime CI, and the SPI boundary |
 
 ### Missing from Stock Apple but Present in the Pinned Forks
 
@@ -817,7 +805,7 @@ new Apple design work.
 | CC-001 | P1 | Compose | **Complete:** make unconfigured image-volume lookup fail closed | Every unconfigured SPI method has a contract test; declared-volume planning reports a clear provider error |
 | CC-002 | P1 | Compose | **Complete:** add task-cancellation ownership to `ProcessRunner` | Cancelled captured/inherited/input child exits within bound; no continuation double-resume; no surviving PID |
 | CC-003 | P1 | Plugin | **Complete:** replace wait-before-drain compatibility preflight | Fake command writes >256 KiB to stdout and stderr without deadlock; cancellation and error text tested |
-| CC-004 | P1 | Compose | Preserve inherited volumes during `commit` | Unit and live Docker parity cover inherited/additive/multiple `VOLUME`; status claim restored only after passing |
+| CC-004 | P1 | Compose | **Complete:** preserve inherited volumes during `commit` | Unit and live Docker parity cover inherited/additive/duplicate/multiple `VOLUME`; status claim restored after passing |
 | CC-005 | P1 | Compose/docs | Downgrade tar-stream `cp` parity pending direct runtime streams | Status and help describe content support versus metadata limits; metadata fixture fails for the expected tracked reason |
 | CC-006 | P2 | Compose | Correct lifecycle ownership diagnostics | Pinned-lane errors name Compose orchestration; stock-lane errors name missing Apple capability |
 | TEST-007 | P1 | Compose CI | Make live test skips explicit and gate aggregate coverage | CI reports executed/skipped counts; separate Core/SPI/provider/plugin/aggregate thresholds |

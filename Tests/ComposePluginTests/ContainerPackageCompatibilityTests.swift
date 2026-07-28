@@ -754,14 +754,14 @@ struct ContainerPackagePreflightSignalTests {
 
     let pidFile = directory.appendingPathComponent("preflight.pid")
     let fakeContainer = try makeInterruptibleContainer(in: directory)
-    let process = try makeInterruptedPreflightProcess(
+    let interruptedProcess = try makeInterruptedPreflightProcess(
       fakeContainer: fakeContainer,
       pidFile: pidFile
     )
+    let process = interruptedProcess.process
     defer {
       if process.isRunning {
         _ = kill(process.processIdentifier, SIGKILL)
-        process.waitUntilExit()
       }
     }
 
@@ -777,11 +777,13 @@ struct ContainerPackagePreflightSignalTests {
     guard kill(process.processIdentifier, SIGINT) == 0 else {
       throw ContainerPackagePreflightTestError.signalFailed
     }
-    try await waitForPreflightCLIExit(process)
+    let termination = try await waitForPreflightCLIExit(
+      interruptedProcess.terminations
+    )
 
     #expect(clock.now - interruptionStarted < .seconds(2))
-    #expect(process.terminationReason == .exit)
-    #expect(process.terminationStatus == 130)
+    #expect(termination.reason == .exit)
+    #expect(termination.status == 130)
     errno = 0
     #expect(kill(preflightIdentifier, 0) == -1)
     #expect(errno == ESRCH)
@@ -808,13 +810,35 @@ private func makeInterruptibleContainer(in directory: URL) throws -> URL {
 }
 
 /// Starts the real Compose CLI against an interruptible fake runtime.
+private struct InterruptedPreflightProcess {
+  let process: Process
+  let terminations: AsyncStream<PreflightProcessTermination>
+}
+
+private struct PreflightProcessTermination: Sendable {
+  let reason: Process.TerminationReason
+  let status: Int32
+}
+
 private func makeInterruptedPreflightProcess(
   fakeContainer: URL,
   pidFile: URL
-) throws -> Process {
+) throws -> InterruptedPreflightProcess {
   let composeExecutable = URL(fileURLWithPath: ".build/debug/compose")
   #expect(FileManager.default.isExecutableFile(atPath: composeExecutable.path))
   let process = Process()
+  let (terminations, continuation) = AsyncStream.makeStream(
+    of: PreflightProcessTermination.self
+  )
+  process.terminationHandler = { process in
+    continuation.yield(
+      PreflightProcessTermination(
+        reason: process.terminationReason,
+        status: process.terminationStatus
+      )
+    )
+    continuation.finish()
+  }
   process.executableURL = composeExecutable
   process.arguments = ["ps"]
   process.environment = ProcessInfo.processInfo.environment.merging([
@@ -824,7 +848,10 @@ private func makeInterruptedPreflightProcess(
   process.standardOutput = FileHandle.nullDevice
   process.standardError = FileHandle.nullDevice
   try process.run()
-  return process
+  return InterruptedPreflightProcess(
+    process: process,
+    terminations: terminations
+  )
 }
 
 /// Waits for the preflight child to publish its PID before cancellation.
@@ -844,20 +871,31 @@ private func waitForPreflightProcessIdentifier(at pidFile: URL) async throws -> 
 }
 
 /// Waits for an interrupted Compose CLI to finish child cleanup and exit.
-private func waitForPreflightCLIExit(_ process: Process) async throws {
-  let clock = ContinuousClock()
-  let deadline = clock.now + .seconds(3)
-  while clock.now < deadline {
-    if !process.isRunning {
-      process.waitUntilExit()
-      return
+private func waitForPreflightCLIExit(
+  _ terminations: AsyncStream<PreflightProcessTermination>
+) async throws -> PreflightProcessTermination {
+  try await withThrowingTaskGroup(of: PreflightProcessTermination.self) { group in
+    group.addTask {
+      for await termination in terminations {
+        return termination
+      }
+      throw ContainerPackagePreflightTestError.composeProcessStatusMissing
     }
-    try await Task.sleep(for: .milliseconds(10))
+    group.addTask {
+      try await Task.sleep(for: .seconds(3))
+      throw ContainerPackagePreflightTestError.composeProcessTimedOut
+    }
+
+    guard let termination = try await group.next() else {
+      throw ContainerPackagePreflightTestError.composeProcessStatusMissing
+    }
+    group.cancelAll()
+    return termination
   }
-  throw ContainerPackagePreflightTestError.composeProcessTimedOut
 }
 
 private enum ContainerPackagePreflightTestError: Error {
+  case composeProcessStatusMissing
   case composeProcessTimedOut
   case pidFileTimedOut
   case signalFailed

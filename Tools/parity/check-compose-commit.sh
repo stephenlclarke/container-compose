@@ -33,9 +33,9 @@
 #
 # This script is intentionally local-only and is not part of CI. It validates
 # Docker Compose V2 running-container commit image config behavior with
-# --pause=false, then compares that image config with the stopped-container
-# slice currently supported through container-compose and the local Apple-backed
-# runtime.
+# --pause=false, including inherited and changed Docker volume metadata, then
+# compares that image config with the stopped-container slice currently supported
+# through container-compose and the local Apple-backed runtime.
 
 set -euo pipefail
 
@@ -52,6 +52,8 @@ DOCKER_COMPOSE_COMMAND=()
 FIXTURE_DIR=""
 DOCKER_PROJECT_NAME="container-compose-commit-docker-$RANDOM-$$"
 CONTAINER_PROJECT_NAME="container-compose-commit-runtime-$RANDOM-$$"
+DOCKER_BASE_IMAGE="example/commit-parity-docker-base-$RANDOM:latest"
+CONTAINER_BASE_IMAGE="example/commit-parity-runtime-base-$RANDOM:latest"
 DOCKER_IMAGE="example/commit-parity-docker-$RANDOM:latest"
 CONTAINER_IMAGE="example/commit-parity-runtime-$RANDOM:latest"
 
@@ -133,10 +135,15 @@ check_tools() {
 
 create_fixture() {
     FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/compose-commit.XXXXXX")"
+    cat >"$FIXTURE_DIR/Dockerfile" <<'DOCKERFILE'
+FROM alpine:3.20
+RUN mkdir -p /image-data /shared-data
+VOLUME ["/image-data", "/shared-data"]
+DOCKERFILE
     cat >"$FIXTURE_DIR/compose.yml" <<'YAML'
 services:
   api:
-    image: alpine:3.20
+    image: ${COMMIT_PARITY_IMAGE:?COMMIT_PARITY_IMAGE is required}
     command: ["sh", "-c", "sleep 120"]
     environment:
       BASE_VALUE: original
@@ -154,18 +161,29 @@ YAML
 
 cleanup() {
     if [[ -n "$FIXTURE_DIR" ]]; then
-        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" down --remove-orphans >/dev/null 2>&1 || true
-        CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
-            "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" down --remove-orphans >/dev/null 2>&1 || true
+        COMMIT_PARITY_IMAGE="$DOCKER_BASE_IMAGE" \
+            "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" down --remove-orphans >/dev/null 2>&1 || true
+        COMMIT_PARITY_IMAGE="$CONTAINER_BASE_IMAGE" \
+            CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
+                "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" down --remove-orphans >/dev/null 2>&1 || true
         rm -rf "$FIXTURE_DIR"
     fi
     docker image rm -f "$DOCKER_IMAGE" >/dev/null 2>&1 || true
+    docker image rm -f "$DOCKER_BASE_IMAGE" >/dev/null 2>&1 || true
     "$CONTAINER_BINARY" image delete --force "$CONTAINER_IMAGE" >/dev/null 2>&1 || true
+    "$CONTAINER_BINARY" image delete --force "$CONTAINER_BASE_IMAGE" >/dev/null 2>&1 || true
+}
+
+build_fixture_images() {
+    docker build --quiet --tag "$DOCKER_BASE_IMAGE" "$FIXTURE_DIR" >/dev/null
+    "$CONTAINER_BINARY" build --tag "$CONTAINER_BASE_IMAGE" "$FIXTURE_DIR" >/dev/null
 }
 
 commit_with_docker_compose() {
-    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up -d --quiet-pull api >/dev/null
-    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" commit \
+    COMMIT_PARITY_IMAGE="$DOCKER_BASE_IMAGE" \
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up -d --quiet-pull api >/dev/null
+    COMMIT_PARITY_IMAGE="$DOCKER_BASE_IMAGE" \
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" commit \
         --pause=false \
         --author parity \
         --message snapshot \
@@ -174,28 +192,35 @@ commit_with_docker_compose() {
         --change 'EXPOSE 8443' \
         --change 'LABEL org.example.commit=yes' \
         --change 'USER app' \
+        --change 'VOLUME /added-data' \
+        --change 'VOLUME ["/logs","/shared-data"]' \
         --change 'WORKDIR /srv/app' \
         api "$DOCKER_IMAGE" >/dev/null
     docker image inspect "$DOCKER_IMAGE" >"$FIXTURE_DIR/docker-image.json"
 }
 
 commit_with_container_compose() {
-    CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
-        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up -d api >/dev/null
-    CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
-        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" stop api >/dev/null
-    CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
-        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" commit \
-        -p=false \
-        -a parity \
-        -m snapshot \
-        -c 'ENV SNAPSHOT=true' \
-        -c 'CMD ["sh","-c","echo committed"]' \
-        -c 'EXPOSE 8443' \
-        -c 'LABEL org.example.commit=yes' \
-        -c 'USER app' \
-        -c 'WORKDIR /srv/app' \
-        api "$CONTAINER_IMAGE" >/dev/null
+    COMMIT_PARITY_IMAGE="$CONTAINER_BASE_IMAGE" \
+        CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
+            "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up -d api >/dev/null
+    COMMIT_PARITY_IMAGE="$CONTAINER_BASE_IMAGE" \
+        CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
+            "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" stop api >/dev/null
+    COMMIT_PARITY_IMAGE="$CONTAINER_BASE_IMAGE" \
+        CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
+            "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" commit \
+            -p=false \
+            -a parity \
+            -m snapshot \
+            -c 'ENV SNAPSHOT=true' \
+            -c 'CMD ["sh","-c","echo committed"]' \
+            -c 'EXPOSE 8443' \
+            -c 'LABEL org.example.commit=yes' \
+            -c 'USER app' \
+            -c 'VOLUME /added-data' \
+            -c 'VOLUME ["/logs","/shared-data"]' \
+            -c 'WORKDIR /srv/app' \
+            api "$CONTAINER_IMAGE" >/dev/null
     "$CONTAINER_BINARY" image inspect "$CONTAINER_IMAGE" >"$FIXTURE_DIR/container-image.json"
 }
 
@@ -221,6 +246,9 @@ def exposed(config):
 
 def labels(config):
     return config.get("Labels") or {}
+
+def volumes(config):
+    return set((config.get("Volumes") or {}).keys())
 
 def assert_healthcheck(source, healthcheck):
     if healthcheck is None:
@@ -256,6 +284,9 @@ for source, config, healthcheck in [
     ports = exposed(config)
     if not {"8080/tcp", "8443/tcp"}.issubset(ports):
         raise SystemExit(f"{source} committed exposed ports = {ports!r}")
+    expected_volumes = {"/image-data", "/shared-data", "/added-data", "/logs"}
+    if volumes(config) != expected_volumes:
+        raise SystemExit(f"{source} committed volumes = {config.get('Volumes')!r}")
     assert_healthcheck(source, healthcheck)
 PY
 }
@@ -265,6 +296,7 @@ main() {
     check_tools
     trap cleanup EXIT
     create_fixture
+    build_fixture_images
     commit_with_docker_compose
     commit_with_container_compose
     assert_committed_image_config

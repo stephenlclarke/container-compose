@@ -25737,6 +25737,48 @@ struct ComposeOrchestratorTests {
         #expect(await imageManager.requests.contains(.healthCheck(reference: "example/api", platform: "linux/amd64")))
     }
 
+    @Test("commit preserves volumes from the service platform variant")
+    func commitPreservesServicePlatformVolumes() async throws {
+        let exporter = try RecordingContainerExporter(archiveData: rootfsArchiveData())
+        let imageManager = RecordingContainerImageManager(
+            platformImageVolumeTargets: [
+                ImageVolumeTargetRequestKey(reference: "example/api", platform: "linux/amd64"): ["/service-data"],
+            ],
+            imageMetadata: [
+                "example/api": ComposeImageMetadata(reference: "example/api") {
+                    $0.declaredVolumeTargets = ["/host-data"]
+                },
+            ]
+        )
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.platform = "linux/amd64"
+                },
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.exporter = exporter
+            $0.imageManager = imageManager
+        })
+
+        try await orchestrator.commit(project: project, serviceName: "api")
+
+        let archiveData = try #require((await imageManager.loadedArchiveData).first)
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archive = directory.appendingPathComponent("image.tar")
+        try archiveData.write(to: archive)
+        let config = try commitArchiveConfig(from: archive)
+        #expect(config.config.volumes == ["/service-data": [:]])
+        #expect(await imageManager.requests.contains(.volumeTargets(reference: "example/api", platform: "linux/amd64")))
+    }
+
     @Test("commit resolves effective Compose healthchecks for image config")
     func commitResolvesEffectiveHealthchecksForImageConfig() throws {
         let inherited = ComposeImageHealthCheck(
@@ -26011,6 +26053,63 @@ struct ComposeOrchestratorTests {
             "/data": [:],
         ])
         #expect(config.config.workingDir == "/srv/app")
+    }
+
+    @Test("commit image archive preserves inherited Docker volumes")
+    func commitImageArchivePreservesInheritedDockerVolumes() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let rootfs = directory.appendingPathComponent("rootfs.tar")
+        try rootfsArchiveData().write(to: rootfs)
+        let imageArchive = directory.appendingPathComponent("image.tar")
+
+        try ComposeCommitImageArchive.write(
+            rootfsArchive: rootfs,
+            output: imageArchive,
+            service: composeService(name: "api", image: "example/api"),
+            options: ComposeCommitOptions(),
+            metadata: .init(baseImage: ComposeImageMetadata(reference: "example/base:latest") {
+                $0.declaredVolumeTargets = ["/data", "/cache"]
+            })
+        )
+
+        let config = try commitArchiveConfig(from: imageArchive)
+        #expect(config.config.volumes == [
+            "/cache": [:],
+            "/data": [:],
+        ])
+    }
+
+    @Test("commit image archive adds repeated Docker volume changes")
+    func commitImageArchiveAddsRepeatedDockerVolumeChanges() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let rootfs = directory.appendingPathComponent("rootfs.tar")
+        try rootfsArchiveData().write(to: rootfs)
+        let imageArchive = directory.appendingPathComponent("image.tar")
+
+        try ComposeCommitImageArchive.write(
+            rootfsArchive: rootfs,
+            output: imageArchive,
+            service: composeService(name: "api", image: "example/api"),
+            options: ComposeCommitOptions {
+                $0.changes = [
+                    "VOLUME /cache /shared",
+                    "VOLUME [\"/logs\",\"/cache\"]",
+                ]
+            },
+            metadata: .init(baseImage: ComposeImageMetadata(reference: "example/base:latest") {
+                $0.declaredVolumeTargets = ["/inherited"]
+            })
+        )
+
+        let config = try commitArchiveConfig(from: imageArchive)
+        #expect(config.config.volumes == [
+            "/cache": [:],
+            "/inherited": [:],
+            "/logs": [:],
+            "/shared": [:],
+        ])
     }
 
     @Test("commit image archive uses the default shell for shell-form changes")
