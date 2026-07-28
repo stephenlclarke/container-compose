@@ -34,22 +34,29 @@ the full packaged CLI preflight in an isolated process and enforces a maximum
 resident-memory ceiling. Signed connector-review correction `3ed87228` routes
 host termination signals through the existing Compose signal proxy, cancels
 and reaps the isolated preflight group, and retains the signal until the
-executable returns its conventional shell status.
+executable returns its conventional shell status. Signed connector-review
+correction `fbe0ce05` installs that proxy before creating the child task and
+adds a package-private process-runner mode that drains each stream while
+retaining only a bounded prefix and the exact omitted-byte count.
 
 The corrected path:
 
 - drains stdout and stderr concurrently while the child runs;
+- retains at most 64 KiB plus UTF-8 boundary lookahead from each preflight
+  stream while recording the exact number of omitted bytes;
 - supplies an empty stdin payload and closes the writer;
 - inherits the process runner's task-cancellation and process-group ownership;
-- converts host termination signals into task cancellation before the
-  executable returns the corresponding shell status;
+- installs host-signal handling before creating the child task, then converts a
+  signal into task cancellation before the executable returns the corresponding
+  shell status;
 - waits for process exit and complete pipe drainage before returning;
 - preserves stderr precedence for a failed command;
 - falls back to stdout when stderr is empty;
 - limits a displayed failure diagnostic at a 64 KiB raw-stream boundary,
   preserves complete valid UTF-8 scalars, and reports the exact omitted source
   byte count; and
-- preserves the existing successful JSON and service-readiness behaviour.
+- preserves the existing bounded successful JSON and service-readiness
+  behaviour.
 
 ## Ownership boundary
 
@@ -68,16 +75,22 @@ No Apple runtime fork or new compatibility primitive is required.
   argument-based preflight asynchronous, calls the shared process runner, and
   bounds failed-command diagnostics with an incremental raw-byte scan.
 - `Sources/ComposeCore/ProcessRunner.swift` retains package-private raw stream
-  data while preserving the public string result API.
+  prefixes and omitted-byte counts while preserving the unbounded public string
+  result API.
 - `Sources/ComposePlugin/ComposePlugin.swift` awaits the preflight before
   dispatching a runtime-backed command.
 - `Tests/ComposePluginTests/ContainerPackageCompatibilityTests.swift` exercises
   concurrent large-output drainage, stderr selection, diagnostic truncation,
-  cancellation latency, and child reaping.
+  cancellation latency, child reaping, and proxy-before-launch ordering.
+- `Tests/ComposeCoreTests/ProcessRunnerBoundedOutputTests.swift` proves bounded
+  capture drains MiB-sized streams and reports exact omitted-byte counts.
 
 ## Acceptance
 
-- A fake command writes 307,200 bytes to both stdout and stderr and terminates.
+- Fake commands write 65,537 and 307,200 bytes to both stdout and stderr,
+  drain fully, and reject oversized successful stdout with its exact byte count.
+- A bounded process-runner capture drains 1 MiB of stdout and 2 MiB of stderr
+  while retaining exactly 1 KiB of each and reporting exact omitted counts.
 - A failed command still selects stderr after first writing 307,200 bytes to
   stdout.
 - A 307,200-byte failure diagnostic is limited to 64 KiB and reports 241,664
@@ -97,6 +110,8 @@ No Apple runtime fork or new compatibility primitive is required.
 - The child PID reports `ESRCH` after cancellation completes.
 - Sending SIGINT to the full CLI reaps a TERM-ignoring preflight child and exits
   with status 130.
+- A delayed signal proxy observes that the preflight child cannot start before
+  proxy installation completes.
 - Existing package mismatch, missing executable, and service readiness
   diagnostics remain covered.
 - Repository build, test, format, lint, dependency, and diff gates pass.

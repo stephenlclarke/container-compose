@@ -319,33 +319,38 @@ record the failed-run boundary and regression coverage.
 ### Complete: Compatibility Preflight Drains Full Pipes
 
 Signed Compose-plugin correction `81d32eb2`, plus review corrections
-`96ac7830`, `045d020c`, `9db8f060`, `e0ad1dfe`, `4bf2eac6`, and `3ed87228`,
-replaces the wait-before-drain `Foundation.Process` path with the shared
-asynchronous `ProcessRunner`. Both streams now drain while the child runs, task
+`96ac7830`, `045d020c`, `9db8f060`, `e0ad1dfe`, `4bf2eac6`, `3ed87228`, and
+`fbe0ce05`, replaces the wait-before-drain `Foundation.Process` path with the
+shared asynchronous `ProcessRunner`. Both streams now drain while the child
+runs, while a package-private capture mode retains only 64 KiB plus UTF-8
+boundary lookahead per stream and records the exact omitted byte count. Task
 cancellation owns the exact child process group and propagates through both
-compatibility awaits, and host signals cancel and reap that group before the
-CLI returns the corresponding shell status. Failed-command diagnostics retain
-stderr precedence while being limited at a 64 KiB raw-stream boundary with
-complete valid UTF-8 scalars and an exact omitted source-byte count. Diagnostic
-formatting scans the retained raw data once and keeps only the bounded rendered
-prefix and byte offsets, rather than a proportional per-byte object model. The
-package-private raw data does not alter the public `CommandResult` equality
-contract.
+compatibility awaits. The host signal proxy is installed before the child task
+is created, then signals cancel and reap that group before the CLI returns the
+corresponding shell status. Failed-command diagnostics retain stderr precedence
+while being limited at a 64 KiB raw-stream boundary with complete valid UTF-8
+scalars and an exact omitted source-byte count. Diagnostic formatting scans the
+retained raw data once and keeps only the bounded rendered prefix and byte
+offsets, rather than a proportional per-byte object model. The package-private
+capture metadata does not alter the public `CommandResult` equality contract or
+the unbounded public runner API.
 
-The serialized regression suite writes 307,200 bytes to both stdout and stderr,
-proves a large-output failure still selects stderr, verifies diagnostic
-truncation and malformed UTF-8 source-byte accounting, confirms both
-compatibility awaits preserve `CancellationError`, and confirms a cancelled
-TERM-ignoring child returns within two seconds and reports `ESRCH`. A 16 MiB
-isolated packaged-CLI failure, added in `592266a7`, stays below 320 MiB maximum
-resident memory, limits the rendered diagnostic below 67,000 bytes, and also
-passes with Address Sanitizer. The focused package-compatibility run passes 21
-tests across four suites, and the focused equality regression passes. The
-SIGINT reproduction exits 130 only after its
-TERM-ignoring preflight child reports `ESRCH`. A bounded CLI reproduction timed
-out on the previous implementation and exits normally through the corrected
-diagnostic path.
-The complete local gate passes 1,260 Swift tests in 44 suites, 92.80% Swift
+The serialized regression suite rejects successful 65,537-byte and
+307,200-byte stdout only after draining both streams, proves a large-output
+failure still selects stderr, verifies diagnostic truncation and malformed
+UTF-8 source-byte accounting, confirms both compatibility awaits preserve
+`CancellationError`, and confirms a cancelled TERM-ignoring child returns
+within two seconds and reports `ESRCH`. A dedicated process-runner regression
+drains 1 MiB of stdout and 2 MiB of stderr while retaining exactly 1 KiB of
+each and recording the exact omitted counts. A delayed proxy regression proves
+the child cannot start before signal handling is active. A 16 MiB isolated
+packaged-CLI failure, added in `592266a7`, stays below 320 MiB maximum resident
+memory, limits the rendered diagnostic below 67,000 bytes, and also passes with
+Address Sanitizer. The focused sanitizer run passes 23 tests across five
+suites. The SIGINT reproduction exits 130 only after its TERM-ignoring preflight
+child reports `ESRCH`. A bounded CLI reproduction timed out on the previous
+implementation and exits normally through the corrected diagnostic path.
+The complete local gate passes 1,262 Swift tests in 45 suites, 92.79% Swift
 coverage, 89.88% Go coverage, and all CLI, lint, dependency, licence, and smoke
 checks.
 

@@ -326,17 +326,21 @@ runtime install, stop, reset, or live parity run.
 ## Next parity blockers
 
 CC-003 is complete in signed Compose commits `81d32eb2`, `96ac7830`,
-`045d020c`, `9db8f060`, `e0ad1dfe`, `4bf2eac6`, and `3ed87228`:
+`045d020c`, `9db8f060`, `e0ad1dfe`, `4bf2eac6`, `3ed87228`, and `fbe0ce05`:
 package-compatibility stdout and stderr now drain concurrently through the
-shared process runner, cancellation owns the child process group and remains
-structured through both awaits, and host signals cancel and reap that group
-before the CLI returns the corresponding shell status. Diagnostics are bounded
-at a 64 KiB raw-stream boundary with complete valid UTF-8 scalars and exact
-omitted source-byte counts. The formatter scans raw data once and retains only
-the bounded rendered prefix and offsets without changing public
-`CommandResult` equality. Test commit `592266a7` runs a 16 MiB packaged-CLI
-failure in an isolated process, enforces a 320 MiB maximum resident-memory
-ceiling, and passes with Address Sanitizer.
+shared process runner while retaining only a bounded prefix and exact omitted
+byte count for each stream. Cancellation owns the child process group and
+remains structured through both awaits. The signal proxy is active before the
+child task can start, and host signals cancel and reap that group before the
+CLI returns the corresponding shell status. Diagnostics are bounded at a
+64 KiB raw-stream boundary with complete valid UTF-8 scalars and exact omitted
+source-byte counts. The formatter scans raw data once and retains only the
+bounded rendered prefix and offsets without changing public `CommandResult`
+equality or the unbounded public runner API. Test commit `592266a7` runs a
+16 MiB packaged-CLI failure in an isolated process, enforces a 320 MiB maximum
+resident-memory ceiling, and passes with Address Sanitizer. The final focused
+sanitizer run passes 23 tests across five suites; the complete local gate passes
+1,262 Swift tests in 45 suites.
 
 The next parity blockers are:
 
