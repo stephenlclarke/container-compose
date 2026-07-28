@@ -139,7 +139,7 @@ defect-free.
 
 ## Confirmed Findings
 
-### P1: `ComposeCore` Is Not Runtime-Neutral
+### P1: `ComposeCore` Is Not Runtime-Neutral — Resolved
 
 Before DOC-010, the architecture documents said that the orchestrator
 referenced only `ComposeRuntimeSPI` and that Apple types belonged in the
@@ -150,45 +150,22 @@ provider:
   `Runtime Architecture`;
 - `docs/upstream/COMPOSE-COUPLING-AUDIT.md`, under `Result`.
 
-DOC-010 corrected those documents to describe the implementation as it exists.
-The package and source finding remains:
+DOC-010 first corrected the documents to describe the implementation as it
+existed. ARCH-101 and ARCH-102 then removed the finding:
 
-- `Package.swift:62-71` gives `ComposeCore` direct dependencies on seven
-  Apple products:
-  `ContainerAPIClient`, `ContainerResource`, `ContainerizationArchive`,
-  `Containerization`, `ContainerizationExtras`, `ContainerizationOCI`, and
-  `ContainerizationOS`.
-- Many `ComposeCore` files import those packages directly, including
-  `ComposeOrchestratorRuntimeSupport.swift`,
-  `ComposeOrchestratorRunCopyStart.swift`, and
-  `ComposeCommitImageArchive.swift`.
-- `ContainerServiceCreateAdapter.swift` exposes Apple runtime types from the
-  core target.
-- Core tests import Apple products and use Apple-shaped doubles, so the test
-  architecture reinforces the coupling.
-
-Impact:
-
-- an alternate provider cannot consume `ComposeCore` without the complete
-  Apple dependency graph;
-- dependency upgrades have a larger blast radius than the target boundary
-  permits;
-- Compose policy and Apple DTO translation can drift together;
-- provider injection does not provide package portability.
+- `ComposeCore` now depends only on `ComposeRuntimeSPI`;
+- no Core source file imports an Apple module;
+- create-plan process, logging, health, restart, host, and block-I/O values are
+  Compose-owned SPI models;
+- `ComposeContainerRuntime` owns Apple DTO projection, archive staging,
+  Bridge extraction, OCI commit-image construction, and live API adapters;
+- `make core-runtime-neutrality` fails if an Apple dependency or import
+  returns.
 
 Ownership: Compose architecture.
 
-Documentation status: corrected by DOC-010. Architecture status: open.
-
-Required correction:
-
-- move Apple DTO translation, archive integration, and live API types into
-  `ComposeContainerRuntime`;
-- keep only runtime-neutral requests and summaries in `ComposeRuntimeSPI`;
-- add a package-graph test that fails if `ComposeCore` gains an Apple package
-  dependency or `import Container*`;
-- keep the design and coupling audit in current-state wording until the package
-  graph proves the target boundary; only then claim a runtime-neutral Core.
+Documentation and architecture status: resolved by DOC-010, ARCH-101, and
+ARCH-102.
 
 The direction aligns with
 [apple/container discussion #1759](https://github.com/apple/container/discussions/1759),
@@ -854,8 +831,8 @@ Goal: make ownership enforceable and reduce the cost of every later feature.
 
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
-| ARCH-101 | P1 | Compose | Remove Apple products from `ComposeCore` | `Package.swift` and source-import gate prove Core depends only on model/SPI targets |
-| ARCH-102 | P2 | Compose/runtime | Move DTO/archive/live API translation into provider | Public Core API contains no Apple types; existing CLI behaviour and tests remain stable |
+| ARCH-101 | P1 | Compose | **Complete:** remove Apple products from `ComposeCore` | `Package.swift` and source-import gate prove Core depends only on model/SPI targets |
+| ARCH-102 | P2 | Compose/runtime | **Complete:** move DTO/archive/live API translation into provider | Public Core API contains no Apple types; existing CLI behaviour and tests remain stable |
 | ARCH-103 | P2 | Stack | Generate a typed runtime capability/version manifest | Startup reports exact missing capability; stock Apple and matched-fork behaviour are deterministic |
 | FORK-104 | P1 | Stack | Reclassify all 394 non-merge fork commits against current Apple heads | Every commit is bug fix, generic primitive, temporary port, or rejected Compose policy; no unowned delta |
 | FORK-105 | P2 | Stack | Upstream generic slices and remove merged ports | Each retained slice has focused tests, Apple issue/PR, and deletion condition |

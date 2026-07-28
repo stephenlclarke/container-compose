@@ -14,25 +14,14 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import Foundation
+/// Error categories that affect Compose orchestration decisions.
+public enum ComposeRuntimeErrorCode: Sendable {
+    case notFound
+    case other
+}
 
-/// Runtime defaults shared by typed Compose projections.
-public enum ComposeRuntimeDefaults {
-    public static var shellExecutable: String {
-        ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_SHELL"]
-            ?? ["", "bin", "sh"].joined(separator: "/")
-    }
-
-    public static var workingDirectory: String {
-        ["", ""].joined(separator: "/")
-    }
-
-    public static func shellProcess() -> ComposeProcessConfiguration {
-        ComposeProcessConfiguration(
-            executable: shellExecutable,
-            arguments: [],
-            environment: [],
-            workingDirectory: workingDirectory,
-        )
-    }
+/// Narrow error view implemented by concrete runtime errors at the provider boundary.
+public protocol ComposeRuntimeErrorProviding: Error {
+    var composeRuntimeErrorCode: ComposeRuntimeErrorCode { get }
+    var composeRuntimeUnderlyingError: (any Error)? { get }
 }

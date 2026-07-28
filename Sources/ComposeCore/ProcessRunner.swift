@@ -14,7 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerizationOS
 import Foundation
 #if canImport(Darwin)
     import Darwin
@@ -45,7 +44,7 @@ private func suppressBrokenPipeSignal(for handle: FileHandle) {
 
 /// A command prepared with an isolated process group and terminal ownership.
 private struct PreparedProcessCommand {
-    var command: Command
+    var command: ComposeProcessCommand
     let jobControlProcessGroup: pid_t?
 }
 
@@ -73,6 +72,140 @@ private typealias ProcessStartObserver = @Sendable (
     @escaping @Sendable () -> Void,
 ) -> Void
 
+/// Minimal POSIX process primitive used by the Compose command runner.
+private final class ComposeProcessCommand: @unchecked Sendable {
+    struct Attributes {
+        var setProcessGroup = false
+        var setForegroundProcessGroup = false
+    }
+
+    let executable: String
+    let arguments: [String]
+    let environment: [String]
+    let directory: String?
+    var stdin: FileHandle?
+    var stdout: FileHandle?
+    var stderr: FileHandle?
+    var attributes = Attributes()
+
+    private let lock = NSLock()
+    private var processIdentifier: pid_t = -1
+
+    var pid: pid_t {
+        lock.withLock { processIdentifier }
+    }
+
+    init(
+        _ executable: String,
+        arguments: [String],
+        environment: [String],
+        directory: String?,
+    ) {
+        self.executable = executable
+        self.arguments = arguments
+        self.environment = environment
+        self.directory = directory
+    }
+
+    func start() throws {
+        guard lock.withLock({ processIdentifier == -1 }) else {
+            throw POSIXError(.EBUSY)
+        }
+
+        var fileActions: posix_spawn_file_actions_t?
+        try Self.check(posix_spawn_file_actions_init(&fileActions))
+        defer { posix_spawn_file_actions_destroy(&fileActions) }
+
+        try Self.duplicate(stdin ?? .standardInput, to: STDIN_FILENO, actions: &fileActions)
+        try Self.duplicate(stdout ?? .standardOutput, to: STDOUT_FILENO, actions: &fileActions)
+        try Self.duplicate(stderr ?? .standardError, to: STDERR_FILENO, actions: &fileActions)
+        if let directory {
+            #if canImport(Darwin)
+                if #available(macOS 26, *) {
+                    try Self.check(posix_spawn_file_actions_addchdir(&fileActions, directory))
+                } else {
+                    try Self.check(posix_spawn_file_actions_addchdir_np(&fileActions, directory))
+                }
+            #elseif canImport(Glibc)
+                try Self.check(posix_spawn_file_actions_addchdir_np(&fileActions, directory))
+            #endif
+        }
+
+        var attributes: posix_spawnattr_t?
+        try Self.check(posix_spawnattr_init(&attributes))
+        defer { posix_spawnattr_destroy(&attributes) }
+
+        var flags = Int16(POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK)
+        #if canImport(Darwin)
+            flags |= Int16(POSIX_SPAWN_CLOEXEC_DEFAULT)
+        #endif
+        if self.attributes.setProcessGroup {
+            flags |= Int16(POSIX_SPAWN_SETPGROUP)
+            try Self.check(posix_spawnattr_setpgroup(&attributes, 0))
+        }
+        try Self.check(posix_spawnattr_setflags(&attributes, flags))
+
+        var defaultSignals = sigset_t()
+        sigemptyset(&defaultSignals)
+        for signal in 1 ..< NSIG where signal != SIGKILL && signal != SIGSTOP {
+            sigaddset(&defaultSignals, signal)
+        }
+        try Self.check(posix_spawnattr_setsigdefault(&attributes, &defaultSignals))
+        var signalMask = sigset_t()
+        sigemptyset(&signalMask)
+        try Self.check(posix_spawnattr_setsigmask(&attributes, &signalMask))
+
+        var cArguments: [UnsafeMutablePointer<CChar>?] = ([executable] + arguments).map { strdup($0) } + [nil]
+        defer {
+            for value in cArguments {
+                free(value)
+            }
+        }
+        var cEnvironment: [UnsafeMutablePointer<CChar>?] = environment.map { strdup($0) } + [nil]
+        defer {
+            for value in cEnvironment {
+                free(value)
+            }
+        }
+
+        var child: pid_t = 0
+        let result = cArguments.withUnsafeMutableBufferPointer { argumentBuffer in
+            cEnvironment.withUnsafeMutableBufferPointer { environmentBuffer in
+                posix_spawnp(
+                    &child,
+                    executable,
+                    &fileActions,
+                    &attributes,
+                    argumentBuffer.baseAddress,
+                    environmentBuffer.baseAddress,
+                )
+            }
+        }
+        try Self.check(result)
+
+        lock.withLock {
+            processIdentifier = child
+        }
+        if self.attributes.setForegroundProcessGroup {
+            _ = tcsetpgrp(STDIN_FILENO, child)
+        }
+    }
+
+    private static func duplicate(
+        _ handle: FileHandle,
+        to destination: Int32,
+        actions: inout posix_spawn_file_actions_t?,
+    ) throws {
+        try check(posix_spawn_file_actions_adddup2(&actions, handle.fileDescriptor, destination))
+    }
+
+    private static func check(_ result: Int32) throws {
+        guard result == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: result) ?? .EIO)
+        }
+    }
+}
+
 /// Returns the signal that stopped a child, or nil for a terminal wait status.
 func processStoppedSignal(_ waitStatus: Int32) -> Int32? {
     guard waitStatus & 0xFF == 0x7F else {
@@ -81,7 +214,7 @@ func processStoppedSignal(_ waitStatus: Int32) -> Int32? {
     return waitStatus >> 8 & 0xFF
 }
 
-/// Creates an Apple command whose descendants share one owned process group.
+/// Creates a process command whose descendants share one owned process group.
 private func prepareProcessCommand(
     _ executable: String,
     _ arguments: [String],
@@ -93,13 +226,13 @@ private func prepareProcessCommand(
         .merging(environment ?? [:]) { _, new in new }
         .sorted { $0.key < $1.key }
         .map { "\($0.key)=\($0.value)" }
-    var command = Command(
+    let command = ComposeProcessCommand(
         executable,
         arguments: arguments,
         environment: resolvedEnvironment,
         directory: workingDirectory?.path,
     )
-    command.attrs.setPGroup = true
+    command.attributes.setProcessGroup = true
 
     let foreground = processForegroundConfiguration(
         inheritsStandardInput: inheritsStandardInput,
@@ -107,7 +240,7 @@ private func prepareProcessCommand(
         currentForegroundProcessGroup: tcgetpgrp(STDIN_FILENO),
         currentProcessGroup: getpgrp(),
     )
-    command.attrs.setForegroundPGroup = foreground.makeChildForeground
+    command.attributes.setForegroundProcessGroup = foreground.makeChildForeground
     return PreparedProcessCommand(
         command: command,
         jobControlProcessGroup: foreground.jobControlProcessGroup,
@@ -264,7 +397,7 @@ public extension CommandRunning {
     }
 }
 
-/// Production command runner backed by Apple's process command primitive.
+/// Production command runner backed by POSIX process spawning.
 public struct ProcessRunner: CommandRunning {
     private static let isStateless = true
     private let processDidStart: ProcessStartObserver
@@ -361,7 +494,7 @@ public struct ProcessRunner: CommandRunning {
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let stdout = Pipe()
-                var prepared = prepareProcessCommand(
+                let prepared = prepareProcessCommand(
                     executable,
                     arguments,
                     workingDirectory: workingDirectory,
@@ -417,7 +550,7 @@ public struct ProcessRunner: CommandRunning {
                 let stdout = Pipe()
                 let stderr = Pipe()
                 let stdin = options.input == nil ? nil : Pipe()
-                var prepared = prepareProcessCommand(
+                let prepared = prepareProcessCommand(
                     executable,
                     arguments,
                     workingDirectory: workingDirectory,
@@ -465,7 +598,7 @@ public struct ProcessRunner: CommandRunning {
         let state = ProcessRunState(capturesStdout: false, capturesStderr: false)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                var prepared = prepareProcessCommand(
+                let prepared = prepareProcessCommand(
                     executable,
                     arguments,
                     workingDirectory: workingDirectory,
@@ -592,7 +725,7 @@ private final class ProcessRunState: @unchecked Sendable {
 
     /// Records a successful launch and terminates immediately if cancellation raced it.
     func didLaunch(
-        _ command: Command,
+        _ command: ComposeProcessCommand,
         jobControlProcessGroup: pid_t?,
     ) {
         let processGroup = command.pid
@@ -614,7 +747,7 @@ private final class ProcessRunState: @unchecked Sendable {
     }
 
     /// Reaps the child leader without blocking the caller's async executor.
-    func waitForExit(_ command: Command) {
+    func waitForExit(_ command: ComposeProcessCommand) {
         let processIdentifier = command.pid
         DispatchQueue.global(qos: .utility).async {
             while true {

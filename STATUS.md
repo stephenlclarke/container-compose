@@ -10,18 +10,18 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current refs should come from checked-in source-of-truth files rather than duplicated prose: [Tools/release/stack-refs.json](Tools/release/stack-refs.json) records stack component refs, `Package.swift` and [Package.resolved](Package.resolved) record exact SwiftPM dependency resolution, and `container system version` / `container compose version` report installed runtime and plugin provenance after installation.
 
-### Current Architecture Constraint
+### Current Architecture Boundary
 
-Runtime collaborators are injected through `ComposeRuntimeSPI`, but
-`ComposeCore` is not yet runtime-neutral at the package boundary. It directly
-depends on seven Apple package products, imports Apple modules for DTO,
-archive, and live API work, and publicly exposes some Apple-shaped types.
-Alternate providers therefore still inherit the Apple build graph.
+Runtime collaborators and create-time DTOs are defined in Compose-owned types.
+`ComposeCore` depends only on `ComposeRuntimeSPI`, imports no Apple modules,
+and exposes no Apple package types. `ComposeContainerRuntime` owns Apple DTO,
+archive, OCI, and live API translation. `make core-runtime-neutrality`
+enforces the package and source-import boundary.
 
-`ARCH-101` and `ARCH-102` track removal of that coupling. The parity claims in
-this ledger describe tested behavior on the matched `stephenlclarke` stack;
-they do not claim that Core or another provider can build independently of
-Apple packages. See [DESIGN.md](DESIGN.md) and the
+The parity claims in this ledger still describe tested behaviour on the
+matched `stephenlclarke` stack. Runtime-neutral Core does not imply that an
+alternate provider implements every capability. See [DESIGN.md](DESIGN.md)
+and the
 [Compose Runtime Coupling Audit](docs/upstream/COMPOSE-COUPLING-AUDIT.md).
 
 ## Current Validation

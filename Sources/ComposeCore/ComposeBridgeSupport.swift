@@ -19,8 +19,6 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
-import ContainerizationArchive
-import ContainerizationOCI
 import Foundation
 
 enum BridgeModelValue: Equatable {
@@ -109,26 +107,6 @@ func ensureBridgeDestinationIsNew(_ destination: String) throws {
 
 func createBridgeExportDirectory() throws -> URL {
     try ComposeTemporaryFiles.createDirectory(prefix: "container-compose-bridge-export-")
-}
-
-func extractBridgeTemplates(archive: URL, destination: String) throws {
-    let reader = try ArchiveReader(file: archive)
-    let rejected = try reader.extractContents(
-        to: URL(fileURLWithPath: destination, isDirectory: true),
-        including: bridgeArchiveMemberIsTemplate,
-    )
-    guard rejected.isEmpty else {
-        let paths = rejected.sorted().joined(separator: ", ")
-        throw ComposeError.invalidProject("transformer archive contains unsafe template paths: \(paths)")
-    }
-}
-
-private func bridgeArchiveMemberIsTemplate(_ path: String) -> Bool {
-    var components = path.split(separator: "/", omittingEmptySubsequences: true)
-    while components.first == "." {
-        components.removeFirst()
-    }
-    return components.first == "templates"
 }
 
 func bridgeFileDefinitions(
@@ -282,7 +260,7 @@ func bridgeTransformerDisplayReferences(_ transformer: ComposeBridgeTransformer)
 
 func bridgeOfficialTransformerNeedsAMD64(_ reference: String) -> Bool {
     #if arch(arm64)
-        guard let parsed = try? Reference.parse(reference),
+        guard let parsed = try? ComposeImageReference.parse(reference),
               [
                   "docker/compose-bridge-kubernetes",
                   "docker.io/docker/compose-bridge-kubernetes",

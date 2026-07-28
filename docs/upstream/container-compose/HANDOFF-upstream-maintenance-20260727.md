@@ -466,3 +466,39 @@ Continue the ordered inventory in
 `docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after this
 item is complete. COPY-401/COPY-402 are complete on the supported stack; their
 remaining work is convergence with a stock Apple archive API.
+
+ARCH-101 and ARCH-102 are complete. `ComposeCore` now depends only on
+`ComposeRuntimeSPI`, and the SPI itself has no package dependencies. Core
+source and public create-plan values contain no Apple package imports or
+types. `ComposeContainerRuntime` owns projection to Apple process, logging,
+health, restart, host, block-I/O, resource, archive, OCI, and live API types.
+Compose-specific archive work is injected through a fail-closed
+`ComposeArchiveManaging` contract.
+
+`make core-runtime-neutrality` enforces the exact Core and SPI package graphs
+and rejects normal, selective, annotated, or access-level Apple imports in
+either target. Five focused gate tests pass. Focused tests also cover neutral
+model decoding, complete Apple create projection, fail-closed archive defaults,
+the replacement byte-size, device, image-reference, and IP parsers, and the
+local POSIX process runner. The 37 process-runner tests and 42 focused
+orchestrator copy, commit, and Bridge tests pass.
+
+Strict review found and corrected compatibility defects in the first neutral
+helper implementations: malformed quoted GPU fields were accepted; image
+domain and digest parsing differed from Apple; byte-size whitespace handling
+was too permissive at line boundaries and too strict internally; IPv6 zones,
+embedded IPv4 rendering, and leading-zero IPv4 validation differed from Apple;
+and the local process runner inherited a blocked `SIGTERM`. Provider projection
+coverage was also extended to hostname, domain name, sysctls, CPU shares,
+cgroup parent, memory reservation, and memory swap. The strengthened tests pass
+after each correction.
+
+Full `HAWKEYE_AUTO_INSTALL=1 make ci` passed in 352.02 seconds with 1,295
+Swift tests: `executed=1270 skipped=25`. Coverage was 92.83% `ComposeCore`,
+99.05% `ComposeRuntimeSPI`, 79.74% `ComposeContainerRuntime`, 56.52%
+`ComposePlugin`, 87.82% aggregate first-party Swift, and 89.88% Go. The
+meaningfully changed Swift files pass SwiftFormat 0/18 unchanged, `make docs`
+generates the Core DocC archive without warnings, and `git diff --check`
+passes.
+
+Continue with ARCH-103 and FORK-104 from the ordered critical-review inventory.

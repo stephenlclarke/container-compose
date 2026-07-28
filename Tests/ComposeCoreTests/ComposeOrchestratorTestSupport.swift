@@ -589,6 +589,7 @@ func orchestratorDependencies(
     configure: (inout ComposeOrchestratorDependencies) -> Void
 ) -> ComposeOrchestratorDependencies {
     var dependencies = ComposeOrchestratorDependencies()
+    dependencies.archiveManager = ContainerArchiveManager()
     dependencies.copier = RecordingContainerCopier()
     dependencies.discoveryManager = RecordingContainerDiscoveryManager()
     dependencies.eventsManager = RecordingContainerEventsManager()

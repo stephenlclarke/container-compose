@@ -14,9 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerizationOCI
-import ContainerResource
-
 /// User-visible service identity fields for create planning.
 public struct ContainerServiceCreateIdentity: Sendable {
     public var name: String
@@ -48,15 +45,15 @@ public struct ContainerServiceCreateIdentity: Sendable {
 
 /// Runtime-specific service create fields.
 public struct ContainerServiceCreateRuntime: Sendable {
-    public var initProcess: ProcessConfiguration
-    public var logging: ContainerLogConfiguration
-    public var healthCheck: ContainerHealthCheck?
-    public var restartPolicy: ContainerRestartPolicy
+    public var initProcess: ComposeProcessConfiguration
+    public var logging: ComposeLogConfiguration
+    public var healthCheck: ComposeHealthCheck?
+    public var restartPolicy: ComposeRestartPolicy
     public var hostname: String?
     public var domainname: String?
-    public var hosts: [ContainerConfiguration.HostEntry]
+    public var hosts: [ComposeHostEntry]
     public var sysctls: [String: String]
-    public var blockIO: LinuxBlockIO?
+    public var blockIO: ComposeLinuxBlockIO?
     public var cpuShares: UInt64?
     public var cgroupParent: String?
     public var memoryReservationInBytes: Int64?
@@ -64,9 +61,9 @@ public struct ContainerServiceCreateRuntime: Sendable {
 
     public init() {
         initProcess = ComposeRuntimeDefaults.shellProcess()
-        logging = ContainerLogConfiguration.default
+        logging = ComposeLogConfiguration.default
         healthCheck = nil
-        restartPolicy = ContainerRestartPolicy.no
+        restartPolicy = ComposeRestartPolicy.no
         hostname = nil
         domainname = nil
         hosts = []
@@ -92,15 +89,15 @@ public struct ContainerServiceCreatePlan: Sendable {
     public var labels: [String: String]
     public var annotations: [String: String]
     public var exposedPorts: [String]
-    public var initProcess: ProcessConfiguration
-    public var logging: ContainerLogConfiguration
-    public var healthCheck: ContainerHealthCheck?
-    public var restartPolicy: ContainerRestartPolicy
+    public var initProcess: ComposeProcessConfiguration
+    public var logging: ComposeLogConfiguration
+    public var healthCheck: ComposeHealthCheck?
+    public var restartPolicy: ComposeRestartPolicy
     public var hostname: String?
     public var domainname: String?
-    public var hosts: [ContainerConfiguration.HostEntry]
+    public var hosts: [ComposeHostEntry]
     public var sysctls: [String: String]
-    public var blockIO: LinuxBlockIO?
+    public var blockIO: ComposeLinuxBlockIO?
     public var cpuShares: UInt64?
     public var cgroupParent: String?
     public var memoryReservationInBytes: Int64?

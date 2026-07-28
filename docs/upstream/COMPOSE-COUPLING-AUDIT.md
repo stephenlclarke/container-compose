@@ -26,23 +26,25 @@ The graph contains 274 fork-ahead commits. The audit reviewed all 248 non-merge 
 
 ## Current Result
 
-`ComposeRuntimeSPI` is an active provider seam, but the package separation is
-not complete. `ComposeCore` directly depends on these seven Apple package
-products:
+`ARCH-101` and `ARCH-102` complete the package separation. `ComposeCore`
+depends only on `ComposeRuntimeSPI`; no Swift file in `Sources/ComposeCore`
+imports a `Container*` or `Containerization*` module. Public Core create-plan
+values use Compose-owned process, logging, health, restart, host, and
+block-I/O models.
 
-- `ContainerAPIClient`
-- `ContainerResource`
-- `ContainerizationArchive`
-- `Containerization`
-- `ContainerizationExtras`
-- `ContainerizationOCI`
-- `ContainerizationOS`
+`ComposeContainerRuntime` now owns:
 
-At the DOC-010 audit, 32 Swift files in `Sources/ComposeCore` imported one or
-more `Container*` or `Containerization*` modules. Public Core create-plan
-values also contain Apple process, logging, health, restart, host, and
-block-I/O types. An alternate provider cannot currently consume Core without
-the Apple build graph.
+- projection from neutral create-plan values to Apple `ContainerResource` and
+  `ContainerizationOCI` DTOs;
+- Bridge template extraction through `ContainerizationArchive`;
+- path-only provider archive staging;
+- OCI commit-image archive construction;
+- live Apple API and explicit CLI adapters.
+
+The package and source-import rules are executable policy through
+`make core-runtime-neutrality`. An alternate provider can consume
+`ComposeCore` without inheriting the Apple package graph, although it must
+still implement every runtime capability it uses.
 
 The complete Compose-only external-resource slice has moved behind SPI
 contracts:
@@ -59,21 +61,18 @@ The remaining runtime-composition candidates are deliberately retained:
 - Copy/export, log/event streaming, health observation, and lifecycle paths require runtime-owned state or guest processes.
 - Build attestations, SSH forwarding, named-builder selection, checks, and BuildKit transport remain builder primitives. Recreating the builder-shim lifecycle in Compose would increase, rather than reduce, coupling.
 
-`ARCH-101` and `ARCH-102` track the remaining separation: remove Apple products
-and imports from Core, then move Apple DTO, archive, and live API translation
-into `ComposeContainerRuntime`. A package-graph and source-import gate is part
-of that completion criterion. Until those items land, the design and status
-documents must describe SPI injection and package portability as separate
-properties.
+Runtime-neutral package ownership and runtime capability parity remain
+separate properties. The matched stack is still the supported release lane,
+and the retained lower-runtime primitives above still require their explicit
+fork and upstream convergence work.
 
 ## Reproducible Package Evidence
 
-Inspect the declared Core products:
+Inspect the declared Core dependencies:
 
 ```sh
 swift package dump-package |
-  jq -r '.targets[] | select(.name == "ComposeCore") | .dependencies[] |
-    select(.product != null) | .product[0]'
+  jq -r '.targets[] | select(.name == "ComposeCore") | .dependencies[]'
 ```
 
 List the Core files that import Apple modules:
@@ -83,9 +82,12 @@ rg -l '^import (Container|Containerization)' Sources/ComposeCore \
   --glob '*.swift'
 ```
 
-The first command currently prints the seven products above. The second
-currently prints 32 files. The future ARCH-101 gate must require both checks to
-produce no Apple dependency or import.
+The first command shows only `ComposeRuntimeSPI`. The second command prints
+nothing. Run the enforced form with:
+
+```sh
+make core-runtime-neutrality
+```
 
 ## Decorator Boundary
 

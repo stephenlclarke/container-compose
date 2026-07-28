@@ -26,7 +26,7 @@ struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExportin
     ComposeRuntimeEventsManaging, ComposeRuntimeLifecycleManaging, ComposeRuntimeStatsManaging,
     ComposeRuntimeTopManaging, ComposeRuntimeLogManaging, ComposeRuntimeConfigReading,
     ComposeRuntimeSecretReading, ComposeRuntimeDiscoveryManaging, ComposeRuntimeImageManaging,
-    ComposeRuntimeImageVolumeInitializing,
+    ComposeRuntimeImageVolumeInitializing, ComposeArchiveManaging,
     ComposeRuntimeResourceManaging
 {
     private func unavailable(_ operation: String) -> ComposeError {
@@ -49,6 +49,37 @@ struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExportin
         options _: ContainerCopyTransferOptions,
     ) async throws {
         throw unavailable("copy between containers")
+    }
+
+    func writeCommitImageArchive(_: ComposeCommitImageArchiveRequest) throws {
+        throw unavailable("commit image archive")
+    }
+
+    func extractBridgeTemplates(archive _: URL, destination _: String) throws {
+        throw unavailable("bridge template extraction")
+    }
+
+    func copyArchiveIntoContainer(
+        using _: any ComposeRuntimeCopying,
+        id _: String,
+        archive _: FileHandle,
+        destination _: String,
+        options _: ContainerCopyTransferOptions,
+        temporaryDirectory _: URL,
+    ) async throws {
+        throw unavailable("archive copy into container")
+    }
+
+    func copyFromContainerAsArchive(
+        using _: any ComposeRuntimeCopying,
+        id _: String,
+        source _: String,
+        archive _: FileHandle,
+        copyContents _: Bool,
+        options _: ContainerCopyTransferOptions,
+        temporaryDirectory _: URL,
+    ) async throws {
+        throw unavailable("archive copy from container")
     }
 
     func exportContainer(id _: String, output _: String?, live _: Bool, noFreeze _: Bool) async throws {
@@ -225,6 +256,10 @@ struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExportin
 /// Each collaborator reports an explicit unsupported-runtime error when used.
 /// Executables should supply real providers from a runtime composition package.
 public enum ComposeRuntimeProviderDefaults {
+    public static func archives() -> any ComposeArchiveManaging {
+        ComposeUnconfiguredRuntime()
+    }
+
     public static func copying() -> any ComposeRuntimeCopying {
         ComposeUnconfiguredRuntime()
     }

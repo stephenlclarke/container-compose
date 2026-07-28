@@ -14,7 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerizationOCI
 import Foundation
 
 /// Compose runtime projection paired with compose-go's public Bridge model.
@@ -199,7 +198,7 @@ extension ComposeOrchestrator {
                 output: archive.path,
                 live: false,
             )
-            try extractBridgeTemplates(archive: archive, destination: destination)
+            try archiveManager.extractBridgeTemplates(archive: archive, destination: destination)
             try writeBridgeTransformerDockerfile(destination: destination)
         } catch {
             await removeCreatedContainer()
@@ -343,7 +342,7 @@ private func renderBridgeTransformers(
 
 private func bridgeTransformerRow(_ transformer: ComposeBridgeTransformer) -> BridgeTransformerRow {
     let reference = bridgeTransformerDisplayReferences(transformer).first ?? transformer.reference
-    let parsed = try? Reference.parse(reference)
+    let parsed = try? ComposeImageReference.parse(reference)
     let digest = transformer.id.split(separator: ":", maxSplits: 1).last.map(String.init) ?? transformer.id
     let id = digest.count > 12 ? String(digest.prefix(12)) : digest
     return BridgeTransformerRow(

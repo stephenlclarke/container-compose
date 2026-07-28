@@ -28,6 +28,7 @@ public enum ComposeContainerRuntime {
         options: ComposeExecutionOptions = ComposeExecutionOptions(),
     ) -> ComposeOrchestratorDependencies {
         let commands = ComposeOrchestratorCommandDependencies(
+            archiveManager: ContainerArchiveManager(),
             copier: ContainerClientCopier(),
             execManager: ContainerClientExecManager(),
             exporter: ContainerClientExporter(temporaryDirectory: options.temporaryDirectory),

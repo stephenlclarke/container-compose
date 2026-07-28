@@ -5,16 +5,15 @@
 supported release lane uses the matched stephenlclarke runtime stack while
 Apple-facing runtime additions are prepared as small generic handoffs.
 
-The implementation has a partially separated architecture. `compose-go` owns
-Compose project semantics, Swift owns normalization bridging and user-visible
+The implementation has a separated architecture. `compose-go` owns Compose
+project semantics, Swift owns normalization bridging and user-visible
 orchestration policy, and `ComposeRuntimeSPI` provides injectable
-runtime-neutral contracts. `ComposeCore` still directly depends on Apple
-package products and uses Apple-shaped DTO, archive, and live API types.
-`ComposeContainerRuntime` owns part, but not all, of the translation to the
-matched runtime stack.
+runtime-neutral contracts. `ComposeCore` depends only on that Compose-owned
+contract target. `ComposeContainerRuntime` owns Apple DTO, archive, OCI, and
+live API translation for the matched runtime stack.
 
-This document distinguishes that current package graph from the target
-boundary tracked by `ARCH-101` and `ARCH-102`.
+The package and source boundary is enforced by
+`make core-runtime-neutrality`.
 [STATUS.md](STATUS.md) is the authoritative feature ledger.
 
 ## Goals
@@ -73,23 +72,20 @@ images, and project resources. The SPI target itself has no Apple runtime
 dependency. The `ContainerClient`- and CLI-backed managers implement those
 contracts through `ComposeContainerRuntime`.
 
-That seam does not yet make `ComposeCore` runtime-neutral. The core target
-directly links seven products from `container` and `containerization`, and its
-source imports Apple modules for DTO translation, archive integration, process
-configuration, and live runtime behavior. Public create-plan values also
-expose Apple types. An alternate provider therefore still inherits the Apple
-build graph even when it supplies every SPI collaborator.
+Compose-specific archive requests are also injected without exposing Apple
+types. `ComposeContainerRuntime` supplies archive-stream staging for path-only
+providers, Bridge template extraction, and OCI commit-image construction.
 
 Docker and Compose syntax is normalized into typed plans before runtime
-projection. Some of those plans are Compose-owned; others currently contain
-Apple runtime types. For example, `ContainerServiceCreatePlan` keeps service
-identity, process configuration, logging, health, restart, hostname, hosts,
-sysctls, block-I/O, and resource values typed, but several of those property
-types come from Apple packages. `memswap_limit` is resolved here as a total
-memory-plus-swap byte value: Compose validates its relationship to `mem_limit`
-and calculates Docker's default, then the current explicit CLI adapter carries
-the resulting `--memory-swap` value. The lower stack receives the generic typed
-primitive and projects it to OCI.
+projection. `ContainerServiceCreatePlan` keeps service identity, process
+configuration, logging, health, restart, hostname, hosts, sysctls, block-I/O,
+and resource values in Compose-owned types. The Apple-backed provider converts
+those values to `ContainerResource` and `ContainerizationOCI` DTOs.
+`memswap_limit` is resolved in Core as a total memory-plus-swap byte value:
+Compose validates its relationship to `mem_limit` and calculates Docker's
+default, then the current explicit CLI adapter carries the resulting
+`--memory-swap` value. The lower stack receives the generic typed primitive and
+projects it to OCI.
 
 Missing runtime capabilities belong in Apple-shaped issue and pull request
 drafts under [`docs/upstream/`](docs/upstream/). Those drafts request reusable
@@ -97,15 +93,15 @@ runtime primitives, not Compose service selection or Docker output policy.
 
 ## Architecture
 
-### Current Layer Responsibilities
+### Layer Responsibilities
 
-| Layer | Current responsibility | Current constraint |
+| Layer | Responsibility | Constraint |
 | --- | --- | --- |
 | Entry points | Plugin discovery, command parsing, user invocation, and Apple-backed composition | Imports Apple command and runtime products |
 | Compose normalization | Compose-file loading, interpolation, merge, and canonical JSON | No runtime work |
-| `ComposeCore` | Selection, plans, reconciliation, Docker-compatible behavior, output, and some Apple DTO/archive/live API translation | Directly links Apple products and publicly exposes some Apple types |
-| `ComposeRuntimeSPI` | Runtime-neutral requests, summaries, and capability contracts | Target is Apple-independent, but does not cover every Core/runtime type boundary yet |
-| `ComposeContainerRuntime` | Typed `ContainerClient`, explicit CLI translations, and Compose-owned external-resource defaults | Owns only part of the Apple translation graph |
+| `ComposeCore` | Selection, runtime-neutral plans, reconciliation, Docker-compatible behavior, and output | Depends only on `ComposeRuntimeSPI`; imports no Apple modules |
+| `ComposeRuntimeSPI` | Runtime-neutral requests, summaries, create-plan value types, and capability contracts | Contains no Apple package types or dependencies |
+| `ComposeContainerRuntime` | Typed `ContainerClient`, Apple DTO/archive/OCI translation, explicit CLI translations, and Compose-owned external-resource defaults | Is the replaceable Apple-backed provider |
 | Matched runtime stack | Containers, images, networks, volumes, processes, VMs, and builds | Carries no Docker/Compose compatibility policy |
 
 `ComposeContainerRuntime` is an Apple-backed composition root and owns the
@@ -114,13 +110,9 @@ caller-Keychain external secrets. The plugin injects those collaborators into
 `ComposeCore`. Standalone Core defaults intentionally report an
 unsupported-runtime error until a library client supplies a provider.
 
-### Target Boundary
+### Runtime Boundary
 
-`ARCH-101` removes Apple products and imports from `ComposeCore`. `ARCH-102`
-moves the remaining Apple DTO, archive, and live API translation into
-`ComposeContainerRuntime`. Only after both are complete will an alternate
-provider be able to consume Core without the Apple build graph. The target
-direction is:
+`ARCH-101` and `ARCH-102` established this boundary:
 
 1. `ComposeCore` depends only on Compose-owned models and
    `ComposeRuntimeSPI`.
@@ -145,11 +137,11 @@ flowchart TD
         ComposeGo --> Canonical["Canonical project JSON"]
     end
 
-    subgraph Policy["3. Current ComposeCore"]
+    subgraph Policy["3. ComposeCore"]
         direction TB
         Model["ComposeProject"] --> Orchestrator["ComposeOrchestrator"]
         Orchestrator --> Planner["Selection, dependencies, labels, hashes"]
-        Planner --> CreatePlan["Typed service-create plan\ncurrently includes Apple types"]
+        Planner --> CreatePlan["Runtime-neutral service-create plan"]
         Orchestrator --> Output["Compose-compatible output"]
     end
 
@@ -161,10 +153,12 @@ flowchart TD
         direction TB
         Composition["Runtime composition root (called by plugin)"]
         Direct["Typed ContainerClient adapters"]
+        Translation["Apple DTO, archive, and OCI translation"]
         Command["Explicit container CLI adapters"]
         LocalStores["Compose-owned external config and secret providers"]
         Decorator["Optional focused compatibility decorator"]
         Composition --> Direct
+        Composition --> Translation
         Composition --> Command
         Composition --> LocalStores
     end
@@ -182,30 +176,29 @@ flowchart TD
     Plugin --> Composition
     Canonical --> Model
     Orchestrator --> SPI
-    Orchestrator --> AppleProducts
     SPI -. "implemented by" .-> Direct
     SPI -. "implemented by" .-> Command
     SPI -. "implemented by" .-> LocalStores
     SPI -. "can be decorated by" .-> Decorator
     Decorator -. "wraps" .-> Direct
-    CreatePlan --> Command
+    CreatePlan -. "projected by" .-> Translation
+    Translation --> AppleProducts
     Direct --> Container
     Command --> Container
     Decorator --> Container
 ```
 
-Solid arrows show current data, execution, or package-use flow. Dashed arrows
-show a provider's relationship to the SPI contract. The direct
-`ComposeCore`-to-Apple edge is the remaining architecture debt. Moving a
-capability from a command adapter to a direct API must not change
-Compose-visible behavior.
+Solid arrows show data, execution, or package-use flow. Dashed arrows show
+provider implementation and projection relationships. Moving a capability
+from a command adapter to a direct API must not change Compose-visible
+behavior.
 
 ### Source Layout
 
 ```text
 Sources/ComposePlugin/        Plugin command entry point and ArgumentParser surface
-Sources/ComposeCore/          Normalization, orchestration, and remaining Apple-backed translation
-Sources/ComposeContainerRuntime/ Apple ContainerClient and CLI providers plus partial composition root
+Sources/ComposeCore/          Normalization, runtime-neutral planning, and orchestration
+Sources/ComposeContainerRuntime/ Apple DTO/archive/OCI translation, providers, and composition root
 Sources/ComposeRuntimeSPI/    Runtime-neutral value types and provider contracts
 Tools/compose-normalizer/     Compose-go-backed canonical JSON normalizer
 Tests/ComposeCoreTests/       Orchestration and adapter behavior
@@ -245,10 +238,10 @@ when packaged provenance is absent.
 
 - Keep Compose parsing out of Swift and runtime orchestration out of Go.
 - Prefer small typed models and focused adapters over broad mutable state.
-- Treat a runtime SPI collaborator as dependency injection, not proof that the
-  package graph is runtime-neutral.
-- Complete `ARCH-101` and `ARCH-102` before claiming that Core or an alternate
-  provider is independent of Apple package types.
+- Keep every Core request, summary, and public plan free of Apple package
+  types.
+- Run `make core-runtime-neutrality` to enforce the package and source-import
+  boundary.
 - Keep subprocess interaction behind `CommandRunning` so plans remain testable
   without a live runtime.
 - Preserve deterministic names, sorted traversal, labels, and configuration

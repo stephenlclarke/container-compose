@@ -14,7 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerResource
 import CoreFoundation
 import CryptoKit
 import Foundation

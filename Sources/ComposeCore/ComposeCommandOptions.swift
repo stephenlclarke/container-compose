@@ -14,7 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerResource
 import Foundation
 
 /// Options for `compose up`.
@@ -784,10 +783,10 @@ struct RuntimeRestartPolicyArguments {
         return result
     }
 
-    func restartPolicy() throws -> ContainerRestartPolicy {
+    func restartPolicy() throws -> ComposeRestartPolicy {
         let components = policy.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
         guard let modeValue = components.first,
-              let mode = ContainerRestartPolicy.Mode(rawValue: String(modeValue))
+              let mode = ComposeRestartPolicy.Mode(rawValue: String(modeValue))
         else {
             throw ComposeError.invalidProject("invalid restart policy '\(policy)'")
         }
@@ -805,7 +804,7 @@ struct RuntimeRestartPolicyArguments {
             retryCount = nil
         }
 
-        return try ContainerRestartPolicy(
+        return try ComposeRestartPolicy(
             mode: mode,
             maximumRetryCount: retryCount,
             retryDelayInNanoseconds: unsignedNanoseconds(delayNanoseconds, field: "restart delay"),

@@ -14,8 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerizationExtras
-import ContainerResource
 import CryptoKit
 import Foundation
 
@@ -364,18 +362,14 @@ func networkLinkLocalIPValues(service: ComposeService, network: String) throws -
                 "service '\(service.name)' link_local_ips value '\(address)' cannot contain ','",
             )
         }
-        do {
-            let parsed = try IPAddress(address)
-            guard !parsed.isUnspecified else {
-                throw ComposeError.invalidProject(
-                    "service '\(service.name)' link_local_ips value '\(address)' must not be unspecified",
-                )
-            }
-        } catch let error as ComposeError {
-            throw error
-        } catch {
+        guard let isUnspecified = isUnspecifiedIPAddress(address) else {
             throw ComposeError.invalidProject(
                 "service '\(service.name)' link_local_ips value '\(address)' must be a valid IPv4 or IPv6 address",
+            )
+        }
+        guard !isUnspecified else {
+            throw ComposeError.invalidProject(
+                "service '\(service.name)' link_local_ips value '\(address)' must not be unspecified",
             )
         }
     }

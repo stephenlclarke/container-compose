@@ -14,9 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerAPIClient
-import ContainerizationExtras
-import ContainerResource
 import Foundation
 
 struct ComposeRuntimeUnsupportedValue {
@@ -431,14 +428,14 @@ extension ComposeOrchestrator {
     }
 
     /// Returns the Compose-owned typed logging policy for service create/run.
-    func runtimeLogConfiguration(service: ComposeService) throws -> ContainerLogConfiguration {
+    func runtimeLogConfiguration(service: ComposeService) throws -> ComposeLogConfiguration {
         let driver = runtimeLogDriver(service: service)
-        var configuration: ContainerLogConfiguration
+        var configuration: ComposeLogConfiguration
         switch driver {
         case nil, "", "json-file", "local":
             configuration = .default
         case "none":
-            configuration = ContainerLogConfiguration(storage: .none)
+            configuration = ComposeLogConfiguration(storage: .none)
         case let driver?:
             throw ComposeError.unsupported("service '\(service.name)' uses unsupported logging driver '\(driver)'; supported drivers are json-file, local, and none")
         }
@@ -510,7 +507,7 @@ extension ComposeOrchestrator {
     func logOptionSizeInBytes(_ value: String, serviceName: String) throws -> UInt64 {
         let bytes: Double
         do {
-            bytes = try Measurement<UnitInformationStorage>.parse(parsing: value).converted(to: .bytes).value
+            bytes = try ComposeByteSizeParser.bytes(value)
         } catch {
             throw ComposeError.invalidProject("service '\(serviceName)' logging option max-size '\(value)' must be a size")
         }
@@ -565,7 +562,7 @@ extension ComposeOrchestrator {
     }
 
     /// Returns typed host entries for Compose `extra_hosts`.
-    func runtimeHostEntries(service: ComposeService) throws -> [ContainerConfiguration.HostEntry] {
+    func runtimeHostEntries(service: ComposeService) throws -> [ComposeHostEntry] {
         try (service.extraHosts ?? []).map { raw in
             try runtimeHostEntry(raw, service: service)
         }
@@ -665,7 +662,7 @@ extension ComposeOrchestrator {
             return []
         }
         do {
-            _ = try Parser.deviceCgroupRules(rules)
+            try ComposeRuntimeInputParser.validateDeviceCgroupRules(rules)
         } catch {
             throw ComposeError.invalidProject("service '\(service.name)' has invalid device_cgroup_rules; entries must use '<type> <major>:<minor> <access>' such as 'c 1:3 mr'")
         }
@@ -700,9 +697,9 @@ extension ComposeOrchestrator {
             throw ComposeError.invalidProject("service '\(service.name)' has an invalid GPU device request")
         }
 
-        let requests: [ParsedGPURequest]
+        let requests: [ComposeGPURequest]
         do {
-            requests = try Parser.gpus(arguments)
+            requests = try ComposeRuntimeInputParser.gpuRequests(arguments)
         } catch {
             throw ComposeError.invalidProject("service '\(service.name)' has an invalid GPU device request")
         }
@@ -768,7 +765,7 @@ extension ComposeOrchestrator {
         return fields.joined(separator: ",")
     }
 
-    private func validateGPUBackendSupport(_ requests: [ParsedGPURequest], serviceName: String) throws {
+    private func validateGPUBackendSupport(_ requests: [ComposeGPURequest], serviceName: String) throws {
         guard requests.count == 1 else {
             throw ComposeError.unsupported("service '\(serviceName)' requests multiple GPUs; the Apple virtio-gpu backend exposes one GPU")
         }
@@ -911,7 +908,6 @@ extension ComposeOrchestrator {
         } else {
             source
         }
-        _ = try Parser.devices([spec])
         return spec
     }
 
@@ -935,7 +931,7 @@ extension ComposeOrchestrator {
     }
 
     /// Canonicalizes one Compose host entry into the typed runtime hosts entry.
-    func runtimeHostEntry(_ raw: String, service: ComposeService) throws -> ContainerConfiguration.HostEntry {
+    func runtimeHostEntry(_ raw: String, service: ComposeService) throws -> ComposeHostEntry {
         let separator = raw.firstIndex(of: "=") ?? raw.firstIndex(of: ":")
         guard let separator else {
             throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' must use HOST=IP or HOST:IP")
@@ -950,18 +946,18 @@ extension ComposeOrchestrator {
             throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' has an empty IP address")
         }
 
-        if rawAddress == ContainerConfiguration.HostEntry.hostGatewayAddress {
-            return ContainerConfiguration.HostEntry(
-                ipAddress: ContainerConfiguration.HostEntry.hostGatewayAddress,
+        if rawAddress == ComposeHostEntry.hostGatewayAddress {
+            return ComposeHostEntry(
+                ipAddress: ComposeHostEntry.hostGatewayAddress,
                 hostnames: [hostname],
             )
         }
 
         let ipAddress = unbracketedIPAddress(rawAddress)
-        guard (try? IPAddress(ipAddress)) != nil else {
+        guard isValidIPAddress(ipAddress) else {
             throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' has invalid IP address '\(rawAddress)'")
         }
-        return ContainerConfiguration.HostEntry(ipAddress: ipAddress, hostnames: [hostname])
+        return ComposeHostEntry(ipAddress: ipAddress, hostnames: [hostname])
     }
 
     /// Canonicalizes one Compose host entry into the runtime `--add-host` form.

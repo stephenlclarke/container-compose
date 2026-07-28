@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
 import ContainerizationArchive
 import ContainerizationOCI
 import Foundation

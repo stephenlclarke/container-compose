@@ -14,6 +14,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
+import ComposeRuntimeSPI
 import ContainerizationArchive
 import Foundation
 

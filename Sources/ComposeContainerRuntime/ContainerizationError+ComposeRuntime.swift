@@ -14,25 +14,15 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import Foundation
+import ComposeRuntimeSPI
+import ContainerizationError
 
-/// Runtime defaults shared by typed Compose projections.
-public enum ComposeRuntimeDefaults {
-    public static var shellExecutable: String {
-        ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_SHELL"]
-            ?? ["", "bin", "sh"].joined(separator: "/")
+extension ContainerizationError: ComposeRuntimeErrorProviding {
+    public var composeRuntimeErrorCode: ComposeRuntimeErrorCode {
+        code == .notFound ? .notFound : .other
     }
 
-    public static var workingDirectory: String {
-        ["", ""].joined(separator: "/")
-    }
-
-    public static func shellProcess() -> ComposeProcessConfiguration {
-        ComposeProcessConfiguration(
-            executable: shellExecutable,
-            arguments: [],
-            environment: [],
-            workingDirectory: workingDirectory,
-        )
+    public var composeRuntimeUnderlyingError: (any Error)? {
+        cause
     }
 }

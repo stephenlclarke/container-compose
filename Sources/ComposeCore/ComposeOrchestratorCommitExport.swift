@@ -115,14 +115,15 @@ public extension ComposeOrchestrator {
             noFreeze: noFreeze,
         )
         try ComposeTemporaryFiles.secureFile(at: rootfs)
-        try ComposeCommitImageArchive.write(
+        try archiveManager.writeCommitImageArchive(ComposeCommitImageArchiveRequest(
             rootfsArchive: rootfs,
             output: archive,
             service: service,
             options: commit,
-            metadata: .init(baseImage: baseImageMetadata, healthCheck: healthCheck),
+            baseImage: baseImageMetadata,
+            healthCheck: healthCheck,
             temporaryDirectory: options.temporaryDirectory,
-        )
+        ))
         try ComposeTemporaryFiles.secureFile(at: archive)
         try await imageManager.loadImageArchive(archive.path, emit: options.emit)
     }

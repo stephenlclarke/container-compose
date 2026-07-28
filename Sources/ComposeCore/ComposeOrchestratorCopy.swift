@@ -213,7 +213,8 @@ public extension ComposeOrchestrator {
             )
             return
         }
-        try await copier.copyArchiveIntoContainer(
+        try await archiveManager.copyArchiveIntoContainer(
+            using: copier,
             id: id,
             archive: archive,
             destination: destination,
@@ -239,7 +240,8 @@ public extension ComposeOrchestrator {
             )
             return
         }
-        try await copier.copyFromContainerAsArchive(
+        try await archiveManager.copyFromContainerAsArchive(
+            using: copier,
             id: id,
             source: source,
             archive: archive,

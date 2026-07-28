@@ -14,7 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerResource
 import CryptoKit
 import Foundation
 
@@ -122,7 +121,7 @@ func serviceCreateBaseProcess(
     supplementalGroups: [UInt32] = [],
     supplementalGroupNames: [String] = [],
     oomScoreAdj: Int? = nil,
-) -> ProcessConfiguration {
+) -> ComposeProcessConfiguration {
     let executable: String
     let arguments: [String]
     if let entrypoint = service.entrypoint, !entrypoint.isEmpty {
@@ -145,8 +144,8 @@ func serviceCreateBaseProcess(
             return key
         }
     let workingDirectory = service.workingDir ?? "/"
-    let user = service.user.map { ProcessConfiguration.User.raw(userString: $0) } ?? .id(uid: 0, gid: 0)
-    return ProcessConfiguration(
+    let user = service.user.map { ComposeProcessConfiguration.User.raw(userString: $0) } ?? .id(uid: 0, gid: 0)
+    return ComposeProcessConfiguration(
         executable: executable,
         arguments: arguments,
         environment: environment,

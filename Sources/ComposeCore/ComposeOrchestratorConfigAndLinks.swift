@@ -19,10 +19,6 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
-import ContainerizationError
-import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 import Foundation
 
 struct ServiceCreatePlanRequest {
@@ -105,9 +101,7 @@ extension ComposeOrchestrator {
 
     /// Returns a display reference with a default `latest` tag when no tag or digest is present.
     func imageReferenceWithDefaultTag(_ reference: String) throws -> String {
-        let parsed = try Reference.parse(reference)
-        parsed.normalize()
-        return parsed.description
+        try ComposeImageReference.normalized(reference)
     }
 
     /// Returns images referenced by selected services, including generated build tags.
@@ -217,9 +211,9 @@ extension ComposeOrchestrator {
 
     private func serviceCreateRuntime(
         service: ComposeService,
-        baseProcess: ProcessConfiguration,
-        healthCheck: ContainerHealthCheck?,
-        restartPolicy: ContainerRestartPolicy,
+        baseProcess: ComposeProcessConfiguration,
+        healthCheck: ComposeHealthCheck?,
+        restartPolicy: ComposeRestartPolicy,
     ) throws -> ContainerServiceCreateRuntime {
         var runtime = ContainerServiceCreateRuntime()
         runtime.initProcess = baseProcess
