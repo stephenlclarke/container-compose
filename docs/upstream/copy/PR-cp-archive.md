@@ -6,7 +6,7 @@
 
 - Map Compose `cp --archive` to fork-backed direct copy APIs.
 - Render `--archive` in dry-run copy commands.
-- Request archive ownership preservation on both service-to-service staging legs.
+- Preserve archive ownership across direct service-to-service streams.
 
 ## Type of Change
 
@@ -46,8 +46,8 @@ Existing upstream context:
 ## Implementation Details
 
 - Added `ContainerCopyTransferOptions.preserveOwnership`.
-- Passed `ComposeCopyOptions.archive` to copy-in, copy-out, and service-to-service staging.
-- Requested ownership preservation on both service-to-service staging legs while keeping `--follow-link` source-only.
+- Passed `ComposeCopyOptions.archive` to copy-in, copy-out, and service-to-service streams.
+- Requested ownership preservation on the destination stream while keeping `--follow-link` source-only.
 - Updated dry-run copy command rendering to include `--archive`.
 - Removed the previous `cp --archive` unsupported validation path.
 - Added focused orchestrator and adapter tests.
@@ -56,7 +56,7 @@ Existing upstream context:
 
 - Supported with the current fork-backed runtime pinned to `stephenlclarke/container` and `stephenlclarke/containerization`.
 - Stock `apple/container` builds must keep treating this as runtime-gated until the copy archive API is accepted upstream.
-- Service-to-service copy is a `container-compose` extension implemented through host staging; archive mode requests preservation on both staging legs, but host permissions can limit UID/GID preservation when writing the staged file.
+- Service-to-service copy is a `container-compose` extension implemented through a bounded Unix socket pair between the matched runtime archive APIs. It does not materialise archive members on the host.
 
 ## Testing
 

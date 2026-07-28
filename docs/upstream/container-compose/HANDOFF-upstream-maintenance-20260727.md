@@ -15,13 +15,13 @@ at `3103fee41ebb37c04adbaeade217f0731a9e68ce`. Local
 parity pass. All applicable hosted source, runtime, ASan, format, CodeQL, and
 DocC checks pass. The pull request remains unmerged pending review.
 
-CC-005 is implemented on `fix/cp-archive-metadata-parity`. Command help and
-`STATUS.md` now classify tar-stream `cp` and `--archive` metadata support as
-partial. The expanded live parity fixture confirms matching content, mode,
-symlink, sparse allocation, long-path, and large-file behaviour. It also
-confirms that host staging loses arbitrary UID/GID and timestamps and rejects
-hard-link entries. Complete metadata parity remains COPY-401/COPY-402 work
-after Apple accepts a direct runtime stream contract.
+CC-005 is implemented on `fix/cp-stream-metadata-parity` across the matched
+supported stack. Command help and `STATUS.md` classify tar-stream `cp` and
+`--archive` as supported. The expanded live Docker Compose v5.3.1 fixture
+confirms matching content, ownership, mode, timestamp, symlink, hard-link,
+sparse-allocation, long-path, and large-file behaviour and records comparable
+timings. COPY-401/COPY-402 are complete on the supported fork stack; stock
+Apple convergence remains.
 
 The durable goal remains:
 
@@ -372,14 +372,14 @@ adds `/added-data` and `["/logs", "/shared-data"]`, and confirms Docker Compose
 v5.3.1 and the installed Container-backed Compose binary both retain the same
 four targets. No Apple runtime fork or stack pin changes.
 
-CC-005 is complete as the honest local correction. The command and
-`--archive` option are partial rather than fully supported, and the live
-metadata fixture records the exact host-staging boundary. Third-party
+CC-005 is complete on the matched supported stack. The command and `--archive`
+option are supported, and the live metadata fixture records exact behavioural
+and timing evidence for Docker Compose and Container Compose. Third-party
 [apple/containerization#812](https://github.com/apple/containerization/pull/812)
 and [apple/container#1947](https://github.com/apple/container/pull/1947)
-remain open, mergeable, blocked drafts. Do not copy either draft into the
-supported forks before its API, cancellation, backpressure, path-safety, and
-metadata semantics are reviewed.
+remain open drafts. The supported implementation was reviewed independently
+and strengthened for API ownership, cancellation, backpressure, path safety,
+metadata, sparse files, and hard links rather than importing either draft.
 
 The next Phase 0 parity blocker is CC-006:
 
@@ -389,5 +389,5 @@ The next Phase 0 parity blocker is CC-006:
 
 Continue the ordered inventory in
 `docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after this
-item is complete. COPY-401/COPY-402 remain required in Phase 4 for complete
-direct-stream archive parity.
+item is complete. COPY-401/COPY-402 are complete on the supported stack; their
+remaining work is convergence with a stock Apple archive API.

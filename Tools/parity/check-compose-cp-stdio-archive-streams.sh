@@ -33,12 +33,20 @@
 #                      "docker compose" when available, otherwise docker-compose.
 #   TAR                GNU tar binary used to create metadata fixtures. Defaults
 #                      to tar.
+#   PARITY_TIMING_OUTPUT
+#                      Optional path for a tab-separated timing report.
+#   PARITY_TIMEOUT_SECONDS
+#                      Per-copy hang timeout. Defaults to 120 seconds.
+#   PARITY_TIMING_MAX_RATIO
+#                      Material slowdown ratio. Defaults to 10.
+#   PARITY_TIMING_MIN_DELTA_SECONDS
+#                      Minimum absolute slowdown before ratio enforcement.
+#                      Defaults to 5 seconds.
 #
 # This script is intentionally local-only and is not part of CI. It verifies
 # Docker Compose V2 and container-compose `cp -` archive stream behavior for
-# stdin-to-service and service-to-stdout content copies. It also confirms the
-# expected host-staging ownership, timestamp, and hard-link gaps until direct
-# runtime streams are available.
+# stdin-to-service and service-to-stdout content copies, archive metadata, hard
+# links, sparse files, and direct-stream timing.
 
 set -euo pipefail
 
@@ -52,9 +60,14 @@ STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 CONTAINER_BINARY="${CONTAINER_COMPOSE_CONTAINER:-container}"
 TAR_BINARY="${TAR:-tar}"
+PARITY_TIMING_OUTPUT="${PARITY_TIMING_OUTPUT:-}"
+PARITY_TIMEOUT_SECONDS="${PARITY_TIMEOUT_SECONDS:-120}"
+PARITY_TIMING_MAX_RATIO="${PARITY_TIMING_MAX_RATIO:-10}"
+PARITY_TIMING_MIN_DELTA_SECONDS="${PARITY_TIMING_MIN_DELTA_SECONDS:-5}"
 DOCKER_COMPOSE_COMMAND=()
 FIXTURE_DIR=""
 LONG_ARCHIVE_PATH=""
+TIMING_FILE=""
 DOCKER_PROJECT_NAME="container-compose-cp-stdio-docker-$RANDOM-$$"
 CONTAINER_PROJECT_NAME="container-compose-cp-stdio-runtime-$RANDOM-$$"
 
@@ -126,6 +139,9 @@ check_tools() {
     if ! "$TAR_BINARY" --version 2>/dev/null | grep -q 'GNU tar'; then
         skip_or_fail 'GNU tar is required for deterministic sparse and ownership fixtures'
     fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        skip_or_fail 'python3 is required for bounded timing capture'
+    fi
     if ! docker info >/dev/null 2>&1; then
         skip_or_fail 'Docker Engine is not available'
     fi
@@ -139,6 +155,7 @@ check_tools() {
 
 create_fixture() {
     FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/compose-cp-stdio.XXXXXX")"
+    TIMING_FILE="$FIXTURE_DIR/timings.tsv"
     cat >"$FIXTURE_DIR/compose.yml" <<'YAML'
 services:
   app:
@@ -185,6 +202,101 @@ YAML
         -cf "$FIXTURE_DIR/hardlinks.tar" \
         hardlinks/source.txt \
         hardlinks/target.txt
+}
+
+monotonic_nanoseconds() {
+    python3 -c 'import time; print(time.monotonic_ns())'
+}
+
+run_bounded() {
+    python3 -c '
+import os
+import signal
+import subprocess
+import sys
+
+timeout = float(sys.argv[1])
+process = subprocess.Popen(sys.argv[2:], start_new_session=True)
+try:
+    raise SystemExit(process.wait(timeout=timeout))
+except subprocess.TimeoutExpired:
+    os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+    raise SystemExit(124)
+' "$PARITY_TIMEOUT_SECONDS" "$@"
+}
+
+measure_copy() {
+    local implementation="$1"
+    local operation="$2"
+    shift 2
+    local start_ns
+    local end_ns
+    local status
+
+    start_ns="$(monotonic_nanoseconds)"
+    set +e
+    run_bounded "$@"
+    status=$?
+    set -e
+    end_ns="$(monotonic_nanoseconds)"
+
+    python3 -c '
+import sys
+print(f"{sys.argv[1]}\t{sys.argv[2]}\t{(int(sys.argv[4]) - int(sys.argv[3])) / 1_000_000_000:.6f}")
+' "$implementation" "$operation" "$start_ns" "$end_ns" >>"$TIMING_FILE"
+
+    if ((status == 124)); then
+        error "$implementation $operation copy exceeded ${PARITY_TIMEOUT_SECONDS}s and was terminated"
+        return 124
+    fi
+    return "$status"
+}
+
+report_timing_metrics() {
+    python3 - "$TIMING_FILE" "$PARITY_TIMING_MAX_RATIO" "$PARITY_TIMING_MIN_DELTA_SECONDS" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+max_ratio = float(sys.argv[2])
+min_delta = float(sys.argv[3])
+measurements = {}
+for line in path.read_text(encoding="utf-8").splitlines():
+    implementation, operation, raw_seconds = line.split("\t")
+    measurements.setdefault(operation, {})[implementation] = float(raw_seconds)
+
+failed = False
+print("Compose cp parity timings (seconds):")
+for operation in sorted(measurements):
+    values = measurements[operation]
+    docker = values["docker"]
+    container = values["container-compose"]
+    ratio = container / docker if docker > 0 else float("inf")
+    delta = container - docker
+    print(
+        f"  {operation}: docker={docker:.6f} "
+        f"container-compose={container:.6f} ratio={ratio:.2f}x delta={delta:+.6f}"
+    )
+    if ratio > max_ratio and delta > min_delta:
+        print(
+            f"error: {operation} exceeds the material slowdown boundary: "
+            f"{ratio:.2f}x and {delta:.3f}s slower",
+            file=sys.stderr,
+        )
+        failed = True
+raise SystemExit(1 if failed else 0)
+PY
+
+    if [[ -n "$PARITY_TIMING_OUTPUT" ]]; then
+        mkdir -p "$(dirname "$PARITY_TIMING_OUTPUT")"
+        cp "$TIMING_FILE" "$PARITY_TIMING_OUTPUT"
+        info "Timing report written to $PARITY_TIMING_OUTPUT"
+    fi
 }
 
 cleanup() {
@@ -279,24 +391,23 @@ capture_metadata_fixture() {
     "$executor" stat -c '%s:%b' /tmp/metadata/sparse.bin >"$FIXTURE_DIR/$prefix-sparse.txt"
 }
 
-assert_expected_metadata_boundary() {
+assert_metadata_parity() {
     local docker_metadata
     local container_metadata
     local docker_sparse
     local container_sparse
-    local container_uid
-    local container_gid
-    local container_mode
-    local container_mtime
 
     docker_metadata="$(<"$FIXTURE_DIR/docker-metadata.txt")"
     container_metadata="$(<"$FIXTURE_DIR/container-metadata.txt")"
     docker_sparse="$(<"$FIXTURE_DIR/docker-sparse.txt")"
     container_sparse="$(<"$FIXTURE_DIR/container-sparse.txt")"
-    IFS=':' read -r container_uid container_gid container_mode container_mtime <<<"$container_metadata"
 
     [[ "$docker_metadata" == "1234:2345:640:1700000000" ]] || {
         error "Docker Compose metadata baseline = $docker_metadata, want 1234:2345:640:1700000000"
+        return 1
+    }
+    [[ "$container_metadata" == "$docker_metadata" ]] || {
+        error "container-compose metadata = $container_metadata, want Docker baseline $docker_metadata"
         return 1
     }
     [[ "${docker_sparse%%:*}" == "16777216" ]] || {
@@ -311,37 +422,33 @@ assert_expected_metadata_boundary() {
         error "container-compose sparse allocation = $container_sparse, want Docker baseline $docker_sparse"
         return 1
     }
-    [[ "$container_mode" == "640" ]] || {
-        error "container-compose mode = $container_mode, want Docker baseline 640"
-        return 1
-    }
-    if [[ "$container_uid:$container_gid" == "1234:2345" ]]; then
-        error 'container-compose unexpectedly reached ownership parity; update the documented boundary and this fixture'
-        return 1
-    fi
-    if [[ "$container_mtime" == "1700000000" ]]; then
-        error 'container-compose unexpectedly reached timestamp parity; update the documented boundary and this fixture'
-        return 1
-    fi
 
-    info "Expected host-staging ownership/timestamp gap confirmed: Docker metadata=$docker_metadata; container-compose metadata=$container_metadata"
+    info "Archive metadata parity confirmed: $container_metadata"
     info "Sparse allocation parity confirmed: $container_sparse"
 }
 
 check_docker_compose_cp_streams() {
     "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up -d --quiet-pull app >/dev/null
-    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp - app:/tmp <"$FIXTURE_DIR/payload.tar"
+    measure_copy docker stdin-content \
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp - app:/tmp \
+        <"$FIXTURE_DIR/payload.tar"
     "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp app:/tmp/payload.txt "$FIXTURE_DIR/docker-payload.txt"
     assert_file_equals "$FIXTURE_DIR/payload.txt" "$FIXTURE_DIR/docker-payload.txt" "Docker Compose stdin archive copy"
 
     "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp "$FIXTURE_DIR/stdout-source.txt" app:/tmp/stdout-source.txt
-    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp app:/tmp/stdout-source.txt - >"$FIXTURE_DIR/docker-stdout.tar"
+    measure_copy docker stdout-content \
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp app:/tmp/stdout-source.txt - \
+        >"$FIXTURE_DIR/docker-stdout.tar"
     extract_stdout_archive "$FIXTURE_DIR/docker-stdout.tar" "$FIXTURE_DIR/docker-stdout"
     assert_file_equals "$FIXTURE_DIR/stdout-source.txt" "$FIXTURE_DIR/docker-stdout/stdout-source.txt" "Docker Compose stdout archive copy"
 
-    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp -a - app:/tmp <"$FIXTURE_DIR/metadata.tar"
+    measure_copy docker stdin-metadata \
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp -a - app:/tmp \
+        <"$FIXTURE_DIR/metadata.tar"
     capture_metadata_fixture docker_compose_exec docker "Docker Compose"
-    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp -a - app:/tmp <"$FIXTURE_DIR/hardlinks.tar"
+    measure_copy docker stdin-hardlinks \
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp -a - app:/tmp \
+        <"$FIXTURE_DIR/hardlinks.tar"
     local source_inode
     local target_inode
     source_inode="$(docker_compose_exec stat -c '%i' /tmp/hardlinks/source.txt)"
@@ -356,7 +463,9 @@ check_container_compose_cp_streams() {
     CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
         "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up -d app >/dev/null
     CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
-        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp - app:/tmp <"$FIXTURE_DIR/payload.tar"
+        measure_copy container-compose stdin-content \
+        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp - app:/tmp \
+        <"$FIXTURE_DIR/payload.tar"
     CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
         "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp app:/tmp/payload.txt "$FIXTURE_DIR/container-payload.txt"
     assert_file_equals "$FIXTURE_DIR/payload.txt" "$FIXTURE_DIR/container-payload.txt" "container-compose stdin archive copy"
@@ -364,33 +473,31 @@ check_container_compose_cp_streams() {
     CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
         "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp "$FIXTURE_DIR/stdout-source.txt" app:/tmp/stdout-source.txt
     CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
-        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp app:/tmp/stdout-source.txt - >"$FIXTURE_DIR/container-stdout.tar"
+        measure_copy container-compose stdout-content \
+        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp app:/tmp/stdout-source.txt - \
+        >"$FIXTURE_DIR/container-stdout.tar"
     extract_stdout_archive "$FIXTURE_DIR/container-stdout.tar" "$FIXTURE_DIR/container-stdout"
     assert_file_equals "$FIXTURE_DIR/stdout-source.txt" "$FIXTURE_DIR/container-stdout/stdout-source.txt" "container-compose stdout archive copy"
 
     CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
-        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp -a - app:/tmp <"$FIXTURE_DIR/metadata.tar"
+        measure_copy container-compose stdin-metadata \
+        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp -a - app:/tmp \
+        <"$FIXTURE_DIR/metadata.tar"
     capture_metadata_fixture container_compose_exec container "container-compose"
 
-    local hardlink_output
-    local hardlink_status
-    set +e
-    hardlink_output="$(
-        CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
-            "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp -a - app:/tmp \
-            <"$FIXTURE_DIR/hardlinks.tar" 2>&1
-    )"
-    hardlink_status=$?
-    set -e
-    if ((hardlink_status == 0)); then
-        error 'container-compose unexpectedly accepted the staged hard-link fixture; update the expected-gap assertion'
-        return 1
-    fi
-    [[ "$hardlink_output" == *"archive contains unsafe paths: hardlinks/target.txt"* ]] || {
-        error "container-compose hard-link fixture failed for an unexpected reason: $hardlink_output"
+    CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
+        measure_copy container-compose stdin-hardlinks \
+        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp -a - app:/tmp \
+        <"$FIXTURE_DIR/hardlinks.tar"
+    local source_inode
+    local target_inode
+    source_inode="$(container_compose_exec stat -c '%i' /tmp/hardlinks/source.txt)"
+    target_inode="$(container_compose_exec stat -c '%i' /tmp/hardlinks/target.txt)"
+    [[ "$source_inode" == "$target_inode" ]] || {
+        error "container-compose hard-link fixture used different inodes: $source_inode != $target_inode"
         return 1
     }
-    info 'Expected host-staging hard-link gap confirmed: hardlinks/target.txt is rejected before the runtime stream boundary.'
+    info "Hard-link parity confirmed: inode $source_inode"
 }
 
 main() {
@@ -400,8 +507,9 @@ main() {
     create_fixture
     check_docker_compose_cp_streams
     check_container_compose_cp_streams
-    assert_expected_metadata_boundary
-    info 'Docker Compose cp stdio content and sparse-allocation parity passed; expected ownership, timestamp, and hard-link gaps were confirmed.'
+    assert_metadata_parity
+    report_timing_metrics
+    info 'Docker Compose cp stdio content, metadata, sparse-allocation, and hard-link parity passed.'
 }
 
 main "$@"

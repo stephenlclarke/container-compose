@@ -513,9 +513,9 @@ cli-smoke-built:
 	[[ "$$images_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$images_help_output" == *"Format the output. Values: [table | json]"* ]]; \
 	cp_help_output="$$(".build/debug/compose" cp --help)"; \
-	[[ "$$cp_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
-	[[ "$$cp_help_output" == *"Tar-stream operands stage through the host filesystem"* ]]; \
-	[[ "$$cp_help_output" == *"$${ansi_escape}[38;5;208m--archive$${ansi_escape}[0m"* ]]; \
+	[[ "$$cp_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$cp_help_output" != *"Tar-stream operands stage through the host filesystem"* ]]; \
+	[[ "$$cp_help_output" == *"$${ansi_escape}[32m--archive$${ansi_escape}[0m"* ]]; \
 	[[ "$$cp_help_output" == *"$${ansi_escape}[32m--follow-link$${ansi_escape}[0m"* ]]; \
 	logs_help_output="$$(".build/debug/compose" logs --help)"; \
 	[[ "$$logs_help_output" == *"-f, --follow"* ]]; \

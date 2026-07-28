@@ -111,17 +111,31 @@ public extension ComposeOrchestrator {
             return
         }
 
+        if destinations.count == 1, let destination = destinations.first {
+            try await copyArchiveIntoContainer(
+                id: destination.id,
+                archive: options.copyInputArchive(),
+                destination: destination.path,
+                options: transferOptions,
+            )
+            return
+        }
+
         let archiveFile = try stagedCopyInputArchive(options.copyInputArchive())
         defer {
             try? FileManager.default.removeItem(at: archiveFile.deletingLastPathComponent())
         }
         for destination in destinations {
-            try await copier.copyArchiveFileIntoContainer(
-                id: destination.id,
-                archive: archiveFile,
-                destination: destination.path,
-                options: transferOptions,
-            )
+            do {
+                let archive = try FileHandle(forReadingFrom: archiveFile)
+                defer { try? archive.close() }
+                try await copyArchiveIntoContainer(
+                    id: destination.id,
+                    archive: archive,
+                    destination: destination.path,
+                    options: transferOptions,
+                )
+            }
         }
     }
 
@@ -141,10 +155,12 @@ public extension ComposeOrchestrator {
             return
         }
         if localPath == "-" {
-            try await copier.copyFromContainerAsArchive(
+            let archiveSource = Self.archiveSource(source.path)
+            try await copyFromContainerAsArchive(
                 id: source.id,
-                source: source.path,
+                source: archiveSource.path,
                 archive: options.copyOutputArchive(),
+                copyContents: archiveSource.copyContents,
                 options: transferOptions,
             )
             return
@@ -182,27 +198,92 @@ public extension ComposeOrchestrator {
         }
     }
 
+    private func copyArchiveIntoContainer(
+        id: String,
+        archive: FileHandle,
+        destination: String,
+        options: ContainerCopyTransferOptions,
+    ) async throws {
+        if let archiveCopier = copier as? any ComposeRuntimeArchiveCopying {
+            try await archiveCopier.copyArchiveIntoContainer(
+                id: id,
+                archive: archive,
+                destination: destination,
+                options: options,
+            )
+            return
+        }
+        try await copier.copyArchiveIntoContainer(
+            id: id,
+            archive: archive,
+            destination: destination,
+            options: options,
+        )
+    }
+
+    private func copyFromContainerAsArchive(
+        id: String,
+        source: String,
+        archive: FileHandle,
+        copyContents: Bool,
+        options: ContainerCopyTransferOptions,
+    ) async throws {
+        if let archiveCopier = copier as? any ComposeRuntimeArchiveCopying {
+            try await archiveCopier.copyFromContainerAsArchive(
+                id: id,
+                source: source,
+                archive: archive,
+                copyContents: copyContents,
+                options: options,
+            )
+            return
+        }
+        try await copier.copyFromContainerAsArchive(
+            id: id,
+            source: source,
+            archive: archive,
+            copyContents: copyContents,
+            options: options,
+        )
+    }
+
     private func stagedCopyInputArchive(_ input: FileHandle) throws -> URL {
         let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
             UUID().uuidString,
             isDirectory: true,
         )
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        let archive = tempDirectory.appendingPathComponent("stdin.tar")
-        FileManager.default.createFile(atPath: archive.path, contents: nil)
-        let output = try FileHandle(forWritingTo: archive)
-        defer {
-            try? output.close()
-        }
-        let bufferSize = 1024 * 1024
-        while true {
-            let chunk = input.readData(ofLength: bufferSize)
-            if chunk.isEmpty {
-                break
+        do {
+            try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+            let archive = tempDirectory.appendingPathComponent("stdin.tar")
+            FileManager.default.createFile(atPath: archive.path, contents: nil)
+            let output = try FileHandle(forWritingTo: archive)
+            defer {
+                try? output.close()
             }
-            output.write(chunk)
+            let bufferSize = 1024 * 1024
+            while true {
+                let chunk = input.readData(ofLength: bufferSize)
+                if chunk.isEmpty {
+                    break
+                }
+                output.write(chunk)
+            }
+            return archive
+        } catch {
+            try? FileManager.default.removeItem(at: tempDirectory)
+            throw error
         }
-        return archive
+    }
+
+    private static func archiveSource(_ source: String) -> (path: String, copyContents: Bool) {
+        if source == "/." {
+            return ("/", true)
+        }
+        guard source.hasSuffix("/.") else {
+            return (source, false)
+        }
+        let path = String(source.dropLast(2))
+        return (path.isEmpty ? "/" : path, true)
     }
 
     /// Stages copies from one source service container into selected destination containers.

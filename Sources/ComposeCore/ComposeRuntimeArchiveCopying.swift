@@ -48,7 +48,10 @@ public extension ComposeRuntimeCopying {
         try FileManager.default.createDirectory(at: extractedRoot, withIntermediateDirectories: true)
 
         let reader = try ArchiveReader(file: archiveFile)
-        let rejectedPaths = try reader.extractContents(to: extractedRoot)
+        let rejectedPaths = try reader.extractContents(
+            to: extractedRoot,
+            preserveOwnership: options.preserveOwnership,
+        )
         if !rejectedPaths.isEmpty {
             throw ComposeError.invalidProject("cp '-': archive contains unsafe paths: \(rejectedPaths.sorted().joined(separator: ", "))")
         }
@@ -68,6 +71,7 @@ public extension ComposeRuntimeCopying {
         id: String,
         source: String,
         archive: FileHandle,
+        copyContents: Bool = false,
         options: ContainerCopyTransferOptions,
     ) async throws {
         let tempDirectory = try Self.makeTemporaryDirectory()
@@ -75,7 +79,8 @@ public extension ComposeRuntimeCopying {
 
         let root = tempDirectory.appendingPathComponent("root", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try await copyFromContainer(id: id, source: source, destination: root.path, options: options)
+        let stagedSource = copyContents ? Self.copyContentsSource(source) : source
+        try await copyFromContainer(id: id, source: stagedSource, destination: root.path, options: options)
 
         let members = try Self.topLevelArchiveMembers(in: root)
         guard !members.isEmpty else {
@@ -99,6 +104,13 @@ public extension ComposeRuntimeCopying {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    private static func copyContentsSource(_ source: String) -> String {
+        if source == "/" {
+            return "/."
+        }
+        return source.hasSuffix("/") ? "\(source)." : "\(source)/."
     }
 
     private static func copyStream(_ input: FileHandle, to destination: URL) throws {

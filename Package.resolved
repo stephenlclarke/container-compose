@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephenlclarke/container.git",
       "state" : {
-        "revision" : "367430446959e3048da37f5f64d3c10e1293d3de"
+        "revision" : "f5e25b12ed074e7e5fb09933d86a27652034f3e5"
       }
     },
     {
@@ -23,7 +23,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephenlclarke/containerization.git",
       "state" : {
-        "revision" : "043193efa5f1a2e21a240041d6edd71d7673739e"
+        "revision" : "52386838456a431d24bed6c38a9e84fb0ad28997"
       }
     },
     {

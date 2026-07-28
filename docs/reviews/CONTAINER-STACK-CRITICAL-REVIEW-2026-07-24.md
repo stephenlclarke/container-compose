@@ -10,10 +10,11 @@ Compose v5.3.1 use `compose-go/v2` v2.13.0. Its current CLI help surface has no
 unexpected command or long-option differences from Docker Compose v5.3.1.
 
 It is not yet safe to describe the implementation as complete Docker Compose
-parity. One remaining confirmed Compose defect affects runtime correctness:
-tar-stream `cp` stages through the host filesystem and cannot reliably preserve
-container ownership metadata. Fixing this completely needs the direct stream
-primitive proposed in `apple/containerization`.
+parity. The previously confirmed tar-stream `cp` metadata defect is resolved on
+the matched supported stack: archives now cross the runtime boundary directly,
+and live Docker Compose v5.3.1 parity covers ownership, mode, timestamps,
+symlinks, hard links, sparse allocation, long paths, and large files. The
+archive API remains fork-only, so stock Apple convergence is still required.
 
 The former unconfigured image-volume, child-process cancellation,
 package-compatibility preflight, and inherited commit-volume defects are
@@ -111,9 +112,10 @@ attempted a 1.62 GB Go cache before builds that completed in a few minutes.
 Signed Compose commit `6cae9a84` removes only those package-lane caches and
 retains validation-workflow caches.
 
-The compatibility-preflight and inherited-volume defects are now corrected.
-Tar-stream `cp` content works and is classified honestly as partial, while
-complete archive-metadata parity still requires direct runtime streaming.
+The compatibility-preflight, inherited-volume, and tar-stream `cp` metadata
+defects are now corrected. The matched supported stack supplies direct runtime
+streaming and the Compose help and status surfaces report that validated lane
+as supported.
 
 All repositories were fetched with `git fetch --all --prune --no-tags`.
 The review covered:
@@ -398,52 +400,41 @@ Impact: committed images retain the base image's storage declarations while
 accepting Docker-compatible additive volume changes. Ownership remains
 Compose; no Apple runtime or stack-pin change is required.
 
-### P1: Tar-Stream `cp` Cannot Preserve Full Container Metadata
+### Resolved P1: Tar-Stream `cp` Preserves Container Metadata
 
-`Sources/ComposeCore/ComposeRuntimeArchiveCopying.swift:22-89` implements
-streaming input by writing a host tar, extracting it into a host directory,
-then path-copying each member into the container. Output reverses the same
-path-based staging.
+The matched supported stack now keeps archive bytes inside the runtime copy
+path:
 
-This is content streaming, not complete tar-stream parity:
+- `stephenlclarke/containerization`
+  `52386838456a431d24bed6c38a9e84fb0ad28997` produces and extracts caller-owned
+  archives with ownership, nanosecond timestamps, hard-link, sparse-file, and
+  path-safety handling;
+- `stephenlclarke/container`
+  `f5e25b12ed074e7e5fb09933d86a27652034f3e5` forwards caller-owned handles
+  through XPC and the runtime service;
+- Compose streams one-destination stdin and stdout directly, uses a
+  bounded-lifecycle Unix socket pair for service-to-service copies, and stages
+  only raw input bytes for `--all` replay.
 
-- a non-root host process cannot reliably materialise arbitrary container
-  UID/GID values;
-- host staging loses the requested timestamp and rejects hard-link entries
-  before the runtime sees the data;
-- `--archive` cannot guarantee Docker's ownership-preservation contract;
-- the original parity probe checked data flow, not metadata fidelity.
-
-The expanded live Docker Compose v5.3.1 fixture confirms matching content,
-mode, symlink, sparse allocation, long-path, and 4 MiB stream behaviour.
-Against a Docker baseline of UID 1234, GID 2345, mode 0640, and mtime
-1700000000, host-staged Container Compose retained mode 0640 but not the
-requested ownership or timestamp. Docker retained a hard-link inode pair;
-Container Compose rejected `hardlinks/target.txt` during archive validation.
+The live Docker Compose v5.3.1 fixture now requires matching content, UID 1234,
+GID 2345, mode 0640, mtime 1700000000, symlink targets, hard-link inode
+identity, sparse allocation, a 180-character path component, and a 4 MiB file.
+All assertions passed on 2026-07-28. Each operation has a 120-second timeout.
+The recorded Container Compose operations took 0.688076 to 0.780232 seconds,
+versus 0.131541 to 0.233447 seconds for Docker Compose. The largest ratio was
+5.64x and the largest absolute delta was 0.610435 seconds, below the configured
+material-slowdown boundary of both 10x and 5 seconds. See
+[`COMPOSE-CP-STREAM-METADATA-PARITY-2026-07-28.md`](COMPOSE-CP-STREAM-METADATA-PARITY-2026-07-28.md)
+for the environment, workload, raw measurements, and comparison method.
 
 [apple/containerization PR #812](https://github.com/apple/containerization/pull/812)
-adds direct `FileHandle` copy-in/copy-out specifically to preserve tar headers
-and path fidelity. It remains an open, mergeable, blocked draft at
-`570a56f74bf79aa3fa383e708d4741043c1e4f6f`. The corresponding
-[apple/container PR #1947](https://github.com/apple/container/pull/1947) was
-also an open, mergeable, blocked draft at
-`7199840b57504963e0f76370a72dfcd74d927eb9` on 2026-07-28.
+and [apple/container PR #1947](https://github.com/apple/container/pull/1947)
+remain third-party draft proposals. The supported implementation was reviewed
+and strengthened independently rather than importing either draft verbatim.
 
-Ownership: lower-runtime primitive first, then Compose adapter.
-
-Local correction completed:
-
-- command help and `STATUS.md` mark stdin/stdout archive and `--archive`
-  metadata parity partial;
-- the local fixture now distinguishes passing content semantics from the
-  expected ownership, timestamp, and hard-link gaps;
-- path traversal and link-target validation remain at the staging boundary.
-
-Remaining external correction:
-
-- adopt a direct stream API after the lower-runtime contract is accepted;
-- add uid, gid, mode, symlink, hard-link, timestamp, sparse file, long path,
-  and large-stream parity at the direct stream boundary.
+Remaining external correction: converge the fork-only archive contract with a
+stock Apple API that preserves the same ownership, cancellation, backpressure,
+path-safety, sparse-file, hard-link, and caller-handle guarantees.
 
 ### P2: Runtime Test and Coverage Evidence Is Misleading
 
@@ -643,13 +634,13 @@ This should be managed as an upstream-convergence programme:
 
 | Area | Gap |
 | --- | --- |
-| Correctness | Tar-stream `cp` cannot preserve complete container ownership metadata until direct runtime streams exist |
+| Correctness | Tar-stream `cp` metadata parity is complete on the matched supported stack; its direct archive API remains a stock Apple convergence risk |
 | Process control | Cancellation and bounded concurrent package-preflight drainage are implemented; remaining runtime process work is tracked separately |
 | Deploy | Accept and preserve local-mode Deploy metadata that Docker Compose accepts but does not schedule |
 | Testing | Honest runtime skips; provider/plugin/aggregate coverage; metadata-complete commit and copy fixtures |
 | Diagnostics | Supported-lane messages currently blame missing Apple primitives that exist in the pins |
 | Security | Explicit private permissions for temporary copy, commit, and secret material |
-| Documentation | Correct overclaims for tar-stream `cp`, runtime CI, and the SPI boundary |
+| Documentation | Keep matched-stack tar-stream support, runtime CI, and the SPI boundary described without implying stock Apple support |
 
 ### Missing from Stock Apple but Present in the Pinned Forks
 
@@ -679,7 +670,7 @@ is merged and consumed.
 | Network drivers/IPAM | Custom drivers, custom IPAM, multiple same-family pools, disabled IPv4, IPv6 ranges/auxiliary addresses | Validation and projection after typed primitives exist |
 | Security | Seccomp/AppArmor profiles, custom user mappings, complete privileged/device isolation | Parse/map profiles and capability diagnostics |
 | Resources | CPU realtime, swappiness, OOM-kill disable, richer machine stats | Map fields and expose accurate `stats` |
-| Storage | Non-local volume plugins, recursive bind and cache modes, direct tar streams | Driver/options behaviour, archive fidelity, parity tests |
+| Storage | Non-local volume plugins and recursive bind and cache modes | Driver/options behaviour and parity tests |
 | Docker API | Authenticated Docker-compatible socket proxy boundary | `use_api_socket` |
 | Devices/GPU | Vendor GPU/CDI, multiple GPUs, arbitrary passthrough | Reservation and selector mapping |
 | Logging | Distinct local/json-file semantics, fan-out resilience, remote/plugin drivers and buffering | Driver options, mode, buffer controls, output parity |
@@ -721,7 +712,7 @@ affects this stack.
 | [container #2000](https://github.com/apple/container/pull/2000) | Fixes `logs -n N` truncation at backward-read chunk boundaries. The supported fork already had equivalent complete-record behavior; explicit 3 KB and multi-record regressions now guard it. |
 | [containerization #799](https://github.com/apple/containerization/pull/799) | Fixes missing-source copy deadlock. The fork already carries equivalent behaviour. Replace the local port when Apple merges it. |
 | [containerization #813](https://github.com/apple/containerization/pull/813) | Redacts environment values in debug logs. The fork already carries an equivalent fix. Open, non-draft, `BLOCKED`. |
-| [containerization #812](https://github.com/apple/containerization/pull/812) and [container #1947](https://github.com/apple/container/pull/1947) | Direct tar-stream copy. Both are draft/blocked and need API, metadata, cancellation, and backpressure review before adoption. |
+| [containerization #812](https://github.com/apple/containerization/pull/812) and [container #1947](https://github.com/apple/container/pull/1947) | Direct tar-stream copy. Both remain third-party drafts. The supported stack carries independently reviewed and strengthened behaviour; Apple convergence still requires equivalent metadata, cancellation, backpressure, path-safety, sparse-file, hard-link, and caller-handle guarantees. |
 | [builder-shim #83](https://github.com/apple/container-builder-shim/pull/83) | Custom BuildKit frontends. Open, non-draft, `BLOCKED`. Prefer upstream over a Compose-side parser. |
 | [builder-shim #84](https://github.com/apple/container-builder-shim/pull/84) | JSON build-context transfer for performance. Open, non-draft, `BLOCKED`. Benchmark and harden before enabling. |
 | [builder-shim #87](https://github.com/apple/container-builder-shim/pull/87) | Correct `.dockerignore` parent re-inclusion. Equivalent commit `2778407` is already in the fork. |
@@ -820,7 +811,7 @@ new Apple design work.
 | CC-002 | P1 | Compose | **Complete:** add task-cancellation ownership to `ProcessRunner` | Cancelled captured/inherited/input child exits within bound; no continuation double-resume; no surviving PID |
 | CC-003 | P1 | Plugin | **Complete:** replace wait-before-drain compatibility preflight | Fake command writes >256 KiB to stdout and stderr without deadlock; cancellation and error text tested |
 | CC-004 | P1 | Compose | **Complete:** preserve inherited volumes during `commit` | Unit and live Docker parity cover inherited/additive/duplicate/multiple `VOLUME`; status claim restored after passing |
-| CC-005 | P1 | Compose/docs | **Complete:** downgrade tar-stream `cp` parity pending direct runtime streams | Status and help describe content support versus metadata limits; the live fixture proves content parity and the expected ownership, timestamp, and hard-link gaps |
+| CC-005 | P1 | Stack/Compose/docs | **Complete:** stream tar archives without host extraction and restore supported status | Exact pins expose caller-owned archive handles; help and status report the matched lane; live Docker parity proves ownership, timestamp, hard-link, sparse-file, content, and path fidelity with recorded timings |
 | CC-006 | P2 | Compose | Correct lifecycle ownership diagnostics | Pinned-lane errors name Compose orchestration; stock-lane errors name missing Apple capability |
 | TEST-007 | P1 | Compose CI | Make live test skips explicit and gate aggregate coverage | CI reports executed/skipped counts; separate Core/SPI/provider/plugin/aggregate thresholds |
 | TEST-008 | P2 | Compose | Split the 32k-line orchestrator test by command/capability | Shared fixtures have one owner; tests run in parallel; no coverage loss |
@@ -909,8 +900,8 @@ Phase gate:
 
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
-| COPY-401 | P1 | Containerization/container | Complete direct tar stream API (#812/#1947) | Bounded backpressure, cancellation, path safety, uid/gid/mode/link/time fidelity, and large streams |
-| COPY-402 | P1 | Compose | Replace host staging with direct stream adapter | Docker `cp -` and `--archive` metadata parity passes in both directions |
+| COPY-401 | Complete on supported fork stack | Containerization/container | Direct tar stream API implemented; stock Apple convergence remains | Bounded backpressure, cancellation, path safety, uid/gid/mode/link/time fidelity, sparse files, caller-handle ownership, and large streams pass |
+| COPY-402 | Complete | Compose | Host extraction replaced with direct stream adapter; raw staging remains only for `--all` replay | Docker `cp -` and `--archive` metadata parity passes with timings and bounded hang detection |
 | VOL-403 | P2 | Runtime | Define non-local volume driver/plugin contract | Unsupported driver never creates a misleading local ext4 volume |
 | MOUNT-404 | P2 | Runtime/Compose | Implement recursive bind and feasible consistency/cache modes | Nested bind (#1890), subpath, hardlink, and live-update tests pass |
 | SEC-405 | P1 | Containerization/container | Land seccomp and security-profile primitives | Typed profile load, validation, defaulting, and denial tests; no Compose policy in runtime |

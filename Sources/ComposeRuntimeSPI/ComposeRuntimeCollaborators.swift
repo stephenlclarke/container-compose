@@ -45,6 +45,27 @@ public protocol ComposeRuntimeCopying: Sendable {
     ) async throws
 }
 
+/// Native archive-stream operations provided by copy backends that can preserve
+/// container filesystem metadata without host extraction.
+public protocol ComposeRuntimeArchiveCopying: ComposeRuntimeCopying {
+    /// Extracts an uncompressed tar stream into `destination` inside container `id`.
+    func copyArchiveIntoContainer(
+        id: String,
+        archive: FileHandle,
+        destination: String,
+        options: ContainerCopyTransferOptions,
+    ) async throws
+
+    /// Streams `source` from container `id` as an uncompressed tar archive.
+    func copyFromContainerAsArchive(
+        id: String,
+        source: String,
+        archive: FileHandle,
+        copyContents: Bool,
+        options: ContainerCopyTransferOptions,
+    ) async throws
+}
+
 /// Container filesystem export operation provided by a Compose runtime backend.
 public protocol ComposeRuntimeExporting: Sendable {
     /// Exports `id` as a tar archive. `live` requests a running-container snapshot;

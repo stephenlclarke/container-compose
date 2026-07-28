@@ -8,7 +8,7 @@ Docker exposes tar archive streaming through `docker cp` and `docker compose cp`
 
 `apple/container` currently exposes path-based `copyIn` and `copyOut` APIs. The lower `containerization` runtime streams archive data internally over vsock, but the public CLI/API boundary accepts host filesystem paths rather than a caller-provided input stream or caller-owned output stream.
 
-`container-compose` implements the content flow for `compose cp - SERVICE:PATH` and `compose cp SERVICE:PATH -` in the Compose layer through temporary host staging and libarchive. The current live fixture matches Docker for content, modes, symlinks, sparse allocation, long paths, and large files, but host staging does not preserve arbitrary UID/GID or timestamps and rejects hard-link entries. A first-class Apple runtime copy stream primitive is therefore required for complete visible Compose archive-metadata parity, not only for performance.
+During testing of my Container Compose plugin, I found that the path-only API cannot preserve complete tar semantics without extracting archive members on the host. The supported fork now demonstrates a first-class stream contract: the current live fixture matches Docker for content, ownership, modes, timestamps, symlinks, hard links, sparse allocation, long paths, and large files. Stock Apple still needs an equivalent primitive so callers can obtain that fidelity without carrying fork-only runtime APIs.
 
 References:
 
@@ -21,8 +21,9 @@ References:
 
 Existing upstream context:
 
-- `container-compose` now accepts `compose cp` operands equal to `-` and stages archive streams through the existing path-based Apple copy APIs.
-- Expanded Docker Compose v5.3.1 parity evidence confirms the host-staging ownership, timestamp, and hard-link limitations described above.
+- `container-compose` accepts `compose cp` operands equal to `-` and uses caller-owned archive handles when the matched runtime advertises the capability.
+- Expanded Docker Compose v5.3.1 parity evidence confirms the direct-stream contract preserves ownership, timestamps, hard links, sparse allocation, content, and path fidelity.
+- The path-based fallback remains source-compatible for alternate providers but cannot provide the same archive-fidelity guarantee.
 
 ## Proposed behavior
 
