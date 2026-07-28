@@ -14,12 +14,10 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+@testable import ComposeCore
 import Foundation
 import Testing
 
-@testable import ComposeCore
-
-@Suite
 struct CommandResultTests {
     @Test
     func `equality retains the public string contract`() {
