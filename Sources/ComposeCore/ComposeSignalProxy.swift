@@ -18,6 +18,7 @@
     import Darwin
 #endif
 import Dispatch
+import Foundation
 
 /// Runs an async operation while forwarding host signals to a caller-supplied handler.
 public protocol ComposeSignalProxying: Sendable {
@@ -46,31 +47,11 @@ public struct DispatchComposeSignalProxy: ComposeSignalProxying {
                 try await operation()
                 return
             }
-
-            let queue = DispatchQueue(label: "container-compose.signal-proxy")
-            var sources: [DispatchSourceSignal] = []
-            var previousHandlers: [(Int32, (@convention(c) (Int32) -> Void)?)] = []
-            for mapping in mappings {
-                previousHandlers.append((mapping.number, Darwin.signal(mapping.number, SIG_IGN)))
-                let source = DispatchSource.makeSignalSource(signal: mapping.number, queue: queue)
-                source.setEventHandler {
-                    Task {
-                        await handler(mapping.name)
-                    }
-                }
-                source.resume()
-                sources.append(source)
-            }
-            defer {
-                for source in sources {
-                    source.cancel()
-                }
-                for (number, previousHandler) in previousHandlers {
-                    _ = Darwin.signal(number, previousHandler)
-                }
-            }
-
-            try await operation()
+            try await Self.runWithSignalProxy(
+                mappings: mappings,
+                handler: handler,
+                operation: operation,
+            )
         #else
             _ = signals
             _ = handler
@@ -79,6 +60,54 @@ public struct DispatchComposeSignalProxy: ComposeSignalProxying {
     }
 
     #if canImport(Darwin)
+        private static func runWithSignalProxy(
+            mappings: [(name: String, number: Int32)],
+            handler: @escaping @Sendable (String) async -> Void,
+            operation: @escaping @Sendable () async throws -> Void,
+        ) async throws {
+            let queue = DispatchQueue(label: "container-compose.signal-proxy")
+            let cancellationGroup = DispatchGroup()
+            let handlerTasks = SignalHandlerTaskTracker()
+            var sources: [DispatchSourceSignal] = []
+            var previousHandlers: [(Int32, (@convention(c) (Int32) -> Void)?)] = []
+            for mapping in mappings {
+                previousHandlers.append((mapping.number, Darwin.signal(mapping.number, SIG_IGN)))
+                let source = DispatchSource.makeSignalSource(signal: mapping.number, queue: queue)
+                source.setEventHandler {
+                    handlerTasks.submit {
+                        await handler(mapping.name)
+                    }
+                }
+                cancellationGroup.enter()
+                source.setCancelHandler {
+                    cancellationGroup.leave()
+                }
+                source.resume()
+                sources.append(source)
+            }
+
+            let operationResult: Result<Void, Error>
+            do {
+                try await operation()
+                operationResult = .success(())
+            } catch {
+                operationResult = .failure(error)
+            }
+            for source in sources {
+                source.cancel()
+            }
+            await withCheckedContinuation { continuation in
+                cancellationGroup.notify(queue: queue) {
+                    continuation.resume()
+                }
+            }
+            await handlerTasks.waitForAll()
+            for (number, previousHandler) in previousHandlers {
+                _ = Darwin.signal(number, previousHandler)
+            }
+            try operationResult.get()
+        }
+
         private static func signalMapping(named name: String) -> (name: String, number: Int32)? {
             switch name {
             case "SIGHUP":
@@ -94,4 +123,51 @@ public struct DispatchComposeSignalProxy: ComposeSignalProxying {
             }
         }
     #endif
+}
+
+private final class SignalHandlerTaskTracker: @unchecked Sendable {
+    private let lock = NSLock()
+    private var inFlightTaskCount = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func submit(_ operation: @escaping @Sendable () async -> Void) {
+        lock.lock()
+        inFlightTaskCount += 1
+        lock.unlock()
+
+        Task {
+            await operation()
+            self.completeTask()
+        }
+    }
+
+    func waitForAll() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            guard inFlightTaskCount > 0 else {
+                lock.unlock()
+                continuation.resume()
+                return
+            }
+            waiters.append(continuation)
+            lock.unlock()
+        }
+    }
+
+    private func completeTask() {
+        let completedWaiters: [CheckedContinuation<Void, Never>]
+        lock.lock()
+        inFlightTaskCount -= 1
+        if inFlightTaskCount == 0 {
+            completedWaiters = waiters
+            waiters.removeAll()
+        } else {
+            completedWaiters = []
+        }
+        lock.unlock()
+
+        for waiter in completedWaiters {
+            waiter.resume()
+        }
+    }
 }
