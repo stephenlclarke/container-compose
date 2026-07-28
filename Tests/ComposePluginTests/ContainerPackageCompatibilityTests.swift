@@ -598,6 +598,92 @@ struct ContainerPackagePreflightProcessTests {
   }
 }
 
+@Suite("Container package preflight signals", .serialized)
+struct ContainerPackagePreflightSignalTests {
+  @Test("interrupting the CLI preflight terminates its child process")
+  func interruptTerminatesChild() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer {
+      try? FileManager.default.removeItem(at: directory)
+    }
+
+    let pidFile = directory.appendingPathComponent("preflight.pid")
+    let fakeContainer = try makeInterruptibleContainer(in: directory)
+    let process = try makeInterruptedPreflightProcess(
+      fakeContainer: fakeContainer,
+      pidFile: pidFile
+    )
+    defer {
+      if process.isRunning {
+        _ = kill(process.processIdentifier, SIGKILL)
+        process.waitUntilExit()
+      }
+    }
+
+    let preflightIdentifier = try await waitForPreflightProcessIdentifier(at: pidFile)
+    defer {
+      if kill(preflightIdentifier, 0) == 0 {
+        _ = kill(-preflightIdentifier, SIGKILL)
+      }
+    }
+
+    let clock = ContinuousClock()
+    let interruptionStarted = clock.now
+    guard kill(process.processIdentifier, SIGINT) == 0 else {
+      throw ContainerPackagePreflightTestError.signalFailed
+    }
+    try await waitForPreflightCLIExit(process)
+
+    #expect(clock.now - interruptionStarted < .seconds(2))
+    #expect(process.terminationReason == .exit)
+    #expect(process.terminationStatus == 130)
+    errno = 0
+    #expect(kill(preflightIdentifier, 0) == -1)
+    #expect(errno == ESRCH)
+  }
+}
+
+/// Creates a fake runtime preflight that records its PID and ignores TERM.
+private func makeInterruptibleContainer(in directory: URL) throws -> URL {
+  let executable = directory.appendingPathComponent("container")
+  try """
+  #!/bin/sh
+  if [ "$*" = "system version --format json" ]; then
+    printf '%s' "$$" > "$CONTAINER_COMPOSE_PREFLIGHT_PID_FILE"
+    trap '' TERM
+    while :; do :; done
+  fi
+  exit 2
+  """.write(to: executable, atomically: true, encoding: .utf8)
+  try FileManager.default.setAttributes(
+    [.posixPermissions: 0o755],
+    ofItemAtPath: executable.path
+  )
+  return executable
+}
+
+/// Starts the real Compose CLI against an interruptible fake runtime.
+private func makeInterruptedPreflightProcess(
+  fakeContainer: URL,
+  pidFile: URL
+) throws -> Process {
+  let composeExecutable = URL(fileURLWithPath: ".build/debug/compose")
+  #expect(FileManager.default.isExecutableFile(atPath: composeExecutable.path))
+  let process = Process()
+  process.executableURL = composeExecutable
+  process.arguments = ["ps"]
+  process.environment = ProcessInfo.processInfo.environment.merging([
+    "CONTAINER_COMPOSE_CONTAINER": fakeContainer.path,
+    "CONTAINER_COMPOSE_PREFLIGHT_PID_FILE": pidFile.path,
+  ]) { _, new in new }
+  process.standardOutput = FileHandle.nullDevice
+  process.standardError = FileHandle.nullDevice
+  try process.run()
+  return process
+}
+
 /// Waits for the preflight child to publish its PID before cancellation.
 private func waitForPreflightProcessIdentifier(at pidFile: URL) async throws -> pid_t {
   let clock = ContinuousClock()
@@ -614,6 +700,22 @@ private func waitForPreflightProcessIdentifier(at pidFile: URL) async throws -> 
   throw ContainerPackagePreflightTestError.pidFileTimedOut
 }
 
+/// Waits for an interrupted Compose CLI to finish child cleanup and exit.
+private func waitForPreflightCLIExit(_ process: Process) async throws {
+  let clock = ContinuousClock()
+  let deadline = clock.now + .seconds(3)
+  while clock.now < deadline {
+    if !process.isRunning {
+      process.waitUntilExit()
+      return
+    }
+    try await Task.sleep(for: .milliseconds(10))
+  }
+  throw ContainerPackagePreflightTestError.composeProcessTimedOut
+}
+
 private enum ContainerPackagePreflightTestError: Error {
+  case composeProcessTimedOut
   case pidFileTimedOut
+  case signalFailed
 }

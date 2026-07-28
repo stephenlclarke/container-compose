@@ -24,6 +24,17 @@ import ComposeCore
 @_exported import ContainerResource
 import Foundation
 
+/// Retains the first host signal received while a preflight child is active.
+private actor ContainerPackagePreflightSignalState {
+  private(set) var signal: String?
+
+  func record(_ signal: String) {
+    if self.signal == nil {
+      self.signal = signal
+    }
+  }
+}
+
 /// Validates that runtime-backed Compose commands are using the matching fork-backed stack.
 enum ContainerPackageCompatibility {
   static let installGuideURLEnvironmentKey = "CONTAINER_COMPOSE_INSTALL_GUIDE_URL"
@@ -134,6 +145,8 @@ extension ContainerPackageCompatibility {
       }
       do {
         _ = try await run(["system", "status"])
+      } catch let interruption as ContainerPackagePreflightInterruption {
+        throw interruption
       } catch is CancellationError {
         throw CancellationError()
       } catch {
@@ -144,6 +157,8 @@ extension ContainerPackageCompatibility {
           ])
       }
       return nil
+    } catch let interruption as ContainerPackagePreflightInterruption {
+      throw interruption
     } catch is CancellationError {
       throw CancellationError()
     } catch {
@@ -287,11 +302,37 @@ extension ContainerPackageCompatibility {
     arguments: [String],
     displayArguments: [String]
   ) async throws -> Data {
-    let result = try await ProcessRunner().run(
-      executable,
-      arguments,
-      input: Data()
-    )
+    let commandTask = Task {
+      try await ProcessRunner().run(
+        executable,
+        arguments,
+        input: Data()
+      )
+    }
+    let signalState = ContainerPackagePreflightSignalState()
+    let result: CommandResult
+    do {
+      result = try await withTaskCancellationHandler {
+        try await DispatchComposeSignalProxy().withSignalProxy(
+          signals: ["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"],
+          handler: { signal in
+            await signalState.record(signal)
+            commandTask.cancel()
+          },
+          operation: {
+            _ = try await commandTask.value
+          }
+        )
+        return try await commandTask.value
+      } onCancel: {
+        commandTask.cancel()
+      }
+    } catch is CancellationError {
+      if let signal = await signalState.signal {
+        throw ContainerPackagePreflightInterruption(signal: signal)
+      }
+      throw CancellationError()
+    }
     guard result.succeeded else {
       let stderr = boundedDiagnostic(result.stderrData)
       let stdout = boundedDiagnostic(result.stdoutData)
@@ -523,6 +564,26 @@ enum ContainerPackageCompatibilityError: Error, LocalizedError {
     switch self {
     case .commandFailed(let message):
       message
+    }
+  }
+}
+
+/// A host signal received while Compose owns an isolated preflight child.
+struct ContainerPackagePreflightInterruption: Error {
+  let signal: String
+
+  var exitStatus: Int32 {
+    switch signal {
+    case "SIGHUP":
+      129
+    case "SIGINT":
+      130
+    case "SIGQUIT":
+      131
+    case "SIGTERM":
+      143
+    default:
+      1
     }
   }
 }

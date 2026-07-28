@@ -335,14 +335,18 @@ struct ComposePluginMain {
             return
         }
         let rewritten = ComposeArgumentRewriter.rewrite(arguments)
-        if let failure = try await ContainerPackageCompatibility.compatibilityFailure(
-            arguments: rewritten,
-            lane: composeBuildInfo.lane,
-            expectedContainerRef: composeBuildInfo.containerRef,
-            expectedContainerizationRef: composeBuildInfo.containerizationRef
-        ) {
-            FileHandle.standardError.write(Data((failure + "\n").utf8))
-            exit(1)
+        do {
+            if let failure = try await ContainerPackageCompatibility.compatibilityFailure(
+                arguments: rewritten,
+                lane: composeBuildInfo.lane,
+                expectedContainerRef: composeBuildInfo.containerRef,
+                expectedContainerizationRef: composeBuildInfo.containerizationRef
+            ) {
+                FileHandle.standardError.write(Data((failure + "\n").utf8))
+                exit(1)
+            }
+        } catch let interruption as ContainerPackagePreflightInterruption {
+            exit(interruption.exitStatus)
         }
         await ComposePlugin.main(rewritten)
     }
