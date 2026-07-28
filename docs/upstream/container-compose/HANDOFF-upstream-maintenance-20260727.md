@@ -325,14 +325,17 @@ runtime install, stop, reset, or live parity run.
 
 ## Next parity blockers
 
-Do not start these until this slice is fully published and closed:
+CC-003 is complete in signed Compose commits `81d32eb2` and `96ac7830`:
+package-compatibility stdout and stderr now drain concurrently through the
+shared process runner, cancellation owns the child process group, and
+diagnostics are bounded at complete UTF-8 scalar boundaries.
 
-1. Drain package-compatibility preflight stdout/stderr concurrently so a full
-   child pipe cannot deadlock.
-2. Preserve inherited OCI `VOLUME` declarations in `compose commit`.
-3. Replace archive-mode `compose cp` host staging with direct runtime streams
+The next parity blockers are:
+
+1. Preserve inherited OCI `VOLUME` declarations in `compose commit`.
+2. Replace archive-mode `compose cp` host staging with direct runtime streams
    so ownership metadata can be preserved.
 
 Continue the ordered inventory in
-`docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after these three
-confirmed P1 items.
+`docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after the two
+remaining confirmed P1 items are complete.

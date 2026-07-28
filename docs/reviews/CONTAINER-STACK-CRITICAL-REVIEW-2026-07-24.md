@@ -316,26 +316,31 @@ and
 [pull-request handoff](../upstream/container-compose/PR-current-dispatch-release-authority.md)
 record the failed-run boundary and regression coverage.
 
-### P1: Compatibility Preflight Can Deadlock on Full Pipes
+### Complete: Compatibility Preflight Drains Full Pipes
 
-`Sources/ComposePlugin/ContainerPackageCompatibility.swift:260-280` attaches
-stdout and stderr pipes, calls `waitUntilExit()`, and only then drains either
-pipe.
+Signed Compose-plugin correction `81d32eb2`, plus review correction `96ac7830`,
+replaces the wait-before-drain `Foundation.Process` path with the shared
+asynchronous `ProcessRunner`. Both streams now drain while the child runs, task
+cancellation owns the exact child process group, and failed-command diagnostics
+retain stderr precedence while being limited to 64 KiB at a complete UTF-8
+scalar boundary with an exact omitted-byte count.
 
-A child that writes more than the pipe buffer can block before exit, while the
-parent waits for exit. This preflight runs before runtime-backed commands, so a
-diagnostic or changed `container system version` implementation can deadlock
-the whole plugin.
+The serialized regression suite writes 307,200 bytes to both stdout and stderr,
+proves a large-output failure still selects stderr, verifies diagnostic
+truncation, and confirms a cancelled TERM-ignoring child returns within two
+seconds and reports `ESRCH`. The focused package-compatibility run passes 16
+tests in three suites. A bounded CLI reproduction timed out on the previous
+implementation and exits normally through the corrected diagnostic path.
+The complete local gate passes 1,254 Swift tests in 42 suites, 92.79% Swift
+coverage, 89.88% Go coverage, and all CLI, lint, dependency, licence, and smoke
+checks.
 
-Ownership: Compose plugin.
-
-Required correction:
-
-- drain both streams concurrently while the process runs, preferably through
-  the corrected shared process runner;
-- add a fake `container` executable that writes more than 256 KiB to each
-  stream and prove success and failure paths terminate;
-- propagate cancellation and retain bounded diagnostic output.
+Ownership remains the Compose plugin and shared Compose process runner; no
+Apple runtime fork change is required. The
+[issue](../upstream/container-compose/ISSUE-package-compatibility-preflight-drain.md)
+and
+[pull-request handoff](../upstream/container-compose/PR-package-compatibility-preflight-drain.md)
+record the boundary and validation evidence.
 
 ### P1: `compose commit` Drops Inherited OCI Volumes
 
@@ -772,7 +777,7 @@ new Apple design work.
 | --- | --- | --- | --- | --- |
 | CC-001 | P1 | Compose | **Complete:** make unconfigured image-volume lookup fail closed | Every unconfigured SPI method has a contract test; declared-volume planning reports a clear provider error |
 | CC-002 | P1 | Compose | **Complete:** add task-cancellation ownership to `ProcessRunner` | Cancelled captured/inherited/input child exits within bound; no continuation double-resume; no surviving PID |
-| CC-003 | P1 | Plugin | Replace wait-before-drain compatibility preflight | Fake command writes >256 KiB to stdout and stderr without deadlock; cancellation and error text tested |
+| CC-003 | P1 | Plugin | **Complete:** replace wait-before-drain compatibility preflight | Fake command writes >256 KiB to stdout and stderr without deadlock; cancellation and error text tested |
 | CC-004 | P1 | Compose | Preserve inherited volumes during `commit` | Unit and live Docker parity cover inherited/additive/multiple `VOLUME`; status claim restored only after passing |
 | CC-005 | P1 | Compose/docs | Downgrade tar-stream `cp` parity pending direct runtime streams | Status and help describe content support versus metadata limits; metadata fixture fails for the expected tracked reason |
 | CC-006 | P2 | Compose | Correct lifecycle ownership diagnostics | Pinned-lane errors name Compose orchestration; stock-lane errors name missing Apple capability |
