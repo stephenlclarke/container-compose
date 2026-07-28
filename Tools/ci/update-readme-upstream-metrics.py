@@ -59,7 +59,6 @@ def default_repo_root(root: Path = ROOT) -> Path:
             "-C",
             str(root),
             "rev-parse",
-            "--path-format=absolute",
             "--git-common-dir",
         ],
         check=False,
