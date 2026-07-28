@@ -141,6 +141,7 @@ public struct ComposeExecutionOptions {
     public var hostPortAllocator: @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16
     public var watchPollInterval: Duration
     public var materializedConfigSecretDirectory: URL
+    public var temporaryDirectory: URL
     public var sleep: @Sendable (Duration) async throws -> Void {
         didSet {
             usesDefaultSleep = false
@@ -172,6 +173,7 @@ public struct ComposeExecutionOptions {
         hostPortAllocator = ComposeExecutionOptions.defaultHostPortAllocator
         watchPollInterval = .seconds(1)
         materializedConfigSecretDirectory = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
+        temporaryDirectory = FileManager.default.temporaryDirectory
         sleep = { try await Task.sleep(for: $0) }
         usesDefaultSleep = true
         confirm = ComposeExecutionOptions.defaultConfirmation

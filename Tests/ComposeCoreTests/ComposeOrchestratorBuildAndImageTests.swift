@@ -461,6 +461,9 @@ extension ComposeOrchestratorTests {
     @Test("build materializes inline Dockerfile for container build")
     func buildMaterializesInlineDockerfileForContainerBuild() async throws {
         let runner = InlineDockerfileRunner()
+        let sharedRoot = try temporaryDirectory()
+        try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: sharedRoot.path)
+        defer { try? FileManager.default.removeItem(at: sharedRoot) }
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -473,17 +476,25 @@ extension ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).build(project: project, services: ["api"], noCache: false)
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions {
+                $0.temporaryDirectory = sharedRoot
+            },
+        ).build(project: project, services: ["api"], noCache: false)
 
         let command = try #require(runner.commands.first)
         let fileIndex = try #require(command.firstIndex(of: "--file"))
         let dockerfilePath = command[fileIndex + 1]
         #expect(command.containsSequence(["container", "build", "--tag", "example/api:inline"]))
-        #expect(dockerfilePath.contains("container-compose-demo-api-"))
+        #expect(dockerfilePath.contains("container-compose-inline-"))
         #expect(dockerfilePath.hasSuffix("/Dockerfile"))
         #expect(command.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
         #expect(runner.dockerfileContents == ["FROM alpine:3.20\nRUN echo inline\n"])
+        #expect(runner.dockerfileDirectoryPermissions == [0o700])
+        #expect(runner.dockerfilePermissions == [0o600])
         #expect(!FileManager.default.fileExists(atPath: dockerfilePath))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: sharedRoot.path).isEmpty)
     }
 
     @Test("build rejects conflicting Dockerfile forms before emitting commands")

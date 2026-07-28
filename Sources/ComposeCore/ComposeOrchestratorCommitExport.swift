@@ -97,30 +97,33 @@ public extension ComposeOrchestrator {
             inherited: baseImageMetadata?.healthCheck,
         )
 
-        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
-            UUID().uuidString,
-            isDirectory: true,
+        let tempDirectory = try ComposeTemporaryFiles.createDirectory(
+            in: options.temporaryDirectory,
+            prefix: "container-compose-commit-",
         )
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         defer {
             try? FileManager.default.removeItem(at: tempDirectory)
         }
 
         let rootfs = tempDirectory.appendingPathComponent("rootfs.tar")
         let archive = tempDirectory.appendingPathComponent("image.tar")
+        try ComposeTemporaryFiles.prepareFile(at: rootfs)
         try await exporter.exportContainer(
             id: container.id,
             output: rootfs.path,
             live: live,
             noFreeze: noFreeze,
         )
+        try ComposeTemporaryFiles.secureFile(at: rootfs)
         try ComposeCommitImageArchive.write(
             rootfsArchive: rootfs,
             output: archive,
             service: service,
             options: commit,
             metadata: .init(baseImage: baseImageMetadata, healthCheck: healthCheck),
+            temporaryDirectory: options.temporaryDirectory,
         )
+        try ComposeTemporaryFiles.secureFile(at: archive)
         try await imageManager.loadImageArchive(archive.path, emit: options.emit)
     }
 

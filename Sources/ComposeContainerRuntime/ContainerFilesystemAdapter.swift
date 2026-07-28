@@ -222,23 +222,35 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
 
 /// `ContainerClient`-backed exporter for real service container exports.
 public struct ContainerClientExporter: ComposeRuntimeExporting {
-    private static let isStateless = true
+    public typealias Export = @Sendable (String, URL, Bool, Bool) async throws -> Void
 
-    public init() {
-        _ = Self.isStateless
+    private let temporaryDirectory: URL
+    private let exportOperation: Export
+
+    public init(
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        export: @escaping Export = { id, archive, live, noFreeze in
+            try await ContainerClient().export(id: id, archive: archive, live: live, noFreeze: noFreeze)
+        },
+    ) {
+        self.temporaryDirectory = temporaryDirectory
+        exportOperation = export
     }
 
     /// Exports through `ContainerClient.export(id:archive:live:noFreeze:)`.
     public func exportContainer(id: String, output: String?, live: Bool, noFreeze: Bool) async throws {
-        let client = ContainerClient()
-        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let tempDirectory = try ComposeTemporaryFiles.createDirectory(
+            in: temporaryDirectory,
+            prefix: "container-compose-export-",
+        )
         defer {
             try? FileManager.default.removeItem(at: tempDirectory)
         }
 
         let archive = tempDirectory.appendingPathComponent("archive.tar")
-        try await client.export(id: id, archive: archive, live: live, noFreeze: noFreeze)
+        try ComposeTemporaryFiles.prepareFile(at: archive)
+        try await exportOperation(id, archive, live, noFreeze)
+        try ComposeTemporaryFiles.secureFile(at: archive)
 
         if let output {
             try FileManager.default.moveItem(at: archive, to: Self.outputURL(output))

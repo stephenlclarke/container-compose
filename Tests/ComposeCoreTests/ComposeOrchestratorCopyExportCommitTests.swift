@@ -266,6 +266,60 @@ extension ComposeOrchestratorTests {
         #expect(destination == "/tmp")
     }
 
+    @Test("cp staging is private in shared TMPDIR and cleans up after failure")
+    func cpStagingIsPrivateInSharedTemporaryDirectoryAndCleansUpAfterFailure() async throws {
+        let sharedRoot = try temporaryDirectory()
+        try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: sharedRoot.path)
+        defer { try? FileManager.default.removeItem(at: sharedRoot) }
+        let fixtureRoot = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+        let archive = try archiveWithFile(named: "payload.txt", contents: "from stdin\n", in: fixtureRoot)
+        let input = try FileHandle(forReadingFrom: archive)
+        defer { try? input.close() }
+        let copier = TemporaryPathSnapshottingContainerCopier(root: sharedRoot)
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "running"),
+            discoveredServiceContainer(id: "demo-api-2", serviceName: "api", status: "running"),
+        ])
+        var executionOptions = ComposeExecutionOptions(runtimeHooks: .init(copyInputArchive: { input }))
+        executionOptions.temporaryDirectory = sharedRoot
+        let orchestrator = ComposeOrchestrator(
+            options: executionOptions,
+            dependencies: orchestratorDependencies {
+                $0.copier = copier
+                $0.discoveryManager = discoveryManager
+            },
+        )
+
+        await #expect(throws: ComposeError.self) {
+            try await orchestrator.copy(
+                project: ComposeProject(
+                    name: "demo",
+                    services: ["api": ComposeService(name: "api", image: "example/api")],
+                ),
+                options: ComposeCopyOptions {
+                    $0.arguments = ["-", "api:/tmp"]
+                    $0.all = true
+                },
+            )
+        }
+
+        let snapshots = await copier.snapshots
+        let directories = snapshots.filter {
+            guard $0.isDirectory else {
+                return false
+            }
+            let components = $0.path.split(separator: "/")
+            return components.count == 1 || components.last == "root"
+        }
+        let archives = snapshots.filter { !$0.isDirectory && $0.path.hasSuffix(".tar") }
+        #expect(directories.count >= 4)
+        #expect(directories.allSatisfy { $0.permissions == 0o700 })
+        #expect(archives.count >= 2)
+        #expect(archives.allSatisfy { $0.permissions == 0o600 })
+        #expect(try FileManager.default.contentsOfDirectory(atPath: sharedRoot.path).isEmpty)
+    }
+
     @Test("cp streams service container paths as stdout tar archives")
     func cpStreamsServiceContainerPathsAsStdoutTarArchives() async throws {
         let runner = RecordingRunner()
@@ -1617,6 +1671,64 @@ extension ComposeOrchestratorTests {
         #expect(exports.first?.live == true)
         #expect(exports.first?.noFreeze == true)
         #expect((await imageManager.requests).count == 2)
+    }
+
+    @Test("commit staging is private and cleans up after export failure")
+    func commitStagingIsPrivateAndCleansUpAfterExportFailure() async throws {
+        let sharedRoot = try temporaryDirectory()
+        try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: sharedRoot.path)
+        defer { try? FileManager.default.removeItem(at: sharedRoot) }
+        let exporter = TemporaryPathSnapshottingExporter(root: sharedRoot)
+        var executionOptions = ComposeExecutionOptions()
+        executionOptions.temporaryDirectory = sharedRoot
+        let service = ComposeService(name: "api", image: "example/api")
+        let orchestrator = ComposeOrchestrator(
+            options: executionOptions,
+            dependencies: orchestratorDependencies {
+                $0.exporter = exporter
+            },
+        )
+
+        await #expect(throws: ComposeError.self) {
+            try await orchestrator.writeCommitImage(
+                project: ComposeProject(name: "demo", services: ["api": service]),
+                service: service,
+                options: ComposeCommitOptions(),
+                container: ComposeContainerSummary(id: "demo-api-1", status: "stopped"),
+            )
+        }
+
+        let snapshots = await exporter.snapshots
+        let directory = try #require(snapshots.first { $0.isDirectory })
+        let rootfs = try #require(snapshots.first { $0.path.hasSuffix("/rootfs.tar") })
+        #expect(directory.permissions == 0o700)
+        #expect(rootfs.permissions == 0o600)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: sharedRoot.path).isEmpty)
+    }
+
+    @Test("commit image staging cleans up after archive construction failure")
+    func commitImageStagingCleansUpAfterArchiveConstructionFailure() throws {
+        let sharedRoot = try temporaryDirectory()
+        try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: sharedRoot.path)
+        defer { try? FileManager.default.removeItem(at: sharedRoot) }
+        let fixtureRoot = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+        let rootfs = fixtureRoot.appendingPathComponent("rootfs.tar")
+        try rootfsArchiveData().write(to: rootfs)
+
+        #expect(throws: ComposeError.self) {
+            try ComposeCommitImageArchive.write(
+                rootfsArchive: rootfs,
+                output: fixtureRoot.appendingPathComponent("image.tar"),
+                service: ComposeService(name: "api", image: "example/api"),
+                options: ComposeCommitOptions {
+                    $0.changes = ["UNSUPPORTED value"]
+                },
+                temporaryDirectory: sharedRoot,
+            )
+        }
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: sharedRoot.path).isEmpty)
     }
 
     @Test("commit image archive applies Docker change instructions")

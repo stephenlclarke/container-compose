@@ -218,6 +218,7 @@ public extension ComposeOrchestrator {
             archive: archive,
             destination: destination,
             options: options,
+            temporaryDirectory: self.options.temporaryDirectory,
         )
     }
 
@@ -244,19 +245,18 @@ public extension ComposeOrchestrator {
             archive: archive,
             copyContents: copyContents,
             options: options,
+            temporaryDirectory: self.options.temporaryDirectory,
         )
     }
 
     private func stagedCopyInputArchive(_ input: FileHandle) throws -> URL {
-        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
-            UUID().uuidString,
-            isDirectory: true,
+        let tempDirectory = try ComposeTemporaryFiles.createDirectory(
+            in: options.temporaryDirectory,
+            prefix: "container-compose-copy-",
         )
         do {
-            try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
             let archive = tempDirectory.appendingPathComponent("stdin.tar")
-            FileManager.default.createFile(atPath: archive.path, contents: nil)
-            let output = try FileHandle(forWritingTo: archive)
+            let output = try ComposeTemporaryFiles.createFile(at: archive)
             defer {
                 try? output.close()
             }

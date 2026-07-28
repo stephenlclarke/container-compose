@@ -397,9 +397,9 @@ and aggregate first-party Swift at 85%. The full CI measurements were 92.89%,
 
 TEST-008 is complete. The 33,831-line orchestrator test was split into one
 shared-support owner and eleven command or capability suite files. All 895
-unique test IDs are preserved. On the same local macOS arm64 build, warm
-`--skip-build` runs completed in 2.594 seconds with default parallel execution
-and 5.205 seconds with `--no-parallel`.
+unique test IDs are preserved. On the same local macOS arm64 host, targeting
+`arm64e-apple-macos14.0`, warm `--skip-build` runs completed in 2.594 seconds
+with default parallel execution and 5.205 seconds with `--no-parallel`.
 
 Strict coverage comparison exposed an existing scheduler-dependent
 abort-on-container-failure test: the successful container did not always
@@ -411,10 +411,33 @@ reports `executed=1251 skipped=25`, with `ComposeCore` at 92.89%,
 Go at 89.88%. The covered source-line set exactly matches the pre-split
 baseline.
 
-The next listed Phase 0 item is SEC-009:
+SEC-009 is complete. Compose-owned sensitive temporary paths now use verified
+`0700` directory and `0600` file permissions before writes. The configured
+temporary root flows through inline Dockerfiles, streamed copy replay and
+extraction, commit export and image construction, and the Container provider
+export adapter. Compose Bridge and image-volume copy-up staging use the same
+helper. Archive writers and provider exports are rechecked after they run;
+symlink replacement is rejected. Extracted container payload permissions and
+the original volume backing-file mode are preserved.
 
-1. Set `0700` and `0600` permissions on sensitive temporary paths.
-2. Cover standard and shared `TMPDIR` use, including cleanup failure.
+Targeted tests cover the standard macOS temporary root and a deliberately 0777
+shared root. They verify live permissions, successful exporter output,
+directory-collision preservation, symlink rejection, and cleanup after copy,
+exporter, image construction, and image-volume failures. The full 898-test
+orchestrator suite passed in 2.479 seconds on the Swift
+`arm64e-apple-macos14.0` target.
+
+Full `HAWKEYE_AUTO_INSTALL=1 make ci` passed in 352.23 seconds with 1,285
+tests: `executed=1260 skipped=25`. Coverage was 92.74% `ComposeCore`, 100.00%
+`ComposeRuntimeSPI`, 76.78% `ComposeContainerRuntime`, 56.52%
+`ComposePlugin`, 87.66% aggregate first-party Swift, and 89.88% Go. Compared
+with TEST-008, unchanged source lost no covered lines.
+
+The next listed Phase 0 item is DOC-010:
+
+1. Correct `DESIGN.md` to match the actual package graph.
+2. Update the coupling audit and `STATUS.md` claims to match tested command
+   semantics.
 
 Continue the ordered inventory in
 `docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after this

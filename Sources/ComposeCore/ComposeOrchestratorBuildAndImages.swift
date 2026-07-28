@@ -257,12 +257,18 @@ extension ComposeOrchestrator {
 
     /// Writes Compose `dockerfile_inline` content to a temporary Dockerfile for apple/container build.
     func materializeInlineDockerfile(project: ComposeProject, service: ComposeService, contents: String) throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("container-compose-\(project.name)-\(service.name)-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try ComposeTemporaryFiles.createDirectory(
+            in: options.temporaryDirectory,
+            prefix: "container-compose-inline-",
+        )
         let dockerfile = directory.appendingPathComponent("Dockerfile", isDirectory: false)
-        try contents.write(to: dockerfile, atomically: true, encoding: .utf8)
-        return dockerfile
+        do {
+            try ComposeTemporaryFiles.write(Data(contents.utf8), to: dockerfile)
+            return dockerfile
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
     }
 
     /// Renders Docker Buildx bake JSON for `compose build --print`.

@@ -62,14 +62,10 @@ func absoluteBridgePath(_ path: String) -> String {
 }
 
 func createBridgeInputDirectory(composeYAML: String) throws -> URL {
-    let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("container-compose-bridge-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let directory = try ComposeTemporaryFiles.createDirectory(prefix: "container-compose-bridge-")
     do {
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         let composeFile = directory.appendingPathComponent("compose.yaml")
-        try composeYAML.write(to: composeFile, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: composeFile.path)
+        try ComposeTemporaryFiles.write(Data(composeYAML.utf8), to: composeFile)
         return directory
     } catch {
         try? FileManager.default.removeItem(at: directory)
@@ -112,16 +108,7 @@ func ensureBridgeDestinationIsNew(_ destination: String) throws {
 }
 
 func createBridgeExportDirectory() throws -> URL {
-    let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("container-compose-bridge-export-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    do {
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-        return directory
-    } catch {
-        try? FileManager.default.removeItem(at: directory)
-        throw error
-    }
+    try ComposeTemporaryFiles.createDirectory(prefix: "container-compose-bridge-export-")
 }
 
 func extractBridgeTemplates(archive: URL, destination: String) throws {

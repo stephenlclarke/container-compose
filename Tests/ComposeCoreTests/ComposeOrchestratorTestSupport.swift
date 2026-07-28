@@ -375,6 +375,8 @@ func temporaryExecutable(name: String = "provider") throws -> URL {
 final class InlineDockerfileRunner: CommandRunning, @unchecked Sendable {
     private(set) var commands: [[String]] = []
     private(set) var dockerfileContents: [String] = []
+    private(set) var dockerfileDirectoryPermissions: [Int] = []
+    private(set) var dockerfilePermissions: [Int] = []
 
     func run(
         _ executable: String,
@@ -394,6 +396,10 @@ final class InlineDockerfileRunner: CommandRunning, @unchecked Sendable {
             let dockerfileURL = URL(fileURLWithPath: arguments[fileIndex + 1])
             if FileManager.default.fileExists(atPath: dockerfileURL.path) {
                 try dockerfileContents.append(String(contentsOf: dockerfileURL, encoding: .utf8))
+                try dockerfileDirectoryPermissions.append(
+                    orchestratorPosixPermissions(at: dockerfileURL.deletingLastPathComponent().path),
+                )
+                try dockerfilePermissions.append(orchestratorPosixPermissions(at: dockerfileURL.path))
             }
         }
         return CommandResult(status: 0, stdout: "", stderr: "")
@@ -1849,6 +1855,100 @@ actor PathOnlyRecordingContainerCopier: ContainerCopying {
             destinationID: destinationID,
             destination: destination,
         ))
+    }
+}
+
+struct TemporaryPathSnapshot: Equatable {
+    var path: String
+    var isDirectory: Bool
+    var permissions: Int
+}
+
+actor TemporaryPathSnapshottingContainerCopier: ContainerCopying {
+    private let root: URL
+    private var storage: [TemporaryPathSnapshot] = []
+
+    init(root: URL) {
+        self.root = root
+    }
+
+    var snapshots: [TemporaryPathSnapshot] {
+        storage
+    }
+
+    func copyIntoContainer(
+        id _: String,
+        source _: String,
+        destination _: String,
+        options _: ContainerCopyTransferOptions,
+    ) async throws {
+        storage = try Self.snapshot(root: root)
+        throw ComposeError.invalidProject("intentional copy failure")
+    }
+
+    func copyFromContainer(
+        id _: String,
+        source _: String,
+        destination _: String,
+        options _: ContainerCopyTransferOptions,
+    ) async throws {
+        throw ComposeError.invalidProject("unexpected copy-from operation")
+    }
+
+    func copyBetweenContainers(
+        sourceID _: String,
+        source _: String,
+        destinationID _: String,
+        destination _: String,
+        options _: ContainerCopyTransferOptions,
+    ) async throws {
+        throw ComposeError.invalidProject("unexpected container-to-container copy")
+    }
+
+    fileprivate static func snapshot(root: URL) throws -> [TemporaryPathSnapshot] {
+        let fileManager = FileManager.default
+        let resolvedRoot = root.resolvingSymlinksInPath()
+        guard let enumerator = fileManager.enumerator(
+            at: resolvedRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [],
+        ) else {
+            return []
+        }
+        return try enumerator.compactMap { item -> TemporaryPathSnapshot? in
+            guard let url = item as? URL else {
+                return nil
+            }
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey])
+            let components = url.pathComponents
+            guard let rootIndex = components.lastIndex(of: root.lastPathComponent) else {
+                return nil
+            }
+            return TemporaryPathSnapshot(
+                path: components.suffix(from: rootIndex + 1).joined(separator: "/"),
+                isDirectory: values.isDirectory == true,
+                permissions: try orchestratorPosixPermissions(at: url.path),
+            )
+        }
+        .sorted { $0.path < $1.path }
+    }
+}
+
+actor TemporaryPathSnapshottingExporter: ContainerExporting {
+    private let root: URL
+    private var storage: [TemporaryPathSnapshot] = []
+
+    init(root: URL) {
+        self.root = root
+    }
+
+    var snapshots: [TemporaryPathSnapshot] {
+        storage
+    }
+
+    func exportContainer(id _: String, output _: String?, live _: Bool, noFreeze _: Bool) async throws {
+        storage = try TemporaryPathSnapshottingContainerCopier.snapshot(root: root)
+        throw ComposeError.invalidProject("intentional export failure")
     }
 }
 

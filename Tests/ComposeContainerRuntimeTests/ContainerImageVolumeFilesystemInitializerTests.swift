@@ -91,6 +91,7 @@ struct ContainerImageVolumeInitializerTests {
     @Test
     func `an empty volume is seeded from the selected image subtree and then reused`() async throws {
         let directory = FileManager.default.uniqueTemporaryDirectory()
+        try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: directory.path)
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let imagePath = FilePath(directory.appendingPathComponent("image.ext4").path)
@@ -102,6 +103,7 @@ struct ContainerImageVolumeInitializerTests {
             size: 8.mib(),
             journal: EXT4.JournalConfig(size: 4.mib(), defaultMode: .ordered),
         )
+        try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: volumePath.description)
 
         let initializer = ContainerImageVolumeInitializer()
         let volume = ComposeVolumeSummary(
@@ -121,6 +123,8 @@ struct ContainerImageVolumeInitializerTests {
         #expect(try seededReader.stat(FilePath("/payload.txt")).inode.mode & 0o777 == 0o640)
         #expect(try seededReader.stat(FilePath("/payload.txt")).inode.uid == 1000)
         #expect(try seededReader.stat(FilePath("/payload.txt")).inode.gid == 1001)
+        #expect(try posixPermissions(at: volumePath) == 0o640)
+        #expect(try stagingPaths(in: directory).isEmpty)
 
         #expect(try await !(initializer.initializeIfEmpty(
             imageFilesystem: imagePath.description,
@@ -235,6 +239,7 @@ struct ContainerImageVolumeInitializerTests {
     @Test
     func `an invalid journal setting leaves an empty target volume unchanged`() async throws {
         let directory = FileManager.default.uniqueTemporaryDirectory()
+        try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: directory.path)
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let imagePath = FilePath(directory.appendingPathComponent("image.ext4").path)
@@ -259,6 +264,18 @@ struct ContainerImageVolumeInitializerTests {
 
         let reader = try EXT4.EXT4Reader(blockDevice: volumePath)
         #expect(try reader.listDirectory(FilePath("/")) == ["lost+found"])
+        #expect(try stagingPaths(in: directory).isEmpty)
+    }
+
+    private func posixPermissions(at path: FilePath) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: path.description)
+        let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
+        return permissions.intValue & 0o777
+    }
+
+    private func stagingPaths(in directory: URL) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix(".compose-image-volume-init-") }
     }
 
     private func formatImage(

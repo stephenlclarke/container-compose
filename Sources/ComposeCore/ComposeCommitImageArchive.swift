@@ -51,16 +51,21 @@ package enum ComposeCommitImageArchive {
         service: ComposeService,
         options: ComposeCommitOptions,
         metadata: Metadata = Metadata(),
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
     ) throws {
-        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let tempDirectory = try ComposeTemporaryFiles.createDirectory(
+            in: temporaryDirectory,
+            prefix: "container-compose-image-",
+        )
         defer {
             try? FileManager.default.removeItem(at: tempDirectory)
         }
 
         let layoutDirectory = tempDirectory.appendingPathComponent("layout", isDirectory: true)
         let blobsDirectory = layoutDirectory.appendingPathComponent("blobs/sha256", isDirectory: true)
-        try FileManager.default.createDirectory(at: blobsDirectory, withIntermediateDirectories: true)
+        try ComposeTemporaryFiles.createDirectory(at: layoutDirectory)
+        try ComposeTemporaryFiles.createDirectory(at: layoutDirectory.appendingPathComponent("blobs", isDirectory: true))
+        try ComposeTemporaryFiles.createDirectory(at: blobsDirectory)
 
         let writer = try ContentWriter(for: blobsDirectory)
         let layer = try writer.create(from: rootfsArchive)
@@ -133,16 +138,18 @@ package enum ComposeCommitImageArchive {
 
         try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? FileManager.default.removeItem(at: output)
+        try ComposeTemporaryFiles.prepareFile(at: output)
         let archive = try ArchiveWriter(format: .paxRestricted, filter: .none, file: output)
         try archive.archiveDirectory(layoutDirectory)
         try archive.finishEncoding()
+        try ComposeTemporaryFiles.secureFile(at: output)
     }
 
     private static func writeJSON<T: Encodable>(_ value: T, to url: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(value)
-        try data.write(to: url)
+        try ComposeTemporaryFiles.write(data, to: url)
     }
 
     private static func iso8601String(_ date: Date) -> String {

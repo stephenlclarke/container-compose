@@ -515,10 +515,10 @@ Resolution (2026-07-26):
 
 ### P3: Temporary Copy and Commit Data Needs Explicit Permissions
 
-Archive-copy and commit paths create temporary directories and files with
-Foundation defaults, normally 0755 and 0644. The standard macOS temporary
-parent is user-private, which limits exposure under normal operation, but a
-caller-controlled `TMPDIR` can point at a shared tree.
+Archive-copy and commit paths previously created temporary directories and
+files with Foundation defaults, normally 0755 and 0644. The standard macOS
+temporary parent is user-private, which limited exposure under normal
+operation, but a caller-controlled `TMPDIR` can point at a shared tree.
 
 Impact: copied container content or image metadata can become readable by
 other local users in a non-standard temporary directory.
@@ -530,6 +530,29 @@ Required correction:
 - create temporary directories as 0700 and files as 0600;
 - verify permissions before writing sensitive data;
 - keep cleanup in `defer` and add failure-path tests.
+
+Resolution (2026-07-28):
+
+- `ComposeTemporaryFiles` creates and verifies private staging directories and
+  files before sensitive writes.
+- The execution-specific temporary root now reaches inline Dockerfiles,
+  streamed copy replay and extraction, commit export and image construction,
+  and the Container provider export adapter.
+- Compose Bridge input/export paths and image-volume copy-up staging use the
+  same helper. Image-volume replacement restores the original backing-file
+  mode after its private staging files are no longer needed.
+- Archive writers and provider operations are followed by permission
+  and regular-file verification because they can replace or change the staged
+  file. Symlink replacement is rejected without changing the link target.
+- Tests cover the standard temporary root and a deliberately shared 0777 root,
+  including exporter, archive-construction, copy, and image-volume failures.
+  Cleanup leaves the shared root empty.
+- Extracted container payload modes remain intact. The hardening applies only
+  to Compose-owned staging directories and archive/control files.
+- Full `HAWKEYE_AUTO_INSTALL=1 make ci` passed in 352.23 seconds with 1,260
+  executed tests and 25 explicit live-runtime skips. Coverage was 92.74% Core,
+  100.00% SPI, 76.78% provider, 56.52% plugin, 87.66% aggregate Swift, and
+  89.88% Go. Unchanged source lost no covered lines against TEST-008.
 
 ## Design and Maintainability Review
 
@@ -803,7 +826,7 @@ new Apple design work.
 | CC-006 | P2 | Compose | **Complete:** correct lifecycle ownership diagnostics | Pinned-lane errors name Compose orchestration; stock-lane errors name missing Apple capability |
 | TEST-007 | P1 | Compose CI | **Complete:** make live test skips explicit and gate aggregate coverage | CI reports executed/skipped counts; separate Core/SPI/provider/plugin/aggregate thresholds |
 | TEST-008 | P2 | Compose | **Complete:** split the 33k-line orchestrator test by command/capability | One shared-fixture owner; 895 unique test IDs; default parallel 2.594s versus forced serial 5.205s; exact baseline line coverage retained |
-| SEC-009 | P2 | Compose | Set 0700/0600 permissions on sensitive temporary paths | Permission tests cover standard and shared `TMPDIR`; cleanup survives failure |
+| SEC-009 | P2 | Compose | **Complete:** set 0700/0600 permissions on sensitive temporary paths | Permission tests cover standard and shared `TMPDIR`; cleanup survives failure |
 | DOC-010 | P1 | Compose | Correct `DESIGN.md`, coupling audit, and `STATUS.md` claims | Documentation matches the actual package graph and tested command semantics |
 | APPLE-011 | P1 | Runtime forks | **Complete on supported fork:** review/port signal and log-tail fixes #1997/#2000 | Focused runtime tests and Compose kill/log-tail parity pass; local commits remain independently removable |
 | APPLE-012 | P1 | Runtime forks | **Complete on supported fork:** fix log fan-out after dead client (#2009) | One failed writer is removed or isolated; persisted log and healthy attach writer continue; no busy loop |
