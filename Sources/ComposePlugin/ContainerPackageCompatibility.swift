@@ -293,8 +293,8 @@ extension ContainerPackageCompatibility {
       input: Data()
     )
     guard result.succeeded else {
-      let stderr = boundedDiagnostic(result.stderr)
-      let stdout = boundedDiagnostic(result.stdout)
+      let stderr = boundedDiagnostic(result.stderrData)
+      let stdout = boundedDiagnostic(result.stdoutData)
       let command = displayArguments.joined(separator: " ")
       let message = stderr.isEmpty ? stdout : stderr
       throw ContainerPackageCompatibilityError.commandFailed(
@@ -304,21 +304,129 @@ extension ContainerPackageCompatibility {
     return Data(result.stdout.utf8)
   }
 
-  private static func boundedDiagnostic(_ value: String) -> String {
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    let data = Data(trimmed.utf8)
-    guard data.count > maximumDiagnosticBytes else {
-      return trimmed
+  private struct DiagnosticUnit {
+    let range: Range<Int>
+    let scalar: Unicode.Scalar?
+
+    var isWhitespace: Bool {
+      scalar?.properties.isWhitespace == true
     }
 
-    var prefixByteCount = maximumDiagnosticBytes
-    while prefixByteCount > 0 {
-      if let prefix = String(data: data.prefix(prefixByteCount), encoding: .utf8) {
-        return "\(prefix)\n[truncated \(data.count - prefixByteCount) bytes]"
-      }
-      prefixByteCount -= 1
+    var rendered: String {
+      scalar.map(String.init) ?? "\u{fffd}"
     }
-    return "[truncated \(data.count) bytes]"
+  }
+
+  private static func boundedDiagnostic(_ data: Data) -> String {
+    let units = diagnosticUnits(in: Array(data))
+    guard
+      let first = units.firstIndex(where: { !$0.isWhitespace }),
+      let last = units.lastIndex(where: { !$0.isWhitespace })
+    else {
+      return ""
+    }
+
+    let rawStart = units[first].range.lowerBound
+    let rawEnd = units[last].range.upperBound
+    var consumedRawEnd = rawStart
+    var rendered = ""
+    for unit in units[first...last] {
+      if unit.range.upperBound - rawStart > maximumDiagnosticBytes {
+        break
+      }
+      rendered.append(contentsOf: unit.rendered)
+      consumedRawEnd = unit.range.upperBound
+    }
+
+    guard consumedRawEnd < rawEnd else {
+      return rendered
+    }
+    let omittedByteCount = rawEnd - consumedRawEnd
+    let byteLabel = omittedByteCount == 1 ? "byte" : "bytes"
+    return "\(rendered)\n[truncated \(omittedByteCount) \(byteLabel)]"
+  }
+
+  private static func diagnosticUnits(in bytes: [UInt8]) -> [DiagnosticUnit] {
+    var units: [DiagnosticUnit] = []
+    units.reserveCapacity(bytes.count)
+    var index = 0
+    while index < bytes.count {
+      let decoded = decodeUTF8Scalar(in: bytes, at: index)
+      units.append(
+        DiagnosticUnit(
+          range: index..<(index + decoded.length),
+          scalar: decoded.scalar
+        ))
+      index += decoded.length
+    }
+    return units
+  }
+
+  private static func decodeUTF8Scalar(
+    in bytes: [UInt8],
+    at index: Int
+  ) -> (length: Int, scalar: Unicode.Scalar?) {
+    let first = bytes[index]
+    if first < 0x80 {
+      return (1, Unicode.Scalar(first))
+    }
+
+    if first >= 0xc2, first <= 0xdf,
+      hasContinuationBytes(1, in: bytes, after: index)
+    {
+      let value = UInt32(first & 0x1f) << 6
+        | UInt32(bytes[index + 1] & 0x3f)
+      return (2, Unicode.Scalar(value))
+    }
+
+    if first >= 0xe0, first <= 0xef,
+      hasContinuationBytes(2, in: bytes, after: index)
+    {
+      let second = bytes[index + 1]
+      let validSecond =
+        (first == 0xe0 && second >= 0xa0)
+        || (first == 0xed && second <= 0x9f)
+        || (first != 0xe0 && first != 0xed)
+      if validSecond {
+        let value = UInt32(first & 0x0f) << 12
+          | UInt32(second & 0x3f) << 6
+          | UInt32(bytes[index + 2] & 0x3f)
+        return (3, Unicode.Scalar(value))
+      }
+    }
+
+    if first >= 0xf0, first <= 0xf4,
+      hasContinuationBytes(3, in: bytes, after: index)
+    {
+      let second = bytes[index + 1]
+      let validSecond =
+        (first == 0xf0 && second >= 0x90)
+        || (first == 0xf4 && second <= 0x8f)
+        || (first != 0xf0 && first != 0xf4)
+      if validSecond {
+        let value = UInt32(first & 0x07) << 18
+          | UInt32(second & 0x3f) << 12
+          | UInt32(bytes[index + 2] & 0x3f) << 6
+          | UInt32(bytes[index + 3] & 0x3f)
+        return (4, Unicode.Scalar(value))
+      }
+    }
+    // One malformed byte per unit keeps every replacement tied to an exact raw range.
+    return (1, nil)
+  }
+
+  private static func hasContinuationBytes(
+    _ count: Int,
+    in bytes: [UInt8],
+    after index: Int
+  ) -> Bool {
+    guard index + count < bytes.count else {
+      return false
+    }
+    for offset in 1...count where bytes[index + offset] & 0xc0 != 0x80 {
+      return false
+    }
+    return true
   }
 
   private static func serviceGuidance(lane: String, detected: [String]) -> String {

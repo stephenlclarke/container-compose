@@ -444,6 +444,26 @@ struct ContainerPackagePreflightProcessTests {
     }
   }
 
+  @Test("preflight diagnostic limit counts malformed raw bytes")
+  func failureTextCountsMalformedRawBytes() async {
+    do {
+      _ = try await ContainerPackageCompatibility.captureCommand(
+        executable: "/bin/sh",
+        arguments: [
+          "-c",
+          "python3 -c 'import os; os.write(2, b\"\\xff\" + b\"e\" * 65536)'; exit 23",
+        ],
+        displayArguments: ["container", "system", "version"]
+      )
+      Issue.record("Expected the preflight command to fail")
+    } catch {
+      let message = error.localizedDescription
+      #expect(message.hasPrefix("\u{fffd}"))
+      #expect(message.hasSuffix("[truncated 1 byte]"))
+      #expect(message.utf8.count < 65_600)
+    }
+  }
+
   @Test("cancelling a preflight terminates its child process")
   func cancellationTerminatesChild() async throws {
     let directory = FileManager.default.temporaryDirectory

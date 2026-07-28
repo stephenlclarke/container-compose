@@ -159,13 +159,29 @@ private func notifyProcessDidStart(
 /// Captured result from an external command.
 public struct CommandResult: Equatable, Sendable {
     public var status: Int32
-    public var stdout: String
-    public var stderr: String
+    package var stdoutData: Data
+    package var stderrData: Data
+
+    public var stdout: String {
+        get { processOutputString(stdoutData) }
+        set { stdoutData = Data(newValue.utf8) }
+    }
+
+    public var stderr: String {
+        get { processOutputString(stderrData) }
+        set { stderrData = Data(newValue.utf8) }
+    }
 
     public init(status: Int32, stdout: String, stderr: String) {
         self.status = status
-        self.stdout = stdout
-        self.stderr = stderr
+        stdoutData = Data(stdout.utf8)
+        stderrData = Data(stderr.utf8)
+    }
+
+    package init(status: Int32, stdoutData: Data, stderrData: Data) {
+        self.status = status
+        self.stdoutData = stdoutData
+        self.stderrData = stderrData
     }
 
     public var succeeded: Bool {
@@ -785,8 +801,8 @@ private extension ProcessRunState {
             continuation,
             .success(CommandResult(
                 status: status,
-                stdout: processOutputString(stdout),
-                stderr: processOutputString(stderr),
+                stdoutData: stdout,
+                stderrData: stderr,
             )),
         )
     }
