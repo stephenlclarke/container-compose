@@ -392,6 +392,33 @@ struct PreflightDiagnosticPriorityTests {
       #expect(error.localizedDescription == "[truncated 65552 bytes]")
     }
   }
+
+  @Test("preflight diagnostic limit includes trimmed leading bytes")
+  func failureTextBoundsUTF8FromRawStreamStart() async {
+    do {
+      _ = try await ContainerPackageCompatibility.captureCommand(
+        executable: "/bin/sh",
+        arguments: [
+          "-c",
+          """
+          python3 - <<'PY'
+          import os
+          os.write(2, b" " * 4 + b"e" * 65532 + "\\U0001f600".encode())
+          PY
+          exit 23
+          """,
+        ],
+        displayArguments: ["container", "system", "version"]
+      )
+      Issue.record("Expected the preflight command to fail")
+    } catch {
+      let message = error.localizedDescription
+      let renderedPrefix = message.split(separator: "\n", omittingEmptySubsequences: false)[0]
+      #expect(renderedPrefix.utf8.count == 65_532)
+      #expect(!message.contains("\u{fffd}"))
+      #expect(message.hasSuffix("[truncated 4 bytes]"))
+    }
+  }
 }
 
 @Suite("Container package preflight process", .serialized)

@@ -435,7 +435,7 @@ extension ContainerPackageCompatibility {
           rawEnd = unitEnd
         }
 
-        if let rawStart, unitEnd - rawStart <= maximumDiagnosticBytes {
+        if rawStart != nil, unitEnd <= maximumDiagnosticBytes {
           rendered.append(contentsOf: decoded.scalar.map(String.init) ?? "\u{fffd}")
           consumedRawEnd = unitEnd
         }
