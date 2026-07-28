@@ -171,7 +171,7 @@ public extension ComposeOrchestrator {
         do {
             metadata.declaredVolumeTargets = try await imageManager.imageDeclaredVolumeTargets(
                 image,
-                platform: service.platform
+                platform: service.platform,
             )
         } catch {
             // Retain the default-variant declarations when the platform-aware
