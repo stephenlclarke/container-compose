@@ -2,7 +2,7 @@
 
 This is the current disposition of Apple work that affects the five-repository container stack. Re-check GitHub before changing an Apple-backed component because issue, review, and merge state can change independently.
 
-Updated: 28 July 2026 after fetching every configured Apple and
+Updated: 29 July 2026 after fetching every configured Apple and
 Stephen-owned remote, querying the live pull-request state, and completing the
 31-pull-request stock-Apple port audit and the three strengthened stock
 submissions derived from that audit, including their strict follow-up review.
@@ -21,16 +21,17 @@ left/right counts below are from `git rev-list --left-right --count
 
 | Repository | Apple `main` | Supported fork `main` | Apple-only | Fork-only |
 | --- | --- | --- | ---: | ---: |
-| `container` | `48145ac7fb177d9fb14e015a0bdea4c642b36729` | `367430446959e3048da37f5f64d3c10e1293d3de` | 1 | 327 |
-| `containerization` | `3a224e9f909a3e5689bbddd9f3536df091231bb4` | `043193efa5f1a2e21a240041d6edd71d7673739e` | 1 | 133 |
+| `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `367430446959e3048da37f5f64d3c10e1293d3de` | 2 | 327 |
+| `containerization` | `7800b4642171561c95b5f55500b19e5dce5acd45` | `043193efa5f1a2e21a240041d6edd71d7673739e` | 2 | 133 |
 | `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `f97cddf5b3aae2426a094613793c11c41b1d2e53` | 0 | 33 |
 
-The supported `container` fork is one Apple commit behind: Apple PR #2027 at
-`48145ac7`. The supported `containerization` fork is one Apple commit behind:
-Apple PR #822 at `3a224e9f`. Both moved after the previous fork refresh;
-neither delta is silently counted as fork functionality. The fork-only counts
-include merge commits and intentionally retained generic runtime work; they are
-not a count of changes that are ready for Apple.
+The supported `container` fork is two Apple commits behind: Apple PR #2027 at
+`48145ac7` and the 0.40.1 dependency update in #2038 at `6e65319f`. The
+supported `containerization` fork is two Apple commits behind: Apple PR #822 at
+`3a224e9f` and the virtiofs remount correction in #824 at `7800b464`. These
+deltas are not silently counted as fork functionality. The fork-only counts
+include merge commits and intentionally retained generic runtime work; they
+are not a count of changes that are ready for Apple.
 
 ## Submitted Stephen-Authored Apple Pull Requests
 
@@ -42,13 +43,13 @@ approval. No actionable author review is outstanding.
 
 | Pull request | Published head | Current state and purpose |
 | --- | --- | --- |
-| [apple/container#2036](https://github.com/apple/container/pull/2036) | `4a617cb0f88646627b17078817f56e751b55f5bd` | Review required. Close descriptors after failed directory-watch startup, accept descriptor zero, replace process-wide leak heuristics with deterministic path-specific coverage, and synchronise watcher-test phases to explicit runtime state. No hosted check has been reported. |
+| [apple/container#2036](https://github.com/apple/container/pull/2036) | `f2f248fbb80092d47945e30eaf0e0b79ace9ff16` | Review required. Close descriptors after failed directory-watch startup, accept descriptor zero, replace process-wide leak heuristics with deterministic path-specific coverage, synchronise watcher-test phases to explicit runtime state, and remove the obsolete force-unwrapped fixture. No hosted check has been reported. |
 | [apple/container#2035](https://github.com/apple/container/pull/2035) | `a8d3b5c87e468a3641ef075c3fce686e206817ad` | Review required. Preserve unloadable bundles, validate runtimes before state insertion, and write root-filesystem metadata atomically. No hosted check has been reported. |
 | [apple/container#2031](https://github.com/apple/container/pull/2031) | `58b07fcaa6f09426adc6cd792732c855496ed80f` | Review required. Preserve active and infrastructure image aliases. No hosted check has been reported. |
 | [apple/container#1965](https://github.com/apple/container/pull/1965) | `618d28197a20baf643dbdc87272e9f768f57f888` | Review required. Honour generic XPC request timeouts. |
 | [apple/container#1935](https://github.com/apple/container/pull/1935) | `f4f908606d4a7693f9bfc958593f7671b35caa0f` | Review required. Keep root help responsive for [apple/container#1459](https://github.com/apple/container/issues/1459); stacked on the preferred cancellation work in [apple/container#1862](https://github.com/apple/container/pull/1862). |
 | [apple/container#1934](https://github.com/apple/container/pull/1934) | `d5d73ef1a95ca9f78ffa287b7c2e5204bfd9d569` | Review required. Preserve the complete `unspecified` version placeholder. |
-| [apple/containerization#823](https://github.com/apple/containerization/pull/823) | `5d4007ddfa37bd2be77980dfb4b73a31db3232ce` | Review required. Defer restrictive directory attributes without allowing an intermediate symlink to redirect metadata writes outside the extraction root. No hosted check has been reported. |
+| [apple/containerization#823](https://github.com/apple/containerization/pull/823) | `3ed10bf1a0dda802cb46c1f0b55934c55a4bd395` | Review required. Defer restrictive directory attributes without allowing an intermediate symlink to redirect metadata writes outside the extraction root, and bind deferred metadata to the extracted directory identity so a recreated path cannot inherit stale attributes. No hosted check has been reported. |
 | [apple/containerization#821](https://github.com/apple/containerization/pull/821) | `726e1ffdceada5cc62d32c8fc939aef30220e6ff` | Review required. Restore permissions after ownership so `fchown` cannot clear set-ID bits. This pull request intentionally depends on #820. No hosted check has been reported. |
 | [apple/containerization#820](https://github.com/apple/containerization/pull/820) | `6e32963617b3ed8f4b63432dbcf834f94807342b` | Review required. Preserve sticky, set-user-ID, and set-group-ID archive permission bits. No hosted check has been reported. |
 | [apple/containerization#799](https://github.com/apple/containerization/pull/799) | `9c5b9ee19796dc13f0d7d1b0687d780f0db04e29` | Review required with hosted build, signature, and Linux compile checks green. Missing copy sources fail promptly and no longer block later lifecycle operations. |
@@ -151,7 +152,7 @@ conflict with Apple `main`.
 | Apple pull request | Live head and state | Local disposition |
 | --- | --- | --- |
 | [#1719](https://github.com/apple/container/pull/1719) | `e5440c85a591`, open, conflicting | `1a486c5`: sanitise the sudoers filename and also correct the upstream variable spelling and shell syntax. |
-| [#1773](https://github.com/apple/container/pull/1773) | `77196fce3d2d`, open, mergeable, blocked | Replacement [#2036](https://github.com/apple/container/pull/2036) at `4a617cb` retains @muk2's production close, accepts descriptor zero, requires a `Sendable` handler, replaces the process-wide threshold with exact path-specific leak detection, and synchronises watcher-test phases to explicit runtime state. |
+| [#1773](https://github.com/apple/container/pull/1773) | `77196fce3d2d`, open, mergeable, blocked | Replacement [#2036](https://github.com/apple/container/pull/2036) at `f2f248f` retains @muk2's production close, accepts descriptor zero, requires a `Sendable` handler, replaces the process-wide threshold with exact path-specific leak detection, synchronises watcher-test phases to explicit runtime state, and removes the obsolete force-unwrapped fixture. |
 | [#1832](https://github.com/apple/container/pull/1832) | `ce8d26b0572d`, open, mergeable, blocked | `521f9b7`: stage non-regular image inputs while retaining direct regular-file paths. |
 | [#1847](https://github.com/apple/container/pull/1847) | `7506d68bb852`, open draft, mergeable, blocked | `6472d82`: carry only the verified guest-platform kernel selection; the unproved vminit change remains excluded. |
 | [#1854](https://github.com/apple/container/pull/1854) | `9a0db6f8507b`, open, mergeable, blocked | `ca6edcc`: keep `SIGWINCH` off the generic process-kill path. |
@@ -182,7 +183,7 @@ state. #748 currently conflicts with Apple `main`.
 | Apple pull request | Live head and state | Local disposition |
 | --- | --- | --- |
 | [#715](https://github.com/apple/containerization/pull/715) | `29dfe1b9e847`, open, mergeable, blocked | `ad950d4`: bound the manifest GET fallback and derive its descriptor from returned bytes. |
-| [#716](https://github.com/apple/containerization/pull/716) | `77da467c16d8`, open, mergeable, blocked | Replacement [#823](https://github.com/apple/containerization/pull/823) at `5d4007d` credits @JaewonHur, traverses every component descriptor-relative without following symlinks, preserves last-entry-wins metadata, and proves an intermediate symlink cannot escape the extraction root. |
+| [#716](https://github.com/apple/containerization/pull/716) | `77da467c16d8`, open, mergeable, blocked | Replacement [#823](https://github.com/apple/containerization/pull/823) at `3ed10bf` credits @JaewonHur, traverses every component descriptor-relative without following symlinks, preserves last-entry-wins metadata, binds deferred attributes to the extracted inode, and proves an intermediate symlink cannot escape the extraction root. |
 | [#717](https://github.com/apple/containerization/pull/717) | `5c0fe3668529`, open, mergeable, blocked | `b992252`: retain requested size for ordinary partial groups and round only tiny metadata-constrained final groups. |
 | [#748](https://github.com/apple/containerization/pull/748) | `79f4658de009`, open, conflicting | `5184c6e`: allow Swift Crypto 3 or 4 and resolve the fork to 4.5.1. |
 | [#768](https://github.com/apple/containerization/pull/768) | `5835a86b3bc0`, open, mergeable, blocked | `d6322d3`: classify Basic-auth registry failures as credential errors. |
@@ -202,8 +203,8 @@ bug reports:
 | Original pull request | Replacement and disposition |
 | --- | --- |
 | [apple/container#1859](https://github.com/apple/container/pull/1859) | [#2035](https://github.com/apple/container/pull/2035), fixing [#2033](https://github.com/apple/container/issues/2033), at `a8d3b5c`. Runtime validation now precedes state insertion, root-filesystem metadata uses the same atomic durability rule as other bundle JSON, and corrected malformed-data and missing-runtime tests prove both behaviours. |
-| [apple/container#1773](https://github.com/apple/container/pull/1773) | [#2036](https://github.com/apple/container/pull/2036), fixing [#2034](https://github.com/apple/container/issues/2034), at `4a617cb`. The correct production close from @muk2 is retained, descriptor zero and the escaping handler contract are corrected, and the weak process-wide threshold is replaced by exact path-specific leak detection with 32 verified handler calls. Strict review exposed a readiness race in the strengthened watcher tests; explicit active, inactive, and restarted watcher-state requirements now gate each filesystem mutation. This replacement deliberately does not close [#1097](https://github.com/apple/container/issues/1097), whose guest virtiofs workload has no established causal path through the host DNS directory watcher. |
-| [apple/containerization#716](https://github.com/apple/containerization/pull/716) | [#823](https://github.com/apple/containerization/pull/823) at `5d4007d`, the highest-priority security correction. `O_NOFOLLOW` on one `openat` call protects only the final path component. Component-wise descriptor traversal now prevents an intermediate symlink redirecting deferred metadata outside the extraction root, while canonical last-entry-wins state preserves archive semantics. It was validated at `50f7722`; Apple `main` then gained only #822's unrelated `linux_run` Makefile change, and GitHub still reports the PR mergeable and blocked. |
+| [apple/container#1773](https://github.com/apple/container/pull/1773) | [#2036](https://github.com/apple/container/pull/2036), fixing [#2034](https://github.com/apple/container/issues/2034), at `f2f248f`. The correct production close from @muk2 is retained, descriptor zero and the escaping handler contract are corrected, and the weak process-wide threshold is replaced by exact path-specific leak detection with 32 verified handler calls. Strict review exposed a readiness race in the strengthened watcher tests; explicit active, inactive, and restarted watcher-state requirements now gate each filesystem mutation. The final review also removed an obsolete force-unwrapped fixture. This replacement deliberately does not close [#1097](https://github.com/apple/container/issues/1097), whose guest virtiofs workload has no established causal path through the host DNS directory watcher. |
+| [apple/containerization#716](https://github.com/apple/containerization/pull/716) | [#823](https://github.com/apple/containerization/pull/823) at `3ed10bf`, the highest-priority security correction. `O_NOFOLLOW` on one `openat` call protects only the final path component. Component-wise descriptor traversal prevents an intermediate symlink redirecting deferred metadata outside the extraction root, while canonical last-entry-wins state preserves archive semantics. Strict review additionally bound deferred metadata to the device and inode recorded at extraction time, preventing a removed and recreated path from receiving stale attributes. It was validated at `50f7722`; Apple `main` then gained only #822 and #824, both unrelated to archive extraction, and GitHub still reports the PR mergeable and blocked. |
 
 ### Recorded Validation Timings
 
@@ -215,29 +216,35 @@ signal here.
 - #2035 stock negative control: the two corrected persistence tests failed with
   four issues in 0.016 seconds; command wall time 94.56 seconds including the
   stock build. The replacement branch passed both tests in 0.006 seconds;
-  command wall time 201.58 seconds including its fresh dependency build.
+  command wall time 201.58 seconds including its fresh dependency build. A
+  strict-review rerun also passed both tests in 0.006 seconds, with 95.93
+  seconds wall time including a clean rebuild.
 - #2035 full gate: 591 tests in 72 suites passed in 2.011 seconds; command wall
-  time 119.33 seconds. `HAWKEYE_AUTO_INSTALL=1 make check` also passed.
+  time 119.33 seconds. `HAWKEYE_AUTO_INSTALL=1 make check` also passed. Two
+  fresh strict-review full-suite retries passed the persistence coverage, then
+  stopped on the unrelated stock watcher-readiness races corrected by #2036.
 - #2036 stock negative control: the single path-specific test failed in 0.010
   seconds with exactly 32 watched-directory descriptors left open from a zero
   baseline; command wall time 0.63 seconds after the stock test build.
 - #2036 strict review initially reproduced a test-readiness race in the
   directory-recreation case. After synchronising each phase to explicit
   watcher state, 10 consecutive focused attempts passed, 50 tests total, with
-  each suite completing in 1.056 to 1.101 seconds.
-- #2036 final focused gate: 5 tests in 1 suite passed in 1.060 seconds after a
-  93.05-second clean dependency build.
-- #2036 final full gate: 590 tests in 71 suites passed in 1.260 seconds after a
-  93.68-second clean repository build. `HAWKEYE_AUTO_INSTALL=1 make check` also
-  passed.
+  each final-head suite completing in 1.062 to 1.092 seconds. Cached command
+  wall times were 1.89 to 1.97 seconds after the first build refresh.
+- #2036 final focused gate: 5 tests in 1 suite passed in 1.081 seconds; command
+  wall time was 5.84 seconds including the incremental build.
+- #2036 final full gate: 590 tests in 71 suites passed in 1.266 seconds; command
+  wall time was 114.91 seconds including the 105.82-second full rebuild.
+  `make check` passed in 4.84 seconds.
 - #823 stock and original-#716 negative controls: the corrected read-only
   directory test failed on stock in 0.013 seconds; the intermediate-symlink
   escape failed against #716 in 0.011 seconds; and its aliased
   last-entry-wins case failed in 0.008 seconds.
-- #823 focused gates: 25 archive-reader tests passed in 43.191 seconds and 28
-  descriptor-operation tests passed in 18.504 seconds. The full gate passed
-  578 tests in 80 suites in 45.134 seconds; the final clean
-  `make check && make test` command completed in 150.37 seconds.
+- #823 focused gates after the identity correction: 26 archive-reader tests
+  passed in 43.917 seconds and 28 descriptor-operation tests passed in 18.969
+  seconds. The full gate passed 579 tests in 80 suites in 45.230 seconds;
+  command wall time was 121.14 seconds including the coverage rebuild.
+  `make check` passed in 3.62 seconds.
 - The earlier cumulative-fork validation remains supporting evidence: 1,223
   container tests in 146 suites passed in 12.314 seconds, and 669
   containerization tests in 86 suites passed in 151.545 seconds.
