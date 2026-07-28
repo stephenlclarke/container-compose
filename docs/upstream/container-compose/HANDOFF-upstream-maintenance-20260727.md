@@ -325,10 +325,12 @@ runtime install, stop, reset, or live parity run.
 
 ## Next parity blockers
 
-CC-003 is complete in signed Compose commits `81d32eb2` and `96ac7830`:
-package-compatibility stdout and stderr now drain concurrently through the
-shared process runner, cancellation owns the child process group, and
-diagnostics are bounded at complete UTF-8 scalar boundaries.
+CC-003 is complete in signed Compose commits `81d32eb2`, `96ac7830`,
+`045d020c`, and `9db8f060`: package-compatibility stdout and stderr now drain
+concurrently through the shared process runner, cancellation owns the child
+process group and remains structured through both awaits, and diagnostics are
+bounded at a 64 KiB raw-stream boundary with complete valid UTF-8 scalars and
+exact omitted source-byte counts.
 
 The next parity blockers are:
 

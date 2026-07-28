@@ -21,7 +21,10 @@ makes the package preflight asynchronous and routes both checks through
 complete UTF-8 scalar at the diagnostic byte boundary and reports the exact
 number of bytes omitted. Signed connector-review correction `045d020c`
 propagates `CancellationError` from both compatibility awaits rather than
-converting cancellation into install or service guidance.
+converting cancellation into install or service guidance. Signed
+connector-review correction `9db8f060` preserves the original stdout and
+stderr bytes through the package boundary so malformed UTF-8 cannot alter the
+64 KiB source boundary or omitted-byte count.
 
 The corrected path:
 
@@ -31,8 +34,9 @@ The corrected path:
 - waits for process exit and complete pipe drainage before returning;
 - preserves stderr precedence for a failed command;
 - falls back to stdout when stderr is empty;
-- limits a displayed failure diagnostic to 64 KiB and reports the exact
-  omitted byte count; and
+- limits a displayed failure diagnostic at a 64 KiB raw-stream boundary,
+  preserves complete valid UTF-8 scalars, and reports the exact omitted source
+  byte count; and
 - preserves the existing successful JSON and service-readiness behaviour.
 
 ## Ownership boundary
@@ -51,6 +55,8 @@ No Apple runtime fork or new compatibility primitive is required.
 - `Sources/ComposePlugin/ContainerPackageCompatibility.swift` makes the
   argument-based preflight asynchronous, calls the shared process runner, and
   bounds failed-command diagnostics.
+- `Sources/ComposeCore/ProcessRunner.swift` retains package-private raw stream
+  data while preserving the public string result API.
 - `Sources/ComposePlugin/ComposePlugin.swift` awaits the preflight before
   dispatching a runtime-backed command.
 - `Tests/ComposePluginTests/ContainerPackageCompatibilityTests.swift` exercises
@@ -66,6 +72,8 @@ No Apple runtime fork or new compatibility primitive is required.
   omitted bytes.
 - A multibyte scalar crossing the 64 KiB boundary is omitted intact without a
   replacement character, and its complete byte count is reported.
+- A malformed byte before the boundary renders as a replacement character
+  without changing the exact omitted source-byte count.
 - Cancelling a TERM-ignoring preflight returns `CancellationError` within two
   seconds.
 - Cancellation from either the version or service-status await is propagated.
