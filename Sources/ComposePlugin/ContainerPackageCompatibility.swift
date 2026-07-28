@@ -304,66 +304,56 @@ extension ContainerPackageCompatibility {
     return Data(result.stdout.utf8)
   }
 
-  private struct DiagnosticUnit {
-    let range: Range<Int>
-    let scalar: Unicode.Scalar?
-
-    var isWhitespace: Bool {
-      scalar?.properties.isWhitespace == true
-    }
-
-    var rendered: String {
-      scalar.map(String.init) ?? "\u{fffd}"
-    }
-  }
-
   private static func boundedDiagnostic(_ data: Data) -> String {
-    let units = diagnosticUnits(in: Array(data))
-    guard
-      let first = units.firstIndex(where: { !$0.isWhitespace }),
-      let last = units.lastIndex(where: { !$0.isWhitespace })
-    else {
-      return ""
-    }
+    data.withUnsafeBytes { rawBuffer in
+      let bytes = rawBuffer.bindMemory(to: UInt8.self)
+      var rawStart: Int?
+      var rawEnd: Int?
+      var consumedRawEnd: Int?
+      var rendered = ""
+      var index = 0
 
-    let rawStart = units[first].range.lowerBound
-    let rawEnd = units[last].range.upperBound
-    var consumedRawEnd = rawStart
-    var rendered = ""
-    for unit in units[first...last] {
-      if unit.range.upperBound - rawStart > maximumDiagnosticBytes {
-        break
+      while index < bytes.count {
+        let decoded = decodeUTF8Scalar(in: bytes, at: index)
+        let unitEnd = index + decoded.length
+        let isWhitespace = decoded.scalar?.properties.isWhitespace == true
+
+        if rawStart == nil {
+          if isWhitespace {
+            index = unitEnd
+            continue
+          }
+          rawStart = index
+        }
+
+        if !isWhitespace {
+          rawEnd = unitEnd
+        }
+
+        if let rawStart, unitEnd - rawStart <= maximumDiagnosticBytes {
+          rendered.append(contentsOf: decoded.scalar.map(String.init) ?? "\u{fffd}")
+          consumedRawEnd = unitEnd
+        }
+        index = unitEnd
       }
-      rendered.append(contentsOf: unit.rendered)
-      consumedRawEnd = unit.range.upperBound
-    }
 
-    guard consumedRawEnd < rawEnd else {
-      return rendered
+      guard
+        let rawEnd,
+        let consumedRawEnd
+      else {
+        return ""
+      }
+      guard consumedRawEnd < rawEnd else {
+        return rendered.trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+      let omittedByteCount = rawEnd - consumedRawEnd
+      let byteLabel = omittedByteCount == 1 ? "byte" : "bytes"
+      return "\(rendered)\n[truncated \(omittedByteCount) \(byteLabel)]"
     }
-    let omittedByteCount = rawEnd - consumedRawEnd
-    let byteLabel = omittedByteCount == 1 ? "byte" : "bytes"
-    return "\(rendered)\n[truncated \(omittedByteCount) \(byteLabel)]"
-  }
-
-  private static func diagnosticUnits(in bytes: [UInt8]) -> [DiagnosticUnit] {
-    var units: [DiagnosticUnit] = []
-    units.reserveCapacity(bytes.count)
-    var index = 0
-    while index < bytes.count {
-      let decoded = decodeUTF8Scalar(in: bytes, at: index)
-      units.append(
-        DiagnosticUnit(
-          range: index..<(index + decoded.length),
-          scalar: decoded.scalar
-        ))
-      index += decoded.length
-    }
-    return units
   }
 
   private static func decodeUTF8Scalar(
-    in bytes: [UInt8],
+    in bytes: UnsafeBufferPointer<UInt8>,
     at index: Int
   ) -> (length: Int, scalar: Unicode.Scalar?) {
     let first = bytes[index]
@@ -417,7 +407,7 @@ extension ContainerPackageCompatibility {
 
   private static func hasContinuationBytes(
     _ count: Int,
-    in bytes: [UInt8],
+    in bytes: UnsafeBufferPointer<UInt8>,
     after index: Int
   ) -> Bool {
     guard index + count < bytes.count else {

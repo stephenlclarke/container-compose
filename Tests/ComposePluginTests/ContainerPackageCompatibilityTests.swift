@@ -425,6 +425,25 @@ struct ContainerPackagePreflightProcessTests {
     }
   }
 
+  @Test("preflight bounds large diagnostics without per-byte retention")
+  func failureTextScansLargeDiagnosticsIncrementally() async {
+    do {
+      _ = try await ContainerPackageCompatibility.captureCommand(
+        executable: "/bin/sh",
+        arguments: [
+          "-c",
+          "python3 -c 'import os; os.write(2, b\"e\" * (16 * 1024 * 1024))'; exit 23",
+        ],
+        displayArguments: ["container", "system", "version"]
+      )
+      Issue.record("Expected the preflight command to fail")
+    } catch {
+      let message = error.localizedDescription
+      #expect(message.hasSuffix("[truncated 16711680 bytes]"))
+      #expect(message.utf8.count < 65_600)
+    }
+  }
+
   @Test("preflight diagnostic limit preserves UTF-8 scalar boundaries")
   func failureTextPreservesUTF8Boundaries() async {
     do {
