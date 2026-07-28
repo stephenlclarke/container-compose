@@ -318,20 +318,22 @@ record the failed-run boundary and regression coverage.
 
 ### Complete: Compatibility Preflight Drains Full Pipes
 
-Signed Compose-plugin correction `81d32eb2`, plus review correction `96ac7830`,
-replaces the wait-before-drain `Foundation.Process` path with the shared
-asynchronous `ProcessRunner`. Both streams now drain while the child runs, task
-cancellation owns the exact child process group, and failed-command diagnostics
+Signed Compose-plugin correction `81d32eb2`, plus review corrections
+`96ac7830` and `045d020c`, replaces the wait-before-drain `Foundation.Process`
+path with the shared asynchronous `ProcessRunner`. Both streams now drain while
+the child runs, task cancellation owns the exact child process group and
+propagates through both compatibility awaits, and failed-command diagnostics
 retain stderr precedence while being limited to 64 KiB at a complete UTF-8
 scalar boundary with an exact omitted-byte count.
 
 The serialized regression suite writes 307,200 bytes to both stdout and stderr,
 proves a large-output failure still selects stderr, verifies diagnostic
-truncation, and confirms a cancelled TERM-ignoring child returns within two
-seconds and reports `ESRCH`. The focused package-compatibility run passes 16
-tests in three suites. A bounded CLI reproduction timed out on the previous
-implementation and exits normally through the corrected diagnostic path.
-The complete local gate passes 1,254 Swift tests in 42 suites, 92.79% Swift
+truncation, confirms both compatibility awaits preserve `CancellationError`,
+and confirms a cancelled TERM-ignoring child returns within two seconds and
+reports `ESRCH`. The focused package-compatibility run passes 18 tests in three
+suites. A bounded CLI reproduction timed out on the previous implementation
+and exits normally through the corrected diagnostic path.
+The complete local gate passes 1,256 Swift tests in 42 suites, 92.81% Swift
 coverage, 89.88% Go coverage, and all CLI, lint, dependency, licence, and smoke
 checks.
 

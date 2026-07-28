@@ -15,7 +15,10 @@
 Apply signed commit
 [`81d32eb24493f294ccdc86e7ff0c52881995c94a`](https://github.com/stephenlclarke/container-compose/commit/81d32eb24493f294ccdc86e7ff0c52881995c94a),
 `fix(plugin): drain compatibility preflight output`, followed by signed review
-correction `96ac7830`, `fix(plugin): preserve diagnostic character boundaries`.
+corrections `96ac7830`, `fix(plugin): preserve diagnostic character boundaries`,
+and `045d020c`, `fix(plugin): propagate preflight cancellation`. The latter
+preserves structured cancellation from both the version and service-status
+awaits instead of converting it into user guidance.
 
 The production change is limited to the package preflight implementation and
 its single asynchronous call site. It reuses the existing private Compose
@@ -36,7 +39,7 @@ automation works from both primary checkouts and isolated worktrees.
   empty stdin, exit handling, and stream drainage to `ProcessRunner`.
 - `ContainerPackageCompatibility.boundedDiagnostic` retains at most 64 KiB and
   appends the exact omitted byte count.
-- `ComposePluginMain.run` awaits the compatibility preflight.
+- `ComposePluginMain.main` awaits the throwing compatibility preflight.
 - The serialized package-preflight process suite uses real shell children to
   reproduce full-pipe, failure, and cancellation behaviour.
 - `update-readme-upstream-metrics.py` derives the sibling repository root from
@@ -57,16 +60,17 @@ make readme-upstream-metrics-check
 
 Results on the designated Apple silicon MacBook Pro:
 
-- 16 package-compatibility tests in three suites pass;
+- 18 package-compatibility tests in three suites pass;
 - the 307,200-byte stdout and stderr child exits normally;
-- the TERM-ignoring cancellation child is reaped within two seconds;
+- cancellation from both compatibility awaits remains `CancellationError`,
+  and the TERM-ignoring cancellation child is reaped within two seconds;
 - the previously hanging packaged-CLI reproduction times out at five seconds
   before the fix and exits with the expected compatibility failure after it;
 - six metrics-generator regression tests and Python compilation pass;
 - the generated 28 July 2026 snapshot reports all three support forks zero
   behind Apple and 493 commits ahead in total; and
-- `HAWKEYE_AUTO_INSTALL=1 make ci` passes 1,254 Swift tests in 42 suites,
-  92.79% Swift coverage, 89.88% Go coverage, and the complete CLI, lint,
+- `HAWKEYE_AUTO_INSTALL=1 make ci` passes 1,256 Swift tests in 42 suites,
+  92.81% Swift coverage, 89.88% Go coverage, and the complete CLI, lint,
   dependency, licence, and smoke gates.
 
 ## Publication evidence

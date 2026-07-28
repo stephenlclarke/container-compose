@@ -19,7 +19,9 @@ Signed implementation commit
 makes the package preflight asynchronous and routes both checks through
 `ComposeCore.ProcessRunner`. Signed review follow-up `96ac7830` preserves a
 complete UTF-8 scalar at the diagnostic byte boundary and reports the exact
-number of bytes omitted.
+number of bytes omitted. Signed connector-review correction `045d020c`
+propagates `CancellationError` from both compatibility awaits rather than
+converting cancellation into install or service guidance.
 
 The corrected path:
 
@@ -66,6 +68,7 @@ No Apple runtime fork or new compatibility primitive is required.
   replacement character, and its complete byte count is reported.
 - Cancelling a TERM-ignoring preflight returns `CancellationError` within two
   seconds.
+- Cancellation from either the version or service-status await is propagated.
 - The child PID reports `ESRCH` after cancellation completes.
 - Existing package mismatch, missing executable, and service readiness
   diagnostics remain covered.
