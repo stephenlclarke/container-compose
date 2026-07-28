@@ -419,6 +419,23 @@ struct PreflightDiagnosticPriorityTests {
       #expect(message.hasSuffix("[truncated 4 bytes]"))
     }
   }
+
+  @Test("preflight reports diagnostics beyond a leading whitespace budget")
+  func failureTextReportsContentBeyondLeadingWhitespaceBudget() async {
+    do {
+      _ = try await ContainerPackageCompatibility.captureCommand(
+        executable: "/bin/sh",
+        arguments: [
+          "-c",
+          "python3 -c 'import os; os.write(2, b\" \" * 65536 + b\"x\")'; exit 23",
+        ],
+        displayArguments: ["container", "system", "version"]
+      )
+      Issue.record("Expected the preflight command to fail")
+    } catch {
+      #expect(error.localizedDescription == "[truncated 1 byte]")
+    }
+  }
 }
 
 @Suite("Container package preflight process", .serialized)
