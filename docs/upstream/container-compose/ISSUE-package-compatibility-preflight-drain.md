@@ -24,7 +24,10 @@ propagates `CancellationError` from both compatibility awaits rather than
 converting cancellation into install or service guidance. Signed
 connector-review correction `9db8f060` preserves the original stdout and
 stderr bytes through the package boundary so malformed UTF-8 cannot alter the
-64 KiB source boundary or omitted-byte count.
+64 KiB source boundary or omitted-byte count. Signed connector-review
+correction `e0ad1dfe` replaces the proportional per-byte diagnostic model with
+a single pass over the raw data that retains only the bounded rendered prefix
+and byte offsets.
 
 The corrected path:
 
@@ -54,7 +57,7 @@ No Apple runtime fork or new compatibility primitive is required.
 
 - `Sources/ComposePlugin/ContainerPackageCompatibility.swift` makes the
   argument-based preflight asynchronous, calls the shared process runner, and
-  bounds failed-command diagnostics.
+  bounds failed-command diagnostics with an incremental raw-byte scan.
 - `Sources/ComposeCore/ProcessRunner.swift` retains package-private raw stream
   data while preserving the public string result API.
 - `Sources/ComposePlugin/ComposePlugin.swift` awaits the preflight before
@@ -74,6 +77,8 @@ No Apple runtime fork or new compatibility primitive is required.
   replacement character, and its complete byte count is reported.
 - A malformed byte before the boundary renders as a replacement character
   without changing the exact omitted source-byte count.
+- A failing child can emit 16 MiB to stderr while diagnostic formatting retains
+  no proportional per-byte model and renders fewer than 65,600 bytes.
 - Cancelling a TERM-ignoring preflight returns `CancellationError` within two
   seconds.
 - Cancellation from either the version or service-status await is propagated.

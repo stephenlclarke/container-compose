@@ -326,11 +326,13 @@ runtime install, stop, reset, or live parity run.
 ## Next parity blockers
 
 CC-003 is complete in signed Compose commits `81d32eb2`, `96ac7830`,
-`045d020c`, and `9db8f060`: package-compatibility stdout and stderr now drain
-concurrently through the shared process runner, cancellation owns the child
-process group and remains structured through both awaits, and diagnostics are
-bounded at a 64 KiB raw-stream boundary with complete valid UTF-8 scalars and
-exact omitted source-byte counts.
+`045d020c`, `9db8f060`, and `e0ad1dfe`: package-compatibility stdout and stderr
+now drain concurrently through the shared process runner, cancellation owns
+the child process group and remains structured through both awaits, and
+diagnostics are bounded at a 64 KiB raw-stream boundary with complete valid
+UTF-8 scalars and exact omitted source-byte counts. The formatter scans raw
+data once and retains only the bounded rendered prefix and offsets; a 16 MiB
+failure regression covers this memory boundary.
 
 The next parity blockers are:
 

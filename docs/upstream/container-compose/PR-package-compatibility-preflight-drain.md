@@ -21,7 +21,12 @@ preserves structured cancellation from both the version and service-status
 awaits instead of converting it into user guidance. Signed connector-review
 correction `9db8f060`, `fix(plugin): preserve raw diagnostic byte counts`,
 retains the process runner's raw output inside the package so malformed UTF-8
-cannot distort the diagnostic boundary or omitted-byte count.
+cannot distort the diagnostic boundary or omitted-byte count. Signed
+connector-review correction `e0ad1dfe`, `fix(plugin): bound preflight
+diagnostic memory`, replaces the intermediate per-byte unit array with a
+single pass over the retained raw data. The pass keeps only the bounded
+rendered prefix and byte offsets, so diagnostic formatting no longer amplifies
+large child output into proportional per-byte object storage.
 
 The production change is limited to the package preflight implementation, its
 single asynchronous call site, and package-private raw output retained by the
@@ -44,8 +49,8 @@ automation works from both primary checkouts and isolated worktrees.
 - `CommandResult` retains package-private raw stdout and stderr while preserving
   its public string accessors.
 - `ContainerPackageCompatibility.boundedDiagnostic` cuts at a 64 KiB raw-stream
-  boundary without splitting a valid UTF-8 scalar and appends the exact omitted
-  source-byte count.
+  boundary in one pass without splitting a valid UTF-8 scalar or retaining a
+  per-byte model, then appends the exact omitted source-byte count.
 - `ComposePluginMain.main` awaits the throwing compatibility preflight.
 - The serialized package-preflight process suite uses real shell children to
   reproduce full-pipe, failure, and cancellation behaviour.
@@ -67,9 +72,11 @@ make readme-upstream-metrics-check
 
 Results on the designated Apple silicon MacBook Pro:
 
-- 19 package-compatibility tests in three suites pass;
+- 20 package-compatibility tests in three suites pass;
 - the 307,200-byte stdout and stderr child exits normally;
 - malformed UTF-8 retains its original byte count through bounded diagnostics;
+- a failing child writes 16 MiB to stderr, the formatter scans it without
+  per-byte retention, and the rendered diagnostic remains below 65,600 bytes;
 - cancellation from both compatibility awaits remains `CancellationError`,
   and the TERM-ignoring cancellation child is reaped within two seconds;
 - the previously hanging packaged-CLI reproduction times out at five seconds
@@ -77,7 +84,7 @@ Results on the designated Apple silicon MacBook Pro:
 - six metrics-generator regression tests and Python compilation pass;
 - the generated 28 July 2026 snapshot reports all three support forks zero
   behind Apple and 493 commits ahead in total; and
-- `HAWKEYE_AUTO_INSTALL=1 make ci` passes 1,257 Swift tests in 42 suites,
+- `HAWKEYE_AUTO_INSTALL=1 make ci` passes 1,258 Swift tests in 42 suites,
   92.80% Swift coverage, 89.88% Go coverage, and the complete CLI, lint,
   dependency, licence, and smoke gates.
 
@@ -107,6 +114,7 @@ slice `current` prerelease remain pending until this branch is published.
 - [x] Bounded failure diagnostic coverage
 - [x] Multibyte diagnostic boundary coverage
 - [x] Malformed UTF-8 raw-byte accounting coverage
+- [x] Bounded-allocation large-diagnostic coverage
 - [x] Cancellation and child-reaping coverage
 - [x] Worktree-safe generated metrics regression coverage
 - [x] Complete local repository gate
