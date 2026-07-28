@@ -57,6 +57,18 @@ private struct CapturedProcessCommandIO {
     let input: Data?
 }
 
+/// Configuration specific to a captured process invocation.
+private struct CapturedProcessOptions {
+    let input: Data?
+    let maximumOutputBytes: Int?
+}
+
+/// A bounded process-stream prefix and the exact number of discarded bytes.
+private struct CapturedProcessOutput {
+    var data = Data()
+    var omittedByteCount = 0
+}
+
 private typealias ProcessStartObserver = @Sendable (
     @escaping @Sendable () -> Void,
 ) -> Void
@@ -161,27 +173,45 @@ public struct CommandResult: Equatable, Sendable {
     public var status: Int32
     package var stdoutData: Data
     package var stderrData: Data
+    package var stdoutOmittedByteCount: Int
+    package var stderrOmittedByteCount: Int
 
     public var stdout: String {
         get { processOutputString(stdoutData) }
-        set { stdoutData = Data(newValue.utf8) }
+        set {
+            stdoutData = Data(newValue.utf8)
+            stdoutOmittedByteCount = 0
+        }
     }
 
     public var stderr: String {
         get { processOutputString(stderrData) }
-        set { stderrData = Data(newValue.utf8) }
+        set {
+            stderrData = Data(newValue.utf8)
+            stderrOmittedByteCount = 0
+        }
     }
 
     public init(status: Int32, stdout: String, stderr: String) {
         self.status = status
         stdoutData = Data(stdout.utf8)
         stderrData = Data(stderr.utf8)
+        stdoutOmittedByteCount = 0
+        stderrOmittedByteCount = 0
     }
 
-    package init(status: Int32, stdoutData: Data, stderrData: Data) {
+    package init(
+        status: Int32,
+        stdoutData: Data,
+        stderrData: Data,
+        stdoutOmittedByteCount: Int = 0,
+        stderrOmittedByteCount: Int = 0,
+    ) {
         self.status = status
         self.stdoutData = stdoutData
         self.stderrData = stderrData
+        self.stdoutOmittedByteCount = stdoutOmittedByteCount
+        self.stderrOmittedByteCount = stderrOmittedByteCount
     }
 
     public static func == (lhs: CommandResult, rhs: CommandResult) -> Bool {
@@ -269,7 +299,10 @@ public struct ProcessRunner: CommandRunning {
                 arguments,
                 workingDirectory: workingDirectory,
                 environment: environment,
-                input: input,
+                options: CapturedProcessOptions(
+                    input: input,
+                    maximumOutputBytes: nil,
+                ),
             )
         case .capturedOutputInheritingInputAndError:
             try await runCapturedOutputInheritingInputAndError(
@@ -293,6 +326,28 @@ public struct ProcessRunner: CommandRunning {
                 environment: environment,
             )
         }
+    }
+
+    /// Runs a captured command while retaining at most one prefix per output stream.
+    package func runCapturingOutputPrefix(
+        _ executable: String,
+        _ arguments: [String],
+        workingDirectory: URL? = nil,
+        environment: [String: String]? = nil,
+        input: Data? = nil,
+        maximumOutputBytes: Int,
+    ) async throws -> CommandResult {
+        precondition(maximumOutputBytes >= 0)
+        return try await runCaptured(
+            executable,
+            arguments,
+            workingDirectory: workingDirectory,
+            environment: environment,
+            options: CapturedProcessOptions(
+                input: input,
+                maximumOutputBytes: maximumOutputBytes,
+            ),
+        )
     }
 
     /// Runs a child process with stdin/stderr attached and stdout captured.
@@ -350,20 +405,24 @@ public struct ProcessRunner: CommandRunning {
         _ arguments: [String],
         workingDirectory: URL?,
         environment: [String: String]?,
-        input: Data?,
+        options: CapturedProcessOptions,
     ) async throws -> CommandResult {
-        let state = ProcessRunState(capturesStdout: true, capturesStderr: true)
+        let state = ProcessRunState(
+            capturesStdout: true,
+            capturesStderr: true,
+            maximumOutputBytes: options.maximumOutputBytes,
+        )
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let stdout = Pipe()
                 let stderr = Pipe()
-                let stdin = input == nil ? nil : Pipe()
+                let stdin = options.input == nil ? nil : Pipe()
                 var prepared = prepareProcessCommand(
                     executable,
                     arguments,
                     workingDirectory: workingDirectory,
                     environment: environment,
-                    inheritsStandardInput: input == nil,
+                    inheritsStandardInput: options.input == nil,
                 )
                 prepared.command.stdin = stdin?.fileHandleForReading ?? FileHandle.standardInput
                 prepared.command.stdout = stdout.fileHandleForWriting
@@ -385,7 +444,7 @@ public struct ProcessRunner: CommandRunning {
                         stdin: stdin,
                         stdout: stdout,
                         stderr: stderr,
-                        input: input,
+                        input: options.input,
                     ),
                     state: state,
                     processDidStart: processDidStart,
@@ -490,16 +549,24 @@ private final class ProcessRunState: @unchecked Sendable {
     private var continuation: CheckedContinuation<CommandResult, Error>?
     private var escalation: DispatchWorkItem?
     private var jobControlProcessGroup: pid_t?
+    private let maximumOutputBytes: Int?
     private var ownedProcessGroup: pid_t?
     private var stdout = Data()
+    private var stdoutOmittedByteCount = 0
     private var stderr = Data()
+    private var stderrOmittedByteCount = 0
     private var stdoutFinished: Bool
     private var stderrFinished: Bool
     private var status: Int32?
     private var terminationFinished = false
     private var terminationRequested = false
 
-    init(capturesStdout: Bool, capturesStderr: Bool) {
+    init(
+        capturesStdout: Bool,
+        capturesStderr: Bool,
+        maximumOutputBytes: Int? = nil,
+    ) {
+        self.maximumOutputBytes = maximumOutputBytes
         stdoutFinished = !capturesStdout
         stderrFinished = !capturesStderr
     }
@@ -581,8 +648,24 @@ private final class ProcessRunState: @unchecked Sendable {
         // Drain pipes while the process is running. Waiting until termination
         // can deadlock when a child writes more than the pipe buffer.
         DispatchQueue.global(qos: .utility).async {
-            let data = handle.readDataToEndOfFile()
-            self.complete(stream: stream, data: data)
+            var output = CapturedProcessOutput()
+            while true {
+                let chunk = handle.readData(ofLength: 64 * 1024)
+                guard !chunk.isEmpty else {
+                    break
+                }
+                if let maximumOutputBytes = self.maximumOutputBytes {
+                    let retainedByteCount = min(
+                        chunk.count,
+                        max(0, maximumOutputBytes - output.data.count),
+                    )
+                    output.data.append(chunk.prefix(retainedByteCount))
+                    output.omittedByteCount += chunk.count - retainedByteCount
+                } else {
+                    output.data.append(chunk)
+                }
+            }
+            self.complete(stream: stream, output: output)
         }
     }
 }
@@ -706,15 +789,17 @@ private extension ProcessRunState {
     }
 
     /// Records one completed pipe read and completes if the process exited.
-    private func complete(stream: Stream, data: Data) {
+    private func complete(stream: Stream, output: CapturedProcessOutput) {
         let completion: Completion?
         lock.lock()
         switch stream {
         case .stdout:
-            stdout = data
+            stdout = output.data
+            stdoutOmittedByteCount = output.omittedByteCount
             stdoutFinished = true
         case .stderr:
-            stderr = data
+            stderr = output.data
+            stderrOmittedByteCount = output.omittedByteCount
             stderrFinished = true
         }
         completion = completedResultLocked()
@@ -809,6 +894,8 @@ private extension ProcessRunState {
                 status: status,
                 stdoutData: stdout,
                 stderrData: stderr,
+                stdoutOmittedByteCount: stdoutOmittedByteCount,
+                stderrOmittedByteCount: stderrOmittedByteCount,
             )),
         )
     }

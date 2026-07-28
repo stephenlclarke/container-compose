@@ -26,12 +26,37 @@ import Foundation
 
 /// Retains the first host signal received while a preflight child is active.
 private actor ContainerPackagePreflightSignalState {
+  private var cancellationRequested = false
+  private var commandTask: Task<CommandResult, Error>?
+  private var result: CommandResult?
   private(set) var signal: String?
 
   func record(_ signal: String) {
     if self.signal == nil {
       self.signal = signal
     }
+    cancel()
+  }
+
+  func attach(_ commandTask: Task<CommandResult, Error>) {
+    self.commandTask = commandTask
+    if cancellationRequested {
+      commandTask.cancel()
+    }
+  }
+
+  func complete(_ result: CommandResult) {
+    self.result = result
+    commandTask = nil
+  }
+
+  func cancel() {
+    cancellationRequested = true
+    commandTask?.cancel()
+  }
+
+  func completedResult() -> CommandResult? {
+    result
   }
 }
 
@@ -42,6 +67,7 @@ enum ContainerPackageCompatibility {
   static let envExecutableEnvironmentKey = "CONTAINER_COMPOSE_ENV_EXECUTABLE"
 
   private static let maximumDiagnosticBytes = 64 * 1024
+  private static let maximumCapturedOutputBytes = maximumDiagnosticBytes + 3
   private static let requiredContainerSource = "stephenlclarke/container"
   private static let requiredContainerizationSource = "stephenlclarke/containerization"
   private static let defaultInstallGuideURLComponents = [
@@ -300,32 +326,80 @@ extension ContainerPackageCompatibility {
   static func captureCommand(
     executable: String,
     arguments: [String],
-    displayArguments: [String]
+    displayArguments: [String],
+    signalProxy: ComposeSignalProxying = DispatchComposeSignalProxy()
   ) async throws -> Data {
-    let commandTask = Task {
-      try await ProcessRunner().run(
-        executable,
-        arguments,
-        input: Data()
+    let result = try await captureCommandResult(
+      executable: executable,
+      arguments: arguments,
+      signalProxy: signalProxy
+    )
+    guard result.succeeded else {
+      let stderr = boundedDiagnostic(
+        result.stderrData,
+        omittedByteCount: result.stderrOmittedByteCount
+      )
+      let stdout = boundedDiagnostic(
+        result.stdoutData,
+        omittedByteCount: result.stdoutOmittedByteCount
+      )
+      let command = displayArguments.joined(separator: " ")
+      let message = stderr.isEmpty ? stdout : stderr
+      throw ContainerPackageCompatibilityError.commandFailed(
+        message.isEmpty ? "\(command) failed" : message
       )
     }
+    guard
+      result.stdoutOmittedByteCount == 0,
+      result.stdoutData.count <= maximumDiagnosticBytes
+    else {
+      let command = displayArguments.joined(separator: " ")
+      let byteCount = result.stdoutData.count + result.stdoutOmittedByteCount
+      throw ContainerPackageCompatibilityError.commandFailed(
+        "\(command) returned \(byteCount) bytes; the preflight limit is \(maximumDiagnosticBytes)"
+      )
+    }
+    return result.stdoutData
+  }
+
+  private static func captureCommandResult(
+    executable: String,
+    arguments: [String],
+    signalProxy: ComposeSignalProxying
+  ) async throws -> CommandResult {
     let signalState = ContainerPackagePreflightSignalState()
-    let result: CommandResult
     do {
-      result = try await withTaskCancellationHandler {
-        try await DispatchComposeSignalProxy().withSignalProxy(
+      return try await withTaskCancellationHandler {
+        try await signalProxy.withSignalProxy(
           signals: ["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"],
           handler: { signal in
             await signalState.record(signal)
-            commandTask.cancel()
           },
           operation: {
-            _ = try await commandTask.value
+            let commandTask = Task {
+              try await ProcessRunner().runCapturingOutputPrefix(
+                executable,
+                arguments,
+                input: Data(),
+                maximumOutputBytes: maximumCapturedOutputBytes
+              )
+            }
+            await signalState.attach(commandTask)
+            let result = try await commandTask.value
+            await signalState.complete(result)
           }
         )
-        return try await commandTask.value
+        if let signal = await signalState.signal {
+          throw ContainerPackagePreflightInterruption(signal: signal)
+        }
+        guard let result = await signalState.completedResult() else {
+          throw CancellationError()
+        }
+        return result
       } onCancel: {
-        commandTask.cancel()
+        Task {
+          await signalState.cancel()
+        }
       }
     } catch is CancellationError {
       if let signal = await signalState.signal {
@@ -333,19 +407,9 @@ extension ContainerPackageCompatibility {
       }
       throw CancellationError()
     }
-    guard result.succeeded else {
-      let stderr = boundedDiagnostic(result.stderrData)
-      let stdout = boundedDiagnostic(result.stdoutData)
-      let command = displayArguments.joined(separator: " ")
-      let message = stderr.isEmpty ? stdout : stderr
-      throw ContainerPackageCompatibilityError.commandFailed(
-        message.isEmpty ? "\(command) failed" : message
-      )
-    }
-    return Data(result.stdout.utf8)
   }
 
-  private static func boundedDiagnostic(_ data: Data) -> String {
+  private static func boundedDiagnostic(_ data: Data, omittedByteCount: Int) -> String {
     data.withUnsafeBytes { rawBuffer in
       let bytes = rawBuffer.bindMemory(to: UInt8.self)
       var rawStart: Int?
@@ -384,12 +448,13 @@ extension ContainerPackageCompatibility {
       else {
         return ""
       }
-      guard consumedRawEnd < rawEnd else {
+      let sourceEnd = omittedByteCount == 0 ? rawEnd : data.count + omittedByteCount
+      guard consumedRawEnd < sourceEnd else {
         return rendered.trimmingCharacters(in: .whitespacesAndNewlines)
       }
-      let omittedByteCount = rawEnd - consumedRawEnd
-      let byteLabel = omittedByteCount == 1 ? "byte" : "bytes"
-      return "\(rendered)\n[truncated \(omittedByteCount) \(byteLabel)]"
+      let totalOmittedByteCount = sourceEnd - consumedRawEnd
+      let byteLabel = totalOmittedByteCount == 1 ? "byte" : "bytes"
+      return "\(rendered)\n[truncated \(totalOmittedByteCount) \(byteLabel)]"
     }
   }
 

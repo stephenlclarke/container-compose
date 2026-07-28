@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
 import Foundation
 import Testing
 
@@ -374,25 +375,33 @@ struct ContainerPackagePreflightProcessTests {
     let maximumResidentBytes: UInt64
   }
 
-  @Test("preflight drains large stdout and stderr while the command runs")
-  func drainsLargeOutput() async throws {
-    let data = try await ContainerPackageCompatibility.captureCommand(
-      executable: "/bin/sh",
-      arguments: [
-        "-c",
-        """
-        python3 - <<'PY'
-        import os
-        os.write(1, b"o" * 307200)
-        os.write(2, b"e" * 307200)
-        PY
-        """,
-      ],
-      displayArguments: ["container", "system", "version"]
-    )
-
-    #expect(data.count == 307_200)
-    #expect(data.allSatisfy { $0 == UInt8(ascii: "o") })
+  @Test(
+    "preflight drains oversized successful output before rejecting it",
+    arguments: [65_537, 307_200]
+  )
+  func drainsLargeOutput(byteCount: Int) async throws {
+    do {
+      _ = try await ContainerPackageCompatibility.captureCommand(
+        executable: "/bin/sh",
+        arguments: [
+          "-c",
+          """
+          python3 - <<'PY'
+          import os
+          os.write(1, b"o" * \(byteCount))
+          os.write(2, b"e" * \(byteCount))
+          PY
+          """,
+        ],
+        displayArguments: ["container", "system", "version"]
+      )
+      Issue.record("Expected oversized successful output to fail")
+    } catch {
+      #expect(
+        error.localizedDescription
+          == "container system version returned \(byteCount) bytes; the preflight limit is 65536"
+      )
+    }
   }
 
   @Test("preflight failures prefer stderr after draining both streams")
@@ -595,6 +604,69 @@ struct ContainerPackagePreflightProcessTests {
     errno = 0
     #expect(kill(processIdentifier, 0) == -1)
     #expect(errno == ESRCH)
+  }
+
+  @Test("preflight starts its child only after the signal proxy is active")
+  func signalProxyPrecedesChildLaunch() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer {
+      try? FileManager.default.removeItem(at: directory)
+    }
+
+    let marker = directory.appendingPathComponent("preflight-started")
+    let observation = PreflightProxyLaunchObservation()
+    let data = try await ContainerPackageCompatibility.captureCommand(
+      executable: "/bin/sh",
+      arguments: [
+        "-c",
+        "printf started > \"$1\"; printf ok",
+        "container-package-preflight",
+        marker.path,
+      ],
+      displayArguments: ["container", "system", "version"],
+      signalProxy: DelayedPreflightSignalProxy(
+        marker: marker,
+        observation: observation
+      )
+    )
+
+    #expect(data == Data("ok".utf8))
+    #expect(await !observation.childStartedBeforeOperation)
+    #expect(FileManager.default.fileExists(atPath: marker.path))
+  }
+}
+
+private actor PreflightProxyLaunchObservation {
+  private(set) var childStartedBeforeOperation = false
+
+  func record(childStarted: Bool) {
+    childStartedBeforeOperation = childStarted
+  }
+}
+
+/// Delays its operation so a child created before proxy installation is observable.
+private struct DelayedPreflightSignalProxy: ComposeSignalProxying {
+  let marker: URL
+  let observation: PreflightProxyLaunchObservation
+
+  func withSignalProxy(
+    signals _: [String],
+    handler _: @escaping @Sendable (String) async -> Void,
+    operation: @escaping @Sendable () async throws -> Void
+  ) async throws {
+    let clock = ContinuousClock()
+    let deadline = clock.now + .milliseconds(200)
+    while clock.now < deadline,
+      !FileManager.default.fileExists(atPath: marker.path)
+    {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    await observation.record(
+      childStarted: FileManager.default.fileExists(atPath: marker.path)
+    )
+    try await operation()
   }
 }
 
