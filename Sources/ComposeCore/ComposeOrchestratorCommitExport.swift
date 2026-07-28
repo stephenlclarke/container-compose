@@ -160,13 +160,22 @@ public extension ComposeOrchestrator {
         }
         do {
             // Image metadata uses the local default variant, while Compose can
-            // select a different service platform. Resolve this field again
-            // for the service so the committed config matches that variant.
+            // select a different service platform. Resolve variant-specific
+            // fields again so the committed config matches that selection.
             metadata.healthCheck = try await imageManager.imageHealthCheck(image, platform: service.platform)
         } catch {
             // Metadata is best-effort for commit parity. Keep the complete
             // metadata result when the more specific healthcheck query is
             // unavailable, matching the existing metadata fallback policy.
+        }
+        do {
+            metadata.declaredVolumeTargets = try await imageManager.imageDeclaredVolumeTargets(
+                image,
+                platform: service.platform
+            )
+        } catch {
+            // Retain the default-variant declarations when the platform-aware
+            // query is unavailable, matching the existing metadata fallback.
         }
         return metadata
     }
