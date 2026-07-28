@@ -27,7 +27,11 @@ stderr bytes through the package boundary so malformed UTF-8 cannot alter the
 64 KiB source boundary or omitted-byte count. Signed connector-review
 correction `e0ad1dfe` replaces the proportional per-byte diagnostic model with
 a single pass over the raw data that retains only the bounded rendered prefix
-and byte offsets.
+and byte offsets. Signed connector-review correction `4bf2eac6` preserves the
+existing public `CommandResult` equality contract despite its new
+package-private raw stream storage. Signed test correction `592266a7` measures
+the full packaged CLI preflight in an isolated process and enforces a maximum
+resident-memory ceiling.
 
 The corrected path:
 
@@ -77,8 +81,11 @@ No Apple runtime fork or new compatibility primitive is required.
   replacement character, and its complete byte count is reported.
 - A malformed byte before the boundary renders as a replacement character
   without changing the exact omitted source-byte count.
-- A failing child can emit 16 MiB to stderr while diagnostic formatting retains
-  no proportional per-byte model and renders fewer than 65,600 bytes.
+- Publicly identical `CommandResult` values remain equal when their retained raw
+  bytes differ.
+- A failing packaged CLI can emit 16 MiB to stderr, render fewer than 67,000
+  diagnostic bytes, and remain below 320 MiB maximum resident memory.
+- The 16 MiB isolated memory regression passes with Address Sanitizer.
 - Cancelling a TERM-ignoring preflight returns `CancellationError` within two
   seconds.
 - Cancellation from either the version or service-status await is propagated.

@@ -326,13 +326,16 @@ runtime install, stop, reset, or live parity run.
 ## Next parity blockers
 
 CC-003 is complete in signed Compose commits `81d32eb2`, `96ac7830`,
-`045d020c`, `9db8f060`, and `e0ad1dfe`: package-compatibility stdout and stderr
-now drain concurrently through the shared process runner, cancellation owns
-the child process group and remains structured through both awaits, and
-diagnostics are bounded at a 64 KiB raw-stream boundary with complete valid
-UTF-8 scalars and exact omitted source-byte counts. The formatter scans raw
-data once and retains only the bounded rendered prefix and offsets; a 16 MiB
-failure regression covers this memory boundary.
+`045d020c`, `9db8f060`, `e0ad1dfe`, and `4bf2eac6`:
+package-compatibility stdout and stderr now drain concurrently through the
+shared process runner, cancellation owns the child process group and remains
+structured through both awaits, and diagnostics are bounded at a 64 KiB
+raw-stream boundary with complete valid UTF-8 scalars and exact omitted
+source-byte counts. The formatter scans raw data once and retains only the
+bounded rendered prefix and offsets without changing public `CommandResult`
+equality. Test commit `592266a7` runs a 16 MiB packaged-CLI failure in an
+isolated process, enforces a 320 MiB maximum resident-memory ceiling, and
+passes with Address Sanitizer.
 
 The next parity blockers are:
 

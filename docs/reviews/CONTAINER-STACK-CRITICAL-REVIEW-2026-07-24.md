@@ -319,7 +319,7 @@ record the failed-run boundary and regression coverage.
 ### Complete: Compatibility Preflight Drains Full Pipes
 
 Signed Compose-plugin correction `81d32eb2`, plus review corrections
-`96ac7830`, `045d020c`, `9db8f060`, and `e0ad1dfe`, replaces the
+`96ac7830`, `045d020c`, `9db8f060`, `e0ad1dfe`, and `4bf2eac6`, replaces the
 wait-before-drain `Foundation.Process` path with the shared asynchronous
 `ProcessRunner`. Both streams now drain while the child runs, task cancellation
 owns the exact child process group and propagates through both compatibility
@@ -327,18 +327,21 @@ awaits, and failed-command diagnostics retain stderr precedence while being
 limited at a 64 KiB raw-stream boundary with complete valid UTF-8 scalars and
 an exact omitted source-byte count. Diagnostic formatting scans the retained
 raw data once and keeps only the bounded rendered prefix and byte offsets,
-rather than a proportional per-byte object model.
+rather than a proportional per-byte object model. The package-private raw data
+does not alter the public `CommandResult` equality contract.
 
 The serialized regression suite writes 307,200 bytes to both stdout and stderr,
 proves a large-output failure still selects stderr, verifies diagnostic
 truncation and malformed UTF-8 source-byte accounting, confirms both
 compatibility awaits preserve `CancellationError`, and confirms a cancelled
 TERM-ignoring child returns within two seconds and reports `ESRCH`. A 16 MiB
-failure diagnostic also proves the incremental formatter retains bounded
-state. The focused package-compatibility run passes 20 tests in three suites. A
-bounded CLI reproduction timed out on the previous implementation and exits
-normally through the corrected diagnostic path.
-The complete local gate passes 1,258 Swift tests in 42 suites, 92.80% Swift
+isolated packaged-CLI failure, added in `592266a7`, stays below 320 MiB maximum
+resident memory, limits the rendered diagnostic below 67,000 bytes, and also
+passes with Address Sanitizer. The focused package-compatibility run passes 20
+tests in three suites, and the focused equality regression passes. A bounded
+CLI reproduction timed out on the previous implementation and exits normally
+through the corrected diagnostic path.
+The complete local gate passes 1,259 Swift tests in 43 suites, 92.80% Swift
 coverage, 89.88% Go coverage, and all CLI, lint, dependency, licence, and smoke
 checks.
 
