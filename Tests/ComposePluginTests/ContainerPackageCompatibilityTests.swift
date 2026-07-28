@@ -394,6 +394,25 @@ struct ContainerPackagePreflightProcessTests {
     }
   }
 
+  @Test("preflight diagnostic limit preserves UTF-8 scalar boundaries")
+  func failureTextPreservesUTF8Boundaries() async {
+    do {
+      _ = try await ContainerPackageCompatibility.captureCommand(
+        executable: "/bin/sh",
+        arguments: [
+          "-c",
+          "python3 -c 'import os; os.write(2, b\"e\" * 65535 + \"é\".encode())'; exit 23",
+        ],
+        displayArguments: ["container", "system", "version"]
+      )
+      Issue.record("Expected the preflight command to fail")
+    } catch {
+      let message = error.localizedDescription
+      #expect(message.hasSuffix("[truncated 2 bytes]"))
+      #expect(!message.contains("\u{fffd}"))
+    }
+  }
+
   @Test("cancelling a preflight terminates its child process")
   func cancellationTerminatesChild() async throws {
     let directory = FileManager.default.temporaryDirectory

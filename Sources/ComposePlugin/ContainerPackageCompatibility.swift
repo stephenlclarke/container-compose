@@ -307,8 +307,14 @@ extension ContainerPackageCompatibility {
       return trimmed
     }
 
-    let prefix = String(decoding: data.prefix(maximumDiagnosticBytes), as: UTF8.self)
-    return "\(prefix)\n[truncated \(data.count - maximumDiagnosticBytes) bytes]"
+    var prefixByteCount = maximumDiagnosticBytes
+    while prefixByteCount > 0 {
+      if let prefix = String(data: data.prefix(prefixByteCount), encoding: .utf8) {
+        return "\(prefix)\n[truncated \(data.count - prefixByteCount) bytes]"
+      }
+      prefixByteCount -= 1
+    }
+    return "[truncated \(data.count) bytes]"
   }
 
   private static func serviceGuidance(lane: String, detected: [String]) -> String {
