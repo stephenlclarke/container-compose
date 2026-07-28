@@ -18,7 +18,7 @@ is_swiftpm_signal_13() {
 }
 
 has_passing_test_output() {
-  grep -Eq '✔ (Test|Suite) .* passed|Test run with [1-9][0-9]* tests .* passed|Executed [1-9][0-9]* tests' "$log"
+  grep -Eq '✔ (Test|Suite) .* passed|Test run with [1-9][0-9]* tests? .* passed|Executed [1-9][0-9]* tests?' "$log"
 }
 
 has_test_failure_output() {
