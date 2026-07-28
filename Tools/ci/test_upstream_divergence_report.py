@@ -83,6 +83,33 @@ class UpstreamDivergenceReportTests(unittest.TestCase):
             upstream_remotes=("upstream",),
         )
 
+    def test_repo_root_from_primary_checkout_common_dir(self) -> None:
+        root = Path("/tmp/github/container-compose")
+
+        repo_root = reporter.repo_root_from_git_common_dir(root, ".git")
+
+        self.assertEqual(repo_root, Path("/tmp/github").resolve())
+
+    def test_repo_root_from_linked_worktree_common_dir(self) -> None:
+        root = Path("/tmp/github/worktrees/container-compose-review")
+
+        repo_root = reporter.repo_root_from_git_common_dir(
+            root,
+            "/tmp/github/container-compose/.git",
+        )
+
+        self.assertEqual(repo_root, Path("/tmp/github").resolve())
+
+    def test_repo_root_falls_back_for_nonstandard_common_dir(self) -> None:
+        root = Path("/tmp/github/container-compose")
+
+        repo_root = reporter.repo_root_from_git_common_dir(
+            root,
+            "/tmp/git-metadata/container-compose",
+        )
+
+        self.assertEqual(repo_root, root.parent)
+
     def test_reports_fork_and_upstream_divergence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

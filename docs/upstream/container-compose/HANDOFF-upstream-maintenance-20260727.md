@@ -433,11 +433,34 @@ tests: `executed=1260 skipped=25`. Coverage was 92.74% `ComposeCore`, 100.00%
 `ComposePlugin`, 87.66% aggregate first-party Swift, and 89.88% Go. Compared
 with TEST-008, unchanged source lost no covered lines.
 
-The next listed Phase 0 item is DOC-010:
+DOC-010 is complete. `DESIGN.md`, the Core DocC architecture page, the coupling
+audit, and `STATUS.md` now distinguish the current injection seam from package
+portability. They record the seven direct Apple product dependencies, 32 Core
+source files importing Apple modules, and public Apple-shaped create-plan
+types. The dated 2026-07-17 coupling baseline remains historical evidence;
+current divergence comes from `make upstream-divergence-report`, and the
+semantic re-audit commands use explicit Apple and Stephen remote refs. The
+divergence reporter now resolves the linked repository root through Git's
+common directory, so the same command works from the primary checkout and
+isolated sibling worktrees.
 
-1. Correct `DESIGN.md` to match the actual package graph.
-2. Update the coupling audit and `STATUS.md` claims to match tested command
-   semantics.
+The documents now reserve the runtime-neutral Core claim for `ARCH-101` and
+`ARCH-102`: remove Apple dependencies/imports from Core, move the remaining
+DTO/archive/live API translation into `ComposeContainerRuntime`, and enforce
+the boundary with package-graph and source-import gates.
+
+The package evidence commands reproduced seven direct products and 32
+importing Core files. Eight focused divergence-reporter tests passed, including
+primary-checkout and linked-worktree root resolution. The live reporter found
+all three sibling repositories with no lookup errors. All 50
+`ComposeCLIHelpTests` passed, including the STATUS command/option totals,
+partial-marker details, and Compose specification rows. `make docs` generated
+the Core DocC archive without warnings.
+
+Full `HAWKEYE_AUTO_INSTALL=1 make ci` passed in 356.57 seconds with 1,285
+tests: `executed=1260 skipped=25`. Coverage was 92.74% `ComposeCore`, 100.00%
+`ComposeRuntimeSPI`, 76.78% `ComposeContainerRuntime`, 56.52%
+`ComposePlugin`, 87.66% aggregate first-party Swift, and 89.88% Go.
 
 Continue the ordered inventory in
 `docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after this

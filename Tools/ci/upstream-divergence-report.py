@@ -31,7 +31,31 @@ from typing import Sequence
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_REPO_ROOT = ROOT.parent
+
+
+def repo_root_from_git_common_dir(root: Path, common_dir_text: str) -> Path:
+    common_dir = Path(common_dir_text.strip())
+    if not common_dir.is_absolute():
+        common_dir = root / common_dir
+    common_dir = common_dir.resolve()
+    if common_dir.name == ".git":
+        return common_dir.parent.parent
+    return root.parent
+
+
+def default_repo_root(root: Path = ROOT) -> Path:
+    result = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--git-common-dir"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return root.parent
+    return repo_root_from_git_common_dir(root, result.stdout)
+
+
+DEFAULT_REPO_ROOT = default_repo_root()
 
 
 @dataclass(frozen=True)
