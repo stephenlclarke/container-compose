@@ -368,6 +368,12 @@ struct ContainerSystemServiceReadinessTests {
 
 @Suite("Container package preflight process", .serialized)
 struct ContainerPackagePreflightProcessTests {
+  private struct PreflightMeasurement {
+    let status: Int32
+    let diagnostic: String
+    let maximumResidentBytes: UInt64
+  }
+
   @Test("preflight drains large stdout and stderr while the command runs")
   func drainsLargeOutput() async throws {
     let data = try await ContainerPackageCompatibility.captureCommand(
@@ -426,22 +432,94 @@ struct ContainerPackagePreflightProcessTests {
   }
 
   @Test("preflight bounds large diagnostics without per-byte retention")
-  func failureTextScansLargeDiagnosticsIncrementally() async {
-    do {
-      _ = try await ContainerPackageCompatibility.captureCommand(
-        executable: "/bin/sh",
-        arguments: [
-          "-c",
-          "python3 -c 'import os; os.write(2, b\"e\" * (16 * 1024 * 1024))'; exit 23",
-        ],
-        displayArguments: ["container", "system", "version"]
-      )
-      Issue.record("Expected the preflight command to fail")
-    } catch {
-      let message = error.localizedDescription
-      #expect(message.hasSuffix("[truncated 16711680 bytes]"))
-      #expect(message.utf8.count < 65_600)
+  func failureTextScansLargeDiagnosticsIncrementally() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer {
+      try? FileManager.default.removeItem(at: directory)
     }
+
+    let fakeContainer = try makeLargeDiagnosticContainer(in: directory)
+    let measurement = try measureLargeDiagnosticPreflight(
+      fakeContainer: fakeContainer,
+      directory: directory
+    )
+
+    #expect(measurement.status == 1)
+    #expect(measurement.diagnostic.contains("[truncated 16711680 bytes]"))
+    #expect(measurement.diagnostic.utf8.count < 67_000)
+    #expect(measurement.maximumResidentBytes < 320 * 1024 * 1024)
+  }
+
+  private func makeLargeDiagnosticContainer(in directory: URL) throws -> URL {
+    let executable = directory.appendingPathComponent("container")
+    try """
+    #!/bin/sh
+    if [ "$*" = "system version --format json" ]; then
+      python3 -c 'import os; os.write(2, b"e" * (16 * 1024 * 1024))'
+      exit 23
+    fi
+    exit 2
+    """.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o755],
+      ofItemAtPath: executable.path
+    )
+    return executable
+  }
+
+  private func measureLargeDiagnosticPreflight(
+    fakeContainer: URL,
+    directory: URL
+  ) throws -> PreflightMeasurement {
+    let metrics = directory.appendingPathComponent("time.txt")
+    let stdout = directory.appendingPathComponent("stdout.txt")
+    let stderr = directory.appendingPathComponent("stderr.txt")
+    FileManager.default.createFile(atPath: stdout.path, contents: nil)
+    FileManager.default.createFile(atPath: stderr.path, contents: nil)
+    let stdoutHandle = try FileHandle(forWritingTo: stdout)
+    let stderrHandle = try FileHandle(forWritingTo: stderr)
+    defer {
+      try? stdoutHandle.close()
+      try? stderrHandle.close()
+    }
+
+    let composeExecutable = URL(fileURLWithPath: ".build/debug/compose")
+    #expect(FileManager.default.isExecutableFile(atPath: composeExecutable.path))
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/time")
+    process.arguments = [
+      "-l",
+      "-o",
+      metrics.path,
+      composeExecutable.path,
+      "ps",
+    ]
+    process.environment = ProcessInfo.processInfo.environment.merging(
+      ["CONTAINER_COMPOSE_CONTAINER": fakeContainer.path]
+    ) { _, new in new }
+    process.standardOutput = stdoutHandle
+    process.standardError = stderrHandle
+    try process.run()
+    process.waitUntilExit()
+    try stdoutHandle.close()
+    try stderrHandle.close()
+
+    let diagnostic = try String(contentsOf: stderr, encoding: .utf8)
+    let measurements = try String(contentsOf: metrics, encoding: .utf8)
+    let residentLine = try #require(
+      measurements.split(separator: "\n")
+        .first { $0.contains("maximum resident set size") }
+    )
+    let residentBytes = try #require(
+      UInt64(residentLine.split(whereSeparator: \.isWhitespace)[0])
+    )
+    return PreflightMeasurement(
+      status: process.terminationStatus,
+      diagnostic: diagnostic,
+      maximumResidentBytes: residentBytes
+    )
   }
 
   @Test("preflight diagnostic limit preserves UTF-8 scalar boundaries")
