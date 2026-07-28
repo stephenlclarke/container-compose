@@ -446,7 +446,12 @@ extension ContainerPackageCompatibility {
         let rawEnd,
         let consumedRawEnd
       else {
-        return ""
+        guard omittedByteCount > 0 else {
+          return ""
+        }
+        let sourceByteCount = data.count + omittedByteCount
+        let byteLabel = sourceByteCount == 1 ? "byte" : "bytes"
+        return "[truncated \(sourceByteCount) \(byteLabel)]"
       }
       let sourceEnd = omittedByteCount == 0 ? rawEnd : data.count + omittedByteCount
       guard consumedRawEnd < sourceEnd else {

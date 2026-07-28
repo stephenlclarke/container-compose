@@ -367,6 +367,33 @@ struct ContainerSystemServiceReadinessTests {
   }
 }
 
+@Suite("Container package preflight diagnostic priority")
+struct PreflightDiagnosticPriorityTests {
+  @Test("preflight failures retain stderr priority when its prefix is whitespace")
+  func whitespacePrefixedFailureRetainsStandardErrorPriority() async {
+    do {
+      _ = try await ContainerPackageCompatibility.captureCommand(
+        executable: "/bin/sh",
+        arguments: [
+          "-c",
+          """
+          python3 - <<'PY'
+          import os
+          os.write(1, b"stdout fallback")
+          os.write(2, b" " * 65539 + b"hidden stderr")
+          PY
+          exit 23
+          """,
+        ],
+        displayArguments: ["container", "system", "version"]
+      )
+      Issue.record("Expected the preflight command to fail")
+    } catch {
+      #expect(error.localizedDescription == "[truncated 65552 bytes]")
+    }
+  }
+}
+
 @Suite("Container package preflight process", .serialized)
 struct ContainerPackagePreflightProcessTests {
   private struct PreflightMeasurement {
