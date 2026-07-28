@@ -184,6 +184,12 @@ public struct CommandResult: Equatable, Sendable {
         self.stderrData = stderrData
     }
 
+    public static func == (lhs: CommandResult, rhs: CommandResult) -> Bool {
+        lhs.status == rhs.status
+            && lhs.stdout == rhs.stdout
+            && lhs.stderr == rhs.stderr
+    }
+
     public var succeeded: Bool {
         status == 0
     }
