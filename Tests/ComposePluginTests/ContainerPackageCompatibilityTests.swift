@@ -19,6 +19,12 @@ import Testing
 
 @testable import ComposePlugin
 
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#endif
+
 private let appleSystemVersionJSON = """
   [
     {
@@ -233,9 +239,9 @@ struct ContainerPackageCompatibilityTests {
   }
 
   @Test("unavailable container command reports install guidance")
-  func unavailableContainerCommandReportsInstallGuidance() throws {
+  func unavailableContainerCommandReportsInstallGuidance() async throws {
     let message = try #require(
-      ContainerPackageCompatibility.compatibilityFailure(
+      await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
         run: { _ in
@@ -254,11 +260,11 @@ struct ContainerPackageCompatibilityTests {
 @Suite("Container system service readiness")
 struct ContainerSystemServiceReadinessTests {
   @Test("package mismatch skips service readiness check")
-  func packageMismatchSkipsServiceReadinessCheck() throws {
+  func packageMismatchSkipsServiceReadinessCheck() async throws {
     var calls: [[String]] = []
 
     let message = try #require(
-      ContainerPackageCompatibility.compatibilityFailure(
+      await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
         run: { arguments in
@@ -273,11 +279,11 @@ struct ContainerSystemServiceReadinessTests {
   }
 
   @Test("stopped system service reports service readiness guidance")
-  func stoppedSystemServiceReportsServiceReadinessGuidance() throws {
+  func stoppedSystemServiceReportsServiceReadinessGuidance() async throws {
     var calls: [[String]] = []
 
     let message = try #require(
-      ContainerPackageCompatibility.compatibilityFailure(
+      await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
         expectedContainerRef: "matched-container",
@@ -307,10 +313,10 @@ struct ContainerSystemServiceReadinessTests {
   }
 
   @Test("running system service passes runtime preflight")
-  func runningSystemServicePassesRuntimePreflight() {
+  func runningSystemServicePassesRuntimePreflight() async {
     var calls: [[String]] = []
 
-    let message = ContainerPackageCompatibility.compatibilityFailure(
+    let message = await ContainerPackageCompatibility.compatibilityFailure(
       arguments: ["up"],
       lane: "main",
       expectedContainerRef: "matched-container",
@@ -327,4 +333,120 @@ struct ContainerSystemServiceReadinessTests {
     #expect(message == nil)
     #expect(calls == [["system", "version", "--format", "json"], ["system", "status"]])
   }
+}
+
+@Suite("Container package preflight process", .serialized)
+struct ContainerPackagePreflightProcessTests {
+  @Test("preflight drains large stdout and stderr while the command runs")
+  func drainsLargeOutput() async throws {
+    let data = try await ContainerPackageCompatibility.captureCommand(
+      executable: "/bin/sh",
+      arguments: [
+        "-c",
+        """
+        python3 - <<'PY'
+        import os
+        os.write(1, b"o" * 307200)
+        os.write(2, b"e" * 307200)
+        PY
+        """,
+      ],
+      displayArguments: ["container", "system", "version"]
+    )
+
+    #expect(data.count == 307_200)
+    #expect(data.allSatisfy { $0 == UInt8(ascii: "o") })
+  }
+
+  @Test("preflight failures prefer stderr after draining both streams")
+  func failureTextPrefersStandardError() async {
+    do {
+      _ = try await ContainerPackageCompatibility.captureCommand(
+        executable: "/bin/sh",
+        arguments: [
+          "-c",
+          "python3 -c 'import os; os.write(1, b\"o\" * 307200); os.write(2, b\"preferred stderr\")'; exit 23",
+        ],
+        displayArguments: ["container", "system", "version"]
+      )
+      Issue.record("Expected the preflight command to fail")
+    } catch {
+      #expect(error.localizedDescription == "preferred stderr")
+    }
+  }
+
+  @Test("preflight failures bound large diagnostics after draining")
+  func failureTextIsBounded() async {
+    do {
+      _ = try await ContainerPackageCompatibility.captureCommand(
+        executable: "/bin/sh",
+        arguments: [
+          "-c",
+          "python3 -c 'import os; os.write(2, b\"e\" * 307200)'; exit 23",
+        ],
+        displayArguments: ["container", "system", "version"]
+      )
+      Issue.record("Expected the preflight command to fail")
+    } catch {
+      let message = error.localizedDescription
+      #expect(message.hasSuffix("[truncated 241664 bytes]"))
+      #expect(message.utf8.count < 65_600)
+    }
+  }
+
+  @Test("cancelling a preflight terminates its child process")
+  func cancellationTerminatesChild() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer {
+      try? FileManager.default.removeItem(at: directory)
+    }
+
+    let pidFile = directory.appendingPathComponent("preflight.pid")
+    let task = Task {
+      try await ContainerPackageCompatibility.captureCommand(
+        executable: "/bin/sh",
+        arguments: [
+          "-c",
+          "printf '%s' \"$$\" > \"$1\"; trap '' TERM; while :; do :; done",
+          "container-package-preflight",
+          pidFile.path,
+        ],
+        displayArguments: ["container", "system", "version"]
+      )
+    }
+    let processIdentifier = try await waitForPreflightProcessIdentifier(at: pidFile)
+    let clock = ContinuousClock()
+    let cancellationStarted = clock.now
+    task.cancel()
+
+    await #expect(throws: CancellationError.self) {
+      try await task.value
+    }
+    #expect(clock.now - cancellationStarted < .seconds(2))
+    errno = 0
+    #expect(kill(processIdentifier, 0) == -1)
+    #expect(errno == ESRCH)
+  }
+}
+
+/// Waits for the preflight child to publish its PID before cancellation.
+private func waitForPreflightProcessIdentifier(at pidFile: URL) async throws -> pid_t {
+  let clock = ContinuousClock()
+  let deadline = clock.now + .seconds(3)
+  while clock.now < deadline {
+    if let data = FileManager.default.contents(atPath: pidFile.path),
+      let value = String(data: data, encoding: .utf8),
+      let processIdentifier = pid_t(value)
+    {
+      return processIdentifier
+    }
+    try await Task.sleep(for: .milliseconds(10))
+  }
+  throw ContainerPackagePreflightTestError.pidFileTimedOut
+}
+
+private enum ContainerPackagePreflightTestError: Error {
+  case pidFileTimedOut
 }

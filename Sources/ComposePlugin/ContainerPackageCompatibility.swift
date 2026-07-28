@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
 // Keep the package graph wired to apple/container products that the plugin is
 // expected to use as runtime integration matures.
 @_exported import ContainerAPIClient
@@ -29,6 +30,7 @@ enum ContainerPackageCompatibility {
   static let containerExecutableEnvironmentKey = "CONTAINER_COMPOSE_CONTAINER"
   static let envExecutableEnvironmentKey = "CONTAINER_COMPOSE_ENV_EXECUTABLE"
 
+  private static let maximumDiagnosticBytes = 64 * 1024
   private static let requiredContainerSource = "stephenlclarke/container"
   private static let requiredContainerizationSource = "stephenlclarke/containerization"
   private static let defaultInstallGuideURLComponents = [
@@ -113,14 +115,14 @@ extension ContainerPackageCompatibility {
     lane: String,
     expectedContainerRef: String? = nil,
     expectedContainerizationRef: String? = nil,
-    run: ([String]) throws -> Data = runContainerCommand
-  ) -> String? {
+    run: ([String]) async throws -> Data = runContainerCommand
+  ) async -> String? {
     guard requiresRuntimeCheck(arguments: arguments) else {
       return nil
     }
 
     do {
-      let data = try run(["system", "version", "--format", "json"])
+      let data = try await run(["system", "version", "--format", "json"])
       let components = try decodeComponents(from: data)
       if let failure = compatibilityFailure(
         components: components,
@@ -131,7 +133,7 @@ extension ContainerPackageCompatibility {
         return failure
       }
       do {
-        _ = try run(["system", "status"])
+        _ = try await run(["system", "status"])
       } catch {
         return serviceGuidance(
           lane: lane,
@@ -257,38 +259,56 @@ extension ContainerPackageCompatibility {
     try JSONDecoder().decode([ContainerSystemVersionComponent].self, from: data)
   }
 
-  private static func runContainerCommand(arguments: [String]) throws -> Data {
+  private static func runContainerCommand(arguments: [String]) async throws -> Data {
     let executable =
       ProcessInfo.processInfo.environment[containerExecutableEnvironmentKey] ?? "container"
-    let process = Process()
     if executable.hasPrefix("/") {
-      process.executableURL = URL(fileURLWithPath: executable)
-      process.arguments = arguments
-    } else {
-      process.executableURL = URL(fileURLWithPath: envExecutablePath)
-      process.arguments = [executable] + arguments
+      return try await captureCommand(
+        executable: executable,
+        arguments: arguments,
+        displayArguments: ["container"] + arguments
+      )
     }
 
-    let output = Pipe()
-    let error = Pipe()
-    process.standardOutput = output
-    process.standardError = error
-    try process.run()
-    process.waitUntilExit()
+    return try await captureCommand(
+      executable: envExecutablePath,
+      arguments: [executable] + arguments,
+      displayArguments: ["container"] + arguments
+    )
+  }
 
-    let data = output.fileHandleForReading.readDataToEndOfFile()
-    let errorData = error.fileHandleForReading.readDataToEndOfFile()
-    guard process.terminationStatus == 0 else {
-      let stderr = (String(bytes: errorData, encoding: .utf8) ?? "")
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-      let stdout = (String(bytes: data, encoding: .utf8) ?? "")
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-      let command = (["container"] + arguments).joined(separator: " ")
+  /// Runs one preflight command while draining both output streams concurrently.
+  static func captureCommand(
+    executable: String,
+    arguments: [String],
+    displayArguments: [String]
+  ) async throws -> Data {
+    let result = try await ProcessRunner().run(
+      executable,
+      arguments,
+      input: Data()
+    )
+    guard result.succeeded else {
+      let stderr = boundedDiagnostic(result.stderr)
+      let stdout = boundedDiagnostic(result.stdout)
+      let command = displayArguments.joined(separator: " ")
       let message = stderr.isEmpty ? stdout : stderr
       throw ContainerPackageCompatibilityError.commandFailed(
-        message.isEmpty ? "\(command) failed" : message)
+        message.isEmpty ? "\(command) failed" : message
+      )
     }
-    return data
+    return Data(result.stdout.utf8)
+  }
+
+  private static func boundedDiagnostic(_ value: String) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    let data = Data(trimmed.utf8)
+    guard data.count > maximumDiagnosticBytes else {
+      return trimmed
+    }
+
+    let prefix = String(decoding: data.prefix(maximumDiagnosticBytes), as: UTF8.self)
+    return "\(prefix)\n[truncated \(data.count - maximumDiagnosticBytes) bytes]"
   }
 
   private static func serviceGuidance(lane: String, detected: [String]) -> String {

@@ -335,7 +335,7 @@ struct ComposePluginMain {
             return
         }
         let rewritten = ComposeArgumentRewriter.rewrite(arguments)
-        if let failure = ContainerPackageCompatibility.compatibilityFailure(
+        if let failure = await ContainerPackageCompatibility.compatibilityFailure(
             arguments: rewritten,
             lane: composeBuildInfo.lane,
             expectedContainerRef: composeBuildInfo.containerRef,
