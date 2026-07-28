@@ -241,7 +241,7 @@ struct ContainerPackageCompatibilityTests {
   @Test("unavailable container command reports install guidance")
   func unavailableContainerCommandReportsInstallGuidance() async throws {
     let message = try #require(
-      await ContainerPackageCompatibility.compatibilityFailure(
+      try await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
         run: { _ in
@@ -264,7 +264,7 @@ struct ContainerSystemServiceReadinessTests {
     var calls: [[String]] = []
 
     let message = try #require(
-      await ContainerPackageCompatibility.compatibilityFailure(
+      try await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
         run: { arguments in
@@ -283,7 +283,7 @@ struct ContainerSystemServiceReadinessTests {
     var calls: [[String]] = []
 
     let message = try #require(
-      await ContainerPackageCompatibility.compatibilityFailure(
+      try await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
         expectedContainerRef: "matched-container",
@@ -313,10 +313,10 @@ struct ContainerSystemServiceReadinessTests {
   }
 
   @Test("running system service passes runtime preflight")
-  func runningSystemServicePassesRuntimePreflight() async {
+  func runningSystemServicePassesRuntimePreflight() async throws {
     var calls: [[String]] = []
 
-    let message = await ContainerPackageCompatibility.compatibilityFailure(
+    let message = try await ContainerPackageCompatibility.compatibilityFailure(
       arguments: ["up"],
       lane: "main",
       expectedContainerRef: "matched-container",
@@ -332,6 +332,37 @@ struct ContainerSystemServiceReadinessTests {
 
     #expect(message == nil)
     #expect(calls == [["system", "version", "--format", "json"], ["system", "status"]])
+  }
+
+  @Test("version preflight preserves cancellation")
+  func versionPreflightPreservesCancellation() async {
+    await #expect(throws: CancellationError.self) {
+      try await ContainerPackageCompatibility.compatibilityFailure(
+        arguments: ["up"],
+        lane: "main",
+        run: { _ in
+          throw CancellationError()
+        }
+      )
+    }
+  }
+
+  @Test("service readiness preflight preserves cancellation")
+  func serviceReadinessPreflightPreservesCancellation() async {
+    await #expect(throws: CancellationError.self) {
+      try await ContainerPackageCompatibility.compatibilityFailure(
+        arguments: ["up"],
+        lane: "main",
+        expectedContainerRef: "matched-container",
+        expectedContainerizationRef: "matched-containerization",
+        run: { arguments in
+          if arguments == ["system", "status"] {
+            throw CancellationError()
+          }
+          return Data(matchingSystemVersionJSON.utf8)
+        }
+      )
+    }
   }
 }
 

@@ -324,7 +324,7 @@ struct ComposePlugin: AsyncParsableCommand {
 @main
 struct ComposePluginMain {
     /// Rewrites process arguments and starts the async command tree.
-    static func main() async {
+    static func main() async throws {
         // Docker Compose allows global options before the subcommand. Rewrite
         // them before handing arguments to Swift Argument Parser.
         let arguments = Array(CommandLine.arguments.dropFirst())
@@ -335,7 +335,7 @@ struct ComposePluginMain {
             return
         }
         let rewritten = ComposeArgumentRewriter.rewrite(arguments)
-        if let failure = await ContainerPackageCompatibility.compatibilityFailure(
+        if let failure = try await ContainerPackageCompatibility.compatibilityFailure(
             arguments: rewritten,
             lane: composeBuildInfo.lane,
             expectedContainerRef: composeBuildInfo.containerRef,

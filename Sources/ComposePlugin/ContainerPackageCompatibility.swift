@@ -116,7 +116,7 @@ extension ContainerPackageCompatibility {
     expectedContainerRef: String? = nil,
     expectedContainerizationRef: String? = nil,
     run: ([String]) async throws -> Data = runContainerCommand
-  ) async -> String? {
+  ) async throws -> String? {
     guard requiresRuntimeCheck(arguments: arguments) else {
       return nil
     }
@@ -134,6 +134,8 @@ extension ContainerPackageCompatibility {
       }
       do {
         _ = try await run(["system", "status"])
+      } catch is CancellationError {
+        throw CancellationError()
       } catch {
         return serviceGuidance(
           lane: lane,
@@ -142,6 +144,8 @@ extension ContainerPackageCompatibility {
           ])
       }
       return nil
+    } catch is CancellationError {
+      throw CancellationError()
     } catch {
       return installGuidance(
         lane: lane,
