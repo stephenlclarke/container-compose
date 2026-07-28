@@ -230,7 +230,7 @@ private struct CommitImageConfig: Encodable {
         exposedPorts = try exposedPortMap(base: base?.exposedPorts, service: service)
         stopSignal = normalizedString(service.stopSignal) ?? normalizedString(base?.stopSignal)
         self.healthCheck = (healthCheck ?? base?.healthCheck).map(CommitImageHealthCheck.init)
-        volumes = nil
+        volumes = volumeMap(base?.declaredVolumeTargets)
         onBuild = nil
     }
 
@@ -316,6 +316,17 @@ private func nonEmptyDictionary(_ values: [String: String]?) -> [String: String]
         return nil
     }
     return values
+}
+
+private func volumeMap(_ targets: [String]?) -> [String: [String: String]]? {
+    guard let targets, !targets.isEmpty else {
+        return nil
+    }
+    var volumes: [String: [String: String]] = [:]
+    for target in targets {
+        volumes[target] = [:]
+    }
+    return volumes
 }
 
 private func normalizedString(_ value: String?) -> String? {
