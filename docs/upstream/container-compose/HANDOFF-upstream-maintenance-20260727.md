@@ -325,14 +325,45 @@ runtime install, stop, reset, or live parity run.
 
 ## Next parity blockers
 
-Do not start these until this slice is fully published and closed:
+CC-003 is complete in signed Compose commits `81d32eb2`, `96ac7830`,
+`045d020c`, `9db8f060`, `e0ad1dfe`, `4bf2eac6`, `3ed87228`, `fbe0ce05`,
+`b65d18a6`, `62a40d48`, `b07e9da8`, and `5b6f4880`:
+package-compatibility stdout and stderr now drain concurrently through the
+shared process runner while retaining only a bounded prefix and exact omitted
+byte count for each stream. Cancellation owns the child process group and
+remains structured through both awaits. The signal proxy is active before the
+child task can start, synchronously registers delivered handlers, drains
+dispatch-source cancellation, and awaits those handlers before accepting the
+operation result. Host signals therefore cancel and reap the preflight group
+before the CLI returns the corresponding shell status. Diagnostics are bounded
+at a 64 KiB raw-stream boundary with complete valid UTF-8 scalars and exact
+omitted source-byte counts. The boundary is measured from the absolute
+raw-stream start, so trimming leading whitespace cannot shift the UTF-8
+lookahead or split a valid scalar. Content beginning beyond a
+whitespace-consumed display budget returns an exact truncation marker rather
+than an empty diagnostic. The
+formatter scans raw data once and retains only the
+bounded rendered prefix and offsets without changing public `CommandResult`
+equality or the unbounded public runner API. Test commit `592266a7` runs a
+16 MiB packaged-CLI failure in an isolated process, enforces a 320 MiB maximum
+resident-memory ceiling, and passes with Address Sanitizer. The final focused
+sanitizer runs pass 25 package-preflight tests across five suites and three
+signal-proxy tests in one suite. Signed correction `b65d18a6`
+preserves stderr priority when
+the retained prefix is whitespace but omitted bytes remain, with an exact
+65,552-byte real-child regression. Signed correction `62a40d48` adds a
+leading-whitespace/four-byte-scalar boundary regression. Signed correction
+`b07e9da8` reports one-byte content that starts after a 64 KiB leading-whitespace
+budget. Signed correction `5b6f4880` proves a delivered handler cannot race the
+proxied operation result. The complete local gate passes 1,266 Swift tests in
+46 suites with 92.81% Swift and 89.88% Go coverage.
 
-1. Drain package-compatibility preflight stdout/stderr concurrently so a full
-   child pipe cannot deadlock.
-2. Preserve inherited OCI `VOLUME` declarations in `compose commit`.
-3. Replace archive-mode `compose cp` host staging with direct runtime streams
+The next parity blockers are:
+
+1. Preserve inherited OCI `VOLUME` declarations in `compose commit`.
+2. Replace archive-mode `compose cp` host staging with direct runtime streams
    so ownership metadata can be preserved.
 
 Continue the ordered inventory in
-`docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after these three
-confirmed P1 items.
+`docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after the two
+remaining confirmed P1 items are complete.

@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
 // Keep the package graph wired to apple/container products that the plugin is
 // expected to use as runtime integration matures.
 @_exported import ContainerAPIClient
@@ -23,12 +24,50 @@
 @_exported import ContainerResource
 import Foundation
 
+/// Retains the first host signal received while a preflight child is active.
+private actor ContainerPackagePreflightSignalState {
+  private var cancellationRequested = false
+  private var commandTask: Task<CommandResult, Error>?
+  private var result: CommandResult?
+  private(set) var signal: String?
+
+  func record(_ signal: String) {
+    if self.signal == nil {
+      self.signal = signal
+    }
+    cancel()
+  }
+
+  func attach(_ commandTask: Task<CommandResult, Error>) {
+    self.commandTask = commandTask
+    if cancellationRequested {
+      commandTask.cancel()
+    }
+  }
+
+  func complete(_ result: CommandResult) {
+    self.result = result
+    commandTask = nil
+  }
+
+  func cancel() {
+    cancellationRequested = true
+    commandTask?.cancel()
+  }
+
+  func completedResult() -> CommandResult? {
+    result
+  }
+}
+
 /// Validates that runtime-backed Compose commands are using the matching fork-backed stack.
 enum ContainerPackageCompatibility {
   static let installGuideURLEnvironmentKey = "CONTAINER_COMPOSE_INSTALL_GUIDE_URL"
   static let containerExecutableEnvironmentKey = "CONTAINER_COMPOSE_CONTAINER"
   static let envExecutableEnvironmentKey = "CONTAINER_COMPOSE_ENV_EXECUTABLE"
 
+  private static let maximumDiagnosticBytes = 64 * 1024
+  private static let maximumCapturedOutputBytes = maximumDiagnosticBytes + 3
   private static let requiredContainerSource = "stephenlclarke/container"
   private static let requiredContainerizationSource = "stephenlclarke/containerization"
   private static let defaultInstallGuideURLComponents = [
@@ -113,14 +152,14 @@ extension ContainerPackageCompatibility {
     lane: String,
     expectedContainerRef: String? = nil,
     expectedContainerizationRef: String? = nil,
-    run: ([String]) throws -> Data = runContainerCommand
-  ) -> String? {
+    run: ([String]) async throws -> Data = runContainerCommand
+  ) async throws -> String? {
     guard requiresRuntimeCheck(arguments: arguments) else {
       return nil
     }
 
     do {
-      let data = try run(["system", "version", "--format", "json"])
+      let data = try await run(["system", "version", "--format", "json"])
       let components = try decodeComponents(from: data)
       if let failure = compatibilityFailure(
         components: components,
@@ -131,7 +170,11 @@ extension ContainerPackageCompatibility {
         return failure
       }
       do {
-        _ = try run(["system", "status"])
+        _ = try await run(["system", "status"])
+      } catch let interruption as ContainerPackagePreflightInterruption {
+        throw interruption
+      } catch is CancellationError {
+        throw CancellationError()
       } catch {
         return serviceGuidance(
           lane: lane,
@@ -140,6 +183,10 @@ extension ContainerPackageCompatibility {
           ])
       }
       return nil
+    } catch let interruption as ContainerPackagePreflightInterruption {
+      throw interruption
+    } catch is CancellationError {
+      throw CancellationError()
     } catch {
       return installGuidance(
         lane: lane,
@@ -257,38 +304,232 @@ extension ContainerPackageCompatibility {
     try JSONDecoder().decode([ContainerSystemVersionComponent].self, from: data)
   }
 
-  private static func runContainerCommand(arguments: [String]) throws -> Data {
+  private static func runContainerCommand(arguments: [String]) async throws -> Data {
     let executable =
       ProcessInfo.processInfo.environment[containerExecutableEnvironmentKey] ?? "container"
-    let process = Process()
     if executable.hasPrefix("/") {
-      process.executableURL = URL(fileURLWithPath: executable)
-      process.arguments = arguments
-    } else {
-      process.executableURL = URL(fileURLWithPath: envExecutablePath)
-      process.arguments = [executable] + arguments
+      return try await captureCommand(
+        executable: executable,
+        arguments: arguments,
+        displayArguments: ["container"] + arguments
+      )
     }
 
-    let output = Pipe()
-    let error = Pipe()
-    process.standardOutput = output
-    process.standardError = error
-    try process.run()
-    process.waitUntilExit()
+    return try await captureCommand(
+      executable: envExecutablePath,
+      arguments: [executable] + arguments,
+      displayArguments: ["container"] + arguments
+    )
+  }
 
-    let data = output.fileHandleForReading.readDataToEndOfFile()
-    let errorData = error.fileHandleForReading.readDataToEndOfFile()
-    guard process.terminationStatus == 0 else {
-      let stderr = (String(bytes: errorData, encoding: .utf8) ?? "")
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-      let stdout = (String(bytes: data, encoding: .utf8) ?? "")
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-      let command = (["container"] + arguments).joined(separator: " ")
+  /// Runs one preflight command while draining both output streams concurrently.
+  static func captureCommand(
+    executable: String,
+    arguments: [String],
+    displayArguments: [String],
+    signalProxy: ComposeSignalProxying = DispatchComposeSignalProxy()
+  ) async throws -> Data {
+    let result = try await captureCommandResult(
+      executable: executable,
+      arguments: arguments,
+      signalProxy: signalProxy
+    )
+    guard result.succeeded else {
+      let stderr = boundedDiagnostic(
+        result.stderrData,
+        omittedByteCount: result.stderrOmittedByteCount
+      )
+      let stdout = boundedDiagnostic(
+        result.stdoutData,
+        omittedByteCount: result.stdoutOmittedByteCount
+      )
+      let command = displayArguments.joined(separator: " ")
       let message = stderr.isEmpty ? stdout : stderr
       throw ContainerPackageCompatibilityError.commandFailed(
-        message.isEmpty ? "\(command) failed" : message)
+        message.isEmpty ? "\(command) failed" : message
+      )
     }
-    return data
+    guard
+      result.stdoutOmittedByteCount == 0,
+      result.stdoutData.count <= maximumDiagnosticBytes
+    else {
+      let command = displayArguments.joined(separator: " ")
+      let byteCount = result.stdoutData.count + result.stdoutOmittedByteCount
+      throw ContainerPackageCompatibilityError.commandFailed(
+        "\(command) returned \(byteCount) bytes; the preflight limit is \(maximumDiagnosticBytes)"
+      )
+    }
+    return result.stdoutData
+  }
+
+  private static func captureCommandResult(
+    executable: String,
+    arguments: [String],
+    signalProxy: ComposeSignalProxying
+  ) async throws -> CommandResult {
+    let signalState = ContainerPackagePreflightSignalState()
+    do {
+      return try await withTaskCancellationHandler {
+        try await signalProxy.withSignalProxy(
+          signals: ["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"],
+          handler: { signal in
+            await signalState.record(signal)
+          },
+          operation: {
+            let commandTask = Task {
+              try await ProcessRunner().runCapturingOutputPrefix(
+                executable,
+                arguments,
+                input: Data(),
+                maximumOutputBytes: maximumCapturedOutputBytes
+              )
+            }
+            await signalState.attach(commandTask)
+            let result = try await commandTask.value
+            await signalState.complete(result)
+          }
+        )
+        if let signal = await signalState.signal {
+          throw ContainerPackagePreflightInterruption(signal: signal)
+        }
+        guard let result = await signalState.completedResult() else {
+          throw CancellationError()
+        }
+        return result
+      } onCancel: {
+        Task {
+          await signalState.cancel()
+        }
+      }
+    } catch is CancellationError {
+      if let signal = await signalState.signal {
+        throw ContainerPackagePreflightInterruption(signal: signal)
+      }
+      throw CancellationError()
+    }
+  }
+
+  private static func boundedDiagnostic(_ data: Data, omittedByteCount: Int) -> String {
+    data.withUnsafeBytes { rawBuffer in
+      let bytes = rawBuffer.bindMemory(to: UInt8.self)
+      var rawStart: Int?
+      var rawEnd: Int?
+      var consumedRawEnd: Int?
+      var rendered = ""
+      var index = 0
+
+      while index < bytes.count {
+        let decoded = decodeUTF8Scalar(in: bytes, at: index)
+        let unitEnd = index + decoded.length
+        let isWhitespace = decoded.scalar?.properties.isWhitespace == true
+
+        if rawStart == nil {
+          if isWhitespace {
+            index = unitEnd
+            continue
+          }
+          rawStart = index
+        }
+
+        if !isWhitespace {
+          rawEnd = unitEnd
+        }
+
+        if rawStart != nil, unitEnd <= maximumDiagnosticBytes {
+          rendered.append(contentsOf: decoded.scalar.map(String.init) ?? "\u{fffd}")
+          consumedRawEnd = unitEnd
+        }
+        index = unitEnd
+      }
+
+      guard let rawStart, let rawEnd else {
+        guard omittedByteCount > 0 else {
+          return ""
+        }
+        let sourceByteCount = data.count + omittedByteCount
+        let byteLabel = sourceByteCount == 1 ? "byte" : "bytes"
+        return "[truncated \(sourceByteCount) \(byteLabel)]"
+      }
+      let sourceEnd = omittedByteCount == 0 ? rawEnd : data.count + omittedByteCount
+      guard let consumedRawEnd else {
+        let totalOmittedByteCount = sourceEnd - rawStart
+        let byteLabel = totalOmittedByteCount == 1 ? "byte" : "bytes"
+        return "[truncated \(totalOmittedByteCount) \(byteLabel)]"
+      }
+      guard consumedRawEnd < sourceEnd else {
+        return rendered.trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+      let totalOmittedByteCount = sourceEnd - consumedRawEnd
+      let byteLabel = totalOmittedByteCount == 1 ? "byte" : "bytes"
+      return "\(rendered)\n[truncated \(totalOmittedByteCount) \(byteLabel)]"
+    }
+  }
+
+  private static func decodeUTF8Scalar(
+    in bytes: UnsafeBufferPointer<UInt8>,
+    at index: Int
+  ) -> (length: Int, scalar: Unicode.Scalar?) {
+    let first = bytes[index]
+    if first < 0x80 {
+      return (1, Unicode.Scalar(first))
+    }
+
+    if first >= 0xc2, first <= 0xdf,
+      hasContinuationBytes(1, in: bytes, after: index)
+    {
+      let value = UInt32(first & 0x1f) << 6
+        | UInt32(bytes[index + 1] & 0x3f)
+      return (2, Unicode.Scalar(value))
+    }
+
+    if first >= 0xe0, first <= 0xef,
+      hasContinuationBytes(2, in: bytes, after: index)
+    {
+      let second = bytes[index + 1]
+      let validSecond =
+        (first == 0xe0 && second >= 0xa0)
+        || (first == 0xed && second <= 0x9f)
+        || (first != 0xe0 && first != 0xed)
+      if validSecond {
+        let value = UInt32(first & 0x0f) << 12
+          | UInt32(second & 0x3f) << 6
+          | UInt32(bytes[index + 2] & 0x3f)
+        return (3, Unicode.Scalar(value))
+      }
+    }
+
+    if first >= 0xf0, first <= 0xf4,
+      hasContinuationBytes(3, in: bytes, after: index)
+    {
+      let second = bytes[index + 1]
+      let validSecond =
+        (first == 0xf0 && second >= 0x90)
+        || (first == 0xf4 && second <= 0x8f)
+        || (first != 0xf0 && first != 0xf4)
+      if validSecond {
+        let value = UInt32(first & 0x07) << 18
+          | UInt32(second & 0x3f) << 12
+          | UInt32(bytes[index + 2] & 0x3f) << 6
+          | UInt32(bytes[index + 3] & 0x3f)
+        return (4, Unicode.Scalar(value))
+      }
+    }
+    // One malformed byte per unit keeps every replacement tied to an exact raw range.
+    return (1, nil)
+  }
+
+  private static func hasContinuationBytes(
+    _ count: Int,
+    in bytes: UnsafeBufferPointer<UInt8>,
+    after index: Int
+  ) -> Bool {
+    guard index + count < bytes.count else {
+      return false
+    }
+    for offset in 1...count where bytes[index + offset] & 0xc0 != 0x80 {
+      return false
+    }
+    return true
   }
 
   private static func serviceGuidance(lane: String, detected: [String]) -> String {
@@ -395,6 +636,26 @@ enum ContainerPackageCompatibilityError: Error, LocalizedError {
     switch self {
     case .commandFailed(let message):
       message
+    }
+  }
+}
+
+/// A host signal received while Compose owns an isolated preflight child.
+struct ContainerPackagePreflightInterruption: Error {
+  let signal: String
+
+  var exitStatus: Int32 {
+    switch signal {
+    case "SIGHUP":
+      129
+    case "SIGINT":
+      130
+    case "SIGQUIT":
+      131
+    case "SIGTERM":
+      143
+    default:
+      1
     }
   }
 }

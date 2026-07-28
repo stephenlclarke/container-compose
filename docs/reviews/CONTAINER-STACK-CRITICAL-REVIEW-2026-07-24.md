@@ -316,26 +316,70 @@ and
 [pull-request handoff](../upstream/container-compose/PR-current-dispatch-release-authority.md)
 record the failed-run boundary and regression coverage.
 
-### P1: Compatibility Preflight Can Deadlock on Full Pipes
+### Complete: Compatibility Preflight Drains Full Pipes
 
-`Sources/ComposePlugin/ContainerPackageCompatibility.swift:260-280` attaches
-stdout and stderr pipes, calls `waitUntilExit()`, and only then drains either
-pipe.
+Signed Compose-plugin corrections `81d32eb2`, plus review corrections
+`96ac7830`, `045d020c`, `9db8f060`, `e0ad1dfe`, `4bf2eac6`, `3ed87228`, and
+`fbe0ce05`, `b65d18a6`, `62a40d48`, `b07e9da8`, and final correction
+`5b6f4880`, replace the
+wait-before-drain `Foundation.Process` path with the shared asynchronous
+`ProcessRunner`. Both
+streams now drain while the child runs, while a package-private capture mode
+retains only 64 KiB plus UTF-8 boundary lookahead per stream and records the
+exact omitted byte count. Task
+cancellation owns the exact child process group and propagates through both
+compatibility awaits. The host signal proxy is installed before the child task
+is created, synchronously registers every delivered handler, drains dispatch
+source cancellation, and awaits those handlers before accepting the operation
+result. Signals therefore cancel and reap the preflight group before the CLI
+returns the corresponding shell status. Failed-command diagnostics retain
+stderr precedence while being limited at a 64 KiB absolute raw-stream boundary
+with complete valid UTF-8 scalars and an exact omitted source-byte count.
+Leading-whitespace
+trimming cannot shift that boundary or its three-byte lookahead, and content
+beyond a whitespace-consumed budget still returns an exact truncation marker.
+Diagnostic formatting scans the
+retained raw data once and keeps only the bounded rendered prefix and byte
+offsets, rather than a proportional per-byte object model. If the retained
+stderr prefix contains only whitespace but omitted bytes remain, the formatter
+returns an exact truncation marker so stderr keeps its priority over stdout.
+The package-private capture metadata does not alter the public `CommandResult`
+equality contract or the unbounded public runner API.
 
-A child that writes more than the pipe buffer can block before exit, while the
-parent waits for exit. This preflight runs before runtime-backed commands, so a
-diagnostic or changed `container system version` implementation can deadlock
-the whole plugin.
+The serialized regression suite rejects successful 65,537-byte and
+307,200-byte stdout only after draining both streams, proves a large-output
+failure still selects stderr, verifies diagnostic truncation and malformed
+UTF-8 source-byte accounting, confirms both compatibility awaits preserve
+`CancellationError`, and confirms a cancelled TERM-ignoring child returns
+within two seconds and reports `ESRCH`. A dedicated process-runner regression
+drains 1 MiB of stdout and 2 MiB of stderr while retaining exactly 1 KiB of
+each and recording the exact omitted counts. A delayed proxy regression proves
+the child cannot start before signal handling is active. A whitespace-prefix
+regression proves omitted stderr remains authoritative and reports all 65,552
+source bytes instead of falling back to stdout. A second whitespace-prefix
+regression proves a four-byte scalar crossing the retained prefix is omitted
+intact without exceeding the raw-stream budget. A 16 MiB isolated packaged-CLI
+failure, added in `592266a7`, stays below 320 MiB maximum resident memory,
+limits the rendered diagnostic below 67,000 bytes, and also passes with Address
+Sanitizer. A deterministic signal-proxy regression holds a delivered handler
+open after the proxied operation returns and proves the proxy cannot return
+until that handler is released. The final focused sanitizer runs pass 25
+package-preflight tests across five suites and three signal-proxy tests in one
+suite.
+The SIGINT reproduction exits 130 only after
+its TERM-ignoring preflight child reports `ESRCH`. A bounded CLI reproduction
+timed out on the previous implementation and exits normally through the
+corrected diagnostic path. The complete local gate passes 1,266 Swift tests in
+46 suites, 92.81% Swift
+coverage, 89.88% Go coverage, and all CLI, lint, dependency, licence, and smoke
+checks.
 
-Ownership: Compose plugin.
-
-Required correction:
-
-- drain both streams concurrently while the process runs, preferably through
-  the corrected shared process runner;
-- add a fake `container` executable that writes more than 256 KiB to each
-  stream and prove success and failure paths terminate;
-- propagate cancellation and retain bounded diagnostic output.
+Ownership remains the Compose plugin and shared Compose process runner; no
+Apple runtime fork change is required. The
+[issue](../upstream/container-compose/ISSUE-package-compatibility-preflight-drain.md)
+and
+[pull-request handoff](../upstream/container-compose/PR-package-compatibility-preflight-drain.md)
+record the boundary and validation evidence.
 
 ### P1: `compose commit` Drops Inherited OCI Volumes
 
@@ -772,7 +816,7 @@ new Apple design work.
 | --- | --- | --- | --- | --- |
 | CC-001 | P1 | Compose | **Complete:** make unconfigured image-volume lookup fail closed | Every unconfigured SPI method has a contract test; declared-volume planning reports a clear provider error |
 | CC-002 | P1 | Compose | **Complete:** add task-cancellation ownership to `ProcessRunner` | Cancelled captured/inherited/input child exits within bound; no continuation double-resume; no surviving PID |
-| CC-003 | P1 | Plugin | Replace wait-before-drain compatibility preflight | Fake command writes >256 KiB to stdout and stderr without deadlock; cancellation and error text tested |
+| CC-003 | P1 | Plugin | **Complete:** replace wait-before-drain compatibility preflight | Fake command writes >256 KiB to stdout and stderr without deadlock; cancellation and error text tested |
 | CC-004 | P1 | Compose | Preserve inherited volumes during `commit` | Unit and live Docker parity cover inherited/additive/multiple `VOLUME`; status claim restored only after passing |
 | CC-005 | P1 | Compose/docs | Downgrade tar-stream `cp` parity pending direct runtime streams | Status and help describe content support versus metadata limits; metadata fixture fails for the expected tracked reason |
 | CC-006 | P2 | Compose | Correct lifecycle ownership diagnostics | Pinned-lane errors name Compose orchestration; stock-lane errors name missing Apple capability |

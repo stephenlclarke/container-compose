@@ -77,6 +77,8 @@ struct ProcessRunnerTests {
         #expect(result.succeeded)
         #expect(result.stdout == "\u{FFFD}")
         #expect(result.stderr == "\u{FFFD}")
+        #expect(result.stdoutData == Data([0xFF]))
+        #expect(result.stderrData == Data([0xFE]))
     }
 
     @Test

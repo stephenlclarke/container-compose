@@ -21,7 +21,7 @@ import ComposeCore
 import Foundation
 import Testing
 
-@Suite("Compose signal proxy")
+@Suite("Compose signal proxy", .serialized)
 struct ComposeSignalProxyTests {
     @Test
     func `unknown signal names run the operation without installing handlers`() async throws {
@@ -60,6 +60,51 @@ struct ComposeSignalProxyTests {
 
             #expect(await events.values == ["SIGHUP"])
         }
+
+        @Test
+        func `proxy waits for delivered signal handlers before returning`() async throws {
+            let gate = SignalHandlerCompletionGate()
+            let task = Task {
+                try await DispatchComposeSignalProxy().withSignalProxy(
+                    signals: ["SIGHUP"],
+                    handler: { await gate.handle($0) },
+                    operation: {
+                        guard Darwin.raise(SIGHUP) == 0 else {
+                            throw SignalProxyTestError.raiseFailed
+                        }
+                        for _ in 0 ..< 100 {
+                            if await gate.handlerStarted {
+                                return
+                            }
+                            try await Task.sleep(for: .milliseconds(10))
+                        }
+                        throw SignalProxyTestError.timedOut
+                    },
+                )
+                await gate.recordProxyCompletion()
+            }
+
+            for _ in 0 ..< 100 {
+                if await gate.handlerStarted {
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(await gate.handlerStarted)
+
+            for _ in 0 ..< 20 {
+                if await gate.proxyCompleted {
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(await !gate.proxyCompleted)
+
+            await gate.releaseHandler()
+            try await task.value
+            #expect(await gate.proxyCompleted)
+            #expect(await gate.signals == ["SIGHUP"])
+        }
     #endif
 }
 
@@ -81,5 +126,34 @@ private actor SignalEventRecorder {
 
     func contains(_ event: String) -> Bool {
         events.contains(event)
+    }
+}
+
+private actor SignalHandlerCompletionGate {
+    private(set) var handlerStarted = false
+    private(set) var proxyCompleted = false
+    private(set) var signals: [String] = []
+    private var handlerRelease: CheckedContinuation<Void, Never>?
+    private var handlerReleased = false
+
+    func handle(_ signal: String) async {
+        signals.append(signal)
+        handlerStarted = true
+        guard !handlerReleased else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            handlerRelease = continuation
+        }
+    }
+
+    func recordProxyCompletion() {
+        proxyCompleted = true
+    }
+
+    func releaseHandler() {
+        handlerReleased = true
+        handlerRelease?.resume()
+        handlerRelease = nil
     }
 }

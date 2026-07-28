@@ -49,6 +49,28 @@ class UpdateReadmeUpstreamMetricsTests(unittest.TestCase):
         self.assertIn(updater.BEGIN_MARKER, rendered)
         self.assertIn(updater.END_MARKER, rendered)
 
+    def test_resolves_stack_root_from_linked_worktree_common_directory(self) -> None:
+        root = Path("/Users/example/github/worktrees/container-compose-change")
+        common_dir = "/Users/example/github/container-compose/.git\n"
+
+        resolved = updater.repo_root_from_git_common_dir(root, common_dir)
+
+        self.assertEqual(resolved, Path("/Users/example/github"))
+
+    def test_resolves_stack_root_from_primary_checkout_common_directory(self) -> None:
+        root = Path("/Users/example/github/container-compose")
+
+        resolved = updater.repo_root_from_git_common_dir(root, ".git\n")
+
+        self.assertEqual(resolved, Path("/Users/example/github"))
+
+    def test_falls_back_when_common_directory_is_not_a_git_directory(self) -> None:
+        root = Path("/Users/example/github/container-compose")
+
+        resolved = updater.repo_root_from_git_common_dir(root, "/tmp/bare-repository")
+
+        self.assertEqual(resolved, Path("/Users/example/github"))
+
     def test_replaces_legacy_unmarked_metrics_block(self) -> None:
         readme = "\n".join(
             [

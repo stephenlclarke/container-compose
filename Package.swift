@@ -112,6 +112,7 @@ let package = Package(
         .testTarget(
             name: "ComposePluginTests",
             dependencies: [
+                "ComposeCore",
                 "ComposePlugin",
             ],
             path: "Tests/ComposePluginTests",
