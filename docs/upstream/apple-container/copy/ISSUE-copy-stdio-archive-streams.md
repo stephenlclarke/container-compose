@@ -8,7 +8,7 @@ Docker exposes tar archive streaming through `docker cp` and `docker compose cp`
 
 `apple/container` currently exposes path-based `copyIn` and `copyOut` APIs. The lower `containerization` runtime streams archive data internally over vsock, but the public CLI/API boundary accepts host filesystem paths rather than a caller-provided input stream or caller-owned output stream.
 
-`container-compose` implements Docker-compatible `compose cp - SERVICE:PATH` and `compose cp SERVICE:PATH -` in the Compose layer through temporary host staging and libarchive. A first-class Apple runtime copy stream primitive would still be useful because it would remove the staging path and reduce large-archive overhead, but visible Compose parity no longer depends on this Apple API.
+`container-compose` implements the content flow for `compose cp - SERVICE:PATH` and `compose cp SERVICE:PATH -` in the Compose layer through temporary host staging and libarchive. The current live fixture matches Docker for content, modes, symlinks, sparse allocation, long paths, and large files, but host staging does not preserve arbitrary UID/GID or timestamps and rejects hard-link entries. A first-class Apple runtime copy stream primitive is therefore required for complete visible Compose archive-metadata parity, not only for performance.
 
 References:
 
@@ -17,10 +17,12 @@ References:
 - Nearby Apple context: `apple/container#1832` covers image load from file descriptor input; it is adjacent stdin/archive handling but not container filesystem copy streaming.
 - Nearby Apple context: `apple/container#963` and `apple/container#895` cover volume copy, which is adjacent but not a replacement for container copy stdin/stdout archive streaming.
 - Nearby Apple context: `apple/container#1391` covers archive writer behavior for build-context entries and symlinks, but does not expose `container cp -`.
+- Current implementation proposals: `apple/containerization#812` and `apple/container#1947` are open, mergeable, blocked drafts that require full metadata, cancellation, backpressure, and path-safety review before adoption.
 
 Existing upstream context:
 
 - `container-compose` now accepts `compose cp` operands equal to `-` and stages archive streams through the existing path-based Apple copy APIs.
+- Expanded Docker Compose v5.3.1 parity evidence confirms the host-staging ownership, timestamp, and hard-link limitations described above.
 
 ## Proposed behavior
 

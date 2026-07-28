@@ -1,17 +1,27 @@
 # Cross-MBP handoff: upstream maintenance
 
-Updated: 2026-07-27 11:56 BST
+Updated: 2026-07-28
 
 ## Stop point
 
-The source changes for this slice are merged and the exact-main publication
-gates have closed green. The mutable `current` prerelease now points at the
-merge, the package artefacts and Homebrew formulas are aligned, and SonarCloud
-has indexed the exact revision.
+The earlier upstream-maintenance closeout described below is complete. Stable
+release `0.10.1` and the mutable `current` prerelease were subsequently
+published and verified; do not repeat that promotion.
 
-The remaining closeout work is documentation review/merge and the final Slack
-END notification. Do not begin the next parity slice until that closeout is
-complete.
+CC-004 is implemented and published for review in
+[stephenlclarke/container-compose#173](https://github.com/stephenlclarke/container-compose/pull/173)
+at `3103fee41ebb37c04adbaeade217f0731a9e68ce`. Local
+`HAWKEYE_AUTO_INSTALL=1 make ci` and live Docker Compose v5.3.1 inherited-volume
+parity pass. All applicable hosted source, runtime, ASan, format, CodeQL, and
+DocC checks pass. The pull request remains unmerged pending review.
+
+CC-005 is implemented on `fix/cp-archive-metadata-parity`. Command help and
+`STATUS.md` now classify tar-stream `cp` and `--archive` metadata support as
+partial. The expanded live parity fixture confirms matching content, mode,
+symlink, sparse allocation, long-path, and large-file behaviour. It also
+confirms that host staging loses arbitrary UID/GID and timestamps and rejects
+hard-link entries. Complete metadata parity remains COPY-401/COPY-402 work
+after Apple accepts a direct runtime stream contract.
 
 The durable goal remains:
 
@@ -267,18 +277,12 @@ The refreshed `current` prerelease is valid slice evidence:
 - checked-in README tape contains 16 `Type`, 16 `Enter`, 14 `Wait+Screen`,
   zero `Replay`, and zero `Marker` directives
 
-## Remaining closeout
+## Previous closeout
 
-1. Commit this evidence as a signed documentation commit on
-   `docs/upstream-maintenance-closeout-20260727`, push it, open a PR, obtain an
-   exact-head connector review, run the thread-aware fetcher, and merge.
-2. If the docs-only merge becomes newer than the released target, dispatch full
-   CI for exact final `main` and republish `current` from that exact revision.
-   Do not leave the mutable prerelease behind final `main`.
-3. Refresh this handoff with final run, Sonar, release, tap, GIF, and Slack END
-   identities.
-4. Fully reread the Slack skills, send the detailed slice END, then begin a new
-   slice only after a new Slack START.
+The documentation review, exact-main validation, mutable `current`
+republication, Homebrew alignment, and Slack END notification from the
+27 July slice are complete. The evidence below is retained as the historical
+publication record.
 
 ## Upstream state at merge
 
@@ -368,11 +372,22 @@ adds `/added-data` and `["/logs", "/shared-data"]`, and confirms Docker Compose
 v5.3.1 and the installed Container-backed Compose binary both retain the same
 four targets. No Apple runtime fork or stack pin changes.
 
-The next parity blocker is:
+CC-005 is complete as the honest local correction. The command and
+`--archive` option are partial rather than fully supported, and the live
+metadata fixture records the exact host-staging boundary. Third-party
+[apple/containerization#812](https://github.com/apple/containerization/pull/812)
+and [apple/container#1947](https://github.com/apple/container/pull/1947)
+remain open, mergeable, blocked drafts. Do not copy either draft into the
+supported forks before its API, cancellation, backpressure, path-safety, and
+metadata semantics are reviewed.
 
-1. Replace archive-mode `compose cp` host staging with direct runtime streams
-   so ownership metadata can be preserved.
+The next Phase 0 parity blocker is CC-006:
+
+1. Correct lifecycle ownership diagnostics so pinned-stack failures name
+   Compose orchestration and stock-runtime failures name the missing Apple
+   capability.
 
 Continue the ordered inventory in
 `docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after this
-remaining confirmed P1 item is complete.
+item is complete. COPY-401/COPY-402 remain required in Phase 4 for complete
+direct-stream archive parity.

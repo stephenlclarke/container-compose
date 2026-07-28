@@ -7,8 +7,8 @@ This change fills the remaining Docker Compose v2 `cp` command gap:
 - Supports `container compose cp - SERVICE:PATH` by reading a tar archive from stdin and copying extracted archive members into the selected service container destination.
 - Supports `container compose cp SERVICE:PATH -` by staging the service container path and writing a tar archive to stdout.
 - Keeps direct path copies, service-to-service copies, `--archive`, `--follow-link`, `--index`, and `--all` behavior intact.
-- Marks `cp` as supported in command help and `STATUS.md`.
-- Keeps the Apple runtime handoff current: a native copy-stream API would remove staging, but visible Docker Compose parity is now handled in the Compose layer.
+- Originally marked `cp` as supported in command help and `STATUS.md`; the later metadata-fidelity review correctly downgrades tar-stream and `--archive` support to partial.
+- Keeps the Apple runtime handoff current: the Compose layer handles content flow, while native copy streams remain necessary for complete archive-metadata parity.
 
 ## Type of Change
 
@@ -38,13 +38,14 @@ References:
 - Updated dry-run output to show `compose-runtime cp - SERVICE:PATH` and `compose-runtime cp SERVICE:PATH -`.
 - Added focused unit tests for stdin archive copy, stdout archive copy, and invalid `-` to `-` operands.
 - Added Docker Compose parity coverage for round-tripping stdin and stdout archive copy workflows.
+- The later expanded fixture covers ownership, mode, timestamp, symlink, hard-link, sparse allocation, long-path, and large-file behavior. It confirms passing content semantics while retaining expected ownership, timestamp, and hard-link gaps.
 
 ## Repository Scope
 
 - The service selection, archive staging, and Docker Compose operand semantics stay in `stephenlclarke/container-compose`.
 - `stephenlclarke/containerization` provides the copy-out lifecycle fix for [apple/container#1927](https://github.com/apple/container/issues/1927), so `compose cp SERVICE:PATH -` fails promptly when the service path is missing and leaves the container usable.
 - `stephenlclarke/container` and `stephenlclarke/container-compose` pin that matched `containerization` revision.
-- A future Apple API can replace the staging internals without changing the Compose CLI surface.
+- A future Apple API can replace the staging internals without changing the Compose CLI surface and close the remaining archive-metadata gap.
 
 ## Upstream Scan
 
@@ -52,6 +53,7 @@ References:
 - [apple/container#963](https://github.com/apple/container/pull/963) and [apple/container#895](https://github.com/apple/container/issues/895) cover volume copy, not container filesystem `cp -` archive streams, so no code was imported.
 - [apple/containerization#652](https://github.com/apple/containerization/pull/652) and [apple/container#1391](https://github.com/apple/container/pull/1391) cover explicit archive entries and symlink handling for build contexts. The current stdout archive path uses existing `ArchiveWriter.archiveDirectory` behavior; no overlapping approved code was available to import.
 - [apple/container#1832](https://github.com/apple/container/pull/1832) and [apple/container#1905](https://github.com/apple/container/pull/1905) are adjacent image load/save stdin/stdout fallback work, not container filesystem copy.
+- [apple/containerization#812](https://github.com/apple/containerization/pull/812) and [apple/container#1947](https://github.com/apple/container/pull/1947) are the current direct-stream proposals. Both remain blocked drafts and are not imported.
 - A Docker Compose PR/issue scan for `cp`, stdin/stdout, tar, and archive streams found no open implementation PR to merge into this codebase.
 - The approved Apple PR scan matched the current tracker in `docs/upstream/APPLE-UPSTREAM-REVIEW.md`; no newly approved copy or archive PR was available to import. The approved Docker Compose PRs were GitHub Actions dependency bumps and do not affect Compose `cp` behavior.
 
@@ -81,10 +83,11 @@ npx --yes markdownlint-cli2 $(git ls-files '*.md')
 - `cp - SERVICE:PATH` consumes stdin once and reuses the staged archive for all selected destination containers.
 - `cp SERVICE:PATH -` writes binary tar bytes directly to stdout.
 - The implementation uses temporary host staging because current Apple path-copy APIs do not accept caller-owned copy streams.
+- Current support is partial: arbitrary UID/GID and timestamps are not preserved and hard-link entries are rejected during staging.
 
 ## Remaining Risks
 
-- Native Apple stream-copy APIs would reduce staging and can improve very large archive performance.
+- Native Apple stream-copy APIs are required for complete archive-metadata parity and would also reduce staging overhead.
 - Archive extraction rejects unsafe paths before copy; future Docker Compose behavior changes around unusual tar members should be checked against the parity script.
 
 ## Checklist

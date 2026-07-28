@@ -14,6 +14,7 @@ References:
 - Docker Compose `cp` reference: <https://docs.docker.com/reference/cli/docker/compose/cp/>
 - Adjacent Apple PR: [apple/container#1832](https://github.com/apple/container/pull/1832) covers file-descriptor staging for image load input, not container filesystem copy streams.
 - Copy-out lifecycle dependency: [apple/container#1927](https://github.com/apple/container/issues/1927) / [apple/containerization#799](https://github.com/apple/containerization/pull/799).
+- Direct-stream proposals: [apple/containerization#812](https://github.com/apple/containerization/pull/812) and [apple/container#1947](https://github.com/apple/container/pull/1947).
 
 ## Current container-compose behavior
 
@@ -23,12 +24,13 @@ References:
 - service-container source paths are staged to a temporary host directory, archived with libarchive, and written to stdout without text decoding.
 - direct path copies, service-to-service copies, `--archive`, `--follow-link`, `--index`, and `--all` stay on the existing copy paths.
 - missing service-container source paths rely on the matched `stephenlclarke/containerization` copy-out lifecycle fix so failures return promptly and do not block later container operations.
+- the current live fixture matches Docker Compose v5.3.1 for content, modes, symlinks, sparse allocation, long paths, and large files. Host-staged archive input does not preserve arbitrary UID/GID or timestamps and rejects hard-link entries.
 
 ## Likely owner
 
-container-compose design gap, with an optional apple/container runtime improvement.
+Apple runtime stream primitive followed by a container-compose adapter.
 
-The Compose-compatible behavior is implemented in `container-compose`. A future Apple stream-copy API would let this project remove the temporary host staging path, but it is no longer required for user-visible Docker Compose parity.
+The content behavior is implemented in `container-compose`, and its support is now classified as partial. Complete user-visible archive-metadata parity requires a reviewed direct stream API so tar headers reach the runtime without host materialisation.
 
 ## Minimal example
 

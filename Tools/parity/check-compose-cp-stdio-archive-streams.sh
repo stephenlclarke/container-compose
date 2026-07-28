@@ -31,10 +31,14 @@
 #                      Path to the Apple container binary used by container-compose.
 #   DOCKER_COMPOSE     Docker Compose command to compare with. Defaults to
 #                      "docker compose" when available, otherwise docker-compose.
+#   TAR                GNU tar binary used to create metadata fixtures. Defaults
+#                      to tar.
 #
 # This script is intentionally local-only and is not part of CI. It verifies
 # Docker Compose V2 and container-compose `cp -` archive stream behavior for
-# stdin-to-service and service-to-stdout copies.
+# stdin-to-service and service-to-stdout content copies. It also confirms the
+# expected host-staging ownership, timestamp, and hard-link gaps until direct
+# runtime streams are available.
 
 set -euo pipefail
 
@@ -47,8 +51,10 @@ readonly REPO_ROOT
 STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 CONTAINER_BINARY="${CONTAINER_COMPOSE_CONTAINER:-container}"
+TAR_BINARY="${TAR:-tar}"
 DOCKER_COMPOSE_COMMAND=()
 FIXTURE_DIR=""
+LONG_ARCHIVE_PATH=""
 DOCKER_PROJECT_NAME="container-compose-cp-stdio-docker-$RANDOM-$$"
 CONTAINER_PROJECT_NAME="container-compose-cp-stdio-runtime-$RANDOM-$$"
 
@@ -114,8 +120,11 @@ detect_docker_compose() {
 
 check_tools() {
     detect_docker_compose
-    if ! command -v tar >/dev/null 2>&1; then
-        skip_or_fail 'tar is not available'
+    if ! command -v "$TAR_BINARY" >/dev/null 2>&1 && [[ ! -x "$TAR_BINARY" ]]; then
+        skip_or_fail "tar binary is not executable: $TAR_BINARY"
+    fi
+    if ! "$TAR_BINARY" --version 2>/dev/null | grep -q 'GNU tar'; then
+        skip_or_fail 'GNU tar is required for deterministic sparse and ownership fixtures'
     fi
     if ! docker info >/dev/null 2>&1; then
         skip_or_fail 'Docker Engine is not available'
@@ -137,8 +146,45 @@ services:
     command: ["sh", "-c", "sleep 120"]
 YAML
     printf 'from stdin archive\n' >"$FIXTURE_DIR/payload.txt"
-    tar -C "$FIXTURE_DIR" -cf "$FIXTURE_DIR/payload.tar" payload.txt
+    "$TAR_BINARY" -C "$FIXTURE_DIR" -cf "$FIXTURE_DIR/payload.tar" payload.txt
     printf 'from stdout archive\n' >"$FIXTURE_DIR/stdout-source.txt"
+
+    local archive_root="$FIXTURE_DIR/archive-input"
+    local long_component
+    long_component="$(printf 'a%.0s' {1..180})"
+    LONG_ARCHIVE_PATH="metadata/long/$long_component/long-name.txt"
+    mkdir -p "$archive_root/metadata/long/$long_component" "$archive_root/hardlinks"
+    printf 'metadata fidelity\n' >"$archive_root/metadata/metadata.txt"
+    chmod 0640 "$archive_root/metadata/metadata.txt"
+    ln -s metadata.txt "$archive_root/metadata/metadata-link"
+    printf 'long path fidelity\n' >"$archive_root/$LONG_ARCHIVE_PATH"
+    truncate -s 16777216 "$archive_root/metadata/sparse.bin"
+    printf 'sparse-start\n' | dd of="$archive_root/metadata/sparse.bin" conv=notrunc 2>/dev/null
+    printf 'sparse-end\n' | dd of="$archive_root/metadata/sparse.bin" bs=1 seek=16777200 conv=notrunc 2>/dev/null
+    dd if=/dev/zero of="$archive_root/metadata/large.bin" bs=1048576 count=4 2>/dev/null
+    printf 'hard-link fidelity\n' >"$archive_root/hardlinks/source.txt"
+    ln "$archive_root/hardlinks/source.txt" "$archive_root/hardlinks/target.txt"
+
+    "$TAR_BINARY" \
+        --format=pax \
+        --sparse \
+        --numeric-owner \
+        --owner=1234 \
+        --group=2345 \
+        --mtime=@1700000000 \
+        -C "$archive_root" \
+        -cf "$FIXTURE_DIR/metadata.tar" \
+        metadata
+    "$TAR_BINARY" \
+        --format=pax \
+        --numeric-owner \
+        --owner=1234 \
+        --group=2345 \
+        --mtime=@1700000000 \
+        -C "$archive_root" \
+        -cf "$FIXTURE_DIR/hardlinks.tar" \
+        hardlinks/source.txt \
+        hardlinks/target.txt
 }
 
 cleanup() {
@@ -174,7 +220,112 @@ extract_stdout_archive() {
     local destination="$2"
 
     mkdir -p "$destination"
-    tar -C "$destination" -xf "$archive"
+    "$TAR_BINARY" -C "$destination" -xf "$archive"
+}
+
+docker_compose_exec() {
+    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" exec -T app "$@"
+}
+
+container_compose_exec() {
+    CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
+        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" exec -T app "$@"
+}
+
+capture_metadata_fixture() {
+    local executor="$1"
+    local prefix="$2"
+    local label="$3"
+    local archive_root="$FIXTURE_DIR/archive-input"
+    local expected_hash
+    local actual_hash
+
+    expected_hash="$(shasum -a 256 "$archive_root/metadata/metadata.txt" | awk '{print $1}')"
+    actual_hash="$("$executor" sha256sum /tmp/metadata/metadata.txt | awk '{print $1}')"
+    [[ "$actual_hash" == "$expected_hash" ]] || {
+        error "$label metadata fixture content hash = $actual_hash, want $expected_hash"
+        return 1
+    }
+
+    expected_hash="$(shasum -a 256 "$archive_root/$LONG_ARCHIVE_PATH" | awk '{print $1}')"
+    actual_hash="$("$executor" sha256sum "/tmp/$LONG_ARCHIVE_PATH" | awk '{print $1}')"
+    [[ "$actual_hash" == "$expected_hash" ]] || {
+        error "$label long-path fixture content hash = $actual_hash, want $expected_hash"
+        return 1
+    }
+
+    expected_hash="$(shasum -a 256 "$archive_root/metadata/large.bin" | awk '{print $1}')"
+    actual_hash="$("$executor" sha256sum /tmp/metadata/large.bin | awk '{print $1}')"
+    [[ "$actual_hash" == "$expected_hash" ]] || {
+        error "$label large-stream fixture content hash = $actual_hash, want $expected_hash"
+        return 1
+    }
+
+    expected_hash="$(shasum -a 256 "$archive_root/metadata/sparse.bin" | awk '{print $1}')"
+    actual_hash="$("$executor" sha256sum /tmp/metadata/sparse.bin | awk '{print $1}')"
+    [[ "$actual_hash" == "$expected_hash" ]] || {
+        error "$label sparse fixture content hash = $actual_hash, want $expected_hash"
+        return 1
+    }
+
+    local link_target
+    link_target="$("$executor" readlink /tmp/metadata/metadata-link)"
+    [[ "$link_target" == "metadata.txt" ]] || {
+        error "$label symlink target = $link_target, want metadata.txt"
+        return 1
+    }
+
+    "$executor" stat -c '%u:%g:%a:%Y' /tmp/metadata/metadata.txt >"$FIXTURE_DIR/$prefix-metadata.txt"
+    "$executor" stat -c '%s:%b' /tmp/metadata/sparse.bin >"$FIXTURE_DIR/$prefix-sparse.txt"
+}
+
+assert_expected_metadata_boundary() {
+    local docker_metadata
+    local container_metadata
+    local docker_sparse
+    local container_sparse
+    local container_uid
+    local container_gid
+    local container_mode
+    local container_mtime
+
+    docker_metadata="$(<"$FIXTURE_DIR/docker-metadata.txt")"
+    container_metadata="$(<"$FIXTURE_DIR/container-metadata.txt")"
+    docker_sparse="$(<"$FIXTURE_DIR/docker-sparse.txt")"
+    container_sparse="$(<"$FIXTURE_DIR/container-sparse.txt")"
+    IFS=':' read -r container_uid container_gid container_mode container_mtime <<<"$container_metadata"
+
+    [[ "$docker_metadata" == "1234:2345:640:1700000000" ]] || {
+        error "Docker Compose metadata baseline = $docker_metadata, want 1234:2345:640:1700000000"
+        return 1
+    }
+    [[ "${docker_sparse%%:*}" == "16777216" ]] || {
+        error "Docker Compose sparse fixture size = $docker_sparse, want 16777216 bytes"
+        return 1
+    }
+    [[ "${container_sparse%%:*}" == "16777216" ]] || {
+        error "container-compose sparse fixture size = $container_sparse, want 16777216 bytes"
+        return 1
+    }
+    [[ "$container_sparse" == "$docker_sparse" ]] || {
+        error "container-compose sparse allocation = $container_sparse, want Docker baseline $docker_sparse"
+        return 1
+    }
+    [[ "$container_mode" == "640" ]] || {
+        error "container-compose mode = $container_mode, want Docker baseline 640"
+        return 1
+    }
+    if [[ "$container_uid:$container_gid" == "1234:2345" ]]; then
+        error 'container-compose unexpectedly reached ownership parity; update the documented boundary and this fixture'
+        return 1
+    fi
+    if [[ "$container_mtime" == "1700000000" ]]; then
+        error 'container-compose unexpectedly reached timestamp parity; update the documented boundary and this fixture'
+        return 1
+    fi
+
+    info "Expected host-staging ownership/timestamp gap confirmed: Docker metadata=$docker_metadata; container-compose metadata=$container_metadata"
+    info "Sparse allocation parity confirmed: $container_sparse"
 }
 
 check_docker_compose_cp_streams() {
@@ -187,6 +338,18 @@ check_docker_compose_cp_streams() {
     "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp app:/tmp/stdout-source.txt - >"$FIXTURE_DIR/docker-stdout.tar"
     extract_stdout_archive "$FIXTURE_DIR/docker-stdout.tar" "$FIXTURE_DIR/docker-stdout"
     assert_file_equals "$FIXTURE_DIR/stdout-source.txt" "$FIXTURE_DIR/docker-stdout/stdout-source.txt" "Docker Compose stdout archive copy"
+
+    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp -a - app:/tmp <"$FIXTURE_DIR/metadata.tar"
+    capture_metadata_fixture docker_compose_exec docker "Docker Compose"
+    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp -a - app:/tmp <"$FIXTURE_DIR/hardlinks.tar"
+    local source_inode
+    local target_inode
+    source_inode="$(docker_compose_exec stat -c '%i' /tmp/hardlinks/source.txt)"
+    target_inode="$(docker_compose_exec stat -c '%i' /tmp/hardlinks/target.txt)"
+    [[ "$source_inode" == "$target_inode" ]] || {
+        error "Docker Compose hard-link fixture used different inodes: $source_inode != $target_inode"
+        return 1
+    }
 }
 
 check_container_compose_cp_streams() {
@@ -204,6 +367,30 @@ check_container_compose_cp_streams() {
         "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp app:/tmp/stdout-source.txt - >"$FIXTURE_DIR/container-stdout.tar"
     extract_stdout_archive "$FIXTURE_DIR/container-stdout.tar" "$FIXTURE_DIR/container-stdout"
     assert_file_equals "$FIXTURE_DIR/stdout-source.txt" "$FIXTURE_DIR/container-stdout/stdout-source.txt" "container-compose stdout archive copy"
+
+    CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
+        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp -a - app:/tmp <"$FIXTURE_DIR/metadata.tar"
+    capture_metadata_fixture container_compose_exec container "container-compose"
+
+    local hardlink_output
+    local hardlink_status
+    set +e
+    hardlink_output="$(
+        CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
+            "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" cp -a - app:/tmp \
+            <"$FIXTURE_DIR/hardlinks.tar" 2>&1
+    )"
+    hardlink_status=$?
+    set -e
+    if ((hardlink_status == 0)); then
+        error 'container-compose unexpectedly accepted the staged hard-link fixture; update the expected-gap assertion'
+        return 1
+    fi
+    [[ "$hardlink_output" == *"archive contains unsafe paths: hardlinks/target.txt"* ]] || {
+        error "container-compose hard-link fixture failed for an unexpected reason: $hardlink_output"
+        return 1
+    }
+    info 'Expected host-staging hard-link gap confirmed: hardlinks/target.txt is rejected before the runtime stream boundary.'
 }
 
 main() {
@@ -213,7 +400,8 @@ main() {
     create_fixture
     check_docker_compose_cp_streams
     check_container_compose_cp_streams
-    info 'Docker Compose cp stdio archive parity check passed for stdin and stdout tar streams.'
+    assert_expected_metadata_boundary
+    info 'Docker Compose cp stdio content and sparse-allocation parity passed; expected ownership, timestamp, and hard-link gaps were confirmed.'
 }
 
 main "$@"

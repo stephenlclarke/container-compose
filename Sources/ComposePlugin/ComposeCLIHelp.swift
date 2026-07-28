@@ -307,7 +307,7 @@ enum ComposeCLIHelp {
         "commit": .supported,
         "config": .supported,
         "convert": .supported,
-        "cp": .supported,
+        "cp": .partiallySupported,
         "create": .supported,
         "down": .supported,
         "events": .partiallySupported,
@@ -341,6 +341,7 @@ enum ComposeCLIHelp {
     ]
 
     private static let supportDetails: [String: String] = [
+        "cp": "Path copies preserve the runtime's supported metadata. Tar-stream operands stage through the host filesystem, so arbitrary UID/GID and timestamps are not preserved, hard-link entries are rejected, and complete archive fidelity is unavailable until the runtime exposes direct streams.",
         "events": "OOM, explicit restart, rename, resize, update, and attach/detach actions are unavailable; automatic policy restarts emit die then start, and exec lifecycle actions are supported.",
         "exec": "Docker-complete privileged execution is unavailable.",
         "run": "Container-facing DNS aliases are unavailable.",
@@ -473,7 +474,7 @@ enum ComposeCLIHelp {
         ],
         "cp": [
             "--all": .supported,
-            "--archive": .supported,
+            "--archive": .partiallySupported,
             "--dry-run": .supported,
             "--follow-link": .supported,
             "--index": .supported,
@@ -1371,7 +1372,7 @@ enum ComposeCLIHelp {
 
         Options:
               --all           Include containers created by the run command
-          -a, --archive       Archive mode (copy all uid/gid information)
+          -a, --archive       Archive mode (request source UID/GID preservation)
               --dry-run       Execute command in dry run mode
           -L, --follow-link   Always follow symbol link in SRC_PATH
               --index int     Index of the container if service has multiple replicas

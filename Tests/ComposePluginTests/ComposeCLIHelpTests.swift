@@ -103,7 +103,7 @@ struct ComposeCLIHelpTests {
         let commitHelp = try #require(ComposeCLIHelp.commandHelpText(command: "commit"))
         let eventsHelp = try #require(ComposeCLIHelp.commandHelpText(command: "events"))
 
-        #expect(partialCommands == [["events"], ["exec"], ["run"], ["up"]])
+        #expect(partialCommands == [["cp"], ["events"], ["exec"], ["run"], ["up"]])
         #expect(commitHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(commitHelp.contains("best-effort snapshot"))
         #expect(commitHelp.contains("\u{001B}[32m--pause\u{001B}[0m"))
@@ -440,6 +440,18 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(help.contains("Docker-complete privileged execution is unavailable."))
         #expect(help.contains("\u{001B}[38;5;208m--privileged\u{001B}[0m"))
+    }
+
+    @Test("cp command discloses staged archive metadata limits")
+    func cpCommandDisclosesStagedArchiveMetadataLimits() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "cp"))
+
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("Tar-stream operands stage through the host filesystem"))
+        #expect(help.contains("arbitrary UID/GID and timestamps are not preserved"))
+        #expect(help.contains("hard-link entries are rejected"))
+        #expect(help.contains("\u{001B}[38;5;208m--archive\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--follow-link\u{001B}[0m"))
     }
 
     @Test("build command reports its complete local build surface")
