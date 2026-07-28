@@ -395,10 +395,26 @@ instrumented profile now gates `ComposeCore` at 90%, `ComposeRuntimeSPI` at
 and aggregate first-party Swift at 85%. The full CI measurements were 92.89%,
 100.00%, 75.91%, 56.52%, and 87.68%, respectively.
 
-The next listed Phase 0 item is TEST-008:
+TEST-008 is complete. The 33,831-line orchestrator test was split into one
+shared-support owner and eleven command or capability suite files. All 895
+unique test IDs are preserved. On the same local macOS arm64 build, warm
+`--skip-build` runs completed in 2.594 seconds with default parallel execution
+and 5.205 seconds with `--no-parallel`.
 
-1. Split the 32k-line orchestrator test by command or capability without
-   losing coverage or shared-fixture ownership.
+Strict coverage comparison exposed an existing scheduler-dependent
+abort-on-container-failure test: the successful container did not always
+complete before the failing container after the split. The fixture now makes
+that order explicit; ten consecutive focused runs passed. Full `make ci`
+reports `executed=1251 skipped=25`, with `ComposeCore` at 92.89%,
+`ComposeRuntimeSPI` at 100.00%, the `ComposeContainerRuntime` provider at
+75.91%, `ComposePlugin` at 56.52%, aggregate first-party Swift at 87.68%, and
+Go at 89.88%. The covered source-line set exactly matches the pre-split
+baseline.
+
+The next listed Phase 0 item is SEC-009:
+
+1. Set `0700` and `0600` permissions on sensitive temporary paths.
+2. Cover standard and shared `TMPDIR` use, including cleanup failure.
 
 Continue the ordered inventory in
 `docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after this

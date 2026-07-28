@@ -560,10 +560,12 @@ Required correction:
   `DESIGN.md`.
 - **The core target owns too much translation:** Apple DTOs, archive types,
   runtime policy, and Compose policy are mixed.
-- **The main orchestrator test is too large:**
-  `Tests/ComposeCoreTests/ComposeOrchestratorTests.swift` is 32,133 lines.
-  Broad coverage is valuable, but this file makes ownership, fixtures, failure
-  localisation, and parallel test execution harder.
+- **The main orchestrator test was too large:** before TEST-008,
+  `Tests/ComposeCoreTests/ComposeOrchestratorTests.swift` had grown to 33,831
+  lines. It is now a 218-line core suite plus ten capability extensions, with
+  one 3,673-line shared-support owner. The largest capability file is 8,643
+  lines. All 895 test IDs are preserved and default parallel execution is
+  verified.
 - **Live adapters are under-tested:** one 325-line provider test file covers a
   17-file `ComposeContainerRuntime` target.
 - **Fork delta is no longer minimal:** all Apple upstream commits are present,
@@ -800,7 +802,7 @@ new Apple design work.
 | CC-005 | P1 | Stack/Compose/docs | **Complete:** stream tar archives without host extraction and restore supported status | Exact pins expose caller-owned archive handles; help and status report the matched lane; live Docker parity proves ownership, timestamp, hard-link, sparse-file, content, and path fidelity with recorded timings |
 | CC-006 | P2 | Compose | **Complete:** correct lifecycle ownership diagnostics | Pinned-lane errors name Compose orchestration; stock-lane errors name missing Apple capability |
 | TEST-007 | P1 | Compose CI | **Complete:** make live test skips explicit and gate aggregate coverage | CI reports executed/skipped counts; separate Core/SPI/provider/plugin/aggregate thresholds |
-| TEST-008 | P2 | Compose | Split the 32k-line orchestrator test by command/capability | Shared fixtures have one owner; tests run in parallel; no coverage loss |
+| TEST-008 | P2 | Compose | **Complete:** split the 33k-line orchestrator test by command/capability | One shared-fixture owner; 895 unique test IDs; default parallel 2.594s versus forced serial 5.205s; exact baseline line coverage retained |
 | SEC-009 | P2 | Compose | Set 0700/0600 permissions on sensitive temporary paths | Permission tests cover standard and shared `TMPDIR`; cleanup survives failure |
 | DOC-010 | P1 | Compose | Correct `DESIGN.md`, coupling audit, and `STATUS.md` claims | Documentation matches the actual package graph and tested command semantics |
 | APPLE-011 | P1 | Runtime forks | **Complete on supported fork:** review/port signal and log-tail fixes #1997/#2000 | Focused runtime tests and Compose kill/log-tail parity pass; local commits remain independently removable |
