@@ -26013,6 +26013,63 @@ struct ComposeOrchestratorTests {
         #expect(config.config.workingDir == "/srv/app")
     }
 
+    @Test("commit image archive preserves inherited Docker volumes")
+    func commitImageArchivePreservesInheritedDockerVolumes() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let rootfs = directory.appendingPathComponent("rootfs.tar")
+        try rootfsArchiveData().write(to: rootfs)
+        let imageArchive = directory.appendingPathComponent("image.tar")
+
+        try ComposeCommitImageArchive.write(
+            rootfsArchive: rootfs,
+            output: imageArchive,
+            service: composeService(name: "api", image: "example/api"),
+            options: ComposeCommitOptions(),
+            metadata: .init(baseImage: ComposeImageMetadata(reference: "example/base:latest") {
+                $0.declaredVolumeTargets = ["/data", "/cache"]
+            })
+        )
+
+        let config = try commitArchiveConfig(from: imageArchive)
+        #expect(config.config.volumes == [
+            "/cache": [:],
+            "/data": [:],
+        ])
+    }
+
+    @Test("commit image archive adds repeated Docker volume changes")
+    func commitImageArchiveAddsRepeatedDockerVolumeChanges() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let rootfs = directory.appendingPathComponent("rootfs.tar")
+        try rootfsArchiveData().write(to: rootfs)
+        let imageArchive = directory.appendingPathComponent("image.tar")
+
+        try ComposeCommitImageArchive.write(
+            rootfsArchive: rootfs,
+            output: imageArchive,
+            service: composeService(name: "api", image: "example/api"),
+            options: ComposeCommitOptions {
+                $0.changes = [
+                    "VOLUME /cache /shared",
+                    "VOLUME [\"/logs\",\"/cache\"]",
+                ]
+            },
+            metadata: .init(baseImage: ComposeImageMetadata(reference: "example/base:latest") {
+                $0.declaredVolumeTargets = ["/inherited"]
+            })
+        )
+
+        let config = try commitArchiveConfig(from: imageArchive)
+        #expect(config.config.volumes == [
+            "/cache": [:],
+            "/inherited": [:],
+            "/logs": [:],
+            "/shared": [:],
+        ])
+    }
+
     @Test("commit image archive uses the default shell for shell-form changes")
     func commitImageArchiveUsesDefaultShellPath() throws {
         let directory = try temporaryDirectory()
