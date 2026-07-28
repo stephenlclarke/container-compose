@@ -2,6 +2,9 @@
 
 This is the current disposition of Apple work that affects the five-repository container stack. Re-check GitHub before changing an Apple-backed component because issue, review, and merge state can change independently.
 
+Updated: 28 July 2026 after fetching every configured Apple and
+Stephen-owned remote and querying the live pull-request state.
+
 ## Scope
 
 - `apple/container`
@@ -10,38 +13,110 @@ This is the current disposition of Apple work that affects the five-repository c
 
 ## Fetched Main Baselines
 
-The 27 July 2026 refresh fetched every configured Apple and Stephen-owned
-remote before comparison. Each supported fork contains its complete Apple
-`main` history:
+Each supported fork contains its complete Apple `main` history. The
+left/right counts below are from `git rev-list --left-right --count
+<apple-main>...<fork-main>`:
 
-| Repository | Apple `main` | Supported fork `main` | Apple-only commits |
-| --- | --- | --- | ---: |
-| `container` | `d1d763530df3c6a326dbae7f0c0a59a335808045` | `5796a79ee3e59c16098d086278c072740d519ee8` | 0 |
-| `containerization` | `74ace148ded72f7bb3c878b142e4962ae668adf4` | `164088e02e16ed80e536d0c59822b09931d213df` | 0 |
-| `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `f97cddf5b3aae2426a094613793c11c41b1d2e53` | 0 |
+| Repository | Apple `main` | Supported fork `main` | Apple-only | Fork-only |
+| --- | --- | --- | ---: | ---: |
+| `container` | `27e5043165178edb095c901624857b51a2ea8e1a` | `367430446959e3048da37f5f64d3c10e1293d3de` | 0 | 327 |
+| `containerization` | `50f77222964ed3d01dcb53f803ea2d511656a9dc` | `043193efa5f1a2e21a240041d6edd71d7673739e` | 0 | 133 |
+| `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `f97cddf5b3aae2426a094613793c11c41b1d2e53` | 0 | 33 |
 
-No Apple commit needed merging in this refresh. The runtime maintenance head
-`281208b1a8db06c92348afdeb1c163e043637c16` passed exact-head review and
-hosted checks, then merged without tree changes as
-`5796a79ee3e59c16098d086278c072740d519ee8`. The Compose and Homebrew support
-repositories also had no open dependency-bot pull requests.
+No Apple commit is missing from a supported fork at this snapshot. The
+fork-only counts include merge commits and intentionally retained generic
+runtime work; they are not a count of changes that are ready for Apple.
 
-## Open stephenlclarke Proposals
+## Submitted Stephen-Authored Apple Pull Requests
 
-| Pull request | Current purpose |
-| --- | --- |
-| [apple/container#1934](https://github.com/apple/container/pull/1934) | Ready-for-review fix that preserves the complete `unspecified` version placeholder. |
-| [apple/container#1935](https://github.com/apple/container/pull/1935) | Ready-for-review root-help responsiveness fix for [apple/container#1459](https://github.com/apple/container/issues/1459), stacked on [apple/container#1862](https://github.com/apple/container/pull/1862). |
-| [apple/container#1965](https://github.com/apple/container/pull/1965) | Ready-for-review request-timeout correction; retain as an independent generic XPC lifecycle proposal while it awaits maintainer review. |
-| [apple/containerization#799](https://github.com/apple/containerization/pull/799) | Ready-for-review fix for [apple/container#1927](https://github.com/apple/container/issues/1927): missing copy sources fail promptly, preserve the guest error, and no longer block later container lifecycle operations. |
+### Open
 
-The exact current heads of these proposals, plus
-[apple/container-builder-shim#87](https://github.com/apple/container-builder-shim/pull/87),
-are retained as immutable stephenlclarke-owned branches in
-[PR-ARCHIVE.json](PR-ARCHIVE.json). The daily archive verification workflow
-fails if any snapshot is deleted or retargeted.
+All seven open pull requests are ready rather than drafts, mergeable, and
+awaiting Apple maintainer review.
 
-## Ready Apple Handoffs
+| Pull request | Published head | Current state and purpose |
+| --- | --- | --- |
+| [apple/container#2031](https://github.com/apple/container/pull/2031) | `58b07fcaa6f09426adc6cd792732c855496ed80f` | Review required. Preserve active and infrastructure image aliases. Apple Actions are `action_required`; no hosted job has run. |
+| [apple/container#1965](https://github.com/apple/container/pull/1965) | `618d28197a20baf643dbdc87272e9f768f57f888` | Review required. Honour generic XPC request timeouts. |
+| [apple/container#1935](https://github.com/apple/container/pull/1935) | `f4f908606d4a7693f9bfc958593f7671b35caa0f` | Review required. Keep root help responsive for [apple/container#1459](https://github.com/apple/container/issues/1459); stacked on the preferred cancellation work in [apple/container#1862](https://github.com/apple/container/pull/1862). |
+| [apple/container#1934](https://github.com/apple/container/pull/1934) | `d5d73ef1a95ca9f78ffa287b7c2e5204bfd9d569` | Review required. Preserve the complete `unspecified` version placeholder. |
+| [apple/containerization#821](https://github.com/apple/containerization/pull/821) | `726e1ffdceada5cc62d32c8fc939aef30220e6ff` | Review required. Restore permissions after ownership so `fchown` cannot clear set-ID bits. This pull request intentionally depends on #820. Apple Actions are `action_required`; no hosted job has run. |
+| [apple/containerization#820](https://github.com/apple/containerization/pull/820) | `6e32963617b3ed8f4b63432dbcf834f94807342b` | Review required. Preserve sticky, set-user-ID, and set-group-ID archive permission bits. Apple Actions are `action_required`; no hosted job has run. |
+| [apple/containerization#799](https://github.com/apple/containerization/pull/799) | `9c5b9ee19796dc13f0d7d1b0687d780f0db04e29` | Review required with hosted build, signature, and Linux compile checks green. Missing copy sources fail promptly and no longer block later lifecycle operations. |
+
+No Stephen-authored pull request has been submitted to
+`apple/container-builder-shim`.
+
+### Merged or closed
+
+| Pull request | Final state | Disposition |
+| --- | --- | --- |
+| [apple/containerization#798](https://github.com/apple/containerization/pull/798) | Merged 15 July 2026 | The CloudHypervisor SwiftPM exclusion is present in current Apple `main`; no fork-only replacement remains necessary. |
+| [apple/container#1933](https://github.com/apple/container/pull/1933) | Closed 22 July 2026 without merge | Superseded by merged production handler work in `apple/container#1981` and `apple/containerization#808`. |
+| [apple/container#1838](https://github.com/apple/container/pull/1838) | Closed 27 June 2026 without merge | Superseded by open replacement #1935. |
+| [apple/container#1831](https://github.com/apple/container/pull/1831) | Closed 27 June 2026 without merge | Superseded by open replacement #1934. |
+| [apple/container#1765](https://github.com/apple/container/pull/1765) | Closed 27 June 2026 without merge | The broad Docker-compatible timestamp parser was not accepted upstream; Docker timestamp parsing remains Compose-owned. |
+| [apple/container#1764](https://github.com/apple/container/pull/1764) | Closed 27 June 2026 without merge | The broader log retrieval proposal was not merged; generic log retrieval still needs smaller Apple-shaped primitives. |
+| [apple/container#1758](https://github.com/apple/container/pull/1758) | Closed 27 June 2026 without merge | Superseded first by #1933 and then by Apple's merged production handler changes. |
+
+[PR-ARCHIVE.json](PR-ARCHIVE.json) currently retains immutable snapshots for
+Apple PRs #1933, #1934, #1935, #1965, containerization PRs #798 and #799, and
+third-party builder-shim PR #87. It does not yet archive the heads of newly
+submitted PRs #2031, #820, or #821; do not describe that archive as complete
+until those refs are added and verified.
+
+## Handoff Inventory
+
+There are 128 `PR-*.md` handoff files under the three Apple directories:
+
+| Directory | Files | Submission rule |
+| --- | ---: | --- |
+| [`apple-container/`](apple-container/) | 88 | `PR-1933.md`, `PR-1934.md`, and `PR-1935.md` map to Stephen-authored submissions. `PR-1926.md` and `PR-1997.md` track existing third-party Apple PRs. `PR-container-test-support-dependencies.md`, `PR-oci-system-paths-api.md`, and `PR-apple-main-sync-20260722-2.md` are downstream reconciliation records. Every other handoff in this directory is unsubmitted. |
+| [`apple-containerization/`](apple-containerization/) | 35 | `PR-798.md` and `PR-799.md` map to Stephen-authored submissions. Every other handoff in this directory is unsubmitted. |
+| [`apple-container-builder-shim/`](apple-container-builder-shim/) | 5 | `PR-87.md` tracks an existing third-party Apple PR. The other four handoffs are unsubmitted. |
+
+The submitted #1965, #2031, #820, and #821 pull requests do not yet have
+individual checked-in handoff files. Their live state is recorded above.
+
+An unsubmitted handoff is not automatically submission-ready. Its own commit
+tracking and validation sections determine whether it is a draft,
+constructible proposal, downstream-only record, or reviewed candidate. Before
+submission, rebase the smallest independent change on current stock Apple
+`main`, rerun stock validation, fill the current Apple issue and PR templates,
+and keep Stephen-only compatibility behavior out of the patch.
+
+## PR #33 Stock-Apple Review
+
+[stephenlclarke/container#33](https://github.com/stephenlclarke/container/pull/33)
+is an open fork PR at
+`7ffac9dcf059bd62da87cebe40d20ce05742238c`. Its two defects both exist on
+stock `apple/container:main` at
+`27e5043165178edb095c901624857b51a2ea8e1a`, but the fork PR is not directly
+upstreamable:
+
+- Stock `XPCMessage.set` still calls raw
+  `close(value.fileDescriptor)` and `close(fh.fileDescriptor)` after creating
+  XPC objects. That closes the descriptor without marking the owning
+  Foundation `FileHandle` closed, so a later explicit close can close an
+  unrelated descriptor that reused the same integer. The production
+  correction to call `FileHandle.close()` is directly relevant to stock.
+- Stock `ProcessIO` still performs a potentially blocking guest-pipe write
+  inside Foundation's stdin `readabilityHandler`, while stdout and stderr use
+  Foundation readability handlers too. The full-duplex deadlock mechanism
+  therefore also exists on stock.
+- The ProcessIO commit conflicts when applied to stock because the fork adds
+  detach-key matching and attached-process handling that Apple `main` does
+  not have. The XPC regression also depends on the fork's
+  `ContainerXPCTests` target and prior variable-descriptor-array test
+  infrastructure, neither of which exists on stock.
+
+The upstream disposition is to split PR #33 into two unsubmitted,
+stock-shaped proposals: one focused XPC `FileHandle` ownership correction
+with a stock-compatible descriptor-reuse regression, and one ProcessIO input
+pump/backpressure correction adapted to Apple's simpler API. No Apple issue or
+pull request has been filed for either slice.
+
+## Unsubmitted Review Candidates
 
 | Repository | Current purpose |
 | --- | --- |
@@ -67,6 +142,10 @@ fails if any snapshot is deleted or retargeted.
 | `apple/containerization` | [Cgroup formatter catch spacing](apple-containerization/PR-cgroup-catch-format.md) restores the exact spelling required by the strict Swift formatter without changing runtime behavior. |
 | `apple/containerization` | [vmnet integration exclusivity](apple-containerization/PR-vmnet-integration-exclusivity.md) serializes only host-networking VM tests so release validation remains deterministic. |
 
+These candidates remain unsubmitted. Their source commits and tests were
+reviewed in the fork, but each still requires a fresh stock-Apple rebase and
+validation before submission.
+
 ## Overlapping Upstream Work
 
 | Pull request | Local disposition |
@@ -77,16 +156,20 @@ fails if any snapshot is deleted or retargeted.
 | [apple/container#1735](https://github.com/apple/container/pull/1735) | Preferred daemon entry-point ID validation. Imported as standalone commit `16ecfd5`; the broader residual bundle-path and volume-disk-usage hardening is tracked in [PR-container-storage-path-validation.md](apple-container/PR-container-storage-path-validation.md) and must follow this PR rather than compete with it. |
 | [apple/container#1630](https://github.com/apple/container/pull/1630) | The local live-export handoff is a generic snapshot primitive based on this direction. It uses a unique temporary snapshot and serializes the freeze/copy/thaw lifecycle; it deliberately does not add Docker-shaped `container commit` behavior from [apple/container#1762](https://github.com/apple/container/pull/1762). |
 
-## Approved Open Pull Requests
+## Tracked Third-Party Apple Pull Requests
 
 | Pull request | Local disposition |
 | --- | --- |
-| [apple/container#1818](https://github.com/apple/container/pull/1818) | Ported as `6e525cc`; this exact ordered-journaling source change remains a standalone upstream commit. |
-| [apple/container#1708](https://github.com/apple/container/pull/1708) | Already represented by the machine-configuration documentation in `3bb6864`. |
-| [apple/container#1660](https://github.com/apple/container/pull/1660) | Already represented by the application-root backup exclusion in `3bb6864`. |
-| [apple/container#1508](https://github.com/apple/container/pull/1508) | Approved but currently conflicting. It is not copied because the local SSH forwarding implementation supports default, explicit, and multiple named sockets. Reconcile with upstream if this PR changes or lands. |
-| [apple/container#730](https://github.com/apple/container/pull/730) | Already represented in `3bb6864`, plus the parse-entry correction required by the fork's `@main` wrapper. |
-| [apple/containerization#753](https://github.com/apple/containerization/pull/753) | Already represented by `8de8a10`, including default client ID, caller override, and request-header tests. |
+| [apple/container#1818](https://github.com/apple/container/pull/1818) | Closed 20 July 2026 without merge. The ordered-journaling source change remains a fork-only standalone commit at `6e525cc`. |
+| [apple/container#1708](https://github.com/apple/container/pull/1708) | Open, approved, and currently conflicting. Already represented by the machine-configuration documentation in `3bb6864`. |
+| [apple/container#1660](https://github.com/apple/container/pull/1660) | Open and approved. Already represented by the application-root backup exclusion in `3bb6864`. |
+| [apple/container#1508](https://github.com/apple/container/pull/1508) | Open, mergeable, and awaiting review. It is not copied because the local SSH forwarding implementation supports default, explicit, and multiple named sockets. Reconcile with upstream if this PR changes or lands. |
+| [apple/container#730](https://github.com/apple/container/pull/730) | Open and approved. Already represented in `3bb6864`, plus the parse-entry correction required by the fork's `@main` wrapper. |
+| [apple/containerization#753](https://github.com/apple/containerization/pull/753) | Open and approved. Already represented by `8de8a10`, including default client ID, caller override, and request-header tests. |
+| [apple/container#1889](https://github.com/apple/container/pull/1889) | Merged 23 July 2026 and present in the current Apple baseline. The earlier fork port at `0fe7833` is now retained only as ancestry. |
+| [apple/container#1997](https://github.com/apple/container/pull/1997) | Open, mergeable, and awaiting review. Its content-identical signal-name correction is represented by `bb2438c`. |
+| [apple/container#2000](https://github.com/apple/container/pull/2000) | Closed 28 July 2026 without merge. The fork's existing backward-read tests continue to cover the reported behaviour. |
+| [apple/containerization#792](https://github.com/apple/containerization/pull/792) | Open, mergeable, and awaiting review. Its fresh-session registry retry behaviour is represented by `d388a15` and `c8043bb`. |
 
 ## Confirmed Local Impact
 
@@ -94,9 +177,9 @@ fails if any snapshot is deleted or retargeted.
 | --- | --- |
 | [apple/containerization#518](https://github.com/apple/containerization/issues/518) | Exec debug logging no longer serializes environment-backed secrets; fixed in `f17ec69`. |
 | [apple/container#1917](https://github.com/apple/container/issues/1917) | Generated resolver files no longer pollute the macOS global search list; fixed in `stephenlclarke/container` `160035f`. |
-| [apple/container#1888](https://github.com/apple/container/issues/1888) | The focused stderr change from [apple/container#1889](https://github.com/apple/container/pull/1889) is ported as `0fe7833`. |
+| [apple/container#1888](https://github.com/apple/container/issues/1888) | The focused stderr correction from merged [apple/container#1889](https://github.com/apple/container/pull/1889) is in the current Apple baseline. The earlier fork port at `0fe7833` is now retained only as ancestry. |
 | [apple/container#1672](https://github.com/apple/container/issues/1672) | [apple/container#1717](https://github.com/apple/container/pull/1717) is ported as `7329f12`. |
-| [apple/container#1767](https://github.com/apple/container/issues/1767) | Approved [apple/container#1818](https://github.com/apple/container/pull/1818) is ported as `6e525cc`. |
+| [apple/container#1767](https://github.com/apple/container/issues/1767) | [apple/container#1818](https://github.com/apple/container/pull/1818) closed without merge; the ordered-journaling correction remains fork-only at `6e525cc`. |
 | [apple/container#1757](https://github.com/apple/container/issues/1757) | Launch failures and application-root mismatches are handled in `stephenlclarke/container` `6ac1253`. |
 | [apple/containerization#790](https://github.com/apple/containerization/issues/790) and [apple/container#1895](https://github.com/apple/container/issues/1895) | Fresh-session registry retry behavior from [apple/containerization#792](https://github.com/apple/containerization/pull/792) is represented by `d388a15` and `c8043bb`. |
 | [apple/container#1937](https://github.com/apple/container/issues/1937) | Directory bind mounts containing hardlinks can intermittently fail with `EACCES` inside the guest. The fork carries non-root hard-link directory bind-mount regression coverage in `stephenlclarke/container` `e0034f4`, but that controlled coverage does not claim the intermittent upstream race is resolved. The single-file hardlink fix from [apple/containerization#665](https://github.com/apple/containerization/pull/665) is already present; `container-compose` must not paper over the directory bind behavior with a copy or snapshot workaround that would break live mounts. |
@@ -116,7 +199,7 @@ fails if any snapshot is deleted or retargeted.
 | Current full-dispatch authority | A docs-only main merge requires explicit full-validation CI to establish runtime, coverage, and SonarCloud authority. Current's controller accepted that exact successful `workflow_dispatch`, but its independent package-time guard pre-filtered to push events and rejected the same run after cache restoration. Compose-only correction `c8524d36` accepts successful exact-main CI from the existing trusted `push` or `workflow_dispatch` set and continues to exclude all other events. See [ISSUE-current-dispatch-release-authority.md](container-compose/ISSUE-current-dispatch-release-authority.md) and [PR-current-dispatch-release-authority.md](container-compose/PR-current-dispatch-release-authority.md). |
 | Current dependency cache overhead | Current run `30235634675` spent 10 minutes restoring a 2.13 GB SwiftPM cache and 19 minutes 19 seconds attempting a 1.62 GB Go cache restore, versus 2 minutes 25 seconds and 2 minutes 17 seconds for the respective runtime and Compose builds. Compose-only correction `6cae9a84` removes the release SwiftPM cache and disables release `setup-go` caching while retaining all validation-workflow caches. See [ISSUE-release-dependency-cache-overhead.md](container-compose/ISSUE-release-dependency-cache-overhead.md) and [PR-release-dependency-cache-overhead.md](container-compose/PR-release-dependency-cache-overhead.md). |
 | [apple/container#1941](https://github.com/apple/container/issues/1941) | The supported fork ports the content-identical signal-name correction from [apple/container#1997](https://github.com/apple/container/pull/1997) in `bb2438c`, with regression coverage in `26cc778` and handoff details in [PR-1997.md](apple-container/PR-1997.md). Drop the port when Apple merges an equivalent fix. |
-| [apple/container#1967](https://github.com/apple/container/issues/1967) | The supported `LogFileOutput` already retains complete records across backward-read chunks. Explicit 3 KB and multi-record tests in `26cc778` cover the behavior proposed by [apple/container#2000](https://github.com/apple/container/pull/2000). |
+| [apple/container#1967](https://github.com/apple/container/issues/1967) | [apple/container#2000](https://github.com/apple/container/pull/2000) closed 28 July 2026 without merge. The supported `LogFileOutput` already retains complete records across backward-read chunks; explicit 3 KB and multi-record tests in `26cc778` cover the reported behaviour. |
 | [apple/container#2009](https://github.com/apple/container/issues/2009) | The supported init-process reattach path writes persistent sinks first and removes failed clients through `AttachableOutput`; `26cc778` proves later persistent writes continue. Apple main still needs its own reviewed fix. |
 | [apple/containerization#798](https://github.com/apple/containerization/pull/798) | Merged upstream. Its SwiftPM manifest correction is included in the current Apple baseline, so it no longer needs fork-side review or a local port. |
 | [apple/container#2021](https://github.com/apple/container/issues/2021) | Host disk-space retention after deleting guest files is owned by the macOS Virtualization.framework virtio-fs implementation and is released when the container stops. The supported stack must not add a divergent copy, remount, or guest-filesystem workaround for an Apple OS primitive. Track the upstream platform resolution. |
@@ -124,17 +207,24 @@ fails if any snapshot is deleted or retargeted.
 
 ## Open Follow-up
 
-- Keep `apple/container#1934`, `#1935`, and `#1965`, `apple/containerization#799`, and `apple/container-builder-shim#87` open until Apple merges, replaces, or explicitly rejects their current changes.
-- The 27 July refresh found those four Stephen-authored Apple pull requests
-  mergeable with no actionable author review. The account-wide connector
-  audit also confirmed that every actionable connector thread has a Stephen
-  response; historical merged threads remain open until their current-main
-  fix or verification is linked.
+- Keep Stephen-authored `apple/container#1934`, `#1935`, `#1965`, and `#2031`
+  and `apple/containerization#799`, `#820`, and `#821` open until Apple
+  merges, replaces, or explicitly rejects their current changes. Track
+  third-party `apple/container-builder-shim#87` independently.
+- The 28 July refresh found all seven open Stephen-authored Apple pull requests
+  mergeable and awaiting review, with no actionable author review. PR #799's
+  hosted build, signature, and Linux compile checks are green. Apple Actions
+  report `action_required` without starting jobs for #2031, #820, and #821.
 - Rebase `apple/container#1935` after `apple/container#1862` lands so the preferred upstream XPC commit is not duplicated.
+- Split `stephenlclarke/container#33` into separate stock-shaped XPC ownership
+  and ProcessIO backpressure proposals. Neither has been submitted to Apple.
 - Generic log-retrieval runtime primitives still need minimal Apple proposals; Docker timestamp parsing remains owned by `container-compose`.
 - [apple/container#378](https://github.com/apple/container/issues/378) needs a running-process stream reattach primitive before Compose can support interactive `attach`; the required runtime contract and the deliberate output-only fallback are documented in [ISSUE-attach-stream-reattach.md](apple-container/ISSUE-attach-stream-reattach.md).
 - The container storage-boundary follow-up must wait for `apple/container#1735` and retain only its residual `FilePath` and volume-disk-usage protections. The independent `containerization` handoff is ready in [PR-container-storage-path-validation.md](apple-containerization/PR-container-storage-path-validation.md).
-- The two builder-shim handoffs are independently constructible and have no matching open upstream issue or pull request. Keep them separate from [apple/container-builder-shim#87](https://github.com/apple/container-builder-shim/pull/87), which changes `.dockerignore` filtering only.
+- The four unsubmitted builder-shim handoffs have no matching open upstream
+  issue or pull request. Keep them separate from
+  [apple/container-builder-shim#87](https://github.com/apple/container-builder-shim/pull/87),
+  which changes `.dockerignore` filtering only.
 - The reporter's post-fix stop-interruption observation on [apple/containerization#799](https://github.com/apple/containerization/pull/799) is not a requested review change. Keep it under local macOS reproduction before widening the existing copy-failure proposal or opening a separate lifecycle fix.
 - The connector review on
   [stephenlclarke/containerization#9](https://github.com/stephenlclarke/containerization/pull/9)
