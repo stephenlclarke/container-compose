@@ -9,6 +9,8 @@
   output to a 64 KiB raw-stream boundary with exact omitted-byte accounting.
 - Cover output larger than 256 KiB on both streams, bounded errors, and
   cancellation with child-reaping evidence, including malformed UTF-8.
+- Convert preflight-time host signals into owned child cancellation before the
+  CLI exits with the corresponding conventional shell status.
 
 ## Intended review delta
 
@@ -32,14 +34,17 @@ equality`, defines equality in terms of the existing public status, stdout, and
 stderr contract so package-private raw bytes do not change observable
 semantics. Signed test correction `592266a7`, `test(plugin): enforce preflight
 memory bound`, runs the complete CLI preflight in an isolated process and
-asserts a 16 MiB failure remains below 320 MiB maximum resident memory.
+asserts a 16 MiB failure remains below 320 MiB maximum resident memory. Signed
+connector-review correction `3ed87228`, `fix(plugin): forward preflight
+interrupts`, uses the existing Compose signal proxy to cancel the isolated
+preflight task before returning the corresponding shell status.
 
 The production change is limited to the package preflight implementation, its
-single asynchronous call site, and package-private raw output retained by the
-shared process runner. The public `CommandResult` string API remains unchanged.
-The slice changes no Apple runtime fork, package matching rule, or
-Docker-shaped runtime primitive. See the companion [issue
-handoff](ISSUE-package-compatibility-preflight-drain.md).
+single asynchronous call site and executable interruption boundary, and
+package-private raw output retained by the shared process runner. The public
+`CommandResult` string API remains unchanged. The slice changes no Apple
+runtime fork, package matching rule, or Docker-shaped runtime primitive. See
+the companion [issue handoff](ISSUE-package-compatibility-preflight-drain.md).
 
 Signed follow-up commits `5d9898c3` and `56bb08d5` also make the generated
 README divergence snapshot resolve the linked stack root from Git's common
@@ -57,7 +62,8 @@ automation works from both primary checkouts and isolated worktrees.
 - `ContainerPackageCompatibility.boundedDiagnostic` cuts at a 64 KiB raw-stream
   boundary in one pass without splitting a valid UTF-8 scalar or retaining a
   per-byte model, then appends the exact omitted source-byte count.
-- `ComposePluginMain.main` awaits the throwing compatibility preflight.
+- `ComposePluginMain.main` awaits the throwing compatibility preflight and
+  converts a retained host signal into its conventional shell exit status.
 - The serialized package-preflight process suite uses real shell children to
   reproduce full-pipe, failure, and cancellation behaviour.
 - `update-readme-upstream-metrics.py` derives the sibling repository root from
@@ -78,7 +84,7 @@ make readme-upstream-metrics-check
 
 Results on the designated Apple silicon MacBook Pro:
 
-- 20 package-compatibility tests in three suites pass;
+- 21 package-compatibility tests in four suites pass;
 - the 307,200-byte stdout and stderr child exits normally;
 - `CommandResult` values with identical public status and decoded strings remain
   equal even when their package-private raw bytes differ;
@@ -88,12 +94,14 @@ Results on the designated Apple silicon MacBook Pro:
 - the isolated 16 MiB memory regression also passes with Address Sanitizer;
 - cancellation from both compatibility awaits remains `CancellationError`,
   and the TERM-ignoring cancellation child is reaped within two seconds;
+- an isolated full CLI receives SIGINT, reaps its TERM-ignoring preflight child,
+  and exits with status 130;
 - the previously hanging packaged-CLI reproduction times out at five seconds
   before the fix and exits with the expected compatibility failure after it;
 - six metrics-generator regression tests and Python compilation pass;
 - the generated 28 July 2026 snapshot reports all three support forks zero
   behind Apple and 493 commits ahead in total; and
-- `HAWKEYE_AUTO_INSTALL=1 make ci` passes 1,259 Swift tests in 43 suites,
+- `HAWKEYE_AUTO_INSTALL=1 make ci` passes 1,260 Swift tests in 44 suites,
   92.80% Swift coverage, 89.88% Go coverage, and the complete CLI, lint,
   dependency, licence, and smoke gates.
 
@@ -127,6 +135,7 @@ slice `current` prerelease remain pending until this branch is published.
 - [x] Public `CommandResult` equality compatibility coverage
 - [x] Isolated full-CLI maximum resident memory coverage
 - [x] Cancellation and child-reaping coverage
+- [x] Host-signal forwarding and conventional exit-status coverage
 - [x] Worktree-safe generated metrics regression coverage
 - [x] Complete local repository gate
 - [x] Signed Conventional documentation commit

@@ -31,13 +31,18 @@ and byte offsets. Signed connector-review correction `4bf2eac6` preserves the
 existing public `CommandResult` equality contract despite its new
 package-private raw stream storage. Signed test correction `592266a7` measures
 the full packaged CLI preflight in an isolated process and enforces a maximum
-resident-memory ceiling.
+resident-memory ceiling. Signed connector-review correction `3ed87228` routes
+host termination signals through the existing Compose signal proxy, cancels
+and reaps the isolated preflight group, and retains the signal until the
+executable returns its conventional shell status.
 
 The corrected path:
 
 - drains stdout and stderr concurrently while the child runs;
 - supplies an empty stdin payload and closes the writer;
 - inherits the process runner's task-cancellation and process-group ownership;
+- converts host termination signals into task cancellation before the
+  executable returns the corresponding shell status;
 - waits for process exit and complete pipe drainage before returning;
 - preserves stderr precedence for a failed command;
 - falls back to stdout when stderr is empty;
@@ -90,6 +95,8 @@ No Apple runtime fork or new compatibility primitive is required.
   seconds.
 - Cancellation from either the version or service-status await is propagated.
 - The child PID reports `ESRCH` after cancellation completes.
+- Sending SIGINT to the full CLI reaps a TERM-ignoring preflight child and exits
+  with status 130.
 - Existing package mismatch, missing executable, and service readiness
   diagnostics remain covered.
 - Repository build, test, format, lint, dependency, and diff gates pass.
