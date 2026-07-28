@@ -28,13 +28,12 @@ three support forks contain 414 non-merge commits beyond current Apple
 upstream heads. That gives the project valuable capabilities, but creates a
 large review, release, and convergence burden.
 
-The normal CI result also overstates runtime evidence. Twenty-five Swift
-runtime smoke tests return immediately when
-`CONTAINER_COMPOSE_RUN_RUNTIME_TESTS` is unset, yet are reported as passing.
-The configured Swift coverage gate measures only `ComposeCore`; recalculating
-the same profile across all first-party Swift targets produces 84.63% line
-coverage, with `ComposeContainerRuntime` at 77.46% and `ComposePlugin` at
-40.89%.
+Normal CI now distinguishes runtime evidence honestly. Twenty-five Swift
+runtime smoke tests are explicitly skipped with their activation reason when
+`CONTAINER_COMPOSE_RUN_RUNTIME_TESTS` is unset, and the test wrapper reports
+authoritative executed/skipped counts. The same instrumented profile gates
+`ComposeCore`, `ComposeRuntimeSPI`, `ComposeContainerRuntime`,
+`ComposePlugin`, and aggregate first-party Swift coverage separately.
 
 The recommended order is:
 
@@ -436,46 +435,33 @@ Remaining external correction: converge the fork-only archive contract with a
 stock Apple API that preserves the same ownership, cancellation, backpressure,
 path-safety, sparse-file, hard-link, and caller-handle guarantees.
 
-### P2: Runtime Test and Coverage Evidence Is Misleading
+### P2: Runtime Test and Coverage Evidence Is Misleading — Resolved
 
-All 25 tests in
-`Tests/ComposeRuntimeTests/ComposeRuntimeSmokeTests.swift` begin with
-`guard runtimeTestsEnabled else { return }`. The environment check is at
-lines 1622-1623. `make ci` does not set the variable, so Swift Testing reports
-all 25 as passing in milliseconds without executing a runtime assertion.
+Resolution (2026-07-28):
 
-The live lane in `Makefile:245-259` does set the variable, but that lane is
-separate from ordinary CI. The distinction is not visible in the normal test
-summary.
-
-The coverage gate at `Makefile:293-299` exports only
-`--sources Sources/ComposeCore`. Recalculated from the same profile:
+- The runtime smoke suite uses Swift Testing's suite-level `.enabled` trait
+  with the exact `CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1` activation reason.
+  No test can return early and be reported as executed.
+- The shared test wrapper derives its executed count from Swift Testing's
+  discovered total, so parameterised cases are included, then subtracts each
+  explicit skipped-test event. Normal coverage validation reported
+  `executed=1251 skipped=25`.
+- `make swift-runtime-test` uses the same wrapper and enables the suite inside
+  the isolated matched-runtime lane.
+- One merged profile produces independently gated reports for every
+  first-party target and the aggregate. The initial passing result was:
 
 | Target | Line coverage |
 | --- | ---: |
-| All first-party Swift | 84.63% |
-| `ComposeCore` | 91.45% |
-| `ComposeRuntimeSPI` | 99.06% |
-| `ComposeContainerRuntime` | 77.46% |
-| `ComposePlugin` | 40.89% |
+| All first-party Swift | 87.68% |
+| `ComposeCore` | 92.89% |
+| `ComposeRuntimeSPI` | 100.00% |
+| `ComposeContainerRuntime` provider | 75.91% |
+| `ComposePlugin` | 56.52% |
 
-Several parity-critical live adapters were effectively uncovered:
-
-- `ContainerExecLiveAdapter.swift`: 0%
-- `ContainerLifecycleLiveAdapter.swift`: 0%
-- `ContainerImageLiveAdapter.swift`: 1.46%
-
-Ownership: Compose test infrastructure.
-
-Required correction:
-
-- use explicit test skipping with a reason, rather than early return;
-- make CI print executed and skipped runtime-test counts;
-- rename the existing metric to `ComposeCore coverage`;
-- add separate gates for SPI, provider, plugin, and aggregate first-party
-  coverage;
-- prioritise behavioural tests for live adapters, cancellation, signal
-  forwarding, log tails, copy streams, and provider preflight.
+The enforced floors are 85%, 90%, 95%, 75%, and 50%, respectively. The
+separate live release gate remains required evidence for adapter behaviour;
+normal unit coverage no longer implies that those 25 runtime scenarios ran.
 
 ### P2: Builder Prefetch Stress Tests Pass Broken Expectations
 
@@ -812,13 +798,13 @@ new Apple design work.
 | CC-003 | P1 | Plugin | **Complete:** replace wait-before-drain compatibility preflight | Fake command writes >256 KiB to stdout and stderr without deadlock; cancellation and error text tested |
 | CC-004 | P1 | Compose | **Complete:** preserve inherited volumes during `commit` | Unit and live Docker parity cover inherited/additive/duplicate/multiple `VOLUME`; status claim restored after passing |
 | CC-005 | P1 | Stack/Compose/docs | **Complete:** stream tar archives without host extraction and restore supported status | Exact pins expose caller-owned archive handles; help and status report the matched lane; live Docker parity proves ownership, timestamp, hard-link, sparse-file, content, and path fidelity with recorded timings |
-| CC-006 | P2 | Compose | Correct lifecycle ownership diagnostics | Pinned-lane errors name Compose orchestration; stock-lane errors name missing Apple capability |
-| TEST-007 | P1 | Compose CI | Make live test skips explicit and gate aggregate coverage | CI reports executed/skipped counts; separate Core/SPI/provider/plugin/aggregate thresholds |
+| CC-006 | P2 | Compose | **Complete:** correct lifecycle ownership diagnostics | Pinned-lane errors name Compose orchestration; stock-lane errors name missing Apple capability |
+| TEST-007 | P1 | Compose CI | **Complete:** make live test skips explicit and gate aggregate coverage | CI reports executed/skipped counts; separate Core/SPI/provider/plugin/aggregate thresholds |
 | TEST-008 | P2 | Compose | Split the 32k-line orchestrator test by command/capability | Shared fixtures have one owner; tests run in parallel; no coverage loss |
 | SEC-009 | P2 | Compose | Set 0700/0600 permissions on sensitive temporary paths | Permission tests cover standard and shared `TMPDIR`; cleanup survives failure |
 | DOC-010 | P1 | Compose | Correct `DESIGN.md`, coupling audit, and `STATUS.md` claims | Documentation matches the actual package graph and tested command semantics |
-| APPLE-011 | P1 | Runtime forks | Review/port signal and log-tail fixes #1997/#2000 if they remain unmerged | Focused runtime tests and Compose kill/log-tail parity pass; local commits remain independently removable |
-| APPLE-012 | P1 | Runtime forks | Fix log fan-out after dead client (#2009) | One failed writer is removed or isolated; persisted log and healthy attach writer continue; no busy loop |
+| APPLE-011 | P1 | Runtime forks | **Complete on supported fork:** review/port signal and log-tail fixes #1997/#2000 | Focused runtime tests and Compose kill/log-tail parity pass; local commits remain independently removable |
+| APPLE-012 | P1 | Runtime forks | **Complete on supported fork:** fix log fan-out after dead client (#2009) | One failed writer is removed or isolated; persisted log and healthy attach writer continue; no busy loop |
 
 Phase gate:
 

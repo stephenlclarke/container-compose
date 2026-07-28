@@ -34,6 +34,11 @@ PYTHON ?= python3
 MARKDOWNLINT ?= markdownlint
 HAWKEYE ?= $(shell command -v hawkeye 2>/dev/null || printf '%s' .local/bin/hawkeye)
 SWIFT_COVERAGE_MIN ?= 90
+SWIFT_CORE_COVERAGE_MIN ?= $(SWIFT_COVERAGE_MIN)
+SWIFT_RUNTIME_SPI_COVERAGE_MIN ?= 95
+SWIFT_PROVIDER_COVERAGE_MIN ?= 75
+SWIFT_PLUGIN_COVERAGE_MIN ?= 50
+SWIFT_AGGREGATE_COVERAGE_MIN ?= 85
 GO_COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin-release-arm64.tar.gz
@@ -78,6 +83,7 @@ SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES := \
 SWIFT_TEST_FRAMEWORK_SEARCH_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_FRAMEWORK_CANDIDATES),$(if $(wildcard $(path)/Testing.framework),$(path))))
 SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES),$(if $(wildcard $(path)/libTesting.dylib $(path)/lib_TestingInterop.dylib),$(path))))
 SWIFT_TEST_RESULT_LOG ?= .build/swift-test.log
+SWIFT_RUNTIME_TEST_RESULT_LOG ?= .build/swift-runtime-test.log
 SWIFT_TEST_ATTEMPTS ?= 2
 # Coverage needs a normal Swift test exit; accepting a SwiftPM signal-13 fallback
 # can leave incomplete profile data that reports false 0% coverage.
@@ -235,7 +241,7 @@ swift-test-build:
 
 swift-test: swift-test-build
 	@mkdir -p .build
-	@SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_TEST_ATTEMPTS)" Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
+	@PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_TEST_ATTEMPTS)" Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 	@if ! grep -Eq 'Test run with [1-9][0-9]* tests? .* passed|Executed [1-9][0-9]* tests?|swiftpm-testing-helper signal 13 toolchain failure' "$(SWIFT_TEST_RESULT_LOG)"; then \
 		printf 'swift test completed without running tests; check the active toolchain Testing.framework and rpath settings.\n' >&2; \
 		exit 1; \
@@ -258,7 +264,9 @@ swift-runtime-test: container-stack-build build swift-runtime-test-build
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		env CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
 		CONTAINER_BIN="$$container_binary" CONTAINER_COMPOSE_CONTAINER="$$container_binary" \
-		$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --filter "$(SWIFT_RUNTIME_TEST_FILTER)" $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
+		PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_RUNTIME_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS=1 \
+		Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build \
+		--filter "$(SWIFT_RUNTIME_TEST_FILTER)" $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 
 swift-coverage: swift-test-build
 	@if [[ -z "$(SWIFT_LLVM_COV)" ]]; then \
@@ -269,9 +277,9 @@ swift-coverage: swift-test-build
 		printf 'llvm-profdata is required; install the active Swift toolchain or set SWIFT_LLVM_PROFDATA=/path/to/llvm-profdata\n' >&2; \
 		exit 1; \
 	fi
-	@rm -f .build/*/debug/codecov/*.profraw .build/*/debug/codecov/*.profdata .build/codecov/fallback.profdata coverage.lcov coverage.xml
+	@rm -f .build/*/debug/codecov/*.profraw .build/*/debug/codecov/*.profdata .build/codecov/fallback.profdata coverage*.lcov coverage*.xml
 	@find .build -maxdepth 3 -path .build/index-build -prune -o -path '*/debug' -type d -exec mkdir -p '{}/codecov' \;
-	@SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_COVERAGE_TEST_ATTEMPTS)" SWIFT_TEST_ACCEPT_SIGNAL_13=0 Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
+	@PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_COVERAGE_TEST_ATTEMPTS)" SWIFT_TEST_ACCEPT_SIGNAL_13=0 Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 	test_binary="$$(find .build -path '*.xctest/Contents/MacOS/container-composePackageTests' -type f | head -n 1)"; \
 	profile=".build/codecov/fallback.profdata"; \
 	if [[ -z "$$test_binary" ]]; then \
@@ -292,13 +300,26 @@ swift-coverage: swift-test-build
 	fi; \
 	mkdir -p .build/codecov; \
 	find .build -path .build/index-build -prune -o -name '*.profraw' -type f -print0 | xargs -0 "$(SWIFT_LLVM_PROFDATA)" merge -sparse -o "$$profile"; \
-	"$(SWIFT_LLVM_COV)" export \
-		-format=lcov \
-		-instr-profile="$$profile" \
-		"$$test_binary" \
-		--sources Sources/ComposeCore \
-		> coverage.lcov; \
-	$(PYTHON) Tools/coverage/lcov-to-sonarqube-generic.py coverage.lcov coverage.xml
+	for coverage_target in \
+		core=Sources/ComposeCore \
+		runtime-spi=Sources/ComposeRuntimeSPI \
+		provider=Sources/ComposeContainerRuntime \
+		plugin=Sources/ComposePlugin \
+		aggregate=Sources; do \
+		name="$${coverage_target%%=*}"; \
+		source="$${coverage_target#*=}"; \
+		lcov_path="coverage-$${name}.lcov"; \
+		xml_path="coverage-$${name}.xml"; \
+		"$(SWIFT_LLVM_COV)" export \
+			-format=lcov \
+			-instr-profile="$$profile" \
+			"$$test_binary" \
+			--sources "$$source" \
+			> "$$lcov_path"; \
+		$(PYTHON) Tools/coverage/lcov-to-sonarqube-generic.py "$$lcov_path" "$$xml_path"; \
+	done; \
+	cp coverage-aggregate.lcov coverage.lcov; \
+	cp coverage-aggregate.xml coverage.xml
 
 go-test:
 	cd Tools/compose-normalizer && $(GO) test ./... -coverpkg=./... -coverprofile=coverage.out -covermode=atomic
@@ -1469,9 +1490,17 @@ coverage: swift-coverage go-test
 
 coverage-check: coverage
 	$(PYTHON) Tools/coverage/check-coverage.py \
-		--swift-minimum "$(SWIFT_COVERAGE_MIN)" \
+		--swift-core-minimum "$(SWIFT_CORE_COVERAGE_MIN)" \
+		--swift-runtime-spi-minimum "$(SWIFT_RUNTIME_SPI_COVERAGE_MIN)" \
+		--swift-provider-minimum "$(SWIFT_PROVIDER_COVERAGE_MIN)" \
+		--swift-plugin-minimum "$(SWIFT_PLUGIN_COVERAGE_MIN)" \
+		--swift-aggregate-minimum "$(SWIFT_AGGREGATE_COVERAGE_MIN)" \
 		--go-minimum "$(GO_COVERAGE_MIN)" \
-		--swift coverage.xml \
+		--swift-core coverage-core.xml \
+		--swift-runtime-spi coverage-runtime-spi.xml \
+		--swift-provider coverage-provider.xml \
+		--swift-plugin coverage-plugin.xml \
+		--swift-aggregate coverage-aggregate.xml \
 		--go Tools/compose-normalizer/coverage.out
 
 sonar: coverage sonar-scan
@@ -1637,6 +1666,6 @@ pre-commit:
 
 clean:
 	$(SWIFT) package clean
-	rm -rf "$(DIST_DIR)" "$(PLUGIN_ARCHIVE)" "$(DOCS_OUTPUT_DIR)" "$(DOCS_SERVER_DIR)" "$(DOCS_SCRATCH_PATH)" .scannerwork coverage.lcov coverage.out coverage.report coverage.xml
+	rm -rf "$(DIST_DIR)" "$(PLUGIN_ARCHIVE)" "$(DOCS_OUTPUT_DIR)" "$(DOCS_SERVER_DIR)" "$(DOCS_SCRATCH_PATH)" .scannerwork coverage*.lcov coverage.out coverage.report coverage*.xml
 	rm -f *.profraw Tools/compose-normalizer/coverage.out Tools/compose-normalizer/compose-normalizer
 	find Tools -type d -name __pycache__ -prune -exec rm -rf {} +

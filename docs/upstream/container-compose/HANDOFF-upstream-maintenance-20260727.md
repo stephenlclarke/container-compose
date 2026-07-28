@@ -381,11 +381,24 @@ remain open drafts. The supported implementation was reviewed independently
 and strengthened for API ownership, cancellation, backpressure, path safety,
 metadata, sparse files, and hard links rather than importing either draft.
 
-The next Phase 0 parity blocker is CC-006:
+CC-006 was already complete in the lifecycle-hook implementation on `main`;
+the stale inventory row is corrected in this slice. Supported-lane lifecycle
+failures belong to Compose orchestration, while stock Apple interactive
+reattach remains a capability convergence item.
 
-1. Correct lifecycle ownership diagnostics so pinned-stack failures name
-   Compose orchestration and stock-runtime failures name the missing Apple
-   capability.
+TEST-007 is complete. The 25 live smoke tests now use an explicit suite-level
+skip with the activation reason instead of returning as false passes. The
+shared wrapper reports `executed=1251 skipped=25` in normal coverage
+validation, while the isolated live lane enables the same suite. One
+instrumented profile now gates `ComposeCore` at 90%, `ComposeRuntimeSPI` at
+95%, the `ComposeContainerRuntime` provider at 75%, `ComposePlugin` at 50%,
+and aggregate first-party Swift at 85%. The full CI measurements were 92.89%,
+100.00%, 75.91%, 56.52%, and 87.68%, respectively.
+
+The next listed Phase 0 item is TEST-008:
+
+1. Split the 32k-line orchestrator test by command or capability without
+   losing coverage or shared-fixture ownership.
 
 Continue the ordered inventory in
 `docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after this

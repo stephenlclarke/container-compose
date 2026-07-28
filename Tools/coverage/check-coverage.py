@@ -74,14 +74,30 @@ def check(name: str, actual: float, minimum: float) -> bool:
 def main() -> int:
     """Parse arguments and check all configured coverage reports."""
     parser = argparse.ArgumentParser(description="Check generated coverage reports.")
-    parser.add_argument("--swift-minimum", type=float, default=90.0)
+    parser.add_argument("--swift-core-minimum", type=float, default=90.0)
+    parser.add_argument("--swift-runtime-spi-minimum", type=float, default=95.0)
+    parser.add_argument("--swift-provider-minimum", type=float, default=75.0)
+    parser.add_argument("--swift-plugin-minimum", type=float, default=50.0)
+    parser.add_argument("--swift-aggregate-minimum", type=float, default=85.0)
     parser.add_argument("--go-minimum", type=float, default=85.0)
-    parser.add_argument("--swift", type=Path, required=True)
+    parser.add_argument("--swift-core", type=Path, required=True)
+    parser.add_argument("--swift-runtime-spi", type=Path, required=True)
+    parser.add_argument("--swift-provider", type=Path, required=True)
+    parser.add_argument("--swift-plugin", type=Path, required=True)
+    parser.add_argument("--swift-aggregate", type=Path, required=True)
     parser.add_argument("--go", type=Path, required=True)
     args = parser.parse_args()
 
     ok = True
-    ok = check("Swift", generic_line_coverage(args.swift), args.swift_minimum) and ok
+    swift_checks = [
+        ("ComposeCore", args.swift_core, args.swift_core_minimum),
+        ("ComposeRuntimeSPI", args.swift_runtime_spi, args.swift_runtime_spi_minimum),
+        ("ComposeContainerRuntime provider", args.swift_provider, args.swift_provider_minimum),
+        ("ComposePlugin", args.swift_plugin, args.swift_plugin_minimum),
+        ("First-party Swift aggregate", args.swift_aggregate, args.swift_aggregate_minimum),
+    ]
+    for name, path, minimum in swift_checks:
+        ok = check(name, generic_line_coverage(path), minimum) and ok
     ok = check("Go", go_statement_coverage(args.go), args.go_minimum) and ok
     return 0 if ok else 1
 

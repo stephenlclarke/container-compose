@@ -119,7 +119,7 @@ Useful focused targets are:
 | `make release-gate-hosted` | GitHub-hosted static stack validation: source checks, builds, unit coverage, Compose CI, and Homebrew formula syntax without Virtualization.framework or Docker-engine runtime tests. |
 | `make ci-release` | Full release gate plus the release package build. |
 | `make check` | Lint, documentation, formatting, and license checks. |
-| `make coverage-check` | Enforce at least 90% Swift line and 85% Go statement coverage. |
+| `make coverage-check` | Enforce separate ComposeCore, runtime SPI, provider, plugin, aggregate first-party Swift, and Go coverage floors. |
 | `make cli-smoke-built` | Exercise representative commands using the existing build. |
 | `make swift-runtime-test` | Build and run the isolated matched runtime smoke suite. |
 | `make upstream-divergence-report` | Fetch Apple upstream and stephenlclarke refs for the Apple-backed sibling repos, then write `.build/reports/upstream-divergence.md` and `.build/reports/upstream-divergence.json`. |
@@ -138,18 +138,31 @@ non-legacy Swift file for strict SwiftLint and SwiftFormat validation and runs
 the complete Address Sanitizer and Thread Sanitizer suites. A failure is a
 release blocker even when ordinary push CI is green.
 
-Override local coverage floors only for deliberate stricter validation:
+The default Swift line-coverage floors are 90% for `ComposeCore`, 95% for
+`ComposeRuntimeSPI`, 75% for the `ComposeContainerRuntime` provider, 50% for
+`ComposePlugin`, and 85% across all first-party Swift. Go statement coverage
+must remain at least 85%. Override local floors only for deliberate stricter
+validation:
 
 ```sh
-SWIFT_COVERAGE_MIN=91 GO_COVERAGE_MIN=88 make coverage-check
+SWIFT_CORE_COVERAGE_MIN=91 \
+SWIFT_PROVIDER_COVERAGE_MIN=76 \
+SWIFT_AGGREGATE_COVERAGE_MIN=86 \
+GO_COVERAGE_MIN=88 \
+make coverage-check
 ```
 
-Coverage outputs are `coverage.lcov`, `coverage.xml`,
-`Tools/compose-normalizer/coverage.out`, and Swift `.profraw` files.
+Target-specific outputs are `coverage-core.*`, `coverage-runtime-spi.*`,
+`coverage-provider.*`, `coverage-plugin.*`, and `coverage-aggregate.*`.
+`coverage.lcov` and `coverage.xml` are aggregate copies for SonarQube.
+Go output remains `Tools/compose-normalizer/coverage.out`.
 
 `make swift-runtime-test` uses the sibling runtime, isolates state under the
 marker-protected `.build/container-runtime` directory, retains only the kernel
-cache between runs, and always stops the test runtime when it exits.
+cache between runs, and always stops the test runtime when it exits. Normal CI
+reports the 25 live smoke tests as explicitly skipped with the activation
+reason. Both normal and live lanes print authoritative `executed` and `skipped`
+counts from the Swift Testing log.
 
 Run `make upstream-divergence-report` before upstream handoff, runtime-stack promotion, or release review work. The report compares `container`, `containerization`, and `container-builder-shim` against their Apple upstream `main` refs, lists fork-only and upstream-only commit subjects, and checks whether Apple upstream can merge cleanly into the local checkout. Use `make upstream-divergence-check` when the review needs a hard failure, and `make upstream-divergence-release-check` before a stable release so an upstream-behind fork cannot be promoted.
 

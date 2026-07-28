@@ -15,6 +15,7 @@ Current refs should come from checked-in source-of-truth files rather than dupli
 Use this validation floor when parity or runtime behavior changes:
 
 - `container-compose`: `make ci`; targeted tests while iterating; full `make docker-compose-parity` whenever Compose, Dockerfile/build, CLI, or runtime behavior changes; and `make release-gate` before stable package dispatch.
+- Normal CI explicitly reports the 25 runtime smoke tests as skipped when the isolated runtime lane is not enabled. Coverage gates `ComposeCore`, `ComposeRuntimeSPI`, the Apple-backed provider, `ComposePlugin`, aggregate first-party Swift, and Go separately.
 - Apple-backed repositories: each affected repository's full source checks and unit tests, plus integration tests for changed runtime behavior.
 - Documentation-only changes: the repository Markdown gate over every tracked `.md` file.
 

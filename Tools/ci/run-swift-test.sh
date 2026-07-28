@@ -10,6 +10,8 @@ log="${SWIFT_TEST_RESULT_LOG:-.build/swift-test.log}"
 attempts="${SWIFT_TEST_ATTEMPTS:-2}"
 tail_lines="${SWIFT_TEST_TAIL_LINES:-200}"
 accept_signal_13="${SWIFT_TEST_ACCEPT_SIGNAL_13:-1}"
+python="${PYTHON:-python3}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 mkdir -p "$(dirname "$log")"
 
@@ -25,6 +27,13 @@ has_test_failure_output() {
   grep -Eq '✘|Issue recorded|Test run .* failed|[1-9][0-9]* tests? failed|failed after [0-9]' "$log"
 }
 
+report_swift_testing_counts() {
+  local summary
+
+  summary="$("$python" "$script_dir/summarize-swift-testing.py" "$log")"
+  printf '%s\n' "$summary" >>"$log"
+}
+
 attempt=1
 while (( attempt <= attempts )); do
   if (( attempt > 1 )); then
@@ -37,6 +46,7 @@ while (( attempt <= attempts )); do
   set -e
 
   if [[ "$status" -eq 0 ]]; then
+    report_swift_testing_counts
     tail -n "$tail_lines" "$log"
     exit 0
   fi
@@ -50,6 +60,7 @@ while (( attempt <= attempts )); do
   if [[ "$accept_signal_13" == "1" ]] && is_swiftpm_signal_13 && has_passing_test_output && ! has_test_failure_output; then
     printf 'Test run with 1 tests passed after swiftpm-testing-helper signal 13 toolchain failure.\n' >>"$log"
     printf 'Treating swiftpm-testing-helper signal 13 as a SwiftPM toolchain failure after passing test output.\n' >&2
+    report_swift_testing_counts
     tail -n "$tail_lines" "$log"
     exit 0
   fi
