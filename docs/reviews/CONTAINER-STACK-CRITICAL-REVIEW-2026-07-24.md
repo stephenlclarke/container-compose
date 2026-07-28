@@ -318,10 +318,11 @@ record the failed-run boundary and regression coverage.
 
 ### Complete: Compatibility Preflight Drains Full Pipes
 
-Signed Compose-plugin correction `81d32eb2`, plus review corrections
+Signed Compose-plugin corrections `81d32eb2`, plus review corrections
 `96ac7830`, `045d020c`, `9db8f060`, `e0ad1dfe`, `4bf2eac6`, `3ed87228`, and
-`fbe0ce05`, plus final correction `b65d18a6`, replaces the wait-before-drain
-`Foundation.Process` path with the shared asynchronous `ProcessRunner`. Both
+`fbe0ce05`, `b65d18a6`, `62a40d48`, and final correction `b07e9da8`, replace the
+wait-before-drain `Foundation.Process` path with the shared asynchronous
+`ProcessRunner`. Both
 streams now drain while the child runs, while a package-private capture mode
 retains only 64 KiB plus UTF-8 boundary lookahead per stream and records the
 exact omitted byte count. Task
@@ -329,8 +330,11 @@ cancellation owns the exact child process group and propagates through both
 compatibility awaits. The host signal proxy is installed before the child task
 is created, then signals cancel and reap that group before the CLI returns the
 corresponding shell status. Failed-command diagnostics retain stderr precedence
-while being limited at a 64 KiB raw-stream boundary with complete valid UTF-8
-scalars and an exact omitted source-byte count. Diagnostic formatting scans the
+while being limited at a 64 KiB absolute raw-stream boundary with complete
+valid UTF-8 scalars and an exact omitted source-byte count. Leading-whitespace
+trimming cannot shift that boundary or its three-byte lookahead, and content
+beyond a whitespace-consumed budget still returns an exact truncation marker.
+Diagnostic formatting scans the
 retained raw data once and keeps only the bounded rendered prefix and byte
 offsets, rather than a proportional per-byte object model. If the retained
 stderr prefix contains only whitespace but omitted bytes remain, the formatter
@@ -348,14 +352,16 @@ drains 1 MiB of stdout and 2 MiB of stderr while retaining exactly 1 KiB of
 each and recording the exact omitted counts. A delayed proxy regression proves
 the child cannot start before signal handling is active. A whitespace-prefix
 regression proves omitted stderr remains authoritative and reports all 65,552
-source bytes instead of falling back to stdout. A 16 MiB isolated packaged-CLI
+source bytes instead of falling back to stdout. A second whitespace-prefix
+regression proves a four-byte scalar crossing the retained prefix is omitted
+intact without exceeding the raw-stream budget. A 16 MiB isolated packaged-CLI
 failure, added in `592266a7`, stays below 320 MiB maximum resident memory,
 limits the rendered diagnostic below 67,000 bytes, and also passes with Address
-Sanitizer. The focused sanitizer run before the final formatter-only correction
-passes 23 tests across five suites. The SIGINT reproduction exits 130 only after
+Sanitizer. The final focused sanitizer run passes 25 tests across five suites.
+The SIGINT reproduction exits 130 only after
 its TERM-ignoring preflight child reports `ESRCH`. A bounded CLI reproduction
 timed out on the previous implementation and exits normally through the
-corrected diagnostic path. The complete local gate passes 1,263 Swift tests in
+corrected diagnostic path. The complete local gate passes 1,265 Swift tests in
 46 suites, 92.79% Swift
 coverage, 89.88% Go coverage, and all CLI, lint, dependency, licence, and smoke
 checks.

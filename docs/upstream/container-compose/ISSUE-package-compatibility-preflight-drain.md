@@ -40,7 +40,12 @@ adds a package-private process-runner mode that drains each stream while
 retaining only a bounded prefix and the exact omitted-byte count. Signed final
 correction `b65d18a6` represents an all-whitespace retained prefix as truncated
 when omitted bytes remain, preserving stderr priority without claiming the
-unretained content.
+unretained content. Signed connector-review correction `62a40d48` applies the
+64 KiB display limit from the absolute raw-stream start, so trimming leading
+whitespace cannot shift the UTF-8 lookahead boundary or split a valid scalar.
+Signed manual-review correction `b07e9da8` reports the exact non-whitespace
+source-byte count when leading whitespace consumes the complete display budget,
+rather than returning an empty diagnostic.
 
 The corrected path:
 
@@ -57,9 +62,9 @@ The corrected path:
 - preserves that stderr precedence when its retained prefix contains only
   whitespace but its exact omitted-byte count proves more stderr exists;
 - falls back to stdout when stderr is empty;
-- limits a displayed failure diagnostic at a 64 KiB raw-stream boundary,
-  preserves complete valid UTF-8 scalars, and reports the exact omitted source
-  byte count; and
+- limits a displayed failure diagnostic at a 64 KiB absolute raw-stream
+  boundary, preserves complete valid UTF-8 scalars, and reports the exact omitted
+  source byte count; and
 - preserves the existing bounded successful JSON and service-readiness
   behaviour.
 
@@ -120,6 +125,11 @@ No Apple runtime fork or new compatibility primitive is required.
 - A failed child that writes stdout plus 65,539 retained whitespace bytes and
   omitted stderr reports `[truncated 65552 bytes]` from stderr rather than
   falling back to stdout.
+- Four leading whitespace bytes followed by a four-byte UTF-8 scalar crossing
+  the retained prefix cannot shift the display budget, emit replacement
+  characters, or render more than 64 KiB of source bytes.
+- A one-byte failure following 64 KiB of leading whitespace reports
+  `[truncated 1 byte]` rather than disappearing.
 - Existing package mismatch, missing executable, and service readiness
   diagnostics remain covered.
 - Repository build, test, format, lint, dependency, and diff gates pass.
