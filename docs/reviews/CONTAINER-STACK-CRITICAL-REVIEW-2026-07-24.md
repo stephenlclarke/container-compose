@@ -320,7 +320,8 @@ record the failed-run boundary and regression coverage.
 
 Signed Compose-plugin corrections `81d32eb2`, plus review corrections
 `96ac7830`, `045d020c`, `9db8f060`, `e0ad1dfe`, `4bf2eac6`, `3ed87228`, and
-`fbe0ce05`, `b65d18a6`, `62a40d48`, and final correction `b07e9da8`, replace the
+`fbe0ce05`, `b65d18a6`, `62a40d48`, `b07e9da8`, and final correction
+`5b6f4880`, replace the
 wait-before-drain `Foundation.Process` path with the shared asynchronous
 `ProcessRunner`. Both
 streams now drain while the child runs, while a package-private capture mode
@@ -328,10 +329,13 @@ retains only 64 KiB plus UTF-8 boundary lookahead per stream and records the
 exact omitted byte count. Task
 cancellation owns the exact child process group and propagates through both
 compatibility awaits. The host signal proxy is installed before the child task
-is created, then signals cancel and reap that group before the CLI returns the
-corresponding shell status. Failed-command diagnostics retain stderr precedence
-while being limited at a 64 KiB absolute raw-stream boundary with complete
-valid UTF-8 scalars and an exact omitted source-byte count. Leading-whitespace
+is created, synchronously registers every delivered handler, drains dispatch
+source cancellation, and awaits those handlers before accepting the operation
+result. Signals therefore cancel and reap the preflight group before the CLI
+returns the corresponding shell status. Failed-command diagnostics retain
+stderr precedence while being limited at a 64 KiB absolute raw-stream boundary
+with complete valid UTF-8 scalars and an exact omitted source-byte count.
+Leading-whitespace
 trimming cannot shift that boundary or its three-byte lookahead, and content
 beyond a whitespace-consumed budget still returns an exact truncation marker.
 Diagnostic formatting scans the
@@ -357,12 +361,16 @@ regression proves a four-byte scalar crossing the retained prefix is omitted
 intact without exceeding the raw-stream budget. A 16 MiB isolated packaged-CLI
 failure, added in `592266a7`, stays below 320 MiB maximum resident memory,
 limits the rendered diagnostic below 67,000 bytes, and also passes with Address
-Sanitizer. The final focused sanitizer run passes 25 tests across five suites.
+Sanitizer. A deterministic signal-proxy regression holds a delivered handler
+open after the proxied operation returns and proves the proxy cannot return
+until that handler is released. The final focused sanitizer runs pass 25
+package-preflight tests across five suites and three signal-proxy tests in one
+suite.
 The SIGINT reproduction exits 130 only after
 its TERM-ignoring preflight child reports `ESRCH`. A bounded CLI reproduction
 timed out on the previous implementation and exits normally through the
-corrected diagnostic path. The complete local gate passes 1,265 Swift tests in
-46 suites, 92.79% Swift
+corrected diagnostic path. The complete local gate passes 1,266 Swift tests in
+46 suites, 92.81% Swift
 coverage, 89.88% Go coverage, and all CLI, lint, dependency, licence, and smoke
 checks.
 

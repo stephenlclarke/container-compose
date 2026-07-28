@@ -14,6 +14,8 @@
 - Convert preflight-time host signals into owned child cancellation before the
   CLI exits with the corresponding conventional shell status, with the proxy
   installed before the child task is created.
+- Drain delivered signal handlers before accepting the proxied operation
+  result, so cancellation state cannot be observed too early.
 
 ## Intended review delta
 
@@ -52,6 +54,10 @@ display budget to absolute raw offsets so leading-whitespace trimming cannot
 shift the UTF-8 lookahead boundary. Signed manual-review correction `b07e9da8`,
 `fix(plugin): report diagnostics beyond whitespace budget`, returns an exact
 truncation marker when leading whitespace consumes the entire display budget.
+Signed connector-review correction `5b6f4880`, `fix(core): drain proxied signal
+handlers`, synchronously registers delivered handler tasks, drains
+dispatch-source cancellation, and awaits those handlers before returning the
+proxied result.
 
 The production change is limited to the package preflight implementation, its
 single asynchronous call site and executable interruption boundary, and
@@ -127,13 +133,17 @@ Results on the designated Apple silicon MacBook Pro:
   and exits with status 130;
 - a delayed signal-proxy regression proves the child cannot start before the
   proxy is active;
+- a deterministic signal-proxy regression holds a delivered handler open after
+  the operation returns and proves the proxy waits for its completion;
 - the previously hanging packaged-CLI reproduction times out at five seconds
   before the fix and exits with the expected compatibility failure after it;
 - six metrics-generator regression tests and Python compilation pass;
 - the generated 28 July 2026 snapshot reports all three support forks zero
   behind Apple and 493 commits ahead in total; and
-- `HAWKEYE_AUTO_INSTALL=1 make ci` passes 1,265 Swift tests in 46 suites,
-  92.79% Swift coverage, 89.88% Go coverage, and the complete CLI, lint,
+- AddressSanitizer passes 25 package-preflight tests across five suites and
+  three signal-proxy tests in one suite; and
+- `HAWKEYE_AUTO_INSTALL=1 make ci` passes 1,266 Swift tests in 46 suites,
+  92.81% Swift coverage, 89.88% Go coverage, and the complete CLI, lint,
   dependency, licence, and smoke gates.
 
 ## Publication evidence

@@ -45,7 +45,11 @@ unretained content. Signed connector-review correction `62a40d48` applies the
 whitespace cannot shift the UTF-8 lookahead boundary or split a valid scalar.
 Signed manual-review correction `b07e9da8` reports the exact non-whitespace
 source-byte count when leading whitespace consumes the complete display budget,
-rather than returning an empty diagnostic.
+rather than returning an empty diagnostic. Signed connector-review correction
+[`5b6f4880eb7ef6da3af902e546cfccfb566c729b`](https://github.com/stephenlclarke/container-compose/commit/5b6f4880eb7ef6da3af902e546cfccfb566c729b)
+synchronously registers delivered signal-handler tasks, drains dispatch-source
+cancellation, and awaits those handlers before accepting the proxied operation
+result.
 
 The corrected path:
 
@@ -94,6 +98,8 @@ No Apple runtime fork or new compatibility primitive is required.
   cancellation latency, child reaping, and proxy-before-launch ordering.
 - `Tests/ComposeCoreTests/ProcessRunnerBoundedOutputTests.swift` proves bounded
   capture drains MiB-sized streams and reports exact omitted-byte counts.
+- `Tests/ComposeCoreTests/ComposeSignalProxyTests.swift` proves a delivered
+  handler cannot race the proxied operation result.
 
 ## Acceptance
 
@@ -122,6 +128,8 @@ No Apple runtime fork or new compatibility primitive is required.
   with status 130.
 - A delayed signal proxy observes that the preflight child cannot start before
   proxy installation completes.
+- A delivered signal handler held open after the operation returns prevents the
+  signal proxy from returning until the handler is released.
 - A failed child that writes stdout plus 65,539 retained whitespace bytes and
   omitted stderr reports `[truncated 65552 bytes]` from stderr rather than
   falling back to stdout.
@@ -132,7 +140,10 @@ No Apple runtime fork or new compatibility primitive is required.
   `[truncated 1 byte]` rather than disappearing.
 - Existing package mismatch, missing executable, and service readiness
   diagnostics remain covered.
-- Repository build, test, format, lint, dependency, and diff gates pass.
+- AddressSanitizer passes 25 package-preflight tests across five suites and
+  three signal-proxy tests in one suite.
+- Repository build, test, format, lint, dependency, and diff gates pass,
+  including 1,266 Swift tests with 92.81% Swift and 89.88% Go coverage.
 
 ## Compatibility and deletion
 
