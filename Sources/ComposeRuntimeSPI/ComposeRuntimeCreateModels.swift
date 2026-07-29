@@ -174,6 +174,8 @@ public struct ComposeHealthCheck: Codable, Sendable {
 /// Runtime restart behaviour projected from a Compose service.
 public struct ComposeRestartPolicy: Codable, Equatable, Sendable {
     public enum Mode: String, CaseIterable, Codable, Sendable {
+        // The spelling is part of the Docker Compose restart-policy vocabulary.
+        // swiftlint:disable:next identifier_name
         case no
         case onFailure = "on-failure"
         case always
@@ -225,6 +227,8 @@ public struct ComposeRestartPolicy: Codable, Equatable, Sendable {
         )
     }
 
+    // The spelling is part of the Docker Compose restart-policy vocabulary.
+    // swiftlint:disable:next identifier_name
     public static let no = ComposeRestartPolicy(mode: .no)
 }
 

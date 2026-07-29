@@ -474,6 +474,9 @@ jobs:
               Sources/ComposeCore/ComposeCommandOptions.swift|Sources/ComposeCore/ComposeCommitImageArchive.swift|Sources/ComposeCore/ComposeExecutionOptions.swift|Sources/ComposeCore/ComposeOrchestratorBuildAndImages.swift|Sources/ComposeCore/ComposeOrchestratorCreateAndLogs.swift|Sources/ComposeCore/ComposeOrchestratorMountsContainersVolumes.swift|Sources/ComposeCore/ComposeOrchestratorRunCopyStart.swift|Sources/ComposeCore/ComposeOrchestratorUp.swift|Sources/ComposeCore/ComposeOrchestratorWaitAndPorts.swift|Sources/ComposeCore/ContainerDiscoveryAdapter.swift|Tests/ComposeCoreTests/ComposeOrchestratorTests.swift)
                 continue
                 ;;
+              Sources/ComposeContainerRuntime/ComposeCommitImageArchive.swift|Tests/ComposeCoreTests/ComposeOrchestratorBuildAndImageTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorCopyExportCommitTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorInspectionAndConfigTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorLifecycleTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorLogsWatchAttachTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorResourceTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorRunTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorRuntimeAdapterTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorTestSupport.swift|Tests/ComposeCoreTests/ComposeOrchestratorUpAndCreateTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorValidationTests.swift)
+                continue
+                ;;
               Sources/ComposePlugin/ContainerPackageCompatibility.swift|Tests/ComposePluginTests/ContainerPackageCompatibilityTests.swift|Tests/ComposeCoreTests/ComposeNormalizerTests.swift|Tests/ComposeRuntimeTests/ComposeRuntimeSmokeTests.swift)
                 continue
                 ;;

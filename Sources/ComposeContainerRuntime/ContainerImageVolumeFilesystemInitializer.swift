@@ -33,6 +33,8 @@ public struct ContainerImageVolumeInitializer: Sendable {
         // This runtime adapter is stateless; construction needs no setup.
     }
 
+    // The operation deliberately keeps its staged archive and formatter cleanup together.
+    // swiftlint:disable function_body_length
     /// Copies `imageSubpath` into `volume` only when the volume contains no
     /// entries other than ext4's required `lost+found` directory.
     ///
@@ -114,6 +116,8 @@ public struct ContainerImageVolumeInitializer: Sendable {
         try fileManager.setAttributes([.posixPermissions: volumePermissions], ofItemAtPath: volumeURL.path)
         return true
     }
+
+    // swiftlint:enable function_body_length
 
     private static func permissions(at url: URL) throws -> Int {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)

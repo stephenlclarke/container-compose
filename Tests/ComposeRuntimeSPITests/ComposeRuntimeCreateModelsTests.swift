@@ -60,7 +60,7 @@ struct ComposeRuntimeCreateModelsTests {
                 """.utf8,
             ),
         )
-        let no = try JSONDecoder().decode(
+        let disabled = try JSONDecoder().decode(
             ComposeRestartPolicy.self,
             from: Data(
                 """
@@ -88,9 +88,9 @@ struct ComposeRuntimeCreateModelsTests {
         #expect(always.maximumRetryCount == nil)
         #expect(always.retryDelayInNanoseconds == 5)
         #expect(always.successfulRunDurationInNanoseconds == 6)
-        #expect(no.maximumRetryCount == nil)
-        #expect(no.retryDelayInNanoseconds == nil)
-        #expect(no.successfulRunDurationInNanoseconds == nil)
+        #expect(disabled.maximumRetryCount == nil)
+        #expect(disabled.retryDelayInNanoseconds == nil)
+        #expect(disabled.successfulRunDurationInNanoseconds == nil)
         #expect(unlimited.maximumRetryCount == nil)
     }
 }

@@ -20,8 +20,8 @@ import Testing
 
 @Suite("Container filesystem adapter")
 struct ContainerFilesystemAdapterTests {
-    @Test("export staging is private and cleaned after provider failure")
-    func exportStagingIsPrivateAndCleanedAfterProviderFailure() async throws {
+    @Test
+    func `export staging is private and cleaned after provider failure`() async throws {
         let sharedRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("compose-export-shared-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(
@@ -46,8 +46,8 @@ struct ContainerFilesystemAdapterTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: sharedRoot.path).isEmpty)
     }
 
-    @Test("export restores private archive permissions before moving output")
-    func exportRestoresPrivateArchivePermissionsBeforeMovingOutput() async throws {
+    @Test
+    func `export restores private archive permissions before moving output`() async throws {
         let sharedRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("compose-export-shared-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(
@@ -96,7 +96,6 @@ private final class ExportPermissionRecorder: @unchecked Sendable {
             fileStorage = file
         }
     }
-
 }
 
 private func permissions(at url: URL) throws -> Int {

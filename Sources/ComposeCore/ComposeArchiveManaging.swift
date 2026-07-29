@@ -59,6 +59,8 @@ public protocol ComposeArchiveManaging: Sendable {
     /// Extracts transformer templates from an exported container root filesystem.
     func extractBridgeTemplates(archive: URL, destination: String) throws
 
+    // The archive boundary keeps transfer inputs explicit for runtime adapters.
+    // swiftlint:disable function_parameter_count
     /// Stages an archive stream through a runtime that only supports filesystem paths.
     func copyArchiveIntoContainer(
         using copier: any ComposeRuntimeCopying,
@@ -79,4 +81,5 @@ public protocol ComposeArchiveManaging: Sendable {
         options: ContainerCopyTransferOptions,
         temporaryDirectory: URL,
     ) async throws
+    // swiftlint:enable function_parameter_count
 }

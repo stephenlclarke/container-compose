@@ -281,7 +281,11 @@ extension ComposeOrchestrator {
         if let interfaceName = try networkGuestInterfaceName(service: service, network: network) {
             options.append("interface=\(interfaceName)")
         }
-        try options.append(contentsOf: networkStaticAddressOptions(project: project, service: service, network: network))
+        try options.append(contentsOf: networkStaticAddressOptions(
+            project: project,
+            service: service,
+            network: network,
+        ))
         for address in try networkLinkLocalIPValues(service: service, network: network) {
             options.append("address=\(address)")
         }
@@ -375,5 +379,4 @@ extension ComposeOrchestrator {
         }
         generatedAliasSources[normalizedAlias] = hostSource
     }
-
 }

@@ -899,7 +899,7 @@ extension ComposeOrchestrator {
             throw ComposeError.invalidProject("invalid device permissions")
         }
 
-        let spec: String = if let target, let permissions {
+        return if let target, let permissions {
             "\(source):\(target):\(permissions)"
         } else if let target {
             "\(source):\(target)"
@@ -908,7 +908,6 @@ extension ComposeOrchestrator {
         } else {
             source
         }
-        return spec
     }
 
     private func optionalStringField(_ name: String, in object: [String: ComposeValue]) throws -> String? {

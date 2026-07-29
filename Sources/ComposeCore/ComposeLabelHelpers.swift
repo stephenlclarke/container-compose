@@ -191,7 +191,7 @@ func configHash(
             service: service,
             externalVolumeMounts: externalVolumeMounts,
         ),
-        linkTargets: try serviceLinkTargetFingerprints(project: project, service: service),
+        linkTargets: serviceLinkTargetFingerprints(project: project, service: service),
     )
     guard let data = try? encoder.encode(fingerprint) else {
         return stableHash(service.name)

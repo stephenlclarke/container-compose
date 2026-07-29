@@ -51,6 +51,8 @@ public struct ContainerArchiveManager: ComposeArchiveManaging {
         }
     }
 
+    // The runtime copier protocol keeps transfer inputs explicit at this boundary.
+    // swiftlint:disable:next function_parameter_count
     public func copyArchiveIntoContainer(
         using copier: any ComposeRuntimeCopying,
         id: String,
@@ -68,6 +70,8 @@ public struct ContainerArchiveManager: ComposeArchiveManaging {
         )
     }
 
+    // The runtime copier protocol keeps transfer inputs explicit at this boundary.
+    // swiftlint:disable:next function_parameter_count
     public func copyFromContainerAsArchive(
         using copier: any ComposeRuntimeCopying,
         id: String,

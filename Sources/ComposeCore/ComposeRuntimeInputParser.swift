@@ -55,6 +55,8 @@ enum ComposeRuntimeInputParser {
         try values.map(parseGPURequest)
     }
 
+    // The accepted key vocabulary is intentionally parsed in one audited switch.
+    // swiftlint:disable:next cyclomatic_complexity
     private static func parseGPURequest(_ value: String) throws -> ComposeGPURequest {
         let fields = try csvFields(value)
         guard !fields.isEmpty else {
@@ -86,7 +88,9 @@ enum ComposeRuntimeInputParser {
             case "device":
                 result.deviceIDs = fieldValue.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
             case "capabilities":
-                result.capabilities = fieldValue.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+                result.capabilities = fieldValue
+                    .split(separator: ",", omittingEmptySubsequences: false)
+                    .map(String.init)
                 result.capabilities.append("gpu")
             case "options":
                 result.options = try gpuOptions(fieldValue)

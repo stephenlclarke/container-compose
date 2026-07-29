@@ -24,8 +24,10 @@ import Foundation
 public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
     public typealias CopyInto = @Sendable (String, String, String, ContainerCopyTransferOptions) async throws -> Void
     public typealias CopyFrom = @Sendable (String, String, String, ContainerCopyTransferOptions) async throws -> Void
-    public typealias CopyArchiveInto = @Sendable (String, FileHandle, String, ContainerCopyTransferOptions) async throws -> Void
-    public typealias CopyArchiveFrom = @Sendable (String, String, FileHandle, Bool, ContainerCopyTransferOptions) async throws -> Void
+    public typealias CopyArchiveInto =
+        @Sendable (String, FileHandle, String, ContainerCopyTransferOptions) async throws -> Void
+    public typealias CopyArchiveFrom =
+        @Sendable (String, String, FileHandle, Bool, ContainerCopyTransferOptions) async throws -> Void
 
     private let copyIntoOperation: CopyInto
     private let copyFromOperation: CopyFrom

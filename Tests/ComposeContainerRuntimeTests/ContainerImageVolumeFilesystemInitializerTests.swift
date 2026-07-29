@@ -22,6 +22,8 @@ import Foundation
 import SystemPackage
 import Testing
 
+// The cases share one fixture vocabulary and remain easier to audit together.
+// swiftlint:disable:next type_body_length
 struct ContainerImageVolumeInitializerTests {
     @Test
     func `volume summaries retain the runtime driver options`() {

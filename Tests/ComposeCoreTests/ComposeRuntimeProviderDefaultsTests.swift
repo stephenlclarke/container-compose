@@ -19,6 +19,8 @@ import Foundation
 import Testing
 
 @Suite("Compose runtime provider defaults")
+// The suite keeps the fail-closed contract for every provider surface in one place.
+// swiftlint:disable:next type_body_length
 struct ComposeRuntimeProviderDefaultsTests {
     private func expectUnavailable(
         _ operation: String,

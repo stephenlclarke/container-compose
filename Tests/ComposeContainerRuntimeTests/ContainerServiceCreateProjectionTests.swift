@@ -24,6 +24,8 @@ import Testing
 @Suite("Container service create projection")
 struct ContainerServiceCreateProjectionTests {
     @Test
+    // This single projection assertion intentionally covers every neutral runtime field.
+    // swiftlint:disable:next function_body_length
     func `projects every neutral create-plan runtime field`() throws {
         let process = ComposeProcessConfiguration(
             executable: "/usr/bin/worker",

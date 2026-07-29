@@ -34,13 +34,17 @@ enum ComposeImageReference {
         }
         let (domain, remainder) = parseDomain(input)
         if let domain {
-            let domainPattern = #"^(?:localhost|(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9])(?:\.(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9]))*|\[[A-Fa-f0-9:]+\])(?::[0-9]+)?$"#
+            let label = #"(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9])"#
+            let domainPattern = #"^(?:localhost|\#(label)(?:\.\#(label))*|\[[A-Fa-f0-9:]+\])(?::[0-9]+)?$"#
             guard domain.range(of: domainPattern, options: .regularExpression) != nil else {
                 throw ComposeError.invalidProject("invalid image reference '\(input)'")
             }
         }
 
-        let pattern = #"^(?<path>(?:[a-z0-9]+(?:[._]|__|-|/)?)*[a-z0-9]+)(?::(?<tag>[\w][\w.-]{0,127}))?(?:@(?<digest>sha256:[0-9A-Fa-f]{64}))?$"#
+        let pathPattern = #"(?<path>(?:[a-z0-9]+(?:[._]|__|-|/)?)*[a-z0-9]+)"#
+        let tagPattern = #"(?::(?<tag>[\w][\w.-]{0,127}))?"#
+        let digestPattern = #"(?:@(?<digest>sha256:[0-9A-Fa-f]{64}))?"#
+        let pattern = #"^\#(pathPattern)\#(tagPattern)\#(digestPattern)$"#
         let expression = try NSRegularExpression(pattern: pattern)
         let range = NSRange(remainder.startIndex ..< remainder.endIndex, in: remainder)
         guard let match = expression.firstMatch(in: remainder, range: range), match.range == range,

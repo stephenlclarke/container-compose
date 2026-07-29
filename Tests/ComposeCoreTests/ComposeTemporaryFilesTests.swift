@@ -20,8 +20,8 @@ import Testing
 
 @Suite("Secure temporary paths")
 struct ComposeTemporaryFilesTests {
-    @Test("standard temporary root creates private directories and files")
-    func standardTemporaryRootCreatesPrivateDirectoriesAndFiles() throws {
+    @Test
+    func `standard temporary root creates private directories and files`() throws {
         let directory = try ComposeTemporaryFiles.createDirectory(prefix: "compose-permissions-")
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("payload")
@@ -33,8 +33,8 @@ struct ComposeTemporaryFilesTests {
         #expect(try Data(contentsOf: file) == Data("sensitive\n".utf8))
     }
 
-    @Test("shared temporary root retains private child permissions")
-    func sharedTemporaryRootRetainsPrivateChildPermissions() throws {
+    @Test
+    func `shared temporary root retains private child permissions`() throws {
         let sharedRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("compose-shared-tmp-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(
@@ -54,8 +54,8 @@ struct ComposeTemporaryFilesTests {
         #expect(try permissions(at: file) == 0o600)
     }
 
-    @Test("failed directory creation preserves an existing path")
-    func failedDirectoryCreationPreservesExistingPath() throws {
+    @Test
+    func `failed directory creation preserves an existing path`() throws {
         let parent = try ComposeTemporaryFiles.createDirectory(prefix: "compose-existing-path-")
         defer { try? FileManager.default.removeItem(at: parent) }
         let existing = parent.appendingPathComponent("existing", isDirectory: true)
@@ -70,8 +70,8 @@ struct ComposeTemporaryFilesTests {
         #expect(try Data(contentsOf: sentinel) == Data("preserve\n".utf8))
     }
 
-    @Test("file permission verification rejects symlink replacement")
-    func filePermissionVerificationRejectsSymlinkReplacement() throws {
+    @Test
+    func `file permission verification rejects symlink replacement`() throws {
         let directory = try ComposeTemporaryFiles.createDirectory(prefix: "compose-symlink-check-")
         defer { try? FileManager.default.removeItem(at: directory) }
         let target = directory.appendingPathComponent("target")
