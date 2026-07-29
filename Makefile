@@ -30,6 +30,8 @@ GO ?= go
 GO_RELEASE_ENV ?= CGO_ENABLED=0
 GO_RELEASE_BUILD_FLAGS ?= -trimpath
 GO_RELEASE_LDFLAGS ?= -s -w
+CODESIGN ?= codesign
+CODESIGN_OPTS ?= --force --sign - --timestamp=none
 PYTHON ?= python3
 MARKDOWNLINT ?= markdownlint
 HAWKEYE ?= $(shell command -v hawkeye 2>/dev/null || printf '%s' .local/bin/hawkeye)
@@ -1574,6 +1576,15 @@ package-built:
 	cp config.toml "$(DIST_DIR)/compose/config.toml"
 	cp Tools/compose-normalizer/compose-normalizer "$(DIST_DIR)/compose/resources/compose-normalizer"
 	cp "$(PLUGIN_ICON)" "$(DIST_DIR)/compose/resources/container-compose-icon.png"
+	$(CODESIGN) $(CODESIGN_OPTS) \
+		--identifier io.github.stephenlclarke.container-compose \
+		"$(DIST_DIR)/compose/bin/compose"
+	$(CODESIGN) $(CODESIGN_OPTS) \
+		--identifier io.github.stephenlclarke.container-compose.normalizer \
+		"$(DIST_DIR)/compose/resources/compose-normalizer"
+	$(CODESIGN) --verify --strict --verbose=2 "$(DIST_DIR)/compose/bin/compose"
+	$(CODESIGN) --verify --strict --verbose=2 \
+		"$(DIST_DIR)/compose/resources/compose-normalizer"
 	$(PYTHON) Tools/release/write-build-info.py \
 		--output "$(DIST_DIR)/compose/resources/build-info.json" \
 		--version "$(COMPOSE_VERSION)" \

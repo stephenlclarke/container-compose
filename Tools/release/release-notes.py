@@ -941,6 +941,7 @@ def render_release_notes(
             "- Current packages require green `main` CI; that is where SonarQube analyses the source.",
             "- Stable releases additionally require the hosted Stable Release Gate, which runs builder, containerization, and container coverage and runtime integration checks, Compose CI, and full Docker Compose parity.",
             "- The package workflow verifies the exact immutable runtime asset before it writes either Homebrew formula.",
+            "- Every Mach-O executable in both archives is Developer ID Application signed with the hardened runtime and a secure timestamp before attestation or publication.",
             f"- `make package-release PLUGIN_ARCHIVE={asset}` passed.",
             "- `make go-release-check` passed as part of package validation.",
             "- `git diff --check` passed as part of `make check`.",
