@@ -8,9 +8,9 @@ links to an immutable Git snapshot.
 
 Last verified: 2026-07-29
 
-Entries: 355. Document snapshots: 616. Current supporting documents: 6.
+Entries: 357. Document snapshots: 616. Current supporting documents: 6.
 
-States: `archived` 298, `closed` 3, `merged` 6, `submitted` 10, `tracked-upstream` 15, `unsubmitted` 23.
+States: `archived` 298, `closed` 3, `merged` 6, `submitted` 10, `tracked-upstream` 17, `unsubmitted` 23.
 
 | Owner | Capability or pull request | State | Referenced commits | Documents |
 | --- | --- | --- | --- | --- |
@@ -43,6 +43,7 @@ States: `archived` 298, `closed` 3, `merged` 6, `submitted` 10, `tracked-upstrea
 | `apple/container` | [Preserve unloadable bundles and write metadata atomically](https://github.com/apple/container/pull/2035) | `submitted` | `a8d3b5c87e46` | None |
 | `apple/container` | [Close directory watcher descriptors after failed startup](https://github.com/apple/container/pull/2036) | `submitted` | `f2f248fbb800` | None |
 | `apple/container` | [Update containerization import to 0.40.1](https://github.com/apple/container/pull/2038) | `merged` | `ea7f7f5dfac0` | None |
+| `apple/container` | [\[builder-tests\]: add test for meta args parsing](https://github.com/apple/container/pull/2040) | `tracked-upstream` | `f27d3e37cf7c` | None |
 | `apple/container` | Support Privileged Run and Create Processes | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-206.md) |
 | `apple/container` | [cli: accept global flags after subcommands](https://github.com/apple/container/pull/730) | `tracked-upstream` | `9a43fa83941a` | None |
 | `apple/container` | Pull request: carry additional interface addresses through the Linux runtime | `unsubmitted` | `678e331f1314`, `a7fbf5b29a41` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-additional-interface-addresses.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-additional-interface-addresses.md) |
@@ -137,6 +138,7 @@ States: `archived` 298, `closed` 3, `merged` 6, `submitted` 10, `tracked-upstrea
 | `apple/container` | Pull request: accept an explicit unlimited CPU limit | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-zero-cpu-limit.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-zero-cpu-limit.md) |
 | `apple/container-builder-shim` | `.dockerignore` negation re-includes can stream orphan descendants | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/ISSUE-1800.md) |
 | `apple/container-builder-shim` | [Emit excluded parent dirs of files re-included by dockerignore negations](https://github.com/apple/container-builder-shim/pull/87) | `tracked-upstream` | `277840720984`, `2f0328782746`, `54c8b93547a7`, `e5773f48cbd3` | [PR details](apple-container-builder-shim/PR-87.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/PR-87.md) |
+| `apple/container-builder-shim` | [\[frontend\]: resolve meta args](https://github.com/apple/container-builder-shim/pull/89) | `tracked-upstream` | `134c7381dc3b` | None |
 | `apple/container-builder-shim` | Add non-exporting Dockerfile check mode | `archived` | `db59b6451320` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/ISSUE-build-check.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/PR-build-check.md) |
 | `apple/container-builder-shim` | Verify and atomically publish BuildKit build contexts | `unsubmitted` | `84c9c39844eb` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/ISSUE-build-context-cache-integrity.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/PR-build-context-cache-integrity.md) |
 | `apple/container-builder-shim` | Report unavailable build-context source reads | `unsubmitted` | `6bbbefff020b` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/ISSUE-build-context-source-read-errors.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/PR-build-context-source-read-errors.md) |

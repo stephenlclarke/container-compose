@@ -405,6 +405,18 @@
       "upstream": "https://github.com/apple/container/pull/2038"
     },
     {
+      "id": "apple-container-2040",
+      "owner": "apple/container",
+      "title": "[builder-tests]: add test for meta args parsing",
+      "state": "tracked-upstream",
+      "lastVerified": "2026-07-29",
+      "commits": [
+        "f27d3e37cf7c6470b65c8e4a6f6af36fa0b20b68"
+      ],
+      "documents": [],
+      "upstream": "https://github.com/apple/container/pull/2040"
+    },
+    {
       "id": "apple-container-206",
       "owner": "apple/container",
       "title": "Support Privileged Run and Create Processes",
@@ -642,6 +654,18 @@
         }
       ],
       "upstream": "https://github.com/apple/container-builder-shim/pull/87"
+    },
+    {
+      "id": "apple-container-builder-shim-89",
+      "owner": "apple/container-builder-shim",
+      "title": "[frontend]: resolve meta args",
+      "state": "tracked-upstream",
+      "lastVerified": "2026-07-29",
+      "commits": [
+        "134c7381dc3b1a06afe2d2025fab30c597f26bdd"
+      ],
+      "documents": [],
+      "upstream": "https://github.com/apple/container-builder-shim/pull/89"
     },
     {
       "id": "apple-container-builder-shim-build-check",
