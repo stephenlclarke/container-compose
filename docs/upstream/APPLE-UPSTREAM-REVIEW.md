@@ -14,21 +14,28 @@ Stephen-owned remote and querying the live pull-request state.
 ## Fetched Main Baselines
 
 The table compares each fetched Apple `main` with the currently published
-supported fork `main`. The left/right counts are from `git rev-list
+fork `main`. The left/right counts are from `git rev-list
 --left-right --count <apple-main>...<fork-main>`:
 
-| Repository | Apple `main` | Supported fork `main` | Apple-only | Fork-only |
+| Repository | Apple `main` | Fork `main` | Apple-only | Fork-only |
 | --- | --- | --- | ---: | ---: |
 | `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `367430446959e3048da37f5f64d3c10e1293d3de` | 2 | 327 |
 | `containerization` | `7800b4642171561c95b5f55500b19e5dce5acd45` | `043193efa5f1a2e21a240041d6edd71d7673739e` | 2 | 133 |
 | `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `f97cddf5b3aae2426a094613793c11c41b1d2e53` | 0 | 33 |
 
-Apple moved during this work. The published `container` fork `main` is missing
-Apple #2027 and #2038; the published `containerization` fork `main` is missing
-Apple #822 and #824. These four commits require the next coordinated stack
-reconciliation before a new supported pin can be published. The fork-only
-counts include merge commits and intentionally retained generic runtime work;
-they are not a count of changes that are ready for Apple.
+The published default branches have not yet advanced to Apple #2027, #2038,
+Apple #822, and Apple #824. The exact supported pins already contain those
+Apple heads:
+`container` `9b1a49b53ff73417d1b4cfbf39fa5a9dffa06023` contains
+`6e65319fe476ffe8db8ddaf828a537ed36fe2859` through merge `90124ba1`, and
+`containerization` `66f0963cbe2b59170f9164c4dae5828baf59fdd8`
+contains `7800b4642171561c95b5f55500b19e5dce5acd45` through merge `ef5202d5`.
+The coordinated supported stack passed the full Compose CI before publication,
+so no further pin movement is required for these four commits. Advance the
+default branches only when the broader validated development stack is
+promoted. The fork-only counts include merge commits and intentionally
+retained generic runtime work; they are not a count of changes that are ready
+for Apple.
 
 ## Submitted Stephen-Authored Apple Pull Requests
 
