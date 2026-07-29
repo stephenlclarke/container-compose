@@ -1,18 +1,29 @@
 # Compose Runtime Coupling Audit
 
-This audit classifies the fork-only commits needed by `container-compose` against clean Apple-upstream worktrees. It is a review record, not an Apple handoff: [README.md](README.md) remains the policy for drafts that should be raised upstream.
+This audit classifies the fork-only commits carried for `container-compose`,
+including explicit removal candidates, against current Apple upstream refs. It
+is a review record, not an Apple handoff: [README.md](README.md) remains the
+policy for drafts that should be raised upstream.
 
 ## Clean Baselines
 
-The baseline worktrees are clean local branches at Apple upstream heads. They make the retained delta independently inspectable without modifying the established support forks.
+The baseline refs were fetched from Apple and Stephen-owned remotes. The
+strict report inspects the clean supported `main` branches without modifying
+them.
 
-| Repository | Clean worktree | Apple upstream head | Fork divergence at audit | Diff from Apple baseline |
+| Repository | Apple upstream head | Fork head | Fork divergence at audit | Diff from Apple baseline |
 | --- | --- | --- | --- | --- |
-| `container` | `/Users/sclarke/github/worktrees/container-apple-upstream-audit-20260717` | `07ff3c0a72503a71f161784c95d059e80058af14` | 0 behind, 165 ahead | 254 files, 22,982 additions, 1,080 deletions |
-| `containerization` | `/Users/sclarke/github/worktrees/containerization-apple-upstream-audit-20260717` | `2a591c2aeed6ff0cc70f00a5a8bf06b112b433c2` | 0 behind, 78 ahead | 76 files, 5,209 additions, 360 deletions |
-| `container-builder-shim` | `/Users/sclarke/github/worktrees/container-builder-shim-apple-upstream-audit-20260717` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | 0 behind, 31 ahead | 60 files, 2,474 additions, 875 deletions |
+| `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `367430446959e3048da37f5f64d3c10e1293d3de` | 2 behind, 327 ahead | 348 files, 31,499 additions, 1,231 deletions |
+| `containerization` | `7800b4642171561c95b5f55500b19e5dce5acd45` | `043193efa5f1a2e21a240041d6edd71d7673739e` | 2 behind, 133 ahead | 110 files, 8,570 additions, 493 deletions |
+| `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `f97cddf5b3aae2426a094613793c11c41b1d2e53` | 0 behind, 33 ahead | 60 files, 2,533 additions, 881 deletions |
 
-The graph contains 274 fork-ahead commits. The audit reviewed all 248 non-merge semantic commits (`152` in `container`, `69` in `containerization`, and `27` in `container-builder-shim`) with `git log --cherry-pick --right-only --no-merges` against those Apple heads.
+The graph contains 493 fork-ahead commits. The refreshed audit reviewed and
+classified all 430 patch-unique non-merge semantic commits (`290` in
+`container`, `112` in `containerization`, and `28` in
+`container-builder-shim`) with `git log --cherry-pick --right-only
+--no-merges` against those Apple heads. The exact ownership and disposition
+registry is
+[Fork Commit Classifications](FORK-COMMIT-CLASSIFICATIONS.md).
 
 ## Classification Rule
 
@@ -40,6 +51,11 @@ The remaining runtime-composition candidates are deliberately retained:
 - Copy/export, log/event streaming, health observation, and lifecycle paths require runtime-owned state or guest processes.
 - Build attestations, SSH forwarding, named-builder selection, checks, and BuildKit transport remain builder primitives. Recreating the builder-shim lifecycle in Compose would increase, rather than reduce, coupling.
 
+The complete refreshed classification contains 304 support-maintenance
+commits, 101 generic runtime primitives, 21 temporary upstream ports, and four
+rejected Compose-policy commits. The rejected config, secret, and Keychain
+storage slices are explicit FORK-105 removal candidates.
+
 ## Decorator Boundary
 
 A focused decorator remains appropriate only after the runtime exposes a constrained, versioned extension or a complete typed primitive. It can validate Compose-owned plans, negotiate a declared capability, and translate that plan at the `ComposeRuntimeSPI` boundary. It must not use source swizzling, private runtime storage, process injection, or a general interception framework.
@@ -56,4 +72,11 @@ git -C /Users/sclarke/github/containerization log --cherry-pick --right-only --n
 git -C /Users/sclarke/github/container-builder-shim log --cherry-pick --right-only --no-merges --oneline origin/main...main
 ```
 
-Classify every new semantic commit with the rule above. Preserve bug fixes and generic runtime primitives in the support forks; move only complete Compose-only slices into the provider layer.
+Classify every new semantic commit with the rule above. Preserve bug fixes and generic runtime primitives in the support forks; move only complete Compose-only slices into the provider layer. Update the reviewed JSON registry explicitly, then run:
+
+```sh
+make fork-classifications-check
+```
+
+The check fails for an unclassified, duplicate, stale, or invalid entry and
+does not assign a disposition automatically.
