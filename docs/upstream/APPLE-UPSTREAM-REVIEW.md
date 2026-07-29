@@ -25,15 +25,19 @@ fork `main`. The left/right counts are from `git rev-list
 
 The published default branches now contain Apple #2027, #2038, #822, and #824,
 so neither fork is behind its fetched Apple `main`. The current development
-pins advance beyond those defaults for network service discovery:
-`container` `ae66e3e2e69fee3c26fa84a402df79ccc45ca9bc` contains fork `main`
-through a merge parent and pins
+pins advance beyond those defaults for network service discovery and XPC
+reliability: `container` `a528d38dff0d941902ead5a206ec03b5118509f6`
+contains fork `main` through a merge parent and pins
 `containerization` `d7377b962af724f8d7c2b640f3ab12184d33f1af`,
 which likewise contains its fork `main`. The linked feature branches passed
-their focused tests, full runtime tests and checks, and a live
-service-discovery integration test before this pin update. The fork-only
-counts include merge commits and intentionally retained generic runtime work;
-they are not a count of changes that are ready for Apple.
+their focused tests, full runtime tests and checks, a live service-discovery
+integration test, and deterministic XPC cancellation and launchd diagnostic
+regressions before this pin update. The pinned Container head also makes
+Developer ID archive verification, including the complete Apple certification
+chain, a mandatory release test; that packaging policy is Stephen-owned and
+does not change the Apple-facing runtime patch.
+The fork-only counts include merge commits and intentionally retained generic
+runtime work; they are not a count of changes that are ready for Apple.
 
 ## Submitted Stephen-Authored Apple Pull Requests
 
@@ -162,7 +166,7 @@ validation before submission.
 
 | Pull request | Local disposition |
 | --- | --- |
-| [apple/container#1862](https://github.com/apple/container/pull/1862) | Preferred XPC cancellation implementation. Imported unchanged as the first standalone commit in `apple/container#1935`, with deterministic tests in the next commit. Drop the import when this PR lands. |
+| [apple/container#1862](https://github.com/apple/container/pull/1862) | Preferred XPC cancellation implementation. The supported stack adapts its cancellation and unknown-route behavior in `c8b70994199f68e0f5ee0e0c7eecacbee84ffea7` without regressing the fork's stronger timeout error code and direct resume-once path. Deterministic pre-storage cancellation, caller cancellation, delayed timeout reply, delayed cancellation reply, client reuse, and unknown-route tests pass. The unchanged Apple commit remains the base of `apple/container#1935`; drop both local representations when #1862 lands. |
 | [apple/container#1926](https://github.com/apple/container/pull/1926) | Its attached-exec disconnect cleanup is represented in `stephenlclarke/container`; its separate stop-timeout path still needs single-owner cleanup review. |
 | [apple/container-builder-shim#87](https://github.com/apple/container-builder-shim/pull/87) | Its `.dockerignore` re-included-parent fix is represented by standalone commit `2778407`; the fork retains its staged-Dockerfile safeguard until the upstream shape lands. |
 | [apple/container#1735](https://github.com/apple/container/pull/1735) | Preferred daemon entry-point ID validation. Imported as standalone commit `16ecfd5`; the broader residual bundle-path and volume-disk-usage hardening is tracked in [PR-container-storage-path-validation.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-container-storage-path-validation.md) and must follow this PR rather than compete with it. |
@@ -172,6 +176,7 @@ validation before submission.
 
 | Pull request | Local disposition |
 | --- | --- |
+| [apple/container#2006](https://github.com/apple/container/pull/2006) | Merged 27 July 2026 as `13e976f88e7da4ff71559b7e6e4e763ff38364ce`, closing [apple/container#2003](https://github.com/apple/container/issues/2003). The supported fork contains the merge through its current Apple baseline; no fork-only replacement is needed. |
 | [apple/container#1818](https://github.com/apple/container/pull/1818) | Closed 20 July 2026 without merge. The ordered-journaling source change remains a fork-only standalone commit at `6e525cc`. |
 | [apple/container#1708](https://github.com/apple/container/pull/1708) | Open and approved; GitHub currently reports mergeability as unknown. Already represented by the machine-configuration documentation in `3bb6864`. |
 | [apple/container#1660](https://github.com/apple/container/pull/1660) | Open and approved; GitHub currently reports mergeability as unknown. Already represented by the application-root backup exclusion in `3bb6864`. |

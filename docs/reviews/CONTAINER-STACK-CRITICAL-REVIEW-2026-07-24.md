@@ -740,9 +740,9 @@ Resolution update (2026-07-26):
 | [container #1941](https://github.com/apple/container/issues/1941) | Resolved in the supported fork by the content-identical #1997 port; Apple convergence remains open. |
 | [container #1967](https://github.com/apple/container/issues/1967) | Equivalent complete-tail behavior was already present in the supported fork and now has explicit chunk-boundary regressions; Apple #2000 remains the upstream path. |
 | [container #2009](https://github.com/apple/container/issues/2009) | The supported init-process reattach path isolates failed clients through `AttachableOutput`, with a persistent-log regression. Apple main still needs its own reviewed correction. |
-| [container #2007](https://github.com/apple/container/issues/2007) | Delayed XPC replies can cause checked-continuation misuse and process crash. |
-| [container #2008](https://github.com/apple/container/issues/2008) | `container system start` can hide launchd bootstrap failure and report a misleading XPC error in CI/non-login sessions. |
-| [container #2003](https://github.com/apple/container/issues/2003) | Runtime startup remains susceptible to reported intermittent failure. |
+| [container #2007](https://github.com/apple/container/issues/2007) | Complete on the supported fork in `c8b7099`: caller cancellation, timeout, delayed-reply, client-reuse, and unknown-route regressions pass without continuation misuse. Apple convergence remains through #1862 and #1965. |
+| [container #2008](https://github.com/apple/container/issues/2008) | Complete on the supported fork in `4f5c203`: launchd bootstrap failures preserve their command, exit status, and diagnostics instead of becoming a misleading XPC timeout. The Apple issue remains open. |
+| [container #2003](https://github.com/apple/container/issues/2003) | Closed by merged Apple PR #2006 on 27 July 2026. The supported fork includes that Apple baseline and does not carry a replacement. |
 | [container #1916](https://github.com/apple/container/issues/1916) | Exec/stop hangs overlap Compose lifecycle cancellation and timeout behaviour. |
 | [container #1917](https://github.com/apple/container/issues/1917) | Resolver search-domain pollution is fixed in the support fork and should converge upstream. |
 | [container #1927](https://github.com/apple/container/issues/1927) | Missing copy source can poison later lifecycle operations; fixed locally and proposed in lower-runtime PR #799. |
@@ -881,7 +881,7 @@ Goal: make long-running and interactive workloads predictable.
 | LIFE-301 | ✅ Complete | Compose | Orchestrate `pre_start` helpers using pinned primitives | Inherited mounts/networks/env/user/workdir, failure propagation, cleanup, idempotence/scaling, and Docker parity pass |
 | LIFE-302 | ✅ Complete | Compose | Run lifecycle hooks around interactive foreground `run` | Reattach, one-shot signal proxy, detach keys, hook order, exact exit status, auto-removal, and cancellation pass |
 | LOG-303 | ✅ Complete | Runtime/Compose | Stabilise signal payload, tail boundaries, and attached-client fan-out | #1941, #1967, and #2009 regressions pass under the committed Compose attach/log fixture; Apple convergence remains tracked separately |
-| XPC-304 | P1 | Apple/runtime | Resolve delayed-reply continuation crash and startup error masking | No continuation misuse; bootstrap root cause preserved; repeated start/stop soak passes |
+| XPC-304 | ✅ Complete on supported fork | Apple/runtime | Resolve delayed-reply continuation crash and startup error masking | Deterministic cancellation and startup-diagnostic regressions pass; ten bounded release-build stop/start cycles completed without failure or timeout |
 | STATE-305 | P2 | Runtime/Compose | Add feasible `dead`, `restarting`, and `removing` states | Inspect, `ps`, filters, wait, and transition parity pass |
 | EVT-306 | P2 | Runtime/Compose | Add oom, explicit restart, rename, resize, update, attach/detach events | Event order, attributes, JSON/text rendering, filters, and no duplicate remove action |
 | STATS-307 | P2 | Runtime/Compose | Complete machine-backed CPU/memory statistics | Streaming/no-stream output has defined denominators and Docker-compatible unavailable values |
@@ -957,13 +957,13 @@ Phase gate:
 
 ### Passed
 
-- Network service-discovery development pins:
-  - `container` `73da8cc75de4efcc107131c1448357c82090d1ff`
+- Network service-discovery and XPC reliability development pins:
+  - `container` `a528d38dff0d941902ead5a206ec03b5118509f6`
   - `containerization` `d7377b962af724f8d7c2b640f3ab12184d33f1af`
   - focused runtime tests covered DNS parsing/forwarding, network lookup order,
     alias canonicalisation/collision handling, attachment allocation, and the
     ProcessIO input pump;
-  - the full pinned `container` suite passed with 1,251 tests in 144 suites;
+  - the full pinned `container` suite passed with 1,261 tests in 144 suites;
   - the timed live service-discovery matrix passed all nine behavioural
     comparisons against Docker. Container Compose medians ranged from 2.27x
     to 5.13x for steady-state operations; cold project startup was 7.095
@@ -977,6 +977,33 @@ Phase gate:
     test` passed in 113.15 seconds with 1,272 Swift tests executed, 25
     live-runtime tests explicitly skipped, and all Go normaliser tests
     passing; `make check` passed in 108.44 seconds.
+- XPC cancellation and startup diagnostics:
+  - deterministic pre-storage cancellation, caller cancellation, delayed
+    timeout reply, delayed cancellation reply, client reuse, unknown-route,
+    bootstrap failure, and legacy launchd fallback tests passed;
+  - ten release-package stop/start cycles completed on macOS 26.5.1
+    (`25F80`) on an Apple M5 with a 60-second command timeout and 180-second
+    harness timeout;
+  - no operation failed or timed out; stop median was 0.112 seconds, the first
+    cold start was 4.654 seconds, and the following nine starts had a
+    0.553-second median and 0.645-second maximum;
+  - the pre-test debug runtime was restored and reported running afterwards;
+  - raw timings, workload, environment, repetitions, and bounds are retained
+    in `docs/reviews/container-system-start-stop-soak-timings-2026-07-29.tsv`.
+- Developer ID release signing:
+  - the Container and Compose package paths sign every Mach-O with hardened
+    runtime and a secure timestamp using repository secrets imported into an
+    isolated temporary keychain;
+  - verification requires the Developer ID Application leaf, Developer ID
+    Certification Authority, Apple Root CA, and one consistent ten-character
+    team identifier across every executable;
+  - archive verification rejects ad hoc signatures, missing hardened runtime,
+    mixed team identifiers, unsafe archive paths, and archives without Mach-O
+    files before attestation or publication;
+  - local release packaging and all verifier regressions pass for both
+    archives; actual Developer ID certificate, authority, team, and timestamp
+    proof remains a hosted release gate because GitHub secret values are not
+    exported to local validation.
 - Legacy links now use source-scoped DNS mappings rather than static
   `/etc/hosts` projection:
   - Docker Compose v5.3.1 confirmed that a scaled link alias selects the first
