@@ -856,9 +856,9 @@ Dependencies: Phase 1 capability boundary; Apple DNS/listener design.
 
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
-| NET-201 | P1 | Apple runtime | Deliver container-facing network-scoped DNS listener | Containers resolve service and container names only on shared networks; updates are atomic |
-| NET-202 | P1 | Apple runtime | Register aliases with attachment lifecycle | Create/connect/disconnect/delete update records; collisions and stale records are deterministic |
-| NET-203 | P1 | Compose | Map service names, `networks.aliases`, `--use-aliases`, and links to DNS | Docker parity covers scale, recreate, static IP, address change, and alias collision |
+| NET-201 | P1 | Apple runtime | **Complete on supported stack:** deliver container-facing network-scoped DNS listener | Containers resolve service and container names only on shared networks; updates are atomic |
+| NET-202 | P1 | Apple runtime | **Complete on supported stack:** register aliases with attachment lifecycle | Create/connect/disconnect/delete update records; collisions and stale records are deterministic |
+| NET-203 | P1 | Compose | **Complete:** map service names, `networks.aliases`, and `--use-aliases` to DNS | Timed Docker parity covers scale, recreate, static IP, container names, service names, explicit aliases, shared aliases, and one-off `run --use-aliases` |
 | NET-204 | P2 | Apple runtime | Define durable multi-container sandbox with independent network namespaces | PID/IPC sharing does not collapse network isolation; lifecycle and recovery are tested |
 | NET-205 | P2 | Compose | Implement `network_mode: service:` and `container:` after NET-204 | Namespace identity, dependency order, teardown, and error parity pass |
 | NET-206 | P2 | Apple/Compose | Complete feasible IPAM fields | Disabled IPv4, multiple pools, IPv6 range/aux, and error parity are explicit |
@@ -958,18 +958,25 @@ Phase gate:
 ### Passed
 
 - Network service-discovery development pins:
-  - `container` `0274f4a947b0df1b5f36436f677f46f5369e8b10`
+  - `container` `ae66e3e2e69fee3c26fa84a402df79ccc45ca9bc`
   - `containerization` `d7377b962af724f8d7c2b640f3ab12184d33f1af`
   - focused runtime tests covered DNS parsing/forwarding, network lookup order,
-    alias canonicalisation/collision handling, and attachment allocation;
-  - the full pinned `container` suite passed with 1,235 tests in 143 suites;
-  - the live service-discovery integration test passed in 4.652 seconds,
-    compared with 4.577 seconds on the equivalent pre-merge tree;
-  - the isolated integration command took 282.78 seconds including the custom
-    init-image rebuild and warm-up;
+    alias canonicalisation/collision handling, attachment allocation, and the
+    ProcessIO input pump;
+  - the full pinned `container` suite passed with 1,244 tests in 144 suites;
+  - the timed live service-discovery matrix passed all nine behavioural
+    comparisons against Docker. Container Compose medians ranged from 2.27x
+    to 5.13x for steady-state operations; cold project startup was 7.095
+    seconds versus Docker's 0.705 seconds and remained below the documented
+    material-regression threshold;
+  - the exact published builder digest passed a no-cache DNS build in 27.71
+    seconds;
   - `HAWKEYE_AUTO_INSTALL=1 make ci` passed on the coordinated Compose pins in
-    308.85 seconds with 1,272 Swift tests executed and 25 live-runtime tests
-    explicitly skipped.
+    602.79 seconds;
+  - after advancing the Container pin for the ProcessIO correction, `make
+    test` passed in 113.15 seconds with 1,272 Swift tests executed, 25
+    live-runtime tests explicitly skipped, and all Go normaliser tests
+    passing; `make check` passed in 108.44 seconds.
 - `HAWKEYE_AUTO_INSTALL=1 make ci` in clean `container-compose`
   - Python coverage tooling: 4 tests
   - release tooling: 155 tests

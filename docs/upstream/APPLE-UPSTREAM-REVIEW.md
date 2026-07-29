@@ -26,7 +26,7 @@ fork `main`. The left/right counts are from `git rev-list
 The published default branches now contain Apple #2027, #2038, #822, and #824,
 so neither fork is behind its fetched Apple `main`. The current development
 pins advance beyond those defaults for network service discovery:
-`container` `3560a2599c4b9f8040446308a070f9f499f3ebb4` contains fork `main`
+`container` `ae66e3e2e69fee3c26fa84a402df79ccc45ca9bc` contains fork `main`
 through a merge parent and pins
 `containerization` `d7377b962af724f8d7c2b640f3ab12184d33f1af`,
 which likewise contains its fork `main`. The linked feature branches passed
@@ -114,6 +114,13 @@ upstreamable:
   not have. The XPC regression also depends on the fork's
   `ContainerXPCTests` target and prior variable-descriptor-array test
   infrastructure, neither of which exists on stock.
+
+The supported development branch contains both corrections. The XPC ownership
+case uses the stronger independent fix at
+`6320cf8203a8544bb049ef030f7be569748dc667`; the ProcessIO input pump was
+ported as `ae66e3e2e69fee3c26fa84a402df79ccc45ca9bc`. Focused ProcessIO testing,
+`make check`, and the full 1,244-test Container suite pass at that published
+head. These local corrections do not change the Apple submission state.
 
 The upstream disposition is to split PR #33 into two unsubmitted,
 stock-shaped proposals: one focused XPC `FileHandle` ownership correction
@@ -227,8 +234,9 @@ validation before submission.
   report `action_required` without starting jobs for #2031, #820, and #821;
   #2035, #2036, and #823 have no hosted check suites.
 - Rebase `apple/container#1935` after `apple/container#1862` lands so the preferred upstream XPC commit is not duplicated.
-- Split `stephenlclarke/container#33` into separate stock-shaped XPC ownership
-  and ProcessIO backpressure proposals. Neither has been submitted to Apple.
+- Split the supported XPC ownership and ProcessIO backpressure corrections
+  derived from `stephenlclarke/container#33` into separate stock-shaped
+  proposals. Neither has been submitted to Apple.
 - Track third-party direct-stream drafts `apple/containerization#812` and
   `apple/container#1947` without importing them verbatim. The supported fork
   now carries an independently reviewed and strengthened implementation; Apple
