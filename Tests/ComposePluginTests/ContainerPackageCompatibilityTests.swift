@@ -55,6 +55,7 @@ private let matchingSystemVersionJSON = """
         "io.github.stephenlclarke.container.compose.create-configuration.v1",
         "io.github.stephenlclarke.container.compose.image-filesystem.v1",
         "io.github.stephenlclarke.container.compose.lifecycle.v1",
+        "io.github.stephenlclarke.container.compose.network-scoped-aliases.v1",
         "io.github.stephenlclarke.container.compose.observation.v1"
       ],
       "source": "stephenlclarke/container",

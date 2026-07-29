@@ -21,6 +21,7 @@ enum ComposeRuntimeCapability: String, CaseIterable, Codable, Sendable {
   case createConfiguration = "io.github.stephenlclarke.container.compose.create-configuration.v1"
   case imageFilesystem = "io.github.stephenlclarke.container.compose.image-filesystem.v1"
   case lifecycle = "io.github.stephenlclarke.container.compose.lifecycle.v1"
+  case networkScopedAliases = "io.github.stephenlclarke.container.compose.network-scoped-aliases.v1"
   case observation = "io.github.stephenlclarke.container.compose.observation.v1"
 }
 

@@ -1156,21 +1156,12 @@ extension ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests.contains("legacy_db"))
     }
 
-    @Test("run maps legacy links to static host entries after starting dependencies")
-    func runMapsLegacyLinksToStaticHostEntriesAfterStartingDependencies() async throws {
+    @Test("run maps legacy links to source-scoped DNS aliases after starting dependencies")
+    func runMapsLegacyLinksToSourceScopedDNSAliasesAfterStartingDependencies() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
-            "demo-db-1": [
-                nil,
-                ComposeContainerSummary(
-                    id: "demo-db-1",
-                    status: "running",
-                    networks: [
-                        ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
-                    ]
-                ),
-            ],
+            "demo-db-1": [nil],
         ])
         let project = composeProject(
             name: "demo",
@@ -1196,9 +1187,10 @@ extension ComposeOrchestratorTests {
         let dependencyCommand = try #require(runner.commands.first?.arguments)
         let runCommand = try #require(runner.commands.last?.arguments)
         #expect(dependencyCommand.containsSequence(["--name", "demo-db-1"]))
-        #expect(runCommand.containsSequence(["--network", "demo_backend"]))
-        #expect(runCommand.containsSequence(["--add-host", "database:192.168.64.20"]))
+        #expect(runCommand.containsSequence(["--network", "demo_backend,dns-alias=database:demo-db-1"]))
+        #expect(!runCommand.contains("--add-host"))
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
+        #expect(await discoveryManager.getRequests == ["demo-db-1"])
     }
 
     @Test("run maps hostnames to runtime arguments")

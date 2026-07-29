@@ -76,17 +76,10 @@ public extension ComposeOrchestrator {
         try await ensureResources(project: workingProject)
 
         for serviceReference in services {
-            var service = workingProject.services[serviceReference.name] ?? serviceReference
+            let service = workingProject.services[serviceReference.name] ?? serviceReference
             if shouldBuildServiceForCreate(create, service: service) {
                 try await build(project: project, services: [service.name], noCache: false, quiet: create.quietBuild)
             }
-
-            service = try await serviceByResolvingLinkHosts(
-                project: workingProject,
-                service: service,
-                scaleOverrides: scaleOverrides,
-            )
-            workingProject.services[service.name] = service
 
             let replicaCount = try serviceReplicaCount(service, scaleOverrides: scaleOverrides)
             if replicaCount > 0 {

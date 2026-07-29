@@ -1594,21 +1594,12 @@ extension ComposeOrchestratorTests {
         #expect(request.volumeName.hasPrefix("demo_anon-api-1-"))
     }
 
-    @Test("create maps legacy links to static host entries after creating dependencies")
-    func createMapsLegacyLinksToStaticHostEntriesAfterCreatingDependencies() async throws {
+    @Test("create maps legacy links to source-scoped DNS aliases after creating dependencies")
+    func createMapsLegacyLinksToSourceScopedDNSAliasesAfterCreatingDependencies() async throws {
         let runner = RecordingRunner(responses: [.success, .success])
         let resourceManager = RecordingContainerResourceManager()
         let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
-            "demo-db-1": [
-                nil,
-                ComposeContainerSummary(
-                    id: "demo-db-1",
-                    status: "created",
-                    networks: [
-                        ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
-                    ]
-                ),
-            ],
+            "demo-db-1": [nil],
         ])
         let project = composeProject(
             name: "demo",
@@ -1634,9 +1625,10 @@ extension ComposeOrchestratorTests {
         let dependencyCommand = try #require(runner.commands.first?.arguments)
         let createCommand = try #require(runner.commands.last?.arguments)
         #expect(dependencyCommand.containsSequence(["--name", "demo-db-1"]))
-        #expect(createCommand.containsSequence(["--network", "demo_backend"]))
-        #expect(createCommand.containsSequence(["--add-host", "database:192.168.64.20"]))
+        #expect(createCommand.containsSequence(["--network", "demo_backend,dns-alias=database:demo-db-1"]))
+        #expect(!createCommand.contains("--add-host"))
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
+        #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-api-1"])
     }
 
     @Test("create maps disabled logging driver to runtime policy")
@@ -6309,22 +6301,11 @@ extension ComposeOrchestratorTests {
         #expect(commands[0].starts(with: ["container", "run", "--name", "demo-job-1"]))
     }
 
-    @Test("up maps explicit legacy links to static host entries")
-    func upMapsExplicitLegacyLinksToStaticHostEntries() async throws {
+    @Test("up maps explicit legacy links to source-scoped DNS aliases")
+    func upMapsExplicitLegacyLinksToSourceScopedDNSAliases() async throws {
         let runner = RecordingRunner(responses: [.success, .success])
         let resourceManager = RecordingContainerResourceManager()
-        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
-            "demo-redis-1": [
-                nil,
-                ComposeContainerSummary(
-                    id: "demo-redis-1",
-                    status: "running",
-                    networks: [
-                        ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
-                    ]
-                ),
-            ],
-        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -6332,7 +6313,7 @@ extension ComposeOrchestratorTests {
                     $0.networks = ["backend"]
                 },
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.links = ["redis:cache"]
+                    $0.links = ["redis:cache", "redis:cache"]
                     $0.networks = ["backend"]
                 },
             ]
@@ -6351,29 +6332,19 @@ extension ComposeOrchestratorTests {
         let redisCommand = try #require(runner.commands.first?.arguments)
         let apiCommand = try #require(runner.commands.last?.arguments)
         #expect(redisCommand.containsSequence(["--network", "demo_backend"]))
-        #expect(!redisCommand.contains("demo_backend,alias=cache"))
-        #expect(apiCommand.containsSequence(["--network", "demo_backend"]))
-        #expect(apiCommand.containsSequence(["--add-host", "cache:192.168.64.20"]))
+        #expect(!redisCommand.contains(where: { $0.contains("dns-alias=cache:demo-redis-1") }))
+        #expect(apiCommand.containsSequence(["--network", "demo_backend,dns-alias=cache:demo-redis-1"]))
+        #expect(apiCommand.filter { $0.contains("dns-alias=cache:demo-redis-1") }.count == 1)
+        #expect(!apiCommand.contains("--add-host"))
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
-        #expect(await discoveryManager.getRequests == ["demo-redis-1", "demo-redis-1", "demo-api-1"])
+        #expect(await discoveryManager.getRequests == ["demo-redis-1", "demo-api-1"])
     }
 
-    @Test("up maps implicit legacy links to static host entries")
-    func upMapsImplicitLegacyLinksToStaticHostEntries() async throws {
+    @Test("up maps implicit legacy links to source-scoped DNS aliases")
+    func upMapsImplicitLegacyLinksToSourceScopedDNSAliases() async throws {
         let runner = RecordingRunner(responses: [.success, .success])
         let resourceManager = RecordingContainerResourceManager()
-        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
-            "demo-redis-1": [
-                nil,
-                ComposeContainerSummary(
-                    id: "demo-redis-1",
-                    status: "running",
-                    networks: [
-                        ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
-                    ]
-                ),
-            ],
-        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -6398,7 +6369,8 @@ extension ComposeOrchestratorTests {
         })
 
         let apiCommand = try #require(runner.commands.last?.arguments)
-        #expect(apiCommand.containsSequence(["--add-host", "redis:192.168.64.20"]))
+        #expect(apiCommand.containsSequence(["--network", "demo_backend,dns-alias=redis:demo-redis-1"]))
+        #expect(!apiCommand.contains("--add-host"))
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
     }
 
@@ -6406,18 +6378,7 @@ extension ComposeOrchestratorTests {
     func upResolvesLegacyLinksThroughNormalizedDefaultNetwork() async throws {
         let runner = RecordingRunner(responses: [.success, .success])
         let resourceManager = RecordingContainerResourceManager()
-        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
-            "demo-redis-1": [
-                nil,
-                ComposeContainerSummary(
-                    id: "demo-redis-1",
-                    status: "running",
-                    networks: [
-                        ComposeContainerNetworkAttachment(network: "demo_default", ipv4Address: "192.168.64.20"),
-                    ]
-                ),
-            ],
-        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -6442,36 +6403,15 @@ extension ComposeOrchestratorTests {
         })
 
         let apiCommand = try #require(runner.commands.last?.arguments)
-        #expect(apiCommand.containsSequence(["--network", "demo_default"]))
-        #expect(apiCommand.containsSequence(["--add-host", "cache:192.168.64.20"]))
+        #expect(apiCommand.containsSequence(["--network", "demo_default,dns-alias=cache:demo-redis-1"]))
+        #expect(!apiCommand.contains("--add-host"))
         #expect(await resourceManager.requests.map(\.name) == ["demo_default"])
     }
 
-    @Test("up maps every linked replica through its single shared network")
-    func upMapsEveryLinkedReplicaThroughItsSingleSharedNetwork() async throws {
+    @Test("up maps a scaled link target once through its single shared network")
+    func upMapsScaledLinkTargetOnceThroughItsSingleSharedNetwork() async throws {
         let runner = RecordingRunner(responses: [.success, .success, .success])
-        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
-            "demo-db-1": [
-                nil,
-                ComposeContainerSummary(
-                    id: "demo-db-1",
-                    status: "running",
-                    networks: [
-                        ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
-                    ]
-                ),
-            ],
-            "demo-db-2": [
-                nil,
-                ComposeContainerSummary(
-                    id: "demo-db-2",
-                    status: "running",
-                    networks: [
-                        ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.21"),
-                    ]
-                ),
-            ],
-        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -6499,9 +6439,9 @@ extension ComposeOrchestratorTests {
 
         let apiCommand = try #require(runner.commands.last?.arguments)
         #expect(apiCommand.containsSequence(["--network", "demo_frontend"]))
-        #expect(apiCommand.containsSequence(["--network", "demo_backend"]))
-        #expect(apiCommand.containsSequence(["--add-host", "database:192.168.64.20"]))
-        #expect(apiCommand.containsSequence(["--add-host", "database:192.168.64.21"]))
+        #expect(apiCommand.containsSequence(["--network", "demo_backend,dns-alias=database:demo-db-1"]))
+        #expect(apiCommand.filter { $0.contains("dns-alias=database:demo-db-1") }.count == 1)
+        #expect(!apiCommand.contains("--add-host"))
     }
 
     @Test("up maps external links to generated host entries")
@@ -6740,7 +6680,7 @@ extension ComposeOrchestratorTests {
                 })
             Issue.record("Expected conflicting host entry error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' links to 'redis' with alias 'cache', but extra_hosts already defines that hostname; generated static host entries cannot override host entries"))
+            #expect(error == .unsupported("service 'api' links to 'redis' with alias 'cache', but extra_hosts already defines that hostname; generated link aliases cannot override host entries"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -6778,7 +6718,7 @@ extension ComposeOrchestratorTests {
                 })
             Issue.record("Expected conflicting link alias error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' maps both links to 'redis' and links to 'cache' to alias 'database'; generated static host entries require each alias to reference exactly one target"))
+            #expect(error == .unsupported("service 'api' maps both links to 'redis' and links to 'cache' to alias 'database'; each generated alias must reference exactly one target"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -6787,8 +6727,8 @@ extension ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
-    @Test("up rejects static host aliases shared by links and external links before creating resources")
-    func upRejectsStaticHostAliasesSharedByLinksAndExternalLinksBeforeCreatingResources() async throws {
+    @Test("up rejects generated aliases shared by links and external links before creating resources")
+    func upRejectsGeneratedAliasesSharedByLinksAndExternalLinksBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
@@ -6814,7 +6754,7 @@ extension ComposeOrchestratorTests {
                 })
             Issue.record("Expected conflicting static host alias error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' maps both links to 'redis' and external_links to 'legacy_db' to alias 'database'; generated static host entries require each alias to reference exactly one target"))
+            #expect(error == .unsupported("service 'api' maps both links to 'redis' and external_links to 'legacy_db' to alias 'database'; each generated alias must reference exactly one target"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -6823,8 +6763,8 @@ extension ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
-    @Test("up rejects links without one shared network")
-    func upRejectsLinksWithoutOneSharedNetwork() async throws {
+    @Test("up rejects links without a shared network")
+    func upRejectsLinksWithoutSharedNetwork() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -6842,12 +6782,87 @@ extension ComposeOrchestratorTests {
             })
             Issue.record("Expected unsupported links error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' links to 'redis'; links require both services to share exactly one Compose network until apple/container exposes source-scoped DNS links"))
+            #expect(error == .unsupported("service 'api' links to 'redis'; links require both services to share a Compose network"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
         #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up maps links through the first normalised shared network")
+    func upMapsLinksThroughFirstNormalisedSharedNetwork() async throws {
+        let runner = RecordingRunner(responses: [.success, .success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "redis": composeService(name: "redis", image: "redis:7") {
+                    $0.networks = ["second", "first"]
+                },
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.links = ["redis:cache"]
+                    $0.networks = ["second", "first"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "first": ComposeNetwork(name: "first"),
+                "second": ComposeNetwork(name: "second"),
+            ]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions {
+                $0.services = ["api"]
+            })
+
+        let command = try #require(runner.commands.last?.arguments)
+        #expect(command.containsSequence(["--network", "demo_first,dns-alias=cache:demo-redis-1"]))
+        #expect(command.containsSequence(["--network", "demo_second"]))
+        #expect(!command.contains(where: { $0 == "demo_second,dns-alias=cache:demo-redis-1" }))
+    }
+
+    @Test("link target runtime inputs affect the source config hash")
+    func linkTargetRuntimeInputsAffectSourceConfigHash() throws {
+        let source = composeService(name: "api", image: "example/api") {
+            $0.links = ["redis:cache"]
+            $0.networks = ["first", "second"]
+        }
+        let original = composeProject(
+            name: "demo",
+            services: [
+                "redis": composeService(name: "redis", image: "redis:7") {
+                    $0.containerName = "custom-redis"
+                    $0.networks = ["first", "second"]
+                },
+                "api": source,
+            ]
+        )
+        let renamedTarget = composeProject(
+            name: "demo",
+            services: [
+                "redis": composeService(name: "redis", image: "redis:7") {
+                    $0.containerName = "replacement-redis"
+                    $0.networks = ["first", "second"]
+                },
+                "api": source,
+            ]
+        )
+        let movedTarget = composeProject(
+            name: "demo",
+            services: [
+                "redis": composeService(name: "redis", image: "redis:7") {
+                    $0.containerName = "custom-redis"
+                    $0.networks = ["second"]
+                },
+                "api": source,
+            ]
+        )
+
+        let originalHash = try configHash(project: original, service: source)
+        #expect(try configHash(project: renamedTarget, service: source) != originalHash)
+        #expect(try configHash(project: movedTarget, service: source) != originalHash)
     }
 
     @Test("up maps hostnames to runtime arguments")

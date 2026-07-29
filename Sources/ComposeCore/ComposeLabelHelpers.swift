@@ -191,6 +191,7 @@ func configHash(
             service: service,
             externalVolumeMounts: externalVolumeMounts,
         ),
+        linkTargets: try serviceLinkTargetFingerprints(project: project, service: service),
     )
     guard let data = try? encoder.encode(fingerprint) else {
         return stableHash(service.name)
@@ -199,6 +200,24 @@ func configHash(
         return stableHash(service.name)
     }
     return stableHash(encodedFingerprint)
+}
+
+/// Returns target inputs that affect one service's source-scoped link aliases.
+func serviceLinkTargetFingerprints(
+    project: ComposeProject,
+    service: ComposeService,
+) throws -> [String: ServiceLinkTargetFingerprint] {
+    var targets: [String: ServiceLinkTargetFingerprint] = [:]
+    for reference in try serviceLinkReferences(service: service, project: project) {
+        guard let target = project.services[reference.serviceName] else {
+            continue
+        }
+        targets[reference.serviceName] = ServiceLinkTargetFingerprint(
+            containerName: target.containerName.map(slug),
+            networks: (target.networks ?? []).sorted(),
+        )
+    }
+    return targets
 }
 
 /// Validates user-supplied service labels and label files before side effects.

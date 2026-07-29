@@ -1,0 +1,53 @@
+# generated_at=2026-07-29T11:27:57Z
+# workload=startup,scaled-link-lookup,scaled-link-isolation,readdress-link-isolation,scaled-link-hosts,readdress-link-hosts,readdress,post-readdress-lookup
+# repetitions=3
+# comparison=median elapsed monotonic seconds by matching operation
+# timeout_seconds=180
+# material_slowdown=max_ratio:30,min_delta_seconds:60
+# fixture_image=alpine:3.20
+# image_preparation=pulled outside the timed startup workload
+implementation	operation	repetition	seconds
+# host=Darwin arm64
+# docker_engine=29.5.2
+# docker_compose=5.3.1
+# container_compose=0.10.1
+docker	startup	1	0.637069
+docker	scaled_link_lookup	1	0.203813
+docker	scaled_link_lookup	2	0.204526
+docker	scaled_link_lookup	3	0.206643
+docker	scaled_link_isolation	1	0.284769
+docker	scaled_link_isolation	2	0.209405
+docker	scaled_link_isolation	3	0.210931
+docker	readdress_link_isolation	1	0.262401
+docker	readdress_link_isolation	2	0.213876
+docker	readdress_link_isolation	3	0.217151
+docker	scaled_link_hosts	1	0.207596
+docker	scaled_link_hosts	2	0.203629
+docker	scaled_link_hosts	3	0.204910
+docker	readdress_link_hosts	1	0.215671
+docker	readdress_link_hosts	2	0.215405
+docker	readdress_link_hosts	3	0.198435
+docker	target_readdress	1	1.462879
+docker	post_readdress_lookup	1	0.224092
+docker	post_readdress_lookup	2	0.205651
+docker	post_readdress_lookup	3	0.201410
+container-compose	startup	1	6.560003
+container-compose	scaled_link_lookup	1	0.810209
+container-compose	scaled_link_lookup	2	0.725378
+container-compose	scaled_link_lookup	3	0.773082
+container-compose	scaled_link_isolation	1	0.734155
+container-compose	scaled_link_isolation	2	0.788924
+container-compose	scaled_link_isolation	3	0.955906
+container-compose	readdress_link_isolation	1	0.734414
+container-compose	readdress_link_isolation	2	0.734764
+container-compose	readdress_link_isolation	3	0.721289
+container-compose	scaled_link_hosts	1	0.812761
+container-compose	scaled_link_hosts	2	0.779695
+container-compose	scaled_link_hosts	3	0.783086
+container-compose	readdress_link_hosts	1	0.790188
+container-compose	readdress_link_hosts	2	0.792951
+container-compose	readdress_link_hosts	3	0.786420
+container-compose	target_readdress	1	2.726543
+container-compose	post_readdress_lookup	1	0.790090
+container-compose	post_readdress_lookup	2	0.776372
+container-compose	post_readdress_lookup	3	0.732337

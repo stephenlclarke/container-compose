@@ -39,6 +39,7 @@ that it exactly matches the typed Compose and sibling Container definitions.
 | `create-configuration.v1` | Typed process, mount, network, resource, namespace, security, device, and GPU configuration used when creating service and one-off containers |
 | `image-filesystem.v1` | Image metadata and declared-volume discovery, image-volume copy-up, commit/export, and live snapshot behaviour |
 | `lifecycle.v1` | Create/start/stop/restart/exec/attach/kill/pause/wait controls, persisted exit state, and process metadata |
+| `network-scoped-aliases.v1` | Source-scoped dynamic DNS aliases used to preserve Compose link isolation and target address changes |
 | `observation.v1` | Container discovery, health, logs, events, statistics, top, and network/port observation |
 
 The manifest declares code-level support in the matched build and its pinned

@@ -664,7 +664,7 @@ is merged and consumed.
 
 | Area | Required runtime work | Required Compose work |
 | --- | --- | --- |
-| Network identity | Container-facing, network-scoped DNS listener; alias registration; durable multi-container sandbox for shared namespaces | Service/container names, aliases, `--use-aliases`, complete links, dynamic address reconciliation |
+| Shared network namespaces | Durable multi-container sandbox for shared namespaces | `network_mode: service:` and `container:` after the runtime primitive exists |
 | Network drivers/IPAM | Custom drivers, custom IPAM, multiple same-family pools, disabled IPv4, IPv6 ranges/auxiliary addresses | Validation and projection after typed primitives exist |
 | Security | Seccomp/AppArmor profiles, custom user mappings, complete privileged/device isolation | Parse/map profiles and capability diagnostics |
 | Resources | CPU realtime, swappiness, OOM-kill disable, richer machine stats | Map fields and expose accurate `stats` |
@@ -921,10 +921,10 @@ Phase gate:
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
 | OUT-501 | Complete | Compose | Go-template control actions and nested/map traversal | Completed 2026-07-25 with typed rows, deterministic traversal, command/unit coverage, and a Docker Compose v2 `compose.yaml` oracle; see [the completion handoff](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-compose-output-template-control-actions.md). |
-| DEPLOY-502 | P2 | Compose | Preserve Docker local-mode Deploy metadata | Config/convert round trips mode, placement, update, rollback, reservations, and limits without pretending to schedule |
+| DEPLOY-502 | P2 | Compose | **Complete:** preserve Docker local-mode Deploy metadata | Config/convert round trips mode, placement, update, rollback, reservations, and limits without pretending to schedule |
 | MODEL-503 | P3 | Runtime/Compose | Select and integrate a model-runner backend | Model lifecycle, endpoint readiness, variable injection, failure cleanup, and secrets reviewed |
 | LOG-504 | P2 | Runtime/Compose | Add distinct local/json-file and extensible logging drivers | Rotation, buffering, blocking mode, options, and plugin failure semantics pass |
-| LINK-505 | P2 | Compose | Complete legacy link behaviour after DNS | Shared-network selection, aliases, dynamic updates, and any retained env semantics match oracle |
+| LINK-505 | Complete | Compose | Project legacy link aliases through source-scoped DNS mappings | Docker Compose v5.3.1 parity covers first-shared-network selection, scaled targets, source isolation, dynamic target readdressing, and the absence of static `/etc/hosts` mappings |
 | PARITY-506 | P2 | Compose | Add regression probes for every confirmed gap | No fully-supported status row lacks a behaviour-level oracle or justified platform exemption |
 
 Phase gate:
@@ -958,12 +958,12 @@ Phase gate:
 ### Passed
 
 - Network service-discovery development pins:
-  - `container` `ae66e3e2e69fee3c26fa84a402df79ccc45ca9bc`
+  - `container` `73da8cc75de4efcc107131c1448357c82090d1ff`
   - `containerization` `d7377b962af724f8d7c2b640f3ab12184d33f1af`
   - focused runtime tests covered DNS parsing/forwarding, network lookup order,
     alias canonicalisation/collision handling, attachment allocation, and the
     ProcessIO input pump;
-  - the full pinned `container` suite passed with 1,244 tests in 144 suites;
+  - the full pinned `container` suite passed with 1,251 tests in 144 suites;
   - the timed live service-discovery matrix passed all nine behavioural
     comparisons against Docker. Container Compose medians ranged from 2.27x
     to 5.13x for steady-state operations; cold project startup was 7.095
@@ -977,13 +977,32 @@ Phase gate:
     test` passed in 113.15 seconds with 1,272 Swift tests executed, 25
     live-runtime tests explicitly skipped, and all Go normaliser tests
     passing; `make check` passed in 108.44 seconds.
-- `HAWKEYE_AUTO_INSTALL=1 make ci` in clean `container-compose`
-  - Python coverage tooling: 4 tests
-  - release tooling: 155 tests
-  - CI tooling: 14 tests
-  - Swift: 1,124 tests in 26 suites passed
-  - Go normaliser aggregate coverage: 89.88%
-  - configured `ComposeCore` line coverage: 91.46%
+- Legacy links now use source-scoped DNS mappings rather than static
+  `/etc/hosts` projection:
+  - Docker Compose v5.3.1 confirmed that a scaled link alias selects the first
+    target replica while the service name continues to resolve every replica;
+  - the matched supported stack passed source isolation, scaled-target,
+    readdressing, and no-static-host-entry checks;
+  - median startup was 6.560 seconds versus Docker's 0.637 seconds, scaled-link
+    lookup 0.773 seconds versus 0.205 seconds, target readdress 2.727 seconds
+    versus 1.463 seconds, and post-readdress lookup 0.776 seconds versus 0.206
+    seconds;
+  - the four DNS-isolation and `/etc/hosts` absence probes were also timed
+    across all three repetitions: Compose medians were 0.734 to 0.790 seconds
+    versus Docker's 0.205 to 0.217 seconds;
+  - all operations completed within the 180-second hard timeout and below the
+    documented material-slowdown threshold;
+  - raw repetitions and environment metadata are retained in
+    `docs/reviews/compose-links-parity-timings-2026-07-29.tsv`.
+- Final `HAWKEYE_AUTO_INSTALL=1 make ci` on the link-parity slice:
+  - Python coverage tooling: 5 tests
+  - release tooling: 177 tests
+  - CI tooling: 52 tests
+  - Swift: 1,299 tests in 51 suites passed, with 1,274 executed and 25
+    live-runtime tests explicitly skipped
+  - Go normaliser aggregate coverage: 89.79%
+  - configured `ComposeCore` line coverage: 92.86%
+  - first-party Swift aggregate coverage: 87.81%
   - CLI smoke completed
 - `make docker-compose-cli-surface-parity`
   - Docker Compose reference: v5.3.1
@@ -991,6 +1010,10 @@ Phase gate:
   - no unexpected differences
   - four documented local differences: `alpha`, `convert`, `help`, and
     root-help visibility of `--verbose`
+- Strict Docker Compose Deploy parity probes passed:
+  - endpoint-mode config and local dry-run parity in 2.32 seconds;
+  - CPU and memory reservation parity in 2.10 seconds;
+  - update, rollback, and placement metadata parity in 1.88 seconds.
 - `HAWKEYE_AUTO_INSTALL=1 make check` in exact pinned `container`
 - exact pinned `container` hosted `Package` and `Build and test project`
   checks were successful
@@ -1003,9 +1026,9 @@ Phase gate:
 
 ### Not Claimed
 
-- The full live `make release-gate` was not rerun. The Apple container
-  `apiserver` was not running or registered with launchd, and starting a
-  machine-wide service was outside this read-only review.
+- The full `make release-gate` packaging and publication workflow was not
+  rerun for this development slice. The matched Apple runtime was exercised by
+  the dedicated live links parity suite instead.
 - The 25 Compose runtime smoke tests did not execute in `make ci`; they returned
   early because the live-runtime environment variable was unset.
 - No live commit-volume or tar ownership parity test currently exists, which

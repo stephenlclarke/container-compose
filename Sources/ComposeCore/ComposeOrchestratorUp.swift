@@ -212,7 +212,7 @@ extension ComposeOrchestrator {
 
         var changedServices = Set<String>()
         for serviceReference in services {
-            var service = workingProject.services[serviceReference.name] ?? serviceReference
+            let service = workingProject.services[serviceReference.name] ?? serviceReference
             if validateDependencies {
                 try await waitForDependencyConditions(project: workingProject, service: service)
             }
@@ -232,13 +232,6 @@ extension ComposeOrchestrator {
             if shouldBuildServiceForUp(up, service: service) {
                 try await build(project: workingProject, services: [service.name], noCache: false, quiet: up.quietBuild)
             }
-
-            service = try await serviceByResolvingLinkHosts(
-                project: workingProject,
-                service: service,
-                scaleOverrides: scaleOverrides,
-            )
-            workingProject.services[service.name] = service
 
             let replicaCount = try serviceReplicaCount(service, scaleOverrides: scaleOverrides)
             var serviceChanged = false

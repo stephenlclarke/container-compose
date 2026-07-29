@@ -822,15 +822,10 @@ public extension ComposeOrchestrator {
             externalVolumeMounts: externalVolumeMounts,
             imageHealthCheckCache: cache,
         )
-        var preparedService = preparedProject.services[service.name] ?? service
+        let preparedService = preparedProject.services[service.name] ?? service
         if !run.noDeps {
             try await waitForDependencyConditions(project: preparedProject, service: preparedService)
         }
-        preparedService = try await serviceByResolvingLinkHosts(
-            project: preparedProject,
-            service: preparedService,
-            scaleOverrides: [:],
-        )
         return ComposeRunServicePreparation(
             project: preparedProject,
             service: preparedService,

@@ -65,6 +65,13 @@ struct ServiceConfigFingerprint: Encodable {
     var service: ComposeService
     var networks: [String: String]
     var volumes: [String: String]
+    var linkTargets: [String: ServiceLinkTargetFingerprint]
+}
+
+/// Linked-service inputs that change source-scoped DNS projection.
+struct ServiceLinkTargetFingerprint: Encodable {
+    var containerName: String?
+    var networks: [String]
 }
 
 /// One label override passed to `compose run`.
@@ -276,32 +283,6 @@ func networkRuntimeName(project: ComposeProject, composeName: String) -> String 
         return resourceName(project: project.name, name: composeName)
     }
     return networkRuntimeName(project: project, composeName: composeName, network: network)
-}
-
-/// Builds one network attachment value accepted by apple/container.
-func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) throws -> String {
-    var argument = networkRuntimeName(project: project, composeName: network)
-    var options: [String] = []
-    for alias in try networkAliasValues(service: service, network: network) {
-        options.append("alias=\(alias)")
-    }
-    if let macAddress = networkMACAddress(service: service, network: network) {
-        options.append("mac=\(macAddress)")
-    }
-    if let mtu = try service.networkOptions?[network]?.networkMTU() {
-        options.append("mtu=\(mtu)")
-    }
-    if let interfaceName = try networkGuestInterfaceName(service: service, network: network) {
-        options.append("interface=\(interfaceName)")
-    }
-    try options.append(contentsOf: networkStaticAddressOptions(project: project, service: service, network: network))
-    for address in try networkLinkLocalIPValues(service: service, network: network) {
-        options.append("address=\(address)")
-    }
-    if !options.isEmpty {
-        argument += "," + options.joined(separator: ",")
-    }
-    return argument
 }
 
 /// Orders network attachments so the runtime's first interface has the selected gateway.
