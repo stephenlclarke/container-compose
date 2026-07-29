@@ -254,9 +254,9 @@ documents the intentional production no-op. Signed correction
 exact-main SonarCloud analysis `fe1e52b4-9674-4da6-90f8-ce4b0155909d`
 reported gate `OK`, all ratings A, and zero unresolved issues or hotspots.
 The companion
-[issue](../upstream/container-compose/ISSUE-process-start-observer-maintainability.md)
+[issue](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-process-start-observer-maintainability.md)
 and
-[pull-request handoff](../upstream/container-compose/PR-process-start-observer-maintainability.md)
+[pull-request handoff](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-process-start-observer-maintainability.md)
 record the exact analysis and validation boundary.
 
 Current prerelease run `30228427993` then exposed a self-hosted launchd
@@ -278,9 +278,9 @@ after normalized comparison, and the 303.92-second live GIF visibly types
 commands before their real output with 16 `Type`, 16 `Enter`, 14 `Wait`, zero
 Replay, and zero Marker instructions. The final focused source rerun passed
 all 37 process-runner tests. The
-[issue](../upstream/container-compose/ISSUE-current-vhs-start-recovery.md)
+[issue](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-current-vhs-start-recovery.md)
 and
-[pull-request handoff](../upstream/container-compose/PR-current-vhs-start-recovery.md)
+[pull-request handoff](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-current-vhs-start-recovery.md)
 retain the failed-run evidence and the completed zero-Replay/zero-Marker
 publication boundary.
 
@@ -294,9 +294,9 @@ cache restoration because the package-time duplicate guard pre-filtered to
 push events. Compose-only correction `c8524d36` makes that independent guard
 accept the same exact-main successful `push` or `workflow_dispatch` set while
 continuing to exclude every other event. The
-[issue](../upstream/container-compose/ISSUE-current-dispatch-release-authority.md)
+[issue](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-current-dispatch-release-authority.md)
 and
-[pull-request handoff](../upstream/container-compose/PR-current-dispatch-release-authority.md)
+[pull-request handoff](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-current-dispatch-release-authority.md)
 record the failed-run boundary and regression coverage.
 
 ### Complete: Compatibility Preflight Drains Full Pipes
@@ -359,9 +359,9 @@ checks.
 
 Ownership remains the Compose plugin and shared Compose process runner; no
 Apple runtime fork change is required. The
-[issue](../upstream/container-compose/ISSUE-package-compatibility-preflight-drain.md)
+[issue](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-package-compatibility-preflight-drain.md)
 and
-[pull-request handoff](../upstream/container-compose/PR-package-compatibility-preflight-drain.md)
+[pull-request handoff](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-package-compatibility-preflight-drain.md)
 record the boundary and validation evidence.
 
 ### Resolved P1: `compose commit` Preserves Inherited OCI Volumes
@@ -580,10 +580,11 @@ Resolution (2026-07-28):
 - **Fork delta is no longer minimal:** all Apple upstream commits are present,
   but the retained layers are large enough to obscure whether a bug belongs
   upstream, in a fork-only primitive, or in Compose.
-- **The upstream handoff registry is too large:** `docs/upstream` contains 581
-  Markdown files and 31,431 lines, within a repository of 947 tracked files.
-  The current review document was already missing newly reported high-impact
-  Apple bugs. A registry this large is difficult to keep current manually.
+- **The upstream handoff registry is now generated:** DOC-107 replaced 616
+  manually maintained issue and pull-request snapshots with a 355-row
+  structured registry, six current supporting documents, and immutable links
+  to every retired snapshot. CI rejects missing registrations and stale
+  generated Markdown or JSON.
 
 ### Recommended Target Architecture
 
@@ -813,7 +814,7 @@ new Apple design work.
 | TEST-007 | P1 | Compose CI | **Complete:** make live test skips explicit and gate aggregate coverage | CI reports executed/skipped counts; separate Core/SPI/provider/plugin/aggregate thresholds |
 | TEST-008 | P2 | Compose | **Complete:** split the 33k-line orchestrator test by command/capability | One shared-fixture owner; 895 unique test IDs; default parallel 2.594s versus forced serial 5.205s; exact baseline line coverage retained |
 | SEC-009 | P2 | Compose | **Complete:** set 0700/0600 permissions on sensitive temporary paths | Permission tests cover standard and shared `TMPDIR`; cleanup survives failure |
-| DOC-010 | P1 | Compose | Correct `DESIGN.md`, coupling audit, and `STATUS.md` claims | Documentation matches the actual package graph and tested command semantics |
+| DOC-010 | P1 | Compose | **Complete:** correct `DESIGN.md`, coupling audit, and `STATUS.md` claims | Documentation matches the actual package graph and tested command semantics |
 | APPLE-011 | P1 | Runtime forks | **Complete on supported fork:** review/port signal and log-tail fixes #1997/#2000 | Focused runtime tests and Compose kill/log-tail parity pass; local commits remain independently removable |
 | APPLE-012 | P1 | Runtime forks | **Complete on supported fork:** fix log fan-out after dead client (#2009) | One failed writer is removed or isolated; persisted log and healthy attach writer continue; no busy loop |
 
@@ -834,10 +835,10 @@ Goal: make ownership enforceable and reduce the cost of every later feature.
 | ARCH-101 | P1 | Compose | **Complete:** remove Apple products from `ComposeCore` | `Package.swift` and source-import gate prove Core depends only on model/SPI targets |
 | ARCH-102 | P2 | Compose/runtime | **Complete:** move DTO/archive/live API translation into provider | Public Core API contains no Apple types; existing CLI behaviour and tests remain stable |
 | ARCH-103 | P2 | Stack | **Complete:** generate a typed runtime capability/version manifest | Startup reports exact missing capability; stock Apple and matched-fork behaviour are deterministic |
-| FORK-104 | P1 | Stack | Reclassify all 394 non-merge fork commits against current Apple heads | Every commit is bug fix, generic primitive, temporary port, or rejected Compose policy; no unowned delta |
-| FORK-105 | P2 | Stack | Upstream generic slices and remove merged ports | Each retained slice has focused tests, Apple issue/PR, and deletion condition |
-| FORK-106 | P2 | Stack | Converge local #799, #813, #87 equivalents | Apple merge or explicit replacement is recorded; duplicate code is removed without behaviour loss |
-| DOC-107 | P2 | Compose | Replace 581 handoff documents with a compact generated registry plus active drafts | One row per capability/PR with owner, commit, state, last verification, and archive link; superseded drafts archived outside active tree |
+| FORK-104 | P1 | Stack | **Complete:** classify all 430 non-merge fork commits against reviewed Apple heads | Every commit is a bug fix, generic primitive, temporary port, or rejected Compose policy; no unowned delta |
+| FORK-105 | P2 | Stack | **Complete on supported branches:** remove rejected Compose stores and reconcile merged Apple ports | Retained generic slices have focused evidence and deletion conditions; source-equivalent #685, #700, #775, and #798 ports are no longer duplicated |
+| FORK-106 | P2 | Stack | **Externally gated:** converge local #799, #813, and #87 equivalents | All three Apple pull requests remain open, mergeable, and review-blocked; remove the local equivalent after Apple merge or an explicit replacement |
+| DOC-107 | P2 | Compose | **Complete:** replace 616 handoff documents with a compact generated registry plus current supporting documents | The 355-row registry records owner, referenced commits, state, last verification, current details, and immutable archives; only six current supporting documents remain active |
 | SDK-108 | P2 | Apple/Compose | Track lightweight SDK/API work (#1759/#1925) | Provider depends on a stable minimal client surface when available; no private XPC/storage dependency |
 
 Phase gate:
@@ -919,7 +920,7 @@ Phase gate:
 
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
-| OUT-501 | Complete | Compose | Go-template control actions and nested/map traversal | Completed 2026-07-25 with typed rows, deterministic traversal, command/unit coverage, and a Docker Compose v2 `compose.yaml` oracle; see [the completion handoff](../upstream/container-compose/PR-compose-output-template-control-actions.md). |
+| OUT-501 | Complete | Compose | Go-template control actions and nested/map traversal | Completed 2026-07-25 with typed rows, deterministic traversal, command/unit coverage, and a Docker Compose v2 `compose.yaml` oracle; see [the completion handoff](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-compose-output-template-control-actions.md). |
 | DEPLOY-502 | P2 | Compose | Preserve Docker local-mode Deploy metadata | Config/convert round trips mode, placement, update, rollback, reservations, and limits without pretending to schedule |
 | MODEL-503 | P3 | Runtime/Compose | Select and integrate a model-runner backend | Model lifecycle, endpoint readiness, variable injection, failure cleanup, and secrets reviewed |
 | LOG-504 | P2 | Runtime/Compose | Add distinct local/json-file and extensible logging drivers | Rotation, buffering, blocking mode, options, and plugin failure semantics pass |

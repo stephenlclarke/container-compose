@@ -98,7 +98,7 @@ connector review reported no major issue.
 
 The eleven independently useful signed implementation commits are enumerated
 in
-[PR-upstream-maintenance-20260727.md](PR-upstream-maintenance-20260727.md).
+[PR-upstream-maintenance-20260727.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-upstream-maintenance-20260727.md).
 They cover compiled ignore globs, hashed context membership, concurrent stats,
 off-lock sizing, ordered/failure-safe init bootstrap, isolated volume prune,
 Unicode-sensitive glob semantics, partial-bootstrap cleanup, active-runtime

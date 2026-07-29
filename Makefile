@@ -17,7 +17,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := all
-.PHONY: upstream-divergence-report upstream-divergence-check upstream-divergence-release-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
+.PHONY: upstream-divergence-report upstream-divergence-check upstream-divergence-release-check upstream-handoff-registry-update upstream-handoff-registry-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
 
 SWIFT ?= swift
 SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
@@ -1599,6 +1599,12 @@ upstream-divergence-check:
 upstream-divergence-release-check:
 	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --strict --require-upstream-current --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
 
+upstream-handoff-registry-update:
+	$(PYTHON) Tools/ci/upstream-handoff-registry.py render
+
+upstream-handoff-registry-check:
+	$(PYTHON) Tools/ci/upstream-handoff-registry.py check
+
 readme-upstream-metrics-update:
 	$(PYTHON) Tools/ci/update-readme-upstream-metrics.py --fetch
 
@@ -1629,7 +1635,7 @@ worktree-audit:
 worktree-audit-strict:
 	$(PYTHON) Tools/ci/worktree-audit.py --repository "$(CURDIR)" --main main --strict
 
-check: lint core-runtime-neutrality stack-consistency check-licenses
+check: lint core-runtime-neutrality stack-consistency upstream-handoff-registry-check check-licenses
 
 lint: coverage-tools-test
 	@while IFS= read -r -d '' script; do \

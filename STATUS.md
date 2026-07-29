@@ -1,6 +1,6 @@
 # Status
 
-This file is the current Docker Compose v2 parity ledger for `container-compose`. Keep branch, release, build, and validation policy in [BUILD.md](BUILD.md), installation guidance in [INSTALL.md](INSTALL.md), and Apple-facing handoff drafts under `docs/upstream/`.
+This file is the current Docker Compose v2 parity ledger for `container-compose`. Keep branch, release, build, and validation policy in [BUILD.md](BUILD.md), installation guidance in [INSTALL.md](INSTALL.md), and the generated upstream registry plus current supporting records under `docs/upstream/`.
 
 ## Current Integration Assumption
 
@@ -255,7 +255,7 @@ This is the complete known runtime and adapter gap register from the Docker Comp
 The macOS-feasible Phase 4 metadata, state, and events boundary is closed by
 `make docker-compose-phase4-parity`; its exact commits, ownership split, and
 remaining primitive gaps are recorded in the
-[Phase 4 handoff](docs/upstream/container-compose/PR-phase4-metadata-state-events-closure.md).
+[Phase 4 handoff](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-phase4-metadata-state-events-closure.md).
 
 | Area | Missing Apple/fork runtime behavior | Compose adapter or compatibility work | Scope notes |
 | --- | --- | --- | --- |

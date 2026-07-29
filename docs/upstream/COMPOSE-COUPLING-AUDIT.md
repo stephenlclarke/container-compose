@@ -102,7 +102,7 @@ make core-runtime-neutrality
 
 A focused decorator remains appropriate only after the runtime exposes a constrained, versioned extension or a complete typed primitive. It can validate Compose-owned plans, negotiate a declared capability, and translate that plan at the `ComposeRuntimeSPI` boundary. It must not use source swizzling, private runtime storage, process injection, or a general interception framework.
 
-The outstanding [runtime-configuration extension proposal](apple-container/ISSUE-runtime-configuration-extension-hook.md) describes the narrow future hook for typed Linux runtime data. It cannot replace the lower-runtime primitives listed above, and it is not a justification for an unbounded AOP layer.
+The outstanding [runtime-configuration extension proposal](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-runtime-configuration-extension-hook.md) describes the narrow future hook for typed Linux runtime data. It cannot replace the lower-runtime primitives listed above, and it is not a justification for an unbounded AOP layer.
 
 ## Re-audit Procedure
 

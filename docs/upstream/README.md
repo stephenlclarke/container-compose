@@ -1,69 +1,63 @@
-# Upstream Drafts
+# Upstream Handoffs
 
-This directory is the durable handoff area for current Apple-facing issue and
-pull request drafts that unblock `container-compose`. It is not a project
-history or an operational runbook: current installation, release, support, and
-build instructions live at the repository root.
+This directory is the durable handoff area for Apple-facing work that affects `container-compose`. [HANDOFF-REGISTRY.json](HANDOFF-REGISTRY.json) is the maintained source of truth; [HANDOFF-REGISTRY.md](HANDOFF-REGISTRY.md) is its generated reader view. Current installation, release, support, and build instructions remain at the repository root.
 
-## Slice Rules
+## Registry
 
-- Each implementation slice must map to one future Apple pull request per Apple repository. If a capability needs both `apple/containerization` and `apple/container`, split it into two PR-shaped slices: one lower-runtime PR and one API/CLI PR.
-- Keep Compose-specific behavior in `container-compose`. Apple-facing PRs should expose generic runtime primitives, typed resource models, API routes, native lifecycle operations, and tests, not Compose service fan-out, prefixes, colors, selected-service filtering, Docker-shaped parsers, or Docker Compose output policy.
-- Follow the Apple maintainer guidance on [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328): do not create or keep Apple-facing drafts whose only value is Docker CLI compatibility. If a local Apple fork commit currently contains a Docker-shaped flag parser, document it as a temporary validation bridge only when the typed primitive is still a useful Apple slice.
-- `container-compose` owns Docker and Docker Compose compatibility: Compose file parsing, Docker timestamp/duration strings, Docker flag aliases, dry-run command text, project/service filtering, output formatting, and compatibility diagnostics. Apple drafts can cite Docker behavior as background, but the requested Apple surface should be Apple-native and typed wherever possible.
-- Every `PR*.md` draft must include a `Commit Tracking` or `Intended Review Delta` section. Constructible PR drafts must list the exact commit IDs to squash. Planning-only drafts must say they are not constructible yet and name the missing repository commit that must be cut before a PR can be raised.
-- Before selecting a slab or slice, inspect current open issues and pull requests for `apple/container` and `apple/containerization`. Reference matching upstream work in the issue and PR drafts rather than opening duplicates.
-- When Docker behavior is the target, check Docker's own documentation and the Docker Compose implementation before settling the slice boundary. Record the relevant docs/source links in the issue and PR drafts when they affect shape, output, filtering, or test fixtures.
-- Keep the draft files in this repository even when the code lives in sibling forks. That makes `container-compose` the single project handoff for runtime gaps, upstream links, and commit IDs.
-- Treat this `container-compose` tree as the only home for handoff documentation. Do not keep `ISSUE-*.md` or `PR-*.md` draft files in the sibling `container`, `containerization`, or `container-builder-shim` fork worktrees; if one is created there while shaping code, move it into the matching `docs/upstream/` folder here and remove the fork copy.
-- Keep drafts current. Remove obsolete branch names, completed migration notes, dated snapshots, and superseded implementation procedures instead of preserving project history here. Current branch and release rules live in [BUILD.md](../../BUILD.md).
-- Remove an Apple handoff only after its entire capability has moved behind a Compose-owned provider and focused tests prove that the default Compose path no longer uses the fork-only API. Keep handoffs for reusable runtime primitives and independent bug fixes.
-- Every open Apple pull request with code we may need to recover must also have
-  an immutable, stephenlclarke-owned `upstream-pr-NUMBER-SHORTSHA` branch recorded in
-  [PR-ARCHIVE.json](PR-ARCHIVE.json). Never force-push, delete, or retarget an
-  archive branch. Add a new snapshot when an upstream PR head changes.
+The registry keeps one row per capability or pull request with its owner, state, last verification date, referenced commits, upstream pull request, and supporting documents. The initial migration retained immutable links to all 616 retired or current handoff documents at published Compose commit `3d77ec228c7f55a04f689d5e1453752fc0c27f72`.
 
-## Final Upstream Review Gate
+Use these state values consistently:
 
-After the intended `container-compose` functionality is implemented and the sibling forks contain the supporting runtime/API/CLI code, do a full Apple-maintainer review before raising or refreshing upstream PRs.
+| State | Meaning |
+| --- | --- |
+| `active-draft` | A current proposal is still being shaped and has no submitted upstream pull request. |
+| `unsubmitted` | A reviewed candidate remains useful, but no upstream pull request has been submitted. |
+| `submitted` | Stephen submitted the linked upstream pull request and it remains open. |
+| `tracked-upstream` | A relevant open pull request is owned by someone else. |
+| `merged` | The upstream pull request merged. |
+| `closed` | The upstream pull request closed without merge. |
+| `archived` | The proposal or record is retired and is not current upstream work. |
 
-The review must cover every potential PR independently:
+A current supporting document has a repository-relative `path`. A retired document has an immutable `archive` URL. A document can have both while it is current. A new active document does not need an archive until the commit containing it has been published.
 
-- Confirm the PR is still the narrowest useful Apple-facing slice and maps to one repository unless a lower-runtime dependency genuinely requires a separate `apple/containerization` PR.
-- Re-check current open Apple issues and PRs, then update each draft with the matching references, stacking decision, and why any similar upstream work was or was not used as the base.
-- Verify the listed commit IDs still construct the intended PR and that no unrelated `container-compose` policy, Docker Compose formatting, private-machine assumption, or temporary fork-only behavior has leaked into Apple runtime code.
-- Review the code as an Apple maintainer and as any likely code owner for the touched area, then fix findings before drafting the PR text.
-- Re-run the focused validation for each slice plus repository-level hygiene checks, and keep optional Docker / Docker Compose V2 parity checks local-only and out of Apple CI.
-- Update the affected `ISSUE*.md`, `PR*.md`, and `STATUS.md` files with findings, fixes, validation, dependencies, and any residual risk.
+After changing the JSON registry or a current handoff document, run:
 
-## Current Inventory
+```sh
+make upstream-handoff-registry-update
+make upstream-handoff-registry-check
+```
 
-| Area | Paths | Notes |
-| --- | --- | --- |
-| Current Apple review | `docs/upstream/APPLE-UPSTREAM-REVIEW.md` | Live disposition of affected bugs, approved open pull requests, local ports, and unresolved follow-up work. |
-| Runtime-coupling audit | `docs/upstream/COMPOSE-COUPLING-AUDIT.md` | July 2026 classification of every fork-ahead commit, clean Apple baselines, and the Compose-owned slices removed from the required runtime delta. |
-| Immutable PR code archive | `docs/upstream/PR-ARCHIVE.json` | Full-SHA, stephenlclarke-owned snapshots of every open upstream proposal that the stack depends on. [Verify Upstream PR Archives](../../.github/workflows/upstream-pr-archive.yml) checks them daily. |
-| Compose-owned compatibility slices | `docs/upstream/container-compose/` | Plugin-owned issue/PR drafts with commit tracking. These drafts may describe Docker/Compose compatibility and the temporary command-vector bridge while the typed service-create adapter is still being wired. |
-| Copy slices | `docs/upstream/copy/` | Compose-facing copy follow-link and archive drafts with commit tracking. Runtime copy primitives live under the Apple folders. |
-| Process listing / `top` slice | `docs/upstream/process-list/`, `docs/upstream/apple-container/`, and `docs/upstream/apple-containerization/` | Compose-facing Docker-shaped `top` drafts plus generic Apple runtime/API/init-image handoffs and commit tracking. |
-| `apple/container` runtime drafts | `docs/upstream/apple-container/` | Apple-shaped typed runtime issue/PR drafts maintained in this repo even when the code lives in `/Users/sclarke/github/container`. |
-| `apple/containerization` runtime drafts | `docs/upstream/apple-containerization/` | Lower-runtime issue/PR drafts maintained in this repo even when the code lives in `/Users/sclarke/github/containerization`. |
-| `apple/container-builder-shim` build-context drafts | `docs/upstream/apple-container-builder-shim/` | Builder-shim issue/PR drafts maintained here while the code lives in `/Users/sclarke/github/container-builder-shim`. |
-| Event-stream slab | `docs/upstream/events/` | Current handoff drafts for the Apple runtime event primitive, event time filters, Compose-owned `events --json [SERVICE...]`, Compose-owned `events --json --since/--until [SERVICE...]`, and Compose-owned default text event formatting slices. |
+The check validates the schema, states, full commit IDs, canonical GitHub pull-request URLs, active document registration, immutable archive objects, links to retired handoffs, and generated Markdown freshness. The `import-legacy` subcommand was used for the one-time migration and is not the normal update path.
+
+## Handoff Lifecycle
+
+1. Re-check current Apple issues and pull requests before selecting a slice. Do not open a duplicate.
+2. Add or update the structured registry row first. Keep a detailed Markdown document only while it contains current review, construction, testing, or submission information that does not fit the row.
+3. Keep one future Apple pull request per repository. Split a cross-repository capability into independently reviewable lower-runtime and API/CLI slices.
+4. Keep Compose-specific parsing, formatting, filtering, orchestration, and Docker compatibility in `container-compose`. Apple-facing work should expose generic typed primitives and tests.
+5. When a pull request is submitted, record its canonical URL, exact published head, `submitted` state, and verification date.
+6. When a document is retired, publish the commit that still contains it, remove its active `path`, and retain a canonical immutable `archive` URL to that commit.
+7. Keep recoverable upstream code heads separately in [PR-ARCHIVE.json](PR-ARCHIVE.json). Never force-push, delete, or retarget an `upstream-pr-NUMBER-SHORTSHA` archive branch; add a new snapshot when a head changes.
+
+An unsubmitted candidate is not automatically submission-ready. Rebase the smallest independent change on current stock Apple `main`, review it as an Apple maintainer, run focused and repository-level validation, fill the current Apple issue and pull-request templates, and keep Stephen-only compatibility behaviour out of the patch.
+
+## Final Review Gate
+
+Before raising or refreshing an Apple pull request:
+
+- Confirm the slice is the narrowest independently useful Apple-facing change.
+- Re-check overlapping Apple issues and pull requests and record the stacking or replacement decision.
+- Verify the referenced commits construct only the intended delta.
+- Review correctness, regressions, API compatibility, security, maintainability, documentation, release impact, and unnecessary fork divergence.
+- Run focused tests and repository hygiene checks on current stock Apple code. Keep optional Docker parity work out of Apple CI.
+- Update the registry, [APPLE-UPSTREAM-REVIEW.md](APPLE-UPSTREAM-REVIEW.md), and relevant status records with the exact published head and residual blockers.
 
 ## Fork Documentation Audit
 
-Use these to confirm handoff docs have not drifted back into sibling forks:
+Handoff documentation belongs here, not in the sibling runtime forks. These commands should print nothing:
 
 ```sh
 find /Users/sclarke/github/container \( -name .build -o -name .git \) -prune -o \( -name 'ISSUE-*.md' -o -name 'ISSUES-*.md' -o -name 'PR-*.md' \) -print
 find /Users/sclarke/github/containerization \( -name .build -o -name .git \) -prune -o \( -name 'ISSUE-*.md' -o -name 'ISSUES-*.md' -o -name 'PR-*.md' \) -print
 find /Users/sclarke/github/container-builder-shim \( -name .build -o -name .git -o -path '*/vendor/*' \) -prune -o \( -name 'ISSUE-*.md' -o -name 'ISSUES-*.md' -o -name 'PR-*.md' \) -print
-```
-
-These commands should print nothing. After moving or editing handoff docs here, run:
-
-```sh
-markdownlint docs/upstream
-git diff --check
 ```
