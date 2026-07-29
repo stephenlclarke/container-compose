@@ -39,25 +39,44 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 No current commit is unclassified or assigned to more than one slice.
 
-## Review Findings
+## Review Findings And FORK-105 Progress
 
-Four commits are confirmed removal candidates for FORK-105:
+The four rejected Compose-policy commits have been removed on published,
+validated branches without changing the fork default branches:
 
 - `container` persistent config storage and its handoff:
-  `f1f8ce6b33fa`, `7261ac9cfe33`
-- `container` local secret storage: `468a85e233dd`
-- `containerization` opaque Keychain storage: `9f63d1890ebb`
+  `f1f8ce6b33fa`, `7261ac9cfe33`; the removal is at
+  `stephenlclarke/container:refactor/remove-compose-resource-stores`
+  `9b1a49b53ff73417d1b4cfbf39fa5a9dffa06023`.
+- `container` local secret storage: `468a85e233dd`; the removal is in the same
+  `container` branch and head.
+- `containerization` opaque Keychain storage: `9f63d1890ebb`; the removal is at
+  `stephenlclarke/containerization:refactor/remove-compose-keychain-store`
+  `66f0963cbe2b59170f9164c4dae5828baf59fdd8`.
 
-Three early `containerization` ports correspond to Apple changes that are
-already merged:
+Compose pins those exact heads on
+`stephenlclarke/container-compose:refactor/remove-compose-resource-stores` at
+`3d77ec228c7f55a04f689d5e1453752fc0c27f72`. Full lower-repository tests and
+checks passed, followed by `HAWKEYE_AUTO_INSTALL=1 make ci` in Compose. The
+historical commits remain classified until the removal branches are integrated
+into the fork default branches.
 
-- Apple #685 freeze/thaw API: `1eaaee814dad`
-- Apple #700 trim API: `28021979ddb5`
-- Apple #775 configurable EXT4 journal mode: `cff8d5866ac8`
+Four early `containerization` ports have now been reconciled with Apple
+`main` at `7800b4642171561c95b5f55500b19e5dce5acd45`:
 
-Apple #798 is also merged; the earlier fork exclusion at `131b1e8344ad`
-remains classified as a temporary port until normal Apple reconciliation proves
-that no source delta remains.
+- Apple #685 freeze/thaw API: local `1eaaee814dad`, Apple `5887dc55f314`,
+  stable patch ID `366f046411cb`.
+- Apple #700 trim API: local `28021979ddb5`, Apple `6b7b42ca3efe`,
+  stable patch ID `336cc506946d`.
+- Apple #775 configurable EXT4 journal mode: local `cff8d5866ac8`, Apple
+  `a132341dc61b`, stable patch ID `9a20d1a83363`.
+- Apple #798 CloudHypervisor SwiftPM exclusion: local `131b1e8344ad`, Apple
+  `2a591c2aeed6`. The current manifest uses Apple's merged hunk exactly.
+
+A zero-context current-tree comparison found no fork-only freeze/thaw, trim,
+journal-mode, or README-exclusion line. There is therefore no source duplicate
+to delete. Only immutable published history remains, and it will not be
+rewritten.
 
 The remaining temporary ports track Apple #1735, #1997, #2031, #753/#766,
 Apple #799, #813, #820, #821, `container-builder-shim` #83, and
@@ -89,20 +108,16 @@ The gate never classifies a new commit automatically. A maintainer must inspect
 the change, assign it to one explicit slice, update the reviewed heads, and
 rerun the strict report.
 
-## Current Refresh Blocker
+## Current Refresh State
 
-`containerization` and `container-builder-shim` pass the non-destructive Apple
-merge check. Current Apple `container` conflicts with the supported fork in:
+The earlier Apple #2027/#2038 `container` conflicts and Apple #822/#824
+`containerization` updates have been resolved and validated on isolated
+integration branches. The Compose integration head
+`0d9a111609eed8d4bc7e3503f18492059b0f194e` passed full CI before the
+FORK-105 removals above were applied and revalidated.
 
-- `Package.swift`
-- `Package.resolved`
-- `Sources/ContainerBuild/BuildFSSync.swift`
-- `Sources/ContainerBuild/URL+Extensions.swift`
-- `Sources/SocketForwarder/TCPForwarder.swift`
-- `Tests/ContainerBuildTests/BuildFSSyncTests.swift`
-
-Those conflicts come from reconciling Apple #2027 and the #2038
-`containerization` 0.40.1 pin with independently strengthened fork behaviour.
-They must be resolved and validated in an isolated fork-sync branch before a
-stable release. This classification review does not silently choose either
-side.
+The fork default branches remain unchanged, so the registry baseline heads and
+their ahead/behind counts still describe those default branches. Release
+promotion must integrate the validated branches through normal signed commits
+without rewriting published history, then regenerate this registry against the
+new default heads.

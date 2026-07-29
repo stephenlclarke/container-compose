@@ -309,7 +309,7 @@
           "classification": "rejected-compose-policy",
           "owner": "stephenlclarke/container-compose",
           "reason": "Persistent external-config storage is Compose policy and has moved to the Compose-owned provider.",
-          "upstreamDisposition": "Remove the unused runtime store in FORK-105 after exact-pin compatibility confirms no remaining consumer.",
+          "upstreamDisposition": "Removed and fully validated on stephenlclarke/container:refactor/remove-compose-resource-stores at 9b1a49b53ff73417d1b4cfbf39fa5a9dffa06023; retain this historical classification until that branch is integrated into the fork default branch.",
           "commits": [
             "f1f8ce6b33fa3580a142d35312517b0ffa0833ac",
             "7261ac9cfe33bd2fd7efd38ac29ccbbfc13ea3d0"
@@ -320,7 +320,7 @@
           "classification": "rejected-compose-policy",
           "owner": "stephenlclarke/container-compose",
           "reason": "External-secret lookup is Compose policy and now uses the Compose-owned Keychain reader.",
-          "upstreamDisposition": "Remove the unused runtime secret-store API in FORK-105 after exact-pin compatibility confirms no remaining consumer.",
+          "upstreamDisposition": "Removed and fully validated on stephenlclarke/container:refactor/remove-compose-resource-stores at 9b1a49b53ff73417d1b4cfbf39fa5a9dffa06023; retain this historical classification until that branch is integrated into the fork default branch.",
           "commits": [
             "468a85e233dd9ee71897adfada3d812d1da0d4cf"
           ]
@@ -499,7 +499,7 @@
           "classification": "temporary-upstream-port",
           "owner": "apple/containerization#685",
           "reason": "The freeze and thaw API predates Apple merge #685 and remains as duplicate fork history.",
-          "upstreamDisposition": "Retain published history; verify no source delta remains after the next normal Apple merge.",
+          "upstreamDisposition": "Reconciled against Apple main at 7800b4642171561c95b5f55500b19e5dce5acd45: the local and merged Apple patches have identical stable patch IDs and no freeze/thaw source delta remains. Retain published history without rewriting it.",
           "commits": [
             "1eaaee814dad0e31a18711d2b29f869f7a4fb1d8"
           ]
@@ -509,7 +509,7 @@
           "classification": "temporary-upstream-port",
           "owner": "apple/containerization#700",
           "reason": "The trim API predates Apple merge #700 and remains as duplicate fork history.",
-          "upstreamDisposition": "Retain published history; verify no source delta remains after the next normal Apple merge.",
+          "upstreamDisposition": "Reconciled against Apple main at 7800b4642171561c95b5f55500b19e5dce5acd45: the local and merged Apple patches have identical stable patch IDs and no trim source delta remains. Retain published history without rewriting it.",
           "commits": [
             "28021979ddb5640e0f5f4067282bddddb928c013"
           ]
@@ -519,7 +519,7 @@
           "classification": "temporary-upstream-port",
           "owner": "apple/containerization#775",
           "reason": "The configurable EXT4 journal mode predates Apple merge #775 and remains as duplicate fork history.",
-          "upstreamDisposition": "Retain published history; verify no source delta remains after the next normal Apple merge.",
+          "upstreamDisposition": "Reconciled against Apple main at 7800b4642171561c95b5f55500b19e5dce5acd45: the local and merged Apple patches have identical stable patch IDs and no EXT4 journal-mode source delta remains. Retain published history without rewriting it.",
           "commits": [
             "cff8d5866ac8f33fc242c833e91db11d9e572d39"
           ]
@@ -529,7 +529,7 @@
           "classification": "rejected-compose-policy",
           "owner": "stephenlclarke/container-compose",
           "reason": "Opaque Keychain storage was added for Compose external secrets, which now use a Compose-owned reader.",
-          "upstreamDisposition": "Remove the unused lower-runtime Keychain API in FORK-105 after exact-pin compatibility confirms no remaining consumer.",
+          "upstreamDisposition": "Removed and fully validated on stephenlclarke/containerization:refactor/remove-compose-keychain-store at 66f0963cbe2b59170f9164c4dae5828baf59fdd8; retain this historical classification until that branch is integrated into the fork default branch.",
           "commits": [
             "9f63d1890ebbb999f552e88124cbcc6e7813e631"
           ]
@@ -539,7 +539,7 @@
           "classification": "temporary-upstream-port",
           "owner": "apple/containerization#798",
           "reason": "The CloudHypervisor SwiftPM exclusion was carried before Apple merged #798.",
-          "upstreamDisposition": "Retain published history and remove any remaining source duplication after normal Apple reconciliation.",
+          "upstreamDisposition": "Reconciled against Apple main at 7800b4642171561c95b5f55500b19e5dce5acd45: the current CloudHypervisor exclusion is Apple's merged source exactly and no fork-only exclusion delta remains. Retain published history without rewriting it.",
           "commits": [
             "131b1e8344add5dc98bf34bd7c14e75c31a53011"
           ]
