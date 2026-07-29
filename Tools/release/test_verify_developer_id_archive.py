@@ -84,7 +84,11 @@ class VerifyDeveloperIDArchiveTests(unittest.TestCase):
             else "Signature=adhoc"
         )
         authority_lines = authority_lines.replace("\n", "\n                ")
-        flags_line = "flags=0x10000(runtime)" if runtime else "flags=0x0(none)"
+        flags = "0x10000(runtime)" if runtime else "0x0(none)"
+        flags_line = (
+            f"CodeDirectory v=20500 size=128 flags={flags} "
+            "hashes=2+2 location=embedded"
+        )
         team_expression = (
             '[[ "$path" == *second ]] && team=ZZZZZZZZZZ'
             if second_team
