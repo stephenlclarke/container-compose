@@ -957,6 +957,19 @@ Phase gate:
 
 ### Passed
 
+- Network service-discovery development pins:
+  - `container` `0274f4a947b0df1b5f36436f677f46f5369e8b10`
+  - `containerization` `d7377b962af724f8d7c2b640f3ab12184d33f1af`
+  - focused runtime tests covered DNS parsing/forwarding, network lookup order,
+    alias canonicalisation/collision handling, and attachment allocation;
+  - the full pinned `container` suite passed with 1,235 tests in 143 suites;
+  - the live service-discovery integration test passed in 4.652 seconds,
+    compared with 4.577 seconds on the equivalent pre-merge tree;
+  - the isolated integration command took 282.78 seconds including the custom
+    init-image rebuild and warm-up;
+  - `HAWKEYE_AUTO_INSTALL=1 make ci` passed on the coordinated Compose pins in
+    308.85 seconds with 1,272 Swift tests executed and 25 live-runtime tests
+    explicitly skipped.
 - `HAWKEYE_AUTO_INSTALL=1 make ci` in clean `container-compose`
   - Python coverage tooling: 4 tests
   - release tooling: 155 tests
