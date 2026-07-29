@@ -44,8 +44,8 @@
 #                      Defaults to 60 seconds.
 #
 # This local-only check records Docker and container-compose timings while
-# validating source-scoped link aliases, scaled targets, DNS projection,
-# live target readdressing, and alias isolation.
+# validating source-scoped link aliases, scaled targets, dynamic external
+# targets, DNS projection, live target readdressing, and alias isolation.
 
 set -euo pipefail
 
@@ -73,6 +73,8 @@ DOCKER_FILE=""
 CONTAINER_FILE=""
 DOCKER_PROJECT="cc-links-d-$RANDOM-$$"
 CONTAINER_PROJECT="cc-links-a-$RANDOM-$$"
+DOCKER_EXTERNAL_TARGET="${DOCKER_PROJECT}-external"
+CONTAINER_EXTERNAL_TARGET="${CONTAINER_PROJECT}-external"
 DOCKER_SUBNET_PREFIX=""
 CONTAINER_SUBNET_PREFIX=""
 
@@ -165,6 +167,7 @@ check_tools() {
 write_fixture() {
     local path="$1"
     local subnet_prefix="$2"
+    local external_target="$3"
 
     cat >"$path" <<YAML
 services:
@@ -190,6 +193,15 @@ services:
     stop_grace_period: 1s
     networks:
       - backend
+  external-client:
+    image: ${FIXTURE_IMAGE}
+    command: ["sh", "-c", "sleep 900"]
+    stop_grace_period: 1s
+    external_links:
+      - ${external_target}:external-db
+    networks:
+      - backend
+      - secondary
   moving:
     image: ${FIXTURE_IMAGE}
     command: ["sh", "-c", "sleep 900"]
@@ -223,11 +235,11 @@ create_fixtures() {
     CONTAINER_FILE="$FIXTURE_DIR/container-compose.yml"
     DOCKER_SUBNET_PREFIX="10.243.$selector"
     CONTAINER_SUBNET_PREFIX="10.244.$selector"
-    write_fixture "$DOCKER_FILE" "$DOCKER_SUBNET_PREFIX"
-    write_fixture "$CONTAINER_FILE" "$CONTAINER_SUBNET_PREFIX"
+    write_fixture "$DOCKER_FILE" "$DOCKER_SUBNET_PREFIX" "$DOCKER_EXTERNAL_TARGET"
+    write_fixture "$CONTAINER_FILE" "$CONTAINER_SUBNET_PREFIX" "$CONTAINER_EXTERNAL_TARGET"
     {
         printf '# generated_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        printf '# workload=startup,scaled-link-lookup,scaled-link-isolation,readdress-link-isolation,scaled-link-hosts,readdress-link-hosts,readdress,post-readdress-lookup\n'
+        printf '# workload=startup,scaled-link-lookup,scaled-link-isolation,readdress-link-isolation,scaled-link-hosts,readdress-link-hosts,external-absent-lookup,external-alias-hosts,external-secondary-create,external-secondary-lookup,external-remove,external-post-remove-lookup,external-backend-create,external-backend-lookup,readdress,post-readdress-lookup\n'
         printf '# repetitions=%s\n' "$PARITY_REPETITIONS"
         printf '# comparison=median elapsed monotonic seconds by matching operation\n'
         printf '# timeout_seconds=%s\n' "$PARITY_TIMEOUT_SECONDS"
@@ -528,19 +540,74 @@ run_live_suite() {
     local project="$2"
     local file="$3"
     local subnet_prefix="$4"
+    local external_target
+    local external_client_id
+    local external_client_id_after
     local watcher_id
     local watcher_id_after
 
+    if [[ "$implementation" == "docker" ]]; then
+        external_target="$DOCKER_EXTERNAL_TARGET"
+    else
+        external_target="$CONTAINER_EXTERNAL_TARGET"
+    fi
     set_active_compose "$implementation" "$project" "$file"
     measure_capture "$implementation" startup 1 \
-        "${ACTIVE_COMPOSE[@]}" up --detach --scale pool=2 pool linked peer moving watcher >/dev/null
+        "${ACTIVE_COMPOSE[@]}" up --detach --scale pool=2 \
+        pool linked peer external-client moving watcher >/dev/null
 
     assert_timed_address_count "$implementation" linked database 1 scaled_link_lookup
     assert_alias_unavailable "$implementation" peer database scaled_link_isolation
     assert_alias_unavailable "$implementation" peer moving-db readdress_link_isolation
     assert_alias_not_in_hosts "$implementation" linked database scaled_link_hosts
     assert_alias_not_in_hosts "$implementation" watcher moving-db readdress_link_hosts
+    assert_alias_unavailable "$implementation" external-client external-db external_absent_lookup
+    assert_alias_not_in_hosts "$implementation" external-client external-db external_alias_hosts
     wait_for_address watcher moving-db "${subnet_prefix}.10"
+
+    external_client_id="$(run_bounded "${ACTIVE_COMPOSE[@]}" ps --quiet external-client)"
+    [[ -n "$external_client_id" ]] || {
+        error "$implementation did not report an external-client container ID"
+        return 1
+    }
+    if [[ "$implementation" == "docker" ]]; then
+        measure_capture "$implementation" external_secondary_create 1 \
+            docker run --detach --name "$external_target" --network "${project}_secondary" \
+            "$FIXTURE_IMAGE" sh -c 'sleep 900' >/dev/null
+    else
+        measure_capture "$implementation" external_secondary_create 1 \
+            "$CONTAINER_BINARY" run --detach --name "$external_target" \
+            --network "${project}_secondary" "$FIXTURE_IMAGE" sh -c 'sleep 900' >/dev/null
+    fi
+    assert_timed_address_count "$implementation" external-client external-db 1 external_secondary_lookup
+    if [[ "$implementation" == "docker" ]]; then
+        measure_capture "$implementation" external_remove 1 \
+            docker rm --force "$external_target" >/dev/null
+    else
+        measure_capture "$implementation" external_remove 1 \
+            "$CONTAINER_BINARY" delete --force "$external_target" >/dev/null
+    fi
+    assert_alias_unavailable "$implementation" external-client external-db external_post_remove_lookup
+    if [[ "$implementation" == "docker" ]]; then
+        measure_capture "$implementation" external_backend_create 1 \
+            docker run --detach --name "$external_target" --network "${project}_backend" \
+            "$FIXTURE_IMAGE" sh -c 'sleep 900' >/dev/null
+    else
+        measure_capture "$implementation" external_backend_create 1 \
+            "$CONTAINER_BINARY" run --detach --name "$external_target" \
+            --network "${project}_backend" "$FIXTURE_IMAGE" sh -c 'sleep 900' >/dev/null
+    fi
+    assert_timed_address_count "$implementation" external-client external-db 1 external_backend_lookup
+    external_client_id_after="$(run_bounded "${ACTIVE_COMPOSE[@]}" ps --quiet external-client)"
+    if [[ "$external_client_id_after" != "$external_client_id" ]]; then
+        error "$implementation recreated external-client while its external link target changed"
+        return 1
+    fi
+    if [[ "$implementation" == "docker" ]]; then
+        run_bounded docker rm --force "$external_target" >/dev/null
+    else
+        run_bounded "$CONTAINER_BINARY" delete --force "$external_target" >/dev/null
+    fi
 
     watcher_id="$(run_bounded "${ACTIVE_COMPOSE[@]}" ps --quiet watcher)"
     [[ -n "$watcher_id" ]] || {
@@ -568,7 +635,7 @@ run_live_suite() {
 assert_model_projection() {
     local output
     output="$("$CONTAINER_COMPOSE" --ansi never --dry-run --project-name model-links \
-        --file "$CONTAINER_FILE" up linked peer)"
+        --file "$CONTAINER_FILE" up linked peer external-client)"
     grep -F 'dns-alias=database:model-links-pool-1' <<<"$output" >/dev/null || {
         error 'up dry-run did not render the link alias mapping'
         return 1
@@ -580,6 +647,20 @@ assert_model_projection() {
     fi
     if grep -F -- '--add-host database' <<<"$output" >/dev/null; then
         error 'up dry-run retained the legacy static link host mapping'
+        return 1
+    fi
+    grep -F -- "--network model-links_backend,alias=external-client,dns-alias=external-db:${CONTAINER_EXTERNAL_TARGET}" \
+        <<<"$output" >/dev/null || {
+        error 'up dry-run did not project external_links onto the first source network'
+        return 1
+    }
+    grep -F -- "--network model-links_secondary,alias=external-client,dns-alias=external-db:${CONTAINER_EXTERNAL_TARGET}" \
+        <<<"$output" >/dev/null || {
+        error 'up dry-run did not project external_links onto the second source network'
+        return 1
+    }
+    if grep -F -- '--add-host external-db' <<<"$output" >/dev/null; then
+        error 'up dry-run retained the legacy static external_links host mapping'
         return 1
     fi
     if grep -F 'peer' <<<"$output" | grep -F 'dns-alias=database:model-links-pool-1' >/dev/null; then
@@ -647,11 +728,13 @@ PY
 cleanup() {
     local status=$?
     if [[ -n "$FIXTURE_DIR" ]]; then
+        docker rm --force "$DOCKER_EXTERNAL_TARGET" >/dev/null 2>&1 || true
         if [[ -f "$DOCKER_FILE" ]]; then
             "${DOCKER_COMPOSE_COMMAND[@]}" --project-name "$DOCKER_PROJECT" --file "$DOCKER_FILE" \
                 down --remove-orphans >/dev/null 2>&1 || true
         fi
         if [[ "$CONTAINER_COMPOSE_LIVE" == "1" && -f "$CONTAINER_FILE" ]]; then
+            "$CONTAINER_BINARY" delete --force "$CONTAINER_EXTERNAL_TARGET" >/dev/null 2>&1 || true
             env "CONTAINER_BIN=$CONTAINER_BINARY" "CONTAINER_COMPOSE_CONTAINER=$CONTAINER_BINARY" \
                 "$CONTAINER_COMPOSE" --ansi never --project-name "$CONTAINER_PROJECT" --file "$CONTAINER_FILE" \
                 down --remove-orphans >/dev/null 2>&1 || true

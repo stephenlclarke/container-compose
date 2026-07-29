@@ -311,6 +311,12 @@ extension ComposeOrchestrator {
                 values.append(value)
             }
         }
+        for reference in try serviceExternalLinkReferences(service: service) {
+            let value = "\(reference.alias):\(reference.containerName)"
+            if seen.insert(value.lowercased()).inserted {
+                values.append(value)
+            }
+        }
         return values
     }
 
@@ -368,74 +374,6 @@ extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(source.name)' maps both \(existingSource) and \(hostSource) to alias '\(alias)'; each generated alias must reference exactly one target")
         }
         generatedAliasSources[normalizedAlias] = hostSource
-    }
-
-    /// Resolves Compose `external_links` into runtime host entries for the supported local subset.
-    func projectByResolvingExternalLinks(project: ComposeProject, services: [ComposeService]) async throws -> ComposeProject {
-        var result = project
-        for serviceReference in services.sorted(by: { $0.name < $1.name }) {
-            guard var service = result.services[serviceReference.name] else {
-                continue
-            }
-            let hostEntries = try await runtimeExternalLinkHostArguments(project: result, service: service)
-            guard !hostEntries.isEmpty else {
-                continue
-            }
-            service.extraHosts = (service.extraHosts ?? []) + hostEntries
-            result.services[service.name] = service
-        }
-        return result
-    }
-
-    /// Returns generated `extra_hosts`-compatible values for Compose `external_links`.
-    func runtimeExternalLinkHostArguments(project: ComposeProject, service: ComposeService) async throws -> [String] {
-        let references = try serviceExternalLinkReferences(service: service)
-        guard !references.isEmpty else {
-            return []
-        }
-        var entries: [String] = []
-        var seenEntries = Set<String>()
-        for reference in references {
-            guard let container = try await discoveryManager.getContainer(id: reference.containerName) else {
-                throw ComposeError.invalidProject("service '\(service.name)' external_links references missing container '\(reference.containerName)'")
-            }
-            let network = try externalLinkRuntimeNetwork(
-                project: project,
-                service: service,
-                externalContainer: container,
-                reference: reference,
-            )
-            let attachments = container.networks.filter { $0.network == network }
-            guard attachments.count == 1, let attachment = attachments.first else {
-                throw ComposeError.unsupported("service '\(service.name)' external_links to '\(reference.containerName)'; external container must share exactly one runtime network with the service")
-            }
-            let entry = "\(reference.alias)=\(attachment.ipv4Address)"
-            if seenEntries.insert(entry).inserted {
-                entries.append(entry)
-            }
-        }
-        return entries
-    }
-
-    /// Returns the single runtime network a source service shares with one external link.
-    func externalLinkRuntimeNetwork(
-        project: ComposeProject,
-        service: ComposeService,
-        externalContainer: ComposeContainerSummary,
-        reference: ComposeExternalLinkReference,
-    ) throws -> String {
-        let serviceNetworks = Set(
-            (service.networks ?? []).map { networkRuntimeName(project: project, composeName: $0) },
-        )
-        let externalNetworks = Set(externalContainer.networks.map(\.network))
-        let sharedNetworks = serviceNetworks.intersection(externalNetworks).sorted()
-        guard sharedNetworks.count == 1, let network = sharedNetworks.first else {
-            throw ComposeError.unsupported(
-                "service '\(service.name)' external_links to '\(reference.containerName)'; " +
-                    "external container must share exactly one runtime network with the service",
-            )
-        }
-        return network
     }
 
 }

@@ -468,7 +468,7 @@ public extension ComposeOrchestrator {
         activeServiceNames.insert(serviceName)
         runProject = try projectByValidatingLinks(project: runProject, activeServiceNames: activeServiceNames)
         service = runProject.services[serviceName] ?? service
-        var dependencyServices = try selectedDependencyServices.map { service in
+        let dependencyServices = try selectedDependencyServices.map { service in
             guard let activeService = runProject.services[service.name] else {
                 throw ComposeError.invalidProject("unknown service '\(service.name)'")
             }
@@ -479,17 +479,6 @@ public extension ComposeOrchestrator {
             project: runProject,
             validateDependencies: !run.noDeps,
         )
-        runProject = try await projectByResolvingExternalLinks(
-            project: runProject,
-            services: dependencyServices + [service],
-        )
-        service = runProject.services[serviceName] ?? service
-        dependencyServices = try selectedDependencyServices.map { service in
-            guard let activeService = runProject.services[service.name] else {
-                throw ComposeError.invalidProject("unknown service '\(service.name)'")
-            }
-            return activeService
-        }
         try validateRunLifecycleHooks(service: service, options: run)
         try validatePublishedPorts(services: dependencyServices)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish

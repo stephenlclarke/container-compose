@@ -146,7 +146,7 @@ extension ComposeOrchestrator {
             : orderedServices(project: project, selected: up.services)
         var waitTargets: [ServiceContainerTarget] = []
         var workingProject = try projectByValidatingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
-        var services = try selectedServiceReferences.map { service in
+        let services = try selectedServiceReferences.map { service in
             guard let activeService = workingProject.services[service.name] else {
                 throw ComposeError.invalidProject("unknown service '\(service.name)'")
             }
@@ -166,13 +166,6 @@ extension ComposeOrchestrator {
         let validateDependencies = !(up.noDeps && !up.services.isEmpty)
         try validatePullPolicy(up.pullPolicy)
         try validateRuntimeSupport(services: services, project: workingProject, validateDependencies: validateDependencies)
-        workingProject = try await projectByResolvingExternalLinks(project: workingProject, services: services)
-        services = try selectedServiceReferences.map { service in
-            guard let activeService = workingProject.services[service.name] else {
-                throw ComposeError.invalidProject("unknown service '\(service.name)'")
-            }
-            return activeService
-        }
         let attachLogMode = upUsesAttachLogFollow(up)
         let exitControlMode = upUsesExitControl(up)
         let attachedLogServices = try upAttachedLogServices(project: workingProject, services: services, options: up)

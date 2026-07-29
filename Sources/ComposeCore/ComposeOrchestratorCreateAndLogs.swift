@@ -34,8 +34,8 @@ public extension ComposeOrchestrator {
         let selectedServiceReferences = try create.noDeps && !create.services.isEmpty
             ? selectedServices(project: project, selected: create.services)
             : orderedServices(project: project, selected: create.services)
-        var workingProject = try projectByValidatingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
-        var services = try selectedServiceReferences.map { service in
+        let workingProject = try projectByValidatingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
+        let services = try selectedServiceReferences.map { service in
             guard let activeService = workingProject.services[service.name] else {
                 throw ComposeError.invalidProject("unknown service '\(service.name)'")
             }
@@ -52,13 +52,6 @@ public extension ComposeOrchestrator {
         let validateDependencies = !(create.noDeps && !create.services.isEmpty)
         try validateCreatePullPolicy(create.pullPolicy)
         try validateRuntimeSupport(services: services, project: workingProject, validateDependencies: validateDependencies)
-        workingProject = try await projectByResolvingExternalLinks(project: workingProject, services: services)
-        services = try selectedServiceReferences.map { service in
-            guard let activeService = workingProject.services[service.name] else {
-                throw ComposeError.invalidProject("unknown service '\(service.name)'")
-            }
-            return activeService
-        }
         let externalVolumeMounts = try await resolveExternalVolumeMounts(project: workingProject, services: services)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)

@@ -1082,8 +1082,8 @@ extension ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects missing external links before creating resources")
-    func runRejectsMissingExternalLinksBeforeCreatingResources() async throws {
+    @Test("run allows external links whose target does not exist yet")
+    func runAllowsExternalLinksWhoseTargetDoesNotExistYet() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         let discoveryManager = RecordingContainerDiscoveryManager()
@@ -1101,25 +1101,21 @@ extension ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(
-                runner: runner,
-                discoveryManager: discoveryManager,
-                resourceManager: resourceManager
-            ).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected missing external links error")
-        } catch let error as ComposeError {
-            #expect(error == .invalidProject("service 'job' external_links references missing container 'legacy_db'"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
-        #expect(await resourceManager.requests.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "demo_backend,dns-alias=db:legacy_db"]))
+        #expect(!command.contains("--add-host"))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+        #expect(!(await discoveryManager.getRequests).contains("legacy_db"))
     }
 
-    @Test("run maps external links to generated host entries")
-    func runMapsExternalLinksToGeneratedHostEntries() async throws {
+    @Test("run maps external links to source-scoped DNS aliases")
+    func runMapsExternalLinksToSourceScopedDNSAliases() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
@@ -1150,10 +1146,10 @@ extension ComposeOrchestratorTests {
         ).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
         let command = try #require(runner.commands.first?.arguments)
-        #expect(command.containsSequence(["--network", "demo_backend"]))
-        #expect(command.containsSequence(["--add-host", "db:192.168.64.20"]))
+        #expect(command.containsSequence(["--network", "demo_backend,dns-alias=db:legacy_db"]))
+        #expect(!command.contains("--add-host"))
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
-        #expect(await discoveryManager.getRequests.contains("legacy_db"))
+        #expect(!(await discoveryManager.getRequests).contains("legacy_db"))
     }
 
     @Test("run maps legacy links to source-scoped DNS aliases after starting dependencies")
