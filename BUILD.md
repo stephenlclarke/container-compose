@@ -182,6 +182,16 @@ successful hosted gate records a candidate-bound GitHub Actions release-authorit
 check on that tag commit; the package workflow requires that check, then repeats
 `make ci` before it publishes assets or updates the tap.
 
+The package workflow also requires the repository secrets
+`DEVELOPER_ID_APPLICATION_P12_BASE64` and
+`DEVELOPER_ID_APPLICATION_P12_PASSWORD`. It imports that certificate into a
+temporary non-extractable keychain only after release authority is established,
+signs every Mach-O executable in the matched Compose and Container archives
+with the hardened runtime and a secure timestamp, verifies the complete
+archives, and removes the keychain before attestation or publication. A
+missing, expired, ad hoc, mixed-team, untimestamped, or non-hardened signature
+fails the release.
+
 Phase 5 promotions have no Builder-suite exception. Apple
 [`container@d1d7635`](https://github.com/apple/container/commit/d1d763530df3c6a326dbae7f0c0a59a335808045)
 fixed the shared Builder startup race and moved the complete coverage into
@@ -249,7 +259,7 @@ Bootstrap that runner once on the release Mac after its normal build prerequisit
 ./scripts/install-scheduled-release-runner.sh
 ```
 
-The installer verifies hardware virtualization, the Git author identity and SSH tag- and commit-signing configuration, that the signing key can operate without an interactive passphrase, the local `gh` account, and the release toolchain before it registers a repository-only runner and starts its standard `launchd` service. Rerun the same command during normal release maintenance: it queries the latest GitHub Actions macOS ARM64 runner asset, verifies its published SHA-256 digest before stopping anything, and, when the configured runner is stale, replaces only the runner program files, confirms the installed version, and restarts the existing registration and `launchd` service. It uses the logged-in account through the macOS keychain at run time; it does not copy a GitHub token or signing key into an Actions secret.
+The installer verifies hardware virtualization, the Git author identity and SSH tag- and commit-signing configuration, that the signing key can operate without an interactive passphrase, the local `gh` account, and the release toolchain before it registers a repository-only runner and starts its standard `launchd` service. Rerun the same command during normal release maintenance: it queries the latest GitHub Actions macOS ARM64 runner asset, verifies its published SHA-256 digest before stopping anything, and, when the configured runner is stale, replaces only the runner program files, confirms the installed version, and restarts the existing registration and `launchd` service. It uses the logged-in account through the macOS keychain at run time; it does not copy the GitHub token or SSH commit/tag signing key into an Actions secret. The separate Developer ID Application certificate used for release-binary signing is held in the repository secrets named above and is handled only by the temporary package-job keychain.
 
 From clean `~/github/container-compose`, `~/github/container-builder-shim`,
 `~/github/containerization`, `~/github/container`, and

@@ -1662,7 +1662,7 @@ wait_for_github_run_success() {
 
 # Verify the stable release assets and Homebrew formula agree.
 verify_compose_stable_package() {
-  local version="$1" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha
+  local version="$1" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha signature_verifier
   repo="$(github_repo "${COMPOSE_REPO}")"
   asset="container-compose-plugin-release-arm64.tar.gz"
   expected_url="https://github.com/${repo}/releases/download/${version}/${asset}"
@@ -1715,12 +1715,22 @@ verify_compose_stable_package() {
   fi
   runtime_asset_sha="$(shasum -a 256 "${tmp}/${runtime_asset}" | awk '{print $1}')"
   runtime_checksum_sha="$(awk '{print $1}' "${tmp}/${runtime_asset}.sha256")"
-  rm -rf "${tmp}"
   if [[ "${runtime_asset_sha}" != "${runtime_checksum_sha}" ]]; then
     printf 'release %s runtime checksum mismatch: asset %s, checksum file %s\n' \
       "${version}" "${runtime_asset_sha}" "${runtime_checksum_sha}" >&2
     exit 1
   fi
+  signature_verifier="$(
+    repo_path "${COMPOSE_REPO}"
+  )/Tools/release/verify-developer-id-archive.sh"
+  if [[ ! -x "${signature_verifier}" ]]; then
+    printf 'Developer ID archive verifier is missing or not executable: %s\n' \
+      "${signature_verifier}" >&2
+    exit 1
+  fi
+  "${signature_verifier}" "${tmp}/${asset}"
+  "${signature_verifier}" "${tmp}/${runtime_asset}"
+  rm -rf "${tmp}"
 
   formula_text="$(
     github_cli api \

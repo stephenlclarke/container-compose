@@ -121,6 +121,10 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn(f"Mutable `current` pointer targets main commit `{head}`", notes)
             self.assertIn("`container-current-arm64.tar.gz` SHA-256:", notes)
             self.assertIn("`runtime-sha`.", notes)
+            self.assertIn(
+                "Developer ID Application signed with the hardened runtime",
+                notes,
+            )
 
     def test_main_validation_tag_rerun_keeps_full_stable_range(self) -> None:
         module = load_module()

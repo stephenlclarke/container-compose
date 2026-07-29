@@ -692,6 +692,94 @@ jobs:
               ;;
           esac
 
+      - name: Install Developer ID application certificate
+        env:
+          DEVELOPER_ID_APPLICATION_P12_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}
+          DEVELOPER_ID_APPLICATION_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
+          DEVELOPER_ID_KEYCHAIN: ${{ runner.temp }}/container-compose-developer-id-${{ github.run_id }}-${{ github.run_attempt }}.keychain-db
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${DEVELOPER_ID_APPLICATION_P12_BASE64}" ]]; then
+            printf 'DEVELOPER_ID_APPLICATION_P12_BASE64 is required for release signing.\n' >&2
+            exit 1
+          fi
+          if [[ -z "${DEVELOPER_ID_APPLICATION_P12_PASSWORD}" ]]; then
+            printf 'DEVELOPER_ID_APPLICATION_P12_PASSWORD is required for release signing.\n' >&2
+            exit 1
+          fi
+
+          certificate="${RUNNER_TEMP}/developer-id-application-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.p12"
+          keychain_password="$(openssl rand -hex 32)"
+          cleanup_failed_import() {
+            status="$?"
+            rm -f "${certificate}"
+            if ((status != 0)); then
+              security delete-keychain "${DEVELOPER_ID_KEYCHAIN}" >/dev/null 2>&1 || true
+            fi
+            exit "${status}"
+          }
+          trap cleanup_failed_import EXIT
+
+          rm -f "${certificate}" "${DEVELOPER_ID_KEYCHAIN}"
+          python3 - "${certificate}" <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+          import sys
+
+          encoded_certificate = "".join(
+              os.environ["DEVELOPER_ID_APPLICATION_P12_BASE64"].split()
+          )
+          Path(sys.argv[1]).write_bytes(
+              base64.b64decode(encoded_certificate, validate=True)
+          )
+          PY
+          chmod 600 "${certificate}"
+
+          security create-keychain -p "${keychain_password}" "${DEVELOPER_ID_KEYCHAIN}"
+          security set-keychain-settings -lut 14400 "${DEVELOPER_ID_KEYCHAIN}"
+          security unlock-keychain -p "${keychain_password}" "${DEVELOPER_ID_KEYCHAIN}"
+          security import "${certificate}" \
+            -k "${DEVELOPER_ID_KEYCHAIN}" \
+            -P "${DEVELOPER_ID_APPLICATION_P12_PASSWORD}" \
+            -f pkcs12 \
+            -x \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "${keychain_password}" \
+            "${DEVELOPER_ID_KEYCHAIN}"
+
+          identities="$(
+            security find-identity -v -p codesigning "${DEVELOPER_ID_KEYCHAIN}" \
+              | grep 'Developer ID Application:' || true
+          )"
+          identity_count="$(grep -c . <<<"${identities}" || true)"
+          if [[ "${identity_count}" != "1" ]]; then
+            printf 'expected exactly one valid Developer ID Application identity, found %s\n' \
+              "${identity_count}" >&2
+            exit 1
+          fi
+          identity="$(awk '{print $2}' <<<"${identities}")"
+          if [[ ! "${identity}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            printf 'Developer ID Application identity fingerprint is invalid.\n' >&2
+            exit 1
+          fi
+          security find-certificate \
+            -c 'Developer ID Application' \
+            -p "${DEVELOPER_ID_KEYCHAIN}" \
+            | openssl x509 -checkend 86400 -noout
+
+          rm -f "${certificate}"
+          trap - EXIT
+          {
+            printf 'DEVELOPER_ID_APPLICATION_IDENTITY=%s\n' "${identity}"
+            printf 'DEVELOPER_ID_KEYCHAIN=%s\n' "${DEVELOPER_ID_KEYCHAIN}"
+          } >> "${GITHUB_ENV}"
+
       - name: Build matched runtime package
         id: runtime-package
         env:
@@ -708,7 +796,10 @@ jobs:
               runtime_tag="${RELEASE_TAG}"
               runtime_asset="container-current-${PUBLISH_SHA:0:12}-arm64.tar.gz"
               runtime_local_asset="${RUNNER_TEMP}/${runtime_asset}"
-              make -C container package BUILD_CONFIGURATION=release HOMEBREW_ARCHIVE="${runtime_local_asset}"
+              make -C container package \
+                BUILD_CONFIGURATION=release \
+                HOMEBREW_ARCHIVE="${runtime_local_asset}" \
+                CODESIGN_OPTS="--force --sign ${DEVELOPER_ID_APPLICATION_IDENTITY} --keychain ${DEVELOPER_ID_KEYCHAIN} --timestamp --options runtime"
               python3 container-compose/Tools/release/write-sha256-sidecar.py "${runtime_local_asset}"
               runtime_sha="$(awk '{print $1}' "${runtime_local_asset}.sha256")"
               runtime_version="${FORMULA_VERSION}"
@@ -718,7 +809,10 @@ jobs:
               runtime_tag="${PUBLISH_REF_NAME}"
               runtime_asset="container-release-arm64.tar.gz"
               runtime_local_asset="${RUNNER_TEMP}/${runtime_asset}"
-              make -C container package BUILD_CONFIGURATION=release HOMEBREW_ARCHIVE="${runtime_local_asset}"
+              make -C container package \
+                BUILD_CONFIGURATION=release \
+                HOMEBREW_ARCHIVE="${runtime_local_asset}" \
+                CODESIGN_OPTS="--force --sign ${DEVELOPER_ID_APPLICATION_IDENTITY} --keychain ${DEVELOPER_ID_KEYCHAIN} --timestamp --options runtime"
               python3 container-compose/Tools/release/write-sha256-sidecar.py "${runtime_local_asset}"
               runtime_sha="$(awk '{print $1}' "${runtime_local_asset}.sha256")"
               runtime_version="${PUBLISH_REF_NAME}"
@@ -768,12 +862,35 @@ jobs:
           cache: false
 
       - name: Build release package
-        run: make package-release PLUGIN_ARCHIVE="${RUNNER_TEMP}/${{ steps.lane.outputs.asset }}"
+        run: |
+          make package-release \
+            PLUGIN_ARCHIVE="${RUNNER_TEMP}/${{ steps.lane.outputs.asset }}" \
+            CODESIGN_OPTS="--force --sign ${DEVELOPER_ID_APPLICATION_IDENTITY} --keychain ${DEVELOPER_ID_KEYCHAIN} --timestamp --options runtime"
         working-directory: container-compose
         env:
           CONTAINER_COMPOSE_BRANCH: ${{ needs.resolve-publish-context.outputs.ref_name }}
           CONTAINER_COMPOSE_COMMIT: ${{ needs.resolve-publish-context.outputs.sha }}
           CONTAINER_COMPOSE_LANE: ${{ steps.lane.outputs.package_lane }}
+
+      - name: Verify Developer ID signed release archives
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          Tools/release/verify-developer-id-archive.sh \
+            "${RUNNER_TEMP}/${{ steps.lane.outputs.asset }}"
+          Tools/release/verify-developer-id-archive.sh \
+            "${{ steps.runtime-package.outputs.local_asset }}"
+
+      - name: Remove Developer ID signing keychain
+        if: always()
+        env:
+          DEVELOPER_ID_KEYCHAIN: ${{ runner.temp }}/container-compose-developer-id-${{ github.run_id }}-${{ github.run_attempt }}.keychain-db
+        shell: bash
+        run: |
+          set -euo pipefail
+          security delete-keychain "${DEVELOPER_ID_KEYCHAIN}" >/dev/null 2>&1 || true
+          rm -f "${DEVELOPER_ID_KEYCHAIN}"
 
       - name: Install VHS
         if: needs.resolve-publish-context.outputs.ref_type == 'branch'

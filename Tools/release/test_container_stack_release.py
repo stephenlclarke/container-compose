@@ -319,6 +319,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("grep -Fx './bin/container'", workflow)
         self.assertIn('verify_archive_entry "${RUNTIME_ASSET}" "./bin/container" "runtime"', renderer)
         self.assertIn("published ${label} package archive is corrupt", renderer)
+        self.assertIn(
+            '"${signature_verifier}" "${tmp}/${asset}"',
+            self.script,
+        )
+        self.assertIn(
+            '"${signature_verifier}" "${tmp}/${runtime_asset}"',
+            self.script,
+        )
 
     def test_release_checksum_sidecars_use_published_asset_basenames(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
@@ -689,7 +697,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         package = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         package_authority = package[
             package.index("- name: Require the hosted release authority") : package.index(
-                "- name: Build matched runtime package"
+                "- name: Install Developer ID application certificate"
             )
         ]
         current_authority = package_authority[
@@ -741,7 +749,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         authority = workflow[
             workflow.index("- name: Require the hosted release authority") : workflow.index(
-                "- name: Build matched runtime package"
+                "- name: Install Developer ID application certificate"
             )
         ]
         tag_authority = authority[authority.index("tag)") : authority.index("*)")]
@@ -758,6 +766,45 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("workflow_dispatch", tag_authority)
         self.assertNotIn('workflow="stable-release-gate.yml"', tag_authority)
         self.assertNotIn('--commit "${PUBLISH_SHA}"', tag_authority)
+
+    def test_release_archives_require_developer_id_signatures(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        certificate_step = workflow[
+            workflow.index("- name: Install Developer ID application certificate") :
+            workflow.index("- name: Build matched runtime package")
+        ]
+        signing_steps = workflow[
+            workflow.index("- name: Build matched runtime package") :
+            workflow.index("- name: Install VHS")
+        ]
+
+        self.assertIn(
+            "secrets.DEVELOPER_ID_APPLICATION_P12_BASE64",
+            certificate_step,
+        )
+        self.assertIn(
+            "secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD",
+            certificate_step,
+        )
+        self.assertIn("security set-key-partition-list", certificate_step)
+        self.assertNotIn("-A", certificate_step)
+        self.assertEqual(signing_steps.count("--options runtime"), 3)
+        self.assertEqual(signing_steps.count("--timestamp"), 3)
+        self.assertEqual(
+            signing_steps.count("verify-developer-id-archive.sh"),
+            2,
+        )
+        self.assertIn("if: always()", signing_steps)
+        self.assertIn("security delete-keychain", signing_steps)
+        self.assertIn("CODESIGN_OPTS ?= --force --sign - --timestamp=none", makefile)
+        self.assertIn(
+            "--identifier io.github.stephenlclarke.container-compose",
+            makefile,
+        )
+        self.assertTrue(
+            (ROOT / "Tools" / "release" / "verify-developer-id-archive.sh").is_file()
+        )
 
     def test_package_authority_requires_a_successful_candidate_bound_gate(self) -> None:
         accepted = self.run_package_authority_step("tag", "0.6.70", "29288195238", "success")
@@ -1665,7 +1712,7 @@ esac
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         authority = workflow[
             workflow.index("- name: Require the hosted release authority") : workflow.index(
-                "- name: Build matched runtime package"
+                "- name: Install Developer ID application certificate"
             )
         ]
         run_marker = "        run: |\n"
