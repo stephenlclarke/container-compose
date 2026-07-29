@@ -29,7 +29,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/stephenlclarke/container.git",
-            revision: "d956531cb6587bdda8b97875ed2d478ce2aed116",
+            revision: "39f56bd8a1935ca45d5366a5a1f64a4c4e8c9d72",
         ),
         .package(
             url: "https://github.com/stephenlclarke/containerization.git",
