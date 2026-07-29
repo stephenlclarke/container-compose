@@ -958,12 +958,14 @@ Phase gate:
 ### Passed
 
 - Network service-discovery and XPC reliability development pins:
-  - `container` `a528d38dff0d941902ead5a206ec03b5118509f6`
+  - `container-compose` `a1fa0822a12b4913a7a6d857f2149c9975ad9e11`
+  - `container` `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1`
   - `containerization` `d7377b962af724f8d7c2b640f3ab12184d33f1af`
   - focused runtime tests covered DNS parsing/forwarding, network lookup order,
     alias canonicalisation/collision handling, attachment allocation, and the
     ProcessIO input pump;
-  - the full pinned `container` suite passed with 1,261 tests in 144 suites;
+  - the full pinned `container` suite passed with 1,262 Swift Testing cases
+    plus 94 XCTest cases;
   - the timed live service-discovery matrix passed all nine behavioural
     comparisons against Docker. Container Compose medians ranged from 2.27x
     to 5.13x for steady-state operations; cold project startup was 7.095
@@ -1004,20 +1006,26 @@ Phase gate:
     archives; actual Developer ID certificate, authority, team, and timestamp
     proof remains a hosted release gate because GitHub secret values are not
     exported to local validation.
-- Legacy links now use source-scoped DNS mappings rather than static
-  `/etc/hosts` projection:
+- Legacy and external links now use source-scoped DNS mappings rather than
+  static `/etc/hosts` projection:
   - Docker Compose v5.3.1 confirmed that a scaled link alias selects the first
     target replica while the service name continues to resolve every replica;
   - the matched supported stack passed source isolation, scaled-target,
-    readdressing, and no-static-host-entry checks;
-  - median startup was 6.560 seconds versus Docker's 0.637 seconds, scaled-link
-    lookup 0.773 seconds versus 0.205 seconds, target readdress 2.727 seconds
-    versus 1.463 seconds, and post-readdress lookup 0.776 seconds versus 0.206
-    seconds;
+    readdressing, dynamic external-target, and no-static-host-entry checks;
+  - an external target could be absent at source startup, appear on a
+    secondary network, disappear, and reappear on the backend without
+    recreating the source; its alias remained source-scoped throughout;
+  - median startup was 5.858 seconds versus Docker's 0.566 seconds,
+    scaled-link lookup 0.643 seconds versus 0.110 seconds, target readdress
+    2.684 seconds versus 1.331 seconds, and post-readdress lookup 0.634 seconds
+    versus 0.118 seconds;
   - the four DNS-isolation and `/etc/hosts` absence probes were also timed
-    across all three repetitions: Compose medians were 0.734 to 0.790 seconds
-    versus Docker's 0.205 to 0.217 seconds;
-  - all operations completed within the 180-second hard timeout and below the
+    across all three repetitions: Compose medians were 0.633 to 0.645 seconds
+    versus Docker's 0.108 to 0.113 seconds;
+  - dynamic external-target Compose medians were 0.254 to 0.751 seconds
+    versus Docker's 0.112 to 0.173 seconds across absence, create, lookup,
+    removal, post-removal, and reappearance operations;
+  - all operations completed within the 300-second hard timeout and below the
     documented material-slowdown threshold;
   - raw repetitions and environment metadata are retained in
     `docs/reviews/compose-links-parity-timings-2026-07-29.tsv`.
