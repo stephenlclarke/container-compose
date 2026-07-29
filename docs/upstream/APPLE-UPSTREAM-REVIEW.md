@@ -6,6 +6,8 @@ Updated: 29 July 2026 after fetching every configured Apple and
 Stephen-owned remote, querying the live pull-request state, and completing the
 31-pull-request stock-Apple port audit and the three strengthened stock
 submissions derived from that audit, including their strict follow-up review.
+The snapshot also includes the validated Apple #2038/#824 integration branches
+and the resulting Compose stack pins.
 
 ## Scope
 
@@ -32,6 +34,21 @@ supported `containerization` fork is two Apple commits behind: Apple PR #822 at
 deltas are not silently counted as fork functionality. The fork-only counts
 include merge commits and intentionally retained generic runtime work; they
 are not a count of changes that are ready for Apple.
+
+The fork default branches have not been changed. The reviewed integration
+branches that include these Apple heads and the existing Compose runtime
+capability work are:
+
+| Repository | Validated integration branch | Published head |
+| --- | --- | --- |
+| `container` | `feat/compose-runtime-capability-apple-2038` | `d0d4fbd098d3e4d7035b7b3f58946e943065e418` |
+| `containerization` | `feat/copy-stream-metadata-apple-824` | `3a74e96e337443b82148a582856aac6abcf8c349` |
+| `container-compose` | `feat/runtime-capability-apple-2038` | `0d9a111609eed8d4bc7e3503f18492059b0f194e` |
+
+The Compose branch pins the two exact runtime heads in `Package.swift`,
+`Package.resolved`, and `Tools/release/stack-refs.json`. The
+`container-builder-shim` pin remains
+`f97cddf5b3aae2426a094613793c11c41b1d2e53`.
 
 ## Submitted Stephen-Authored Apple Pull Requests
 
@@ -204,7 +221,7 @@ bug reports:
 | --- | --- |
 | [apple/container#1859](https://github.com/apple/container/pull/1859) | [#2035](https://github.com/apple/container/pull/2035), fixing [#2033](https://github.com/apple/container/issues/2033), at `a8d3b5c`. Runtime validation now precedes state insertion, root-filesystem metadata uses the same atomic durability rule as other bundle JSON, and corrected malformed-data and missing-runtime tests prove both behaviours. |
 | [apple/container#1773](https://github.com/apple/container/pull/1773) | [#2036](https://github.com/apple/container/pull/2036), fixing [#2034](https://github.com/apple/container/issues/2034), at `f2f248f`. The correct production close from @muk2 is retained, descriptor zero and the escaping handler contract are corrected, and the weak process-wide threshold is replaced by exact path-specific leak detection with 32 verified handler calls. Strict review exposed a readiness race in the strengthened watcher tests; explicit active, inactive, and restarted watcher-state requirements now gate each filesystem mutation. The final review also removed an obsolete force-unwrapped fixture. This replacement deliberately does not close [#1097](https://github.com/apple/container/issues/1097), whose guest virtiofs workload has no established causal path through the host DNS directory watcher. |
-| [apple/containerization#716](https://github.com/apple/containerization/pull/716) | [#823](https://github.com/apple/containerization/pull/823) at `3ed10bf`, the highest-priority security correction. `O_NOFOLLOW` on one `openat` call protects only the final path component. Component-wise descriptor traversal prevents an intermediate symlink redirecting deferred metadata outside the extraction root, while canonical last-entry-wins state preserves archive semantics. Strict review additionally bound deferred metadata to the device and inode recorded at extraction time, preventing a removed and recreated path from receiving stale attributes. It was validated at `50f7722`; Apple `main` then gained only #822 and #824, both unrelated to archive extraction, and GitHub still reports the PR mergeable and blocked. |
+| [apple/containerization#716](https://github.com/apple/containerization/pull/716) | [#823](https://github.com/apple/containerization/pull/823) at `3ed10bf`, the highest-priority security correction. `O_NOFOLLOW` on one `openat` call protects only the final path component. Component-wise descriptor traversal prevents an intermediate symlink redirecting deferred metadata outside the extraction root, while canonical last-entry-wins state preserves archive semantics. Strict review additionally bound deferred metadata to the device and inode recorded at extraction time, preventing a removed and recreated path from receiving stale attributes. The final reviewed head was validated directly; Apple `main` then gained only #822 and #824, both unrelated to archive extraction, and GitHub still reports the PR mergeable and blocked. |
 
 ### Recorded Validation Timings
 
@@ -248,6 +265,21 @@ signal here.
 - The earlier cumulative-fork validation remains supporting evidence: 1,223
   container tests in 146 suites passed in 12.314 seconds, and 669
   containerization tests in 86 suites passed in 151.545 seconds.
+- The combined `containerization` integration head `3a74e96` passed 137
+  focused tests in 6 suites in 45.287 seconds, with 170.09 seconds command
+  wall time including the cold build. Its full gate passed 679 tests in 86
+  suites in 48.006 seconds, with 137.71 seconds command wall time including
+  the coverage rebuild; `make check` passed in 3.60 seconds.
+- The combined `container` integration head `d0d4fbd` passed 35 focused tests
+  in 4 suites in 0.477 seconds, with 30.79 seconds command wall time including
+  its incremental build. Its full gate passed 1,227 tests in 146 suites in
+  12.195 seconds, with 171.10 seconds command wall time including the clean
+  build and test-image setup; `make check` passed in 10.48 seconds.
+- The resulting Compose head `0d9a111` passed
+  `HAWKEYE_AUTO_INSTALL=1 make ci` in 391.21 seconds. The Swift phase passed
+  1,297 discovered tests in 51 suites in 19.479 seconds, with 1,272 executed
+  and 25 live-runtime tests intentionally skipped. All Swift and Go coverage
+  thresholds, release checks, and CLI smoke checks passed.
 
 No test hung and no material slowdown attributable to these hardenings was
 observed. Preserve these timings with future parity and optimisation runs;
@@ -258,6 +290,7 @@ slower in practical use or does not complete.
 
 | Repository | Current purpose |
 | --- | --- |
+| `apple/container` | The socket forwarder's successful-backend race closes the already inactive frontend a second time instead of closing the newly connected backend. The defect exists on current stock Apple `main`. The fork correction at `d0d4fbd` closes the backend peer and adds a deterministic `EmbeddedChannel` regression. It remains unsubmitted and still needs an independent stock-Apple commit, current issue/PR templates, and direct stock validation before submission. |
 | `apple/container` | [Generic IPv6 network disablement](apple-container/PR-network-ipv6-disablement.md) adds a typed macOS vmnet NAT66 and router-advertisement control while retaining enabled compatibility by default. |
 | `apple/container-builder-shim` | [Build-context source-read errors](apple-container-builder-shim/PR-build-context-source-read-errors.md) fail explicitly instead of sending empty file content. |
 | `apple/container-builder-shim` | [Build-context cache integrity](apple-container-builder-shim/PR-build-context-cache-integrity.md) verifies archives, atomically publishes cache trees, and keeps synthetic Dockerfiles request-local. |
