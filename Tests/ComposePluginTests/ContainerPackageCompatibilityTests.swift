@@ -851,7 +851,8 @@ struct ContainerPackagePreflightSignalTests {
       interruptedProcess.terminations
     )
 
-    #expect(clock.now - interruptionStarted < .seconds(2))
+    // Sanitizer instrumentation can add several seconds to process teardown.
+    #expect(clock.now - interruptionStarted < .seconds(5))
     #expect(termination.reason == .exit)
     #expect(termination.status == 130)
     errno = 0

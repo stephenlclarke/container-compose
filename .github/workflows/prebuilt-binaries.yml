@@ -697,6 +697,7 @@ jobs:
           DEVELOPER_ID_APPLICATION_P12_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}
           DEVELOPER_ID_APPLICATION_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
           DEVELOPER_ID_KEYCHAIN: ${{ runner.temp }}/container-compose-developer-id-${{ github.run_id }}-${{ github.run_attempt }}.keychain-db
+          DEVELOPER_ID_ORIGINAL_KEYCHAINS: ${{ runner.temp }}/container-compose-developer-id-${{ github.run_id }}-${{ github.run_attempt }}.keychains
         shell: bash
         run: |
           set -euo pipefail
@@ -710,12 +711,31 @@ jobs:
           fi
 
           certificate="${RUNNER_TEMP}/developer-id-application-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.p12"
+          signing_probe="${RUNNER_TEMP}/developer-id-signing-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           keychain_password="$(openssl rand -hex 32)"
+          restore_keychain_search_list() {
+            local keychain
+            local -a keychains=()
+            if [[ -f "${DEVELOPER_ID_ORIGINAL_KEYCHAINS}" ]]; then
+              while IFS= read -r keychain; do
+                keychain="${keychain#\"}"
+                keychain="${keychain%\"}"
+                [[ -n "${keychain}" ]] && keychains+=("${keychain}")
+              done < "${DEVELOPER_ID_ORIGINAL_KEYCHAINS}"
+              if ((${#keychains[@]} > 0)); then
+                security list-keychains -d user -s "${keychains[@]}"
+              else
+                security list-keychains -d user -s
+              fi
+            fi
+          }
           cleanup_failed_import() {
             status="$?"
-            rm -f "${certificate}"
+            rm -f "${certificate}" "${signing_probe}"
             if ((status != 0)); then
+              restore_keychain_search_list >/dev/null 2>&1 || true
               security delete-keychain "${DEVELOPER_ID_KEYCHAIN}" >/dev/null 2>&1 || true
+              rm -f "${DEVELOPER_ID_ORIGINAL_KEYCHAINS}"
             fi
             exit "${status}"
           }
@@ -740,6 +760,18 @@ jobs:
           security create-keychain -p "${keychain_password}" "${DEVELOPER_ID_KEYCHAIN}"
           security set-keychain-settings -lut 14400 "${DEVELOPER_ID_KEYCHAIN}"
           security unlock-keychain -p "${keychain_password}" "${DEVELOPER_ID_KEYCHAIN}"
+          security list-keychains -d user \
+            | sed -E 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+            > "${DEVELOPER_ID_ORIGINAL_KEYCHAINS}"
+          original_keychains=()
+          while IFS= read -r keychain; do
+            keychain="${keychain#\"}"
+            keychain="${keychain%\"}"
+            [[ -n "${keychain}" ]] && original_keychains+=("${keychain}")
+          done < "${DEVELOPER_ID_ORIGINAL_KEYCHAINS}"
+          security list-keychains \
+            -d user \
+            -s "${DEVELOPER_ID_KEYCHAIN}" "${original_keychains[@]}"
           security import "${certificate}" \
             -k "${DEVELOPER_ID_KEYCHAIN}" \
             -P "${DEVELOPER_ID_APPLICATION_P12_PASSWORD}" \
@@ -773,7 +805,17 @@ jobs:
             -p "${DEVELOPER_ID_KEYCHAIN}" \
             | openssl x509 -checkend 86400 -noout
 
-          rm -f "${certificate}"
+          cp /usr/bin/true "${signing_probe}"
+          codesign \
+            --force \
+            --keychain "${DEVELOPER_ID_KEYCHAIN}" \
+            --sign "${identity}" \
+            --timestamp \
+            --options runtime \
+            "${signing_probe}"
+          codesign --verify --strict --verbose=2 "${signing_probe}"
+
+          rm -f "${certificate}" "${signing_probe}"
           trap - EXIT
           {
             printf 'DEVELOPER_ID_APPLICATION_IDENTITY=%s\n' "${identity}"
@@ -799,7 +841,7 @@ jobs:
               make -C container package \
                 BUILD_CONFIGURATION=release \
                 HOMEBREW_ARCHIVE="${runtime_local_asset}" \
-                CODESIGN_OPTS="--force --sign ${DEVELOPER_ID_APPLICATION_IDENTITY} --keychain ${DEVELOPER_ID_KEYCHAIN} --timestamp --options runtime"
+                CODESIGN_OPTS="--force --keychain ${DEVELOPER_ID_KEYCHAIN} --sign ${DEVELOPER_ID_APPLICATION_IDENTITY} --timestamp --options runtime"
               python3 container-compose/Tools/release/write-sha256-sidecar.py "${runtime_local_asset}"
               runtime_sha="$(awk '{print $1}' "${runtime_local_asset}.sha256")"
               runtime_version="${FORMULA_VERSION}"
@@ -812,7 +854,7 @@ jobs:
               make -C container package \
                 BUILD_CONFIGURATION=release \
                 HOMEBREW_ARCHIVE="${runtime_local_asset}" \
-                CODESIGN_OPTS="--force --sign ${DEVELOPER_ID_APPLICATION_IDENTITY} --keychain ${DEVELOPER_ID_KEYCHAIN} --timestamp --options runtime"
+                CODESIGN_OPTS="--force --keychain ${DEVELOPER_ID_KEYCHAIN} --sign ${DEVELOPER_ID_APPLICATION_IDENTITY} --timestamp --options runtime"
               python3 container-compose/Tools/release/write-sha256-sidecar.py "${runtime_local_asset}"
               runtime_sha="$(awk '{print $1}' "${runtime_local_asset}.sha256")"
               runtime_version="${PUBLISH_REF_NAME}"
@@ -865,7 +907,7 @@ jobs:
         run: |
           make package-release \
             PLUGIN_ARCHIVE="${RUNNER_TEMP}/${{ steps.lane.outputs.asset }}" \
-            CODESIGN_OPTS="--force --sign ${DEVELOPER_ID_APPLICATION_IDENTITY} --keychain ${DEVELOPER_ID_KEYCHAIN} --timestamp --options runtime"
+            CODESIGN_OPTS="--force --keychain ${DEVELOPER_ID_KEYCHAIN} --sign ${DEVELOPER_ID_APPLICATION_IDENTITY} --timestamp --options runtime"
         working-directory: container-compose
         env:
           CONTAINER_COMPOSE_BRANCH: ${{ needs.resolve-publish-context.outputs.ref_name }}
@@ -886,11 +928,28 @@ jobs:
         if: always()
         env:
           DEVELOPER_ID_KEYCHAIN: ${{ runner.temp }}/container-compose-developer-id-${{ github.run_id }}-${{ github.run_attempt }}.keychain-db
+          DEVELOPER_ID_ORIGINAL_KEYCHAINS: ${{ runner.temp }}/container-compose-developer-id-${{ github.run_id }}-${{ github.run_attempt }}.keychains
         shell: bash
         run: |
           set -euo pipefail
+          restore_status=0
+          original_keychains=()
+          if [[ -f "${DEVELOPER_ID_ORIGINAL_KEYCHAINS}" ]]; then
+            while IFS= read -r keychain; do
+              keychain="${keychain#\"}"
+              keychain="${keychain%\"}"
+              [[ -n "${keychain}" ]] && original_keychains+=("${keychain}")
+            done < "${DEVELOPER_ID_ORIGINAL_KEYCHAINS}"
+            if ((${#original_keychains[@]} > 0)); then
+              security list-keychains -d user -s "${original_keychains[@]}" \
+                || restore_status="$?"
+            else
+              security list-keychains -d user -s || restore_status="$?"
+            fi
+          fi
           security delete-keychain "${DEVELOPER_ID_KEYCHAIN}" >/dev/null 2>&1 || true
-          rm -f "${DEVELOPER_ID_KEYCHAIN}"
+          rm -f "${DEVELOPER_ID_KEYCHAIN}" "${DEVELOPER_ID_ORIGINAL_KEYCHAINS}"
+          exit "${restore_status}"
 
       - name: Install VHS
         if: needs.resolve-publish-context.outputs.ref_type == 'branch'

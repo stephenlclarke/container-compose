@@ -111,7 +111,7 @@ while IFS= read -r -d '' candidate; do
             "${relative_path}" >&2
         exit 1
     fi
-    if ! grep -Eq '^flags=.*runtime' <<<"${signature}"; then
+    if ! grep -Eq '(^|[[:space:]])flags=[^[:space:]]*runtime' <<<"${signature}"; then
         printf 'binary is missing the hardened runtime signature flag: %s\n' \
             "${relative_path}" >&2
         exit 1

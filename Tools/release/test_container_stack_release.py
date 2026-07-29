@@ -788,9 +788,19 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             certificate_step,
         )
         self.assertIn("security set-key-partition-list", certificate_step)
+        self.assertIn("security list-keychains", certificate_step)
+        self.assertIn("developer-id-signing-probe-", certificate_step)
+        self.assertIn("DEVELOPER_ID_ORIGINAL_KEYCHAINS", certificate_step)
+        self.assertIn("restore_keychain_search_list", certificate_step)
+        self.assertIn('--keychain "${DEVELOPER_ID_KEYCHAIN}"', certificate_step)
         self.assertNotIn("-A", certificate_step)
-        self.assertEqual(signing_steps.count("--options runtime"), 3)
-        self.assertEqual(signing_steps.count("--timestamp"), 3)
+        self.assertIn(
+            'CODESIGN_OPTS="--force --keychain ${DEVELOPER_ID_KEYCHAIN} '
+            '--sign ${DEVELOPER_ID_APPLICATION_IDENTITY}',
+            signing_steps,
+        )
+        self.assertEqual(workflow.count("--options runtime"), 4)
+        self.assertEqual(workflow.count("--timestamp"), 4)
         self.assertEqual(
             signing_steps.count("verify-developer-id-archive.sh"),
             2,
