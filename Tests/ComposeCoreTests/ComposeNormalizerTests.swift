@@ -185,7 +185,7 @@ struct ComposeNormalizerTests {
         #expect(project.services["api"]?.uts == "host")
         #expect(project.services["api"]?.domainName == "example.test")
         #expect(project.services["api"]?.command == ["nginx", "-g", "daemon off;"])
-        #expect(project.services["api"]?.networkAliases == ["default": ["api.internal"]])
+        #expect(project.services["api"]?.networkAliases == ["default": ["api", "api.internal"]])
         #expect(project.services["api"]?.networkOptions == [
             "default": ComposeNetworkOptions(
                 driverOpts: ["com.docker.network.driver.mtu": "1450"],

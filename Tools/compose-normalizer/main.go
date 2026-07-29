@@ -899,7 +899,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		VolumeDriver:            service.VolumeDriver,
 		VolumesFrom:             append([]string(nil), service.VolumesFrom...),
 		Networks:                networkValues(service.Networks),
-		NetworkAliases:          networkAliasValues(service.Networks),
+		NetworkAliases:          networkAliasValues(service.Name, service.Networks),
 		NetworkOptions:          networkOptionValues(service.Networks),
 		NetworkMode:             service.NetworkMode,
 		DependsOn:               dependsOnValues(service.DependsOn),
@@ -1658,17 +1658,34 @@ func appendUnsupportedNetworkField(fields *[]string, name string, present bool) 
 	*fields = append(*fields, name)
 }
 
-// networkAliasValues returns declared aliases keyed by Compose network name.
-func networkAliasValues(networks map[string]*types.ServiceNetworkConfig) map[string][]string {
+// networkAliasValues returns implicit and declared aliases keyed by Compose network name.
+func networkAliasValues(serviceName string, networks map[string]*types.ServiceNetworkConfig) map[string][]string {
 	if len(networks) == 0 {
 		return nil
 	}
 	result := map[string][]string{}
 	for name, config := range networks {
-		if config == nil || len(config.Aliases) == 0 {
-			continue
+		aliases := []string{}
+		seen := map[string]struct{}{}
+		appendAlias := func(alias string) {
+			if alias == "" {
+				return
+			}
+			if _, exists := seen[alias]; exists {
+				return
+			}
+			seen[alias] = struct{}{}
+			aliases = append(aliases, alias)
 		}
-		result[name] = append([]string(nil), config.Aliases...)
+		appendAlias(serviceName)
+		if config != nil {
+			for _, alias := range config.Aliases {
+				appendAlias(alias)
+			}
+		}
+		if len(aliases) > 0 {
+			result[name] = aliases
+		}
 	}
 	if len(result) == 0 {
 		return nil

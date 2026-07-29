@@ -941,25 +941,6 @@ extension ComposeOrchestratorTests {
             #expect(error == .invalidProject("unknown service 'missing'"))
         }
 
-        let unsupportedProjects = [
-            ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
-                $0.networks = ["a", "b"]
-                $0.networkAliases = ["a": ["api"]]
-            }]),
-        ]
-
-        for project in unsupportedProjects {
-            do {
-                try await ComposeOrchestrator().up(project: project, options: ComposeUpOptions())
-                Issue.record("Expected unsupported runtime feature")
-            } catch let error as ComposeError {
-                if case .unsupported = error {
-                    continue
-                } else {
-                    Issue.record("Unexpected compose error: \(error)")
-                }
-            }
-        }
     }
 
     @Test("command failures are surfaced")

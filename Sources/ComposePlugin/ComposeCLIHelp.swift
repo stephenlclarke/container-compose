@@ -326,14 +326,14 @@ enum ComposeCLIHelp {
         "push": .supported,
         "restart": .supported,
         "rm": .supported,
-        "run": .partiallySupported,
+        "run": .supported,
         "scale": .supported,
         "start": .supported,
         "stats": .supported,
         "stop": .supported,
         "top": .supported,
         "unpause": .supported,
-        "up": .partiallySupported,
+        "up": .supported,
         "version": .supported,
         "volumes": .supported,
         "wait": .supported,
@@ -343,8 +343,6 @@ enum ComposeCLIHelp {
     private static let supportDetails: [String: String] = [
         "events": "OOM, explicit restart, rename, resize, update, and attach/detach actions are unavailable; automatic policy restarts emit die then start, and exec lifecycle actions are supported.",
         "exec": "Docker-complete privileged execution is unavailable.",
-        "run": "Container-facing DNS aliases are unavailable.",
-        "up": "Container-facing DNS aliases are unavailable.",
     ]
 
     private static let supportByOption: [String: [String: SupportLevel]] = [
@@ -620,7 +618,7 @@ enum ComposeCLIHelp {
             "--remove-orphans": .supported,
             "--rm": .supported,
             "--service-ports": .supported,
-            "--use-aliases": .partiallySupported,
+            "--use-aliases": .supported,
             "--user": .supported,
             "--volume": .supported,
             "--workdir": .supported,
@@ -1608,7 +1606,7 @@ enum ComposeCLIHelp {
               --remove-orphans              Remove containers for services not defined in the Compose file
               --rm                          Automatically remove the container when it exits
           -P, --service-ports               Run command with all service's ports enabled and mapped to the host
-              --use-aliases                 Use the service's network aliases (requires container-facing DNS)
+              --use-aliases                 Use the service's network aliases
           -u, --user string                 Run as specified username or uid
           -v, --volume stringArray          Bind mount a volume
           -w, --workdir string              Working directory inside the container

@@ -1443,9 +1443,9 @@ extension ComposeOrchestratorTests {
         #expect(!commands[0].contains("demo_backend,alias=job,alias=job.internal"))
     }
 
-    @Test("run use-aliases rejects network aliases until the runtime exposes container-facing DNS")
-    func runUseAliasesRejectsNetworkAliasesUntilRuntimeExposesContainerFacingDNS() async throws {
-        let runner = RecordingRunner()
+    @Test("run use-aliases maps service and explicit network aliases")
+    func runUseAliasesMapsServiceAndExplicitNetworkAliases() async throws {
+        let runner = RecordingRunner(responses: [.success])
         let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
@@ -1461,19 +1461,15 @@ extension ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-                .run(project: project, serviceName: "job", options: composeRunOptions(command: ["true"]) {
-                    $0.remove = true
-                    $0.useAliases = true
-                })
-            Issue.record("Expected container-facing DNS error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS"))
-        }
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", options: composeRunOptions(command: ["true"]) {
+                $0.remove = true
+                $0.useAliases = true
+            })
 
-        #expect(runner.commands.isEmpty)
-        #expect(await resourceManager.requests.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "demo_backend,alias=job,alias=job.internal"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
     }
 
     @Test("run maps interface names to runtime network attachments")

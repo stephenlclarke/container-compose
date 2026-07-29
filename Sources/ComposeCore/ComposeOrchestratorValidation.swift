@@ -206,8 +206,7 @@ extension ComposeOrchestrator {
         }
     }
 
-    /// Validates aliases then rejects them until apple/container can resolve
-    /// network registry names from inside service containers.
+    /// Validates network aliases before runtime side effects.
     func validateNetworkAliasSupport(service: ComposeService, networks: [String]) throws {
         guard let networkAliases = service.networkAliases else {
             return
@@ -225,7 +224,6 @@ extension ComposeOrchestrator {
             }
             _ = try networkAliasValues(service: service, network: aliasNetwork)
         }
-        throw ComposeError.unsupported("service '\(service.name)' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS")
     }
 
     /// Rejects build fields that apple/container `container build` cannot represent yet.

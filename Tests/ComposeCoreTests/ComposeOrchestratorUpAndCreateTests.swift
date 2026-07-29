@@ -7159,9 +7159,9 @@ extension ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects network aliases until the runtime exposes container-facing DNS")
-    func upRejectsNetworkAliasesUntilRuntimeExposesContainerFacingDNS() async throws {
-        let runner = RecordingRunner()
+    @Test("up maps shared service and explicit aliases for every replica")
+    func upMapsSharedServiceAndExplicitAliasesForEveryReplica() async throws {
+        let runner = RecordingRunner(responses: [.success, .success])
         let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
@@ -7177,16 +7177,17 @@ extension ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-                .up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected container-facing DNS error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses network aliases; apple/container registers aliases but cannot resolve them inside service containers until it exposes container-facing DNS"))
-        }
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions {
+                $0.scales = ["api=2"]
+            })
 
-        #expect(runner.commands.isEmpty)
-        #expect(await resourceManager.requests.isEmpty)
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands.allSatisfy {
+            $0.containsSequence(["--network", "demo_backend,alias=api,alias=api.internal"])
+        })
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
     }
 
     @Test("up rejects invalid network aliases before creating resources")
