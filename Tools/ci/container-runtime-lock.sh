@@ -34,14 +34,32 @@ acquire_container_runtime_lock() {
             "$timeout_seconds" >&2
         return 2
     fi
-    if ! command -v lockf >/dev/null 2>&1; then
-        printf 'lockf is required to serialize access to the macOS Container runtime\n' >&2
+    local lock_backend
+    if command -v lockf >/dev/null 2>&1; then
+        lock_backend="lockf"
+    elif command -v flock >/dev/null 2>&1; then
+        lock_backend="flock"
+    else
+        printf 'lockf or flock is required to serialize access to the macOS Container runtime\n' >&2
         return 2
     fi
 
     printf 'Waiting for macOS Container runtime lock: %s\n' "$lock_file"
     exec 9>>"$lock_file"
-    if ! lockf -t "$timeout_seconds" 9; then
+    local lock_acquired=0
+    case "$lock_backend" in
+        lockf)
+            if lockf -t "$timeout_seconds" 9; then
+                lock_acquired=1
+            fi
+            ;;
+        flock)
+            if flock -w "$timeout_seconds" 9; then
+                lock_acquired=1
+            fi
+            ;;
+    esac
+    if [[ "$lock_acquired" != "1" ]]; then
         printf 'timed out after %ss waiting for macOS Container runtime lock: %s\n' \
             "$timeout_seconds" "$lock_file" >&2
         return 1

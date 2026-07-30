@@ -32,6 +32,7 @@ The stable per-user launchd/XPC namespace is a generic Container constraint. A u
 ## Acceptance Criteria
 
 - [x] `Tools/ci/container-runtime-lock.sh` acquires `/tmp/container-compose-runtime-${UID}.lock` with a bounded configurable wait and is reentrant inside one workflow.
+- [x] The helper uses macOS `lockf` for the production host and Linux `flock` for portable source-check runners while retaining the same file-descriptor lifetime.
 - [x] The parity harness and Current VHS workflow acquire the same lock before operating the shared runtime.
 - [x] A deterministic test proves a contender cannot acquire the lock until its holder releases it.
 - [x] The harness can load `CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE` and configure the exact `vminit:container-compose` image without a source rebuild.

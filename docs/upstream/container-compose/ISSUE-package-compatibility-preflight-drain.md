@@ -146,7 +146,7 @@ No Apple runtime fork or new compatibility primitive is required.
   three signal-proxy tests in one suite.
 - Repository build, test, format, lint, dependency, and diff gates pass,
   including the current 1,277 Swift tests in 46 suites, all Go packages,
-  92.83% Swift coverage, and 89.88% Go coverage.
+  92.81% Swift coverage, and 89.88% Go coverage.
 - Fresh branch analysis `39c6e9ff-0a90-4cd5-9b59-ed466f5fbdea`
   processed successfully with zero scanner warnings. SonarCloud rejects
   short-branch metric, issue, and quality-gate API reads on the current

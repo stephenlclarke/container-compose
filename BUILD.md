@@ -155,7 +155,7 @@ cache between runs, and always stops the test runtime when it exits.
 
 Container's data root can be isolated, but its API server and plugin helpers use stable launchd/XPC service names in one namespace for the current macOS user. `make docker-compose-parity`, Current VHS publication, and other long-running Compose workflows therefore acquire the advisory host lock in `Tools/ci/container-runtime-lock.sh` before they stop, start, or replace the runtime.
 
-The default lock is `/tmp/container-compose-runtime-${UID}.lock`; `CONTAINER_RUNTIME_LOCK_FILE` changes it and `CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS` changes the default 10,800-second wait. Every cooperating workflow on the host must use the same lock path. A unique per-job lock defeats serialization, and an external repository or runner that does not acquire the lock can still replace the shared service while a Compose run owns it.
+The default lock is `/tmp/container-compose-runtime-${UID}.lock`; `CONTAINER_RUNTIME_LOCK_FILE` changes it and `CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS` changes the default 10,800-second wait. The helper uses `lockf` on macOS and the equivalent `flock` file-descriptor lock in Linux source-check runners. Every cooperating workflow on the host must use the same lock path. A unique per-job lock defeats serialization, and an external repository or runner that does not acquire the lock can still replace the shared service while a Compose run owns it.
 
 The parity harness also:
 

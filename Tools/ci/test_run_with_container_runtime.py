@@ -218,7 +218,13 @@ class ContainerRuntimeLockTest(unittest.TestCase):
             deadline = time.monotonic() + 5
             while not holder_ready.exists() and time.monotonic() < deadline:
                 time.sleep(0.02)
-            self.assertTrue(holder_ready.exists(), "lock holder did not acquire the lock")
+            if not holder_ready.exists():
+                holder_stdout, holder_stderr = holder.communicate(timeout=5)
+                self.fail(
+                    "lock holder did not acquire the lock\n"
+                    + holder_stdout
+                    + holder_stderr
+                )
 
             contender = subprocess.Popen(
                 ["/bin/bash", "-c", contender_script],
@@ -229,16 +235,17 @@ class ContainerRuntimeLockTest(unittest.TestCase):
                 text=True,
             )
             time.sleep(0.2)
-            self.assertFalse(
-                contender_acquired.exists(),
-                "contender acquired the runtime lock before the holder released it",
-            )
+            acquired_before_release = contender_acquired.exists()
 
             holder_release.touch()
             holder_stdout, holder_stderr = holder.communicate(timeout=5)
             contender_stdout, contender_stderr = contender.communicate(timeout=5)
             self.assertEqual(holder.returncode, 0, holder_stdout + holder_stderr)
             self.assertEqual(contender.returncode, 0, contender_stdout + contender_stderr)
+            self.assertFalse(
+                acquired_before_release,
+                "contender acquired the runtime lock before the holder released it",
+            )
             self.assertTrue(contender_acquired.exists())
 
 

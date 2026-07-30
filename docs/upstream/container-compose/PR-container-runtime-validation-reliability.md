@@ -26,7 +26,7 @@ The same live runs showed that transport interruption is not one universal retry
 
 ## Code Map
 
-- `Tools/ci/container-runtime-lock.sh` owns the reentrant `lockf` boundary, timeout validation, and default per-user lock path.
+- `Tools/ci/container-runtime-lock.sh` owns the reentrant advisory-lock boundary, timeout validation, and default per-user lock path. It uses macOS `lockf` in production and Linux `flock` in portable source-check runners.
 - `scripts/run-with-container-runtime.sh` acquires the lock, cleans only a marker-protected app root, loads a retained init archive when supplied, verifies API readiness, and performs one bounded start recovery.
 - `Makefile` forwards retained-archive and parity-evidence settings into the harness.
 - `.github/workflows/prebuilt-binaries.yml` acquires the same lock before the Current VHS runtime workflow.
@@ -58,6 +58,7 @@ Results:
 - `make check` passes.
 - The full unit gate passes 1,277 Swift tests in 46 suites plus all Go packages.
 - Four focused Python harness/lock tests pass.
+- An Ubuntu 24.04 execution with no `lockf` proves the `flock` backend blocks an independent contender until the holder releases the shared descriptor.
 - The 10-repetition bridge stress run completes in 241.31s with Docker/candidate `up` medians of 0.156s/1.060s (6.78×) and `down` medians of 10.181s/5.924s (0.58×).
 - The controlled full suite passes all 62 maintained targets in 1,024.25s real time, 257.89s user time, and 327.29s system time, with a 4,239,622,144-byte maximum resident set size.
 - Its three-repetition bridge comparator records 0.151s/1.101s Docker/candidate `up` medians (7.30×) and 10.179s/5.969s `down` medians (0.59×).
