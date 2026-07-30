@@ -54,21 +54,37 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
 
     /// Resolves Docker image healthcheck metadata from the image config for the requested platform.
     public func imageHealthCheck(reference: String, platform: String?) async throws -> ComposeImageHealthCheck? {
-        let config = try await ConfigurationLoader.load()
-        let image = try await ClientImage.get(reference: reference, containerSystemConfig: config)
-        let resource = try await image.toImageResource(containerSystemConfig: config)
-        let requestedPlatform = try Self.requestedPlatform(platform)
-        let variant = Self.variant(in: resource, matching: requestedPlatform, allowFallback: platform == nil)
-        return variant?.healthCheck.map(ComposeImageHealthCheck.init)
+        try await imageMetadataIfAvailable(reference: reference, platform: platform)?.healthCheck
     }
 
     /// Resolves Docker image config metadata from the requested image.
     public func imageMetadata(reference: String) async throws -> ComposeImageMetadata {
+        try await imageMetadataIfAvailable(reference: reference, platform: nil)
+            ?? ComposeImageMetadata(reference: reference)
+    }
+
+    /// Resolves complete Docker image config metadata for the requested platform.
+    public func imageMetadataIfAvailable(
+        reference: String,
+        platform: String?,
+    ) async throws -> ComposeImageMetadata? {
         let config = try await ConfigurationLoader.load()
         let image = try await ClientImage.get(reference: reference, containerSystemConfig: config)
         let resource = try await image.toImageResource(containerSystemConfig: config)
-        let variant = try Self.variant(in: resource, matching: Self.requestedPlatform(nil), allowFallback: true)
-        let imageConfig = variant?.config.config
+        let requestedPlatform = try Self.requestedPlatform(platform)
+        guard let variant = Self.variant(
+            in: resource,
+            matching: requestedPlatform,
+            allowFallback: platform == nil,
+        ) else {
+            guard platform == nil else {
+                return nil
+            }
+            return ComposeImageMetadata(reference: image.reference) {
+                $0.displayReference = resource.displayReference
+            }
+        }
+        let imageConfig = variant.config.config
         return ComposeImageMetadata(reference: image.reference) {
             $0.displayReference = resource.displayReference
             $0.user = imageConfig?.user
@@ -77,29 +93,17 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
             $0.command = imageConfig?.cmd
             $0.workingDir = imageConfig?.workingDir
             $0.labels = imageConfig?.labels ?? [:]
-            $0.exposedPorts = variant?.exposedPorts ?? []
+            $0.exposedPorts = variant.exposedPorts
             $0.stopSignal = imageConfig?.stopSignal
-            $0.healthCheck = variant?.healthCheck.map(ComposeImageHealthCheck.init)
+            $0.healthCheck = variant.healthCheck.map(ComposeImageHealthCheck.init)
             $0.declaredVolumeTargets = imageConfig?.volumes?.keys.sorted() ?? []
         }
     }
 
     /// Resolves Docker image config `VOLUME` destinations for the requested platform.
     public func imageDeclaredVolumeTargets(reference: String, platform: String?) async throws -> [String] {
-        try await imageDeclaredVolumeTargetsIfAvailable(reference: reference, platform: platform) ?? []
-    }
-
-    /// Resolves Docker image config `VOLUME` destinations while preserving unavailable-platform information.
-    public func imageDeclaredVolumeTargetsIfAvailable(reference: String, platform: String?) async throws -> [String]? {
-        let config = try await ConfigurationLoader.load()
-        let image = try await ClientImage.get(reference: reference, containerSystemConfig: config)
-        let resource = try await image.toImageResource(containerSystemConfig: config)
-        let requestedPlatform = try Self.requestedPlatform(platform)
-        let variant = Self.variant(in: resource, matching: requestedPlatform, allowFallback: platform == nil)
-        guard let variant else {
-            return platform == nil ? [] : nil
-        }
-        return variant.config.config?.volumes?.keys.sorted() ?? []
+        try await imageMetadataIfAvailable(reference: reference, platform: platform)?
+            .declaredVolumeTargets ?? []
     }
 
     /// Lists local images labelled as Compose Bridge transformers.

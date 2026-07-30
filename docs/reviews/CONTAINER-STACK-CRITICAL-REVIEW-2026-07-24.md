@@ -398,6 +398,16 @@ Impact: committed images retain the base image's storage declarations while
 accepting Docker-compatible additive volume changes. Ownership remains
 Compose; no Apple runtime or stack-pin change is required.
 
+The final PR 173 correction selects the complete requested-platform OCI config,
+including identity, process, working-directory, label, port, stop-signal,
+healthcheck, and volume fields. It also replaces the successful platform
+commit path's three full image-resource conversions with one. Unavailable or
+failed platform selection retains the default-variant fallback with at most
+two conversions. The paired
+[issue handoff](../upstream/container-compose/ISSUE-173.md) and
+[pull-request handoff](../upstream/container-compose/PR-173.md) record the
+field-complete and request-count regressions.
+
 ### P1: Tar-Stream `cp` Cannot Preserve Full Container Metadata
 
 `Sources/ComposeCore/ComposeRuntimeArchiveCopying.swift:22-89` implements
@@ -805,7 +815,7 @@ new Apple design work.
 | CC-001 | P1 | Compose | **Complete:** make unconfigured image-volume lookup fail closed | Every unconfigured SPI method has a contract test; declared-volume planning reports a clear provider error |
 | CC-002 | P1 | Compose | **Complete:** add task-cancellation ownership to `ProcessRunner` | Cancelled captured/inherited/input child exits within bound; no continuation double-resume; no surviving PID |
 | CC-003 | P1 | Plugin | **Complete:** replace wait-before-drain compatibility preflight | Fake command writes >256 KiB to stdout and stderr without deadlock; cancellation and error text tested |
-| CC-004 | P1 | Compose | **Complete:** preserve inherited volumes during `commit` | Unit and live Docker parity cover inherited/additive/duplicate/multiple `VOLUME`; status claim restored after passing |
+| CC-004 | P1 | Compose | **Complete:** preserve inherited platform metadata during `commit` | Unit and live Docker parity cover inherited/additive/duplicate/multiple `VOLUME`; the selected-platform regression covers every inherited config field and one-read resolution |
 | CC-005 | P1 | Compose/docs | Downgrade tar-stream `cp` parity pending direct runtime streams | Status and help describe content support versus metadata limits; metadata fixture fails for the expected tracked reason |
 | CC-006 | P2 | Compose | Correct lifecycle ownership diagnostics | Pinned-lane errors name Compose orchestration; stock-lane errors name missing Apple capability |
 | TEST-007 | P1 | Compose CI | Make live test skips explicit and gate aggregate coverage | CI reports executed/skipped counts; separate Core/SPI/provider/plugin/aggregate thresholds |
