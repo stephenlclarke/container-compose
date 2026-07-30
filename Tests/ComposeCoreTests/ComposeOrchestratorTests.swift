@@ -25779,6 +25779,89 @@ struct ComposeOrchestratorTests {
         #expect(await imageManager.requests.contains(.volumeTargets(reference: "example/api", platform: "linux/amd64")))
     }
 
+    @Test("commit retains default image volumes when the service platform is unavailable")
+    func commitRetainsDefaultVolumesWhenServicePlatformIsUnavailable() async throws {
+        let exporter = try RecordingContainerExporter(archiveData: rootfsArchiveData())
+        let unavailableRequest = ImageVolumeTargetRequestKey(reference: "example/api", platform: "linux/amd64")
+        let imageManager = RecordingContainerImageManager(
+            unavailablePlatformImageVolumeTargetRequests: [unavailableRequest],
+            imageMetadata: [
+                "example/api": ComposeImageMetadata(reference: "example/api") {
+                    $0.declaredVolumeTargets = ["/host-data"]
+                },
+            ]
+        )
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.platform = "linux/amd64"
+                },
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.exporter = exporter
+            $0.imageManager = imageManager
+        })
+
+        try await orchestrator.commit(project: project, serviceName: "api")
+
+        let archiveData = try #require((await imageManager.loadedArchiveData).first)
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archive = directory.appendingPathComponent("image.tar")
+        try archiveData.write(to: archive)
+        let config = try commitArchiveConfig(from: archive)
+        #expect(config.config.volumes == ["/host-data": [:]])
+        #expect(await imageManager.requests.contains(.volumeTargets(reference: "example/api", platform: "linux/amd64")))
+    }
+
+    @Test("commit clears default image volumes when the service platform declares none")
+    func commitClearsDefaultVolumesWhenServicePlatformDeclaresNone() async throws {
+        let exporter = try RecordingContainerExporter(archiveData: rootfsArchiveData())
+        let imageManager = RecordingContainerImageManager(
+            platformImageVolumeTargets: [
+                ImageVolumeTargetRequestKey(reference: "example/api", platform: "linux/amd64"): [],
+            ],
+            imageMetadata: [
+                "example/api": ComposeImageMetadata(reference: "example/api") {
+                    $0.declaredVolumeTargets = ["/host-data"]
+                },
+            ]
+        )
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.platform = "linux/amd64"
+                },
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.exporter = exporter
+            $0.imageManager = imageManager
+        })
+
+        try await orchestrator.commit(project: project, serviceName: "api")
+
+        let archiveData = try #require((await imageManager.loadedArchiveData).first)
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archive = directory.appendingPathComponent("image.tar")
+        try archiveData.write(to: archive)
+        let config = try commitArchiveConfig(from: archive)
+        #expect(config.config.volumes == nil)
+        #expect(await imageManager.requests.contains(.volumeTargets(reference: "example/api", platform: "linux/amd64")))
+    }
+
     @Test("commit resolves effective Compose healthchecks for image config")
     func commitResolvesEffectiveHealthchecksForImageConfig() throws {
         let inherited = ComposeImageHealthCheck(
@@ -32610,6 +32693,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
     private var digests: [String: String]
     private var healthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck]
     private var imageVolumeTargets: [ImageVolumeTargetRequestKey: [String]]
+    private let unavailablePlatformImageVolumeTargetRequests: Set<ImageVolumeTargetRequestKey>
     private var imageMetadata: [String: ComposeImageMetadata]
     private var transformers: [ComposeBridgeTransformer]
     private let pullFailures: Set<String>
@@ -32629,6 +32713,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         platformHealthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck] = [:],
         imageVolumeTargets: [String: [String]] = [:],
         platformImageVolumeTargets: [ImageVolumeTargetRequestKey: [String]] = [:],
+        unavailablePlatformImageVolumeTargetRequests: Set<ImageVolumeTargetRequestKey> = [],
         imageMetadata: [String: ComposeImageMetadata] = [:],
         transformers: [ComposeBridgeTransformer] = [],
         pullFailures: Set<String> = [],
@@ -32653,6 +32738,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
             mappedImageVolumeTargets[ImageVolumeTargetRequestKey(reference: reference, platform: nil)] = targets
         }
         self.imageVolumeTargets = mappedImageVolumeTargets
+        self.unavailablePlatformImageVolumeTargetRequests = unavailablePlatformImageVolumeTargetRequests
         self.imageMetadata = imageMetadata
         self.transformers = transformers
         self.pullFailures = pullFailures
@@ -32711,6 +32797,18 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         }
         storage.append(.volumeTargets(reference: reference, platform: platform))
         return targets
+    }
+
+    func imageDeclaredVolumeTargetsIfAvailable(_ reference: String, platform: String?) async throws -> [String]? {
+        if let failure {
+            throw failure
+        }
+        let key = ImageVolumeTargetRequestKey(reference: reference, platform: platform)
+        if unavailablePlatformImageVolumeTargetRequests.contains(key) {
+            storage.append(.volumeTargets(reference: reference, platform: platform))
+            return nil
+        }
+        return try await imageDeclaredVolumeTargets(reference, platform: platform)
     }
 
     func imageMetadata(_ reference: String) async throws -> ComposeImageMetadata {

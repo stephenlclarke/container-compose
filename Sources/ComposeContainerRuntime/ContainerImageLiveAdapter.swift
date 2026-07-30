@@ -86,12 +86,20 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
 
     /// Resolves Docker image config `VOLUME` destinations for the requested platform.
     public func imageDeclaredVolumeTargets(reference: String, platform: String?) async throws -> [String] {
+        try await imageDeclaredVolumeTargetsIfAvailable(reference: reference, platform: platform) ?? []
+    }
+
+    /// Resolves Docker image config `VOLUME` destinations while preserving unavailable-platform information.
+    public func imageDeclaredVolumeTargetsIfAvailable(reference: String, platform: String?) async throws -> [String]? {
         let config = try await ConfigurationLoader.load()
         let image = try await ClientImage.get(reference: reference, containerSystemConfig: config)
         let resource = try await image.toImageResource(containerSystemConfig: config)
         let requestedPlatform = try Self.requestedPlatform(platform)
         let variant = Self.variant(in: resource, matching: requestedPlatform, allowFallback: platform == nil)
-        return variant?.config.config?.volumes?.keys.sorted() ?? []
+        guard let variant else {
+            return platform == nil ? [] : nil
+        }
+        return variant.config.config?.volumes?.keys.sorted() ?? []
     }
 
     /// Lists local images labelled as Compose Bridge transformers.

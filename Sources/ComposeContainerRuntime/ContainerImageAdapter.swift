@@ -34,6 +34,12 @@ public protocol ContainerImageAPIClienting: Sendable {
     /// Returns Docker image config `VOLUME` destinations for `reference` and `platform`.
     func imageDeclaredVolumeTargets(reference: String, platform: String?) async throws -> [String]
 
+    /// Returns image config `VOLUME` destinations when the requested platform is available.
+    ///
+    /// `nil` represents an unavailable platform variant, while an empty array
+    /// represents an available variant with no `VOLUME` declarations.
+    func imageDeclaredVolumeTargetsIfAvailable(reference: String, platform: String?) async throws -> [String]?
+
     /// Lists local Compose Bridge transformer images.
     func bridgeTransformers() async throws -> [ComposeBridgeTransformer]
 
@@ -55,6 +61,11 @@ public extension ContainerImageAPIClienting {
     func imageDeclaredVolumeTargets(reference: String, platform _: String?) async throws -> [String] {
         try await imageMetadata(reference: reference).declaredVolumeTargets
     }
+
+    /// Treats the general volume lookup as available when a client cannot report variant availability.
+    func imageDeclaredVolumeTargetsIfAvailable(reference: String, platform: String?) async throws -> [String]? {
+        try await imageDeclaredVolumeTargets(reference: reference, platform: platform)
+    }
 }
 
 /// Thin apple/container client wrapper around image API calls.
@@ -64,6 +75,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     public typealias HealthCheck = @Sendable (String, String?) async throws -> ComposeImageHealthCheck?
     public typealias Metadata = @Sendable (String) async throws -> ComposeImageMetadata
     public typealias VolumeTargets = @Sendable (String, String?) async throws -> [String]
+    public typealias AvailableVolumeTargets = @Sendable (String, String?) async throws -> [String]?
     public typealias Transformers = @Sendable () async throws -> [ComposeBridgeTransformer]
     public typealias Pull = @Sendable (String) async throws -> Void
     public typealias Push = @Sendable (String) async throws -> String
@@ -75,6 +87,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     private let healthCheckOperation: HealthCheck
     private let metadataOperation: Metadata
     private let volumeTargetsOperation: VolumeTargets
+    private let availableVolumeTargetsOperation: AvailableVolumeTargets
     private let transformersOperation: Transformers
     private let pullOperation: Pull
     private let pushOperation: Push
@@ -88,6 +101,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
         public var healthCheck: HealthCheck
         public var metadata: Metadata
         public var volumeTargets: VolumeTargets
+        public var availableVolumeTargets: AvailableVolumeTargets?
         public var transformers: Transformers
 
         public init(
@@ -98,6 +112,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
             healthCheck: @escaping HealthCheck = { _, _ in nil },
             metadata: @escaping Metadata = { reference in ComposeImageMetadata(reference: reference) },
             volumeTargets: @escaping VolumeTargets = { _, _ in [] },
+            availableVolumeTargets: AvailableVolumeTargets? = nil,
             transformers: @escaping Transformers = { [] },
         ) {
             self.exists = exists
@@ -105,6 +120,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
             self.healthCheck = healthCheck
             self.metadata = metadata
             self.volumeTargets = volumeTargets
+            self.availableVolumeTargets = availableVolumeTargets
             self.transformers = transformers
         }
     }
@@ -138,6 +154,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
                 healthCheck: { try await client.imageHealthCheck(reference: $0, platform: $1) },
                 metadata: { try await client.imageMetadata(reference: $0) },
                 volumeTargets: { try await client.imageDeclaredVolumeTargets(reference: $0, platform: $1) },
+                availableVolumeTargets: { try await client.imageDeclaredVolumeTargetsIfAvailable(reference: $0, platform: $1) },
                 transformers: { try await client.bridgeTransformers() },
             ),
             mutations: MutationOperations(
@@ -156,6 +173,9 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
         healthCheckOperation = queries.healthCheck
         metadataOperation = queries.metadata
         volumeTargetsOperation = queries.volumeTargets
+        availableVolumeTargetsOperation = queries.availableVolumeTargets ?? { reference, platform in
+            try await queries.volumeTargets(reference, platform)
+        }
         transformersOperation = queries.transformers
         pullOperation = mutations.pull
         pushOperation = mutations.push
@@ -191,6 +211,11 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     /// Reads Docker image `VOLUME` destinations through `ClientImage`.
     public func imageDeclaredVolumeTargets(reference: String, platform: String?) async throws -> [String] {
         try await volumeTargetsOperation(reference, platform)
+    }
+
+    /// Reads Docker image `VOLUME` destinations while preserving unavailable-platform information.
+    public func imageDeclaredVolumeTargetsIfAvailable(reference: String, platform: String?) async throws -> [String]? {
+        try await availableVolumeTargetsOperation(reference, platform)
     }
 
     /// Lists local Compose Bridge transformer images.
@@ -250,6 +275,11 @@ public struct ContainerClientImageManager: ComposeRuntimeImageManaging {
     /// Reads Docker image `VOLUME` destinations through the direct apple/container image API.
     public func imageDeclaredVolumeTargets(_ reference: String, platform: String?) async throws -> [String] {
         try await client.imageDeclaredVolumeTargets(reference: reference, platform: platform)
+    }
+
+    /// Reads Docker image `VOLUME` destinations while preserving unavailable-platform information.
+    public func imageDeclaredVolumeTargetsIfAvailable(_ reference: String, platform: String?) async throws -> [String]? {
+        try await client.imageDeclaredVolumeTargetsIfAvailable(reference: reference, platform: platform)
     }
 
     /// Ensures a local image exists before the Compose layer reads its `VOLUME` metadata.

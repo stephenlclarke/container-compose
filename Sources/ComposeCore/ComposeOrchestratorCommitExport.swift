@@ -169,10 +169,12 @@ public extension ComposeOrchestrator {
             // unavailable, matching the existing metadata fallback policy.
         }
         do {
-            metadata.declaredVolumeTargets = try await imageManager.imageDeclaredVolumeTargets(
+            if let declaredVolumeTargets = try await imageManager.imageDeclaredVolumeTargetsIfAvailable(
                 image,
                 platform: service.platform,
-            )
+            ) {
+                metadata.declaredVolumeTargets = declaredVolumeTargets
+            }
         } catch {
             // Retain the default-variant declarations when the platform-aware
             // query is unavailable, matching the existing metadata fallback.
