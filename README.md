@@ -83,9 +83,9 @@ project-owned difference; they must not become implicit exceptions.
 > [!IMPORTANT]
 > **Latest controlled parity evidence (30 July 2026)**
 >
-> The complete maintained 62-target Docker Compose comparison suite passed against Docker Compose 5.3.1 and Docker Engine 29.2.1 on a Mac17,9 running macOS 26.5.2. The run took 1,024.25 seconds. Its three-sample warm-image bridge comparator measured `up` at 0.151s for Docker Compose and 1.101s for container-compose (7.30×), while `down` measured 10.179s and 5.969s respectively (0.59×). Raw samples, JUnit, fingerprints, and interpretation are recorded in [STATUS.md](STATUS.md#latest-controlled-full-suite-evidence).
+> The complete maintained 62-target Docker Compose comparison suite passed in one uninterrupted 1,152.03-second run against Docker Compose 5.3.1 and Docker Engine 29.2.1 on a Mac17,9 running macOS 26.5.2. Its three-sample warm-image bridge comparator measured `up` at 0.153s for Docker Compose and 1.228s for container-compose (8.01×), while `down` measured 10.178s and 5.916s respectively (0.58×). Named-network service discovery, aliases, one-off aliases, recreate behavior, and source-scoped links all passed their live Docker oracles. Exact revisions, timing tables, fingerprints, and interpretation are recorded in [STATUS.md](STATUS.md#latest-controlled-full-suite-evidence).
 >
-> This is a green maintained-suite result, not a claim that the project goal is complete. The bridge startup path remains materially slower than Docker Compose, the representative single/10/50-service performance matrix is not yet implemented, and every partial surface in the ledger remains open.
+> This is a green maintained-suite result, not a claim that the project goal is complete. Bridge, service-discovery, links, and archive-copy startup/operation paths remain materially slower than Docker Compose, the representative single/10/50-service performance matrix is not yet implemented, and every partial surface in the ledger remains open.
 
 <!-- Separate GitHub callouts. -->
 

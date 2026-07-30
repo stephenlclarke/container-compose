@@ -989,9 +989,9 @@ Phase gate:
 
 PR 173 merged as `31b83499abec6fe090a44dfe24527f0d220fd0b9` after selecting the complete requested-platform OCI config and reducing the successful platform path from three image-resource conversions to one. Exact-main CI, Documentation, and Quality runs passed; CodeQL was absent because the workflow had been manually disabled, so no CodeQL result is claimed.
 
-The subsequent Compose branch closes `SQ-013` in `98f2a7139b2e99a60cabdc8ca2d7190c33b7e994`, removes scanner encoding warnings in `35c2848ac37e8e5ad607b9b7662b396d1e6ef2b3`, implements bridge-mode adapter/resource behavior in `36d81f70402c0d203bde8f7c8d57bb574a689e52` and `d6b47233012a31be559c91f8e51f7a579a704736`, and makes runtime validation deterministic for cooperating host users in `9a95ec8cc5a84e15a187ff20ccf948e9ac14bfe9` plus `4a2e0003496c9f96afcc0b3f3d54124ebc09b25b`.
+The subsequent Compose branch closes `SQ-013` in `98f2a7139b2e99a60cabdc8ca2d7190c33b7e994`, removes scanner encoding warnings in `35c2848ac37e8e5ad607b9b7662b396d1e6ef2b3`, implements bridge-mode adapter/resource behavior in `36d81f70402c0d203bde8f7c8d57bb574a689e52` and `d6b47233012a31be559c91f8e51f7a579a704736`, and makes runtime validation deterministic for cooperating host users in `9a95ec8cc5a84e15a187ff20ccf948e9ac14bfe9` plus `4a2e0003496c9f96afcc0b3f3d54124ebc09b25b`. The final network slice adds named-network discovery in `443ca69b1a55ac5331c5f7d341a87c277b1c02bb`, source-scoped legacy and dynamic external links in `acb289fa36400b7931413952b57fdd68e08845b6` and `6235cc589c235849a9a34a18335297630043499f`, and dependency-safe concurrent startup in `62da66f0f106c165f07ea22a92a4e0cf598ee012`.
 
-The full unit gate passes 1,277 Swift tests in 46 suites plus all Go packages. A controlled live run then passed all 62 maintained Docker Compose targets in 1,024.25s on Mac17,9/macOS 26.5.2 against Docker Compose 5.3.1 and Docker Engine 29.2.1. The bridge comparator records 0.151s/1.101s Docker/candidate `up` medians (7.30×) and 10.179s/5.969s `down` medians (0.59×). The result closes neither `PERF-607` nor the wider parity register: startup is not yet comparable, the representative median/P95 matrix is incomplete, and runtime-primitive gaps remain.
+The final unit gate passes 1,311 Swift tests in 51 suites plus all Go packages. One uninterrupted controlled live run at `e969e4796690f88425488ad2b9ca9f795ca4f9c1` then passed all 62 maintained Docker Compose targets in 1,152.03s on Mac17,9/macOS 26.5.2 against Docker Compose 5.3.1 and Docker Engine 29.2.1. The bridge comparator records 0.153s/1.228s Docker/candidate `up` medians (8.01×) and 10.178s/5.916s `down` medians (0.58×). Named-network discovery and links are functionally green; their startup medians remain 8.81× and 8.62× slower than Docker. The result closes neither `PERF-607` nor the wider parity register: startup and archive-copy operations are not yet comparable, the representative median/P95 matrix is incomplete, and runtime-primitive gaps remain.
 
 The controlled run also proves the host-isolation limit. Marker-protected app roots isolate data, but stable per-user launchd/XPC service names remain shared across repositories and runners. The advisory `/tmp/container-compose-runtime-${UID}.lock` protects only participants; a non-cooperating devcontainer runner had to be quiesced and was restored immediately after the run. Two SwiftNIO event-loop shutdown warnings during image-volume builder teardown remain visible as backend cleanup evidence. These do not overturn the 62 passing target results, but they remain relevant to `XPC-304` and Builder lifecycle work.
 
@@ -1000,7 +1000,7 @@ The controlled run also proves the host-isolation limit. Marker-protected app ro
 ### Passed
 
 - Network service-discovery and XPC reliability development pins:
-  - `container-compose` `a1fa0822a12b4913a7a6d857f2149c9975ad9e11`
+  - `container-compose` `e969e4796690f88425488ad2b9ca9f795ca4f9c1`
   - `container` `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1`
   - `containerization` `d7377b962af724f8d7c2b640f3ab12184d33f1af`
   - focused runtime tests covered DNS parsing/forwarding, network lookup order,
@@ -1009,18 +1009,18 @@ The controlled run also proves the host-isolation limit. Marker-protected app ro
   - the full pinned `container` suite passed with 1,262 Swift Testing cases
     plus 94 XCTest cases;
   - the timed live service-discovery matrix passed all nine behavioural
-    comparisons against Docker. Container Compose medians ranged from 2.27x
-    to 5.13x for steady-state operations; cold project startup was 7.095
-    seconds versus Docker's 0.705 seconds and remained below the documented
-    material-regression threshold;
+    comparisons against Docker. Container Compose medians ranged from 1.85×
+    to 5.75× for non-startup operations; project startup was 4.317872 seconds
+    versus Docker's 0.490196 seconds (8.81×) and was 13.0% faster than the
+    pre-optimization candidate baseline;
   - the exact published builder digest passed a no-cache DNS build in 27.71
     seconds;
   - `HAWKEYE_AUTO_INSTALL=1 make ci` passed on the coordinated Compose pins in
     602.79 seconds;
-  - after advancing the Container pin for the ProcessIO correction, `make
-    test` passed in 113.15 seconds with 1,272 Swift tests executed, 25
-    live-runtime tests explicitly skipped, and all Go normaliser tests
-    passing; `make check` passed in 108.44 seconds.
+  - after advancing the Container pin for the ProcessIO correction, the final
+    Compose suite passed 1,311 Swift tests in 51 suites, the eight-test runtime
+    harness passed, and all Go normaliser, release, CI, shell, Markdown, core
+    neutrality, stack consistency, and upstream registry gates passed.
 - XPC cancellation and startup diagnostics:
   - deterministic pre-storage cancellation, caller cancellation, delayed
     timeout reply, delayed cancellation reply, client reuse, unknown-route,
