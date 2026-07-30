@@ -236,10 +236,10 @@ public extension ComposeOrchestrator {
             )
         }
 
-        var plans = try watchPlans(project: project, services: watchServices)
+        let plans = try watchPlans(project: project, services: watchServices)
         try await performInitialWatchSync(project: runtimeProject, plans: plans, quiet: watch.quiet)
         do {
-            try await runWatchLoop(project: runtimeProject, plans: &plans, options: watch)
+            try await runWatchLoop(project: runtimeProject, plans: plans, options: watch)
         } catch is CancellationError {
             if !watch.quiet {
                 options.emit("compose: watch stopped")

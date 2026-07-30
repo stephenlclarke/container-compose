@@ -21,11 +21,9 @@ SHELL := /bin/bash
 
 SWIFT ?= swift
 SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
-# Swift 6.3.2 can crash in release coroutine optimization on this package's
-# watch loop. Size optimization avoids that toolchain crash while still
-# producing a release binary; override to empty when a newer toolchain no
-# longer needs the workaround.
-SWIFT_RELEASE_FLAGS ?= -Xswiftc -Osize
+# Additional release compiler flags for deliberate toolchain experiments.
+# Normal releases use SwiftPM's default speed-optimised production build.
+SWIFT_RELEASE_FLAGS ?=
 GO ?= go
 GO_RELEASE_ENV ?= CGO_ENABLED=0
 GO_RELEASE_BUILD_FLAGS ?= -trimpath

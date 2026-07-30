@@ -91,9 +91,9 @@ normalizer binary is installed. Override that helper with:
 export CONTAINER_COMPOSE_NORMALIZER=/absolute/path/to/compose-normalizer
 ```
 
-Release Swift builds use the optimization flags declared by the Makefile.
-Override `SWIFT_RELEASE_FLAGS` only when validating a toolchain-specific build
-change. Every packaged Go helper uses the release build path.
+Release Swift builds use SwiftPM's default speed optimisation. Set
+`SWIFT_RELEASE_FLAGS` only when validating a toolchain-specific build change.
+Every packaged Go helper uses the release build path.
 
 ## Validate
 
