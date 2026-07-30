@@ -97,6 +97,7 @@ CONTAINER_COMPOSE_CONTAINER ?= $(or $(firstword $(wildcard $(LOCAL_CONTAINER_BIN
 CONTAINER_RUNTIME_STOP_HELPER ?= $(abspath $(CONTAINER_STACK_REPO)/scripts/ensure-container-stopped.sh)
 CONTAINER_RUNTIME_APP_ROOT ?= $(abspath .build/container-runtime)
 CONTAINER_RUNTIME_INIT_BLOCK_REPO ?= $(if $(wildcard $(CONTAINER_STACK_REPO)/Makefile),$(CONTAINER_STACK_REPO),)
+CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE ?=
 CONTAINERIZATION_INIT_SOURCE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_REPO)/Package.swift),$(CONTAINERIZATION_STACK_REPO),)
 # Prefer Docker's plugin form, while accepting the standalone Docker Compose V2
 # executable that Homebrew installs on macOS.  Parity targets pass this value to
@@ -268,6 +269,7 @@ swift-runtime-test: container-stack-build build swift-runtime-test-build
 	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
 		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
+		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		env CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
@@ -1267,6 +1269,7 @@ docker-compose-parity: container-stack-build docker-compose-reference
 	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
 		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
+		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		$(MAKE) --no-print-directory -j1 \

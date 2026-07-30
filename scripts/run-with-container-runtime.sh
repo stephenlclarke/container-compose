@@ -22,15 +22,26 @@ if [[ $# -lt 2 ]]; then
     exit 2
 fi
 
+SCRIPT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIRECTORY
+# shellcheck disable=SC1091
+source "$SCRIPT_DIRECTORY/../Tools/ci/container-runtime-lock.sh"
+
 container_binary=$1
 shift
 runtime_app_root=${CONTAINER_RUNTIME_APP_ROOT:-}
 runtime_init_block_repo=${CONTAINER_RUNTIME_INIT_BLOCK_REPO:-}
+runtime_init_image_archive=${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}
 containerization_init_source_path=${CONTAINERIZATION_INIT_SOURCE_PATH:-}
 matched_init_image=${CONTAINER_COMPOSE_INIT_IMAGE:-}
 runtime_config_home=
 runtime_root_marker=.container-compose-runtime-root
 runtime_root_marker_value='container-compose isolated runtime state v1'
+
+# Report whether a source checkout or retained archive can provide the matched init image.
+has_matched_init_image_source() {
+    [[ -n "$runtime_init_block_repo" || -n "$runtime_init_image_archive" ]]
+}
 
 stop_runtime() {
     "$container_binary" system stop >/dev/null 2>&1 || true
@@ -66,7 +77,7 @@ prepare_runtime_root() {
 }
 
 resolve_matched_init_image() {
-    [[ -n "$runtime_init_block_repo" ]] || return
+    has_matched_init_image_source || return
 
     if [[ -z "$matched_init_image" ]]; then
         matched_init_image="vminit:container-compose"
@@ -74,7 +85,7 @@ resolve_matched_init_image() {
 }
 
 prepare_runtime_config_home() {
-    [[ -n "$runtime_init_block_repo" ]] || return
+    has_matched_init_image_source || return
     [[ -n "$runtime_app_root" ]] || return
 
     runtime_config_home="$runtime_app_root/xdg-config"
@@ -102,7 +113,19 @@ cleanup() {
 
 # Install a guest init image built from the same source lane as the host runtime.
 install_matched_init_image() {
-    [[ -n "$runtime_init_block_repo" ]] || return
+    has_matched_init_image_source || return
+
+    if [[ -n "$runtime_init_image_archive" ]]; then
+        if [[ ! -f "$runtime_init_image_archive" ]]; then
+            printf 'container runtime init-image archive does not exist: %s\n' \
+                "$runtime_init_image_archive" >&2
+            exit 2
+        fi
+
+        printf 'Loading matched container runtime init image archive...\n'
+        "$container_binary" image load --input "$runtime_init_image_archive"
+        return
+    fi
 
     if [[ ! -f "$runtime_init_block_repo/Makefile" ]]; then
         printf 'container runtime init-block repo does not contain a Makefile: %s\n' "$runtime_init_block_repo" >&2
@@ -124,6 +147,7 @@ install_matched_init_image() {
     env "${init_env[@]}" make -C "$runtime_init_block_repo" init-block
 }
 
+acquire_container_runtime_lock
 trap cleanup EXIT
 
 printf 'Stopping stale container services...\n'
