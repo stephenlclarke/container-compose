@@ -272,6 +272,73 @@ extension ComposeOrchestratorTests {
         ])
     }
 
+    @Test("down accepts an interrupted delete only after confirming the container is absent")
+    func downConfirmsInterruptedDeletePostcondition() async throws {
+        let interrupted = ContainerizationError(.interrupted, message: "XPC connection interrupted")
+        let deleteError = ContainerizationError(.internalError, message: "failed to delete container", cause: interrupted)
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let lifecycleManager = RecordingContainerLifecycleManager(
+            deleteErrorsByID: ["demo-api-1": deleteError]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await orchestrator.down(project: project, options: ComposeDownOptions())
+
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+    }
+
+    @Test("down preserves an interrupted delete failure when the container still exists")
+    func downPreservesInterruptedDeleteFailure() async throws {
+        let interrupted = ContainerizationError(.interrupted, message: "XPC connection interrupted")
+        let deleteError = ContainerizationError(.internalError, message: "failed to delete container", cause: interrupted)
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-1", status: "stopped"),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager(
+            deleteErrorsByID: ["demo-api-1": deleteError]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await orchestrator.down(project: project, options: ComposeDownOptions())
+            Issue.record("Expected interrupted delete failure")
+        } catch let error as ContainerizationError {
+            #expect(error == deleteError)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+    }
+
     @Test("down removes remaining project scoped containers")
     func downRemovesRemainingProjectScopedContainers() async throws {
         let runner = RecordingRunner()

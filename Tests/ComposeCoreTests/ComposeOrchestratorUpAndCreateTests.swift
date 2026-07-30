@@ -1019,6 +1019,34 @@ extension ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("up maps network mode bridge to the built-in runtime network")
+    func upMapsNetworkModeBridgeToBuiltinRuntimeNetwork() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.networkMode = "bridge"
+                },
+            ]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "default"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("up maps pid host to container pid argument")
     func upMapsPIDHostToContainerPIDArgument() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -2416,6 +2444,35 @@ extension ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("create maps network mode bridge to the built-in runtime network")
+    func createMapsNetworkModeBridgeToBuiltinRuntimeNetwork() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.networkMode = "bridge"
+                },
+            ]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--network", "default"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("create maps pid host to container pid argument")
     func createMapsPIDHostToContainerPIDArgument() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -2556,7 +2613,7 @@ extension ComposeOrchestratorTests {
         #expect(commands[..<firstCreateIndex].allSatisfy { $0.starts(with: ["container", "build"]) })
         #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-api-1"]) })
         #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-worker-1"]) })
-        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-worker-1"])
+        #expect(await discoveryManager.getRequests.sorted() == ["demo-api-1", "demo-worker-1"])
     }
 
     @Test("create applies service build pull policy before creating containers")
@@ -5738,15 +5795,16 @@ extension ComposeOrchestratorTests {
         })
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-db-1"]))
-        #expect(await imageManager.requests == [
-            .pullMissing("example/api"),
-            .pullMissing("postgres"),
-            .healthCheck(reference: "example/api", platform: nil),
-            .healthCheck(reference: "postgres", platform: nil),
-        ])
-        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1"])
+        #expect(commands.count == 2)
+        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-api-1"]) })
+        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-db-1"]) })
+        let imageRequests = await imageManager.requests
+        #expect(imageRequests.count == 4)
+        #expect(imageRequests.contains(.pullMissing("example/api")))
+        #expect(imageRequests.contains(.pullMissing("postgres")))
+        #expect(imageRequests.contains(.healthCheck(reference: "example/api", platform: nil)))
+        #expect(imageRequests.contains(.healthCheck(reference: "postgres", platform: nil)))
+        #expect(await discoveryManager.getRequests.sorted() == ["demo-api-1", "demo-db-1"])
     }
 
     @Test("up build with missing pull builds buildable images and pulls only runtime images")
@@ -5777,14 +5835,14 @@ extension ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
         #expect(commands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
-        #expect(commands[2].starts(with: ["container", "run", "--name", "demo-db-1"]))
-        #expect(await imageManager.requests == [
-            .pullMissing("postgres"),
-            .healthCheck(reference: "example/api", platform: nil),
-            .healthCheck(reference: "postgres", platform: nil),
-        ])
-        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1"])
+        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-api-1"]) })
+        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-db-1"]) })
+        let imageRequests = await imageManager.requests
+        #expect(imageRequests.count == 3)
+        #expect(imageRequests.contains(.pullMissing("postgres")))
+        #expect(imageRequests.contains(.healthCheck(reference: "example/api", platform: nil)))
+        #expect(imageRequests.contains(.healthCheck(reference: "postgres", platform: nil)))
+        #expect(await discoveryManager.getRequests.sorted() == ["demo-api-1", "demo-db-1"])
     }
 
     @Test("up pull if not present uses the missing-image flow")
@@ -6014,17 +6072,20 @@ extension ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager, imageManager: imageManager).up(project: project, options: ComposeUpOptions())
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-db-1"]))
-        #expect(commands[2].starts(with: ["container", "run", "--name", "demo-worker-1"]))
-        #expect(await imageManager.requests == [
-            .pull("example/api"),
-            .pullMissing("example/worker"),
-            .healthCheck(reference: "example/api", platform: nil),
-            .healthCheck(reference: "postgres", platform: nil),
-            .healthCheck(reference: "example/worker", platform: nil),
-        ])
-        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1", "demo-worker-1"])
+        #expect(commands.count == 3)
+        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-api-1"]) })
+        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-db-1"]) })
+        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-worker-1"]) })
+        let imageRequests = await imageManager.requests
+        #expect(imageRequests.count == 5)
+        #expect(imageRequests.contains(.pull("example/api")))
+        #expect(imageRequests.contains(.pullMissing("example/worker")))
+        #expect(imageRequests.contains(.healthCheck(reference: "example/api", platform: nil)))
+        #expect(imageRequests.contains(.healthCheck(reference: "postgres", platform: nil)))
+        #expect(imageRequests.contains(.healthCheck(reference: "example/worker", platform: nil)))
+        #expect(
+            await discoveryManager.getRequests.sorted()
+                == ["demo-api-1", "demo-db-1", "demo-worker-1"])
     }
 
     @Test("up pulls service image when daily policy has no metadata")

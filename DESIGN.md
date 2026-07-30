@@ -76,16 +76,17 @@ Compose-specific archive requests are also injected without exposing Apple
 types. `ComposeContainerRuntime` supplies archive-stream staging for path-only
 providers, Bridge template extraction, and OCI commit-image construction.
 
-Docker and Compose syntax is normalized into typed plans before runtime
-projection. `ContainerServiceCreatePlan` keeps service identity, process
-configuration, logging, health, restart, hostname, hosts, sysctls, block-I/O,
-and resource values in Compose-owned types. The Apple-backed provider converts
-those values to `ContainerResource` and `ContainerizationOCI` DTOs.
-`memswap_limit` is resolved in Core as a total memory-plus-swap byte value:
-Compose validates its relationship to `mem_limit` and calculates Docker's
-default, then the current explicit CLI adapter carries the resulting
-`--memory-swap` value. The lower stack receives the generic typed primitive and
-projects it to OCI.
+Recovery at this boundary is operation-specific and idempotency-aware. A typed `ContainerizationError.interrupted` from an image pull, including a recursively wrapped cause, permits exactly one retry because the desired image state is idempotent. Container deletion is not replayed after an interruption: Compose accepts the operation only when direct discovery proves the target is already absent, and otherwise returns the original error. The validation harness similarly allows one matched-runtime restart after an XPC transport interruption or a failed API-readiness round trip. These bounded rules do not turn arbitrary errors into success and do not hide persistent launchd/XPC ownership conflicts.
+
+Docker and Compose syntax is normalized into typed Compose-owned plans before
+runtime projection. For example, `ContainerServiceCreatePlan` keeps service
+identity, process configuration, logging, health, restart, hostname, hosts,
+sysctls, block-I/O, and resource values typed even while part of execution
+still renders `container` command arguments. `memswap_limit` is resolved here
+as a total memory-plus-swap byte value: Compose validates its relationship to
+`mem_limit` and calculates Docker's default, then the current explicit CLI
+adapter carries the resulting `--memory-swap` value. The lower stack receives
+only the generic typed primitive and projects it to OCI.
 
 Missing runtime capabilities belong in Apple-shaped issue and pull request
 drafts under [`docs/upstream/`](docs/upstream/). Those drafts request reusable

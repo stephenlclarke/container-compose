@@ -17,6 +17,7 @@
 /// Error categories that affect Compose orchestration decisions.
 public enum ComposeRuntimeErrorCode: Sendable {
     case notFound
+    case interrupted
     case other
 }
 

@@ -22,10 +22,16 @@ if [[ $# -lt 2 ]]; then
     exit 2
 fi
 
+SCRIPT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIRECTORY
+# shellcheck disable=SC1091
+source "$SCRIPT_DIRECTORY/../Tools/ci/container-runtime-lock.sh"
+
 container_binary=$1
 shift
 runtime_app_root=${CONTAINER_RUNTIME_APP_ROOT:-}
 runtime_init_block_repo=${CONTAINER_RUNTIME_INIT_BLOCK_REPO:-}
+runtime_init_image_archive=${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}
 containerization_init_source_path=${CONTAINERIZATION_INIT_SOURCE_PATH:-}
 matched_init_image=${CONTAINER_COMPOSE_INIT_IMAGE:-}
 matched_init_image_tar=${CONTAINER_RUNTIME_INIT_IMAGE_TAR:-}
@@ -54,10 +60,22 @@ validate_runtime_inputs() {
         printf 'container runtime init image archive does not exist: %s\n' "$matched_init_image_tar" >&2
         exit 2
     fi
+    if [[ -n "$runtime_init_image_archive" && ! -f "$runtime_init_image_archive" ]]; then
+        printf 'container runtime init-image archive does not exist: %s\n' \
+            "$runtime_init_image_archive" >&2
+        exit 2
+    fi
     if [[ -n "$runtime_init_block_repo" && ! -f "$runtime_init_block_repo/Makefile" ]]; then
         printf 'container runtime init-block repo does not contain a Makefile: %s\n' "$runtime_init_block_repo" >&2
         exit 2
     fi
+}
+
+# Report whether a source checkout or retained archive can provide the matched init image.
+has_matched_init_image_source() {
+    [[ -n "$runtime_init_block_repo" ||
+        -n "$matched_init_image_tar" ||
+        -n "$runtime_init_image_archive" ]]
 }
 
 stop_runtime() {
@@ -67,8 +85,41 @@ stop_runtime() {
     fi
 }
 
+# Start Container and verify an API round-trip, recovering once from transient XPC startup failure.
+start_runtime() {
+    local attempt
+    local start_log
+    local start_status
+
+    for attempt in 1 2; do
+        start_log=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-start.XXXXXX")
+        if "$container_binary" "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
+            if "$container_binary" list --all --format json >/dev/null; then
+                rm -f "$start_log"
+                return
+            else
+                start_status=$?
+            fi
+        else
+            start_status=$?
+            if ! grep -Eq 'XPC connection error: Connection (interrupted|invalid)' "$start_log"; then
+                rm -f "$start_log"
+                return "$start_status"
+            fi
+        fi
+        rm -f "$start_log"
+
+        if [[ "$attempt" == "2" ]]; then
+            return "$start_status"
+        fi
+        printf 'Container API was not ready; restarting the matched runtime once...\n' >&2
+        stop_runtime
+        sleep 3
+    done
+}
+
 prepare_runtime_root() {
-    [[ -n "$runtime_app_root" ]] || return
+    [[ -n "$runtime_app_root" ]] || return 0
 
     mkdir -p "$runtime_app_root"
     local marker_path="$runtime_app_root/$runtime_root_marker"
@@ -94,9 +145,7 @@ prepare_runtime_root() {
 }
 
 resolve_matched_init_image() {
-    if [[ -z "$runtime_init_block_repo" && -z "$matched_init_image_tar" ]]; then
-        return
-    fi
+    has_matched_init_image_source || return 0
 
     if [[ -z "$matched_init_image" ]]; then
         matched_init_image="vminit:container-compose"
@@ -104,10 +153,8 @@ resolve_matched_init_image() {
 }
 
 prepare_runtime_config_home() {
-    if [[ -z "$runtime_init_block_repo" && -z "$matched_init_image_tar" ]]; then
-        return
-    fi
-    [[ -n "$runtime_app_root" ]] || return
+    has_matched_init_image_source || return 0
+    [[ -n "$runtime_app_root" ]] || return 0
 
     runtime_config_home="$runtime_app_root/xdg-config"
     mkdir -p "$runtime_config_home"
@@ -115,7 +162,7 @@ prepare_runtime_config_home() {
 }
 
 configure_matched_init_image() {
-    [[ -n "$runtime_config_home" ]] || return
+    [[ -n "$runtime_config_home" ]] || return 0
 
     local container_config_dir="$runtime_config_home/container"
     mkdir -p "$container_config_dir"
@@ -139,7 +186,7 @@ configure_matched_init_image() {
 }
 
 configure_runtime_builder_image() {
-    [[ -n "$runtime_config_home" ]] || return
+    [[ -n "$runtime_config_home" ]] || return 0
     if [[ -z "$runtime_builder_image" ]]; then
         return 0
     fi
@@ -189,13 +236,15 @@ cleanup() {
 # Install a guest init image built from the same source lane as the host runtime.
 install_matched_init_image() {
     if [[ -n "$matched_init_image_tar" ]]; then
-        if [[ ! -f "$matched_init_image_tar" ]]; then
-            printf 'container runtime init image archive does not exist: %s\n' "$matched_init_image_tar" >&2
-            exit 2
-        fi
         printf 'Installing prebuilt matched container runtime init image...\n'
         "$container_binary" image load -i "$matched_init_image_tar"
-        return
+        return 0
+    fi
+
+    if [[ -n "$runtime_init_image_archive" ]]; then
+        printf 'Loading matched container runtime init image archive...\n'
+        "$container_binary" image load --input "$runtime_init_image_archive"
+        return 0
     fi
 
     [[ -n "$runtime_init_block_repo" ]] || return 0
@@ -226,6 +275,7 @@ install_matched_init_image() {
 }
 
 validate_runtime_inputs
+acquire_container_runtime_lock
 trap cleanup EXIT
 
 printf 'Stopping stale container services...\n'
@@ -241,7 +291,7 @@ start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
 if [[ -n "$runtime_app_root" ]]; then
     start_arguments+=(--app-root "$runtime_app_root")
 fi
-"$container_binary" "${start_arguments[@]}"
+start_runtime
 install_runtime_builder_image
 install_runtime_bootstrap_image
 install_matched_init_image
@@ -250,7 +300,7 @@ if [[ -n "$runtime_config_home" ]]; then
     printf 'Restarting matched container runtime with the installed init image...\n'
     stop_runtime
     sleep 3
-    "$container_binary" "${start_arguments[@]}"
+    start_runtime
 fi
 
 "$@"

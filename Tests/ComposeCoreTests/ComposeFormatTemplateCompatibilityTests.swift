@@ -260,6 +260,7 @@ struct ComposeFormatTemplateCompatibilityTests {
 
     @Test
     func `printf quote uses Go escapes for runes and raw bytes`() throws {
+        let replacementCharacter = "\u{FFFD}"
         let values: [String: DockerTemplateData] = [
             "Bytes": .byteString([0xC3, 0x07, 0x22, 0x5C]),
             "Nothing": .null,
@@ -275,7 +276,7 @@ struct ComposeFormatTemplateCompatibilityTests {
                 {{printf "%q" -1}}|{{printf "%q" 173}}|{{printf "%q" 255}}
                 """,
                 values: values,
-            ) == #"'\x00'|'\b'|'\t'|'\n'|'\v'|'\f'|'\r'|'\''|'\\'|'�'|'\u00ad'|'ÿ'"#,
+            ) == #"'\x00'|'\b'|'\t'|'\n'|'\v'|'\f'|'\r'|'\''|'\\'|'\#(replacementCharacter)'|'\u00ad'|'ÿ'"#,
         )
         #expect(
             try renderDockerTemplate(

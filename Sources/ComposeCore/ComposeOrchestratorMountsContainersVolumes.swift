@@ -432,7 +432,22 @@ extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try await lifecycleManager.deleteContainer(id: id, force: force)
+            do {
+                try await lifecycleManager.deleteContainer(id: id, force: force)
+            } catch {
+                guard isContainerInterrupted(error), await containerDeletionCompleted(id) else {
+                    throw error
+                }
+            }
+        }
+    }
+
+    /// Confirms that an interrupted delete nevertheless reached its intended postcondition.
+    func containerDeletionCompleted(_ id: String) async -> Bool {
+        do {
+            return try await discoveryManager.getContainer(id: id) == nil
+        } catch {
+            return false
         }
     }
 
@@ -458,6 +473,20 @@ extension ComposeOrchestrator {
             return false
         }
         return isContainerNotFound(cause)
+    }
+
+    /// Returns true when a container lifecycle error or one of its causes is interrupted.
+    func isContainerInterrupted(_ error: any Error) -> Bool {
+        guard let runtimeError = error as? any ComposeRuntimeErrorProviding else {
+            return false
+        }
+        if runtimeError.composeRuntimeErrorCode == .interrupted {
+            return true
+        }
+        guard let cause = runtimeError.composeRuntimeUnderlyingError else {
+            return false
+        }
+        return isContainerInterrupted(cause)
     }
 
     /// Returns the stop command arguments for a service container.

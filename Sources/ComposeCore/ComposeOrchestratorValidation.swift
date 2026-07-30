@@ -180,9 +180,14 @@ extension ComposeOrchestrator {
         networkMode == "host"
     }
 
+    /// Returns whether the service requests Docker Compose's built-in bridge network.
+    func isBridgeNetworkMode(_ networkMode: String?) -> Bool {
+        networkMode == "bridge"
+    }
+
     /// Returns whether the service selects a network namespace mode this runtime can represent.
     func isSupportedNetworkMode(_ networkMode: String) -> Bool {
-        isNoNetworkMode(networkMode) || isHostNetworkMode(networkMode)
+        isNoNetworkMode(networkMode) || isHostNetworkMode(networkMode) || isBridgeNetworkMode(networkMode)
     }
 
     /// Validates per-network MAC addresses and selects a service MAC by Compose priority.

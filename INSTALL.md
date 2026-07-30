@@ -202,6 +202,14 @@ sudo rm -rf /usr/local/libexec/container-plugins/compose
 
 ## Troubleshooting
 
+### Diagnose XPC Ownership Conflicts
+
+Container data can be isolated with an application root, but the API server and plugin helpers still use one stable per-user launchd/XPC namespace. Two installations, local validation jobs, or self-hosted runners using the same macOS account can therefore stop or replace each other's services even when their data roots differ.
+
+Use `container system version` before runtime-backed Compose work and confirm that the running API server reports the expected source and exact revisions. If repeated `Connection interrupted` or `Connection invalid` errors appear, stop the other runtime owner or runner and then start the intended installation; repeatedly changing app roots does not isolate service ownership.
+
+The Compose adapter performs only bounded safe recovery: an idempotent image pull can retry once after a typed interruption, and an interrupted delete counts as success only after direct discovery proves the container is absent. Persistent interruptions remain visible because they indicate a service-owner or lower-runtime problem rather than a Compose operation that should be retried indefinitely.
+
 ### Migrate Legacy Pre-0.6.68 Packages
 
 This is the only legacy release-process procedure in this guide. Packages made

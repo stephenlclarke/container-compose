@@ -17,7 +17,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := all
-.PHONY: upstream-divergence-report upstream-divergence-check upstream-divergence-release-check upstream-handoff-registry-update upstream-handoff-registry-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
+.PHONY: fork-classifications-check upstream-divergence-report upstream-divergence-check upstream-divergence-release-check upstream-handoff-registry-update upstream-handoff-registry-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
 
 SWIFT ?= swift
 SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
@@ -101,6 +101,7 @@ CONTAINER_COMPOSE_CONTAINER ?= $(or $(firstword $(wildcard $(LOCAL_CONTAINER_BIN
 CONTAINER_RUNTIME_STOP_HELPER ?= $(abspath $(CONTAINER_STACK_REPO)/scripts/ensure-container-stopped.sh)
 CONTAINER_RUNTIME_APP_ROOT ?= $(abspath .build/container-runtime)
 CONTAINER_RUNTIME_INIT_BLOCK_REPO ?= $(if $(wildcard $(CONTAINER_STACK_REPO)/Makefile),$(CONTAINER_STACK_REPO),)
+CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE ?=
 CONTAINERIZATION_INIT_SOURCE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_REPO)/Package.swift),$(CONTAINERIZATION_STACK_REPO),)
 # Prefer Docker's plugin form, while accepting the standalone Docker Compose V2
 # executable that Homebrew installs on macOS.  Parity targets pass this value to
@@ -110,7 +111,19 @@ DOCKER_COMPOSE_REFERENCE ?= $(shell if docker compose version >/dev/null 2>&1; t
 DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.3.1
 DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff
 CONTAINER_COMPOSE_LIVE ?= 0
-PARITY_ENV = CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" CONTAINER_COMPOSE_LIVE="$(CONTAINER_COMPOSE_LIVE)" DOCKER_COMPOSE="$(DOCKER_COMPOSE_REFERENCE)" DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)"
+PARITY_EVIDENCE_DIR ?=
+PARITY_REPETITIONS ?= 3
+PARITY_TIMEOUT_SECONDS ?= 300
+PARITY_ENV = \
+	CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" \
+	CONTAINER_COMPOSE_LIVE="$(CONTAINER_COMPOSE_LIVE)" \
+	CONTAINER_STACK_REPO="$(CONTAINER_STACK_REPO)" \
+	CONTAINERIZATION_STACK_REPO="$(CONTAINERIZATION_STACK_REPO)" \
+	DOCKER_COMPOSE="$(DOCKER_COMPOSE_REFERENCE)" \
+	DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)" \
+	PARITY_EVIDENCE_DIR="$(PARITY_EVIDENCE_DIR)" \
+	PARITY_REPETITIONS="$(PARITY_REPETITIONS)" \
+	PARITY_TIMEOUT_SECONDS="$(PARITY_TIMEOUT_SECONDS)"
 MARKDOWN_FILES := $(shell git ls-files '*.md')
 DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-cli-surface-parity \
@@ -263,6 +276,7 @@ swift-runtime-test: container-stack-build build swift-runtime-test-build
 	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
 		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
+		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		env CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
@@ -1283,6 +1297,7 @@ docker-compose-parity: container-stack-build docker-compose-reference
 	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
 		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
+		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		$(MAKE) --no-print-directory -j1 \
@@ -1609,6 +1624,9 @@ coverage-tools-test:
 
 upstream-divergence-report:
 	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
+
+fork-classifications-check:
+	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --classifications-only --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
 
 upstream-divergence-check:
 	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --strict --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json

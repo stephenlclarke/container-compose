@@ -2,8 +2,10 @@
 
 This is the current disposition of Apple work that affects the five-repository container stack. Re-check GitHub before changing an Apple-backed component because issue, review, and merge state can change independently.
 
-Updated: 29 July 2026 after fetching every configured Apple and
-Stephen-owned remote and querying the live pull-request state.
+Apple pull-request state was queried 29 July 2026. Fetched Apple and
+supported-fork baselines, fork classifications, and Compose development pins
+were refreshed 30 July 2026 without claiming a fresh query of every Apple pull
+request.
 
 ## Scope
 
@@ -19,25 +21,25 @@ fork `main`. The left/right counts are from `git rev-list
 
 | Repository | Apple `main` | Fork `main` | Apple-only | Fork-only |
 | --- | --- | --- | ---: | ---: |
-| `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `d33e403dbe4849771ceb7d15107fa522be7e6e8e` | 0 | 328 |
-| `containerization` | `7800b4642171561c95b5f55500b19e5dce5acd45` | `073565e263f985693b4624e970be334cf7802fca` | 0 | 134 |
+| `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `8657c4b8685865c8889b0171d953342fc9f427a7` | 0 | 338 |
+| `containerization` | `ff44a5b683c80fceab875dba8a20ed24d7648c07` | `971fc7e5e27467ebd6227e1ae54f3e5c23de87b4` | 0 | 135 |
 | `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `61832d4ca91715180a84dec0eab091170174c43c` | 0 | 34 |
 
-The published default branches now contain Apple #2027, #2038, #822, and #824,
-so neither fork is behind its fetched Apple `main`. The current development
-pins advance beyond those defaults for network service discovery and XPC
-reliability: `container` `a528d38dff0d941902ead5a206ec03b5118509f6`
-contains fork `main` through a merge parent and pins
+The supported default branches contain their complete fetched Apple histories.
+Their 440 patch-unique non-merge commits are classified in
+[Fork Commit Classifications](FORK-COMMIT-CLASSIFICATIONS.md): 299 in
+`container`, 112 in `containerization`, and 29 in
+`container-builder-shim`. The fork-only counts above include merge commits and
+are not a count of changes ready for Apple.
+
+Compose currently pins the separately validated development heads
+`container` `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1`,
 `containerization` `d7377b962af724f8d7c2b640f3ab12184d33f1af`,
-which likewise contains its fork `main`. The linked feature branches passed
-their focused tests, full runtime tests and checks, a live service-discovery
-integration test, and deterministic XPC cancellation and launchd diagnostic
-regressions before this pin update. The pinned Container head also makes
-Developer ID archive verification, including the complete Apple certification
-chain, a mandatory release test; that packaging policy is Stephen-owned and
-does not change the Apple-facing runtime patch.
-The fork-only counts include merge commits and intentionally retained generic
-runtime work; they are not a count of changes that are ready for Apple.
+and `container-builder-shim`
+`61832d4ca91715180a84dec0eab091170174c43c`. The Container pin contains the
+current Apple head. The Containerization pin predates merged Apple PR #813 by
+one Apple commit and retains an older patch-unique vminitd correction, so it
+requires explicit reconciliation rather than an assumed duplicate removal.
 
 ## Submitted Stephen-Authored Apple Pull Requests
 
@@ -66,6 +68,7 @@ No Stephen-authored pull request has been submitted to
 
 | Pull request | Final state | Disposition |
 | --- | --- | --- |
+| [apple/containerization#813](https://github.com/apple/containerization/pull/813) | Merged 29 July 2026 | Apple now redacts OCI environment values through descriptions. The older fork vminitd call-site correction remains patch-unique and must be reconciled explicitly rather than retained as an assumed duplicate. |
 | [apple/containerization#798](https://github.com/apple/containerization/pull/798) | Merged 15 July 2026 | The CloudHypervisor SwiftPM exclusion is present in current Apple `main`; no fork-only replacement remains necessary. |
 | [apple/container#1933](https://github.com/apple/container/pull/1933) | Closed 22 July 2026 without merge | Superseded by merged production handler work in `apple/container#1981` and `apple/containerization#808`. |
 | [apple/container#1838](https://github.com/apple/container/pull/1838) | Closed 27 June 2026 without merge | Superseded by open replacement #1935. |
@@ -74,11 +77,11 @@ No Stephen-authored pull request has been submitted to
 | [apple/container#1764](https://github.com/apple/container/pull/1764) | Closed 27 June 2026 without merge | The broader log retrieval proposal was not merged; generic log retrieval still needs smaller Apple-shaped primitives. |
 | [apple/container#1758](https://github.com/apple/container/pull/1758) | Closed 27 June 2026 without merge | Superseded first by #1933 and then by Apple's merged production handler changes. |
 
-[PR-ARCHIVE.json](PR-ARCHIVE.json) currently retains immutable snapshots for Apple PRs #1933, #1934, #1935, #1965, containerization PRs #798 and #799, and third-party builder-shim PR #87. It does not yet archive the current heads of `apple/container` PRs #730, #1508, #1630, #1660, #1708, #1735, #1862, #1926, #1947, #1997, #2031, #2035, or #2036, or `apple/containerization` PRs #753, #792, #812, #813, #820, #821, or #823. The code archive is therefore incomplete until immutable Stephen-owned refs for those heads are added and verified.
+[PR-ARCHIVE.json](PR-ARCHIVE.json) currently retains immutable snapshots for Apple PRs #1933, #1934, #1935, #1965, containerization PRs #798 and #799, and third-party builder-shim PR #87. It does not yet archive the current heads of `apple/container` PRs #730, #1508, #1630, #1660, #1708, #1735, #1862, #1926, #1947, #1997, #2031, #2035, or #2036, or `apple/containerization` PRs #753, #792, #812, #820, #821, or #823. The code archive is therefore incomplete until immutable Stephen-owned refs for those heads are added and verified.
 
 ## Handoff Inventory
 
-[HANDOFF-REGISTRY.json](HANDOFF-REGISTRY.json) is now the source of truth. Its generated [reader view](HANDOFF-REGISTRY.md) contains 357 capability or pull-request rows, 616 immutable document snapshots, 459 unique referenced commits, and six current supporting documents:
+[HANDOFF-REGISTRY.json](HANDOFF-REGISTRY.json) is now the source of truth. Its generated [reader view](HANDOFF-REGISTRY.md) contains 360 capability or pull-request rows, 616 immutable document snapshots, 473 unique referenced commits, and 14 current supporting documents:
 
 - `apple-container-builder-shim/PR-87.md`
 - `apple-container/PR-1926.md`
@@ -86,8 +89,16 @@ No Stephen-authored pull request has been submitted to
 - `apple-container/PR-1935.md`
 - `apple-container/PR-1997.md`
 - `apple-containerization/PR-799.md`
+- `container-compose/ISSUE-173.md`
+- `container-compose/PR-173.md`
+- `container-compose/ISSUE-container-runtime-validation-reliability.md`
+- `container-compose/PR-container-runtime-validation-reliability.md`
+- `container-compose/ISSUE-network-mode-bridge.md`
+- `container-compose/PR-network-mode-bridge.md`
+- `container-compose/ISSUE-package-compatibility-preflight-drain.md`
+- `container-compose/PR-package-compatibility-preflight-drain.md`
 
-The registry records 298 retired entries, 23 unsubmitted candidates, ten open Stephen-authored submissions, 17 tracked third-party pull requests, six merged pull requests, and three closed pull requests. Submitted PRs #1965, #2031, #2035, #2036, #820, #821, and #823 are first-class registry rows without separate Markdown files. The two stock-shaped PR #33 follow-ups and the four Apple PRs that moved the fetched main branches are also first-class rows.
+The registry records 301 retired entries, 23 unsubmitted candidates, ten open Stephen-authored submissions, 16 tracked third-party pull requests, seven merged pull requests, and three closed pull requests. Submitted PRs #1965, #2031, #2035, #2036, #820, #821, and #823 are first-class registry rows without separate Markdown files. The two stock-shaped PR #33 follow-ups and the Apple pull requests that moved the fetched main branches are also first-class rows.
 
 An unsubmitted registry row is not automatically submission-ready. Before
 submission, rebase the smallest independent change on current stock Apple
@@ -187,7 +198,7 @@ validation before submission.
 | [apple/container#1997](https://github.com/apple/container/pull/1997) | Open, mergeable, and awaiting review. Its content-identical signal-name correction is represented by `bb2438c`. |
 | [apple/container#2000](https://github.com/apple/container/pull/2000) | Closed 28 July 2026 without merge. The fork's existing backward-read tests continue to cover the reported behaviour. |
 | [apple/containerization#792](https://github.com/apple/containerization/pull/792) | Open, mergeable, and awaiting review. Its fresh-session registry retry behaviour is represented by `d388a15` and `c8043bb`. |
-| [apple/containerization#813](https://github.com/apple/containerization/pull/813) | Open, mergeable, and awaiting review at `542463261721f99afbdfd679ae59f257f7f89096`. Its environment-value redaction is represented in the supported fork; remove the duplicate when Apple merges it. |
+| [apple/containerization#813](https://github.com/apple/containerization/pull/813) | Merged 29 July 2026 as `ff44a5b683c80fceab875dba8a20ed24d7648c07`. The older local vminitd correction remains patch-unique and requires explicit reconciliation with Apple's OCI-level redaction. |
 | [apple/containerization#812](https://github.com/apple/containerization/pull/812) | Open, mergeable, blocked draft at `570a56f74bf79aa3fa383e708d4741043c1e4f6f`. It proposes direct `FileHandle` copy streams. Do not import it before API, cancellation, backpressure, path-safety, and archive-metadata review. |
 | [apple/container#1947](https://github.com/apple/container/pull/1947) | Open, mergeable, blocked draft at `7199840b57504963e0f76370a72dfcd74d927eb9`. It exposes the direct-stream container CLI surface on top of #812 and is not represented in the supported fork. |
 | [apple/container-builder-shim#89](https://github.com/apple/container-builder-shim/pull/89) and [apple/container#2040](https://github.com/apple/container/pull/2040) | Open, mergeable, and awaiting review at `134c7381dc3b1a06afe2d2025fab30c597f26bdd` and `f27d3e37cf7c6470b65c8e4a6f6af36fa0b20b68`. The meta-`ARG` implementation is technically sound, but equivalent pre-`FROM` default and explicit override resolution is already present in the supported builder fork. Do not duplicate the resolver; retain the upstream integration test as convergence evidence. |
@@ -230,6 +241,10 @@ validation before submission.
 
 ## Open Follow-up
 
+- Keep all supported fork mains current with fetched Apple heads, classify
+  every new patch-unique commit, and rerun `make fork-classifications-check`.
+- Reconcile merged `apple/containerization#813` into the exact Compose
+  Containerization development lane and reassess the older vminitd correction.
 - Keep Stephen-authored `apple/container#1934`, `#1935`, `#1965`, `#2031`,
   `#2035`, and `#2036`, and `apple/containerization#799`, `#820`, `#821`, and
   `#823` open until Apple merges, replaces, or explicitly rejects their

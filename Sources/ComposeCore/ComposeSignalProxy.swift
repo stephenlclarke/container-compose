@@ -32,6 +32,10 @@ public protocol ComposeSignalProxying: Sendable {
 
 /// Dispatch-backed signal proxy used by interactive-ish Compose operations.
 public struct DispatchComposeSignalProxy: ComposeSignalProxying {
+    #if canImport(Darwin)
+        private static let processSignalOwnership = ProcessSignalProxyOwnership()
+    #endif
+
     public init() {
         // Public initializer keeps the dispatch-backed proxy constructible outside this module.
     }
@@ -47,11 +51,19 @@ public struct DispatchComposeSignalProxy: ComposeSignalProxying {
                 try await operation()
                 return
             }
-            try await Self.runWithSignalProxy(
-                mappings: mappings,
-                handler: handler,
-                operation: operation,
-            )
+            await Self.processSignalOwnership.acquire()
+            do {
+                try Task.checkCancellation()
+                try await Self.runWithSignalProxy(
+                    mappings: mappings,
+                    handler: handler,
+                    operation: operation,
+                )
+                await Self.processSignalOwnership.release()
+            } catch {
+                await Self.processSignalOwnership.release()
+                throw error
+            }
         #else
             _ = signals
             _ = handler
@@ -124,6 +136,32 @@ public struct DispatchComposeSignalProxy: ComposeSignalProxying {
         }
     #endif
 }
+
+#if canImport(Darwin)
+    /// Serializes ownership of process-wide Darwin signal dispositions.
+    private actor ProcessSignalProxyOwnership {
+        private var isOwned = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        func acquire() async {
+            guard isOwned else {
+                isOwned = true
+                return
+            }
+            await withCheckedContinuation { continuation in
+                waiters.append(continuation)
+            }
+        }
+
+        func release() {
+            guard !waiters.isEmpty else {
+                isOwned = false
+                return
+            }
+            waiters.removeFirst().resume()
+        }
+    }
+#endif
 
 private final class SignalHandlerTaskTracker: @unchecked Sendable {
     private let lock = NSLock()

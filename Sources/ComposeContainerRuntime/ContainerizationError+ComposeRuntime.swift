@@ -19,7 +19,13 @@ import ContainerizationError
 
 extension ContainerizationError: ComposeRuntimeErrorProviding {
     public var composeRuntimeErrorCode: ComposeRuntimeErrorCode {
-        code == .notFound ? .notFound : .other
+        if code == .notFound {
+            return .notFound
+        }
+        if code == .interrupted {
+            return .interrupted
+        }
+        return .other
     }
 
     public var composeRuntimeUnderlyingError: (any Error)? {

@@ -3195,6 +3195,7 @@ actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
     private var pushOutputs: [String: String]
     private var deleteOutputs: [String: String?]
     private var loadOutputs: [String: [String]]
+    private var pullErrors: [String: [ContainerizationError]]
     private var storage: [ContainerImageRequest] = []
 
     init(
@@ -3210,7 +3211,8 @@ actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
         transformers: [ComposeBridgeTransformer] = [],
         pushOutputs: [String: String] = [:],
         deleteOutputs: [String: String?] = [:],
-        loadOutputs: [String: [String]] = [:]
+        loadOutputs: [String: [String]] = [:],
+        pullErrors: [String: [ContainerizationError]] = [:]
     ) {
         self.existingReferences = existingReferences
         self.digests = digests
@@ -3231,6 +3233,7 @@ actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
         self.pushOutputs = pushOutputs
         self.deleteOutputs = deleteOutputs
         self.loadOutputs = loadOutputs
+        self.pullErrors = pullErrors
     }
 
     var requests: [ContainerImageRequest] {
@@ -3287,6 +3290,11 @@ actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
 
     func pullImage(reference: String) async throws {
         storage.append(.pull(reference))
+        if var errors = pullErrors[reference], !errors.isEmpty {
+            let error = errors.removeFirst()
+            pullErrors[reference] = errors
+            throw error
+        }
         existingReferences.insert(reference)
     }
 

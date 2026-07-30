@@ -1583,6 +1583,31 @@ extension ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("run maps network mode bridge to the built-in runtime network")
+    func runMapsNetworkModeBridgeToBuiltinRuntimeNetwork() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.networkMode = "bridge"
+                },
+            ]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "run", "--name"]))
+        #expect(command.containsSequence(["--network", "default"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("run maps pid host to container pid argument")
     func runMapsPIDHostToContainerPIDArgument() async throws {
         let runner = RecordingRunner(responses: [.success])

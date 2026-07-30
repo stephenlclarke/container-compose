@@ -56,6 +56,15 @@ def default_repo_root(root: Path = ROOT) -> Path:
 
 
 DEFAULT_REPO_ROOT = default_repo_root()
+DEFAULT_CLASSIFICATION_REGISTRY = ROOT / "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json"
+ALLOWED_CLASSIFICATIONS = frozenset(
+    {
+        "support-maintenance",
+        "generic-runtime-primitive",
+        "temporary-upstream-port",
+        "rejected-compose-policy",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -79,6 +88,18 @@ class MergeStatus:
     status: str
     details: str = ""
     files: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ForkClassificationStatus:
+    status: str
+    classified: int = 0
+    total: int = 0
+    slice_count: int = 0
+    counts: dict[str, int] = field(default_factory=dict)
+    unclassified_commits: list[CommitSummary] = field(default_factory=list)
+    stale_commits: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -107,6 +128,7 @@ class RepositoryReport:
     upstream_only_commits: list[CommitSummary]
     unpushed_local_commits: list[CommitSummary]
     merge_upstream_into_local: MergeStatus
+    fork_classifications: ForkClassificationStatus
     errors: list[str] = field(default_factory=list)
 
 
@@ -245,6 +267,160 @@ def commit_list(repo: Path, include_ref: str, exclude_ref: str, max_commits: int
     return commits
 
 
+def patch_unique_nonmerge_commits(repo: Path, upstream_ref: str, fork_ref: str) -> list[CommitSummary]:
+    output = git_text(
+        repo,
+        [
+            "log",
+            "--cherry-pick",
+            "--right-only",
+            "--no-merges",
+            "--format=%H%x00%h%x00%s",
+            f"{upstream_ref}...{fork_ref}",
+        ],
+    )
+    commits: list[CommitSummary] = []
+    for line in output.splitlines():
+        if not line:
+            continue
+        parts = line.split("\0", 2)
+        if len(parts) == 3:
+            commits.append(CommitSummary(hash=parts[0], short=parts[1], subject=parts[2]))
+    return commits
+
+
+def load_classification_registry(path: Path) -> dict[str, object]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("classification registry root must be an object")
+    if payload.get("schemaVersion") != 1:
+        raise ValueError("classification registry schemaVersion must be 1")
+    if not isinstance(payload.get("repositories"), dict):
+        raise ValueError("classification registry repositories must be an object")
+    return payload
+
+
+def _nonempty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def validate_fork_classifications(
+    repo: Path,
+    repo_name: str,
+    upstream_ref: str,
+    fork_ref: str,
+    registry: dict[str, object] | None,
+) -> ForkClassificationStatus:
+    actual_commits = patch_unique_nonmerge_commits(repo, upstream_ref, fork_ref)
+    actual_by_hash = {commit.hash: commit for commit in actual_commits}
+    if registry is None:
+        return ForkClassificationStatus(
+            status="not-checked",
+            total=len(actual_commits),
+            unclassified_commits=actual_commits,
+        )
+
+    repositories = registry.get("repositories")
+    if not isinstance(repositories, dict):
+        return ForkClassificationStatus(
+            status="invalid",
+            total=len(actual_commits),
+            unclassified_commits=actual_commits,
+            errors=["registry repositories must be an object"],
+        )
+    entry = repositories.get(repo_name)
+    if not isinstance(entry, dict):
+        return ForkClassificationStatus(
+            status="missing",
+            total=len(actual_commits),
+            unclassified_commits=actual_commits,
+            errors=[f"registry has no {repo_name} entry"],
+        )
+
+    errors: list[str] = []
+    upstream_head = git_text(repo, ["rev-parse", f"{upstream_ref}^{{commit}}"])
+    fork_head = git_text(repo, ["rev-parse", f"{fork_ref}^{{commit}}"])
+    if entry.get("upstreamHead") != upstream_head:
+        errors.append(
+            f"registry upstreamHead is {entry.get('upstreamHead')!r}, expected {upstream_head}"
+        )
+    if entry.get("forkHead") != fork_head:
+        errors.append(f"registry forkHead is {entry.get('forkHead')!r}, expected {fork_head}")
+
+    slices = entry.get("slices")
+    if not isinstance(slices, list):
+        return ForkClassificationStatus(
+            status="invalid",
+            total=len(actual_commits),
+            unclassified_commits=actual_commits,
+            errors=[*errors, "registry slices must be an array"],
+        )
+
+    classified: dict[str, str] = {}
+    duplicate_hashes: set[str] = set()
+    counts = {classification: 0 for classification in sorted(ALLOWED_CLASSIFICATIONS)}
+    seen_slice_ids: set[str] = set()
+    for index, slice_entry in enumerate(slices):
+        label = f"slice {index + 1}"
+        if not isinstance(slice_entry, dict):
+            errors.append(f"{label} must be an object")
+            continue
+        slice_id = slice_entry.get("id")
+        if not _nonempty_string(slice_id):
+            errors.append(f"{label} id must be a non-empty string")
+        elif slice_id in seen_slice_ids:
+            errors.append(f"duplicate slice id {slice_id}")
+        else:
+            seen_slice_ids.add(slice_id)
+
+        classification = slice_entry.get("classification")
+        if classification not in ALLOWED_CLASSIFICATIONS:
+            errors.append(f"{label} has invalid classification {classification!r}")
+            continue
+        for key in ("owner", "reason", "upstreamDisposition"):
+            if not _nonempty_string(slice_entry.get(key)):
+                errors.append(f"{label} {key} must be a non-empty string")
+
+        hashes = slice_entry.get("commits")
+        if not isinstance(hashes, list) or not hashes:
+            errors.append(f"{label} commits must be a non-empty array")
+            continue
+        for commit_hash in hashes:
+            if not isinstance(commit_hash, str) or re.fullmatch(r"[0-9a-f]{40}", commit_hash) is None:
+                errors.append(f"{label} contains invalid commit hash {commit_hash!r}")
+                continue
+            if commit_hash in classified:
+                duplicate_hashes.add(commit_hash)
+                continue
+            classified[commit_hash] = classification
+            counts[classification] += 1
+
+    if duplicate_hashes:
+        errors.append(f"duplicate classified commits: {', '.join(sorted(duplicate_hashes))}")
+
+    actual_hashes = set(actual_by_hash)
+    classified_hashes = set(classified)
+    missing_hashes = actual_hashes - classified_hashes
+    stale_hashes = classified_hashes - actual_hashes
+    unclassified = [commit for commit in actual_commits if commit.hash in missing_hashes]
+    if unclassified:
+        errors.append(f"{len(unclassified)} current fork-only commit(s) are unclassified")
+    if stale_hashes:
+        errors.append(f"{len(stale_hashes)} classified commit(s) are no longer fork-only")
+
+    status = "current" if not errors else "stale"
+    return ForkClassificationStatus(
+        status=status,
+        classified=len(actual_hashes & classified_hashes),
+        total=len(actual_commits),
+        slice_count=len(slices),
+        counts={key: value for key, value in counts.items() if value},
+        unclassified_commits=unclassified,
+        stale_commits=sorted(stale_hashes),
+        errors=errors,
+    )
+
+
 def dirty_paths(repo: Path) -> list[str]:
     output = git_text(repo, ["status", "--porcelain"])
     paths: list[str] = []
@@ -302,11 +478,18 @@ def empty_repository_report(name: str, path: Path, errors: list[str]) -> Reposit
         upstream_only_commits=[],
         unpushed_local_commits=[],
         merge_upstream_into_local=MergeStatus(status="unknown"),
+        fork_classifications=ForkClassificationStatus(status="not-checked"),
         errors=errors,
     )
 
 
-def analyze_repository(spec: RepoSpec, repo_root: Path, fetch: bool, max_commits: int) -> RepositoryReport:
+def analyze_repository(
+    spec: RepoSpec,
+    repo_root: Path,
+    fetch: bool,
+    max_commits: int,
+    classification_registry: dict[str, object] | None = None,
+) -> RepositoryReport:
     repo = repo_root / spec.relative_path
     errors: list[str] = []
     if not repo.exists():
@@ -357,6 +540,13 @@ def analyze_repository(spec: RepoSpec, repo_root: Path, fetch: bool, max_commits
             upstream_only_commits=commit_list(repo, upstream, local, max_commits),
             unpushed_local_commits=commit_list(repo, local, fork, max_commits),
             merge_upstream_into_local=merge_status(repo, local, upstream),
+            fork_classifications=validate_fork_classifications(
+                repo,
+                spec.name,
+                upstream,
+                fork,
+                classification_registry,
+            ),
             errors=[],
         )
     except (GitError, RuntimeError) as error:
@@ -375,8 +565,17 @@ def summarize(repositories: Sequence[RepositoryReport]) -> ReportSummary:
     )
 
 
-def build_report(repo_root: Path, fetch: bool, max_commits: int, specs: Sequence[RepoSpec]) -> StackReport:
-    repositories = [analyze_repository(spec, repo_root, fetch, max_commits) for spec in specs]
+def build_report(
+    repo_root: Path,
+    fetch: bool,
+    max_commits: int,
+    specs: Sequence[RepoSpec],
+    classification_registry: dict[str, object] | None = None,
+) -> StackReport:
+    repositories = [
+        analyze_repository(spec, repo_root, fetch, max_commits, classification_registry)
+        for spec in specs
+    ]
     return StackReport(
         generated_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         fetched=fetch,
@@ -415,8 +614,8 @@ def render_markdown(report: StackReport) -> str:
         f"- Repositories with unpushed local commits: `{report.summary.unpushed_count}`",
         f"- Repositories with report errors: `{report.summary.error_count}`",
         "",
-        "| Repository | Local vs Apple | Fork vs Apple | Local vs fork | Merge Apple into local |",
-        "| --- | ---: | ---: | ---: | --- |",
+        "| Repository | Local vs Apple | Fork vs Apple | Local vs fork | Classifications | Merge Apple into local |",
+        "| --- | ---: | ---: | ---: | --- | --- |",
     ]
     for repo in report.repositories:
         merge = repo.merge_upstream_into_local.status
@@ -424,7 +623,9 @@ def render_markdown(report: StackReport) -> str:
             merge = f"{merge}: {', '.join(repo.merge_upstream_into_local.files)}"
         lines.append(
             f"| `{repo.name}` | {format_divergence(repo.local_to_upstream)} | "
-            f"{format_divergence(repo.fork_to_upstream)} | {format_divergence(repo.local_to_fork)} | {merge} |"
+            f"{format_divergence(repo.fork_to_upstream)} | {format_divergence(repo.local_to_fork)} | "
+            f"{repo.fork_classifications.status} "
+            f"({repo.fork_classifications.classified}/{repo.fork_classifications.total}) | {merge} |"
         )
 
     for repo in report.repositories:
@@ -442,8 +643,26 @@ def render_markdown(report: StackReport) -> str:
                 f"- Fork main: {format_commit(repo.fork)}",
                 f"- Apple main: {format_commit(repo.upstream)}",
                 f"- Merge base: {format_commit(repo.merge_base)}",
+                f"- Fork commit classifications: `{repo.fork_classifications.status}` "
+                f"({repo.fork_classifications.classified}/{repo.fork_classifications.total} commits, "
+                f"{repo.fork_classifications.slice_count} slices)",
             ]
         )
+        if repo.fork_classifications.counts:
+            lines.append("- Classification counts:")
+            lines.extend(
+                f"  - `{classification}`: {count}"
+                for classification, count in sorted(repo.fork_classifications.counts.items())
+            )
+        if repo.fork_classifications.errors:
+            lines.append("- Classification errors:")
+            lines.extend(f"  - {error}" for error in repo.fork_classifications.errors)
+        if repo.fork_classifications.unclassified_commits:
+            lines.append("- Unclassified fork-only commits:")
+            lines.extend(format_commit_list(repo.fork_classifications.unclassified_commits))
+        if repo.fork_classifications.stale_commits:
+            lines.append("- Stale classified commit hashes:")
+            lines.extend(f"  - `{commit_hash}`" for commit_hash in repo.fork_classifications.stale_commits)
         if repo.dirty_paths:
             lines.append("- Dirty paths:")
             lines.extend(f"  - `{path}`" for path in repo.dirty_paths)
@@ -474,7 +693,21 @@ def write_output(path: Path | None, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def strict_failures(report: StackReport, *, require_upstream_current: bool = False) -> list[str]:
+def classification_failures(report: StackReport) -> list[str]:
+    return [
+        f"{repo.name}: fork commit classifications are {repo.fork_classifications.status} "
+        f"({repo.fork_classifications.classified}/{repo.fork_classifications.total})"
+        for repo in report.repositories
+        if repo.fork_classifications.status != "current"
+    ]
+
+
+def strict_failures(
+    report: StackReport,
+    *,
+    require_upstream_current: bool = False,
+    require_classifications: bool = False,
+) -> list[str]:
     failures: list[str] = []
     for repo in report.repositories:
         if repo.errors:
@@ -493,6 +726,8 @@ def strict_failures(report: StackReport, *, require_upstream_current: bool = Fal
             failures.append(
                 f"{repo.name}: fork main is {repo.fork_to_upstream.behind} commit(s) behind Apple upstream"
             )
+    if require_classifications:
+        failures.extend(classification_failures(report))
     return failures
 
 
@@ -533,20 +768,52 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="with --strict, also fail when a fork main is behind Apple upstream",
     )
+    parser.add_argument(
+        "--classification-registry",
+        type=Path,
+        default=DEFAULT_CLASSIFICATION_REGISTRY,
+        help="reviewed fork-only commit classification registry",
+    )
+    parser.add_argument(
+        "--classifications-only",
+        action="store_true",
+        help="return non-zero only for stale, invalid, or incomplete fork classifications",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     max_commits = max(args.max_commits, 0)
-    report = build_report(args.repo_root.expanduser(), args.fetch, max_commits, DEFAULT_REPOS)
+    try:
+        classification_registry = load_classification_registry(args.classification_registry.expanduser())
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        print(f"could not load classification registry: {error}", file=sys.stderr)
+        return 1
+    report = build_report(
+        args.repo_root.expanduser(),
+        args.fetch,
+        max_commits,
+        DEFAULT_REPOS,
+        classification_registry,
+    )
     primary = render_markdown(report) if args.format == "markdown" else report_to_json(report)
     write_output(args.output, primary)
     if args.json_output is not None:
         write_output(args.json_output, report_to_json(report))
 
-    if args.strict:
-        failures = strict_failures(report, require_upstream_current=args.require_upstream_current)
+    if args.classifications_only:
+        failures = classification_failures(report)
+        if failures:
+            for failure in failures:
+                print(failure, file=sys.stderr)
+            return 1
+    elif args.strict:
+        failures = strict_failures(
+            report,
+            require_upstream_current=args.require_upstream_current,
+            require_classifications=True,
+        )
         if failures:
             for failure in failures:
                 print(failure, file=sys.stderr)

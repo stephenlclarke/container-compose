@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-07-29",
+  "generatedAt": "2026-07-30",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -2396,8 +2396,8 @@
       "id": "apple-containerization-813",
       "owner": "apple/containerization",
       "title": "Redact environment variable values in vminitd debug logs",
-      "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "state": "merged",
+      "lastVerified": "2026-07-30",
       "commits": [
         "542463261721f99afbdfd679ae59f257f7f89096"
       ],
@@ -3190,6 +3190,27 @@
         {
           "kind": "pull-request",
           "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-155.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-173",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Pull request 173: preserve complete inherited commit metadata",
+      "state": "archived",
+      "lastVerified": "2026-07-30",
+      "commits": [
+        "aa273273536bfab5cc4d0d2a576ec8961aa69070",
+        "31b83499abec6fe090a44dfe24527f0d220fd0b9"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-173.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-173.md"
         }
       ]
     },
@@ -4214,6 +4235,30 @@
         {
           "kind": "pull-request",
           "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-config-secret-materialization.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-container-runtime-validation-reliability",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Pull Request: Isolate macOS Container Runtime Validation",
+      "state": "archived",
+      "lastVerified": "2026-07-30",
+      "commits": [
+        "9a95ec8cc5a84e15a187ff20ccf948e9ac14bfe9",
+        "4a2e0003496c9f96afcc0b3f3d54124ebc09b25b",
+        "971fc7e5e27467ebd6227e1ae54f3e5c23de87b4",
+        "51cd9ab90c4d12060701fa7ade5ebbc7f097870c",
+        "5119fea95e5c7820c4deceec75b59fadfa8f61c3"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-container-runtime-validation-reliability.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-container-runtime-validation-reliability.md"
         }
       ]
     },
@@ -5343,6 +5388,36 @@
       ]
     },
     {
+      "id": "container-compose-network-mode-bridge",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Pull request: map Compose bridge mode to the built-in macOS network",
+      "state": "archived",
+      "lastVerified": "2026-07-30",
+      "commits": [
+        "4a2e0003496c9f96afcc0b3f3d54124ebc09b25b",
+        "5119fea95e5c7820c4deceec75b59fadfa8f61c3",
+        "971fc7e5e27467ebd6227e1ae54f3e5c23de87b4",
+        "36d81f70402c0d203bde8f7c8d57bb574a689e52",
+        "d6b47233012a31be559c91f8e51f7a579a704736",
+        "d95194e4f573de9716316b4dc4c287f16e6deb2e",
+        "98f2a7139b2e99a60cabdc8ca2d7190c33b7e994",
+        "35c2848ac37e8e5ad607b9b7662b396d1e6ef2b3",
+        "50a745c828e4b4b21f397cc5cf861674fe9911c2",
+        "38308633055c77fc9cd244c313100c81617193b6",
+        "9a95ec8cc5a84e15a187ff20ccf948e9ac14bfe9"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-network-mode-bridge.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-network-mode-bridge.md"
+        }
+      ]
+    },
+    {
       "id": "container-compose-network-static-addresses",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Compose static network endpoint addresses",
@@ -5419,10 +5494,12 @@
       "documents": [
         {
           "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-package-compatibility-preflight-drain.md",
           "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-package-compatibility-preflight-drain.md"
         },
         {
           "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-package-compatibility-preflight-drain.md",
           "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-package-compatibility-preflight-drain.md"
         }
       ]

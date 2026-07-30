@@ -29,6 +29,24 @@ make upstream-handoff-registry-check
 
 The check validates the schema, states, full commit IDs, canonical GitHub pull-request URLs, active document registration, immutable archive objects, links to retired handoffs, and generated Markdown freshness. The `import-legacy` subcommand was used for the one-time migration and is not the normal update path.
 
+## Fork Commit Classification
+
+[FORK-COMMIT-CLASSIFICATIONS.json](FORK-COMMIT-CLASSIFICATIONS.json) is the
+reviewed source of truth for every patch-unique non-merge commit carried by
+the three support forks. Its generated
+[reader view](FORK-COMMIT-CLASSIFICATIONS.md) records the owner, reason, and
+upstream disposition for each commit.
+
+After either an Apple or supported-fork head changes, review every added or
+obsolete entry explicitly and run:
+
+```sh
+make fork-classifications-check
+```
+
+The gate rejects unclassified, duplicate, stale, or structurally invalid
+entries; it never assigns a disposition automatically.
+
 ## Handoff Lifecycle
 
 1. Re-check current Apple issues and pull requests before selecting a slice. Do not open a duplicate.

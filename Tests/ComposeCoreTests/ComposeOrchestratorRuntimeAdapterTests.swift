@@ -1675,6 +1675,22 @@ extension ComposeOrchestratorTests {
         ])
     }
 
+    @Test("image manager repeats an idempotent pull once after an XPC interruption")
+    func imageManagerRecoversInterruptedPull() async throws {
+        let interrupted = ContainerizationError(.interrupted, message: "XPC connection interrupted")
+        let client = RecordingContainerImageAPIClient(pullErrors: [
+            "example/api": [interrupted],
+        ])
+        let manager = ContainerClientImageManager(client: client)
+
+        try await manager.pullImage("example/api")
+
+        #expect(await client.requests == [
+            .pull("example/api"),
+            .pull("example/api"),
+        ])
+    }
+
     @Test("image manager returns image healthchecks through direct API")
     func imageManagerReturnsImageHealthchecksThroughDirectAPI() async throws {
         let healthCheck = ComposeImageHealthCheck(
