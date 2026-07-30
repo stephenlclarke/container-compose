@@ -710,17 +710,29 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('(.event == "push" or .event == "workflow_dispatch")', current_authority)
         self.assertNotIn("--event push", current_authority)
 
-    def test_main_codeql_analysis_is_not_skipped_and_validate_context_is_stable(self) -> None:
+    def test_codeql_defers_drafts_without_weakening_main_or_ready_prs(self) -> None:
         codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
         ci = CI_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("- converted_to_draft", codeql)
+        self.assertIn("- ready_for_review", codeql)
         self.assertIn(
-            "if: github.event_name != 'pull_request' || needs.changes.outputs.go == 'true'",
+            "if: github.event_name != 'pull_request' || github.event.pull_request.draft == false",
             codeql,
         )
         self.assertIn(
-            "if: github.event_name == 'pull_request' && needs.changes.outputs.go != 'true'",
+            "if: github.event_name != 'pull_request' || "
+            "(github.event.pull_request.draft == false && "
+            "needs.changes.outputs.go == 'true')",
             codeql,
         )
+        self.assertIn(
+            "if: github.event_name == 'pull_request' && "
+            "github.event.pull_request.draft == false && "
+            "needs.changes.outputs.go != 'true'",
+            codeql,
+        )
+        self.assertIn("DRAFT_PULL_REQUEST:", codeql)
+        self.assertIn("CodeQL analysis deferred while the pull request is a draft", codeql)
         self.assertNotIn("name: Validate Lightweight", ci)
         self.assertEqual(len(re.findall(r"^    name: Validate$", ci, re.MULTILINE)), 2)
         self.assertIn("name: CodeQL", codeql)
