@@ -2,11 +2,10 @@
 
 This is the current disposition of Apple work that affects the five-repository container stack. Re-check GitHub before changing an Apple-backed component because issue, review, and merge state can change independently.
 
-Apple pull-request state was queried 29 July 2026 while completing the
-31-pull-request stock-Apple port audit and the three strengthened stock
-submissions derived from it. Fetched Apple and supported-fork baselines, fork
-classifications, and Compose-only implementation evidence were refreshed
-30 July 2026 without claiming a fresh query of every Apple pull request.
+Apple pull-request state was queried 29 July 2026. Fetched Apple and
+supported-fork baselines, fork classifications, and Compose development pins
+were refreshed 30 July 2026 without claiming a fresh query of every Apple pull
+request.
 
 ## Scope
 
@@ -16,44 +15,50 @@ classifications, and Compose-only implementation evidence were refreshed
 
 ## Fetched Main Baselines
 
-Each supported fork contains its complete Apple `main` history. The
-left/right counts below are from `git rev-list --left-right --count
-<apple-main>...<fork-main>`:
+The table compares each fetched Apple `main` with the currently published
+fork `main`. The left/right counts are from `git rev-list
+--left-right --count <apple-main>...<fork-main>`:
 
-| Repository | Apple `main` | Supported fork `main` | Apple-only | Fork-only |
+| Repository | Apple `main` | Fork `main` | Apple-only | Fork-only |
 | --- | --- | --- | ---: | ---: |
 | `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `8657c4b8685865c8889b0171d953342fc9f427a7` | 0 | 338 |
 | `containerization` | `ff44a5b683c80fceab875dba8a20ed24d7648c07` | `971fc7e5e27467ebd6227e1ae54f3e5c23de87b4` | 0 | 135 |
 | `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `61832d4ca91715180a84dec0eab091170174c43c` | 0 | 34 |
 
-No Apple commit is missing from a supported fork at this refresh. The
-fork-only counts include merge commits and intentionally retained generic
-runtime work; they are not a count of changes ready for Apple. The current
-heads and all 440 patch-unique non-merge commits are classified in
-[FORK-COMMIT-CLASSIFICATIONS.md](FORK-COMMIT-CLASSIFICATIONS.md). Compose
-continues to promote exact runtime revisions through its stack references and
-linked-stack gates; a supported-fork default-branch update is not itself a
-Compose pin promotion.
+The supported default branches contain their complete fetched Apple histories.
+Their 440 patch-unique non-merge commits are classified in
+[Fork Commit Classifications](FORK-COMMIT-CLASSIFICATIONS.md): 299 in
+`container`, 112 in `containerization`, and 29 in
+`container-builder-shim`. The fork-only counts above include merge commits and
+are not a count of changes ready for Apple.
+
+Compose currently pins the separately validated development heads
+`container` `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1`,
+`containerization` `d7377b962af724f8d7c2b640f3ab12184d33f1af`,
+and `container-builder-shim`
+`61832d4ca91715180a84dec0eab091170174c43c`. The Container pin contains the
+current Apple head. The Containerization pin predates merged Apple PR #813 by
+one Apple commit and retains an older patch-unique vminitd correction, so it
+requires explicit reconciliation rather than an assumed duplicate removal.
 
 ## Submitted Stephen-Authored Apple Pull Requests
 
 ### Open
 
-All ten open pull requests are ready rather than drafts and report a blocked
-merge state while awaiting Apple maintainer review or hosted workflow
-approval. No actionable author review is outstanding.
+All ten open pull requests are ready rather than drafts, mergeable, and
+awaiting Apple maintainer review.
 
 | Pull request | Published head | Current state and purpose |
 | --- | --- | --- |
-| [apple/container#2036](https://github.com/apple/container/pull/2036) | `f2f248fbb80092d47945e30eaf0e0b79ace9ff16` | Review required. Close descriptors after failed directory-watch startup, accept descriptor zero, replace process-wide leak heuristics with deterministic path-specific coverage, synchronise watcher-test phases to explicit runtime state, and remove the obsolete force-unwrapped fixture. No hosted check has been reported. |
-| [apple/container#2035](https://github.com/apple/container/pull/2035) | `a8d3b5c87e468a3641ef075c3fce686e206817ad` | Review required. Preserve unloadable bundles, validate runtimes before state insertion, and write root-filesystem metadata atomically. No hosted check has been reported. |
-| [apple/container#2031](https://github.com/apple/container/pull/2031) | `58b07fcaa6f09426adc6cd792732c855496ed80f` | Review required. Preserve active and infrastructure image aliases. No hosted check has been reported. |
-| [apple/container#1965](https://github.com/apple/container/pull/1965) | `618d28197a20baf643dbdc87272e9f768f57f888` | Review required. Honour generic XPC request timeouts. |
-| [apple/container#1935](https://github.com/apple/container/pull/1935) | `f4f908606d4a7693f9bfc958593f7671b35caa0f` | Review required. Keep root help responsive for [apple/container#1459](https://github.com/apple/container/issues/1459); stacked on the preferred cancellation work in [apple/container#1862](https://github.com/apple/container/pull/1862). |
-| [apple/container#1934](https://github.com/apple/container/pull/1934) | `d5d73ef1a95ca9f78ffa287b7c2e5204bfd9d569` | Review required. Preserve the complete `unspecified` version placeholder. |
-| [apple/containerization#823](https://github.com/apple/containerization/pull/823) | `3ed10bf1a0dda802cb46c1f0b55934c55a4bd395` | Review required. Defer restrictive directory attributes without allowing an intermediate symlink to redirect metadata writes outside the extraction root, and bind deferred metadata to the extracted directory identity so a recreated path cannot inherit stale attributes. No hosted check has been reported. |
-| [apple/containerization#821](https://github.com/apple/containerization/pull/821) | `726e1ffdceada5cc62d32c8fc939aef30220e6ff` | Review required. Restore permissions after ownership so `fchown` cannot clear set-ID bits. This pull request intentionally depends on #820. No hosted check has been reported. |
-| [apple/containerization#820](https://github.com/apple/containerization/pull/820) | `6e32963617b3ed8f4b63432dbcf834f94807342b` | Review required. Preserve sticky, set-user-ID, and set-group-ID archive permission bits. No hosted check has been reported. |
+| [apple/container#2036](https://github.com/apple/container/pull/2036) | `f2f248fbb80092d47945e30eaf0e0b79ace9ff16` | Review required. Close the path-specific directory watcher descriptor after failed startup; deterministic repeated leak tests and the full 590-test stock suite pass locally. Apple Actions are `action_required`; no hosted job has run. |
+| [apple/container#2035](https://github.com/apple/container/pull/2035) | `a8d3b5c87e468a3641ef075c3fce686e206817ad` | Review required. Preserve unloadable bundles, restore state before insertion, and atomically replace root-filesystem metadata; focused persistence regressions and the full stock suite pass locally. Apple Actions are `action_required`; no hosted job has run. |
+| [apple/container#2031](https://github.com/apple/container/pull/2031) | `58b07fcaa6f09426adc6cd792732c855496ed80f` | Review required. Preserve active and infrastructure image aliases. Apple Actions are `action_required`; no hosted job has run. |
+| [apple/container#1965](https://github.com/apple/container/pull/1965) | `618d28197a20baf643dbdc87272e9f768f57f888` | Review required. Honour generic XPC request timeouts. Apple Actions are `action_required`; no hosted job has run. |
+| [apple/container#1935](https://github.com/apple/container/pull/1935) | `f4f908606d4a7693f9bfc958593f7671b35caa0f` | Review required. Keep root help responsive for [apple/container#1459](https://github.com/apple/container/issues/1459); stacked on the preferred cancellation work in [apple/container#1862](https://github.com/apple/container/pull/1862). Apple Actions are `action_required`; no hosted job has run. |
+| [apple/container#1934](https://github.com/apple/container/pull/1934) | `d5d73ef1a95ca9f78ffa287b7c2e5204bfd9d569` | Review required. Preserve the complete `unspecified` version placeholder. Apple Actions are `action_required`; no hosted job has run. |
+| [apple/containerization#823](https://github.com/apple/containerization/pull/823) | `3ed10bf1a0dda802cb46c1f0b55934c55a4bd395` | Review required. Prevent deferred directory metadata from following an intermediate symlink or applying to a removed and recreated directory; all 579 stock tests and `make check` pass locally. Apple Actions are `action_required`; no hosted job has run. |
+| [apple/containerization#821](https://github.com/apple/containerization/pull/821) | `726e1ffdceada5cc62d32c8fc939aef30220e6ff` | Review required. Restore permissions after ownership so `fchown` cannot clear set-ID bits. This pull request intentionally depends on #820. Apple Actions are `action_required`; no hosted job has run. |
+| [apple/containerization#820](https://github.com/apple/containerization/pull/820) | `6e32963617b3ed8f4b63432dbcf834f94807342b` | Review required. Preserve sticky, set-user-ID, and set-group-ID archive permission bits. Apple Actions are `action_required`; no hosted job has run. |
 | [apple/containerization#799](https://github.com/apple/containerization/pull/799) | `9c5b9ee19796dc13f0d7d1b0687d780f0db04e29` | Review required with hosted build, signature, and Linux compile checks green. Missing copy sources fail promptly and no longer block later lifecycle operations. |
 
 No Stephen-authored pull request has been submitted to
@@ -72,32 +77,33 @@ No Stephen-authored pull request has been submitted to
 | [apple/container#1764](https://github.com/apple/container/pull/1764) | Closed 27 June 2026 without merge | The broader log retrieval proposal was not merged; generic log retrieval still needs smaller Apple-shaped primitives. |
 | [apple/container#1758](https://github.com/apple/container/pull/1758) | Closed 27 June 2026 without merge | Superseded first by #1933 and then by Apple's merged production handler changes. |
 
-[PR-ARCHIVE.json](PR-ARCHIVE.json) currently retains immutable snapshots for
-Apple PRs #1933, #1934, #1935, #1965, containerization PRs #798 and #799, and
-third-party builder-shim PR #87. It does not yet archive the heads of newly
-submitted PRs #2031, #2035, #2036, #820, #821, or #823; do not describe that
-archive as complete until those refs are added and verified.
+[PR-ARCHIVE.json](PR-ARCHIVE.json) currently retains immutable snapshots for Apple PRs #1933, #1934, #1935, #1965, containerization PRs #798 and #799, and third-party builder-shim PR #87. It does not yet archive the current heads of `apple/container` PRs #730, #1508, #1630, #1660, #1708, #1735, #1862, #1926, #1947, #1997, #2031, #2035, or #2036, or `apple/containerization` PRs #753, #792, #812, #820, #821, or #823. The code archive is therefore incomplete until immutable Stephen-owned refs for those heads are added and verified.
 
 ## Handoff Inventory
 
-There are 128 `PR-*.md` handoff files under the three Apple directories:
+[HANDOFF-REGISTRY.json](HANDOFF-REGISTRY.json) is now the source of truth. Its generated [reader view](HANDOFF-REGISTRY.md) contains 360 capability or pull-request rows, 616 immutable document snapshots, 473 unique referenced commits, and 14 current supporting documents:
 
-| Directory | Files | Submission rule |
-| --- | ---: | --- |
-| [`apple-container/`](apple-container/) | 88 | `PR-1933.md`, `PR-1934.md`, and `PR-1935.md` map to Stephen-authored submissions. `PR-1926.md` and `PR-1997.md` track existing third-party Apple PRs. `PR-container-test-support-dependencies.md`, `PR-oci-system-paths-api.md`, and `PR-apple-main-sync-20260722-2.md` are downstream reconciliation records. Every other handoff in this directory is unsubmitted. |
-| [`apple-containerization/`](apple-containerization/) | 35 | `PR-798.md` and `PR-799.md` map to Stephen-authored submissions. Every other handoff in this directory is unsubmitted. |
-| [`apple-container-builder-shim/`](apple-container-builder-shim/) | 5 | `PR-87.md` tracks an existing third-party Apple PR. The other four handoffs are unsubmitted. |
+- `apple-container-builder-shim/PR-87.md`
+- `apple-container/PR-1926.md`
+- `apple-container/PR-1934.md`
+- `apple-container/PR-1935.md`
+- `apple-container/PR-1997.md`
+- `apple-containerization/PR-799.md`
+- `container-compose/ISSUE-173.md`
+- `container-compose/PR-173.md`
+- `container-compose/ISSUE-container-runtime-validation-reliability.md`
+- `container-compose/PR-container-runtime-validation-reliability.md`
+- `container-compose/ISSUE-network-mode-bridge.md`
+- `container-compose/PR-network-mode-bridge.md`
+- `container-compose/ISSUE-package-compatibility-preflight-drain.md`
+- `container-compose/PR-package-compatibility-preflight-drain.md`
 
-The submitted #1965, #2031, #2035, #2036, #820, #821, and #823 pull requests
-do not yet have individual checked-in handoff files. Their live state is
-recorded above.
+The registry records 301 retired entries, 23 unsubmitted candidates, ten open Stephen-authored submissions, 16 tracked third-party pull requests, seven merged pull requests, and three closed pull requests. Submitted PRs #1965, #2031, #2035, #2036, #820, #821, and #823 are first-class registry rows without separate Markdown files. The two stock-shaped PR #33 follow-ups and the Apple pull requests that moved the fetched main branches are also first-class rows.
 
-An unsubmitted handoff is not automatically submission-ready. Its own commit
-tracking and validation sections determine whether it is a draft,
-constructible proposal, downstream-only record, or reviewed candidate. Before
+An unsubmitted registry row is not automatically submission-ready. Before
 submission, rebase the smallest independent change on current stock Apple
-`main`, rerun stock validation, fill the current Apple issue and PR templates,
-and keep Stephen-only compatibility behavior out of the patch.
+`main`, rerun stock validation, fill the current Apple issue and pull-request
+templates, and keep Stephen-only compatibility behaviour out of the patch.
 
 ## PR #33 Stock-Apple Review
 
@@ -105,7 +111,7 @@ and keep Stephen-only compatibility behavior out of the patch.
 is an open fork PR at
 `7ffac9dcf059bd62da87cebe40d20ce05742238c`. Its two defects both exist on
 stock `apple/container:main` at
-`48145ac7fb177d9fb14e015a0bdea4c642b36729`, but the fork PR is not directly
+`6e65319fe476ffe8db8ddaf828a537ed36fe2859`, but the fork PR is not directly
 upstreamable:
 
 - Stock `XPCMessage.set` still calls raw
@@ -124,182 +130,44 @@ upstreamable:
   `ContainerXPCTests` target and prior variable-descriptor-array test
   infrastructure, neither of which exists on stock.
 
+The supported development branch contains both corrections. The XPC ownership
+case uses the stronger independent fix at
+`6320cf8203a8544bb049ef030f7be569748dc667`; the ProcessIO input pump was
+ported as `ae66e3e2e69fee3c26fa84a402df79ccc45ca9bc`. Focused ProcessIO testing,
+`make check`, and the full 1,244-test Container suite pass at that published
+head. These local corrections do not change the Apple submission state.
+
 The upstream disposition is to split PR #33 into two unsubmitted,
 stock-shaped proposals: one focused XPC `FileHandle` ownership correction
 with a stock-compatible descriptor-reuse regression, and one ProcessIO input
 pump/backpressure correction adapted to Apple's simpler API. No Apple issue or
 pull request has been filed for either slice.
 
-## Audited Open Apple Pull Requests Carried Locally
-
-The 28 July stock-Apple audit reviewed 31 open third-party pull requests and
-published the compatible changes only to Stephen-owned cumulative branches:
-
-- `stephenlclarke/container:fix/apple-open-pr-bugfixes-20260728` at
-  `be702536bbc166821798e5952c3948e194d95617`
-- `stephenlclarke/containerization:fix/apple-open-pr-bugfixes-20260728` at
-  `1e5d2c89d0f7056fe48b0b9091abdb3d20cdf7a0`
-
-The initial audit changed only Stephen-owned cumulative branches. Its strict
-follow-up review produced stock-based replacement PRs #2035, #2036, and #823
-for strengthened versions of #1859, #1773, and #716 respectively. All original
-third-party entries below remain open upstream. `Blocked` is GitHub's live
-merge state, not a local test failure.
-
-### `apple/container`
-
-Of the 23 carried pull requests, 20 are ready and mergeable but report a
-blocked merge state, #1847 is a mergeable draft, and #1719 and #1944 currently
-conflict with Apple `main`.
-
-| Apple pull request | Live head and state | Local disposition |
-| --- | --- | --- |
-| [#1719](https://github.com/apple/container/pull/1719) | `e5440c85a591`, open, conflicting | `1a486c5`: sanitise the sudoers filename and also correct the upstream variable spelling and shell syntax. |
-| [#1773](https://github.com/apple/container/pull/1773) | `77196fce3d2d`, open, mergeable, blocked | Replacement [#2036](https://github.com/apple/container/pull/2036) at `f2f248f` retains @muk2's production close, accepts descriptor zero, requires a `Sendable` handler, replaces the process-wide threshold with exact path-specific leak detection, synchronises watcher-test phases to explicit runtime state, and removes the obsolete force-unwrapped fixture. |
-| [#1832](https://github.com/apple/container/pull/1832) | `ce8d26b0572d`, open, mergeable, blocked | `521f9b7`: stage non-regular image inputs while retaining direct regular-file paths. |
-| [#1847](https://github.com/apple/container/pull/1847) | `7506d68bb852`, open draft, mergeable, blocked | `6472d82`: carry only the verified guest-platform kernel selection; the unproved vminit change remains excluded. |
-| [#1854](https://github.com/apple/container/pull/1854) | `9a0db6f8507b`, open, mergeable, blocked | `ca6edcc`: keep `SIGWINCH` off the generic process-kill path. |
-| [#1859](https://github.com/apple/container/pull/1859) | `f99feb3c1276`, open, mergeable, blocked | Replacement [#2035](https://github.com/apple/container/pull/2035) at `a8d3b5c` credits @radheradhe01, preserves unloadable bundles, makes all bundle metadata writes atomic, validates the runtime before exposing state, and corrects both regressions. |
-| [#1860](https://github.com/apple/container/pull/1860) | `df165045ee94`, open, mergeable, blocked | `72a89a0`: revalidate state while holding the lifecycle lock before deletion. |
-| [#1861](https://github.com/apple/container/pull/1861) | `27c2b929c4d1`, open, mergeable, blocked | `e8c0d3e`: carry functional commit `c3c7e218a021`; the newer live head only merges Apple `main`, and the functional diff retains stable patch ID `8303849cfd37`. |
-| [#1864](https://github.com/apple/container/pull/1864) | `929a03c4d1fb`, open, mergeable, blocked | `e29bd26`: reject IPv4 subnets with no allocatable host addresses using widened arithmetic. |
-| [#1870](https://github.com/apple/container/pull/1870) | `4442a27bc699`, open, mergeable, blocked | `bd77f3a`: retain exact references and reject ambiguous displayed names and digest prefixes. |
-| [#1891](https://github.com/apple/container/pull/1891) | `a18abb2c1b4d`, open, mergeable, blocked | `30743f0`: retain a separately fetched machine setup-script layer. |
-| [#1893](https://github.com/apple/container/pull/1893) | `fb0b879e7450`, open, mergeable, blocked | `4634a80`: use unaligned-safe DNS wire loads and stores with every-offset coverage. |
-| [#1896](https://github.com/apple/container/pull/1896) | `8c9bab4d818b`, open, mergeable, blocked | `c7c4282`: reject empty mount keys without losing legal equals signs in values. |
-| [#1904](https://github.com/apple/container/pull/1904) | `dfaa3660f131`, open, mergeable, blocked | `8ba4d39`: preserve accepted fractional memory values without byte-rounding loss. |
-| [#1909](https://github.com/apple/container/pull/1909) | `9821ca5cebe1`, open, mergeable, blocked | `6d522a0`: cancel terminal resize forwarding when a build completes. |
-| [#1944](https://github.com/apple/container/pull/1944) | `8c6903c0d0c7`, open, conflicting | `1f7f0c7`: resolve symlinked configuration sources while retaining atomic replacement and destination-symlink protection. |
-| [#1963](https://github.com/apple/container/pull/1963) | `9624e8c86186`, open, mergeable, blocked | `6f49926`: resolve local digest references before normalising names or pulling. |
-| [#2016](https://github.com/apple/container/pull/2016) | `49dfdd87e138`, open, mergeable, blocked | `38e1572`: split mount directives only on the first equals sign. |
-| [#2017](https://github.com/apple/container/pull/2017) | `3fdcc573a6d4`, open, mergeable, blocked | `cb2dceb`: normalise a trailing equals sign to an empty value. |
-| [#2018](https://github.com/apple/container/pull/2018) | `dfa60b167af8`, open, mergeable, blocked | `522a2b3`: accept valid TCP and UDP port 1 while retaining port 0 rejection. |
-| [#2019](https://github.com/apple/container/pull/2019) | `0467f2429755`, open, mergeable, blocked | `6d21802`: close a UDP backend that becomes active after eviction. |
-| [#2025](https://github.com/apple/container/pull/2025) | `85dd2a92c7b1`, open, mergeable, blocked | `544f8a7`: require an executable regular `/sbin/init` and clean up failed machine creation. |
-| [#2027](https://github.com/apple/container/pull/2027) | `16bec754b36b`, open, mergeable, blocked | `42bc06e`: retain the complete verified security set plus fork named-context, interface-binding, path-normalisation, and regression requirements. |
-
-### `apple/containerization`
-
-Six of the seven remaining open carried pull requests are mergeable with a
-blocked merge state. #748 currently conflicts with Apple `main`. #813 merged
-29 July 2026 as `ff44a5b`; the older local vminitd correction remains
-patch-unique and requires explicit reconciliation with Apple's OCI-level
-redaction.
-
-| Apple pull request | Live head and state | Local disposition |
-| --- | --- | --- |
-| [#715](https://github.com/apple/containerization/pull/715) | `29dfe1b9e847`, open, mergeable, blocked | `ad950d4`: bound the manifest GET fallback and derive its descriptor from returned bytes. |
-| [#716](https://github.com/apple/containerization/pull/716) | `77da467c16d8`, open, mergeable, blocked | Replacement [#823](https://github.com/apple/containerization/pull/823) at `3ed10bf` credits @JaewonHur, traverses every component descriptor-relative without following symlinks, preserves last-entry-wins metadata, binds deferred attributes to the extracted inode, and proves an intermediate symlink cannot escape the extraction root. |
-| [#717](https://github.com/apple/containerization/pull/717) | `5c0fe3668529`, open, mergeable, blocked | `b992252`: retain requested size for ordinary partial groups and round only tiny metadata-constrained final groups. |
-| [#748](https://github.com/apple/containerization/pull/748) | `79f4658de009`, open, conflicting | `5184c6e`: allow Swift Crypto 3 or 4 and resolve the fork to 4.5.1. |
-| [#768](https://github.com/apple/containerization/pull/768) | `5835a86b3bc0`, open, mergeable, blocked | `d6322d3`: classify Basic-auth registry failures as credential errors. |
-| [#783](https://github.com/apple/containerization/pull/783) | `7eb0c7df41ee`, open, mergeable, blocked | `6a1370e`: canonicalise arm64 platform descriptions without redundant `v8`. |
-| [#796](https://github.com/apple/containerization/pull/796) | `6c46194ca394`, open, mergeable, blocked | `310932e`: reject invalid bridge interface names before indexing or allocation. |
-
-### Strengthened Changes Submitted to Apple
-
-The later changes for #1859, #1773, and #716 were confirmed as generic Apple
-fixes rather than Compose compatibility additions. Each was rebuilt on stock
-Apple `main`, credits the original author, documents reproduction and
-validation in the current repository template, and is now submitted as a
-ready replacement. The `apple/container` replacements also link the required
-bug reports:
-
-| Original pull request | Replacement and disposition |
-| --- | --- |
-| [apple/container#1859](https://github.com/apple/container/pull/1859) | [#2035](https://github.com/apple/container/pull/2035), fixing [#2033](https://github.com/apple/container/issues/2033), at `a8d3b5c`. Runtime validation now precedes state insertion, root-filesystem metadata uses the same atomic durability rule as other bundle JSON, and corrected malformed-data and missing-runtime tests prove both behaviours. |
-| [apple/container#1773](https://github.com/apple/container/pull/1773) | [#2036](https://github.com/apple/container/pull/2036), fixing [#2034](https://github.com/apple/container/issues/2034), at `f2f248f`. The correct production close from @muk2 is retained, descriptor zero and the escaping handler contract are corrected, and the weak process-wide threshold is replaced by exact path-specific leak detection with 32 verified handler calls. Strict review exposed a readiness race in the strengthened watcher tests; explicit active, inactive, and restarted watcher-state requirements now gate each filesystem mutation. The final review also removed an obsolete force-unwrapped fixture. This replacement deliberately does not close [#1097](https://github.com/apple/container/issues/1097), whose guest virtiofs workload has no established causal path through the host DNS directory watcher. |
-| [apple/containerization#716](https://github.com/apple/containerization/pull/716) | [#823](https://github.com/apple/containerization/pull/823) at `3ed10bf`, the highest-priority security correction. `O_NOFOLLOW` on one `openat` call protects only the final path component. Component-wise descriptor traversal prevents an intermediate symlink redirecting deferred metadata outside the extraction root, while canonical last-entry-wins state preserves archive semantics. Strict review additionally bound deferred metadata to the device and inode recorded at extraction time, preventing a removed and recreated path from receiving stale attributes. The final reviewed head was validated directly; Apple `main` then gained only #822 and #824, both unrelated to archive extraction, and GitHub still reports the PR mergeable and blocked. |
-
-### Recorded Validation Timings
-
-Timings are behavioural evidence and optimisation baselines, not pass/fail
-thresholds by themselves. The positive and negative command times include
-different incremental rebuild costs, so test-level timings are the comparable
-signal here.
-
-- #2035 stock negative control: the two corrected persistence tests failed with
-  four issues in 0.016 seconds; command wall time 94.56 seconds including the
-  stock build. The replacement branch passed both tests in 0.006 seconds;
-  command wall time 201.58 seconds including its fresh dependency build. A
-  strict-review rerun also passed both tests in 0.006 seconds, with 95.93
-  seconds wall time including a clean rebuild.
-- #2035 full gate: 591 tests in 72 suites passed in 2.011 seconds; command wall
-  time 119.33 seconds. `HAWKEYE_AUTO_INSTALL=1 make check` also passed. Two
-  fresh strict-review full-suite retries passed the persistence coverage, then
-  stopped on the unrelated stock watcher-readiness races corrected by #2036.
-- #2036 stock negative control: the single path-specific test failed in 0.010
-  seconds with exactly 32 watched-directory descriptors left open from a zero
-  baseline; command wall time 0.63 seconds after the stock test build.
-- #2036 strict review initially reproduced a test-readiness race in the
-  directory-recreation case. After synchronising each phase to explicit
-  watcher state, 10 consecutive focused attempts passed, 50 tests total, with
-  each final-head suite completing in 1.062 to 1.092 seconds. Cached command
-  wall times were 1.89 to 1.97 seconds after the first build refresh.
-- #2036 final focused gate: 5 tests in 1 suite passed in 1.081 seconds; command
-  wall time was 5.84 seconds including the incremental build.
-- #2036 final full gate: 590 tests in 71 suites passed in 1.266 seconds; command
-  wall time was 114.91 seconds including the 105.82-second full rebuild.
-  `make check` passed in 4.84 seconds.
-- #823 stock and original-#716 negative controls: the corrected read-only
-  directory test failed on stock in 0.013 seconds; the intermediate-symlink
-  escape failed against #716 in 0.011 seconds; and its aliased
-  last-entry-wins case failed in 0.008 seconds.
-- #823 focused gates after the identity correction: 26 archive-reader tests
-  passed in 43.917 seconds and 28 descriptor-operation tests passed in 18.969
-  seconds. The full gate passed 579 tests in 80 suites in 45.230 seconds;
-  command wall time was 121.14 seconds including the coverage rebuild.
-  `make check` passed in 3.62 seconds.
-- The earlier cumulative-fork validation remains supporting evidence: 1,223
-  container tests in 146 suites passed in 12.314 seconds, and 669
-  containerization tests in 86 suites passed in 151.545 seconds.
-- The combined `containerization` integration head `3a74e96` passed 137
-  focused tests in 6 suites in 45.287 seconds, with 170.09 seconds command
-  wall time including the cold build. Its full gate passed 679 tests in 86
-  suites in 48.006 seconds, with 137.71 seconds command wall time including
-  the coverage rebuild; `make check` passed in 3.60 seconds.
-- The combined `container` integration head `d0d4fbd` passed 35 focused tests
-  in 4 suites in 0.477 seconds, with 30.79 seconds command wall time including
-  its incremental build. Its full gate passed 1,227 tests in 146 suites in
-  12.195 seconds, with 171.10 seconds command wall time including the clean
-  build and test-image setup; `make check` passed in 10.48 seconds.
-- The resulting Compose head `0d9a111` passed
-  `HAWKEYE_AUTO_INSTALL=1 make ci` in 391.21 seconds. The Swift phase passed
-  1,297 discovered tests in 51 suites in 19.479 seconds, with 1,272 executed
-  and 25 live-runtime tests intentionally skipped. All Swift and Go coverage
-  thresholds, release checks, and CLI smoke checks passed.
-
-No test hung and no material slowdown attributable to these hardenings was
-observed. Preserve these timings with future parity and optimisation runs;
-slower completion is not itself a parity failure unless it is materially
-slower in practical use or does not complete.
-
 ## Unsubmitted Review Candidates
 
 | Repository | Current purpose |
 | --- | --- |
-| `apple/container` | The socket forwarder's successful-backend race closes the already inactive frontend a second time instead of closing the newly connected backend. The defect exists on current stock Apple `main`. The fork correction at `d0d4fbd` closes the backend peer and adds a deterministic `EmbeddedChannel` regression. It remains unsubmitted and still needs an independent stock-Apple commit, current issue/PR templates, and direct stock validation before submission. |
-| `apple/container` | [Generic IPv6 network disablement](apple-container/PR-network-ipv6-disablement.md) adds a typed macOS vmnet NAT66 and router-advertisement control while retaining enabled compatibility by default. |
-| `apple/container-builder-shim` | [Build-context source-read errors](apple-container-builder-shim/PR-build-context-source-read-errors.md) fail explicitly instead of sending empty file content. |
-| `apple/container-builder-shim` | [Build-context cache integrity](apple-container-builder-shim/PR-build-context-cache-integrity.md) verifies archives, atomically publishes cache trees, and keeps synthetic Dockerfiles request-local. |
-| `apple/container` | [Fork CI validation](apple-container/PR-fork-ci-validation.md) runs formatting, generated-source checks, builds, and unit tests in contributor forks while retaining official guest integration. |
-| `apple/container` | [Live filesystem snapshot export](apple-container/PR-live-export-snapshot.md) adds a generic `export --live` primitive for a running container, based on the direction in [apple/container#1630](https://github.com/apple/container/pull/1630). |
-| `apple/container` | [Additional guest interface addresses](apple-container/PR-additional-interface-addresses.md) carry generic typed CIDRs through runtime attachment strategies. |
-| `apple/container` | [Requested primary network addresses](apple-container/PR-requested-primary-network-addresses.md) reserve generic typed IPv4 and IPv6 attachment addresses with collision checks. |
-| `apple/container` | [IPv4 network gateway configuration](apple-container/PR-network-ipam-gateway.md) carries a validated generic gateway through persisted network configuration, helper startup, vmnet setup, and attachment allocation. |
-| `apple/container` | [IPv4 allocation-range configuration](apple-container/PR-network-ipam-allocation-range.md) carries a generic dynamic-allocation CIDR through persisted network configuration, helper startup, and attachment allocation. |
-| `apple/container` | [IPv4 network address reservations](apple-container/PR-network-ipv4-reserved-addresses.md) carry validated generic reservations through persisted network configuration, helper startup, and attachment allocation. |
-| `apple/container` | [Numeric supplemental process groups](apple-container/PR-supplemental-groups.md) expose the runtime's existing typed GID support through the generic process CLI surface. |
-| `apple/container` | [Owned regular-file bind snapshots](apple-container/PR-file-mount-ownership.md) expose optional UID/GID mapping without mutating the host source. |
-| `apple/container` | [Compiled build glob caching](apple-container/PR-build-glob-cache.md) compiles each Docker ignore pattern once per context while retaining the existing Swift regex semantics. |
-| `apple/container` | [Hashed build-context membership](apple-container/PR-build-context-membership.md) uses the existing `Set<DirEntry>` contract instead of scanning it linearly for each archive candidate. |
-| `apple/container` | [Concurrent stats sampling](apple-container/PR-stats-concurrent-sampling.md) fans out independent runtime samples while preserving list order and failure semantics. |
-| `apple/container` | [Disk-usage lock scope](apple-container/PR-disk-usage-lock-scope.md) snapshots metadata under service locks and traverses resource trees on detached utility tasks. |
-| `apple/containerization` | [Fork CI validation](apple-containerization/PR-fork-ci-validation.md) runs supported checks in contributor forks while retaining official guest image and integration work. |
-| `apple/containerization` | [Additional guest interface addresses](apple-containerization/PR-additional-interface-addresses.md) configure generic supplemental IPv4/IPv6 CIDRs before link-up. |
-| `apple/containerization` | [Owned regular-file bind snapshots](apple-containerization/PR-file-mount-ownership.md) create private guest copies only when ownership metadata is requested. |
-| `apple/containerization` | [Cgroup formatter catch spacing](apple-containerization/PR-cgroup-catch-format.md) restores the exact spelling required by the strict Swift formatter without changing runtime behavior. |
-| `apple/containerization` | [vmnet integration exclusivity](apple-containerization/PR-vmnet-integration-exclusivity.md) serializes only host-networking VM tests so release validation remains deterministic. |
+| `apple/container` | [Generic IPv6 network disablement](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-network-ipv6-disablement.md) adds a typed macOS vmnet NAT66 and router-advertisement control while retaining enabled compatibility by default. |
+| `apple/container-builder-shim` | [Build-context source-read errors](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/PR-build-context-source-read-errors.md) fail explicitly instead of sending empty file content. |
+| `apple/container-builder-shim` | [Build-context cache integrity](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/PR-build-context-cache-integrity.md) verifies archives, atomically publishes cache trees, and keeps synthetic Dockerfiles request-local. |
+| `apple/container` | [Fork CI validation](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-fork-ci-validation.md) runs formatting, generated-source checks, builds, and unit tests in contributor forks while retaining official guest integration. |
+| `apple/container` | [Live filesystem snapshot export](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-live-export-snapshot.md) adds a generic `export --live` primitive for a running container, based on the direction in [apple/container#1630](https://github.com/apple/container/pull/1630). |
+| `apple/container` | [Additional guest interface addresses](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-additional-interface-addresses.md) carry generic typed CIDRs through runtime attachment strategies. |
+| `apple/container` | [Requested primary network addresses](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-requested-primary-network-addresses.md) reserve generic typed IPv4 and IPv6 attachment addresses with collision checks. |
+| `apple/container` | [IPv4 network gateway configuration](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-network-ipam-gateway.md) carries a validated generic gateway through persisted network configuration, helper startup, vmnet setup, and attachment allocation. |
+| `apple/container` | [IPv4 allocation-range configuration](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-network-ipam-allocation-range.md) carries a generic dynamic-allocation CIDR through persisted network configuration, helper startup, and attachment allocation. |
+| `apple/container` | [IPv4 network address reservations](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-network-ipv4-reserved-addresses.md) carry validated generic reservations through persisted network configuration, helper startup, and attachment allocation. |
+| `apple/container` | [Numeric supplemental process groups](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-supplemental-groups.md) expose the runtime's existing typed GID support through the generic process CLI surface. |
+| `apple/container` | [Owned regular-file bind snapshots](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-file-mount-ownership.md) expose optional UID/GID mapping without mutating the host source. |
+| `apple/container` | [Compiled build glob caching](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-build-glob-cache.md) compiles each Docker ignore pattern once per context while retaining the existing Swift regex semantics. |
+| `apple/container` | [Hashed build-context membership](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-build-context-membership.md) uses the existing `Set<DirEntry>` contract instead of scanning it linearly for each archive candidate. |
+| `apple/container` | [Concurrent stats sampling](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-stats-concurrent-sampling.md) fans out independent runtime samples while preserving list order and failure semantics. |
+| `apple/container` | [Disk-usage lock scope](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-disk-usage-lock-scope.md) snapshots metadata under service locks and traverses resource trees on detached utility tasks. |
+| `apple/containerization` | [Fork CI validation](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/PR-fork-ci-validation.md) runs supported checks in contributor forks while retaining official guest image and integration work. |
+| `apple/containerization` | [Additional guest interface addresses](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/PR-additional-interface-addresses.md) configure generic supplemental IPv4/IPv6 CIDRs before link-up. |
+| `apple/containerization` | [Owned regular-file bind snapshots](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/PR-file-mount-ownership.md) create private guest copies only when ownership metadata is requested. |
+| `apple/containerization` | [Cgroup formatter catch spacing](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/PR-cgroup-catch-format.md) restores the exact spelling required by the strict Swift formatter without changing runtime behavior. |
+| `apple/containerization` | [vmnet integration exclusivity](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/PR-vmnet-integration-exclusivity.md) serializes only host-networking VM tests so release validation remains deterministic. |
 
 These candidates remain unsubmitted. Their source commits and tests were
 reviewed in the fork, but each still requires a fresh stock-Apple rebase and
@@ -309,19 +177,20 @@ validation before submission.
 
 | Pull request | Local disposition |
 | --- | --- |
-| [apple/container#1862](https://github.com/apple/container/pull/1862) | Preferred XPC cancellation implementation. Imported unchanged as the first standalone commit in `apple/container#1935`, with deterministic tests in the next commit. Drop the import when this PR lands. |
+| [apple/container#1862](https://github.com/apple/container/pull/1862) | Preferred XPC cancellation implementation. The supported stack adapts its cancellation and unknown-route behavior in `c8b70994199f68e0f5ee0e0c7eecacbee84ffea7` without regressing the fork's stronger timeout error code and direct resume-once path. Deterministic pre-storage cancellation, caller cancellation, delayed timeout reply, delayed cancellation reply, client reuse, and unknown-route tests pass. The unchanged Apple commit remains the base of `apple/container#1935`; drop both local representations when #1862 lands. |
 | [apple/container#1926](https://github.com/apple/container/pull/1926) | Its attached-exec disconnect cleanup is represented in `stephenlclarke/container`; its separate stop-timeout path still needs single-owner cleanup review. |
 | [apple/container-builder-shim#87](https://github.com/apple/container-builder-shim/pull/87) | Its `.dockerignore` re-included-parent fix is represented by standalone commit `2778407`; the fork retains its staged-Dockerfile safeguard until the upstream shape lands. |
-| [apple/container#1735](https://github.com/apple/container/pull/1735) | Preferred daemon entry-point ID validation. Imported as standalone commit `16ecfd5`; the broader residual bundle-path and volume-disk-usage hardening is tracked in [PR-container-storage-path-validation.md](apple-container/PR-container-storage-path-validation.md) and must follow this PR rather than compete with it. |
+| [apple/container#1735](https://github.com/apple/container/pull/1735) | Preferred daemon entry-point ID validation. Imported as standalone commit `16ecfd5`; the broader residual bundle-path and volume-disk-usage hardening is tracked in [PR-container-storage-path-validation.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-container-storage-path-validation.md) and must follow this PR rather than compete with it. |
 | [apple/container#1630](https://github.com/apple/container/pull/1630) | The local live-export handoff is a generic snapshot primitive based on this direction. It uses a unique temporary snapshot and serializes the freeze/copy/thaw lifecycle; it deliberately does not add Docker-shaped `container commit` behavior from [apple/container#1762](https://github.com/apple/container/pull/1762). |
 
 ## Tracked Third-Party Apple Pull Requests
 
 | Pull request | Local disposition |
 | --- | --- |
+| [apple/container#2006](https://github.com/apple/container/pull/2006) | Merged 27 July 2026 as `13e976f88e7da4ff71559b7e6e4e763ff38364ce`, closing [apple/container#2003](https://github.com/apple/container/issues/2003). The supported fork contains the merge through its current Apple baseline; no fork-only replacement is needed. |
 | [apple/container#1818](https://github.com/apple/container/pull/1818) | Closed 20 July 2026 without merge. The ordered-journaling source change remains a fork-only standalone commit at `6e525cc`. |
-| [apple/container#1708](https://github.com/apple/container/pull/1708) | Open, approved, and currently conflicting. Already represented by the machine-configuration documentation in `3bb6864`. |
-| [apple/container#1660](https://github.com/apple/container/pull/1660) | Open and approved. Already represented by the application-root backup exclusion in `3bb6864`. |
+| [apple/container#1708](https://github.com/apple/container/pull/1708) | Open and approved; GitHub currently reports mergeability as unknown. Already represented by the machine-configuration documentation in `3bb6864`. |
+| [apple/container#1660](https://github.com/apple/container/pull/1660) | Open and approved; GitHub currently reports mergeability as unknown. Already represented by the application-root backup exclusion in `3bb6864`. |
 | [apple/container#1508](https://github.com/apple/container/pull/1508) | Open, mergeable, and awaiting review. It is not copied because the local SSH forwarding implementation supports default, explicit, and multiple named sockets. Reconcile with upstream if this PR changes or lands. |
 | [apple/container#730](https://github.com/apple/container/pull/730) | Open and approved. Already represented in `3bb6864`, plus the parse-entry correction required by the fork's `@main` wrapper. |
 | [apple/containerization#753](https://github.com/apple/containerization/pull/753) | Open and approved. Already represented by `8de8a10`, including default client ID, caller override, and request-header tests. |
@@ -329,6 +198,10 @@ validation before submission.
 | [apple/container#1997](https://github.com/apple/container/pull/1997) | Open, mergeable, and awaiting review. Its content-identical signal-name correction is represented by `bb2438c`. |
 | [apple/container#2000](https://github.com/apple/container/pull/2000) | Closed 28 July 2026 without merge. The fork's existing backward-read tests continue to cover the reported behaviour. |
 | [apple/containerization#792](https://github.com/apple/containerization/pull/792) | Open, mergeable, and awaiting review. Its fresh-session registry retry behaviour is represented by `d388a15` and `c8043bb`. |
+| [apple/containerization#813](https://github.com/apple/containerization/pull/813) | Merged 29 July 2026 as `ff44a5b683c80fceab875dba8a20ed24d7648c07`. The older local vminitd correction remains patch-unique and requires explicit reconciliation with Apple's OCI-level redaction. |
+| [apple/containerization#812](https://github.com/apple/containerization/pull/812) | Open, mergeable, blocked draft at `570a56f74bf79aa3fa383e708d4741043c1e4f6f`. It proposes direct `FileHandle` copy streams. Do not import it before API, cancellation, backpressure, path-safety, and archive-metadata review. |
+| [apple/container#1947](https://github.com/apple/container/pull/1947) | Open, mergeable, blocked draft at `7199840b57504963e0f76370a72dfcd74d927eb9`. It exposes the direct-stream container CLI surface on top of #812 and is not represented in the supported fork. |
+| [apple/container-builder-shim#89](https://github.com/apple/container-builder-shim/pull/89) and [apple/container#2040](https://github.com/apple/container/pull/2040) | Open, mergeable, and awaiting review at `134c7381dc3b1a06afe2d2025fab30c597f26bdd` and `f27d3e37cf7c6470b65c8e4a6f6af36fa0b20b68`. The meta-`ARG` implementation is technically sound, but equivalent pre-`FROM` default and explicit override resolution is already present in the supported builder fork. Do not duplicate the resolver; retain the upstream integration test as convergence evidence. |
 
 ## Confirmed Local Impact
 
@@ -342,51 +215,63 @@ validation before submission.
 | [apple/container#1757](https://github.com/apple/container/issues/1757) | Launch failures and application-root mismatches are handled in `stephenlclarke/container` `6ac1253`. |
 | [apple/containerization#790](https://github.com/apple/containerization/issues/790) and [apple/container#1895](https://github.com/apple/container/issues/1895) | Fresh-session registry retry behavior from [apple/containerization#792](https://github.com/apple/containerization/pull/792) is represented by `d388a15` and `c8043bb`. |
 | [apple/container#1937](https://github.com/apple/container/issues/1937) | Directory bind mounts containing hardlinks can intermittently fail with `EACCES` inside the guest. The fork carries non-root hard-link directory bind-mount regression coverage in `stephenlclarke/container` `e0034f4`, but that controlled coverage does not claim the intermittent upstream race is resolved. The single-file hardlink fix from [apple/containerization#665](https://github.com/apple/containerization/pull/665) is already present; `container-compose` must not paper over the directory bind behavior with a copy or snapshot workaround that would break live mounts. |
-| [apple/container#1977](https://github.com/apple/container/issues/1977) | Labels now split only at their first `=` in `stephenlclarke/container` `47c13a8`; the Apple-shaped handoff and Compose v2 parity follow-through are recorded in [PR-label-value-equals.md](apple-container/PR-label-value-equals.md) and [PR-label-value-equals.md](container-compose/PR-label-value-equals.md). |
-| [apple/container#1969](https://github.com/apple/container/issues/1969) | `container copy` now splits a container path reference only at its first `:` in `stephenlclarke/container` `f03ae57`, so legal colons in guest paths are retained. The generic runtime and Compose dependency handoffs are recorded in [PR-copy-path-colon.md](apple-container/PR-copy-path-colon.md) and [PR-copy-path-colon.md](container-compose/PR-copy-path-colon.md). |
-| Isolated runtime startup | A stale same-label launchd service no longer binds a new `--app-root` to an older XPC helper. The generic macOS correction is `stephenlclarke/container` `7272c40`; its issue/PR handoff is [ISSUE-launchd-service-ownership.md](apple-container/ISSUE-launchd-service-ownership.md) and [PR-launchd-service-ownership.md](apple-container/PR-launchd-service-ownership.md). |
-| Compose image-volume subpath teardown | Generic `LinuxContainer` cleanup now unmounts staged subpath binds and their backing volumes so the guest root is removable without `EBUSY`; fixed in `stephenlclarke/containerization` `93d7710` and documented by [ISSUE-staged-subpath-mount-cleanup.md](apple-containerization/ISSUE-staged-subpath-mount-cleanup.md) and [PR-staged-subpath-mount-cleanup.md](apple-containerization/PR-staged-subpath-mount-cleanup.md). |
-| Compose completed dependency state | A one-shot dependency reported as `exited` now satisfies `service_completed_successfully` when its stored exit code is zero, matching the existing `stopped` handling. The Compose-only correction is `74d02bb` and is documented by [ISSUE-completed-dependency-exited-status.md](container-compose/ISSUE-completed-dependency-exited-status.md) and [PR-completed-dependency-exited-status.md](container-compose/PR-completed-dependency-exited-status.md). |
-| Compose unconfigured image-volume provider | Library-only image-volume planning no longer interprets a missing runtime provider as an image with no declared volumes. The Compose-only correction is `5d532790`, with full provider-contract coverage and handoffs in [ISSUE-unconfigured-runtime-image-volume-provider.md](container-compose/ISSUE-unconfigured-runtime-image-volume-provider.md) and [PR-unconfigured-runtime-image-volume-provider.md](container-compose/PR-unconfigured-runtime-image-volume-provider.md). |
-| Concurrent Compose image builds | Generic BuildKit startup now serializes only the macOS inspect/create/bootstrap lifecycle for each builder, so concurrent Compose builds reuse the `buildkit` singleton instead of receiving `container already exists`. The correction is `stephenlclarke/container` `7be83a2`; its issue/PR handoff is [ISSUE-builder-startup-race.md](apple-container/ISSUE-builder-startup-race.md) and [PR-builder-startup-race.md](apple-container/PR-builder-startup-race.md). |
-| Quiet machine-list integration | The generic `machine ls -q` test no longer assumes exclusive ownership of the runtime-wide machine list. It verifies that its own machine is listed without a table header, while retaining other legitimate entries; fixed in `stephenlclarke/container` `e36445b` and documented by [ISSUE-machine-list-quiet-test-isolation.md](apple-container/ISSUE-machine-list-quiet-test-isolation.md) and [PR-machine-list-quiet-test-isolation.md](apple-container/PR-machine-list-quiet-test-isolation.md). |
-| Compose follow-log XPC decoding | A one-descriptor `container logs --follow` reply no longer makes the generic macOS XPC client duplicate an out-of-range second descriptor and trap. The correction is `stephenlclarke/container` `a8f6cae`; its issue/PR handoff is [ISSUE-xpc-variable-descriptor-arrays.md](apple-container/ISSUE-xpc-variable-descriptor-arrays.md) and [PR-xpc-variable-descriptor-arrays.md](apple-container/PR-xpc-variable-descriptor-arrays.md). |
-| Compose child-process cancellation | Cancelling a Compose task now owns and terminates its complete host process group across captured, prompt-inheriting, inherited, and explicit-stdin modes. The Compose-only correction is `044d836d`, reusing `ContainerizationOS.Command` for group creation with atomically latched and bounded TERM-to-KILL escalation, ownership-checked and `SIGTTOU`-safe terminal handoff/restoration, independent background job-control group tracking, `WUNTRACED` stop relay through the parent shell job, per-pipe broken-pipe handling, and handoffs in [ISSUE-process-runner-task-cancellation.md](container-compose/ISSUE-process-runner-task-cancellation.md) and [PR-process-runner-task-cancellation.md](container-compose/PR-process-runner-task-cancellation.md). Exit restores the retained parent group only while the child still owns the terminal, including after an `fg` resume. No Apple runtime fork change is required. |
-| Compose package preflight output | Runtime package and service checks now reuse the asynchronous Compose process runner, so stdout and stderr drain while each child runs and cancellation owns the exact process group. Compose-only corrections `81d32eb2`, `96ac7830`, `045d020c`, `9db8f060`, `e0ad1dfe`, `4bf2eac6`, `3ed87228`, `fbe0ce05`, `b65d18a6`, `62a40d48`, `b07e9da8`, and `5b6f4880` bound retained output at the process-drain boundary and displayed failures at a 64 KiB absolute raw-stream boundary without splitting valid UTF-8 scalars even after leading-whitespace trimming, preserve exact omitted source-byte counts for malformed output and whitespace-only retained prefixes, report content that starts beyond a whitespace-consumed display budget, scan large diagnostics without a proportional per-byte object model, retain stderr priority, retain public `CommandResult` equality and unbounded runner semantics, preserve `CancellationError` from both compatibility awaits, install signal handling before child-task creation, synchronously register delivered signal handlers, drain dispatch-source cancellation, and await those handlers before accepting the proxied result. This guarantees the preflight group is cancelled and reaped before a host signal becomes the CLI shell status. Test correction `592266a7` exercises a 16 MiB packaged-CLI failure below a 320 MiB maximum resident-memory ceiling. The large-output, bounded-capture, diagnostic, memory, signal, cancellation, and child-reaping evidence is recorded in [ISSUE-package-compatibility-preflight-drain.md](container-compose/ISSUE-package-compatibility-preflight-drain.md) and [PR-package-compatibility-preflight-drain.md](container-compose/PR-package-compatibility-preflight-drain.md). No Apple runtime fork change is required. |
-| Compose process-start observation | The exact-main SonarCloud analysis for child-process cancellation identified one undocumented no-op observer and two nested launch-observer closures. Compose-only correction `7939874a` names the private callback contract, invokes it through one helper outside the asynchronous continuation bodies, and explains the production no-op without changing launch or cancellation behavior. Follow-up merge `617c2036` passed exact-main analysis `fe1e52b4-9674-4da6-90f8-ce4b0155909d` with zero unresolved issues or hotspots. See [ISSUE-process-start-observer-maintainability.md](container-compose/ISSUE-process-start-observer-maintainability.md) and [PR-process-start-observer-maintainability.md](container-compose/PR-process-start-observer-maintainability.md). |
-| Compose preflight SonarQube closure | Compose-only refactor `98f2a7139b2e99a60cabdc8ca2d7190c33b7e994` extracts operation-task creation, delivered-signal attachment, and proxied result collection into named helpers while preserving the established cancellation and handler-drain order. Scanner cleanup `35c2848ac37e8e5ad607b9b7662b396d1e6ef2b3` removes duplicate source-encoding configuration and excludes the binary icon from text analysis. Fresh branch analysis `39c6e9ff-0a90-4cd5-9b59-ed466f5fbdea` processed successfully with zero scanner warnings. SonarCloud rejects short-branch metric, issue, and quality-gate API reads on the current organization plan, so the hosted pull-request check remains the final gate authority. No Apple runtime change is required. See [ISSUE-package-compatibility-preflight-drain.md](container-compose/ISSUE-package-compatibility-preflight-drain.md) and [PR-package-compatibility-preflight-drain.md](container-compose/PR-package-compatibility-preflight-drain.md). |
-| Compose runtime validation ownership | Compose-only CI correction `9a95ec8cc5a84e15a187ff20ccf948e9ac14bfe9` serializes cooperating per-user runtime users, reuses a retained exact init-image archive, and retains marker-protected app-root isolation. Runtime-adapter follow-up `4a2e0003496c9f96afcc0b3f3d54124ebc09b25b` proves API readiness after start, restarts once after a transient XPC transport failure, retries only idempotent interrupted image pulls, and accepts an interrupted delete only after discovery confirms absence. A controlled 62-target Docker Compose run passed in 1,024.25s, but it also proved that app roots do not isolate stable launchd/XPC labels: non-cooperating host users must be coordinated separately. This does not close Apple/runtime `XPC-304`. See [ISSUE-container-runtime-validation-reliability.md](container-compose/ISSUE-container-runtime-validation-reliability.md) and [PR-container-runtime-validation-reliability.md](container-compose/PR-container-runtime-validation-reliability.md). |
-| Current VHS runtime startup | The self-hosted Current release runner now requires the global Container launchd namespace to remain absent before recording, repeats that guard after a transport-only reset, and visibly types one bounded retry of the exact packaged-runtime start. This is Compose release-layer recovery for an XPC interruption after a long retained-runtime stop; it changes no Apple runtime source and introduces no Replay, Marker, or transcript path. Four signed commits merged as `4b4a4cff`; exact-main CI, CodeQL, and SonarCloud analysis `b31c11e9-089a-4c1e-b3c6-44967b74ad79` passed with zero unresolved issues or hotspots. Current run `30231378606` published matched checksummed and SLSA-attested archives plus a 303.92-second GIF whose commands and real output are live, with 16 `Type`, 16 `Enter`, 14 `Wait`, zero Replay, and zero Marker instructions. See [ISSUE-current-vhs-start-recovery.md](container-compose/ISSUE-current-vhs-start-recovery.md) and [PR-current-vhs-start-recovery.md](container-compose/PR-current-vhs-start-recovery.md). |
-| Current full-dispatch authority | A docs-only main merge requires explicit full-validation CI to establish runtime, coverage, and SonarCloud authority. Current's controller accepted that exact successful `workflow_dispatch`, but its independent package-time guard pre-filtered to push events and rejected the same run after cache restoration. Compose-only correction `c8524d36` accepts successful exact-main CI from the existing trusted `push` or `workflow_dispatch` set and continues to exclude all other events. See [ISSUE-current-dispatch-release-authority.md](container-compose/ISSUE-current-dispatch-release-authority.md) and [PR-current-dispatch-release-authority.md](container-compose/PR-current-dispatch-release-authority.md). |
-| Current dependency cache overhead | Current run `30235634675` spent 10 minutes restoring a 2.13 GB SwiftPM cache and 19 minutes 19 seconds attempting a 1.62 GB Go cache restore, versus 2 minutes 25 seconds and 2 minutes 17 seconds for the respective runtime and Compose builds. Compose-only correction `6cae9a84` removes the release SwiftPM cache and disables release `setup-go` caching while retaining all validation-workflow caches. See [ISSUE-release-dependency-cache-overhead.md](container-compose/ISSUE-release-dependency-cache-overhead.md) and [PR-release-dependency-cache-overhead.md](container-compose/PR-release-dependency-cache-overhead.md). |
+| [apple/container#1977](https://github.com/apple/container/issues/1977) | Labels now split only at their first `=` in `stephenlclarke/container` `47c13a8`; the Apple-shaped handoff and Compose v2 parity follow-through are recorded in [PR-label-value-equals.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-label-value-equals.md) and [PR-label-value-equals.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-label-value-equals.md). |
+| [apple/container#1969](https://github.com/apple/container/issues/1969) | `container copy` now splits a container path reference only at its first `:` in `stephenlclarke/container` `f03ae57`, so legal colons in guest paths are retained. The generic runtime and Compose dependency handoffs are recorded in [PR-copy-path-colon.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-copy-path-colon.md) and [PR-copy-path-colon.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-copy-path-colon.md). |
+| Isolated runtime startup | A stale same-label launchd service no longer binds a new `--app-root` to an older XPC helper. The generic macOS correction is `stephenlclarke/container` `7272c40`; its issue/PR handoff is [ISSUE-launchd-service-ownership.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-launchd-service-ownership.md) and [PR-launchd-service-ownership.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-launchd-service-ownership.md). |
+| Compose image-volume subpath teardown | Generic `LinuxContainer` cleanup now unmounts staged subpath binds and their backing volumes so the guest root is removable without `EBUSY`; fixed in `stephenlclarke/containerization` `93d7710` and documented by [ISSUE-staged-subpath-mount-cleanup.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/ISSUE-staged-subpath-mount-cleanup.md) and [PR-staged-subpath-mount-cleanup.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/PR-staged-subpath-mount-cleanup.md). |
+| Compose completed dependency state | A one-shot dependency reported as `exited` now satisfies `service_completed_successfully` when its stored exit code is zero, matching the existing `stopped` handling. The Compose-only correction is `74d02bb` and is documented by [ISSUE-completed-dependency-exited-status.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-completed-dependency-exited-status.md) and [PR-completed-dependency-exited-status.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-completed-dependency-exited-status.md). |
+| Compose unconfigured image-volume provider | Library-only image-volume planning no longer interprets a missing runtime provider as an image with no declared volumes. The Compose-only correction is `5d532790`, with full provider-contract coverage and handoffs in [ISSUE-unconfigured-runtime-image-volume-provider.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-unconfigured-runtime-image-volume-provider.md) and [PR-unconfigured-runtime-image-volume-provider.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-unconfigured-runtime-image-volume-provider.md). |
+| Concurrent Compose image builds | Generic BuildKit startup now serializes only the macOS inspect/create/bootstrap lifecycle for each builder, so concurrent Compose builds reuse the `buildkit` singleton instead of receiving `container already exists`. The correction is `stephenlclarke/container` `7be83a2`; its issue/PR handoff is [ISSUE-builder-startup-race.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-builder-startup-race.md) and [PR-builder-startup-race.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-builder-startup-race.md). |
+| Quiet machine-list integration | The generic `machine ls -q` test no longer assumes exclusive ownership of the runtime-wide machine list. It verifies that its own machine is listed without a table header, while retaining other legitimate entries; fixed in `stephenlclarke/container` `e36445b` and documented by [ISSUE-machine-list-quiet-test-isolation.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-machine-list-quiet-test-isolation.md) and [PR-machine-list-quiet-test-isolation.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-machine-list-quiet-test-isolation.md). |
+| Compose follow-log XPC decoding | A one-descriptor `container logs --follow` reply no longer makes the generic macOS XPC client duplicate an out-of-range second descriptor and trap. The correction is `stephenlclarke/container` `a8f6cae`; its issue/PR handoff is [ISSUE-xpc-variable-descriptor-arrays.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-xpc-variable-descriptor-arrays.md) and [PR-xpc-variable-descriptor-arrays.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-xpc-variable-descriptor-arrays.md). |
+| Compose child-process cancellation | Cancelling a Compose task now owns and terminates its complete host process group across captured, prompt-inheriting, inherited, and explicit-stdin modes. The Compose-only correction is `044d836d`, reusing `ContainerizationOS.Command` for group creation with atomically latched and bounded TERM-to-KILL escalation, ownership-checked and `SIGTTOU`-safe terminal handoff/restoration, independent background job-control group tracking, `WUNTRACED` stop relay through the parent shell job, per-pipe broken-pipe handling, and handoffs in [ISSUE-process-runner-task-cancellation.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-process-runner-task-cancellation.md) and [PR-process-runner-task-cancellation.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-process-runner-task-cancellation.md). Exit restores the retained parent group only while the child still owns the terminal, including after an `fg` resume. No Apple runtime fork change is required. |
+| Compose package preflight output | Runtime package and service checks now reuse the asynchronous Compose process runner, so stdout and stderr drain while each child runs and cancellation owns the exact process group. Compose-only corrections `81d32eb2`, `96ac7830`, `045d020c`, `9db8f060`, `e0ad1dfe`, `4bf2eac6`, `3ed87228`, `fbe0ce05`, `b65d18a6`, `62a40d48`, `b07e9da8`, and `5b6f4880` bound retained output at the process-drain boundary and displayed failures at a 64 KiB absolute raw-stream boundary without splitting valid UTF-8 scalars even after leading-whitespace trimming, preserve exact omitted source-byte counts for malformed output and whitespace-only retained prefixes, report content that starts beyond a whitespace-consumed display budget, scan large diagnostics without a proportional per-byte object model, retain stderr priority, retain public `CommandResult` equality and unbounded runner semantics, preserve `CancellationError` from both compatibility awaits, install signal handling before child-task creation, synchronously register delivered signal handlers, drain dispatch-source cancellation, and await those handlers before accepting the proxied result. This guarantees the preflight group is cancelled and reaped before a host signal becomes the CLI shell status. Test correction `592266a7` exercises a 16 MiB packaged-CLI failure below a 320 MiB maximum resident-memory ceiling. The large-output, bounded-capture, diagnostic, memory, signal, cancellation, and child-reaping evidence is recorded in [ISSUE-package-compatibility-preflight-drain.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-package-compatibility-preflight-drain.md) and [PR-package-compatibility-preflight-drain.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-package-compatibility-preflight-drain.md). No Apple runtime fork change is required. |
+| Compose `cp -` archive metadata | The supported stack now streams caller-owned archives through `stephenlclarke/containerization` `52386838456a431d24bed6c38a9e84fb0ad28997`, `stephenlclarke/container` `f5e25b12ed074e7e5fb09933d86a27652034f3e5`, and the matching Compose branch. The automated Docker Compose v5.3.1 fixture requires content, ownership, mode, timestamp, symlink, hard-link, sparse allocation, long-path, and large-file parity and records operation timings. Stock Apple still lacks this reviewed API; third-party drafts [apple/containerization#812](https://github.com/apple/containerization/pull/812) and [apple/container#1947](https://github.com/apple/container/pull/1947) remain tracked rather than imported verbatim. |
+| Compose process-start observation | The exact-main SonarCloud analysis for child-process cancellation identified one undocumented no-op observer and two nested launch-observer closures. Compose-only correction `7939874a` names the private callback contract, invokes it through one helper outside the asynchronous continuation bodies, and explains the production no-op without changing launch or cancellation behavior. Follow-up merge `617c2036` passed exact-main analysis `fe1e52b4-9674-4da6-90f8-ce4b0155909d` with zero unresolved issues or hotspots. See [ISSUE-process-start-observer-maintainability.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-process-start-observer-maintainability.md) and [PR-process-start-observer-maintainability.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-process-start-observer-maintainability.md). |
+| Current VHS runtime startup | The self-hosted Current release runner now requires the global Container launchd namespace to remain absent before recording, repeats that guard after a transport-only reset, and visibly types one bounded retry of the exact packaged-runtime start. This is Compose release-layer recovery for an XPC interruption after a long retained-runtime stop; it changes no Apple runtime source and introduces no Replay, Marker, or transcript path. Four signed commits merged as `4b4a4cff`; exact-main CI, CodeQL, and SonarCloud analysis `b31c11e9-089a-4c1e-b3c6-44967b74ad79` passed with zero unresolved issues or hotspots. Current run `30231378606` published matched checksummed and SLSA-attested archives plus a 303.92-second GIF whose commands and real output are live, with 16 `Type`, 16 `Enter`, 14 `Wait`, zero Replay, and zero Marker instructions. See [ISSUE-current-vhs-start-recovery.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-current-vhs-start-recovery.md) and [PR-current-vhs-start-recovery.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-current-vhs-start-recovery.md). |
+| Current full-dispatch authority | A docs-only main merge requires explicit full-validation CI to establish runtime, coverage, and SonarCloud authority. Current's controller accepted that exact successful `workflow_dispatch`, but its independent package-time guard pre-filtered to push events and rejected the same run after cache restoration. Compose-only correction `c8524d36` accepts successful exact-main CI from the existing trusted `push` or `workflow_dispatch` set and continues to exclude all other events. See [ISSUE-current-dispatch-release-authority.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-current-dispatch-release-authority.md) and [PR-current-dispatch-release-authority.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-current-dispatch-release-authority.md). |
+| Current dependency cache overhead | Current run `30235634675` spent 10 minutes restoring a 2.13 GB SwiftPM cache and 19 minutes 19 seconds attempting a 1.62 GB Go cache restore, versus 2 minutes 25 seconds and 2 minutes 17 seconds for the respective runtime and Compose builds. Compose-only correction `6cae9a84` removes the release SwiftPM cache and disables release `setup-go` caching while retaining all validation-workflow caches. See [ISSUE-release-dependency-cache-overhead.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-release-dependency-cache-overhead.md) and [PR-release-dependency-cache-overhead.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-release-dependency-cache-overhead.md). |
 | [apple/container#1941](https://github.com/apple/container/issues/1941) | The supported fork ports the content-identical signal-name correction from [apple/container#1997](https://github.com/apple/container/pull/1997) in `bb2438c`, with regression coverage in `26cc778` and handoff details in [PR-1997.md](apple-container/PR-1997.md). Drop the port when Apple merges an equivalent fix. |
 | [apple/container#1967](https://github.com/apple/container/issues/1967) | [apple/container#2000](https://github.com/apple/container/pull/2000) closed 28 July 2026 without merge. The supported `LogFileOutput` already retains complete records across backward-read chunks; explicit 3 KB and multi-record tests in `26cc778` cover the reported behaviour. |
 | [apple/container#2009](https://github.com/apple/container/issues/2009) | The supported init-process reattach path writes persistent sinks first and removes failed clients through `AttachableOutput`; `26cc778` proves later persistent writes continue. Apple main still needs its own reviewed fix. |
 | [apple/containerization#798](https://github.com/apple/containerization/pull/798) | Merged upstream. Its SwiftPM manifest correction is included in the current Apple baseline, so it no longer needs fork-side review or a local port. |
 | [apple/container#2021](https://github.com/apple/container/issues/2021) | Host disk-space retention after deleting guest files is owned by the macOS Virtualization.framework virtio-fs implementation and is released when the container stops. The supported stack must not add a divergent copy, remount, or guest-filesystem workaround for an Apple OS primitive. Track the upstream platform resolution. |
 | [apple/container#2022](https://github.com/apple/container/issues/2022) | The reported long-line `logs -n` correctness case passes on the installed supported runtime with a 2,001-byte first record and exact final three records. The four reported hot-path inefficiencies reproduce in the fork and are corrected as independent signed commits: glob cache `abab498f` plus Unicode-semantics correction `4436afe`, hashed context membership `41e31f7`, concurrent stats `600fde2`, and off-lock disk sizing `b15ac4a`. Review follow-up `c7d05f1` keeps active-volume accounting consistent with the sizing snapshot. Matching issue/PR handoffs are linked above. |
+| [apple/container#2037](https://github.com/apple/container/issues/2037) | The reported empty local build context remains open upstream. A 29 July probe against the installed mutable Current package did not reach context transfer: after 153.32 seconds the stopped builder still had not started, and its log showed `unknown flag: --dns-nameserver` because the installed Container binary referenced an older builder digest. The matched development stack pins builder digest `sha256:b48fbf42a51bf3432bd50d64732b4d6931944f3bb30f911a9a513cf8bab9b02e`, which already passed a no-cache context build in 27.71 seconds. Re-run the reporter's exact `COPY` fixture against the next matched Current package before classifying #2037 as reproduced or resolved locally. |
 
 ## Open Follow-up
 
+- Keep all supported fork mains current with fetched Apple heads, classify
+  every new patch-unique commit, and rerun `make fork-classifications-check`.
+- Reconcile merged `apple/containerization#813` into the exact Compose
+  Containerization development lane and reassess the older vminitd correction.
 - Keep Stephen-authored `apple/container#1934`, `#1935`, `#1965`, `#2031`,
   `#2035`, and `#2036`, and `apple/containerization#799`, `#820`, `#821`, and
-  `#823` open until Apple merges, replaces, or explicitly rejects their current
-  changes. Track third-party `apple/container-builder-shim#87` independently.
-- The final 28 July refresh found all ten Stephen-authored Apple pull requests
-  ready, blocked, and awaiting review, with no actionable author review. PR
-  #799's hosted build, signature, and Linux compile checks are green. No hosted
-  check has yet been reported for #2031, #2035, #2036, #820, #821, or #823.
-- Keep the supported fork mains current with Apple and rerun the classification
-  and linked-stack gates before promoting changed runtime pins.
-- Reconcile the older fork vminitd redaction with merged
-  `apple/containerization#813`, removing duplicate behaviour while retaining
-  any independently required log coverage.
+  `#823` open until Apple merges, replaces, or explicitly rejects their
+  current changes. Track third-party `apple/container-builder-shim#87`
+  independently.
+- The 29 July refresh found all ten open Stephen-authored Apple pull requests
+  mergeable and awaiting review, with no actionable author review. PR #799's
+  hosted build, signature, and Linux compile checks are green. Apple Actions
+  report `action_required` without starting jobs for the other nine pull
+  requests; this is not a failing author check.
+- Track `apple/container-builder-shim#89` and its `apple/container#2040`
+  integration test without duplicating the equivalent supported resolver.
+- Re-run `apple/container#2037` against the next matched Current package. The
+  installed package's stale builder digest blocked the first probe before
+  context transfer and is not evidence for or against the upstream report.
 - Rebase `apple/container#1935` after `apple/container#1862` lands so the preferred upstream XPC commit is not duplicated.
-- Split `stephenlclarke/container#33` into separate stock-shaped XPC ownership
-  and ProcessIO backpressure proposals. Neither has been submitted to Apple.
+- Split the supported XPC ownership and ProcessIO backpressure corrections
+  derived from `stephenlclarke/container#33` into separate stock-shaped
+  proposals. Neither has been submitted to Apple.
+- Track third-party direct-stream drafts `apple/containerization#812` and
+  `apple/container#1947` without importing them verbatim. The supported fork
+  now carries an independently reviewed and strengthened implementation; Apple
+  convergence still depends on a ready proposal with equivalent metadata,
+  cancellation, backpressure, path-safety, sparse-file, and hard-link contracts.
 - Generic log-retrieval runtime primitives still need minimal Apple proposals; Docker timestamp parsing remains owned by `container-compose`.
-- [apple/container#378](https://github.com/apple/container/issues/378) needs a running-process stream reattach primitive before Compose can support interactive `attach`; the required runtime contract and the deliberate output-only fallback are documented in [ISSUE-attach-stream-reattach.md](apple-container/ISSUE-attach-stream-reattach.md).
-- The container storage-boundary follow-up must wait for `apple/container#1735` and retain only its residual `FilePath` and volume-disk-usage protections. The independent `containerization` handoff is ready in [PR-container-storage-path-validation.md](apple-containerization/PR-container-storage-path-validation.md).
+- [apple/container#378](https://github.com/apple/container/issues/378) needs a running-process stream reattach primitive before Compose can support interactive `attach`; the required runtime contract and the deliberate output-only fallback are documented in [ISSUE-attach-stream-reattach.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-attach-stream-reattach.md).
+- The container storage-boundary follow-up must wait for `apple/container#1735` and retain only its residual `FilePath` and volume-disk-usage protections. The independent `containerization` handoff is ready in [PR-container-storage-path-validation.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/PR-container-storage-path-validation.md).
 - The four unsubmitted builder-shim handoffs have no matching open upstream
   issue or pull request. Keep them separate from
   [apple/container-builder-shim#87](https://github.com/apple/container-builder-shim/pull/87),

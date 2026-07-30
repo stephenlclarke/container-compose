@@ -23,14 +23,17 @@ import Glibc
 import Foundation
 import Testing
 
-@Suite("Compose runtime smoke tests", .serialized)
+@Suite(
+    "Compose runtime smoke tests",
+    .enabled(
+        if: runtimeTestsEnabled,
+        "Set CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 to execute live runtime smoke tests."
+    ),
+    .serialized
+)
 struct ComposeRuntimeSmokeTests {
     @Test("runtime run build emits progress before build output")
     func runtimeRunBuildEmitsProgressBeforeBuildOutput() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -106,10 +109,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime up handles entrypoint plus command")
     func runtimeUpHandlesEntrypointPlusCommand() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -179,10 +178,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime up reuses an existing named volume")
     func runtimeUpReusesExistingNamedVolume() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = try copyRuntimeFixture(named: "volume-reuse")
         defer {
@@ -232,10 +227,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime up assigns IPv6 for an automatic IPv6 Compose network")
     func runtimeUpAssignsAutomaticIPv6Network() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -297,10 +288,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime up applies an explicit IPv6 IPAM gateway")
     func runtimeUpAppliesIPv6Gateway() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -367,10 +354,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime up disables IPv6 while retaining the Compose IPv6 pool")
     func runtimeUpDisablesIPv6Network() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -436,10 +419,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime ps and top inspect built compose service")
     func runtimePsAndTopInspectBuiltComposeService() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = try copyRuntimeFixture(named: "ps")
         defer {
@@ -531,10 +510,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime dry run up timestamps follows timestamped logs")
     func runtimeDryRunUpTimestampsFollowsTimestampedLogs() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -577,10 +552,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime dry run up attach follows selected logs")
     func runtimeDryRunUpAttachFollowsSelectedLogs() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -634,10 +605,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime dry run up accepts menu boolean values in no-start mode")
     func runtimeDryRunUpAcceptsMenuBooleanValuesInNoStartMode() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -698,10 +665,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime dry run up accepts menu exit-control and menu watch")
     func runtimeDryRunUpAcceptsMenuExitControlAndMenuWatch() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -771,10 +734,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime dry run up renders service privileged command")
     func runtimeDryRunUpRendersServicePrivilegedCommand() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -810,10 +769,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime privileged service restores guest readonly paths")
     func runtimePrivilegedServiceRestoresGuestReadonlyPaths() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -874,10 +829,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime service clears guest system-path overrides without adding capabilities")
     func runtimeServiceClearsGuestSystemPathOverridesWithoutAddingCapabilities() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -962,10 +913,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime host user namespace retains the guest identity mapping")
     func runtimeHostUserNamespaceRetainsGuestIdentityMapping() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -1026,10 +973,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime private user namespace has an identity-mapped guest namespace")
     func runtimePrivateUserNamespaceHasIdentityMappedGuestNamespace() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -1090,10 +1033,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime dry run attach no-stdin follows logs with default signal proxy")
     func runtimeDryRunAttachNoStdinFollowsLogsWithDefaultSignalProxy() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -1140,10 +1079,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime up exit-code-from returns selected service status")
     func runtimeUpExitCodeFromReturnsSelectedServiceStatus() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -1212,10 +1147,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime config resolves image digests")
     func runtimeConfigResolvesImageDigests() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -1261,10 +1192,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime dry run exec renders privileged command")
     func runtimeDryRunExecRendersPrivilegedCommand() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -1306,10 +1233,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime build print renders bake file from compose file")
     func runtimeBuildPrintRendersBakeFileFromComposeFile() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -1382,10 +1305,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime build uses named builder")
     func runtimeBuildUsesNamedBuilder() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -1437,10 +1356,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime build forwards default SSH from compose file and CLI")
     func runtimeBuildForwardsDefaultSSHFromComposeFileAndCLI() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -1497,10 +1412,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime build forwards explicit SSH socket from CLI")
     func runtimeBuildForwardsExplicitSSHSocketFromCLI() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -1554,10 +1465,6 @@ struct ComposeRuntimeSmokeTests {
 
     @Test("runtime build forwards multiple explicit SSH sockets from compose file")
     func runtimeBuildForwardsMultipleExplicitSSHSocketsFromComposeFile() throws {
-        guard runtimeTestsEnabled else {
-            return
-        }
-
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)

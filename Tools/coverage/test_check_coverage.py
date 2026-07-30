@@ -18,6 +18,8 @@
 """Unit tests for the local coverage threshold checker."""
 
 import importlib.util
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -101,6 +103,66 @@ class CoverageCheckTests(unittest.TestCase):
             )
 
             self.assertEqual(check_coverage.go_statement_coverage(coverage_path), 50.0)
+
+    def test_cli_gates_every_first_party_swift_target(self) -> None:
+        """One weak target must fail even when every other report is covered."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            covered = root / "covered.xml"
+            covered.write_text(
+                """
+                <coverage version="1">
+                  <file path="Sources/Covered.swift">
+                    <lineToCover lineNumber="1" covered="true" />
+                  </file>
+                </coverage>
+                """,
+                encoding="utf-8",
+            )
+            uncovered = root / "uncovered.xml"
+            uncovered.write_text(
+                """
+                <coverage version="1">
+                  <file path="Sources/Uncovered.swift">
+                    <lineToCover lineNumber="1" covered="false" />
+                  </file>
+                </coverage>
+                """,
+                encoding="utf-8",
+            )
+            go_coverage = root / "coverage.out"
+            go_coverage.write_text(
+                "mode: atomic\nmain.go:1.1,2.1 1 1\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("check-coverage.py")),
+                    "--swift-core",
+                    str(covered),
+                    "--swift-runtime-spi",
+                    str(covered),
+                    "--swift-provider",
+                    str(uncovered),
+                    "--swift-plugin",
+                    str(covered),
+                    "--swift-aggregate",
+                    str(covered),
+                    "--go",
+                    str(go_coverage),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(
+                "ComposeContainerRuntime provider coverage is below required 75.00%",
+                result.stderr,
+            )
 
 
 if __name__ == "__main__":

@@ -29,10 +29,17 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 STACK_REFS = ROOT / "Tools" / "release" / "stack-refs.json"
+RUNTIME_CAPABILITIES = ROOT / "Tools" / "release" / "runtime-capabilities.json"
 CONTAINER_REPO = Path(os.environ.get("CONTAINER_STACK_REPO", ROOT.parent / "container"))
 CONTAINER_PACKAGE = CONTAINER_REPO / "Package.swift"
+CONTAINER_RUNTIME_CAPABILITIES = (
+    CONTAINER_REPO / "Sources" / "ContainerVersion" / "RuntimeCapabilityManifest.swift"
+)
 COMPOSE_PACKAGE = ROOT / "Package.swift"
 COMPOSE_RESOLVED = ROOT / "Package.resolved"
+COMPOSE_RUNTIME_CAPABILITIES = (
+    ROOT / "Sources" / "ComposePlugin" / "RuntimeCapabilityManifest.swift"
+)
 PACKAGE_SWIFT_FILES = [
     COMPOSE_PACKAGE,
 ]
@@ -134,6 +141,83 @@ def require_match(label: str, actual: str, expected: str) -> None:
         raise SystemExit(f"{label} mismatch: expected {expected}, got {actual}")
 
 
+def swift_runtime_capability_manifest(path: Path) -> tuple[int, list[str]]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError as error:
+        raise SystemExit(f"missing required file: {path}") from error
+
+    schema_match = re.search(r"\bcurrentSchemaVersion\s*=\s*(\d+)", text)
+    if schema_match is None:
+        raise SystemExit(f"{path} is missing currentSchemaVersion")
+    capabilities = re.findall(
+        r'^\s*case\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*"([^"]+)"\s*$',
+        text,
+        re.MULTILINE,
+    )
+    if not capabilities:
+        raise SystemExit(f"{path} does not declare any typed runtime capabilities")
+    return int(schema_match.group(1)), sorted(capabilities)
+
+
+def validate_runtime_capabilities() -> None:
+    manifest = load_json(RUNTIME_CAPABILITIES)
+    if not isinstance(manifest, dict):
+        raise SystemExit("runtime-capabilities.json must contain a JSON object")
+    schema_version = manifest.get("schemaVersion")
+    capabilities = manifest.get("capabilities")
+    if type(schema_version) is not int or schema_version < 1:
+        raise SystemExit(
+            "runtime-capabilities.json schemaVersion must be a positive integer"
+        )
+    if not isinstance(capabilities, list) or not capabilities:
+        raise SystemExit(
+            "runtime-capabilities.json capabilities must be a non-empty list"
+        )
+    if not all(
+        isinstance(capability, str)
+        and capability
+        and capability == capability.strip()
+        for capability in capabilities
+    ):
+        raise SystemExit(
+            "runtime-capabilities.json capability identifiers must be non-empty strings"
+        )
+    if capabilities != sorted(capabilities):
+        raise SystemExit("runtime-capabilities.json capabilities must be sorted")
+    if len(capabilities) != len(set(capabilities)):
+        raise SystemExit("runtime-capabilities.json capabilities must be unique")
+
+    compose_schema, compose_capabilities = swift_runtime_capability_manifest(
+        COMPOSE_RUNTIME_CAPABILITIES
+    )
+    require_match(
+        "Compose runtime capability schema",
+        str(compose_schema),
+        str(schema_version),
+    )
+    if compose_capabilities != capabilities:
+        raise SystemExit(
+            "Compose typed runtime capabilities do not match "
+            "Tools/release/runtime-capabilities.json"
+        )
+
+    if CONTAINER_RUNTIME_CAPABILITIES.is_file():
+        container_schema, container_capabilities = swift_runtime_capability_manifest(
+            CONTAINER_RUNTIME_CAPABILITIES
+        )
+        require_match(
+            "container runtime capability schema",
+            str(container_schema),
+            str(schema_version),
+        )
+        if container_capabilities != capabilities:
+            raise SystemExit(
+                "container typed runtime capabilities do not match "
+                "Tools/release/runtime-capabilities.json"
+            )
+
+
 def read_swift_default(path: Path, name: str) -> str:
     try:
         text = path.read_text(encoding="utf-8")
@@ -185,6 +269,7 @@ def validate_builder_image(stack_refs: dict[str, Any]) -> None:
 
 def main() -> int:
     stack_refs = load_json(STACK_REFS)
+    validate_runtime_capabilities()
     validate_builder_image(stack_refs)
     components = stack_refs.get("components", {})
     container = components.get("container")

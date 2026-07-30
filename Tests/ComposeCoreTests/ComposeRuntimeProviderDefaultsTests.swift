@@ -19,6 +19,8 @@ import Foundation
 import Testing
 
 @Suite("Compose runtime provider defaults")
+// The suite keeps the fail-closed contract for every provider surface in one place.
+// swiftlint:disable:next type_body_length
 struct ComposeRuntimeProviderDefaultsTests {
     private func expectUnavailable(
         _ operation: String,
@@ -63,6 +65,50 @@ struct ComposeRuntimeProviderDefaultsTests {
                 destinationID: "destination",
                 destination: "/data",
                 options: options,
+            )
+        }
+    }
+
+    @Test
+    func `archive defaults fail every operation`() async throws {
+        let archives = ComposeRuntimeProviderDefaults.archives()
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+        let archive = try FileHandle(forReadingFrom: URL(fileURLWithPath: "/dev/null"))
+        defer { try? archive.close() }
+
+        await expectUnavailable("commit image archive") {
+            try archives.writeCommitImageArchive(ComposeCommitImageArchiveRequest(
+                rootfsArchive: temporaryDirectory.appending(path: "rootfs.tar"),
+                output: temporaryDirectory.appending(path: "image.tar"),
+                service: ComposeService(name: "app", image: "example/app:latest"),
+                options: ComposeCommitOptions(),
+            ))
+        }
+        await expectUnavailable("bridge template extraction") {
+            try archives.extractBridgeTemplates(
+                archive: temporaryDirectory.appending(path: "rootfs.tar"),
+                destination: temporaryDirectory.path,
+            )
+        }
+        await expectUnavailable("archive copy into container") {
+            try await archives.copyArchiveIntoContainer(
+                using: ComposeRuntimeProviderDefaults.copying(),
+                id: "app",
+                archive: archive,
+                destination: "/data",
+                options: ContainerCopyTransferOptions(),
+                temporaryDirectory: temporaryDirectory,
+            )
+        }
+        await expectUnavailable("archive copy from container") {
+            try await archives.copyFromContainerAsArchive(
+                using: ComposeRuntimeProviderDefaults.copying(),
+                id: "app",
+                source: "/data",
+                archive: archive,
+                copyContents: false,
+                options: ContainerCopyTransferOptions(),
+                temporaryDirectory: temporaryDirectory,
             )
         }
     }

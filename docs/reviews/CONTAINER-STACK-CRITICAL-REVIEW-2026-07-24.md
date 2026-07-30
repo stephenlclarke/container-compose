@@ -10,10 +10,11 @@ Compose v5.3.1 use `compose-go/v2` v2.13.0. Its current CLI help surface has no
 unexpected command or long-option differences from Docker Compose v5.3.1.
 
 It is not yet safe to describe the implementation as complete Docker Compose
-parity. One remaining confirmed Compose defect affects runtime correctness:
-tar-stream `cp` stages through the host filesystem and cannot reliably preserve
-container ownership metadata. Fixing this completely needs the direct stream
-primitive proposed in `apple/containerization`.
+parity. The previously confirmed tar-stream `cp` metadata defect is resolved on
+the matched supported stack: archives now cross the runtime boundary directly,
+and live Docker Compose v5.3.1 parity covers ownership, mode, timestamps,
+symlinks, hard links, sparse allocation, long paths, and large files. The
+archive API remains fork-only, so stock Apple convergence is still required.
 
 The former unconfigured image-volume, child-process cancellation,
 package-compatibility preflight, and inherited commit-volume defects are
@@ -21,19 +22,18 @@ resolved in Compose-owned changes with focused contract, Docker Compose parity,
 bounded process, and no-surviving-process coverage.
 
 The largest engineering risk is now the runtime dependency model, not Compose
-file parsing. `ComposeRuntimeSPI` is presented as a clean provider boundary,
-but `ComposeCore` still imports and publicly exposes Apple package types. The
-three support forks contain 440 patch-unique non-merge commits beyond current
-Apple upstream heads. That gives the project valuable capabilities, but
-creates a large review, release, and convergence burden.
+file parsing. `ComposeRuntimeSPI` is the enforced provider boundary and
+`ComposeCore` no longer imports or publicly exposes Apple package types. The
+three support forks still contain 440 patch-unique non-merge commits beyond
+current Apple upstream heads. That retained delta gives the project valuable
+capabilities, but creates a large review, release, and convergence burden.
 
-The normal CI result also overstates runtime evidence. Twenty-five Swift
-runtime smoke tests return immediately when
-`CONTAINER_COMPOSE_RUN_RUNTIME_TESTS` is unset, yet are reported as passing.
-The configured Swift coverage gate measures only `ComposeCore`; recalculating
-the same profile across all first-party Swift targets produces 84.63% line
-coverage, with `ComposeContainerRuntime` at 77.46% and `ComposePlugin` at
-40.89%.
+Normal CI now distinguishes runtime evidence honestly. Twenty-five Swift
+runtime smoke tests are explicitly skipped with their activation reason when
+`CONTAINER_COMPOSE_RUN_RUNTIME_TESTS` is unset, and the test wrapper reports
+authoritative executed/skipped counts. The same instrumented profile gates
+`ComposeCore`, `ComposeRuntimeSPI`, `ComposeContainerRuntime`,
+`ComposePlugin`, and aggregate first-party Swift coverage separately.
 
 The recommended order is:
 
@@ -111,9 +111,10 @@ attempted a 1.62 GB Go cache before builds that completed in a few minutes.
 Signed Compose commit `6cae9a84` removes only those package-lane caches and
 retains validation-workflow caches.
 
-This refresh does not close the three confirmed release blockers in the
-executive verdict: compatibility-preflight pipe drainage, inherited commit
-volumes, and direct archive copy streaming remain required.
+The compatibility-preflight, inherited-volume, and tar-stream `cp` metadata
+defects are now corrected. The matched supported stack supplies direct runtime
+streaming and the Compose help and status surfaces report that validated lane
+as supported.
 
 All repositories were fetched with `git fetch --all --prune --no-tags`.
 The review covered:
@@ -157,49 +158,33 @@ side advances.
 
 ## Confirmed Findings
 
-### P1: `ComposeCore` Is Not Runtime-Neutral
+### P1: `ComposeCore` Is Not Runtime-Neutral — Resolved
 
-The documented architecture says the orchestrator references only
-`ComposeRuntimeSPI` and that Apple types belong in the provider:
+Before DOC-010, the architecture documents said that the orchestrator
+referenced only `ComposeRuntimeSPI` and that Apple types belonged in the
+provider:
 
-- `DESIGN.md:93-109`
-- `Sources/ComposeCore/ComposeCore.docc/Architecture.md:3-24`
-- `docs/upstream/COMPOSE-COUPLING-AUDIT.md`
+- `DESIGN.md`, under `Runtime Stack` and `Layer Responsibilities`;
+- `Sources/ComposeCore/ComposeCore.docc/Architecture.md`, under
+  `Runtime Architecture`;
+- `docs/upstream/COMPOSE-COUPLING-AUDIT.md`, under `Result`.
 
-The package and source do not meet that contract:
+DOC-010 first corrected the documents to describe the implementation as it
+existed. ARCH-101 and ARCH-102 then removed the finding:
 
-- `Package.swift:62-71` gives `ComposeCore` direct dependencies on
-  `ContainerAPIClient`, `ContainerResource`, `ContainerizationArchive`,
-  `Containerization`, `ContainerizationExtras`, and `ContainerizationOCI`.
-- Many `ComposeCore` files import those packages directly, including
-  `ComposeOrchestratorRuntimeSupport.swift`,
-  `ComposeOrchestratorRunCopyStart.swift`, and
-  `ComposeCommitImageArchive.swift`.
-- `ContainerServiceCreateAdapter.swift` exposes Apple runtime types from the
-  core target.
-- Core tests import Apple products and use Apple-shaped doubles, so the test
-  architecture reinforces the coupling.
-
-Impact:
-
-- an alternate provider cannot consume `ComposeCore` without the complete
-  Apple dependency graph;
-- dependency upgrades have a larger blast radius than the design claims;
-- Compose policy and Apple DTO translation can drift together;
-- the coupling audit currently records a conclusion that the build graph
-  disproves.
+- `ComposeCore` now depends only on `ComposeRuntimeSPI`;
+- no Core source file imports an Apple module;
+- create-plan process, logging, health, restart, host, and block-I/O values are
+  Compose-owned SPI models;
+- `ComposeContainerRuntime` owns Apple DTO projection, archive staging,
+  Bridge extraction, OCI commit-image construction, and live API adapters;
+- `make core-runtime-neutrality` fails if an Apple dependency or import
+  returns.
 
 Ownership: Compose architecture.
 
-Required correction:
-
-- move Apple DTO translation, archive integration, and live API types into
-  `ComposeContainerRuntime`;
-- keep only runtime-neutral requests and summaries in `ComposeRuntimeSPI`;
-- add a package-graph test that fails if `ComposeCore` gains an Apple package
-  dependency or `import Container*`;
-- update the design and coupling audit only after the package graph proves the
-  boundary.
+Documentation and architecture status: resolved by DOC-010, ARCH-101, and
+ARCH-102.
 
 The direction aligns with
 [apple/container discussion #1759](https://github.com/apple/container/discussions/1759),
@@ -288,9 +273,9 @@ documents the intentional production no-op. Signed correction
 exact-main SonarCloud analysis `fe1e52b4-9674-4da6-90f8-ce4b0155909d`
 reported gate `OK`, all ratings A, and zero unresolved issues or hotspots.
 The companion
-[issue](../upstream/container-compose/ISSUE-process-start-observer-maintainability.md)
+[issue](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-process-start-observer-maintainability.md)
 and
-[pull-request handoff](../upstream/container-compose/PR-process-start-observer-maintainability.md)
+[pull-request handoff](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-process-start-observer-maintainability.md)
 record the exact analysis and validation boundary.
 
 Current prerelease run `30228427993` then exposed a self-hosted launchd
@@ -312,9 +297,9 @@ after normalized comparison, and the 303.92-second live GIF visibly types
 commands before their real output with 16 `Type`, 16 `Enter`, 14 `Wait`, zero
 Replay, and zero Marker instructions. The final focused source rerun passed
 all 37 process-runner tests. The
-[issue](../upstream/container-compose/ISSUE-current-vhs-start-recovery.md)
+[issue](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-current-vhs-start-recovery.md)
 and
-[pull-request handoff](../upstream/container-compose/PR-current-vhs-start-recovery.md)
+[pull-request handoff](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-current-vhs-start-recovery.md)
 retain the failed-run evidence and the completed zero-Replay/zero-Marker
 publication boundary.
 
@@ -328,9 +313,9 @@ cache restoration because the package-time duplicate guard pre-filtered to
 push events. Compose-only correction `c8524d36` makes that independent guard
 accept the same exact-main successful `push` or `workflow_dispatch` set while
 continuing to exclude every other event. The
-[issue](../upstream/container-compose/ISSUE-current-dispatch-release-authority.md)
+[issue](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-current-dispatch-release-authority.md)
 and
-[pull-request handoff](../upstream/container-compose/PR-current-dispatch-release-authority.md)
+[pull-request handoff](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-current-dispatch-release-authority.md)
 record the failed-run boundary and regression coverage.
 
 ### Complete: Compatibility Preflight Drains Full Pipes
@@ -393,9 +378,9 @@ checks.
 
 Ownership remains the Compose plugin and shared Compose process runner; no
 Apple runtime fork change is required. The
-[issue](../upstream/container-compose/ISSUE-package-compatibility-preflight-drain.md)
+[issue](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-package-compatibility-preflight-drain.md)
 and
-[pull-request handoff](../upstream/container-compose/PR-package-compatibility-preflight-drain.md)
+[pull-request handoff](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-package-compatibility-preflight-drain.md)
 record the boundary and validation evidence.
 
 ### Resolved P1: `compose commit` Preserves Inherited OCI Volumes
@@ -419,89 +404,78 @@ Impact: committed images retain the base image's storage declarations while
 accepting Docker-compatible additive volume changes. Ownership remains
 Compose; no Apple runtime or stack-pin change is required.
 
-The final PR 173 correction selects the complete requested-platform OCI config,
-including identity, process, working-directory, label, port, stop-signal,
-healthcheck, and volume fields. It also replaces the successful platform
-commit path's three full image-resource conversions with one. Unavailable or
-failed platform selection retains the default-variant fallback with at most
-two conversions. The paired
+PR 173's final correction resolves the complete requested-platform OCI config
+in one metadata read, including identity, process, working-directory, label,
+port, stop-signal, healthcheck, and volume fields. A missing or failed
+platform-specific lookup retains the default-variant fallback with at most two
+metadata conversions. The paired
 [issue handoff](../upstream/container-compose/ISSUE-173.md) and
 [pull-request handoff](../upstream/container-compose/PR-173.md) record the
 field-complete and request-count regressions.
 
-### P1: Tar-Stream `cp` Cannot Preserve Full Container Metadata
+### Resolved P1: Tar-Stream `cp` Preserves Container Metadata
 
-`Sources/ComposeCore/ComposeRuntimeArchiveCopying.swift:22-89` implements
-streaming input by writing a host tar, extracting it into a host directory,
-then path-copying each member into the container. Output reverses the same
-path-based staging.
+The matched supported stack now keeps archive bytes inside the runtime copy
+path:
 
-This is content streaming, not tar-stream parity:
+- `stephenlclarke/containerization`
+  `52386838456a431d24bed6c38a9e84fb0ad28997` produces and extracts caller-owned
+  archives with ownership, nanosecond timestamps, hard-link, sparse-file, and
+  path-safety handling;
+- `stephenlclarke/container`
+  `f5e25b12ed074e7e5fb09933d86a27652034f3e5` forwards caller-owned handles
+  through XPC and the runtime service;
+- Compose streams one-destination stdin and stdout directly, uses a
+  bounded-lifecycle Unix socket pair for service-to-service copies, and stages
+  only raw input bytes for `--all` replay.
 
-- a non-root host process cannot reliably materialise arbitrary container
-  UID/GID values;
-- host filesystem semantics can alter ownership, mode, links, timestamps, and
-  long paths before the runtime sees the data;
-- `--archive` cannot guarantee Docker's ownership-preservation contract;
-- the parity probe checks data flow, not metadata fidelity.
+The live Docker Compose v5.3.1 fixture now requires matching content, UID 1234,
+GID 2345, mode 0640, mtime 1700000000, symlink targets, hard-link inode
+identity, sparse allocation, a 180-character path component, and a 4 MiB file.
+All assertions passed on 2026-07-28. Each operation has a 120-second timeout.
+The recorded Container Compose operations took 0.688076 to 0.780232 seconds,
+versus 0.131541 to 0.233447 seconds for Docker Compose. The largest ratio was
+5.64x and the largest absolute delta was 0.610435 seconds, below the configured
+material-slowdown boundary of both 10x and 5 seconds. See
+[`COMPOSE-CP-STREAM-METADATA-PARITY-2026-07-28.md`](COMPOSE-CP-STREAM-METADATA-PARITY-2026-07-28.md)
+for the environment, workload, raw measurements, and comparison method.
 
 [apple/containerization PR #812](https://github.com/apple/containerization/pull/812)
-adds direct `FileHandle` copy-in/copy-out specifically to preserve tar headers
-and path fidelity. It was open as a draft with merge state `BLOCKED` on
-2026-07-24. The corresponding
-[apple/container PR #1947](https://github.com/apple/container/pull/1947) was
-also a blocked draft.
+and [apple/container PR #1947](https://github.com/apple/container/pull/1947)
+remain third-party draft proposals. The supported implementation was reviewed
+and strengthened independently rather than importing either draft verbatim.
 
-Ownership: lower-runtime primitive first, then Compose adapter.
+Remaining external correction: converge the fork-only archive contract with a
+stock Apple API that preserves the same ownership, cancellation, backpressure,
+path-safety, sparse-file, hard-link, and caller-handle guarantees.
 
-Required correction:
+### P2: Runtime Test and Coverage Evidence Is Misleading — Resolved
 
-- mark stdin/stdout archive and `--archive` metadata parity partial now;
-- adopt a direct stream API after the lower-runtime contract is accepted;
-- keep path traversal and link-target validation at the stream boundary;
-- add uid, gid, mode, symlink, hard-link, timestamp, sparse file, long path,
-  and large-stream parity fixtures.
+Resolution (2026-07-28):
 
-### P2: Runtime Test and Coverage Evidence Is Misleading
-
-All 25 tests in
-`Tests/ComposeRuntimeTests/ComposeRuntimeSmokeTests.swift` begin with
-`guard runtimeTestsEnabled else { return }`. The environment check is at
-lines 1622-1623. `make ci` does not set the variable, so Swift Testing reports
-all 25 as passing in milliseconds without executing a runtime assertion.
-
-The live lane in `Makefile:245-259` does set the variable, but that lane is
-separate from ordinary CI. The distinction is not visible in the normal test
-summary.
-
-The coverage gate at `Makefile:293-299` exports only
-`--sources Sources/ComposeCore`. Recalculated from the same profile:
+- The runtime smoke suite uses Swift Testing's suite-level `.enabled` trait
+  with the exact `CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1` activation reason.
+  No test can return early and be reported as executed.
+- The shared test wrapper derives its executed count from Swift Testing's
+  discovered total, so parameterised cases are included, then subtracts each
+  explicit skipped-test event. Normal coverage validation reported
+  `executed=1251 skipped=25`.
+- `make swift-runtime-test` uses the same wrapper and enables the suite inside
+  the isolated matched-runtime lane.
+- One merged profile produces independently gated reports for every
+  first-party target and the aggregate. The initial passing result was:
 
 | Target | Line coverage |
 | --- | ---: |
-| All first-party Swift | 84.63% |
-| `ComposeCore` | 91.45% |
-| `ComposeRuntimeSPI` | 99.06% |
-| `ComposeContainerRuntime` | 77.46% |
-| `ComposePlugin` | 40.89% |
+| All first-party Swift | 87.68% |
+| `ComposeCore` | 92.89% |
+| `ComposeRuntimeSPI` | 100.00% |
+| `ComposeContainerRuntime` provider | 75.91% |
+| `ComposePlugin` | 56.52% |
 
-Several parity-critical live adapters were effectively uncovered:
-
-- `ContainerExecLiveAdapter.swift`: 0%
-- `ContainerLifecycleLiveAdapter.swift`: 0%
-- `ContainerImageLiveAdapter.swift`: 1.46%
-
-Ownership: Compose test infrastructure.
-
-Required correction:
-
-- use explicit test skipping with a reason, rather than early return;
-- make CI print executed and skipped runtime-test counts;
-- rename the existing metric to `ComposeCore coverage`;
-- add separate gates for SPI, provider, plugin, and aggregate first-party
-  coverage;
-- prioritise behavioural tests for live adapters, cancellation, signal
-  forwarding, log tails, copy streams, and provider preflight.
+The enforced floors are 85%, 90%, 95%, 75%, and 50%, respectively. The
+separate live release gate remains required evidence for adapter behaviour;
+normal unit coverage no longer implies that those 25 runtime scenarios ran.
 
 ### P2: Builder Prefetch Stress Tests Pass Broken Expectations
 
@@ -555,10 +529,10 @@ Resolution (2026-07-26):
 
 ### P3: Temporary Copy and Commit Data Needs Explicit Permissions
 
-Archive-copy and commit paths create temporary directories and files with
-Foundation defaults, normally 0755 and 0644. The standard macOS temporary
-parent is user-private, which limits exposure under normal operation, but a
-caller-controlled `TMPDIR` can point at a shared tree.
+Archive-copy and commit paths previously created temporary directories and
+files with Foundation defaults, normally 0755 and 0644. The standard macOS
+temporary parent is user-private, which limited exposure under normal
+operation, but a caller-controlled `TMPDIR` can point at a shared tree.
 
 Impact: copied container content or image metadata can become readable by
 other local users in a non-standard temporary directory.
@@ -570,6 +544,29 @@ Required correction:
 - create temporary directories as 0700 and files as 0600;
 - verify permissions before writing sensitive data;
 - keep cleanup in `defer` and add failure-path tests.
+
+Resolution (2026-07-28):
+
+- `ComposeTemporaryFiles` creates and verifies private staging directories and
+  files before sensitive writes.
+- The execution-specific temporary root now reaches inline Dockerfiles,
+  streamed copy replay and extraction, commit export and image construction,
+  and the Container provider export adapter.
+- Compose Bridge input/export paths and image-volume copy-up staging use the
+  same helper. Image-volume replacement restores the original backing-file
+  mode after its private staging files are no longer needed.
+- Archive writers and provider operations are followed by permission
+  and regular-file verification because they can replace or change the staged
+  file. Symlink replacement is rejected without changing the link target.
+- Tests cover the standard temporary root and a deliberately shared 0777 root,
+  including exporter, archive-construction, copy, and image-volume failures.
+  Cleanup leaves the shared root empty.
+- Extracted container payload modes remain intact. The hardening applies only
+  to Compose-owned staging directories and archive/control files.
+- Full `HAWKEYE_AUTO_INSTALL=1 make ci` passed in 352.23 seconds with 1,260
+  executed tests and 25 explicit live-runtime skips. Coverage was 92.74% Core,
+  100.00% SPI, 76.78% provider, 56.52% plugin, 87.66% aggregate Swift, and
+  89.88% Go. Unchanged source lost no covered lines against TEST-008.
 
 ## Design and Maintainability Review
 
@@ -600,19 +597,22 @@ Required correction:
   `DESIGN.md`.
 - **The core target owns too much translation:** Apple DTOs, archive types,
   runtime policy, and Compose policy are mixed.
-- **The main orchestrator test is too large:**
-  `Tests/ComposeCoreTests/ComposeOrchestratorTests.swift` is 32,133 lines.
-  Broad coverage is valuable, but this file makes ownership, fixtures, failure
-  localisation, and parallel test execution harder.
+- **The main orchestrator test was too large:** before TEST-008,
+  `Tests/ComposeCoreTests/ComposeOrchestratorTests.swift` had grown to 33,831
+  lines. It is now a 218-line core suite plus ten capability extensions, with
+  one 3,673-line shared-support owner. The largest capability file is 8,643
+  lines. All 895 test IDs are preserved and default parallel execution is
+  verified.
 - **Live adapters are under-tested:** one 325-line provider test file covers a
   17-file `ComposeContainerRuntime` target.
 - **Fork delta is no longer minimal:** all Apple upstream commits are present,
   but the retained layers are large enough to obscure whether a bug belongs
   upstream, in a fork-only primitive, or in Compose.
-- **The upstream handoff registry is too large:** `docs/upstream` contains 581
-  Markdown files and 31,431 lines, within a repository of 947 tracked files.
-  The current review document was already missing newly reported high-impact
-  Apple bugs. A registry this large is difficult to keep current manually.
+- **The upstream handoff registry is now generated:** DOC-107 replaced 616
+  manually maintained issue and pull-request snapshots with a 355-row
+  structured registry, six current supporting documents, and immutable links
+  to every retired snapshot. CI rejects missing registrations and stale
+  generated Markdown or JSON.
 
 ### Recommended Target Architecture
 
@@ -660,13 +660,13 @@ This should be managed as an upstream-convergence programme:
 
 | Area | Gap |
 | --- | --- |
-| Correctness | Tar-stream `cp` cannot preserve complete container ownership metadata until direct runtime streams exist |
+| Correctness | Tar-stream `cp` metadata parity is complete on the matched supported stack; its direct archive API remains a stock Apple convergence risk |
 | Process control | Cancellation and bounded concurrent package-preflight drainage are implemented; remaining runtime process work is tracked separately |
 | Deploy | Accept and preserve local-mode Deploy metadata that Docker Compose accepts but does not schedule |
 | Testing | Honest runtime skips; provider/plugin/aggregate coverage; metadata-complete commit and copy fixtures |
 | Diagnostics | Supported-lane messages currently blame missing Apple primitives that exist in the pins |
 | Security | Explicit private permissions for temporary copy, commit, and secret material |
-| Documentation | Correct overclaims for tar-stream `cp`, runtime CI, and the SPI boundary |
+| Documentation | Keep matched-stack tar-stream support, runtime CI, and the SPI boundary described without implying stock Apple support |
 
 ### Missing from Stock Apple but Present in the Pinned Forks
 
@@ -692,11 +692,11 @@ is merged and consumed.
 
 | Area | Required runtime work | Required Compose work |
 | --- | --- | --- |
-| Network identity | Container-facing, network-scoped DNS listener; alias registration; durable multi-container sandbox for shared namespaces | Service/container names, aliases, `--use-aliases`, complete links, dynamic address reconciliation |
+| Shared network namespaces | Durable multi-container sandbox for shared namespaces | `network_mode: service:` and `container:` after the runtime primitive exists |
 | Network drivers/IPAM | Custom drivers, custom IPAM, multiple same-family pools, disabled IPv4, IPv6 ranges/auxiliary addresses | Validation and projection after typed primitives exist |
 | Security | Seccomp/AppArmor profiles, custom user mappings, complete privileged/device isolation | Parse/map profiles and capability diagnostics |
 | Resources | CPU realtime, swappiness, OOM-kill disable, richer machine stats | Map fields and expose accurate `stats` |
-| Storage | Non-local volume plugins, recursive bind and cache modes, direct tar streams | Driver/options behaviour, archive fidelity, parity tests |
+| Storage | Non-local volume plugins and recursive bind and cache modes | Driver/options behaviour and parity tests |
 | Docker API | Authenticated Docker-compatible socket proxy boundary | `use_api_socket` |
 | Devices/GPU | Vendor GPU/CDI, multiple GPUs, arbitrary passthrough | Reservation and selector mapping |
 | Logging | Distinct local/json-file semantics, fan-out resilience, remote/plugin drivers and buffering | Driver options, mode, buffer controls, output parity |
@@ -738,7 +738,7 @@ affects this stack.
 | [container #2000](https://github.com/apple/container/pull/2000) | Fixes `logs -n N` truncation at backward-read chunk boundaries. The supported fork already had equivalent complete-record behavior; explicit 3 KB and multi-record regressions now guard it. |
 | [containerization #799](https://github.com/apple/containerization/pull/799) | Fixes missing-source copy deadlock. The fork already carries equivalent behaviour. Replace the local port when Apple merges it. |
 | [containerization #813](https://github.com/apple/containerization/pull/813) | Redacts environment values in debug logs. The fork already carries an equivalent fix. Open, non-draft, `BLOCKED`. |
-| [containerization #812](https://github.com/apple/containerization/pull/812) and [container #1947](https://github.com/apple/container/pull/1947) | Direct tar-stream copy. Both are draft/blocked and need API, metadata, cancellation, and backpressure review before adoption. |
+| [containerization #812](https://github.com/apple/containerization/pull/812) and [container #1947](https://github.com/apple/container/pull/1947) | Direct tar-stream copy. Both remain third-party drafts. The supported stack carries independently reviewed and strengthened behaviour; Apple convergence still requires equivalent metadata, cancellation, backpressure, path-safety, sparse-file, hard-link, and caller-handle guarantees. |
 | [builder-shim #83](https://github.com/apple/container-builder-shim/pull/83) | Custom BuildKit frontends. Open, non-draft, `BLOCKED`. Prefer upstream over a Compose-side parser. |
 | [builder-shim #84](https://github.com/apple/container-builder-shim/pull/84) | JSON build-context transfer for performance. Open, non-draft, `BLOCKED`. Benchmark and harden before enabling. |
 | [builder-shim #87](https://github.com/apple/container-builder-shim/pull/87) | Correct `.dockerignore` parent re-inclusion. Equivalent commit `2778407` is already in the fork. |
@@ -768,9 +768,9 @@ Resolution update (2026-07-26):
 | [container #1941](https://github.com/apple/container/issues/1941) | Resolved in the supported fork by the content-identical #1997 port; Apple convergence remains open. |
 | [container #1967](https://github.com/apple/container/issues/1967) | Equivalent complete-tail behavior was already present in the supported fork and now has explicit chunk-boundary regressions; Apple #2000 remains the upstream path. |
 | [container #2009](https://github.com/apple/container/issues/2009) | The supported init-process reattach path isolates failed clients through `AttachableOutput`, with a persistent-log regression. Apple main still needs its own reviewed correction. |
-| [container #2007](https://github.com/apple/container/issues/2007) | Delayed XPC replies can cause checked-continuation misuse and process crash. |
-| [container #2008](https://github.com/apple/container/issues/2008) | `container system start` can hide launchd bootstrap failure and report a misleading XPC error in CI/non-login sessions. |
-| [container #2003](https://github.com/apple/container/issues/2003) | Runtime startup remains susceptible to reported intermittent failure. |
+| [container #2007](https://github.com/apple/container/issues/2007) | Complete on the supported fork in `c8b7099`: caller cancellation, timeout, delayed-reply, client-reuse, and unknown-route regressions pass without continuation misuse. Apple convergence remains through #1862 and #1965. |
+| [container #2008](https://github.com/apple/container/issues/2008) | Complete on the supported fork in `4f5c203`: launchd bootstrap failures preserve their command, exit status, and diagnostics instead of becoming a misleading XPC timeout. The Apple issue remains open. |
+| [container #2003](https://github.com/apple/container/issues/2003) | Closed by merged Apple PR #2006 on 27 July 2026. The supported fork includes that Apple baseline and does not carry a replacement. |
 | [container #1916](https://github.com/apple/container/issues/1916) | Exec/stop hangs overlap Compose lifecycle cancellation and timeout behaviour. |
 | [container #1917](https://github.com/apple/container/issues/1917) | Resolver search-domain pollution is fixed in the support fork and should converge upstream. |
 | [container #1927](https://github.com/apple/container/issues/1927) | Missing copy source can poison later lifecycle operations; fixed locally and proposed in lower-runtime PR #799. |
@@ -837,14 +837,14 @@ new Apple design work.
 | CC-002 | P1 | Compose | **Complete:** add task-cancellation ownership to `ProcessRunner` | Cancelled captured/inherited/input child exits within bound; no continuation double-resume; no surviving PID |
 | CC-003 | P1 | Plugin | **Complete:** replace wait-before-drain compatibility preflight | Fake command writes >256 KiB to stdout and stderr without deadlock; cancellation and error text tested |
 | CC-004 | P1 | Compose | **Complete:** preserve inherited platform metadata during `commit` | Unit and live Docker parity cover inherited/additive/duplicate/multiple `VOLUME`; the selected-platform regression covers every inherited config field and one-read resolution |
-| CC-005 | P1 | Compose/docs | Downgrade tar-stream `cp` parity pending direct runtime streams | Status and help describe content support versus metadata limits; metadata fixture fails for the expected tracked reason |
-| CC-006 | P2 | Compose | Correct lifecycle ownership diagnostics | Pinned-lane errors name Compose orchestration; stock-lane errors name missing Apple capability |
-| TEST-007 | P1 | Compose CI | Make live test skips explicit and gate aggregate coverage | CI reports executed/skipped counts; separate Core/SPI/provider/plugin/aggregate thresholds |
-| TEST-008 | P2 | Compose | Split the 32k-line orchestrator test by command/capability | Shared fixtures have one owner; tests run in parallel; no coverage loss |
-| SEC-009 | P2 | Compose | Set 0700/0600 permissions on sensitive temporary paths | Permission tests cover standard and shared `TMPDIR`; cleanup survives failure |
-| DOC-010 | P1 | Compose | Correct `DESIGN.md`, coupling audit, and `STATUS.md` claims | Documentation matches the actual package graph and tested command semantics |
-| APPLE-011 | P1 | Runtime forks | Review/port signal and log-tail fixes #1997/#2000 if they remain unmerged | Focused runtime tests and Compose kill/log-tail parity pass; local commits remain independently removable |
-| APPLE-012 | P1 | Runtime forks | Fix log fan-out after dead client (#2009) | One failed writer is removed or isolated; persisted log and healthy attach writer continue; no busy loop |
+| CC-005 | P1 | Stack/Compose/docs | **Complete:** stream tar archives without host extraction and restore supported status | Exact pins expose caller-owned archive handles; help and status report the matched lane; live Docker parity proves ownership, timestamp, hard-link, sparse-file, content, and path fidelity with recorded timings |
+| CC-006 | P2 | Compose | **Complete:** correct lifecycle ownership diagnostics | Pinned-lane errors name Compose orchestration; stock-lane errors name missing Apple capability |
+| TEST-007 | P1 | Compose CI | **Complete:** make live test skips explicit and gate aggregate coverage | CI reports executed/skipped counts; separate Core/SPI/provider/plugin/aggregate thresholds |
+| TEST-008 | P2 | Compose | **Complete:** split the 33k-line orchestrator test by command/capability | One shared-fixture owner; 895 unique test IDs; default parallel 2.594s versus forced serial 5.205s; exact baseline line coverage retained |
+| SEC-009 | P2 | Compose | **Complete:** set 0700/0600 permissions on sensitive temporary paths | Permission tests cover standard and shared `TMPDIR`; cleanup survives failure |
+| DOC-010 | P1 | Compose | **Complete:** correct `DESIGN.md`, coupling audit, and `STATUS.md` claims | Documentation matches the actual package graph and tested command semantics |
+| APPLE-011 | P1 | Runtime forks | **Complete on supported fork:** review/port signal and log-tail fixes #1997/#2000 | Focused runtime tests and Compose kill/log-tail parity pass; local commits remain independently removable |
+| APPLE-012 | P1 | Runtime forks | **Complete on supported fork:** fix log fan-out after dead client (#2009) | One failed writer is removed or isolated; persisted log and healthy attach writer continue; no busy loop |
 | SQ-013 | ✅ Complete | Compose | Refactor preflight signal/cancellation closure nesting (`swift:S3087`) | Signed refactor `98f2a7139b2e99a60cabdc8ca2d7190c33b7e994` introduced named helpers, preserved signal/cancellation/bounded-output behavior, passed the focused regressions, and closed the tracked branch issue without a suppression |
 
 Phase gate:
@@ -861,13 +861,13 @@ Goal: make ownership enforceable and reduce the cost of every later feature.
 
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
-| ARCH-101 | P1 | Compose | Remove Apple products from `ComposeCore` | `Package.swift` and source-import gate prove Core depends only on model/SPI targets |
-| ARCH-102 | P2 | Compose/runtime | Move DTO/archive/live API translation into provider | Public Core API contains no Apple types; existing CLI behaviour and tests remain stable |
-| ARCH-103 | P2 | Stack | Generate a typed runtime capability/version manifest | Startup reports exact missing capability; stock Apple and matched-fork behaviour are deterministic |
-| FORK-104 | Complete | Stack | Classify all 440 patch-unique non-merge fork commits against current Apple heads | Refreshed 30 July 2026 with one explicit slice, owner, reason, and upstream disposition per commit plus a strict no-unowned-delta gate; see [the classification review](../upstream/FORK-COMMIT-CLASSIFICATIONS.md) |
-| FORK-105 | P2 | Stack | Upstream generic slices and remove merged ports | Each retained slice has focused tests, Apple issue/PR, and deletion condition |
-| FORK-106 | P2 | Stack | Converge local #799, #813, #87 equivalents | Apple merge or explicit replacement is recorded; duplicate code is removed without behaviour loss |
-| DOC-107 | P2 | Compose | Replace 581 handoff documents with a compact generated registry plus active drafts | One row per capability/PR with owner, commit, state, last verification, and archive link; superseded drafts archived outside active tree |
+| ARCH-101 | P1 | Compose | **Complete:** remove Apple products from `ComposeCore` | `Package.swift` and source-import gate prove Core depends only on model/SPI targets |
+| ARCH-102 | P2 | Compose/runtime | **Complete:** move DTO/archive/live API translation into provider | Public Core API contains no Apple types; existing CLI behaviour and tests remain stable |
+| ARCH-103 | P2 | Stack | **Complete:** generate a typed runtime capability/version manifest | Startup reports exact missing capability; stock Apple and matched-fork behaviour are deterministic |
+| FORK-104 | P1 | Stack | **Complete:** classify all 440 patch-unique non-merge fork commits against current Apple heads | Every commit has one explicit slice, owner, reason, and upstream disposition; the strict gate rejects unowned or stale delta |
+| FORK-105 | P2 | Stack | **Complete on supported branches:** remove rejected Compose stores and reconcile merged Apple ports | Retained generic slices have focused evidence and deletion conditions; source-equivalent #685, #700, #775, and #798 ports are no longer duplicated |
+| FORK-106 | P2 | Stack | **In progress:** converge local #799, #813, and #87 equivalents | #813 is merged and requires explicit local reconciliation; #799 and #87 remain externally gated |
+| DOC-107 | P2 | Compose | **Complete:** replace 616 handoff documents with a compact generated registry plus current supporting documents | The 355-row registry records owner, referenced commits, state, last verification, current details, and immutable archives; only six current supporting documents remain active |
 | SDK-108 | P2 | Apple/Compose | Track lightweight SDK/API work (#1759/#1925) | Provider depends on a stable minimal client surface when available; no private XPC/storage dependency |
 
 Phase gate:
@@ -885,9 +885,9 @@ Dependencies: Phase 1 capability boundary; Apple DNS/listener design.
 
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
-| NET-201 | P1 | Apple runtime | Deliver container-facing network-scoped DNS listener | Containers resolve service and container names only on shared networks; updates are atomic |
-| NET-202 | P1 | Apple runtime | Register aliases with attachment lifecycle | Create/connect/disconnect/delete update records; collisions and stale records are deterministic |
-| NET-203 | P1 | Compose | Map service names, `networks.aliases`, `--use-aliases`, and links to DNS | Docker parity covers scale, recreate, static IP, address change, and alias collision |
+| NET-201 | P1 | Apple runtime | **Complete on supported stack:** deliver container-facing network-scoped DNS listener | Containers resolve service and container names only on shared networks; updates are atomic |
+| NET-202 | P1 | Apple runtime | **Complete on supported stack:** register aliases with attachment lifecycle | Create/connect/disconnect/delete update records; collisions and stale records are deterministic |
+| NET-203 | P1 | Compose | **Complete:** map service names, `networks.aliases`, and `--use-aliases` to DNS | Timed Docker parity covers scale, recreate, static IP, container names, service names, explicit aliases, shared aliases, and one-off `run --use-aliases` |
 | NET-204 | P2 | Apple runtime | Define durable multi-container sandbox with independent network namespaces | PID/IPC sharing does not collapse network isolation; lifecycle and recovery are tested |
 | NET-205 | P2 | Compose | Implement `network_mode: service:` and `container:` after NET-204 | Namespace identity, dependency order, teardown, and error parity pass |
 | NET-206 | P2 | Apple/Compose | Complete feasible IPAM fields | Disabled IPv4, multiple pools, IPv6 range/aux, and error parity are explicit |
@@ -910,7 +910,7 @@ Goal: make long-running and interactive workloads predictable.
 | LIFE-301 | ✅ Complete | Compose | Orchestrate `pre_start` helpers using pinned primitives | Inherited mounts/networks/env/user/workdir, failure propagation, cleanup, idempotence/scaling, and Docker parity pass |
 | LIFE-302 | ✅ Complete | Compose | Run lifecycle hooks around interactive foreground `run` | Reattach, one-shot signal proxy, detach keys, hook order, exact exit status, auto-removal, and cancellation pass |
 | LOG-303 | ✅ Complete | Runtime/Compose | Stabilise signal payload, tail boundaries, and attached-client fan-out | #1941, #1967, and #2009 regressions pass under the committed Compose attach/log fixture; Apple convergence remains tracked separately |
-| XPC-304 | P1 | Apple/runtime | Resolve delayed-reply continuation crash and startup error masking | No continuation misuse; bootstrap root cause preserved; repeated start/stop soak passes |
+| XPC-304 | ✅ Complete on supported fork | Apple/runtime | Resolve delayed-reply continuation crash and startup error masking | Deterministic cancellation and startup-diagnostic regressions pass; ten bounded release-build stop/start cycles completed without failure or timeout |
 | CI-309 | ✅ Complete | Compose CI | Serialize cooperating per-user runtime owners and add bounded idempotency-aware interruption recovery | One advisory host lock protects every participating long-running Compose workflow; exact init archives are reusable; startup proves API readiness; interrupted pulls retry once; interrupted deletes require a confirmed absent postcondition |
 | STATE-305 | P2 | Runtime/Compose | Add feasible `dead`, `restarting`, and `removing` states | Inspect, `ps`, filters, wait, and transition parity pass |
 | EVT-306 | P2 | Runtime/Compose | Add oom, explicit restart, rename, resize, update, attach/detach events | Event order, attributes, JSON/text rendering, filters, and no duplicate remove action |
@@ -928,8 +928,8 @@ Phase gate:
 
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
-| COPY-401 | P1 | Containerization/container | Complete direct tar stream API (#812/#1947) | Bounded backpressure, cancellation, path safety, uid/gid/mode/link/time fidelity, and large streams |
-| COPY-402 | P1 | Compose | Replace host staging with direct stream adapter | Docker `cp -` and `--archive` metadata parity passes in both directions |
+| COPY-401 | Complete on supported fork stack | Containerization/container | Direct tar stream API implemented; stock Apple convergence remains | Bounded backpressure, cancellation, path safety, uid/gid/mode/link/time fidelity, sparse files, caller-handle ownership, and large streams pass |
+| COPY-402 | Complete | Compose | Host extraction replaced with direct stream adapter; raw staging remains only for `--all` replay | Docker `cp -` and `--archive` metadata parity passes with timings and bounded hang detection |
 | VOL-403 | P2 | Runtime | Define non-local volume driver/plugin contract | Unsupported driver never creates a misleading local ext4 volume |
 | MOUNT-404 | P2 | Runtime/Compose | Implement recursive bind and feasible consistency/cache modes | Nested bind (#1890), subpath, hardlink, and live-update tests pass |
 | SEC-405 | P1 | Containerization/container | Land seccomp and security-profile primitives | Typed profile load, validation, defaulting, and denial tests; no Compose policy in runtime |
@@ -950,11 +950,11 @@ Phase gate:
 
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
-| OUT-501 | Complete | Compose | Go-template control actions and nested/map traversal | Completed 2026-07-25 with typed rows, deterministic traversal, command/unit coverage, and a Docker Compose v2 `compose.yaml` oracle; see [the completion handoff](../upstream/container-compose/PR-compose-output-template-control-actions.md). |
-| DEPLOY-502 | P2 | Compose | Preserve Docker local-mode Deploy metadata | Config/convert round trips mode, placement, update, rollback, reservations, and limits without pretending to schedule |
+| OUT-501 | Complete | Compose | Go-template control actions and nested/map traversal | Completed 2026-07-25 with typed rows, deterministic traversal, command/unit coverage, and a Docker Compose v2 `compose.yaml` oracle; see [the completion handoff](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-compose-output-template-control-actions.md). |
+| DEPLOY-502 | P2 | Compose | **Complete:** preserve Docker local-mode Deploy metadata | Config/convert round trips mode, placement, update, rollback, reservations, and limits without pretending to schedule |
 | MODEL-503 | P3 | Runtime/Compose | Select and integrate a model-runner backend | Model lifecycle, endpoint readiness, variable injection, failure cleanup, and secrets reviewed |
 | LOG-504 | P2 | Runtime/Compose | Add distinct local/json-file and extensible logging drivers | Rotation, buffering, blocking mode, options, and plugin failure semantics pass |
-| LINK-505 | P2 | Compose | Complete legacy link behaviour after DNS | Shared-network selection, aliases, dynamic updates, and any retained env semantics match oracle |
+| LINK-505 | Complete | Compose | Project legacy link aliases through source-scoped DNS mappings | Docker Compose v5.3.1 parity covers first-shared-network selection, scaled targets, source isolation, dynamic target readdressing, and the absence of static `/etc/hosts` mappings |
 | PARITY-506 | P1 | Compose | Add regression probes for every confirmed gap | No macOS-exercisable status row lacks a behavior-level oracle or justified platform exemption |
 
 Phase gate:
@@ -989,9 +989,9 @@ Phase gate:
 
 PR 173 merged as `31b83499abec6fe090a44dfe24527f0d220fd0b9` after selecting the complete requested-platform OCI config and reducing the successful platform path from three image-resource conversions to one. Exact-main CI, Documentation, and Quality runs passed; CodeQL was absent because the workflow had been manually disabled, so no CodeQL result is claimed.
 
-The subsequent Compose branch closes `SQ-013` in `98f2a7139b2e99a60cabdc8ca2d7190c33b7e994`, removes scanner encoding warnings in `35c2848ac37e8e5ad607b9b7662b396d1e6ef2b3`, implements bridge-mode adapter/resource behavior in `36d81f70402c0d203bde8f7c8d57bb574a689e52` and `d6b47233012a31be559c91f8e51f7a579a704736`, and makes runtime validation deterministic for cooperating host users in `9a95ec8cc5a84e15a187ff20ccf948e9ac14bfe9` plus `4a2e0003496c9f96afcc0b3f3d54124ebc09b25b`.
+The subsequent Compose branch closes `SQ-013` in `98f2a7139b2e99a60cabdc8ca2d7190c33b7e994`, removes scanner encoding warnings in `35c2848ac37e8e5ad607b9b7662b396d1e6ef2b3`, implements bridge-mode adapter/resource behavior in `36d81f70402c0d203bde8f7c8d57bb574a689e52` and `d6b47233012a31be559c91f8e51f7a579a704736`, and makes runtime validation deterministic for cooperating host users in `9a95ec8cc5a84e15a187ff20ccf948e9ac14bfe9` plus `4a2e0003496c9f96afcc0b3f3d54124ebc09b25b`. The final network slice adds named-network discovery in `443ca69b1a55ac5331c5f7d341a87c277b1c02bb`, source-scoped legacy and dynamic external links in `acb289fa36400b7931413952b57fdd68e08845b6` and `6235cc589c235849a9a34a18335297630043499f`, and dependency-safe concurrent startup in `62da66f0f106c165f07ea22a92a4e0cf598ee012`.
 
-The full unit gate passes 1,277 Swift tests in 46 suites plus all Go packages. A controlled live run then passed all 62 maintained Docker Compose targets in 1,024.25s on Mac17,9/macOS 26.5.2 against Docker Compose 5.3.1 and Docker Engine 29.2.1. The bridge comparator records 0.151s/1.101s Docker/candidate `up` medians (7.30×) and 10.179s/5.969s `down` medians (0.59×). The result closes neither `PERF-607` nor the wider parity register: startup is not yet comparable, the representative median/P95 matrix is incomplete, and runtime-primitive gaps remain.
+The final unit gate passes 1,311 Swift tests in 51 suites plus all Go packages. One uninterrupted controlled live run at `e969e4796690f88425488ad2b9ca9f795ca4f9c1` then passed all 62 maintained Docker Compose targets in 1,152.03s on Mac17,9/macOS 26.5.2 against Docker Compose 5.3.1 and Docker Engine 29.2.1. The bridge comparator records 0.153s/1.228s Docker/candidate `up` medians (8.01×) and 10.178s/5.916s `down` medians (0.58×). Named-network discovery and links are functionally green; their startup medians remain 8.81× and 8.62× slower than Docker. The result closes neither `PERF-607` nor the wider parity register: startup and archive-copy operations are not yet comparable, the representative median/P95 matrix is incomplete, and runtime-primitive gaps remain.
 
 The controlled run also proves the host-isolation limit. Marker-protected app roots isolate data, but stable per-user launchd/XPC service names remain shared across repositories and runners. The advisory `/tmp/container-compose-runtime-${UID}.lock` protects only participants; a non-cooperating devcontainer runner had to be quiesced and was restored immediately after the run. Two SwiftNIO event-loop shutdown warnings during image-volume builder teardown remain visible as backend cleanup evidence. These do not overturn the 62 passing target results, but they remain relevant to `XPC-304` and Builder lifecycle work.
 
@@ -999,13 +999,87 @@ The controlled run also proves the host-isolation limit. Marker-protected app ro
 
 ### Passed
 
-- `HAWKEYE_AUTO_INSTALL=1 make ci` in clean `container-compose`
-  - Python coverage tooling: 4 tests
-  - release tooling: 155 tests
-  - CI tooling: 14 tests
-  - Swift: 1,124 tests in 26 suites passed
-  - Go normaliser aggregate coverage: 89.88%
-  - configured `ComposeCore` line coverage: 91.46%
+- Network service-discovery and XPC reliability development pins:
+  - `container-compose` `e969e4796690f88425488ad2b9ca9f795ca4f9c1`
+  - `container` `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1`
+  - `containerization` `d7377b962af724f8d7c2b640f3ab12184d33f1af`
+  - focused runtime tests covered DNS parsing/forwarding, network lookup order,
+    alias canonicalisation/collision handling, attachment allocation, and the
+    ProcessIO input pump;
+  - the full pinned `container` suite passed with 1,262 Swift Testing cases
+    plus 94 XCTest cases;
+  - the timed live service-discovery matrix passed all nine behavioural
+    comparisons against Docker. Container Compose medians ranged from 1.85×
+    to 5.75× for non-startup operations; project startup was 4.317872 seconds
+    versus Docker's 0.490196 seconds (8.81×) and was 13.0% faster than the
+    pre-optimization candidate baseline;
+  - the exact published builder digest passed a no-cache DNS build in 27.71
+    seconds;
+  - `HAWKEYE_AUTO_INSTALL=1 make ci` passed on the coordinated Compose pins in
+    602.79 seconds;
+  - after advancing the Container pin for the ProcessIO correction, the final
+    Compose suite passed 1,311 Swift tests in 51 suites, the eight-test runtime
+    harness passed, and all Go normaliser, release, CI, shell, Markdown, core
+    neutrality, stack consistency, and upstream registry gates passed.
+- XPC cancellation and startup diagnostics:
+  - deterministic pre-storage cancellation, caller cancellation, delayed
+    timeout reply, delayed cancellation reply, client reuse, unknown-route,
+    bootstrap failure, and legacy launchd fallback tests passed;
+  - ten release-package stop/start cycles completed on macOS 26.5.1
+    (`25F80`) on an Apple M5 with a 60-second command timeout and 180-second
+    harness timeout;
+  - no operation failed or timed out; stop median was 0.112 seconds, the first
+    cold start was 4.654 seconds, and the following nine starts had a
+    0.553-second median and 0.645-second maximum;
+  - the pre-test debug runtime was restored and reported running afterwards;
+  - raw timings, workload, environment, repetitions, and bounds are retained
+    in `docs/reviews/container-system-start-stop-soak-timings-2026-07-29.tsv`.
+- Developer ID release signing:
+  - the Container and Compose package paths sign every Mach-O with hardened
+    runtime and a secure timestamp using repository secrets imported into an
+    isolated temporary keychain;
+  - verification requires the Developer ID Application leaf, Developer ID
+    Certification Authority, Apple Root CA, and one consistent ten-character
+    team identifier across every executable;
+  - archive verification rejects ad hoc signatures, missing hardened runtime,
+    mixed team identifiers, unsafe archive paths, and archives without Mach-O
+    files before attestation or publication;
+  - local release packaging and all verifier regressions pass for both
+    archives; actual Developer ID certificate, authority, team, and timestamp
+    proof remains a hosted release gate because GitHub secret values are not
+    exported to local validation.
+- Legacy and external links now use source-scoped DNS mappings rather than
+  static `/etc/hosts` projection:
+  - Docker Compose v5.3.1 confirmed that a scaled link alias selects the first
+    target replica while the service name continues to resolve every replica;
+  - the matched supported stack passed source isolation, scaled-target,
+    readdressing, dynamic external-target, and no-static-host-entry checks;
+  - an external target could be absent at source startup, appear on a
+    secondary network, disappear, and reappear on the backend without
+    recreating the source; its alias remained source-scoped throughout;
+  - median startup was 5.858 seconds versus Docker's 0.566 seconds,
+    scaled-link lookup 0.643 seconds versus 0.110 seconds, target readdress
+    2.684 seconds versus 1.331 seconds, and post-readdress lookup 0.634 seconds
+    versus 0.118 seconds;
+  - the four DNS-isolation and `/etc/hosts` absence probes were also timed
+    across all three repetitions: Compose medians were 0.633 to 0.645 seconds
+    versus Docker's 0.108 to 0.113 seconds;
+  - dynamic external-target Compose medians were 0.254 to 0.751 seconds
+    versus Docker's 0.112 to 0.173 seconds across absence, create, lookup,
+    removal, post-removal, and reappearance operations;
+  - all operations completed within the 300-second hard timeout and below the
+    documented material-slowdown threshold;
+  - raw repetitions and environment metadata are retained in
+    `docs/reviews/compose-links-parity-timings-2026-07-29.tsv`.
+- Final `HAWKEYE_AUTO_INSTALL=1 make ci` on the link-parity slice:
+  - Python coverage tooling: 5 tests
+  - release tooling: 177 tests
+  - CI tooling: 52 tests
+  - Swift: 1,299 tests in 51 suites passed, with 1,274 executed and 25
+    live-runtime tests explicitly skipped
+  - Go normaliser aggregate coverage: 89.79%
+  - configured `ComposeCore` line coverage: 92.86%
+  - first-party Swift aggregate coverage: 87.81%
   - CLI smoke completed
 - `make docker-compose-cli-surface-parity`
   - Docker Compose reference: v5.3.1
@@ -1013,6 +1087,10 @@ The controlled run also proves the host-isolation limit. Marker-protected app ro
   - no unexpected differences
   - four documented local differences: `alpha`, `convert`, `help`, and
     root-help visibility of `--verbose`
+- Strict Docker Compose Deploy parity probes passed:
+  - endpoint-mode config and local dry-run parity in 2.32 seconds;
+  - CPU and memory reservation parity in 2.10 seconds;
+  - update, rollback, and placement metadata parity in 1.88 seconds.
 - `HAWKEYE_AUTO_INSTALL=1 make check` in exact pinned `container`
 - exact pinned `container` hosted `Package` and `Build and test project`
   checks were successful
@@ -1025,9 +1103,9 @@ The controlled run also proves the host-isolation limit. Marker-protected app ro
 
 ### Not Claimed
 
-- The full live `make release-gate` was not rerun. The Apple container
-  `apiserver` was not running or registered with launchd, and starting a
-  machine-wide service was outside this read-only review.
+- The full `make release-gate` packaging and publication workflow was not
+  rerun for this development slice. The matched Apple runtime was exercised by
+  the dedicated live links parity suite instead.
 - The 25 Compose runtime smoke tests did not execute in `make ci`; they returned
   early because the live-runtime environment variable was unset.
 - No live commit-volume or tar ownership parity test currently exists, which

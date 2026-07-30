@@ -19,10 +19,6 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
-import ContainerizationError
-import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 import Foundation
 
 extension ComposeOrchestrator {
@@ -467,13 +463,13 @@ extension ComposeOrchestrator {
     /// Returns true when a container lifecycle error or one of its causes is a
     /// runtime not-found response.
     func isContainerNotFound(_ error: any Error) -> Bool {
-        guard let containerError = error as? ContainerizationError else {
+        guard let runtimeError = error as? any ComposeRuntimeErrorProviding else {
             return false
         }
-        if containerError.code == .notFound {
+        if runtimeError.composeRuntimeErrorCode == .notFound {
             return true
         }
-        guard let cause = containerError.cause else {
+        guard let cause = runtimeError.composeRuntimeUnderlyingError else {
             return false
         }
         return isContainerNotFound(cause)
@@ -481,13 +477,13 @@ extension ComposeOrchestrator {
 
     /// Returns true when a container lifecycle error or one of its causes is interrupted.
     func isContainerInterrupted(_ error: any Error) -> Bool {
-        guard let containerError = error as? ContainerizationError else {
+        guard let runtimeError = error as? any ComposeRuntimeErrorProviding else {
             return false
         }
-        if containerError.code == .interrupted {
+        if runtimeError.composeRuntimeErrorCode == .interrupted {
             return true
         }
-        guard let cause = containerError.cause else {
+        guard let cause = runtimeError.composeRuntimeUnderlyingError else {
             return false
         }
         return isContainerInterrupted(cause)

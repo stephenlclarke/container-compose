@@ -14,7 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerResource
 import CryptoKit
 import Foundation
 
@@ -122,7 +121,7 @@ func serviceCreateBaseProcess(
     supplementalGroups: [UInt32] = [],
     supplementalGroupNames: [String] = [],
     oomScoreAdj: Int? = nil,
-) -> ProcessConfiguration {
+) -> ComposeProcessConfiguration {
     let executable: String
     let arguments: [String]
     if let entrypoint = service.entrypoint, !entrypoint.isEmpty {
@@ -145,8 +144,8 @@ func serviceCreateBaseProcess(
             return key
         }
     let workingDirectory = service.workingDir ?? "/"
-    let user = service.user.map { ProcessConfiguration.User.raw(userString: $0) } ?? .id(uid: 0, gid: 0)
-    return ProcessConfiguration(
+    let user = service.user.map { ComposeProcessConfiguration.User.raw(userString: $0) } ?? .id(uid: 0, gid: 0)
+    return ComposeProcessConfiguration(
         executable: executable,
         arguments: arguments,
         environment: environment,
@@ -192,6 +191,7 @@ func configHash(
             service: service,
             externalVolumeMounts: externalVolumeMounts,
         ),
+        linkTargets: serviceLinkTargetFingerprints(project: project, service: service),
     )
     guard let data = try? encoder.encode(fingerprint) else {
         return stableHash(service.name)
@@ -200,6 +200,24 @@ func configHash(
         return stableHash(service.name)
     }
     return stableHash(encodedFingerprint)
+}
+
+/// Returns target inputs that affect one service's source-scoped link aliases.
+func serviceLinkTargetFingerprints(
+    project: ComposeProject,
+    service: ComposeService,
+) throws -> [String: ServiceLinkTargetFingerprint] {
+    var targets: [String: ServiceLinkTargetFingerprint] = [:]
+    for reference in try serviceLinkReferences(service: service, project: project) {
+        guard let target = project.services[reference.serviceName] else {
+            continue
+        }
+        targets[reference.serviceName] = ServiceLinkTargetFingerprint(
+            containerName: target.containerName.map(slug),
+            networks: (target.networks ?? []).sorted(),
+        )
+    }
+    return targets
 }
 
 /// Validates user-supplied service labels and label files before side effects.

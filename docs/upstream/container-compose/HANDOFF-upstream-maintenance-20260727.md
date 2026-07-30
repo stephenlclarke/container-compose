@@ -1,17 +1,27 @@
 # Cross-MBP handoff: upstream maintenance
 
-Updated: 2026-07-27 11:56 BST
+Updated: 2026-07-28
 
 ## Stop point
 
-The source changes for this slice are merged and the exact-main publication
-gates have closed green. The mutable `current` prerelease now points at the
-merge, the package artefacts and Homebrew formulas are aligned, and SonarCloud
-has indexed the exact revision.
+The earlier upstream-maintenance closeout described below is complete. Stable
+release `0.10.1` and the mutable `current` prerelease were subsequently
+published and verified; do not repeat that promotion.
 
-The remaining closeout work is documentation review/merge and the final Slack
-END notification. Do not begin the next parity slice until that closeout is
-complete.
+CC-004 is implemented and published for review in
+[stephenlclarke/container-compose#173](https://github.com/stephenlclarke/container-compose/pull/173)
+at `3103fee41ebb37c04adbaeade217f0731a9e68ce`. Local
+`HAWKEYE_AUTO_INSTALL=1 make ci` and live Docker Compose v5.3.1 inherited-volume
+parity pass. All applicable hosted source, runtime, ASan, format, CodeQL, and
+DocC checks pass. The pull request remains unmerged pending review.
+
+CC-005 is implemented on `fix/cp-stream-metadata-parity` across the matched
+supported stack. Command help and `STATUS.md` classify tar-stream `cp` and
+`--archive` as supported. The expanded live Docker Compose v5.3.1 fixture
+confirms matching content, ownership, mode, timestamp, symlink, hard-link,
+sparse-allocation, long-path, and large-file behaviour and records comparable
+timings. COPY-401/COPY-402 are complete on the supported fork stack; stock
+Apple convergence remains.
 
 The durable goal remains:
 
@@ -88,7 +98,7 @@ connector review reported no major issue.
 
 The eleven independently useful signed implementation commits are enumerated
 in
-[PR-upstream-maintenance-20260727.md](PR-upstream-maintenance-20260727.md).
+[PR-upstream-maintenance-20260727.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-upstream-maintenance-20260727.md).
 They cover compiled ignore globs, hashed context membership, concurrent stats,
 off-lock sizing, ordered/failure-safe init bootstrap, isolated volume prune,
 Unicode-sensitive glob semantics, partial-bootstrap cleanup, active-runtime
@@ -267,18 +277,12 @@ The refreshed `current` prerelease is valid slice evidence:
 - checked-in README tape contains 16 `Type`, 16 `Enter`, 14 `Wait+Screen`,
   zero `Replay`, and zero `Marker` directives
 
-## Remaining closeout
+## Previous closeout
 
-1. Commit this evidence as a signed documentation commit on
-   `docs/upstream-maintenance-closeout-20260727`, push it, open a PR, obtain an
-   exact-head connector review, run the thread-aware fetcher, and merge.
-2. If the docs-only merge becomes newer than the released target, dispatch full
-   CI for exact final `main` and republish `current` from that exact revision.
-   Do not leave the mutable prerelease behind final `main`.
-3. Refresh this handoff with final run, Sonar, release, tap, GIF, and Slack END
-   identities.
-4. Fully reread the Slack skills, send the detailed slice END, then begin a new
-   slice only after a new Slack START.
+The documentation review, exact-main validation, mutable `current`
+republication, Homebrew alignment, and Slack END notification from the
+27 July slice are complete. The evidence below is retained as the historical
+publication record.
 
 ## Upstream state at merge
 
@@ -374,11 +378,184 @@ variant. The successful explicit-platform path converts the local image to an
 selection retains the default-metadata fallback with at most two reads. No
 Apple runtime fork or stack pin changes.
 
-The next parity blocker is:
+CC-005 is complete on the matched supported stack. The command and `--archive`
+option are supported, and the live metadata fixture records exact behavioural
+and timing evidence for Docker Compose and Container Compose. Third-party
+[apple/containerization#812](https://github.com/apple/containerization/pull/812)
+and [apple/container#1947](https://github.com/apple/container/pull/1947)
+remain open drafts. The supported implementation was reviewed independently
+and strengthened for API ownership, cancellation, backpressure, path safety,
+metadata, sparse files, and hard links rather than importing either draft.
 
-1. Replace archive-mode `compose cp` host staging with direct runtime streams
-   so ownership metadata can be preserved.
+CC-006 was already complete in the lifecycle-hook implementation on `main`;
+the stale inventory row is corrected in this slice. Supported-lane lifecycle
+failures belong to Compose orchestration, while stock Apple interactive
+reattach remains a capability convergence item.
+
+TEST-007 is complete. The 25 live smoke tests now use an explicit suite-level
+skip with the activation reason instead of returning as false passes. The
+shared wrapper reports `executed=1251 skipped=25` in normal coverage
+validation, while the isolated live lane enables the same suite. One
+instrumented profile now gates `ComposeCore` at 90%, `ComposeRuntimeSPI` at
+95%, the `ComposeContainerRuntime` provider at 75%, `ComposePlugin` at 50%,
+and aggregate first-party Swift at 85%. The full CI measurements were 92.89%,
+100.00%, 75.91%, 56.52%, and 87.68%, respectively.
+
+TEST-008 is complete. The 33,831-line orchestrator test was split into one
+shared-support owner and eleven command or capability suite files. All 895
+unique test IDs are preserved. On the same local macOS arm64 host, targeting
+`arm64e-apple-macos14.0`, warm `--skip-build` runs completed in 2.594 seconds
+with default parallel execution and 5.205 seconds with `--no-parallel`.
+
+Strict coverage comparison exposed an existing scheduler-dependent
+abort-on-container-failure test: the successful container did not always
+complete before the failing container after the split. The fixture now makes
+that order explicit; ten consecutive focused runs passed. Full `make ci`
+reports `executed=1251 skipped=25`, with `ComposeCore` at 92.89%,
+`ComposeRuntimeSPI` at 100.00%, the `ComposeContainerRuntime` provider at
+75.91%, `ComposePlugin` at 56.52%, aggregate first-party Swift at 87.68%, and
+Go at 89.88%. The covered source-line set exactly matches the pre-split
+baseline.
+
+SEC-009 is complete. Compose-owned sensitive temporary paths now use verified
+`0700` directory and `0600` file permissions before writes. The configured
+temporary root flows through inline Dockerfiles, streamed copy replay and
+extraction, commit export and image construction, and the Container provider
+export adapter. Compose Bridge and image-volume copy-up staging use the same
+helper. Archive writers and provider exports are rechecked after they run;
+symlink replacement is rejected. Extracted container payload permissions and
+the original volume backing-file mode are preserved.
+
+Targeted tests cover the standard macOS temporary root and a deliberately 0777
+shared root. They verify live permissions, successful exporter output,
+directory-collision preservation, symlink rejection, and cleanup after copy,
+exporter, image construction, and image-volume failures. The full 898-test
+orchestrator suite passed in 2.479 seconds on the Swift
+`arm64e-apple-macos14.0` target.
+
+Full `HAWKEYE_AUTO_INSTALL=1 make ci` passed in 352.23 seconds with 1,285
+tests: `executed=1260 skipped=25`. Coverage was 92.74% `ComposeCore`, 100.00%
+`ComposeRuntimeSPI`, 76.78% `ComposeContainerRuntime`, 56.52%
+`ComposePlugin`, 87.66% aggregate first-party Swift, and 89.88% Go. Compared
+with TEST-008, unchanged source lost no covered lines.
+
+DOC-010 is complete. `DESIGN.md`, the Core DocC architecture page, the coupling
+audit, and `STATUS.md` now distinguish the current injection seam from package
+portability. They record the seven direct Apple product dependencies, 32 Core
+source files importing Apple modules, and public Apple-shaped create-plan
+types. The dated 2026-07-17 coupling baseline remains historical evidence;
+current divergence comes from `make upstream-divergence-report`, and the
+semantic re-audit commands use explicit Apple and Stephen remote refs. The
+divergence reporter now resolves the linked repository root through Git's
+common directory, so the same command works from the primary checkout and
+isolated sibling worktrees.
+
+The documents now reserve the runtime-neutral Core claim for `ARCH-101` and
+`ARCH-102`: remove Apple dependencies/imports from Core, move the remaining
+DTO/archive/live API translation into `ComposeContainerRuntime`, and enforce
+the boundary with package-graph and source-import gates.
+
+The package evidence commands reproduced seven direct products and 32
+importing Core files. Eight focused divergence-reporter tests passed, including
+primary-checkout and linked-worktree root resolution. The live reporter found
+all three sibling repositories with no lookup errors. All 50
+`ComposeCLIHelpTests` passed, including the STATUS command/option totals,
+partial-marker details, and Compose specification rows. `make docs` generated
+the Core DocC archive without warnings.
+
+Full `HAWKEYE_AUTO_INSTALL=1 make ci` passed in 356.57 seconds with 1,285
+tests: `executed=1260 skipped=25`. Coverage was 92.74% `ComposeCore`, 100.00%
+`ComposeRuntimeSPI`, 76.78% `ComposeContainerRuntime`, 56.52%
+`ComposePlugin`, 87.66% aggregate first-party Swift, and 89.88% Go.
 
 Continue the ordered inventory in
 `docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after this
-remaining confirmed P1 item is complete.
+item is complete. COPY-401/COPY-402 are complete on the supported stack; their
+remaining work is convergence with a stock Apple archive API.
+
+ARCH-101 and ARCH-102 are complete. `ComposeCore` now depends only on
+`ComposeRuntimeSPI`, and the SPI itself has no package dependencies. Core
+source and public create-plan values contain no Apple package imports or
+types. `ComposeContainerRuntime` owns projection to Apple process, logging,
+health, restart, host, block-I/O, resource, archive, OCI, and live API types.
+Compose-specific archive work is injected through a fail-closed
+`ComposeArchiveManaging` contract.
+
+`make core-runtime-neutrality` enforces the exact Core and SPI package graphs
+and rejects normal, selective, annotated, or access-level Apple imports in
+either target. Five focused gate tests pass. Focused tests also cover neutral
+model decoding, complete Apple create projection, fail-closed archive defaults,
+the replacement byte-size, device, image-reference, and IP parsers, and the
+local POSIX process runner. The 37 process-runner tests and 42 focused
+orchestrator copy, commit, and Bridge tests pass.
+
+Strict review found and corrected compatibility defects in the first neutral
+helper implementations: malformed quoted GPU fields were accepted; image
+domain and digest parsing differed from Apple; byte-size whitespace handling
+was too permissive at line boundaries and too strict internally; IPv6 zones,
+embedded IPv4 rendering, and leading-zero IPv4 validation differed from Apple;
+and the local process runner inherited a blocked `SIGTERM`. Provider projection
+coverage was also extended to hostname, domain name, sysctls, CPU shares,
+cgroup parent, memory reservation, and memory swap. The strengthened tests pass
+after each correction.
+
+Full `HAWKEYE_AUTO_INSTALL=1 make ci` passed in 352.02 seconds with 1,295
+Swift tests: `executed=1270 skipped=25`. Coverage was 92.83% `ComposeCore`,
+99.05% `ComposeRuntimeSPI`, 79.74% `ComposeContainerRuntime`, 56.52%
+`ComposePlugin`, 87.82% aggregate first-party Swift, and 89.88% Go. The
+meaningfully changed Swift files pass SwiftFormat 0/18 unchanged, `make docs`
+generates the Core DocC archive without warnings, and `git diff --check`
+passes.
+
+ARCH-103 is complete. Container and Compose now publish the same typed,
+schema-versioned runtime capability manifest for archive/copy, build
+extensions, create configuration, image/filesystem, lifecycle, and observation
+contracts. Runtime preflight fails closed on an absent or incompatible schema,
+duplicate identifiers, or any missing required identifier. It accepts unknown
+additional identifiers under the same schema. Service and host readiness remain
+separate checks.
+
+The supported lower-runtime graph is:
+
+- Containerization `52386838456a431d24bed6c38a9e84fb0ad28997`, the copy-stream
+  branch 11 commits on top of `043193efa5f1a2e21a240041d6edd71d7673739e`.
+- Container branch `feat/compose-runtime-capability-manifest` at signed
+  `fceb3cf0e40029b4caa1443f9b5011152c90114c`, built on the existing
+  copy-stream head `f5e25b12ed074e7e5fb09933d86a27652034f3e5`.
+- Compose branch `feat/runtime-capability-manifest`, with `Package.swift`,
+  `Package.resolved`, and `Tools/release/stack-refs.json` pinned to those exact
+  Container and Containerization commits.
+
+Do not pin Container `05fc925aec4f166e92252b29a81672b5120fd63d`.
+Strict stack review found that the first manifest branch was based on fork
+`main` rather than the 27-commit Compose copy-stream branch, so the complete
+Compose provider could not compile against its missing archive APIs. The
+published history was not rewritten. The manifest was replayed onto the
+correct branch and the full dependency graph was resolved from GitHub.
+
+The same review exposed a parallel-test false positive in the local XPC file
+handle ownership regressions. Numeric descriptor reuse could make a released
+descriptor appear open. Signed Container correction
+`fceb3cf0e40029b4caa1443f9b5011152c90114c` now compares the descriptor with
+the unique device/inode identity of an opened, unlinked temporary file. The
+12-test XPC suite, 94 XCTest cases, and 1,224 Swift Testing cases in the non-VM
+Container gate pass. The original test also passed 10 consecutive isolated
+attempts, confirming that the parallel failure was in the assertion rather
+than ownership behaviour.
+
+`make stack-consistency` checks the release JSON against both typed Swift
+definitions and the exact package pins. The build-info writer validates and
+embeds the same schema and identifiers. Focused malformed, stock Apple,
+matched-fork, duplicate, missing, wrong-schema, and forward-compatible tests
+pass. Final `HAWKEYE_AUTO_INSTALL=1 make ci` passed in 246.60 seconds with
+1,297 Swift tests: `executed=1272 skipped=25`. Coverage was 92.84%
+`ComposeCore`, 99.05% `ComposeRuntimeSPI`, 79.74%
+`ComposeContainerRuntime`, 57.13% `ComposePlugin`, 87.80% aggregate
+first-party Swift, and 89.88% Go. The gate also passed 5 coverage-tool tests,
+177 release-tool tests, 37 CI-tool tests, runtime-neutrality, stack
+consistency, dependency resolution, Go build/tests, and the capability-aware
+CLI smoke matrix. The 25 Compose live-runtime tests were explicit skips, so
+this is the ARCH-103 code and packaging gate rather than the later live
+release-acceptance gate.
+
+Continue with FORK-104 from the ordered critical-review inventory.

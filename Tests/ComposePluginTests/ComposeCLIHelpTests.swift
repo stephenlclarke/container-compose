@@ -103,7 +103,7 @@ struct ComposeCLIHelpTests {
         let commitHelp = try #require(ComposeCLIHelp.commandHelpText(command: "commit"))
         let eventsHelp = try #require(ComposeCLIHelp.commandHelpText(command: "events"))
 
-        #expect(partialCommands == [["events"], ["exec"], ["run"], ["up"]])
+        #expect(partialCommands == [["events"], ["exec"]])
         #expect(commitHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(commitHelp.contains("best-effort snapshot"))
         #expect(commitHelp.contains("\u{001B}[32m--pause\u{001B}[0m"))
@@ -424,13 +424,11 @@ struct ComposeCLIHelpTests {
     func runCommandAndOptionsAccuratelyReportSupport() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "run"))
 
-        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(help.contains("Container-facing DNS aliases are unavailable."))
+        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--build\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--no-deps\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--service-ports\u{001B}[0m"))
-        #expect(help.contains("\u{001B}[38;5;208m--use-aliases\u{001B}[0m"))
-        #expect(help.contains("requires container-facing DNS"))
+        #expect(help.contains("\u{001B}[32m--use-aliases\u{001B}[0m"))
     }
 
     @Test("exec command discloses the privileged-mode limitation")
@@ -440,6 +438,16 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(help.contains("Docker-complete privileged execution is unavailable."))
         #expect(help.contains("\u{001B}[38;5;208m--privileged\u{001B}[0m"))
+    }
+
+    @Test("cp command reports complete archive support")
+    func cpCommandReportsCompleteArchiveSupport() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "cp"))
+
+        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(!help.contains("Tar-stream operands stage through the host filesystem"))
+        #expect(help.contains("\u{001B}[32m--archive\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--follow-link\u{001B}[0m"))
     }
 
     @Test("build command reports its complete local build surface")
@@ -508,12 +516,11 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("Use --menu=false to explicitly disable the helper menu."))
     }
 
-    @Test("up wait options remain supported while remaining command gaps are disclosed")
-    func upWaitOptionsRemainSupportedWhileRemainingCommandGapsAreDisclosed() throws {
+    @Test("up and wait options report supported")
+    func upAndWaitOptionsReportSupported() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
 
-        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(help.contains("Container-facing DNS aliases are unavailable."))
+        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--wait\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--wait-timeout\u{001B}[0m"))
     }

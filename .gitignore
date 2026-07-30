@@ -15,8 +15,8 @@ container-compose-plugin.tar.gz
 container-compose-plugin-*.tar.gz
 container-compose-plugin-*.tar.gz.sha256
 coverage.report
-coverage.lcov
-coverage.xml
+/coverage*.lcov
+/coverage*.xml
 coverage.out
 *.profraw
 .scannerwork/

@@ -105,6 +105,41 @@ struct ComposeSignalProxyTests {
             #expect(await gate.proxyCompleted)
             #expect(await gate.signals == ["SIGHUP"])
         }
+
+        @Test
+        func `concurrent proxies serialize process signal ownership`() async throws {
+            let gate = SignalProxyOwnershipTestGate()
+            let first = Task {
+                try await DispatchComposeSignalProxy().withSignalProxy(
+                    signals: ["SIGHUP"],
+                    handler: { _ in },
+                    operation: { await gate.runFirstOperation() },
+                )
+            }
+
+            for _ in 0 ..< 100 {
+                if await gate.firstOperationStarted {
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(await gate.firstOperationStarted)
+
+            let second = Task {
+                try await DispatchComposeSignalProxy().withSignalProxy(
+                    signals: ["SIGHUP"],
+                    handler: { _ in },
+                    operation: { await gate.runSecondOperation() },
+                )
+            }
+            try await Task.sleep(for: .milliseconds(50))
+            #expect(await !gate.secondOperationStarted)
+
+            await gate.releaseFirstOperation()
+            try await first.value
+            try await second.value
+            #expect(await gate.secondOperationStarted)
+        }
     #endif
 }
 
@@ -155,5 +190,32 @@ private actor SignalHandlerCompletionGate {
         handlerReleased = true
         handlerRelease?.resume()
         handlerRelease = nil
+    }
+}
+
+private actor SignalProxyOwnershipTestGate {
+    private(set) var firstOperationStarted = false
+    private(set) var secondOperationStarted = false
+    private var firstOperationRelease: CheckedContinuation<Void, Never>?
+    private var firstOperationReleased = false
+
+    func runFirstOperation() async {
+        firstOperationStarted = true
+        guard !firstOperationReleased else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            firstOperationRelease = continuation
+        }
+    }
+
+    func runSecondOperation() {
+        secondOperationStarted = true
+    }
+
+    func releaseFirstOperation() {
+        firstOperationReleased = true
+        firstOperationRelease?.resume()
+        firstOperationRelease = nil
     }
 }

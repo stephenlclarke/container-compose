@@ -33,6 +33,8 @@ public struct ContainerImageVolumeInitializer: Sendable {
         // This runtime adapter is stateless; construction needs no setup.
     }
 
+    // The operation deliberately keeps its staged archive and formatter cleanup together.
+    // swiftlint:disable function_body_length
     /// Copies `imageSubpath` into `volume` only when the volume contains no
     /// entries other than ext4's required `lost+found` directory.
     ///
@@ -57,19 +59,25 @@ public struct ContainerImageVolumeInitializer: Sendable {
 
         let fileManager = FileManager.default
         let volumeURL = URL(fileURLWithPath: volume.source)
-        let stagingDirectory = volumeURL.deletingLastPathComponent()
-            .appendingPathComponent(".compose-image-volume-init-\(UUID().uuidString)", isDirectory: true)
-        try fileManager.createDirectory(at: stagingDirectory, withIntermediateDirectories: false)
+        let volumePermissions = try Self.permissions(at: volumeURL)
+        let stagingDirectory = try ComposeTemporaryFiles.createDirectory(
+            in: volumeURL.deletingLastPathComponent(),
+            prefix: ".compose-image-volume-init-",
+        )
         defer { try? fileManager.removeItem(at: stagingDirectory) }
 
-        let archivePath = FilePath(stagingDirectory.appendingPathComponent("contents.tar").path)
+        let archiveURL = stagingDirectory.appendingPathComponent("contents.tar")
+        try ComposeTemporaryFiles.prepareFile(at: archiveURL)
+        let archivePath = FilePath(archiveURL.path)
         let stagedVolumeURL = stagingDirectory.appendingPathComponent("volume.img")
+        try ComposeTemporaryFiles.prepareFile(at: stagedVolumeURL)
         let stagedVolumePath = FilePath(stagedVolumeURL.path)
         let imageReader = try EXT4.EXT4Reader(blockDevice: FilePath(imageFilesystem))
         let imageVolumeRoot: EXT4.Inode
         do {
             imageVolumeRoot = try imageReader.stat(sourcePath, followSymlinks: false).inode
             try imageReader.export(archive: archivePath, subtree: sourcePath)
+            try ComposeTemporaryFiles.secureFile(at: archiveURL)
         } catch let error as EXT4.PathIOError {
             guard case .notFound = error else {
                 throw error
@@ -103,8 +111,20 @@ public struct ContainerImageVolumeInitializer: Sendable {
             throw error
         }
 
+        try ComposeTemporaryFiles.secureFile(at: stagedVolumeURL)
         _ = try fileManager.replaceItemAt(volumeURL, withItemAt: stagedVolumeURL)
+        try fileManager.setAttributes([.posixPermissions: volumePermissions], ofItemAtPath: volumeURL.path)
         return true
+    }
+
+    // swiftlint:enable function_body_length
+
+    private static func permissions(at url: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard let permissions = attributes[.posixPermissions] as? NSNumber else {
+            throw CocoaError(.fileReadUnknown, userInfo: [NSFilePathErrorKey: url.path])
+        }
+        return permissions.intValue & 0o777
     }
 
     private func imagePaths(for subpath: String) throws -> (subpath: FilePath, root: FilePath) {

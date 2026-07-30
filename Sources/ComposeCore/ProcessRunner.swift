@@ -14,7 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerizationOS
 import Foundation
 #if canImport(Darwin)
     import Darwin
@@ -45,7 +44,7 @@ private func suppressBrokenPipeSignal(for handle: FileHandle) {
 
 /// A command prepared with an isolated process group and terminal ownership.
 private struct PreparedProcessCommand {
-    var command: Command
+    var command: ComposeProcessCommand
     let jobControlProcessGroup: pid_t?
 }
 
@@ -81,7 +80,7 @@ func processStoppedSignal(_ waitStatus: Int32) -> Int32? {
     return waitStatus >> 8 & 0xFF
 }
 
-/// Creates an Apple command whose descendants share one owned process group.
+/// Creates a process command whose descendants share one owned process group.
 private func prepareProcessCommand(
     _ executable: String,
     _ arguments: [String],
@@ -93,13 +92,13 @@ private func prepareProcessCommand(
         .merging(environment ?? [:]) { _, new in new }
         .sorted { $0.key < $1.key }
         .map { "\($0.key)=\($0.value)" }
-    var command = Command(
+    let command = ComposeProcessCommand(
         executable,
         arguments: arguments,
         environment: resolvedEnvironment,
         directory: workingDirectory?.path,
     )
-    command.attrs.setPGroup = true
+    command.attributes.setProcessGroup = true
 
     let foreground = processForegroundConfiguration(
         inheritsStandardInput: inheritsStandardInput,
@@ -107,7 +106,7 @@ private func prepareProcessCommand(
         currentForegroundProcessGroup: tcgetpgrp(STDIN_FILENO),
         currentProcessGroup: getpgrp(),
     )
-    command.attrs.setForegroundPGroup = foreground.makeChildForeground
+    command.attributes.setForegroundProcessGroup = foreground.makeChildForeground
     return PreparedProcessCommand(
         command: command,
         jobControlProcessGroup: foreground.jobControlProcessGroup,
@@ -264,7 +263,7 @@ public extension CommandRunning {
     }
 }
 
-/// Production command runner backed by Apple's process command primitive.
+/// Production command runner backed by POSIX process spawning.
 public struct ProcessRunner: CommandRunning {
     private static let isStateless = true
     private let processDidStart: ProcessStartObserver
@@ -361,7 +360,7 @@ public struct ProcessRunner: CommandRunning {
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let stdout = Pipe()
-                var prepared = prepareProcessCommand(
+                let prepared = prepareProcessCommand(
                     executable,
                     arguments,
                     workingDirectory: workingDirectory,
@@ -417,7 +416,7 @@ public struct ProcessRunner: CommandRunning {
                 let stdout = Pipe()
                 let stderr = Pipe()
                 let stdin = options.input == nil ? nil : Pipe()
-                var prepared = prepareProcessCommand(
+                let prepared = prepareProcessCommand(
                     executable,
                     arguments,
                     workingDirectory: workingDirectory,
@@ -465,7 +464,7 @@ public struct ProcessRunner: CommandRunning {
         let state = ProcessRunState(capturesStdout: false, capturesStderr: false)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                var prepared = prepareProcessCommand(
+                let prepared = prepareProcessCommand(
                     executable,
                     arguments,
                     workingDirectory: workingDirectory,
@@ -592,7 +591,7 @@ private final class ProcessRunState: @unchecked Sendable {
 
     /// Records a successful launch and terminates immediately if cancellation raced it.
     func didLaunch(
-        _ command: Command,
+        _ command: ComposeProcessCommand,
         jobControlProcessGroup: pid_t?,
     ) {
         let processGroup = command.pid
@@ -614,7 +613,7 @@ private final class ProcessRunState: @unchecked Sendable {
     }
 
     /// Reaps the child leader without blocking the caller's async executor.
-    func waitForExit(_ command: Command) {
+    func waitForExit(_ command: ComposeProcessCommand) {
         let processIdentifier = command.pid
         DispatchQueue.global(qos: .utility).async {
             while true {

@@ -29,11 +29,11 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/stephenlclarke/container.git",
-            revision: "5119fea95e5c7820c4deceec75b59fadfa8f61c3",
+            revision: "88460ab2ab0ca2f3fa9f91b2911b3b77647596c1",
         ),
         .package(
             url: "https://github.com/stephenlclarke/containerization.git",
-            revision: "971fc7e5e27467ebd6227e1ae54f3e5c23de87b4",
+            revision: "d7377b962af724f8d7c2b640f3ab12184d33f1af",
         ),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.4.0"),
@@ -62,13 +62,6 @@ let package = Package(
             name: "ComposeCore",
             dependencies: [
                 "ComposeRuntimeSPI",
-                .product(name: "ContainerAPIClient", package: "container"),
-                .product(name: "ContainerResource", package: "container"),
-                .product(name: "ContainerizationArchive", package: "containerization"),
-                .product(name: "Containerization", package: "containerization"),
-                .product(name: "ContainerizationExtras", package: "containerization"),
-                .product(name: "ContainerizationOCI", package: "containerization"),
-                .product(name: "ContainerizationOS", package: "containerization"),
             ],
             path: "Sources/ComposeCore",
         ),
@@ -81,6 +74,7 @@ let package = Package(
                 .product(name: "ContainerPersistence", package: "container"),
                 .product(name: "ContainerResource", package: "container"),
                 .product(name: "Containerization", package: "containerization"),
+                .product(name: "ContainerizationArchive", package: "containerization"),
                 .product(name: "ContainerizationEXT4", package: "containerization"),
                 .product(name: "ContainerizationExtras", package: "containerization"),
                 .product(name: "ContainerizationOCI", package: "containerization"),
@@ -133,6 +127,7 @@ let package = Package(
                 "ComposeContainerRuntime",
                 .product(name: "ContainerResource", package: "container"),
                 .product(name: "ContainerizationEXT4", package: "containerization"),
+                .product(name: "ContainerizationOCI", package: "containerization"),
             ],
             path: "Tests/ComposeContainerRuntimeTests",
         ),

@@ -91,9 +91,9 @@ normalizer binary is installed. Override that helper with:
 export CONTAINER_COMPOSE_NORMALIZER=/absolute/path/to/compose-normalizer
 ```
 
-Release Swift builds use the optimization flags declared by the Makefile.
-Override `SWIFT_RELEASE_FLAGS` only when validating a toolchain-specific build
-change. Every packaged Go helper uses the release build path.
+Release Swift builds use SwiftPM's default speed optimisation. Set
+`SWIFT_RELEASE_FLAGS` only when validating a toolchain-specific build change.
+Every packaged Go helper uses the release build path.
 
 ## Validate
 
@@ -119,7 +119,7 @@ Useful focused targets are:
 | `make release-gate-hosted` | GitHub-hosted static stack validation: source checks, builds, unit coverage, Compose CI, and Homebrew formula syntax without Virtualization.framework or Docker-engine runtime tests. |
 | `make ci-release` | Full release gate plus the release package build. |
 | `make check` | Lint, documentation, formatting, and license checks. |
-| `make coverage-check` | Enforce at least 90% Swift line and 85% Go statement coverage. |
+| `make coverage-check` | Enforce separate ComposeCore, runtime SPI, provider, plugin, aggregate first-party Swift, and Go coverage floors. |
 | `make cli-smoke-built` | Exercise representative commands using the existing build. |
 | `make swift-runtime-test` | Build and run the isolated matched runtime smoke suite. |
 | `make upstream-divergence-report` | Fetch Apple upstream and stephenlclarke refs for the Apple-backed sibling repos, then write `.build/reports/upstream-divergence.md` and `.build/reports/upstream-divergence.json`. |
@@ -138,18 +138,31 @@ non-legacy Swift file for strict SwiftLint and SwiftFormat validation and runs
 the complete Address Sanitizer and Thread Sanitizer suites. A failure is a
 release blocker even when ordinary push CI is green.
 
-Override local coverage floors only for deliberate stricter validation:
+The default Swift line-coverage floors are 90% for `ComposeCore`, 95% for
+`ComposeRuntimeSPI`, 75% for the `ComposeContainerRuntime` provider, 50% for
+`ComposePlugin`, and 85% across all first-party Swift. Go statement coverage
+must remain at least 85%. Override local floors only for deliberate stricter
+validation:
 
 ```sh
-SWIFT_COVERAGE_MIN=91 GO_COVERAGE_MIN=88 make coverage-check
+SWIFT_CORE_COVERAGE_MIN=91 \
+SWIFT_PROVIDER_COVERAGE_MIN=76 \
+SWIFT_AGGREGATE_COVERAGE_MIN=86 \
+GO_COVERAGE_MIN=88 \
+make coverage-check
 ```
 
-Coverage outputs are `coverage.lcov`, `coverage.xml`,
-`Tools/compose-normalizer/coverage.out`, and Swift `.profraw` files.
+Target-specific outputs are `coverage-core.*`, `coverage-runtime-spi.*`,
+`coverage-provider.*`, `coverage-plugin.*`, and `coverage-aggregate.*`.
+`coverage.lcov` and `coverage.xml` are aggregate copies for SonarQube.
+Go output remains `Tools/compose-normalizer/coverage.out`.
 
 `make swift-runtime-test` uses the sibling runtime, isolates state under the
 marker-protected `.build/container-runtime` directory, retains only the kernel
-cache between runs, and always stops the test runtime when it exits.
+cache between runs, and always stops the test runtime when it exits. Normal CI
+reports the 25 live smoke tests as explicitly skipped with the activation
+reason. Both normal and live lanes print authoritative `executed` and `skipped`
+counts from the Swift Testing log.
 
 ### Isolated macOS Runtime Ownership
 
@@ -368,7 +381,7 @@ make docker-compose-parity
 
 The aggregate target requires Docker Compose `5.3.1`, pins Docker's e2e fixtures to commit `f32009d4a2c687dd405398cc7975d12dccaf8dff`, builds the sibling runtime when available, starts it with isolated state, builds `compose`, runs each target in `DOCKER_COMPOSE_PARITY_TARGETS`, and stops the runtime on exit. The reference scripts establish Docker behavior; the isolated runtime suite and the Compose side of each comparison establish local behavior. [STATUS.md](STATUS.md) owns the support ledger.
 
-The latest controlled run on 30 July 2026 completed all 62 maintained targets in 1,024.25s against Docker Compose 5.3.1 and Docker Engine 29.2.1. Its embedded three-repetition warm-image bridge comparator measured Docker/container-compose `up` medians of 0.151s/1.101s (7.30×) and `down` medians of 10.179s/5.969s (0.59×). The exact revisions, host, warnings, stress result, and evidence paths are recorded in [STATUS.md](STATUS.md#latest-controlled-full-suite-evidence). The green 10× executable guard does not make the slower startup comparable to Docker or complete the broader performance matrix.
+The latest controlled run on 30 July 2026 completed all 62 maintained targets without interruption in 1,152.03s against Docker Compose 5.3.1 and Docker Engine 29.2.1. Its embedded three-repetition warm-image bridge comparator measured Docker/container-compose `up` medians of 0.153s/1.228s (8.01×) and `down` medians of 10.178s/5.916s (0.58×). Named-network service discovery and links passed their live behavioral and timing oracles; service-discovery startup improved 13.0% from its pre-optimization candidate baseline but remained 8.81× slower than Docker. Exact revisions, host, warnings, timing tables, and evidence paths are recorded in [STATUS.md](STATUS.md#latest-controlled-full-suite-evidence). The green 10× bridge guard does not make the slower startup comparable to Docker or complete the broader performance matrix.
 
 This functional suite is part of the project's [macOS Docker Compose parity
 and performance goal](STATUS.md#project-goal-macos-docker-compose-parity-and-performance),
@@ -384,8 +397,8 @@ Run a focused target directly while iterating:
 | Compose Bridge | `docker-compose-bridge-parity` |
 | Build | `docker-compose-build-builder-parity`, `docker-compose-build-check-parity`, `docker-compose-build-external-dockerfile-parity`, `docker-compose-build-external-secret-parity`, `docker-compose-build-isolation-parity`, `docker-compose-build-no-cache-filter-parity`, `docker-compose-build-secret-metadata-parity` |
 | Mounts and resources | `docker-compose-bind-create-host-path-parity`, `docker-compose-bind-propagation-parity`, `docker-compose-image-volumes-parity` (Docker image `VOLUME` reference, Compose-model projection, and live macOS first-use/reuse validation when `CONTAINER_COMPOSE_LIVE=1`), `docker-compose-volume-labels-parity` (also verifies anonymous-volume identity), `docker-compose-deploy-endpoint-mode-parity`, `docker-compose-deploy-resource-reservations-parity`, `docker-compose-pids-limit-parity`, `docker-compose-device-cgroup-rules-parity`, `docker-compose-devices-parity`, `docker-compose-gpus-parity` |
-| Networking | `docker-compose-network-driver-opts-parity`, `docker-compose-network-attachable-parity`, `docker-compose-network-ipam-options-parity`, `docker-compose-host-namespaces-parity` (live `network_mode: bridge` inspection and same-host Docker lifecycle timing evidence when `CONTAINER_COMPOSE_LIVE=1`; tune samples and timeouts with `PARITY_REPETITIONS` and `PARITY_TIMEOUT_SECONDS`) |
-| Lifecycle and observability | `docker-compose-up-exit-code-from-parity`, `docker-compose-up-menu-parity`, `docker-compose-health-wait-parity`, `docker-compose-create-options-parity`, `docker-compose-events-parity`, `docker-compose-rm-parity`, `docker-compose-restart-policy-parity` |
+| Networking | `docker-compose-network-driver-opts-parity`, `docker-compose-network-attachable-parity`, `docker-compose-network-ipv6-parity`, `docker-compose-network-ipam-options-parity`, `docker-compose-network-service-discovery-parity`, `docker-compose-links-parity`, `docker-compose-host-namespaces-parity` (live `network_mode: bridge` inspection and same-host Docker lifecycle timing evidence when `CONTAINER_COMPOSE_LIVE=1`; tune samples and timeouts with `PARITY_REPETITIONS` and `PARITY_TIMEOUT_SECONDS`) |
+| Lifecycle and observability | `docker-compose-up-exit-code-from-parity`, `docker-compose-up-menu-parity`, `docker-compose-health-wait-parity`, `docker-compose-create-options-parity`, `docker-compose-events-parity`, `docker-compose-state-status-parity`, `docker-compose-rm-parity`, `docker-compose-lifecycle-hooks-parity`, `docker-compose-signal-log-reliability-parity`, `docker-compose-restart-policy-parity` |
 
 The CLI surface target writes the exact compared versions and differences to
 `.build/parity/compose-cli-surface.md`; documented intentional differences live

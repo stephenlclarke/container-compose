@@ -14,7 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerResource
 import CryptoKit
 import Foundation
 
@@ -113,6 +112,20 @@ func serviceLinkReferences(service: ComposeService, project: ComposeProject) thr
         }
         return reference
     }
+}
+
+/// Returns the first normalised shared network used by a legacy link.
+func linkNetwork(source: ComposeService, target: ComposeService, link: ComposeLinkReference) throws -> String {
+    let sourceNetworks = Set(source.networks ?? [])
+    let targetNetworks = Set(target.networks ?? [])
+    let sharedNetworks = sourceNetworks.intersection(targetNetworks).sorted()
+    guard let network = sharedNetworks.first else {
+        throw ComposeError.unsupported(
+            "service '\(source.name)' links to '\(link.serviceName)'; " +
+                "links require both services to share a Compose network",
+        )
+    }
+    return network
 }
 
 /// Parses one Compose `links` entry of the form `SERVICE` or `SERVICE:ALIAS`.

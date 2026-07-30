@@ -1,0 +1,8 @@
+docker	stdin-content	0.132713
+docker	stdout-content	0.131541
+docker	stdin-metadata	0.233447
+docker	stdin-hardlinks	0.152129
+container-compose	stdin-content	0.742988
+container-compose	stdout-content	0.741976
+container-compose	stdin-metadata	0.780232
+container-compose	stdin-hardlinks	0.688076

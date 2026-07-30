@@ -34,11 +34,11 @@ orchestration and maps supported Compose behavior to the matched runtime stack.
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
 > <!-- upstream-metrics:start -->
-> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 28 July 2026 snapshot, the three support forks are **493 commits ahead of Apple upstream**:
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 30 July 2026 snapshot, the three support forks are **507 commits ahead of Apple upstream**:
 >
-> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 133 ahead** at [`043193efa5f1`](https://github.com/stephenlclarke/containerization/commit/043193efa5f1a2e21a240041d6edd71d7673739e).
-> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 327 ahead** at [`367430446959`](https://github.com/stephenlclarke/container/commit/367430446959e3048da37f5f64d3c10e1293d3de).
-> - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 33 ahead** at [`f97cddf5b3aa`](https://github.com/stephenlclarke/container-builder-shim/commit/f97cddf5b3aae2426a094613793c11c41b1d2e53).
+> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 135 ahead** at [`971fc7e5e274`](https://github.com/stephenlclarke/containerization/commit/971fc7e5e27467ebd6227e1ae54f3e5c23de87b4).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 338 ahead** at [`8657c4b86858`](https://github.com/stephenlclarke/container/commit/8657c4b8685865c8889b0171d953342fc9f427a7).
+> - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 34 ahead** at [`61832d4ca917`](https://github.com/stephenlclarke/container-builder-shim/commit/61832d4ca91715180a84dec0eab091170174c43c).
 > - [`container-compose`](https://github.com/stephenlclarke/container-compose): the integration repository's current `main` branch, with no Apple repository to compare against.
 >
 > What looks like a local Compose change can therefore require coordinated conflict resolution, pin updates, builds, tests, packaging, and release validation across the entire stack. The pinned revisions must move together.
@@ -53,7 +53,7 @@ orchestration and maps supported Compose behavior to the matched runtime stack.
 >
 > `ComposeRuntimeSPI` is the Compose-owned, runtime-neutral contract layer. It defines requests, summaries, and provider contracts for discovery, lifecycle, execution, copy/export, logs/events, stats/top, images, configs/secrets, and project resources, without importing Apple runtime packages.
 >
-> `ComposeCore` uses those contracts for runtime operations while sharing typed container resource models where needed. The plugin installs `ComposeContainerRuntime`, the Apple-backed composition root: it wires typed `ContainerClient` providers, explicit CLI bridges, and Compose-owned filesystem external-config and Keychain external-secret defaults. Standalone `ComposeCore` requires a provider rather than constructing an Apple client.
+> `ComposeCore` depends only on those contracts and other Compose-owned models. The plugin installs `ComposeContainerRuntime`, the Apple-backed composition root: it translates neutral create plans to Apple DTOs, owns archive and OCI integration, and wires typed `ContainerClient` providers, explicit CLI bridges, and Compose-owned filesystem external-config and Keychain external-secret defaults. Standalone `ComposeCore` requires a provider rather than constructing an Apple client. `make core-runtime-neutrality` prevents Apple package dependencies or imports from returning to Core.
 >
 > Docker and Compose policy stays above this seam. This is not a general AOP framework: focused decorators can negotiate declared capabilities, while VM, guest, cgroup, mount, archive, device, and builder primitives remain small Apple-shaped runtime slices. New runtime work continues in tested vertical slices without changing Compose-visible behavior outside its documented parity surface.
 >
@@ -83,9 +83,9 @@ project-owned difference; they must not become implicit exceptions.
 > [!IMPORTANT]
 > **Latest controlled parity evidence (30 July 2026)**
 >
-> The complete maintained 62-target Docker Compose comparison suite passed against Docker Compose 5.3.1 and Docker Engine 29.2.1 on a Mac17,9 running macOS 26.5.2. The run took 1,024.25 seconds. Its three-sample warm-image bridge comparator measured `up` at 0.151s for Docker Compose and 1.101s for container-compose (7.30×), while `down` measured 10.179s and 5.969s respectively (0.59×). Raw samples, JUnit, fingerprints, and interpretation are recorded in [STATUS.md](STATUS.md#latest-controlled-full-suite-evidence).
+> The complete maintained 62-target Docker Compose comparison suite passed in one uninterrupted 1,152.03-second run against Docker Compose 5.3.1 and Docker Engine 29.2.1 on a Mac17,9 running macOS 26.5.2. Its three-sample warm-image bridge comparator measured `up` at 0.153s for Docker Compose and 1.228s for container-compose (8.01×), while `down` measured 10.178s and 5.916s respectively (0.58×). Named-network service discovery, aliases, one-off aliases, recreate behavior, and source-scoped links all passed their live Docker oracles. Exact revisions, timing tables, fingerprints, and interpretation are recorded in [STATUS.md](STATUS.md#latest-controlled-full-suite-evidence).
 >
-> This is a green maintained-suite result, not a claim that the project goal is complete. The bridge startup path remains materially slower than Docker Compose, the representative single/10/50-service performance matrix is not yet implemented, and every partial surface in the ledger remains open.
+> This is a green maintained-suite result, not a claim that the project goal is complete. Bridge, service-discovery, links, and archive-copy startup/operation paths remain materially slower than Docker Compose, the representative single/10/50-service performance matrix is not yet implemented, and every partial surface in the ledger remains open.
 
 <!-- Separate GitHub callouts. -->
 

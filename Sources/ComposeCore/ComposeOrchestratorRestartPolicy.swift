@@ -19,10 +19,6 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
-import ContainerizationError
-import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 import Foundation
 
 extension ComposeOrchestrator {
@@ -40,7 +36,7 @@ extension ComposeOrchestrator {
     }
 
     /// Returns the typed restart policy used by direct apple/container create.
-    func runtimeRestartPolicy(service: ComposeService) throws -> ContainerRestartPolicy? {
+    func runtimeRestartPolicy(service: ComposeService) throws -> ComposeRestartPolicy? {
         try runtimeRestartPolicyArguments(service: service)?.restartPolicy()
     }
 

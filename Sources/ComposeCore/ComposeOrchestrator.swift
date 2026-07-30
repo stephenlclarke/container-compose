@@ -26,6 +26,7 @@ import Foundation
 public final class ComposeOrchestrator: @unchecked Sendable {
     let runner: CommandRunning
     let options: ComposeExecutionOptions
+    let archiveManager: ComposeArchiveManaging
     let copier: ComposeRuntimeCopying
     let configReader: ComposeRuntimeConfigReading
     let discoveryManager: ComposeRuntimeDiscoveryManaging
@@ -52,6 +53,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let dependencies = dependencies ?? ComposeOrchestratorDependencies(runner: runner, options: options)
         self.runner = runner
         self.options = options
+        archiveManager = dependencies.archiveManager
         copier = dependencies.copier
         configReader = dependencies.configReader
         discoveryManager = dependencies.discoveryManager

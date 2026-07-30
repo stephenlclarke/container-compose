@@ -19,17 +19,16 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
-import ContainerizationOCI
 import Foundation
 
 extension ComposeOrchestrator {
     /// Converts Compose `blkio_config` into typed OCI block I/O runtime data.
-    func runtimeBlockIO(service: ComposeService) throws -> LinuxBlockIO? {
+    func runtimeBlockIO(service: ComposeService) throws -> ComposeLinuxBlockIO? {
         guard let blkio = service.blkioConfig else {
             return nil
         }
 
-        return try LinuxBlockIO(
+        return try ComposeLinuxBlockIO(
             weight: runtimeBlockIOWeight(blkio, serviceName: service.name),
             leafWeight: nil,
             weightDevice: runtimeBlockIOWeightDevices(blkio, serviceName: service.name),
@@ -74,7 +73,7 @@ extension ComposeOrchestrator {
     private func runtimeBlockIOWeightDevices(
         _ blkio: ComposeBlkioConfig,
         serviceName: String,
-    ) throws -> [LinuxWeightDevice] {
+    ) throws -> [ComposeLinuxWeightDevice] {
         try (blkio.weightDevice ?? []).map { device in
             try validateBlockIODevicePath(
                 device.path,
@@ -87,7 +86,7 @@ extension ComposeOrchestrator {
                 field: "blkio_config.weight_device.weight",
             )
             let id = try blockIODeviceID(device.path, serviceName: serviceName)
-            return LinuxWeightDevice(
+            return ComposeLinuxWeightDevice(
                 major: id.major,
                 minor: id.minor,
                 weight: UInt16(device.weight),
@@ -101,12 +100,12 @@ extension ComposeOrchestrator {
         field: String,
         serviceName: String,
         parseRate: (String, String, String) throws -> UInt64,
-    ) throws -> [LinuxThrottleDevice] {
+    ) throws -> [ComposeLinuxThrottleDevice] {
         try (devices ?? []).map { device in
             try validateBlockIODevicePath(device.path, serviceName: serviceName, field: "\(field).path")
             let id = try blockIODeviceID(device.path, serviceName: serviceName)
             let rate = try parseRate(device.rate, "\(field).rate", serviceName)
-            return LinuxThrottleDevice(major: id.major, minor: id.minor, rate: rate)
+            return ComposeLinuxThrottleDevice(major: id.major, minor: id.minor, rate: rate)
         }
     }
 
@@ -135,7 +134,7 @@ extension ComposeOrchestrator {
     func blockIOByteRate(_ value: String, field: String, serviceName: String) throws -> UInt64 {
         let bytes: Double
         do {
-            bytes = try Measurement<UnitInformationStorage>.parse(parsing: value).converted(to: .bytes).value
+            bytes = try ComposeByteSizeParser.bytes(value)
         } catch {
             throw ComposeError.invalidProject(
                 "service '\(serviceName)' uses \(field) '\(value)'; block I/O byte rates must be sizes",

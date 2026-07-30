@@ -19,10 +19,6 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
-import ContainerizationError
-import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 import Foundation
 
 extension ComposeOrchestrator {
@@ -111,8 +107,8 @@ extension ComposeOrchestrator {
         project: ComposeProject,
         service: ComposeService,
         cache: ComposeImageHealthCheckCache?,
-        baseProcess: ProcessConfiguration,
-    ) async throws -> ContainerHealthCheck? {
+        baseProcess: ComposeProcessConfiguration,
+    ) async throws -> ComposeHealthCheck? {
         let fields = try healthCheckFields(service: service)
         guard fields["disable"]?.boolValue != true else {
             return nil
@@ -240,8 +236,8 @@ extension ComposeOrchestrator {
         test: ComposeValue,
         fields: [String: ComposeValue],
         serviceName: String,
-        baseProcess: ProcessConfiguration,
-    ) throws -> ContainerHealthCheck? {
+        baseProcess: ComposeProcessConfiguration,
+    ) throws -> ComposeHealthCheck? {
         switch try runtimeHealthCheckCommand(test: test, serviceName: serviceName) {
         case .disabled:
             nil
@@ -278,8 +274,8 @@ extension ComposeOrchestrator {
         _ imageHealthCheck: ComposeImageHealthCheck,
         fields: [String: ComposeValue],
         serviceName: String,
-        baseProcess: ProcessConfiguration,
-    ) throws -> ContainerHealthCheck? {
+        baseProcess: ComposeProcessConfiguration,
+    ) throws -> ComposeHealthCheck? {
         guard let test = imageHealthCheck.test, !test.isEmpty else {
             _ = try handleMissingInheritedHealthCheckCommand(fields: fields, serviceName: serviceName)
             return nil
@@ -342,26 +338,26 @@ extension ComposeOrchestrator {
         fields: [String: ComposeValue],
         inherited: ComposeImageHealthCheck?,
         serviceName: String,
-        baseProcess: ProcessConfiguration,
-    ) throws -> ContainerHealthCheck {
+        baseProcess: ComposeProcessConfiguration,
+    ) throws -> ComposeHealthCheck {
         let interval = try healthCheckDurationNanoseconds(
             fields["interval"],
             inherited: inherited?.intervalInNanoseconds,
             field: "interval",
             serviceName: serviceName,
-        ) ?? ContainerHealthCheck.defaultIntervalInNanoseconds
+        ) ?? ComposeHealthCheck.defaultIntervalInNanoseconds
         let timeout = try healthCheckDurationNanoseconds(
             fields["timeout"],
             inherited: inherited?.timeoutInNanoseconds,
             field: "timeout",
             serviceName: serviceName,
-        ) ?? ContainerHealthCheck.defaultTimeoutInNanoseconds
+        ) ?? ComposeHealthCheck.defaultTimeoutInNanoseconds
         let startPeriod = try healthCheckDurationNanoseconds(
             fields["start_period"],
             inherited: inherited?.startPeriodInNanoseconds,
             field: "start_period",
             serviceName: serviceName,
-        ) ?? ContainerHealthCheck.defaultStartPeriodInNanoseconds
+        ) ?? ComposeHealthCheck.defaultStartPeriodInNanoseconds
         let startInterval = try healthCheckDurationNanoseconds(
             fields["start_interval"],
             inherited: inherited?.startIntervalInNanoseconds,
@@ -374,8 +370,8 @@ extension ComposeOrchestrator {
             serviceName: serviceName,
         )
 
-        return ContainerHealthCheck(
-            process: ProcessConfiguration(
+        return ComposeHealthCheck(
+            process: ComposeProcessConfiguration(
                 executable: ComposeRuntimeDefaults.shellExecutable,
                 arguments: ["-c", command],
                 environment: baseProcess.environment,
@@ -563,7 +559,7 @@ extension ComposeOrchestrator {
         } else if let inherited, inherited > 0 {
             retries = inherited
         } else {
-            return ContainerHealthCheck.defaultRetries
+            return ComposeHealthCheck.defaultRetries
         }
         guard retries <= Int(UInt32.max) else {
             throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.retries must be between 0 and \(UInt32.max)")
@@ -585,19 +581,19 @@ extension ComposeOrchestrator {
                 inherited: inherited?.intervalInNanoseconds,
                 field: "interval",
                 serviceName: serviceName,
-            ) ?? Int64(ContainerHealthCheck.defaultIntervalInNanoseconds),
+            ) ?? Int64(ComposeHealthCheck.defaultIntervalInNanoseconds),
             timeoutInNanoseconds: commitHealthCheckDuration(
                 fields["timeout"],
                 inherited: inherited?.timeoutInNanoseconds,
                 field: "timeout",
                 serviceName: serviceName,
-            ) ?? Int64(ContainerHealthCheck.defaultTimeoutInNanoseconds),
+            ) ?? Int64(ComposeHealthCheck.defaultTimeoutInNanoseconds),
             startPeriodInNanoseconds: commitHealthCheckDuration(
                 fields["start_period"],
                 inherited: inherited?.startPeriodInNanoseconds,
                 field: "start_period",
                 serviceName: serviceName,
-            ) ?? Int64(ContainerHealthCheck.defaultStartPeriodInNanoseconds),
+            ) ?? Int64(ComposeHealthCheck.defaultStartPeriodInNanoseconds),
             startIntervalInNanoseconds: commitHealthCheckDuration(
                 fields["start_interval"],
                 inherited: inherited?.startIntervalInNanoseconds,

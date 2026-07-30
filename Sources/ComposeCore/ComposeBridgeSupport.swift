@@ -19,8 +19,6 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
-import ContainerizationArchive
-import ContainerizationOCI
 import Foundation
 
 enum BridgeModelValue: Equatable {
@@ -62,14 +60,10 @@ func absoluteBridgePath(_ path: String) -> String {
 }
 
 func createBridgeInputDirectory(composeYAML: String) throws -> URL {
-    let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("container-compose-bridge-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let directory = try ComposeTemporaryFiles.createDirectory(prefix: "container-compose-bridge-")
     do {
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         let composeFile = directory.appendingPathComponent("compose.yaml")
-        try composeYAML.write(to: composeFile, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: composeFile.path)
+        try ComposeTemporaryFiles.write(Data(composeYAML.utf8), to: composeFile)
         return directory
     } catch {
         try? FileManager.default.removeItem(at: directory)
@@ -112,36 +106,7 @@ func ensureBridgeDestinationIsNew(_ destination: String) throws {
 }
 
 func createBridgeExportDirectory() throws -> URL {
-    let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("container-compose-bridge-export-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    do {
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-        return directory
-    } catch {
-        try? FileManager.default.removeItem(at: directory)
-        throw error
-    }
-}
-
-func extractBridgeTemplates(archive: URL, destination: String) throws {
-    let reader = try ArchiveReader(file: archive)
-    let rejected = try reader.extractContents(
-        to: URL(fileURLWithPath: destination, isDirectory: true),
-        including: bridgeArchiveMemberIsTemplate,
-    )
-    guard rejected.isEmpty else {
-        let paths = rejected.sorted().joined(separator: ", ")
-        throw ComposeError.invalidProject("transformer archive contains unsafe template paths: \(paths)")
-    }
-}
-
-private func bridgeArchiveMemberIsTemplate(_ path: String) -> Bool {
-    var components = path.split(separator: "/", omittingEmptySubsequences: true)
-    while components.first == "." {
-        components.removeFirst()
-    }
-    return components.first == "templates"
+    try ComposeTemporaryFiles.createDirectory(prefix: "container-compose-bridge-export-")
 }
 
 func bridgeFileDefinitions(
@@ -295,7 +260,7 @@ func bridgeTransformerDisplayReferences(_ transformer: ComposeBridgeTransformer)
 
 func bridgeOfficialTransformerNeedsAMD64(_ reference: String) -> Bool {
     #if arch(arm64)
-        guard let parsed = try? Reference.parse(reference),
+        guard let parsed = try? ComposeImageReference.parse(reference),
               [
                   "docker/compose-bridge-kubernetes",
                   "docker.io/docker/compose-bridge-kubernetes",

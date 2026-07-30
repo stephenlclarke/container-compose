@@ -19,10 +19,6 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
-import ContainerizationError
-import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 import Foundation
 
 public extension ComposeOrchestrator {
@@ -84,5 +80,35 @@ public extension ComposeOrchestrator {
             try visit(name)
         }
         return ordered
+    }
+
+    /// Groups selected services into dependency-safe runtime layers.
+    func serviceDependencyLayers(
+        services: [ComposeService],
+    ) throws -> [[ComposeService]] {
+        let selectedNames = Set(services.map(\.name))
+        let servicesByName = Dictionary(uniqueKeysWithValues: services.map { ($0.name, $0) })
+        var dependencies = [String: Set<String>]()
+        for service in services {
+            dependencies[service.name] = Set(serviceDependencies(service).map(\.key))
+                .intersection(selectedNames)
+        }
+
+        var remaining = selectedNames
+        var completed = Set<String>()
+        var layers: [[ComposeService]] = []
+        while !remaining.isEmpty {
+            let ready = remaining
+                .filter { dependencies[$0, default: []].isSubset(of: completed) }
+                .sorted()
+            guard !ready.isEmpty else {
+                let names = remaining.sorted().joined(separator: ", ")
+                throw ComposeError.invalidProject("dependency cycle involving \(names)")
+            }
+            layers.append(ready.compactMap { servicesByName[$0] })
+            remaining.subtract(ready)
+            completed.formUnion(ready)
+        }
+        return layers
     }
 }

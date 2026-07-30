@@ -85,6 +85,10 @@ jobs:
           heavy=false
           while IFS= read -r path; do
             case "$path" in
+              docs/upstream/*)
+                heavy=true
+                break
+                ;;
               *.md|docs/*|Formula/*)
                 ;;
               *)

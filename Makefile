@@ -17,15 +17,13 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := all
-.PHONY: fork-classifications-check upstream-divergence-report upstream-divergence-check upstream-divergence-release-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
+.PHONY: fork-classifications-check upstream-divergence-report upstream-divergence-check upstream-divergence-release-check upstream-handoff-registry-update upstream-handoff-registry-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
 
 SWIFT ?= swift
 SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
-# Swift 6.3.2 can crash in release coroutine optimization on this package's
-# watch loop. Size optimization avoids that toolchain crash while still
-# producing a release binary; override to empty when a newer toolchain no
-# longer needs the workaround.
-SWIFT_RELEASE_FLAGS ?= -Xswiftc -Osize
+# Additional release compiler flags for deliberate toolchain experiments.
+# Normal releases use SwiftPM's default speed-optimised production build.
+SWIFT_RELEASE_FLAGS ?=
 GO ?= go
 GO_RELEASE_ENV ?= CGO_ENABLED=0
 GO_RELEASE_BUILD_FLAGS ?= -trimpath
@@ -36,6 +34,11 @@ PYTHON ?= python3
 MARKDOWNLINT ?= markdownlint
 HAWKEYE ?= $(shell command -v hawkeye 2>/dev/null || printf '%s' .local/bin/hawkeye)
 SWIFT_COVERAGE_MIN ?= 90
+SWIFT_CORE_COVERAGE_MIN ?= $(SWIFT_COVERAGE_MIN)
+SWIFT_RUNTIME_SPI_COVERAGE_MIN ?= 95
+SWIFT_PROVIDER_COVERAGE_MIN ?= 75
+SWIFT_PLUGIN_COVERAGE_MIN ?= 50
+SWIFT_AGGREGATE_COVERAGE_MIN ?= 85
 GO_COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin-release-arm64.tar.gz
@@ -80,6 +83,7 @@ SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES := \
 SWIFT_TEST_FRAMEWORK_SEARCH_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_FRAMEWORK_CANDIDATES),$(if $(wildcard $(path)/Testing.framework),$(path))))
 SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES),$(if $(wildcard $(path)/libTesting.dylib $(path)/lib_TestingInterop.dylib),$(path))))
 SWIFT_TEST_RESULT_LOG ?= .build/swift-test.log
+SWIFT_RUNTIME_TEST_RESULT_LOG ?= .build/swift-runtime-test.log
 SWIFT_TEST_ATTEMPTS ?= 2
 # Coverage needs a normal Swift test exit; accepting a SwiftPM signal-13 fallback
 # can leave incomplete profile data that reports false 0% coverage.
@@ -170,6 +174,8 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-network-attachable-parity \
 	docker-compose-network-ipv6-parity \
 	docker-compose-network-ipam-options-parity \
+	docker-compose-network-service-discovery-parity \
+	docker-compose-links-parity \
 	docker-compose-oci-annotations-parity \
 	docker-compose-exposed-ports-parity \
 	docker-compose-empty-process-overrides-parity \
@@ -198,9 +204,10 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci ci-fast release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci ci-fast release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 .PHONY: worktree-audit worktree-audit-strict
+.PHONY: core-runtime-neutrality
 .PHONY: docker-compose-environment-parity docker-compose-named-volume-reuse-parity docker-compose-oci-annotations-parity docker-compose-exposed-ports-parity docker-compose-empty-process-overrides-parity docker-compose-provider-services-parity
 .PHONY: docker-compose-phase4-parity
 .PHONY: docker-compose-format-template-actions-parity
@@ -250,7 +257,7 @@ swift-test-build:
 
 swift-test: swift-test-build
 	@mkdir -p .build
-	@SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_TEST_ATTEMPTS)" Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
+	@PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_TEST_ATTEMPTS)" Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 	@if ! grep -Eq 'Test run with [1-9][0-9]* tests? .* passed|Executed [1-9][0-9]* tests?|swiftpm-testing-helper signal 13 toolchain failure' "$(SWIFT_TEST_RESULT_LOG)"; then \
 		printf 'swift test completed without running tests; check the active toolchain Testing.framework and rpath settings.\n' >&2; \
 		exit 1; \
@@ -274,7 +281,9 @@ swift-runtime-test: container-stack-build build swift-runtime-test-build
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		env CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
 		CONTAINER_BIN="$$container_binary" CONTAINER_COMPOSE_CONTAINER="$$container_binary" \
-		$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --filter "$(SWIFT_RUNTIME_TEST_FILTER)" $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
+		PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_RUNTIME_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS=1 \
+		Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build \
+		--filter "$(SWIFT_RUNTIME_TEST_FILTER)" $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 
 swift-coverage: swift-test-build
 	@if [[ -z "$(SWIFT_LLVM_COV)" ]]; then \
@@ -285,9 +294,9 @@ swift-coverage: swift-test-build
 		printf 'llvm-profdata is required; install the active Swift toolchain or set SWIFT_LLVM_PROFDATA=/path/to/llvm-profdata\n' >&2; \
 		exit 1; \
 	fi
-	@rm -f .build/*/debug/codecov/*.profraw .build/*/debug/codecov/*.profdata .build/codecov/fallback.profdata coverage.lcov coverage.xml
+	@rm -f .build/*/debug/codecov/*.profraw .build/*/debug/codecov/*.profdata .build/codecov/fallback.profdata coverage*.lcov coverage*.xml
 	@find .build -maxdepth 3 -path .build/index-build -prune -o -path '*/debug' -type d -exec mkdir -p '{}/codecov' \;
-	@SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_COVERAGE_TEST_ATTEMPTS)" SWIFT_TEST_ACCEPT_SIGNAL_13=0 Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
+	@PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_COVERAGE_TEST_ATTEMPTS)" SWIFT_TEST_ACCEPT_SIGNAL_13=0 Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 	test_binary="$$(find .build -path '*.xctest/Contents/MacOS/container-composePackageTests' -type f | head -n 1)"; \
 	profile=".build/codecov/fallback.profdata"; \
 	if [[ -z "$$test_binary" ]]; then \
@@ -308,13 +317,26 @@ swift-coverage: swift-test-build
 	fi; \
 	mkdir -p .build/codecov; \
 	find .build -path .build/index-build -prune -o -name '*.profraw' -type f -print0 | xargs -0 "$(SWIFT_LLVM_PROFDATA)" merge -sparse -o "$$profile"; \
-	"$(SWIFT_LLVM_COV)" export \
-		-format=lcov \
-		-instr-profile="$$profile" \
-		"$$test_binary" \
-		--sources Sources/ComposeCore \
-		> coverage.lcov; \
-	$(PYTHON) Tools/coverage/lcov-to-sonarqube-generic.py coverage.lcov coverage.xml
+	for coverage_target in \
+		core=Sources/ComposeCore \
+		runtime-spi=Sources/ComposeRuntimeSPI \
+		provider=Sources/ComposeContainerRuntime \
+		plugin=Sources/ComposePlugin \
+		aggregate=Sources; do \
+		name="$${coverage_target%%=*}"; \
+		source="$${coverage_target#*=}"; \
+		lcov_path="coverage-$${name}.lcov"; \
+		xml_path="coverage-$${name}.xml"; \
+		"$(SWIFT_LLVM_COV)" export \
+			-format=lcov \
+			-instr-profile="$$profile" \
+			"$$test_binary" \
+			--sources "$$source" \
+			> "$$lcov_path"; \
+		$(PYTHON) Tools/coverage/lcov-to-sonarqube-generic.py "$$lcov_path" "$$xml_path"; \
+	done; \
+	cp coverage-aggregate.lcov coverage.lcov; \
+	cp coverage-aggregate.xml coverage.xml
 
 go-test:
 	cd Tools/compose-normalizer && $(GO) test ./... -coverpkg=./... -coverprofile=coverage.out -covermode=atomic
@@ -380,6 +402,8 @@ cli-smoke-built:
 	[[ "$$version_pretty_output" == *"container:"*" (custom)"* ]]; \
 	[[ "$$version_pretty_output" == *"containerization:"*" (custom)"* ]]; \
 	[[ "$$version_pretty_output" == *"compose-go: $(COMPOSE_GO_VERSION)"* ]]; \
+	[[ "$$version_pretty_output" == *"runtime-capability-schema: 1"* ]]; \
+	[[ "$$version_pretty_output" == *"runtime-capability: io.github.stephenlclarke.container.compose.archive-copy.v1"* ]]; \
 	version_json_output="$$(".build/debug/compose" version --format json)"; \
 	[[ "$$version_json_output" == *'"version":"0.10.1"'* ]]; \
 	[[ "$$version_json_output" == *'"containerSource":"stephenlclarke/container"'* ]]; \
@@ -388,6 +412,8 @@ cli-smoke-built:
 	[[ "$$version_json_output" == *'"containerizationSource":'* ]]; \
 	[[ "$$version_json_output" == *'"containerizationDistribution":"custom"'* ]]; \
 	[[ "$$version_json_output" == *'"composeGoVersion":"$(COMPOSE_GO_VERSION)"'* ]]; \
+	[[ "$$version_json_output" == *'"runtimeCapabilitySchemaVersion":1'* ]]; \
+	[[ "$$version_json_output" == *'"runtimeCapabilities":["io.github.stephenlclarke.container.compose.archive-copy.v1"'* ]]; \
 	version_short_format_output="$$(".build/debug/compose" version -f json)"; \
 	[[ "$$version_short_format_output" == *'"version":"0.10.1"'* ]]; \
 	version_compact_format_output="$$(".build/debug/compose" version -fjson)"; \
@@ -423,7 +449,7 @@ cli-smoke-built:
 	service_tmp="$$(mktemp -d)"; \
 	trap 'rm -rf "$$service_tmp"' EXIT; \
 	printf '%s\n' '{"version":"0.10.1","source":"stephenlclarke/container-compose","branch":"service-smoke","lane":"stable","commit":"service-smoke","buildType":"release","containerSource":"stephenlclarke/container","containerRef":"matched-container","containerizationSource":"stephenlclarke/containerization","containerizationRef":"matched-containerization","composeGoVersion":"$(COMPOSE_GO_VERSION)"}' > "$$service_tmp/build-info.json"; \
-	printf '%s\n' '#!/usr/bin/env bash' 'if [[ "$$*" == "system version --format json" ]]; then' '  printf '\''[{"appName":"container","buildType":"release","commit":"matched-container","containerization":"stephenlclarke/containerization@matched-containerization","distribution":"custom","source":"stephenlclarke/container","version":"homebrew-main"}]\n'\''' '  exit 0' 'fi' 'if [[ "$$*" == "system status" ]]; then' '  printf '\''apiserver is not running and not registered with launchd\n'\'' >&2' '  exit 1' 'fi' 'exit 2' > "$$service_tmp/container"; \
+	printf '%s\n' '#!/usr/bin/env bash' 'if [[ "$$*" == "system version --format json" ]]; then' '  printf '\''[{"appName":"container","buildType":"release","commit":"matched-container","containerization":"stephenlclarke/containerization@matched-containerization","distribution":"custom","runtimeCapabilitySchemaVersion":1,"runtimeCapabilities":["io.github.stephenlclarke.container.compose.archive-copy.v1","io.github.stephenlclarke.container.compose.build-extensions.v1","io.github.stephenlclarke.container.compose.create-configuration.v1","io.github.stephenlclarke.container.compose.image-filesystem.v1","io.github.stephenlclarke.container.compose.lifecycle.v1","io.github.stephenlclarke.container.compose.observation.v1"],"source":"stephenlclarke/container","version":"homebrew-main"}]\n'\''' '  exit 0' 'fi' 'if [[ "$$*" == "system status" ]]; then' '  printf '\''apiserver is not running and not registered with launchd\n'\'' >&2' '  exit 1' 'fi' 'exit 2' > "$$service_tmp/container"; \
 	chmod +x "$$service_tmp/container"; \
 	set +e; \
 	service_output="$$(CONTAINER_COMPOSE_BUILD_INFO="$$service_tmp/build-info.json" CONTAINER_COMPOSE_CONTAINER="$$service_tmp/container" ".build/debug/compose" ps 2>&1)"; \
@@ -529,6 +555,8 @@ cli-smoke-built:
 	[[ "$$images_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$images_help_output" == *"Format the output. Values: [table | json]"* ]]; \
 	cp_help_output="$$(".build/debug/compose" cp --help)"; \
+	[[ "$$cp_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$cp_help_output" != *"Tar-stream operands stage through the host filesystem"* ]]; \
 	[[ "$$cp_help_output" == *"$${ansi_escape}[32m--archive$${ansi_escape}[0m"* ]]; \
 	[[ "$$cp_help_output" == *"$${ansi_escape}[32m--follow-link$${ansi_escape}[0m"* ]]; \
 	logs_help_output="$$(".build/debug/compose" logs --help)"; \
@@ -1444,6 +1472,12 @@ docker-compose-network-ipv6-parity: build docker-compose-reference
 docker-compose-network-ipam-options-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-network-ipam-options.sh --strict
 
+docker-compose-network-service-discovery-parity: build docker-compose-reference
+	$(PARITY_ENV) ./Tools/parity/check-compose-network-service-discovery.sh --strict
+
+docker-compose-links-parity: build docker-compose-reference
+	$(PARITY_ENV) ./Tools/parity/check-compose-links.sh --strict
+
 docker-compose-empty-process-overrides-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-empty-process-overrides.sh --strict
 
@@ -1484,9 +1518,17 @@ coverage: swift-coverage go-test
 
 coverage-check: coverage
 	$(PYTHON) Tools/coverage/check-coverage.py \
-		--swift-minimum "$(SWIFT_COVERAGE_MIN)" \
+		--swift-core-minimum "$(SWIFT_CORE_COVERAGE_MIN)" \
+		--swift-runtime-spi-minimum "$(SWIFT_RUNTIME_SPI_COVERAGE_MIN)" \
+		--swift-provider-minimum "$(SWIFT_PROVIDER_COVERAGE_MIN)" \
+		--swift-plugin-minimum "$(SWIFT_PLUGIN_COVERAGE_MIN)" \
+		--swift-aggregate-minimum "$(SWIFT_AGGREGATE_COVERAGE_MIN)" \
 		--go-minimum "$(GO_COVERAGE_MIN)" \
-		--swift coverage.xml \
+		--swift-core coverage-core.xml \
+		--swift-runtime-spi coverage-runtime-spi.xml \
+		--swift-provider coverage-provider.xml \
+		--swift-plugin coverage-plugin.xml \
+		--swift-aggregate coverage-aggregate.xml \
 		--go Tools/compose-normalizer/coverage.out
 
 sonar: coverage sonar-scan
@@ -1592,6 +1634,12 @@ upstream-divergence-check:
 upstream-divergence-release-check:
 	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --strict --require-upstream-current --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
 
+upstream-handoff-registry-update:
+	$(PYTHON) Tools/ci/upstream-handoff-registry.py render
+
+upstream-handoff-registry-check:
+	$(PYTHON) Tools/ci/upstream-handoff-registry.py check
+
 readme-upstream-metrics-update:
 	$(PYTHON) Tools/ci/update-readme-upstream-metrics.py --fetch
 
@@ -1613,13 +1661,16 @@ serve-docs:
 stack-consistency:
 	CONTAINER_STACK_REPO="$(CONTAINER_STACK_REPO)" $(PYTHON) Tools/ci/check-stack-consistency.py
 
+core-runtime-neutrality:
+	$(PYTHON) Tools/ci/check-core-runtime-neutrality.py --repository "$(CURDIR)" --swift "$(SWIFT)"
+
 worktree-audit:
 	$(PYTHON) Tools/ci/worktree-audit.py --repository "$(CURDIR)" --main main
 
 worktree-audit-strict:
 	$(PYTHON) Tools/ci/worktree-audit.py --repository "$(CURDIR)" --main main --strict
 
-check: lint stack-consistency check-licenses
+check: lint core-runtime-neutrality stack-consistency upstream-handoff-registry-check check-licenses
 
 lint: coverage-tools-test
 	@while IFS= read -r -d '' script; do \
@@ -1664,6 +1715,6 @@ pre-commit:
 
 clean:
 	$(SWIFT) package clean
-	rm -rf "$(DIST_DIR)" "$(PLUGIN_ARCHIVE)" "$(DOCS_OUTPUT_DIR)" "$(DOCS_SERVER_DIR)" "$(DOCS_SCRATCH_PATH)" .scannerwork coverage.lcov coverage.out coverage.report coverage.xml
+	rm -rf "$(DIST_DIR)" "$(PLUGIN_ARCHIVE)" "$(DOCS_OUTPUT_DIR)" "$(DOCS_SERVER_DIR)" "$(DOCS_SCRATCH_PATH)" .scannerwork coverage*.lcov coverage.out coverage.report coverage*.xml
 	rm -f *.profraw Tools/compose-normalizer/coverage.out Tools/compose-normalizer/compose-normalizer
 	find Tools -type d -name __pycache__ -prune -exec rm -rf {} +

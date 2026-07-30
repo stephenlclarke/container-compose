@@ -33,23 +33,29 @@ from typing import Sequence
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def discover_default_repo_root() -> Path:
+def repo_root_from_git_common_dir(root: Path, common_dir_text: str) -> Path:
+    common_dir = Path(common_dir_text.strip())
+    if not common_dir.is_absolute():
+        common_dir = root / common_dir
+    common_dir = common_dir.resolve()
+    if common_dir.name == ".git":
+        return common_dir.parent.parent
+    return root.parent
+
+
+def default_repo_root(root: Path = ROOT) -> Path:
     result = subprocess.run(
-        ["git", "rev-parse", "--git-common-dir"],
-        cwd=ROOT,
-        capture_output=True,
+        ["git", "-C", str(root), "rev-parse", "--git-common-dir"],
         check=False,
+        capture_output=True,
         text=True,
     )
-    if result.returncode != 0:
-        return ROOT.parent
-    common_dir = Path(result.stdout.strip())
-    if not common_dir.is_absolute():
-        common_dir = ROOT / common_dir
-    return common_dir.resolve().parent.parent
+    if result.returncode != 0 or not result.stdout.strip():
+        return root.parent
+    return repo_root_from_git_common_dir(root, result.stdout)
 
 
-DEFAULT_REPO_ROOT = discover_default_repo_root()
+DEFAULT_REPO_ROOT = default_repo_root()
 DEFAULT_CLASSIFICATION_REGISTRY = ROOT / "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json"
 ALLOWED_CLASSIFICATIONS = frozenset(
     {

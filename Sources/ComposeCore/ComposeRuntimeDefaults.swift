@@ -14,8 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerizationOCI
-import ContainerResource
 import Foundation
 
 /// Runtime defaults shared by typed Compose projections.
@@ -29,8 +27,8 @@ public enum ComposeRuntimeDefaults {
         ["", ""].joined(separator: "/")
     }
 
-    public static func shellProcess() -> ProcessConfiguration {
-        ProcessConfiguration(
+    public static func shellProcess() -> ComposeProcessConfiguration {
+        ComposeProcessConfiguration(
             executable: shellExecutable,
             arguments: [],
             environment: [],

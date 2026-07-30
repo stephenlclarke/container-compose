@@ -1,20 +1,20 @@
 {
   "components": {
     "container": {
-      "ref": "5119fea95e5c7820c4deceec75b59fadfa8f61c3",
+      "ref": "88460ab2ab0ca2f3fa9f91b2911b3b77647596c1",
       "repository": "stephenlclarke/container"
     },
     "container-builder-shim": {
       "image": {
-        "digest": "sha256:d993210e3960bce33a84e061d6cb96385b43277fe94a7492fd6c60b6317d2197",
+        "digest": "sha256:b48fbf42a51bf3432bd50d64732b4d6931944f3bb30f911a9a513cf8bab9b02e",
         "repository": "ghcr.io/stephenlclarke/container-builder-shim/builder",
-        "tag": "current-30068004175-f97cddf5b3aa"
+        "tag": "current-30434989734-61832d4ca917"
       },
-      "ref": "f97cddf5b3aae2426a094613793c11c41b1d2e53",
+      "ref": "61832d4ca91715180a84dec0eab091170174c43c",
       "repository": "stephenlclarke/container-builder-shim"
     },
     "containerization": {
-      "ref": "971fc7e5e27467ebd6227e1ae54f3e5c23de87b4",
+      "ref": "d7377b962af724f8d7c2b640f3ab12184d33f1af",
       "repository": "stephenlclarke/containerization"
     }
   },

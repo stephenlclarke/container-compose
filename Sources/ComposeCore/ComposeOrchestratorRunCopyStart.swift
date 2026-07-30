@@ -19,10 +19,6 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
-import ContainerizationError
-import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 import Foundation
 
 extension ComposeOrchestrator {
@@ -408,7 +404,7 @@ extension ComposeOrchestrator {
         var workingProject = project
         try await applyPullPolicy(nil, project: workingProject, services: services)
         for serviceReference in services {
-            var service = workingProject.services[serviceReference.name] ?? serviceReference
+            let service = workingProject.services[serviceReference.name] ?? serviceReference
             if service.provider != nil {
                 let variables = try await runProvider(project: workingProject, service: service, action: .up)
                 if !variables.isEmpty {
@@ -424,13 +420,6 @@ extension ComposeOrchestrator {
             if service.image == nil, service.pullPolicy != "build", service.build != nil {
                 try await build(project: workingProject, services: [service.name], noCache: false)
             }
-
-            service = try await serviceByResolvingLinkHosts(
-                project: workingProject,
-                service: service,
-                scaleOverrides: [:]
-            )
-            workingProject.services[service.name] = service
 
             let name = containerName(project: workingProject, service: service, oneOff: false)
             let existing = try await inspectContainer(name)

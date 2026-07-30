@@ -17,15 +17,22 @@
 import ComposeCore
 import ComposeRuntimeSPI
 import ContainerAPIClient
+import Darwin
 import Foundation
 
 /// `ContainerClient`-backed copier for real service container file copies.
-public struct ContainerClientCopier: ComposeRuntimeCopying {
+public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
     public typealias CopyInto = @Sendable (String, String, String, ContainerCopyTransferOptions) async throws -> Void
     public typealias CopyFrom = @Sendable (String, String, String, ContainerCopyTransferOptions) async throws -> Void
+    public typealias CopyArchiveInto =
+        @Sendable (String, FileHandle, String, ContainerCopyTransferOptions) async throws -> Void
+    public typealias CopyArchiveFrom =
+        @Sendable (String, String, FileHandle, Bool, ContainerCopyTransferOptions) async throws -> Void
 
     private let copyIntoOperation: CopyInto
     private let copyFromOperation: CopyFrom
+    private let copyArchiveIntoOperation: CopyArchiveInto
+    private let copyArchiveFromOperation: CopyArchiveFrom
 
     public init(
         copyInto: @escaping CopyInto = { id, source, destination, options in
@@ -47,9 +54,29 @@ public struct ContainerClientCopier: ComposeRuntimeCopying {
                 preserveOwnership: options.preserveOwnership,
             )
         },
+        copyArchiveInto: @escaping CopyArchiveInto = { id, archive, destination, options in
+            try await ContainerClient().copyIn(
+                id: id,
+                archive: archive,
+                destination: destination,
+                createParents: true,
+                preserveOwnership: options.preserveOwnership,
+            )
+        },
+        copyArchiveFrom: @escaping CopyArchiveFrom = { id, source, archive, copyContents, options in
+            try await ContainerClient().copyOut(
+                id: id,
+                source: source,
+                archive: archive,
+                followSymlink: options.followSymlink,
+                copyContents: copyContents,
+            )
+        },
     ) {
         copyIntoOperation = copyInto
         copyFromOperation = copyFrom
+        copyArchiveIntoOperation = copyArchiveInto
+        copyArchiveFromOperation = copyArchiveFrom
     }
 
     /// Copies host files into a service container through `ContainerClient`.
@@ -93,54 +120,139 @@ public struct ContainerClientCopier: ComposeRuntimeCopying {
         }
     }
 
-    /// Copies service container files through a temporary host path using
-    /// `ContainerClient.copyOut` followed by `ContainerClient.copyIn`.
+    /// Streams an archive into a service container through `ContainerClient`.
+    public func copyArchiveIntoContainer(
+        id: String,
+        archive: FileHandle,
+        destination: String,
+        options: ContainerCopyTransferOptions = ContainerCopyTransferOptions(),
+    ) async throws {
+        try await copyArchiveIntoOperation(id, archive, destination, options)
+    }
+
+    /// Streams a service container path as an archive through `ContainerClient`.
+    public func copyFromContainerAsArchive(
+        id: String,
+        source: String,
+        archive: FileHandle,
+        copyContents: Bool = false,
+        options: ContainerCopyTransferOptions = ContainerCopyTransferOptions(),
+    ) async throws {
+        try await copyArchiveFromOperation(id, source, archive, copyContents, options)
+    }
+
+    /// Streams service container files directly between native copy APIs.
     public func copyBetweenContainers(sourceID: String, source: String, destinationID: String, destination: String, options: ContainerCopyTransferOptions = ContainerCopyTransferOptions()) async throws {
-        let lastComponent = (source as NSString).lastPathComponent
-        guard !lastComponent.isEmpty, lastComponent != "/" else {
-            throw ComposeError.invalidProject("source path has no last component: \(source)")
-        }
-
-        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
-            UUID().uuidString,
-            isDirectory: true,
-        )
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        defer {
-            try? FileManager.default.removeItem(at: tempDirectory)
-        }
-
-        let stagedSource = tempDirectory.appendingPathComponent(lastComponent).path
-        try await copyFromContainer(id: sourceID, source: source, destination: stagedSource, options: options)
+        let archiveSource = Self.archiveSource(source)
+        let (reader, writer) = try Self.archivePipe()
         let destinationOptions = ContainerCopyTransferOptions(preserveOwnership: options.preserveOwnership)
-        try await copyIntoContainer(
-            id: destinationID,
-            source: stagedSource,
-            destination: destination,
-            options: destinationOptions,
+
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    defer { try? writer.close() }
+                    try await copyArchiveFromOperation(
+                        sourceID,
+                        archiveSource.path,
+                        writer,
+                        archiveSource.copyContents,
+                        options,
+                    )
+                }
+                group.addTask {
+                    defer { try? reader.close() }
+                    try await copyArchiveIntoOperation(
+                        destinationID,
+                        reader,
+                        destination,
+                        destinationOptions,
+                    )
+                }
+                do {
+                    while try await group.next() != nil {}
+                } catch {
+                    try? writer.close()
+                    try? reader.close()
+                    group.cancelAll()
+                    throw error
+                }
+            }
+        } catch {
+            try? writer.close()
+            try? reader.close()
+            throw error
+        }
+    }
+
+    private static func archiveSource(_ source: String) -> (path: String, copyContents: Bool) {
+        if source == "/." {
+            return ("/", true)
+        }
+        guard source.hasSuffix("/.") else {
+            return (source, false)
+        }
+        let path = String(source.dropLast(2))
+        return (path.isEmpty ? "/" : path, true)
+    }
+
+    private static func archivePipe() throws -> (reader: FileHandle, writer: FileHandle) {
+        var descriptors = [Int32](repeating: -1, count: 2)
+        guard socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+
+        var noSignal: Int32 = 1
+        guard setsockopt(
+            descriptors[1],
+            SOL_SOCKET,
+            SO_NOSIGPIPE,
+            &noSignal,
+            socklen_t(MemoryLayout.size(ofValue: noSignal)),
+        ) == 0 else {
+            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            close(descriptors[0])
+            close(descriptors[1])
+            throw error
+        }
+
+        return (
+            FileHandle(fileDescriptor: descriptors[0], closeOnDealloc: true),
+            FileHandle(fileDescriptor: descriptors[1], closeOnDealloc: true),
         )
     }
 }
 
 /// `ContainerClient`-backed exporter for real service container exports.
 public struct ContainerClientExporter: ComposeRuntimeExporting {
-    private static let isStateless = true
+    public typealias Export = @Sendable (String, URL, Bool, Bool) async throws -> Void
 
-    public init() {
-        _ = Self.isStateless
+    private let temporaryDirectory: URL
+    private let exportOperation: Export
+
+    public init(
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        export: @escaping Export = { id, archive, live, noFreeze in
+            try await ContainerClient().export(id: id, archive: archive, live: live, noFreeze: noFreeze)
+        },
+    ) {
+        self.temporaryDirectory = temporaryDirectory
+        exportOperation = export
     }
 
     /// Exports through `ContainerClient.export(id:archive:live:noFreeze:)`.
     public func exportContainer(id: String, output: String?, live: Bool, noFreeze: Bool) async throws {
-        let client = ContainerClient()
-        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let tempDirectory = try ComposeTemporaryFiles.createDirectory(
+            in: temporaryDirectory,
+            prefix: "container-compose-export-",
+        )
         defer {
             try? FileManager.default.removeItem(at: tempDirectory)
         }
 
         let archive = tempDirectory.appendingPathComponent("archive.tar")
-        try await client.export(id: id, archive: archive, live: live, noFreeze: noFreeze)
+        try ComposeTemporaryFiles.prepareFile(at: archive)
+        try await exportOperation(id, archive, live, noFreeze)
+        try ComposeTemporaryFiles.secureFile(at: archive)
 
         if let output {
             try FileManager.default.moveItem(at: archive, to: Self.outputURL(output))

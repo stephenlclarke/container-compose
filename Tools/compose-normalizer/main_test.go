@@ -1427,8 +1427,11 @@ volumes:
 	if got, want := api.Networks, []string{"backend"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Networks = %#v, want %#v", got, want)
 	}
-	if got, want := api.NetworkAliases, map[string][]string{"backend": []string{"api.internal"}}; !reflect.DeepEqual(got, want) {
+	if got, want := api.NetworkAliases, map[string][]string{"backend": []string{"api", "api.internal"}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.NetworkAliases = %#v, want %#v", got, want)
+	}
+	if got, want := project.Services["redis"].NetworkAliases, map[string][]string{"default": []string{"redis"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("redis.NetworkAliases = %#v, want %#v", got, want)
 	}
 	if got, want := api.NetworkOptions, map[string]normalizedNetworkOptions{
 		"backend": {

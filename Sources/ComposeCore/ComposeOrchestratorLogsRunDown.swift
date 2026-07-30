@@ -19,10 +19,6 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
-import ContainerizationError
-import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 import Foundation
 
 /// Direct-runtime log arguments used by dry-run rendering.
@@ -472,7 +468,7 @@ public extension ComposeOrchestrator {
         activeServiceNames.insert(serviceName)
         runProject = try projectByValidatingLinks(project: runProject, activeServiceNames: activeServiceNames)
         service = runProject.services[serviceName] ?? service
-        var dependencyServices = try selectedDependencyServices.map { service in
+        let dependencyServices = try selectedDependencyServices.map { service in
             guard let activeService = runProject.services[service.name] else {
                 throw ComposeError.invalidProject("unknown service '\(service.name)'")
             }
@@ -483,17 +479,6 @@ public extension ComposeOrchestrator {
             project: runProject,
             validateDependencies: !run.noDeps,
         )
-        runProject = try await projectByResolvingExternalLinks(
-            project: runProject,
-            services: dependencyServices + [service],
-        )
-        service = runProject.services[serviceName] ?? service
-        dependencyServices = try selectedDependencyServices.map { service in
-            guard let activeService = runProject.services[service.name] else {
-                throw ComposeError.invalidProject("unknown service '\(service.name)'")
-            }
-            return activeService
-        }
         try validateRunLifecycleHooks(service: service, options: run)
         try validatePublishedPorts(services: dependencyServices)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
@@ -826,15 +811,10 @@ public extension ComposeOrchestrator {
             externalVolumeMounts: externalVolumeMounts,
             imageHealthCheckCache: cache,
         )
-        var preparedService = preparedProject.services[service.name] ?? service
+        let preparedService = preparedProject.services[service.name] ?? service
         if !run.noDeps {
             try await waitForDependencyConditions(project: preparedProject, service: preparedService)
         }
-        preparedService = try await serviceByResolvingLinkHosts(
-            project: preparedProject,
-            service: preparedService,
-            scaleOverrides: [:],
-        )
         return ComposeRunServicePreparation(
             project: preparedProject,
             service: preparedService,

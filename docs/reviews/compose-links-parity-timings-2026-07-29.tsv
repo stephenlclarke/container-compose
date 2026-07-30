@@ -1,0 +1,89 @@
+# generated_at=2026-07-29T19:17:48Z
+# workload=startup,scaled-link-lookup,scaled-link-isolation,readdress-link-isolation,scaled-link-hosts,readdress-link-hosts,external-absent-lookup,external-alias-hosts,external-secondary-create,external-secondary-lookup,external-remove,external-post-remove-lookup,external-backend-create,external-backend-lookup,readdress,post-readdress-lookup
+# repetitions=3
+# comparison=median elapsed monotonic seconds by matching operation
+# timeout_seconds=300
+# material_slowdown=max_ratio:30,min_delta_seconds:60
+# fixture_image=alpine:3.20
+# image_preparation=pulled outside the timed startup workload
+implementation	operation	repetition	seconds
+# host=Darwin arm64
+# docker_engine=29.2.1
+# docker_compose=5.3.1
+# container_compose=0.10.1
+docker	startup	1	0.566132
+docker	scaled_link_lookup	1	0.111663
+docker	scaled_link_lookup	2	0.109761
+docker	scaled_link_lookup	3	0.106875
+docker	scaled_link_isolation	1	0.107856
+docker	scaled_link_isolation	2	0.100727
+docker	scaled_link_isolation	3	0.118566
+docker	readdress_link_isolation	1	0.109737
+docker	readdress_link_isolation	2	0.113050
+docker	readdress_link_isolation	3	0.113070
+docker	scaled_link_hosts	1	0.111506
+docker	scaled_link_hosts	2	0.110591
+docker	scaled_link_hosts	3	0.106173
+docker	readdress_link_hosts	1	0.115234
+docker	readdress_link_hosts	2	0.103611
+docker	readdress_link_hosts	3	0.108965
+docker	external_absent_lookup	1	0.113537
+docker	external_absent_lookup	2	0.099846
+docker	external_absent_lookup	3	0.119206
+docker	external_alias_hosts	1	0.117186
+docker	external_alias_hosts	2	0.118278
+docker	external_alias_hosts	3	0.117231
+docker	external_secondary_create	1	0.173169
+docker	external_secondary_lookup	1	0.122403
+docker	external_secondary_lookup	2	0.110571
+docker	external_secondary_lookup	3	0.118083
+docker	external_remove	1	0.164043
+docker	external_post_remove_lookup	1	0.117509
+docker	external_post_remove_lookup	2	0.109412
+docker	external_post_remove_lookup	3	0.111609
+docker	external_backend_create	1	0.156792
+docker	external_backend_lookup	1	0.112832
+docker	external_backend_lookup	2	0.114789
+docker	external_backend_lookup	3	0.111382
+docker	target_readdress	1	1.331283
+docker	post_readdress_lookup	1	0.116307
+docker	post_readdress_lookup	2	0.118246
+docker	post_readdress_lookup	3	0.119815
+container-compose	startup	1	5.858463
+container-compose	scaled_link_lookup	1	0.643350
+container-compose	scaled_link_lookup	2	0.640169
+container-compose	scaled_link_lookup	3	0.657193
+container-compose	scaled_link_isolation	1	0.633019
+container-compose	scaled_link_isolation	2	0.635382
+container-compose	scaled_link_isolation	3	0.583052
+container-compose	readdress_link_isolation	1	0.633606
+container-compose	readdress_link_isolation	2	0.653046
+container-compose	readdress_link_isolation	3	0.644689
+container-compose	scaled_link_hosts	1	0.643461
+container-compose	scaled_link_hosts	2	0.657258
+container-compose	scaled_link_hosts	3	0.634181
+container-compose	readdress_link_hosts	1	0.656378
+container-compose	readdress_link_hosts	2	0.570616
+container-compose	readdress_link_hosts	3	0.637071
+container-compose	external_absent_lookup	1	0.615824
+container-compose	external_absent_lookup	2	0.648599
+container-compose	external_absent_lookup	3	0.636270
+container-compose	external_alias_hosts	1	0.633637
+container-compose	external_alias_hosts	2	0.651894
+container-compose	external_alias_hosts	3	0.633909
+container-compose	external_secondary_create	1	0.751406
+container-compose	external_secondary_lookup	1	0.636358
+container-compose	external_secondary_lookup	2	0.640009
+container-compose	external_secondary_lookup	3	0.657377
+container-compose	external_remove	1	0.253843
+container-compose	external_post_remove_lookup	1	0.636079
+container-compose	external_post_remove_lookup	2	0.641033
+container-compose	external_post_remove_lookup	3	0.639397
+container-compose	external_backend_create	1	0.645653
+container-compose	external_backend_lookup	1	0.642246
+container-compose	external_backend_lookup	2	0.637011
+container-compose	external_backend_lookup	3	0.640887
+container-compose	target_readdress	1	2.683573
+container-compose	post_readdress_lookup	1	0.634179
+container-compose	post_readdress_lookup	2	0.623274
+container-compose	post_readdress_lookup	3	0.638314
