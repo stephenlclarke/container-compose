@@ -74,6 +74,46 @@ def create_fixture(root: Path) -> tuple[Path, Path, Path]:
     return upstream, fork, work
 
 
+def registry_for(
+    upstream: Path,
+    work: Path,
+    commits: list[str],
+    *,
+    duplicate: bool = False,
+) -> dict[str, object]:
+    slices: list[dict[str, object]] = [
+        {
+            "id": "fixture-maintenance",
+            "classification": "support-maintenance",
+            "owner": "fixture/fork",
+            "reason": "Independent fork maintenance.",
+            "upstreamDisposition": "Retain while the fork requires it.",
+            "commits": commits,
+        }
+    ]
+    if duplicate:
+        slices.append(
+            {
+                "id": "fixture-duplicate",
+                "classification": "generic-runtime-primitive",
+                "owner": "fixture/fork",
+                "reason": "Duplicate test entry.",
+                "upstreamDisposition": "Submit upstream.",
+                "commits": commits,
+            }
+        )
+    return {
+        "schemaVersion": 1,
+        "repositories": {
+            "fixture": {
+                "upstreamHead": git(upstream, "rev-parse", "HEAD"),
+                "forkHead": git(work, "rev-parse", "fork/main"),
+                "slices": slices,
+            }
+        },
+    }
+
+
 class UpstreamDivergenceReportTests(unittest.TestCase):
     def spec(self) -> reporter.RepoSpec:
         return reporter.RepoSpec(
@@ -140,6 +180,80 @@ class UpstreamDivergenceReportTests(unittest.TestCase):
             failures = reporter.strict_failures(stack_report, require_upstream_current=True)
 
             self.assertIn("fixture: fork main is 1 commit(s) behind Apple upstream", failures)
+
+    def test_validates_every_patch_unique_nonmerge_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            upstream, _, work = create_fixture(root)
+            commit_file(work, "fork-only.txt", "fork\n", "add fork feature")
+            git(work, "push", "fork", "main")
+            commit_hash = git(work, "rev-parse", "HEAD")
+            registry = registry_for(upstream, work, [commit_hash])
+
+            report = reporter.analyze_repository(
+                self.spec(),
+                root,
+                fetch=True,
+                max_commits=5,
+                classification_registry=registry,
+            )
+
+            self.assertEqual(report.fork_classifications.status, "current")
+            self.assertEqual(report.fork_classifications.classified, 1)
+            self.assertEqual(report.fork_classifications.total, 1)
+            self.assertEqual(report.fork_classifications.counts, {"support-maintenance": 1})
+
+    def test_strict_classification_check_rejects_unclassified_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            upstream, _, work = create_fixture(root)
+            commit_file(work, "fork-only.txt", "fork\n", "add fork feature")
+            git(work, "push", "fork", "main")
+            registry = registry_for(upstream, work, [])
+            registry["repositories"]["fixture"]["slices"] = []
+
+            stack_report = reporter.build_report(
+                root,
+                fetch=True,
+                max_commits=5,
+                specs=(self.spec(),),
+                classification_registry=registry,
+            )
+            failures = reporter.strict_failures(stack_report, require_classifications=True)
+            classification_failures = reporter.classification_failures(stack_report)
+
+            self.assertEqual(stack_report.repositories[0].fork_classifications.status, "stale")
+            self.assertIn("fixture: fork commit classifications are stale (0/1)", failures)
+            self.assertEqual(
+                classification_failures,
+                ["fixture: fork commit classifications are stale (0/1)"],
+            )
+
+    def test_rejects_duplicate_classification_and_stale_heads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            upstream, _, work = create_fixture(root)
+            commit_file(work, "fork-only.txt", "fork\n", "add fork feature")
+            git(work, "push", "fork", "main")
+            commit_hash = git(work, "rev-parse", "HEAD")
+            registry = registry_for(upstream, work, [commit_hash], duplicate=True)
+            registry["repositories"]["fixture"]["forkHead"] = "0" * 40
+
+            report = reporter.analyze_repository(
+                self.spec(),
+                root,
+                fetch=True,
+                max_commits=5,
+                classification_registry=registry,
+            )
+
+            self.assertEqual(report.fork_classifications.status, "stale")
+            self.assertTrue(
+                any("duplicate classified commits" in error for error in report.fork_classifications.errors)
+            )
+            self.assertTrue(
+                any("registry forkHead" in error for error in report.fork_classifications.errors)
+            )
 
     def test_renders_markdown_and_json_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

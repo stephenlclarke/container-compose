@@ -42,6 +42,7 @@ The review must cover every potential PR independently:
 | --- | --- | --- |
 | Current Apple review | `docs/upstream/APPLE-UPSTREAM-REVIEW.md` | Live disposition of affected bugs, approved open pull requests, local ports, and unresolved follow-up work. |
 | Runtime-coupling audit | `docs/upstream/COMPOSE-COUPLING-AUDIT.md` | July 2026 classification of every fork-ahead commit, clean Apple baselines, and the Compose-owned slices removed from the required runtime delta. |
+| Fork commit registry | `docs/upstream/FORK-COMMIT-CLASSIFICATIONS.md`, `docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json` | Reviewed owner, reason, and upstream disposition for every patch-unique non-merge fork commit. The strict divergence gate rejects unclassified or stale entries. |
 | Immutable PR code archive | `docs/upstream/PR-ARCHIVE.json` | Full-SHA, stephenlclarke-owned snapshots of every open upstream proposal that the stack depends on. [Verify Upstream PR Archives](../../.github/workflows/upstream-pr-archive.yml) checks them daily. |
 | Compose-owned compatibility slices | `docs/upstream/container-compose/` | Plugin-owned issue/PR drafts with commit tracking. These drafts may describe Docker/Compose compatibility and the temporary command-vector bridge while the typed service-create adapter is still being wired. |
 | Copy slices | `docs/upstream/copy/` | Compose-facing copy follow-link and archive drafts with commit tracking. Runtime copy primitives live under the Apple folders. |

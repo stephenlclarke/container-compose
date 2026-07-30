@@ -17,7 +17,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := all
-.PHONY: upstream-divergence-report upstream-divergence-check upstream-divergence-release-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
+.PHONY: fork-classifications-check upstream-divergence-report upstream-divergence-check upstream-divergence-release-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
 
 SWIFT ?= swift
 SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
@@ -1582,6 +1582,9 @@ coverage-tools-test:
 
 upstream-divergence-report:
 	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
+
+fork-classifications-check:
+	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --classifications-only --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
 
 upstream-divergence-check:
 	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --strict --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
