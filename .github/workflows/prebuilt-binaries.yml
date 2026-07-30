@@ -971,6 +971,9 @@ jobs:
         working-directory: container-compose
         run: |
           set -euo pipefail
+          source Tools/ci/container-runtime-lock.sh
+          acquire_container_runtime_lock
+
           demo_root="${RUNNER_TEMP}/current-build-demo"
           demo_app_root="${demo_root}/app"
           demo_output=".build/current-demo/${DEMO_ASSET}"

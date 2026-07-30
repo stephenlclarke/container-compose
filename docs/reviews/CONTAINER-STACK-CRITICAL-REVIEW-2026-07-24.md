@@ -800,8 +800,8 @@ Docker and Compose policy remains in this repository.
 
 Priority definitions:
 
-- **P1:** correctness, hang, data/metadata loss, security, or release-evidence
-  blocker;
+- **P1:** correctness, hang, data/metadata loss, security, release-evidence,
+  or explicit project-goal gate;
 - **P2:** material parity, architecture, maintainability, or reliability gap;
 - **P3:** useful extension, performance, or lower-risk hardening.
 
@@ -824,6 +824,7 @@ new Apple design work.
 | DOC-010 | P1 | Compose | Correct `DESIGN.md`, coupling audit, and `STATUS.md` claims | Documentation matches the actual package graph and tested command semantics |
 | APPLE-011 | P1 | Runtime forks | Review/port signal and log-tail fixes #1997/#2000 if they remain unmerged | Focused runtime tests and Compose kill/log-tail parity pass; local commits remain independently removable |
 | APPLE-012 | P1 | Runtime forks | Fix log fan-out after dead client (#2009) | One failed writer is removed or isolated; persisted log and healthy attach writer continue; no busy loop |
+| SQ-013 | ✅ Complete | Compose | Refactor preflight signal/cancellation closure nesting (`swift:S3087`) | Signed refactor `98f2a7139b2e99a60cabdc8ca2d7190c33b7e994` introduced named helpers, preserved signal/cancellation/bounded-output behavior, passed the focused regressions, and closed the tracked branch issue without a suppression |
 
 Phase gate:
 
@@ -889,6 +890,7 @@ Goal: make long-running and interactive workloads predictable.
 | LIFE-302 | ✅ Complete | Compose | Run lifecycle hooks around interactive foreground `run` | Reattach, one-shot signal proxy, detach keys, hook order, exact exit status, auto-removal, and cancellation pass |
 | LOG-303 | ✅ Complete | Runtime/Compose | Stabilise signal payload, tail boundaries, and attached-client fan-out | #1941, #1967, and #2009 regressions pass under the committed Compose attach/log fixture; Apple convergence remains tracked separately |
 | XPC-304 | P1 | Apple/runtime | Resolve delayed-reply continuation crash and startup error masking | No continuation misuse; bootstrap root cause preserved; repeated start/stop soak passes |
+| CI-309 | ✅ Complete | Compose CI | Serialize cooperating per-user runtime owners and add bounded idempotency-aware interruption recovery | One advisory host lock protects every participating long-running Compose workflow; exact init archives are reusable; startup proves API readiness; interrupted pulls retry once; interrupted deletes require a confirmed absent postcondition |
 | STATE-305 | P2 | Runtime/Compose | Add feasible `dead`, `restarting`, and `removing` states | Inspect, `ps`, filters, wait, and transition parity pass |
 | EVT-306 | P2 | Runtime/Compose | Add oom, explicit restart, rename, resize, update, attach/detach events | Event order, attributes, JSON/text rendering, filters, and no duplicate remove action |
 | STATS-307 | P2 | Runtime/Compose | Complete machine-backed CPU/memory statistics | Streaming/no-stream output has defined denominators and Docker-compatible unavailable values |
@@ -932,16 +934,17 @@ Phase gate:
 | MODEL-503 | P3 | Runtime/Compose | Select and integrate a model-runner backend | Model lifecycle, endpoint readiness, variable injection, failure cleanup, and secrets reviewed |
 | LOG-504 | P2 | Runtime/Compose | Add distinct local/json-file and extensible logging drivers | Rotation, buffering, blocking mode, options, and plugin failure semantics pass |
 | LINK-505 | P2 | Compose | Complete legacy link behaviour after DNS | Shared-network selection, aliases, dynamic updates, and any retained env semantics match oracle |
-| PARITY-506 | P2 | Compose | Add regression probes for every confirmed gap | No fully-supported status row lacks a behaviour-level oracle or justified platform exemption |
+| PARITY-506 | P1 | Compose | Add regression probes for every confirmed gap | No macOS-exercisable status row lacks a behavior-level oracle or justified platform exemption |
 
 Phase gate:
 
-- no Compose-owned item remains in the runtime gap column;
+- no project-owned macOS Compose behavior remains partial or unsupported;
+- every macOS-exercisable status row has a behavior-level oracle or a justified platform exemption;
 - status is generated from executable capability tests where practical;
 - full local-mode Docker Compose parity suite passes against v5.3.1 or a
   deliberately updated pinned oracle.
 
-### Phase 6: Build Performance and Ecosystem Integration
+### Phase 6: macOS Performance Gate and Ecosystem Integration
 
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
@@ -951,14 +954,25 @@ Phase gate:
 | BUILD-604 | P3 | Container/Compose | Add image ID file support (#1998) where required | Atomic file write, no partial value, digest parity, and clear permission errors |
 | ECO-605 | P3 | Apple/Compose | Support Dev Containers through stable API capability, not CLI scraping | Attach, exec, copy, ports, lifecycle, and feature install have versioned contracts |
 | ECO-606 | P3 | Stack | Publish machine-readable capability and compatibility data | Tools can determine supported Compose/runtime/build features without parsing prose |
-| PERF-607 | P3 | Stack | Establish representative performance baselines | Startup, 10/50-service up, logs, sync, build context, and teardown regressions are gated |
+| PERF-607 | P1 | Stack | Gate macOS Compose performance against Docker Compose | Same-host Docker Compose comparisons record median and P95 startup, 10/50-service up, logs, sync, build context, and teardown; no metric is materially worse outside a declared noise band |
 
 Phase gate:
 
 - builder race and liveness tests are meaningful;
-- performance changes have before/after data;
+- the macOS performance gate is comparable or better than the Docker Compose reference;
+- performance changes have reproducible before/after data;
 - ecosystem integration uses stable public interfaces;
 - capability negotiation replaces version guessing.
+
+## 30 July 2026 Implementation Evidence
+
+PR 173 merged as `31b83499abec6fe090a44dfe24527f0d220fd0b9` after selecting the complete requested-platform OCI config and reducing the successful platform path from three image-resource conversions to one. Exact-main CI, Documentation, and Quality runs passed; CodeQL was absent because the workflow had been manually disabled, so no CodeQL result is claimed.
+
+The subsequent Compose branch closes `SQ-013` in `98f2a7139b2e99a60cabdc8ca2d7190c33b7e994`, removes scanner encoding warnings in `35c2848ac37e8e5ad607b9b7662b396d1e6ef2b3`, implements bridge-mode adapter/resource behavior in `36d81f70402c0d203bde8f7c8d57bb574a689e52` and `d6b47233012a31be559c91f8e51f7a579a704736`, and makes runtime validation deterministic for cooperating host users in `9a95ec8cc5a84e15a187ff20ccf948e9ac14bfe9` plus `4a2e0003496c9f96afcc0b3f3d54124ebc09b25b`.
+
+The full unit gate passes 1,277 Swift tests in 46 suites plus all Go packages. A controlled live run then passed all 62 maintained Docker Compose targets in 1,024.25s on Mac17,9/macOS 26.5.2 against Docker Compose 5.3.1 and Docker Engine 29.2.1. The bridge comparator records 0.151s/1.101s Docker/candidate `up` medians (7.30×) and 10.179s/5.969s `down` medians (0.59×). The result closes neither `PERF-607` nor the wider parity register: startup is not yet comparable, the representative median/P95 matrix is incomplete, and runtime-primitive gaps remain.
+
+The controlled run also proves the host-isolation limit. Marker-protected app roots isolate data, but stable per-user launchd/XPC service names remain shared across repositories and runners. The advisory `/tmp/container-compose-runtime-${UID}.lock` protects only participants; a non-cooperating devcontainer runner had to be quiesced and was restored immediately after the run. Two SwiftNIO event-loop shutdown warnings during image-volume builder teardown remain visible as backend cleanup evidence. These do not overturn the 62 passing target results, but they remain relevant to `XPC-304` and Builder lifecycle work.
 
 ## Validation Evidence
 

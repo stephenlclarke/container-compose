@@ -60,8 +60,17 @@ committed image must inherit the complete `linux/amd64` config.
   selected variants and assert the exact request sequence.
 - [x] Local CI, quality, accepted SonarQube analysis, and post-change Docker
   Compose v5.3.1 parity are green.
-- [ ] Hosted CI, CodeQL, Quality, Documentation, and SonarQube checks are green
-  on the final PR head.
+- [x] Hosted CI, Quality, Documentation, and SonarQube validation are green on
+  the merged revision.
+- [ ] CodeQL evidence is intentionally outstanding while the workflow is
+  manually disabled at the owner's request; the required context remains
+  configured and no absent run is counted as green.
+
+## Final disposition
+
+Pull request 173 merged on 30 July 2026 with head `aa273273536bfab5cc4d0d2a576ec8961aa69070` and merge commit `31b83499abec6fe090a44dfe24527f0d220fd0b9`; issue 172 closed with the merge.
+
+Exact-merge [CI run 30546490764](https://github.com/stephenlclarke/container-compose/actions/runs/30546490764), [Documentation run 30546492821](https://github.com/stephenlclarke/container-compose/actions/runs/30546492821), and [Quality run 30546494706](https://github.com/stephenlclarke/container-compose/actions/runs/30546494706) all passed. The CI runtime-validation job included a successful SonarQube scan. CodeQL did not run because GitHub reports the workflow as `disabled_manually`; this is documented as missing evidence, not a pass.
 
 ## Known residual gaps
 

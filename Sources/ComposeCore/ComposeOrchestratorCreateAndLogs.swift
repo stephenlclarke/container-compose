@@ -77,7 +77,9 @@ public extension ComposeOrchestrator {
             pullPolicy: create.pullPolicy,
         )
 
-        try await ensureResources(project: workingProject)
+        try await ensureResources(
+            project: projectBySelectingResources(project: workingProject, services: services)
+        )
 
         for serviceReference in services {
             var service = workingProject.services[serviceReference.name] ?? serviceReference

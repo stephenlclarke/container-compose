@@ -2036,6 +2036,34 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("up maps network mode bridge to the built-in runtime network")
+    func upMapsNetworkModeBridgeToBuiltinRuntimeNetwork() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.networkMode = "bridge"
+                },
+            ]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "default"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("up maps pid host to container pid argument")
     func upMapsPIDHostToContainerPIDArgument() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -3347,6 +3375,35 @@ struct ComposeOrchestratorTests {
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(command.containsSequence(["--network", "host"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("create maps network mode bridge to the built-in runtime network")
+    func createMapsNetworkModeBridgeToBuiltinRuntimeNetwork() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.networkMode = "bridge"
+                },
+            ]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--network", "default"]))
         #expect(!command.contains("demo_default"))
         #expect(await resourceManager.requests.isEmpty)
     }
@@ -17073,6 +17130,73 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("down accepts an interrupted delete only after confirming the container is absent")
+    func downConfirmsInterruptedDeletePostcondition() async throws {
+        let interrupted = ContainerizationError(.interrupted, message: "XPC connection interrupted")
+        let deleteError = ContainerizationError(.internalError, message: "failed to delete container", cause: interrupted)
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let lifecycleManager = RecordingContainerLifecycleManager(
+            deleteErrorsByID: ["demo-api-1": deleteError]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await orchestrator.down(project: project, options: ComposeDownOptions())
+
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+    }
+
+    @Test("down preserves an interrupted delete failure when the container still exists")
+    func downPreservesInterruptedDeleteFailure() async throws {
+        let interrupted = ContainerizationError(.interrupted, message: "XPC connection interrupted")
+        let deleteError = ContainerizationError(.internalError, message: "failed to delete container", cause: interrupted)
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-1", status: "stopped"),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager(
+            deleteErrorsByID: ["demo-api-1": deleteError]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await orchestrator.down(project: project, options: ComposeDownOptions())
+            Issue.record("Expected interrupted delete failure")
+        } catch let error as ContainerizationError {
+            #expect(error == deleteError)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+    }
+
     @Test("down removes remaining project scoped containers")
     func downRemovesRemainingProjectScopedContainers() async throws {
         let runner = RecordingRunner()
@@ -21828,6 +21952,22 @@ struct ComposeOrchestratorTests {
             .exists("example/api"),
             .exists("postgres"),
             .pull("postgres"),
+        ])
+    }
+
+    @Test("image manager repeats an idempotent pull once after an XPC interruption")
+    func imageManagerRecoversInterruptedPull() async throws {
+        let interrupted = ContainerizationError(.interrupted, message: "XPC connection interrupted")
+        let client = RecordingContainerImageAPIClient(pullErrors: [
+            "example/api": [interrupted],
+        ])
+        let manager = ContainerClientImageManager(client: client)
+
+        try await manager.pullImage("example/api")
+
+        #expect(await client.requests == [
+            .pull("example/api"),
+            .pull("example/api"),
         ])
     }
 
@@ -28105,6 +28245,31 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("run maps network mode bridge to the built-in runtime network")
+    func runMapsNetworkModeBridgeToBuiltinRuntimeNetwork() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.networkMode = "bridge"
+                },
+            ]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "run", "--name"]))
+        #expect(command.containsSequence(["--network", "default"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("run maps pid host to container pid argument")
     func runMapsPIDHostToContainerPIDArgument() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -32979,6 +33144,7 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
     private var pushOutputs: [String: String]
     private var deleteOutputs: [String: String?]
     private var loadOutputs: [String: [String]]
+    private var pullErrors: [String: [ContainerizationError]]
     private var storage: [ContainerImageRequest] = []
 
     init(
@@ -32994,7 +33160,8 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
         transformers: [ComposeBridgeTransformer] = [],
         pushOutputs: [String: String] = [:],
         deleteOutputs: [String: String?] = [:],
-        loadOutputs: [String: [String]] = [:]
+        loadOutputs: [String: [String]] = [:],
+        pullErrors: [String: [ContainerizationError]] = [:]
     ) {
         self.existingReferences = existingReferences
         self.digests = digests
@@ -33015,6 +33182,7 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
         self.pushOutputs = pushOutputs
         self.deleteOutputs = deleteOutputs
         self.loadOutputs = loadOutputs
+        self.pullErrors = pullErrors
     }
 
     var requests: [ContainerImageRequest] {
@@ -33071,6 +33239,11 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
 
     func pullImage(reference: String) async throws {
         storage.append(.pull(reference))
+        if var errors = pullErrors[reference], !errors.isEmpty {
+            let error = errors.removeFirst()
+            pullErrors[reference] = errors
+            throw error
+        }
         existingReferences.insert(reference)
     }
 

@@ -212,7 +212,9 @@ extension ComposeOrchestrator {
             externalVolumeMounts: externalVolumeMounts,
             pullPolicy: up.pullPolicy,
         )
-        try await ensureResources(project: workingProject)
+        try await ensureResources(
+            project: projectBySelectingResources(project: workingProject, services: services)
+        )
 
         var changedServices = Set<String>()
         for serviceReference in services {

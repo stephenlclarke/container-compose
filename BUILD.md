@@ -151,6 +151,32 @@ Coverage outputs are `coverage.lcov`, `coverage.xml`,
 marker-protected `.build/container-runtime` directory, retains only the kernel
 cache between runs, and always stops the test runtime when it exits.
 
+### Isolated macOS Runtime Ownership
+
+Container's data root can be isolated, but its API server and plugin helpers use stable launchd/XPC service names in one namespace for the current macOS user. `make docker-compose-parity`, Current VHS publication, and other long-running Compose workflows therefore acquire the advisory host lock in `Tools/ci/container-runtime-lock.sh` before they stop, start, or replace the runtime.
+
+The default lock is `/tmp/container-compose-runtime-${UID}.lock`; `CONTAINER_RUNTIME_LOCK_FILE` changes it and `CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS` changes the default 10,800-second wait. The helper uses `lockf` on macOS and the equivalent `flock` file-descriptor lock in Linux source-check runners. Every cooperating workflow on the host must use the same lock path. A unique per-job lock defeats serialization, and an external repository or runner that does not acquire the lock can still replace the shared service while a Compose run owns it.
+
+The parity harness also:
+
+- clears only a marker-protected `CONTAINER_RUNTIME_APP_ROOT`, retaining its kernel cache;
+- loads `CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE` when supplied, avoiding a cold source rebuild of the exact init image, or falls back to `CONTAINER_RUNTIME_INIT_BLOCK_REPO`;
+- starts the exact Container binary and requires a real `container list --all --format json` API round trip;
+- stops and restarts that exact runtime at most once after an XPC `Connection interrupted`/`Connection invalid` start or failed API-readiness round trip; and
+- always stops the matched runtime when the wrapped command exits.
+
+This recovery is deliberately bounded. The Compose image adapter retries an idempotent pull exactly once for a typed recursive `ContainerizationError.interrupted`. It never blindly replays container deletion; an interrupted delete is accepted only when direct discovery confirms the container is absent. Other errors and unverifiable postconditions fail normally.
+
+For an authoritative same-host result, first coordinate or quiesce every self-hosted runner and local workflow that can operate Container under the same user. A momentarily idle runner is not proof of isolation because it can accept work during the suite. Restore any paused runner immediately after the controlled window.
+
+Set `PARITY_EVIDENCE_DIR` to retain raw timing TSV, JUnit, runtime fingerprints, the human matrix, and a captured aggregate log in one named directory. `PARITY_REPETITIONS` controls equivalent fixture samples and `PARITY_TIMEOUT_SECONDS` bounds each timed operation. Keep the exact Container and Containerization revisions, host model, macOS version, Docker Compose/Engine versions, images, and warm/cold state with the result.
+
+### Temporary CodeQL Pause
+
+As of 30 July 2026, GitHub reports `.github/workflows/codeql.yml` as `disabled_manually` at the owner's request. The workflow source and the required `CodeQL` branch-protection context remain in place. Draft, ready-for-review, push, and scheduled events produce no CodeQL run while it is disabled, so a missing check is not a successful security result.
+
+Do not re-enable CodeQL until the owner explicitly requests it. New pull-request heads and release candidates cannot produce the normal exact-commit CodeQL evidence while the workflow is off. The release quality snapshot still requires exact SonarQube and CodeQL authority, so Current or stable publication from a new commit remains blocked at that evidence boundary rather than silently publishing an incomplete snapshot.
+
 Run `make upstream-divergence-report` before upstream handoff, runtime-stack promotion, or release review work. The report compares `container`, `containerization`, and `container-builder-shim` against their Apple upstream `main` refs, lists fork-only and upstream-only commit subjects, and checks whether Apple upstream can merge cleanly into the local checkout. Use `make upstream-divergence-check` when the review needs a hard failure, and `make upstream-divergence-release-check` before a stable release so an upstream-behind fork cannot be promoted.
 
 GitHub Actions separates source checks, macOS runtime validation, sanitizers,
@@ -342,6 +368,14 @@ make docker-compose-parity
 
 The aggregate target requires Docker Compose `5.3.1`, pins Docker's e2e fixtures to commit `f32009d4a2c687dd405398cc7975d12dccaf8dff`, builds the sibling runtime when available, starts it with isolated state, builds `compose`, runs each target in `DOCKER_COMPOSE_PARITY_TARGETS`, and stops the runtime on exit. The reference scripts establish Docker behavior; the isolated runtime suite and the Compose side of each comparison establish local behavior. [STATUS.md](STATUS.md) owns the support ledger.
 
+The latest controlled run on 30 July 2026 completed all 62 maintained targets in 1,024.25s against Docker Compose 5.3.1 and Docker Engine 29.2.1. Its embedded three-repetition warm-image bridge comparator measured Docker/container-compose `up` medians of 0.151s/1.101s (7.30×) and `down` medians of 10.179s/5.969s (0.59×). The exact revisions, host, warnings, stress result, and evidence paths are recorded in [STATUS.md](STATUS.md#latest-controlled-full-suite-evidence). The green 10× executable guard does not make the slower startup comparable to Docker or complete the broader performance matrix.
+
+This functional suite is part of the project's [macOS Docker Compose parity
+and performance goal](STATUS.md#project-goal-macos-docker-compose-parity-and-performance),
+not a substitute for performance evidence. Changes on a measured execution
+path must also retain same-host Docker Compose benchmark evidence for the
+representative workloads and reporting requirements in that goal.
+
 Run a focused target directly while iterating:
 
 | Area | Targets |
@@ -350,7 +384,7 @@ Run a focused target directly while iterating:
 | Compose Bridge | `docker-compose-bridge-parity` |
 | Build | `docker-compose-build-builder-parity`, `docker-compose-build-check-parity`, `docker-compose-build-external-dockerfile-parity`, `docker-compose-build-external-secret-parity`, `docker-compose-build-isolation-parity`, `docker-compose-build-no-cache-filter-parity`, `docker-compose-build-secret-metadata-parity` |
 | Mounts and resources | `docker-compose-bind-create-host-path-parity`, `docker-compose-bind-propagation-parity`, `docker-compose-image-volumes-parity` (Docker image `VOLUME` reference, Compose-model projection, and live macOS first-use/reuse validation when `CONTAINER_COMPOSE_LIVE=1`), `docker-compose-volume-labels-parity` (also verifies anonymous-volume identity), `docker-compose-deploy-endpoint-mode-parity`, `docker-compose-deploy-resource-reservations-parity`, `docker-compose-pids-limit-parity`, `docker-compose-device-cgroup-rules-parity`, `docker-compose-devices-parity`, `docker-compose-gpus-parity` |
-| Networking | `docker-compose-network-driver-opts-parity`, `docker-compose-network-attachable-parity`, `docker-compose-network-ipam-options-parity`, `docker-compose-host-namespaces-parity` |
+| Networking | `docker-compose-network-driver-opts-parity`, `docker-compose-network-attachable-parity`, `docker-compose-network-ipam-options-parity`, `docker-compose-host-namespaces-parity` (live `network_mode: bridge` inspection and same-host Docker lifecycle timing evidence when `CONTAINER_COMPOSE_LIVE=1`; tune samples and timeouts with `PARITY_REPETITIONS` and `PARITY_TIMEOUT_SECONDS`) |
 | Lifecycle and observability | `docker-compose-up-exit-code-from-parity`, `docker-compose-up-menu-parity`, `docker-compose-health-wait-parity`, `docker-compose-create-options-parity`, `docker-compose-events-parity`, `docker-compose-rm-parity`, `docker-compose-restart-policy-parity` |
 
 The CLI surface target writes the exact compared versions and differences to
@@ -440,6 +474,8 @@ SONAR_BRANCH=main make sonar-scan
 ```
 
 Local scans do not wait for the quality gate by default. Set `SONAR_QUALITYGATE_WAIT=true` when the token can read quality-gate status.
+
+The current SonarCloud organization plan accepts short-branch reports but rejects short-branch metric, issue, and quality-gate API reads. A local branch scan can therefore prove report processing and scanner warnings through its compute-engine task, but the hosted pull-request check remains the final branch gate authority. Do not describe the polling rejection as an analyzer failure or infer a passed gate from a successful upload.
 
 Main-branch CI keeps the scanner's three-attempt fail-closed policy and gives the step enough time for all three 300-second quality-gate waits, scanner work, and retry delays. The enclosing runtime-validation job separately covers its 45-minute coverage gate, 10-minute CLI smoke, 25-minute Sonar budget, and dependency/setup overhead. A reachable SonarCloud service therefore still blocks CI when every attempt fails, without either workflow timeout killing a valid later attempt.
 

@@ -106,7 +106,8 @@ extension ComposeOrchestrator {
     }
 
     /// Polls watched paths until the task is cancelled.
-    func runWatchLoop(project: ComposeProject, plans: inout [ComposeWatchPlan], options watch: ComposeWatchOptions) async throws {
+    func runWatchLoop(project: ComposeProject, plans initialPlans: [ComposeWatchPlan], options watch: ComposeWatchOptions) async throws {
+        var plans = initialPlans
         if !watch.quiet {
             options.emit("compose: watch started")
         }

@@ -59,6 +59,8 @@ handlers`, synchronously registers delivered handler tasks, drains
 dispatch-source cancellation, and awaits those handlers before returning the
 proxied result.
 
+Signed quality follow-up `98f2a7139b2e99a60cabdc8ca2d7190c33b7e994`, `refactor(preflight): flatten signal handling`, extracts operation-task creation, signal-handler attachment, and result collection into named helpers while retaining the exact signal/cancellation semantics. Signed scanner follow-up `35c2848ac37e8e5ad607b9b7662b396d1e6ef2b3`, `chore(sonar): remove encoding warnings`, removes duplicate source-encoding configuration and excludes the binary icon from text analysis.
+
 The production change is limited to the package preflight implementation, its
 single asynchronous call site and executable interruption boundary, and
 package-private bounded output retained by the shared process runner. The
@@ -142,14 +144,20 @@ Results on the designated Apple silicon MacBook Pro:
   behind Apple and 493 commits ahead in total; and
 - AddressSanitizer passes 25 package-preflight tests across five suites and
   three signal-proxy tests in one suite; and
-- `HAWKEYE_AUTO_INSTALL=1 make ci` passes 1,266 Swift tests in 46 suites,
+- The original `HAWKEYE_AUTO_INSTALL=1 make ci` evidence passes 1,266 Swift tests in 46 suites,
   92.81% Swift coverage, 89.88% Go coverage, and the complete CLI, lint,
   dependency, licence, and smoke gates.
+- The current full unit gate passes 1,277 Swift tests in 46 suites plus every
+  Go package.
+- Fresh branch analysis `39c6e9ff-0a90-4cd5-9b59-ed466f5fbdea`
+  processed successfully with zero scanner warnings. SonarCloud rejects
+  short-branch metric, issue, and quality-gate API reads on the current
+  organization plan, so the hosted pull-request check remains the final gate
+  authority.
 
 ## Publication evidence
 
-Exact-head pull-request checks, connector review, exact-main validation, and the
-slice `current` prerelease remain pending until this branch is published.
+The original preflight and signal-drain corrections are present on `main`. The `98f2a713` quality closure and `35c2848a` scanner cleanup remain on the current review branch pending draft publication. CodeQL is manually disabled at the owner's request, so no absent CodeQL run is treated as publication evidence.
 
 ## Compatibility and risk
 
@@ -183,6 +191,8 @@ slice `current` prerelease remain pending until this branch is published.
 - [x] Worktree-safe generated metrics regression coverage
 - [x] Complete local repository gate
 - [x] Signed Conventional documentation commit
+- [x] SonarQube closure refactor and zero-warning accepted branch analysis
 - [ ] Pull-request checks and connector review
-- [ ] Exact-main CI, CodeQL, and SonarCloud gate
+- [ ] Exact-main CI and SonarCloud gate
+- [ ] Exact-revision CodeQL after the owner explicitly re-enables the workflow
 - [ ] Slice prerelease, checksums, attestations, and Homebrew update
