@@ -66,32 +66,49 @@ extension ComposeOrchestrator {
         limit: Int,
         operation: @escaping @Sendable (Value) async throws -> Void,
     ) async throws {
-        var iterator = values.makeIterator()
-        try await withThrowingTaskGroup(of: Void.self) { group in
+        _ = try await runBoundedEngineOperationResults(values, limit: limit) { value in
+            try await operation(value)
+        }
+    }
+
+    /// Executes values concurrently and returns results in input order.
+    func runBoundedEngineOperationResults<Value, Result>(
+        _ values: [Value],
+        limit: Int,
+        operation: @escaping @Sendable (Value) async throws -> Result,
+    ) async throws -> [Result] {
+        var iterator = values.enumerated().makeIterator()
+        return try await withThrowingTaskGroup(of: ConcurrentEngineOperationResult<Result>.self) { group in
             var activeTasks = 0
             for _ in 0 ..< limit {
-                guard let value = iterator.next() else {
+                guard let (index, value) = iterator.next() else {
                     break
                 }
                 activeTasks += 1
                 let concurrentValue = ConcurrentEngineOperationValue(value: value)
                 group.addTask {
-                    try await operation(concurrentValue.value)
+                    let result = try await operation(concurrentValue.value)
+                    return ConcurrentEngineOperationResult(index: index, value: result)
                 }
             }
 
+            var results: [ConcurrentEngineOperationResult<Result>] = []
             while activeTasks > 0 {
-                try await group.next()
+                if let result = try await group.next() {
+                    results.append(result)
+                }
                 activeTasks -= 1
-                guard let value = iterator.next() else {
+                guard let (index, value) = iterator.next() else {
                     continue
                 }
                 activeTasks += 1
                 let concurrentValue = ConcurrentEngineOperationValue(value: value)
                 group.addTask {
-                    try await operation(concurrentValue.value)
+                    let result = try await operation(concurrentValue.value)
+                    return ConcurrentEngineOperationResult(index: index, value: result)
                 }
             }
+            return results.sorted { $0.index < $1.index }.map(\.value)
         }
     }
 }
@@ -102,5 +119,11 @@ extension ComposeOrchestrator {
 /// task group is running. The wrapper confines that audited assumption to the
 /// parallel scheduler instead of marking the broad normalized model Sendable.
 struct ConcurrentEngineOperationValue<Value>: @unchecked Sendable {
+    let value: Value
+}
+
+/// Carries one engine-operation result across a task-group boundary.
+private struct ConcurrentEngineOperationResult<Value>: @unchecked Sendable {
+    let index: Int
     let value: Value
 }

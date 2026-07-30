@@ -1185,6 +1185,96 @@ extension ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-optional-1", "demo-api-1"])
     }
 
+    @Test("up starts independent services concurrently")
+    func upStartsIndependentServicesConcurrently() async throws {
+        let runner = DelayedBuildRunner(delay: .milliseconds(50))
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:latest"),
+                "cache": ComposeService(name: "cache", image: "example/cache:latest"),
+                "worker": ComposeService(name: "worker", image: "example/worker:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(maxParallelism: -1),
+            discoveryManager: discoveryManager
+        ).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.detach = true
+            }
+        )
+
+        #expect(await runner.commands.count == 3)
+        #expect(await runner.maximumActiveOperations == 3)
+    }
+
+    @Test("up honors the configured parallel engine call limit")
+    func upHonorsConfiguredParallelEngineCallLimit() async throws {
+        let runner = DelayedBuildRunner(delay: .milliseconds(50))
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:latest"),
+                "cache": ComposeService(name: "cache", image: "example/cache:latest"),
+                "worker": ComposeService(name: "worker", image: "example/worker:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(maxParallelism: 2),
+            discoveryManager: discoveryManager
+        ).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.detach = true
+            }
+        )
+
+        #expect(await runner.commands.count == 3)
+        #expect(await runner.maximumActiveOperations == 2)
+    }
+
+    @Test("up completes dependency layers before starting dependents")
+    func upCompletesDependencyLayersBeforeStartingDependents() async throws {
+        let runner = DelayedBuildRunner(delay: .milliseconds(50))
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["database": ComposeDependency(condition: "service_started")]
+                },
+                "database": ComposeService(name: "database", image: "example/database:latest"),
+                "worker": composeService(name: "worker", image: "example/worker:latest") {
+                    $0.dependsOn = ["database": ComposeDependency(condition: "service_started")]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(maxParallelism: -1),
+            discoveryManager: discoveryManager
+        ).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.detach = true
+            }
+        )
+
+        let commands = await runner.commands
+        #expect(commands.count == 3)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-database-1"]))
+        #expect(await runner.maximumActiveOperations == 2)
+    }
+
     @Test("up skips missing optional dependencies")
     func upSkipsMissingOptionalDependencies() async throws {
         let runner = RecordingRunner(responses: [

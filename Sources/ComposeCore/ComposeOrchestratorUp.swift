@@ -21,6 +21,24 @@
 #endif
 import Foundation
 
+private struct ComposeUpServiceContext {
+    let project: ComposeProject
+    let options: ComposeUpOptions
+    let scaleOverrides: [String: Int]
+    let externalVolumeMounts: ExternalVolumeMounts
+    let imageHealthCheckCache: ComposeImageHealthCheckCache
+    let dependencyRecreateServices: Set<String>
+    let changedServices: Set<String>
+    let validateDependencies: Bool
+    let detachStartedContainers: Bool
+}
+
+private struct ComposeUpServiceResult {
+    let serviceName: String
+    let waitTargets: [ServiceContainerTarget]
+    let changed: Bool
+}
+
 extension ComposeOrchestrator {
     /// Returns whether a service declares `pre_start` hooks.
     func hasPreStartHooks(_ service: ComposeService) -> Bool {
@@ -152,6 +170,7 @@ extension ComposeOrchestrator {
             }
             return activeService
         }
+        let serviceLayers = try serviceDependencyLayers(services: services)
         if up.menuWatch {
             try validateUpMenuWatchToggle(project: workingProject, serviceNames: services.map(\.name))
         }
@@ -204,98 +223,75 @@ extension ComposeOrchestrator {
         try await ensureResources(project: workingProject)
 
         var changedServices = Set<String>()
-        for serviceReference in services {
-            let service = workingProject.services[serviceReference.name] ?? serviceReference
-            if validateDependencies {
-                try await waitForDependencyConditions(project: workingProject, service: service)
-            }
-            if service.provider != nil {
-                let variables = try await runProvider(project: workingProject, service: service, action: .up)
-                if !variables.isEmpty {
-                    workingProject = projectByInjectingProviderEnvironment(
-                        project: workingProject,
-                        providerServiceName: service.name,
-                        variables: variables,
-                    )
-                }
-                changedServices.insert(service.name)
-                continue
-            }
-
-            if shouldBuildServiceForUp(up, service: service) {
-                try await build(project: workingProject, services: [service.name], noCache: false, quiet: up.quietBuild)
-            }
-
-            let replicaCount = try serviceReplicaCount(service, scaleOverrides: scaleOverrides)
-            var serviceChanged = false
-            var jobTargets: [ServiceContainerTarget] = []
-            var preStartTargets: [ServiceContainerTarget] = []
-            if replicaCount > 0 {
-                for replicaIndex in 1 ... replicaCount {
-                    let name = try serviceContainerName(project: workingProject, service: service, index: replicaIndex)
-                    let existing = try await inspectContainer(name)
-                    if isDeployJobService(service) {
-                        jobTargets.append(ServiceContainerTarget(service: service, index: replicaIndex, name: name))
+        for serviceLayer in serviceLayers {
+            let activeServices = serviceLayer.map { workingProject.services[$0.name] ?? $0 }
+            let parallelLimit = try engineOperationParallelLimit(operationCount: activeServices.count)
+            if parallelLimit == nil || activeServices.contains(where: { $0.provider != nil }) {
+                for service in activeServices {
+                    if service.provider != nil {
+                        if validateDependencies {
+                            try await waitForDependencyConditions(project: workingProject, service: service)
+                        }
+                        let variables = try await runProvider(project: workingProject, service: service, action: .up)
+                        if !variables.isEmpty {
+                            workingProject = projectByInjectingProviderEnvironment(
+                                project: workingProject,
+                                providerServiceName: service.name,
+                                variables: variables,
+                            )
+                        }
+                        changedServices.insert(service.name)
+                        continue
                     }
-                    let reconcileOutcome = try await reconcileServiceContainer(
-                        project: workingProject,
+                    let result = try await reconcileUpService(
                         service: service,
-                        request: ServiceContainerReconcileRequest(
-                            name: name,
-                            existing: existing,
-                            runOptions: RunArgumentOptions {
-                                $0.command = hasPreStartHooks(service) ? "create" : "run"
-                                $0.detach = !hasPreStartHooks(service)
-                                    && (detachStartedContainers || isDeployJobService(service))
-                                $0.containerIndex = replicaIndex
-                                $0.replicaCount = replicaCount
-                            },
+                        context: ComposeUpServiceContext(
+                            project: workingProject,
+                            options: up,
+                            scaleOverrides: scaleOverrides,
                             externalVolumeMounts: externalVolumeMounts,
                             imageHealthCheckCache: imageHealthCheckCache,
-                            forceRecreate: up.forceRecreate,
-                            noRecreate: up.noRecreate,
-                            renewAnonymousVolumes: up.renewAnonymousVolumes,
                             dependencyRecreateServices: dependencyRecreateServices,
-                            recreateTimeout: up.timeout,
+                            changedServices: changedServices,
+                            validateDependencies: validateDependencies,
+                            detachStartedContainers: detachStartedContainers,
                         ),
                     )
-                    serviceChanged = serviceChanged || reconcileOutcome.changed
-                    if hasPreStartHooks(service) {
-                        preStartTargets.append(ServiceContainerTarget(
-                            service: service,
-                            index: replicaIndex,
-                            name: name,
-                            status: reconcileOutcome.changed ? "created" : existing?.status,
-                        ))
-                    }
-                    if up.wait, !isDeployJobService(service) {
-                        waitTargets.append(ServiceContainerTarget(service: service, index: replicaIndex, name: name))
+                    waitTargets.append(contentsOf: result.waitTargets)
+                    if result.changed {
+                        changedServices.insert(result.serviceName)
                     }
                 }
-            }
-            if !preStartTargets.isEmpty {
-                try await startServiceTargets(
-                    project: workingProject,
-                    service: service,
-                    targets: preStartTargets,
-                )
-            }
-            if shouldPruneServiceReplicas(service, scaleOverrides: scaleOverrides) {
-                try await removeServiceReplicasAbove(project: workingProject, service: service, desiredCount: replicaCount, timeout: up.timeout)
-            }
-            try await waitForDeployJobService(service: service, targets: jobTargets)
-
-            if serviceChanged {
-                changedServices.insert(service.name)
                 continue
             }
-            if shouldRestartAfterDependencyChange(service: service, changedServices: changedServices) {
-                let targets = try await serviceContainerTargets(project: workingProject, services: [service])
-                for target in targets {
-                    try await restartContainer(service: service, containerName: target.name, timeout: up.timeout)
-                }
-                if !targets.isEmpty {
-                    changedServices.insert(service.name)
+
+            guard let parallelLimit else {
+                continue
+            }
+            let concurrentContext = ConcurrentEngineOperationValue(value: ComposeUpServiceContext(
+                project: workingProject,
+                options: up,
+                scaleOverrides: scaleOverrides,
+                externalVolumeMounts: externalVolumeMounts,
+                imageHealthCheckCache: imageHealthCheckCache,
+                dependencyRecreateServices: dependencyRecreateServices,
+                changedServices: changedServices,
+                validateDependencies: validateDependencies,
+                detachStartedContainers: detachStartedContainers,
+            ))
+            let results = try await runBoundedEngineOperationResults(
+                activeServices,
+                limit: parallelLimit,
+            ) { [self, concurrentContext] service in
+                try await reconcileUpService(
+                    service: service,
+                    context: concurrentContext.value,
+                )
+            }
+            for result in results {
+                waitTargets.append(contentsOf: result.waitTargets)
+                if result.changed {
+                    changedServices.insert(result.serviceName)
                 }
             }
         }
@@ -389,6 +385,114 @@ extension ComposeOrchestrator {
             )
         }
         return nil
+    }
+
+    /// Reconciles one non-provider service after its dependency layer is ready.
+    private func reconcileUpService(
+        service: ComposeService,
+        context: ComposeUpServiceContext,
+    ) async throws -> ComposeUpServiceResult {
+        let project = context.project
+        let up = context.options
+        if context.validateDependencies {
+            try await waitForDependencyConditions(project: project, service: service)
+        }
+        if shouldBuildServiceForUp(up, service: service) {
+            try await build(project: project, services: [service.name], noCache: false, quiet: up.quietBuild)
+        }
+
+        let replicaCount = try serviceReplicaCount(service, scaleOverrides: context.scaleOverrides)
+        var serviceChanged = false
+        var jobTargets: [ServiceContainerTarget] = []
+        var preStartTargets: [ServiceContainerTarget] = []
+        var waitTargets: [ServiceContainerTarget] = []
+        if replicaCount > 0 {
+            for replicaIndex in 1 ... replicaCount {
+                let name = try serviceContainerName(project: project, service: service, index: replicaIndex)
+                let existing = try await inspectContainer(name)
+                if isDeployJobService(service) {
+                    jobTargets.append(ServiceContainerTarget(service: service, index: replicaIndex, name: name))
+                }
+                let reconcileOutcome = try await reconcileServiceContainer(
+                    project: project,
+                    service: service,
+                    request: ServiceContainerReconcileRequest(
+                        name: name,
+                        existing: existing,
+                        runOptions: RunArgumentOptions {
+                            $0.command = hasPreStartHooks(service) ? "create" : "run"
+                            $0.detach = !hasPreStartHooks(service)
+                                && (context.detachStartedContainers || isDeployJobService(service))
+                            $0.containerIndex = replicaIndex
+                            $0.replicaCount = replicaCount
+                        },
+                        externalVolumeMounts: context.externalVolumeMounts,
+                        imageHealthCheckCache: context.imageHealthCheckCache,
+                        forceRecreate: up.forceRecreate,
+                        noRecreate: up.noRecreate,
+                        renewAnonymousVolumes: up.renewAnonymousVolumes,
+                        dependencyRecreateServices: context.dependencyRecreateServices,
+                        recreateTimeout: up.timeout,
+                    ),
+                )
+                serviceChanged = serviceChanged || reconcileOutcome.changed
+                if hasPreStartHooks(service) {
+                    preStartTargets.append(ServiceContainerTarget(
+                        service: service,
+                        index: replicaIndex,
+                        name: name,
+                        status: reconcileOutcome.changed ? "created" : existing?.status,
+                    ))
+                }
+                if up.wait, !isDeployJobService(service) {
+                    waitTargets.append(ServiceContainerTarget(service: service, index: replicaIndex, name: name))
+                }
+            }
+        }
+        if !preStartTargets.isEmpty {
+            try await startServiceTargets(
+                project: project,
+                service: service,
+                targets: preStartTargets,
+            )
+        }
+        if shouldPruneServiceReplicas(service, scaleOverrides: context.scaleOverrides) {
+            try await removeServiceReplicasAbove(
+                project: project,
+                service: service,
+                desiredCount: replicaCount,
+                timeout: up.timeout,
+            )
+        }
+        try await waitForDeployJobService(service: service, targets: jobTargets)
+
+        if serviceChanged {
+            return ComposeUpServiceResult(
+                serviceName: service.name,
+                waitTargets: waitTargets,
+                changed: true,
+            )
+        }
+        guard shouldRestartAfterDependencyChange(
+            service: service,
+            changedServices: context.changedServices,
+        ) else {
+            return ComposeUpServiceResult(
+                serviceName: service.name,
+                waitTargets: waitTargets,
+                changed: false,
+            )
+        }
+
+        let targets = try await serviceContainerTargets(project: project, services: [service])
+        for target in targets {
+            try await restartContainer(service: service, containerName: target.name, timeout: up.timeout)
+        }
+        return ComposeUpServiceResult(
+            serviceName: service.name,
+            waitTargets: waitTargets,
+            changed: !targets.isEmpty,
+        )
     }
 
     /// Returns whether foreground `up` should aggregate service output through followed logs.
