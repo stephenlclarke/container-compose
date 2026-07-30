@@ -803,7 +803,7 @@ validate_container_compose_dry_run() {
     [[ "$net_line" != *" --network ${CONTAINER_PROJECT_NAME}_default "* ]] || { error "network_mode: host also attached the default network: $net_line"; return 1; }
     [[ "$bridge_line" == *" --network default "* ]] || { error "network_mode: bridge did not emit --network default: $bridge_line"; return 1; }
     [[ "$bridge_line" != *" --network ${CONTAINER_PROJECT_NAME}_default "* ]] || { error "network_mode: bridge also attached the project default network: $bridge_line"; return 1; }
-    [[ "$pid_line" == *" --network ${CONTAINER_PROJECT_NAME}_default "* ]] || { error "pid: host service did not retain default network: $pid_line"; return 1; }
+    [[ "$pid_line" == *" --network ${CONTAINER_PROJECT_NAME}_default,alias=pid "* ]] || { error "pid: host service did not retain its default network service alias: $pid_line"; return 1; }
     [[ "$pid_line" == *" --pid host "* ]] || { error "pid: host service did not emit --pid host: $pid_line"; return 1; }
 
     run_net_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" run net true)"
