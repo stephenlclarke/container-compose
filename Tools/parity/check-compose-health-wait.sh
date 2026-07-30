@@ -9,6 +9,8 @@ readonly SELF_PATH="${BASH_SOURCE[0]:-$0}"
 readonly SCRIPT_NAME="$(basename "$SELF_PATH")"
 readonly REPO_ROOT="$(cd "$(dirname "$SELF_PATH")/../.." && pwd)"
 readonly CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
+readonly CONTAINER_BINARY="${CONTAINER_COMPOSE_CONTAINER:-container}"
+readonly FIXTURE_IMAGE="alpine:3.20"
 readonly PROJECT_SUFFIX="$$-${RANDOM}"
 readonly DOCKER_PROJECT="health-docker-${PROJECT_SUFFIX}"
 readonly CONTAINER_PROJECT="health-container-${PROJECT_SUFFIX}"
@@ -94,6 +96,23 @@ check_tools() {
     fi
     if ! "$CONTAINER_COMPOSE" version >/dev/null 2>&1; then
         skip_or_fail 'container-compose is not runnable'
+    fi
+    if [[ ! -x "$CONTAINER_BINARY" ]] && ! command -v "$CONTAINER_BINARY" >/dev/null 2>&1; then
+        skip_or_fail "container runtime binary is not executable: $CONTAINER_BINARY"
+    fi
+    if ! "$CONTAINER_BINARY" system status >/dev/null 2>&1; then
+        skip_or_fail 'container runtime is not running'
+    fi
+}
+
+# Populate both image stores before exercising fixtures whose pull policy is
+# deliberately `never`, keeping the behavior checks independent of target order.
+prepare_fixture_image() {
+    if ! docker image inspect "$FIXTURE_IMAGE" >/dev/null 2>&1; then
+        docker image pull "$FIXTURE_IMAGE" >/dev/null
+    fi
+    if ! "$CONTAINER_BINARY" image inspect "$FIXTURE_IMAGE" >/dev/null 2>&1; then
+        "$CONTAINER_BINARY" image pull "$FIXTURE_IMAGE" >/dev/null
     fi
 }
 
@@ -242,6 +261,7 @@ main() {
     parse_args "$@"
     detect_docker_compose
     check_tools
+    prepare_fixture_image
     create_fixtures
     trap cleanup EXIT
     check_docker_compose
