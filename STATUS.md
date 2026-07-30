@@ -53,6 +53,27 @@ Use this validation floor when parity or runtime behavior changes:
 - Apple-backed repositories: each affected repository's full source checks and unit tests, plus integration tests for changed runtime behavior.
 - Documentation-only changes: the repository Markdown gate over every tracked `.md` file.
 
+## Latest Controlled Full-Suite Evidence
+
+On 30 July 2026, all 62 targets declared by `DOCKER_COMPOSE_PARITY_TARGETS` completed successfully in one controlled same-host run. The exact revisions were container-compose `4a2e0003496c9f96afcc0b3f3d54124ebc09b25b`, Container `5119fea95e5c7820c4deceec75b59fadfa8f61c3`, and Containerization `971fc7e5e27467ebd6227e1ae54f3e5c23de87b4`. The reference was Docker Compose 5.3.1 with Docker Engine 29.2.1 on an arm64 Mac17,9 running macOS 26.5.2.
+
+The aggregate suite took 1,024.25s real time (17m04.25s), 257.89s user time, and 327.29s system time, with a 4,239,622,144-byte maximum resident set size. The ignored evidence directory `.build/parity/full-4a2e0003-controlled/` retains the complete log, exact runtime fingerprints, raw monotonic timing TSV, JUnit XML, and Markdown comparison matrix.
+
+The embedded equivalent warm-image bridge lifecycle comparator ran three repetitions per engine:
+
+| Fixture | Docker Compose median | container-compose median | Candidate/reference | Executable gate |
+| --- | ---: | ---: | ---: | --- |
+| `network_mode: bridge` up | 0.151s | 1.101s | 7.30× | Pass |
+| `network_mode: bridge` down | 10.179s | 5.969s | 0.59× | Pass |
+
+A separate 10-repetition stress run produced a 0.156s Docker/1.060s candidate `up` median (6.78×) and a 10.181s Docker/5.924s candidate `down` median (0.58×), completing in 241.31s. Its evidence remains under `.build/parity/host-namespace-interrupted-delete-fix-rerun-2/`.
+
+The executable timing rule fails only on timeout, incomplete execution, or a candidate median at least 10× its corresponding Docker median. The 7.30× startup result therefore passes that regression guard, but it does **not** satisfy the product goal of comparable or better performance. `PERF-003`/`PERF-607` remains open until startup is materially improved and the single-service plus 10/50-service startup, logs, sync, build-context, and teardown matrix records median and P95 evidence.
+
+This result also does not convert known partial surfaces into full parity. The CLI oracle still records four documented intentional command-surface differences, and the service/runtime gaps below remain authoritative. Two SwiftNIO warnings about scheduling on an already-shut-down event loop appeared during image-volume builder teardown; every affected build and parity assertion completed, so they are retained as backend cleanup evidence rather than hidden or misclassified as a Compose parity failure.
+
+The authoritative run required a controlled host window because isolated app roots do not isolate Container's per-user launchd/XPC service namespace. A non-cooperating devcontainer runner was quiesced for the run and restored immediately afterward. [BUILD.md](BUILD.md#isolated-macos-runtime-ownership) documents the advisory host lock, retained init image, bounded recovery, and the requirement that every host runtime user cooperate.
+
 ## Parity Legend
 
 - ✅ Yes: green tick; Docker Compose v2 parity is implemented for the current `stephenlclarke` runtime lane.

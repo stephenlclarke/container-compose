@@ -23,18 +23,22 @@ This is Compose-layer-only and works on macOS with the existing Container runtim
 
 ## Acceptance evidence
 
-The live macOS oracle passed on 2026-07-30 using the release builds from container-compose `f146aa18a5b98a19b4654ccd45afb0ac949667ed`, Container `5119fea95e5c7820c4deceec75b59fadfa8f61c3`, and Containerization `971fc7e5e27467ebd6227e1ae54f3e5c23de87b4`. Docker Compose 5.3.1 and Docker Engine 29.2.1 were the same-host reference on an Apple silicon Mac17,9 running macOS 26.5.2.
+The authoritative controlled macOS oracle passed on 30 July 2026 using container-compose `4a2e0003496c9f96afcc0b3f3d54124ebc09b25b`, release Container `5119fea95e5c7820c4deceec75b59fadfa8f61c3`, and Containerization `971fc7e5e27467ebd6227e1ae54f3e5c23de87b4`. Docker Compose 5.3.1 and Docker Engine 29.2.1 were the same-host reference on an arm64 Mac17,9 running macOS 26.5.2.
 
 The runtime configuration and active attachment both contained only the built-in `default` network. Neither lane created an unused project default network for the bridge-only timed service.
 
-Five warm-image repetitions produced these medians:
+The complete maintained suite passed all 62 declared parity targets in 1,024.25s real time. Its embedded three-repetition equivalent warm-image comparator produced:
 
 | Operation | Docker Compose | Container Compose | Candidate/reference | Result |
 | --- | ---: | ---: | ---: | --- |
-| `network_mode: bridge` up | 0.153s | 1.131s | 7.41× | Pass |
-| `network_mode: bridge` down | 10.182s | 5.768s | 0.57× | Pass |
+| `network_mode: bridge` up | 0.151s | 1.101s | 7.30× | Pass |
+| `network_mode: bridge` down | 10.179s | 5.969s | 0.59× | Pass |
 
-The ignored local evidence directory retains the raw monotonic TSV, JUnit XML, runtime fingerprints, and Markdown matrix under `.build/parity/host-namespaces-bridge-release-f146aa18/`.
+A separate 10-repetition stress run measured 0.156s/1.060s for Docker/candidate `up` (6.78×) and 10.181s/5.924s for `down` (0.58×), completing in 241.31s.
+
+Both runs pass the explicit timeout/incomplete/10× executable guard. They do not show that startup is comparable to Docker Compose: the 7.30× controlled median remains a performance optimization target, and the wider representative median/P95 matrix remains open.
+
+The ignored local evidence directories `.build/parity/full-4a2e0003-controlled/` and `.build/parity/host-namespace-interrupted-delete-fix-rerun-2/` retain the raw monotonic TSV, JUnit XML, runtime fingerprints, Markdown matrix, and captured logs. The controlled full run required a host window without non-cooperating runtime users because isolated app roots still share Container's per-user launchd/XPC service namespace; the paused devcontainer runner was restored immediately afterward.
 
 ## References
 

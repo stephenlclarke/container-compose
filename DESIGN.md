@@ -72,6 +72,8 @@ the `ContainerClient`- and CLI-backed managers are the current Apple-backed
 providers. Future providers can use the same contracts without making the
 orchestrator import their package types.
 
+Recovery at this boundary is operation-specific and idempotency-aware. A typed `ContainerizationError.interrupted` from an image pull, including a recursively wrapped cause, permits exactly one retry because the desired image state is idempotent. Container deletion is not replayed after an interruption: Compose accepts the operation only when direct discovery proves the target is already absent, and otherwise returns the original error. The validation harness similarly allows one matched-runtime restart after an XPC transport interruption or a failed API-readiness round trip. These bounded rules do not turn arbitrary errors into success and do not hide persistent launchd/XPC ownership conflicts.
+
 Docker and Compose syntax is normalized into typed Compose-owned plans before
 runtime projection. For example, `ContainerServiceCreatePlan` keeps service
 identity, process configuration, logging, health, restart, hostname, hosts,

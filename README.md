@@ -14,7 +14,7 @@
   <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2"><img alt="Technical Debt" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=sqale_index" /></a>
   <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2"><img alt="Maintainability Rating" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=sqale_rating" /></a>
   <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2"><img alt="Vulnerabilities" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=vulnerabilities" /></a>
-  <a href="https://github.com/stephenlclarke/container-compose/actions/workflows/codeql.yml?query=branch%3Amain"><img alt="CodeQL" src="https://github.com/stephenlclarke/container-compose/actions/workflows/codeql.yml/badge.svg?branch=main" /></a>
+  <a href="https://github.com/stephenlclarke/container-compose/actions/workflows/codeql.yml?query=branch%3Amain"><img alt="CodeQL temporarily disabled" src="https://img.shields.io/badge/CodeQL-temporarily%20disabled-orange" /></a>
   <a href="https://github.com/stephenlclarke/container-compose/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/stephenlclarke/container-compose?label=release" /></a>
   <img alt="Repo Visitors" src="https://visitor-badge.laobi.icu/badge?page_id=stephenlclarke.container-compose" />
 </p>
@@ -79,6 +79,18 @@ The key project goal is [100% observable Docker Compose v2 parity on macOS
 with comparable or better performance](STATUS.md#project-goal-macos-docker-compose-parity-and-performance).
 The ledger and executable reference comparisons must expose every remaining
 project-owned difference; they must not become implicit exceptions.
+
+> [!IMPORTANT]
+> **Latest controlled parity evidence (30 July 2026)**
+>
+> The complete maintained 62-target Docker Compose comparison suite passed against Docker Compose 5.3.1 and Docker Engine 29.2.1 on a Mac17,9 running macOS 26.5.2. The run took 1,024.25 seconds. Its three-sample warm-image bridge comparator measured `up` at 0.151s for Docker Compose and 1.101s for container-compose (7.30×), while `down` measured 10.179s and 5.969s respectively (0.59×). Raw samples, JUnit, fingerprints, and interpretation are recorded in [STATUS.md](STATUS.md#latest-controlled-full-suite-evidence).
+>
+> This is a green maintained-suite result, not a claim that the project goal is complete. The bridge startup path remains materially slower than Docker Compose, the representative single/10/50-service performance matrix is not yet implemented, and every partial surface in the ledger remains open.
+
+<!-- Separate GitHub callouts. -->
+
+> [!NOTE]
+> The CodeQL workflow is temporarily manually disabled at the owner's request. Its branch-protection context remains configured, and the absence of a run must not be interpreted as a passing CodeQL result. It will remain off until the owner explicitly asks for it to be re-enabled.
 
 On macOS, `container-compose` honors the active pull policy, prepares missing default-pull images when needed, then reads image metadata before `up`, `create`, and one-off `run`. It creates deterministic implicit Dockerfile-declared volumes and seeds an empty local volume from the selected image path for both declared and ordinary local volume mounts (including inherited external volumes), preserving the selected directory's ownership and mode on the volume root. `volume.nocopy: true`, a pre-existing `volume.subpath`, and a mount at a missing image path remain empty; populated volumes are preserved across `down`/`up`, matching Docker. Service `pre_start` helpers inherit service runtime context and gate startup, while `post_start` and `pre_stop` cover detached, foreground, and interactive one-off lifecycle paths with Docker-compatible detach and exit-status behavior. Foreground `up --exit-code-from SERVICE` returns the selected service's terminal status even when teardown closes attached log streams. The matched runtime encodes foreground attach signals by Linux-resolvable name, returns complete long records at backward-read tail boundaries, and keeps persistent log capture alive after an attached client disconnects; the committed signal/log reliability fixture verifies all three behaviors against Docker Compose V2.
 

@@ -6,9 +6,20 @@ Implement the narrow, portable mapping for Docker Compose `network_mode: bridge`
 
 ## Constructible commit
 
-- `f65f8b996619c8257b49a9ed86bc6571b12b2540` `feat(network): map bridge network mode`
-- `570c93cc2d9d773e611c66b9c5d8966b142bf706` `fix(network): prevent unused bridge resources`
-- `f146aa18a5b98a19b4654ccd45afb0ac949667ed` `fix(watch): remove async inout state`
+Primary implementation:
+
+- `36d81f70402c0d203bde8f7c8d57bb574a689e52` `feat(network): map bridge network mode`
+- `d6b47233012a31be559c91f8e51f7a579a704736` `fix(network): prevent unused bridge resources`
+- `d95194e4f573de9716316b4dc4c287f16e6deb2e` `fix(watch): remove async inout state`
+
+Review, quality, and controlled-validation follow-through on the same branch:
+
+- `98f2a7139b2e99a60cabdc8ca2d7190c33b7e994` `refactor(preflight): flatten signal handling`
+- `35c2848ac37e8e5ad607b9b7662b396d1e6ef2b3` `chore(sonar): remove encoding warnings`
+- `50a745c828e4b4b21f397cc5cf861674fe9911c2` `docs(handoff): record bridge network mode`
+- `38308633055c77fc9cd244c313100c81617193b6` `docs(handoff): record live bridge parity`
+- `9a95ec8cc5a84e15a187ff20ccf948e9ac14bfe9` `fix(ci): isolate container runtime validation`
+- `4a2e0003496c9f96afcc0b3f3d54124ebc09b25b` `fix(runtime): recover interrupted XPC operations`
 
 ## Implementation
 
@@ -40,16 +51,18 @@ shellcheck Tools/parity/check-compose-host-namespaces.sh
 git diff --check
 ```
 
-Docker Compose 5.3.1 configuration and daemon inspection pass, as do container-compose configuration and dry-run checks. The live macOS run used release container-compose `f146aa18a5b98a19b4654ccd45afb0ac949667ed`, release Container `5119fea95e5c7820c4deceec75b59fadfa8f61c3`, and Containerization `971fc7e5e27467ebd6227e1ae54f3e5c23de87b4` on Mac17,9 with macOS 26.5.2.
-
-The live oracle verified that runtime configuration and attachment contain exactly `default` and that no project-scoped default network exists. Five equivalent warm-image repetitions passed the performance gate:
+Docker Compose 5.3.1 configuration and daemon inspection pass, as do container-compose configuration and dry-run checks. The authoritative controlled full run used container-compose `4a2e0003496c9f96afcc0b3f3d54124ebc09b25b`, release Container `5119fea95e5c7820c4deceec75b59fadfa8f61c3`, and Containerization `971fc7e5e27467ebd6227e1ae54f3e5c23de87b4` on Mac17,9 with macOS 26.5.2. It verified that runtime configuration and attachment contain exactly `default`, that no project-scoped default network exists, and that all 62 maintained parity targets pass in 1,024.25s. Three equivalent warm-image repetitions produced:
 
 | Operation | Docker Compose median | Container Compose median | Candidate/reference | Result |
 | --- | ---: | ---: | ---: | --- |
-| `network_mode: bridge` up | 0.153s | 1.131s | 7.41× | Pass |
-| `network_mode: bridge` down | 10.182s | 5.768s | 0.57× | Pass |
+| `network_mode: bridge` up | 0.151s | 1.101s | 7.30× | Pass |
+| `network_mode: bridge` down | 10.179s | 5.969s | 0.59× | Pass |
 
-The exact raw TSV, JUnit XML, runtime fingerprint JSON, and Markdown matrix remain in the ignored local evidence directory `.build/parity/host-namespaces-bridge-release-f146aa18/`.
+A 10-repetition stress run recorded 0.156s/1.060s Docker/candidate `up` medians (6.78×) and 10.181s/5.924s `down` medians (0.58×), completing in 241.31s. The exact raw TSV, JUnit XML, runtime fingerprint JSON, matrices, and logs remain in `.build/parity/full-4a2e0003-controlled/` and `.build/parity/host-namespace-interrupted-delete-fix-rerun-2/`.
+
+The bridge timings pass the explicit 10× executable guard, but the 7.30× startup result is not yet comparable to Docker Compose and remains part of `PERF-003`/`PERF-607`. Two SwiftNIO event-loop shutdown warnings during the image-volume Builder fixture did not fail any build or assertion and remain visible in the full log as backend cleanup evidence.
+
+The controlled run also validated the CI reliability boundary. `Tools/ci/container-runtime-lock.sh` serializes cooperating users of the shared per-user launchd/XPC namespace, the harness reuses a retained exact init archive and proves API readiness, interrupted idempotent pulls retry once, and interrupted deletes require a confirmed absent postcondition. A non-cooperating devcontainer runner was quiesced for the authoritative window and restored immediately afterward.
 
 ## Compatibility and risk
 

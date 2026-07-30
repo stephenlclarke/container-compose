@@ -32,11 +32,12 @@ Use pull requests for all changes.
    review.
 
 Keep a pull request in draft while active or iterative development is in
-progress. Draft pushes defer CodeQL analysis while retaining the stable
-required-check context. Mark the pull request ready for review when its
-candidate revision is ready for the full CodeQL path. Converting it back to
-draft cancels an in-progress CodeQL run and defers analysis until the next
-ready-for-review event.
+progress. The repository's CodeQL workflow is currently manually disabled at
+the owner's request, while the stable `CodeQL` branch-protection context
+remains configured. Draft, ready-for-review, push, and scheduled events do not
+start CodeQL while that workflow is disabled, and the absence of a check is
+not a passing result. Keep draft-state work intact; the owner will explicitly
+direct when CodeQL should be re-enabled.
 
 Maintainers review pull requests before merge. Direct pushes to protected
 branches should be limited to maintainers and automation that has passed the

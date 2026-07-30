@@ -51,6 +51,8 @@ synchronously registers delivered signal-handler tasks, drains dispatch-source
 cancellation, and awaits those handlers before accepting the proxied operation
 result.
 
+Signed quality follow-up `98f2a7139b2e99a60cabdc8ca2d7190c33b7e994` extracts operation-task creation, delivered-signal handler attachment, and proxied result collection into named helpers. It preserves the established cancellation and signal-drain ordering while closing SonarQube `swift:S3087` without a suppression. Signed scanner-hygiene follow-up `35c2848ac37e8e5ad607b9b7662b396d1e6ef2b3` removes duplicate source-encoding configuration and excludes the binary icon from text analysis, leaving no scanner warnings.
+
 The corrected path:
 
 - drains stdout and stderr concurrently while the child runs;
@@ -143,7 +145,13 @@ No Apple runtime fork or new compatibility primitive is required.
 - AddressSanitizer passes 25 package-preflight tests across five suites and
   three signal-proxy tests in one suite.
 - Repository build, test, format, lint, dependency, and diff gates pass,
-  including 1,266 Swift tests with 92.81% Swift and 89.88% Go coverage.
+  including the current 1,277 Swift tests in 46 suites, all Go packages,
+  92.83% Swift coverage, and 89.88% Go coverage.
+- Fresh branch analysis `39c6e9ff-0a90-4cd5-9b59-ed466f5fbdea`
+  processed successfully with zero scanner warnings. SonarCloud rejects
+  short-branch metric, issue, and quality-gate API reads on the current
+  organization plan, so the hosted pull-request check remains the final gate
+  authority.
 
 ## Compatibility and deletion
 
