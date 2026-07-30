@@ -154,7 +154,12 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
                 healthCheck: { try await client.imageHealthCheck(reference: $0, platform: $1) },
                 metadata: { try await client.imageMetadata(reference: $0) },
                 volumeTargets: { try await client.imageDeclaredVolumeTargets(reference: $0, platform: $1) },
-                availableVolumeTargets: { try await client.imageDeclaredVolumeTargetsIfAvailable(reference: $0, platform: $1) },
+                availableVolumeTargets: { reference, platform in
+                    try await client.imageDeclaredVolumeTargetsIfAvailable(
+                        reference: reference,
+                        platform: platform,
+                    )
+                },
                 transformers: { try await client.bridgeTransformers() },
             ),
             mutations: MutationOperations(
