@@ -3626,7 +3626,11 @@ actor RecordingContainerExporter: ContainerExporting {
             throw failure
         }
         if let archiveData, let output {
-            try archiveData.write(to: URL(fileURLWithPath: output), options: .atomic)
+            let outputURL = URL(fileURLWithPath: output)
+            guard !FileManager.default.fileExists(atPath: outputURL.path) else {
+                throw ComposeError.invalidProject("export destination already exists: \(output)")
+            }
+            try archiveData.write(to: outputURL, options: .atomic)
         }
     }
 }

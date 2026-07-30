@@ -1765,8 +1765,8 @@ extension ComposeOrchestratorTests {
         #expect((await imageManager.requests).count == 2)
     }
 
-    @Test("commit staging is private and cleans up after export failure")
-    func commitStagingIsPrivateAndCleansUpAfterExportFailure() async throws {
+    @Test("commit staging is private, exporter-owned, and cleans up after export failure")
+    func commitStagingIsPrivateExporterOwnedAndCleansUpAfterExportFailure() async throws {
         let sharedRoot = try temporaryDirectory()
         try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: sharedRoot.path)
         defer { try? FileManager.default.removeItem(at: sharedRoot) }
@@ -1792,9 +1792,8 @@ extension ComposeOrchestratorTests {
 
         let snapshots = await exporter.snapshots
         let directory = try #require(snapshots.first { $0.isDirectory })
-        let rootfs = try #require(snapshots.first { $0.path.hasSuffix("/rootfs.tar") })
         #expect(directory.permissions == 0o700)
-        #expect(rootfs.permissions == 0o600)
+        #expect(!snapshots.contains { $0.path.hasSuffix("/rootfs.tar") })
         #expect(try FileManager.default.contentsOfDirectory(atPath: sharedRoot.path).isEmpty)
     }
 

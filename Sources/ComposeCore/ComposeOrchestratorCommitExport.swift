@@ -107,7 +107,6 @@ public extension ComposeOrchestrator {
 
         let rootfs = tempDirectory.appendingPathComponent("rootfs.tar")
         let archive = tempDirectory.appendingPathComponent("image.tar")
-        try ComposeTemporaryFiles.prepareFile(at: rootfs)
         try await exporter.exportContainer(
             id: container.id,
             output: rootfs.path,
