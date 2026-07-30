@@ -155,7 +155,7 @@ public extension ComposeOrchestrator {
             return
         }
         if localPath == "-" {
-            let archiveSource = Self.archiveSource(source.path)
+            let archiveSource = ComposeArchivePath.source(source.path)
             try await copyFromContainerAsArchive(
                 id: source.id,
                 source: archiveSource.path,
@@ -275,17 +275,6 @@ public extension ComposeOrchestrator {
             try? FileManager.default.removeItem(at: tempDirectory)
             throw error
         }
-    }
-
-    private static func archiveSource(_ source: String) -> (path: String, copyContents: Bool) {
-        if source == "/." {
-            return ("/", true)
-        }
-        guard source.hasSuffix("/.") else {
-            return (source, false)
-        }
-        let path = String(source.dropLast(2))
-        return (path.isEmpty ? "/" : path, true)
     }
 
     /// Stages copies from one source service container into selected destination containers.

@@ -21,7 +21,9 @@ import Foundation
 
 /// Apple containerization-backed archive operations used by Compose.
 public struct ContainerArchiveManager: ComposeArchiveManaging {
-    public init() {}
+    public init() {
+        // This adapter is stateless; the explicit initializer supports provider injection.
+    }
 
     public func writeCommitImageArchive(_ request: ComposeCommitImageArchiveRequest) throws {
         try ComposeCommitImageArchive.write(
@@ -30,10 +32,10 @@ public struct ContainerArchiveManager: ComposeArchiveManaging {
             service: request.service,
             options: request.options,
             metadata: .init(
-                baseImage: request.baseImage,
-                healthCheck: request.healthCheck,
-                createdAt: request.createdAt,
-                shellPath: request.shellPath,
+                baseImage: request.image.baseImage,
+                healthCheck: request.image.healthCheck,
+                createdAt: request.image.createdAt,
+                shellPath: request.image.shellPath,
             ),
             temporaryDirectory: request.temporaryDirectory,
         )

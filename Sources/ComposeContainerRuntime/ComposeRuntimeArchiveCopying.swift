@@ -138,7 +138,7 @@ public extension ComposeRuntimeCopying {
 
         let root = tempDirectory.appendingPathComponent("root", isDirectory: true)
         try ComposeTemporaryFiles.createDirectory(at: root)
-        let stagedSource = copyContents ? Self.copyContentsSource(source) : source
+        let stagedSource = copyContents ? ComposeArchivePath.contentsSource(source) : source
         try await copyFromContainer(id: id, source: stagedSource, destination: root.path, options: options)
         try ComposeTemporaryFiles.secureDirectory(at: root)
 
@@ -163,13 +163,6 @@ public extension ComposeRuntimeCopying {
 
     private static func makeTemporaryDirectory(in parent: URL) throws -> URL {
         try ComposeTemporaryFiles.createDirectory(in: parent, prefix: "container-compose-archive-copy-")
-    }
-
-    private static func copyContentsSource(_ source: String) -> String {
-        if source == "/" {
-            return "/."
-        }
-        return source.hasSuffix("/") ? "\(source)." : "\(source)/."
     }
 
     private static func copyStream(_ input: FileHandle, to destination: URL) throws {

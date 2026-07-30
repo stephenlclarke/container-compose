@@ -42,6 +42,31 @@ public struct ComposeProcessConfiguration: Codable, Sendable {
         }
     }
 
+    public struct RuntimeOptions: Sendable {
+        public var supplementalGroups: [UInt32]
+        public var supplementalGroupNames: [String]
+        public var rlimits: [Rlimit]
+        public var oomScoreAdj: Int?
+        public var privileged: Bool
+        public var noNewPrivileges: Bool
+
+        public init(
+            supplementalGroups: [UInt32] = [],
+            supplementalGroupNames: [String] = [],
+            rlimits: [Rlimit] = [],
+            oomScoreAdj: Int? = nil,
+            privileged: Bool = false,
+            noNewPrivileges: Bool = false,
+        ) {
+            self.supplementalGroups = supplementalGroups
+            self.supplementalGroupNames = supplementalGroupNames
+            self.rlimits = rlimits
+            self.oomScoreAdj = oomScoreAdj
+            self.privileged = privileged
+            self.noNewPrivileges = noNewPrivileges
+        }
+    }
+
     public var executable: String
     public var arguments: [String]
     public var environment: [String]
@@ -62,12 +87,7 @@ public struct ComposeProcessConfiguration: Codable, Sendable {
         workingDirectory: String = "/",
         terminal: Bool = false,
         user: User = .id(uid: 0, gid: 0),
-        supplementalGroups: [UInt32] = [],
-        supplementalGroupNames: [String] = [],
-        rlimits: [Rlimit] = [],
-        oomScoreAdj: Int? = nil,
-        privileged: Bool = false,
-        noNewPrivileges: Bool = false,
+        runtimeOptions: RuntimeOptions = RuntimeOptions(),
     ) {
         self.executable = executable
         self.arguments = arguments
@@ -75,12 +95,45 @@ public struct ComposeProcessConfiguration: Codable, Sendable {
         self.workingDirectory = workingDirectory
         self.terminal = terminal
         self.user = user
-        self.supplementalGroups = supplementalGroups
-        self.supplementalGroupNames = supplementalGroupNames
-        self.rlimits = rlimits
-        self.oomScoreAdj = oomScoreAdj
-        self.privileged = privileged
-        self.noNewPrivileges = noNewPrivileges
+        supplementalGroups = runtimeOptions.supplementalGroups
+        supplementalGroupNames = runtimeOptions.supplementalGroupNames
+        rlimits = runtimeOptions.rlimits
+        oomScoreAdj = runtimeOptions.oomScoreAdj
+        privileged = runtimeOptions.privileged
+        noNewPrivileges = runtimeOptions.noNewPrivileges
+    }
+
+    @available(*, deprecated, message: "Use init(executable:arguments:environment:workingDirectory:terminal:user:runtimeOptions:)")
+    public init(
+        executable: String,
+        arguments: [String],
+        environment: [String],
+        workingDirectory: String = "/",
+        terminal: Bool = false,
+        user: User = .id(uid: 0, gid: 0),
+        supplementalGroups: [UInt32] = [],
+        supplementalGroupNames: [String] = [],
+        rlimits: [Rlimit] = [],
+        oomScoreAdj: Int? = nil,
+        privileged: Bool = false,
+        noNewPrivileges: Bool = false,
+    ) {
+        self.init(
+            executable: executable,
+            arguments: arguments,
+            environment: environment,
+            workingDirectory: workingDirectory,
+            terminal: terminal,
+            user: user,
+            runtimeOptions: RuntimeOptions(
+                supplementalGroups: supplementalGroups,
+                supplementalGroupNames: supplementalGroupNames,
+                rlimits: rlimits,
+                oomScoreAdj: oomScoreAdj,
+                privileged: privileged,
+                noNewPrivileges: noNewPrivileges,
+            ),
+        )
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -126,7 +179,12 @@ public struct ComposeLogConfiguration: Codable, Equatable, Sendable {
     public var maxSizeInBytes: UInt64?
     public var maxFileCount: Int?
 
-    public static let `default` = ComposeLogConfiguration()
+    public static let standard = ComposeLogConfiguration()
+
+    @available(*, deprecated, renamed: "standard")
+    public static var `default`: ComposeLogConfiguration {
+        standard
+    }
 
     public init(
         storage: Storage = .local,

@@ -1658,6 +1658,18 @@ func appendUnsupportedNetworkField(fields *[]string, name string, present bool) 
 	*fields = append(*fields, name)
 }
 
+// appendNetworkAlias retains the first non-empty occurrence of an alias.
+func appendNetworkAlias(aliases *[]string, seen map[string]struct{}, alias string) {
+	if alias == "" {
+		return
+	}
+	if _, exists := seen[alias]; exists {
+		return
+	}
+	seen[alias] = struct{}{}
+	*aliases = append(*aliases, alias)
+}
+
 // networkAliasValues returns implicit and declared aliases keyed by Compose network name.
 func networkAliasValues(serviceName string, networks map[string]*types.ServiceNetworkConfig) map[string][]string {
 	if len(networks) == 0 {
@@ -1667,20 +1679,10 @@ func networkAliasValues(serviceName string, networks map[string]*types.ServiceNe
 	for name, config := range networks {
 		aliases := []string{}
 		seen := map[string]struct{}{}
-		appendAlias := func(alias string) {
-			if alias == "" {
-				return
-			}
-			if _, exists := seen[alias]; exists {
-				return
-			}
-			seen[alias] = struct{}{}
-			aliases = append(aliases, alias)
-		}
-		appendAlias(serviceName)
+		appendNetworkAlias(&aliases, seen, serviceName)
 		if config != nil {
 			for _, alias := range config.Aliases {
-				appendAlias(alias)
+				appendNetworkAlias(&aliases, seen, alias)
 			}
 		}
 		if len(aliases) > 0 {

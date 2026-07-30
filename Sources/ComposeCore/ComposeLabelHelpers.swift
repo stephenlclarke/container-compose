@@ -152,10 +152,12 @@ func serviceCreateBaseProcess(
         workingDirectory: workingDirectory,
         terminal: service.tty == true,
         user: user,
-        supplementalGroups: supplementalGroups,
-        supplementalGroupNames: supplementalGroupNames,
-        oomScoreAdj: oomScoreAdj,
-        privileged: service.privileged == true,
+        runtimeOptions: .init(
+            supplementalGroups: supplementalGroups,
+            supplementalGroupNames: supplementalGroupNames,
+            oomScoreAdj: oomScoreAdj,
+            privileged: service.privileged == true,
+        ),
     )
 }
 

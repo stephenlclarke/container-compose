@@ -51,7 +51,7 @@ extension ComposeOrchestrator {
             }
             args.append(contentsOf: ["--file", buildDockerfilePath(dockerfile, build: build, project: project)])
         } else if let dockerfileInline = nonEmpty(build.dockerfileInline) {
-            let dockerfileURL = try materializeInlineDockerfile(project: project, service: service, contents: dockerfileInline)
+            let dockerfileURL = try materializeInlineDockerfile(contents: dockerfileInline)
             inlineDockerfileDirectory = dockerfileURL.deletingLastPathComponent()
             args.append(contentsOf: ["--file", dockerfileURL.path])
         }
@@ -144,7 +144,7 @@ extension ComposeOrchestrator {
     func orderedBuildServices(
         project: ComposeProject,
         selected: [String],
-        includeRuntimeDependencies: Bool
+        includeRuntimeDependencies: Bool,
     ) throws -> [ComposeService] {
         let selectedSet = Set(selected)
         var visiting = Set<String>()
@@ -216,7 +216,7 @@ extension ComposeOrchestrator {
         let servicesByName = Dictionary(uniqueKeysWithValues: buildServices.map { ($0.name, $0) })
         var dependencies = [String: Set<String>]()
         for service in buildServices {
-            dependencies[service.name] = Set(try buildServiceDependencies(
+            dependencies[service.name] = try Set(buildServiceDependencies(
                 project: project,
                 service: service,
                 includeRuntimeDependencies: includeRuntimeDependencies,
@@ -252,7 +252,7 @@ extension ComposeOrchestrator {
     }
 
     /// Writes Compose `dockerfile_inline` content to a temporary Dockerfile for apple/container build.
-    func materializeInlineDockerfile(project: ComposeProject, service: ComposeService, contents: String) throws -> URL {
+    func materializeInlineDockerfile(contents: String) throws -> URL {
         let directory = try ComposeTemporaryFiles.createDirectory(
             in: options.temporaryDirectory,
             prefix: "container-compose-inline-",
@@ -473,9 +473,9 @@ extension ComposeOrchestrator {
         try (build.secrets ?? []).compactMap { secret in
             let id = secret.id.trimmingCharacters(in: .whitespacesAndNewlines)
             switch try buildSecretSource(secret) {
-            case .file(let file):
+            case let .file(file):
                 return "id=\(id),type=file,src=\(absoluteProjectPath(file, project: project))"
-            case .environment(let environment):
+            case let .environment(environment):
                 return "id=\(id),type=env,env=\(environment)"
             case .external:
                 // Docker Compose V2 retains this reference in `config`, but
@@ -583,9 +583,9 @@ extension ComposeOrchestrator {
     func buildSecretArgument(_ secret: ComposeBuildSecret) throws -> String {
         let id = secret.id.trimmingCharacters(in: .whitespacesAndNewlines)
         switch try buildSecretSource(secret) {
-        case .file(let file):
+        case let .file(file):
             return "id=\(id),src=\(file)"
-        case .environment(let environment):
+        case let .environment(environment):
             return "id=\(id),env=\(environment)"
         case .external:
             throw ComposeError.invalidProject(
@@ -764,7 +764,6 @@ extension ComposeOrchestrator {
             }
             service.environment = environment
         }
-
     }
 
     /// Applies `compose run` Linux capability overrides to the copied service
