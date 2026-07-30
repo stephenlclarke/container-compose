@@ -68,6 +68,7 @@ enum ContainerPackageCompatibility {
 
   private static let maximumDiagnosticBytes = 64 * 1024
   private static let maximumCapturedOutputBytes = maximumDiagnosticBytes + 3
+  private static let preflightSignals = ["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"]
   private static let requiredContainerSource = "stephenlclarke/container"
   private static let requiredContainerizationSource = "stephenlclarke/containerization"
   private static let defaultInstallGuideURLComponents = [
@@ -369,44 +370,114 @@ extension ContainerPackageCompatibility {
   ) async throws -> CommandResult {
     let signalState = ContainerPackagePreflightSignalState()
     do {
-      return try await withTaskCancellationHandler {
-        try await signalProxy.withSignalProxy(
-          signals: ["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"],
-          handler: { signal in
-            await signalState.record(signal)
-          },
-          operation: {
-            let commandTask = Task {
-              try await ProcessRunner().runCapturingOutputPrefix(
-                executable,
-                arguments,
-                input: Data(),
-                maximumOutputBytes: maximumCapturedOutputBytes
-              )
-            }
-            await signalState.attach(commandTask)
-            let result = try await commandTask.value
-            await signalState.complete(result)
-          }
-        )
-        if let signal = await signalState.signal {
-          throw ContainerPackagePreflightInterruption(signal: signal)
-        }
-        guard let result = await signalState.completedResult() else {
-          throw CancellationError()
-        }
-        return result
-      } onCancel: {
-        Task {
-          await signalState.cancel()
-        }
-      }
+      return try await runCancellablePreflight(
+        executable: executable,
+        arguments: arguments,
+        signalProxy: signalProxy,
+        signalState: signalState
+      )
     } catch is CancellationError {
-      if let signal = await signalState.signal {
-        throw ContainerPackagePreflightInterruption(signal: signal)
+      try await rethrowPreflightCancellation(signalState: signalState)
+    }
+  }
+
+  private static func runCancellablePreflight(
+    executable: String,
+    arguments: [String],
+    signalProxy: ComposeSignalProxying,
+    signalState: ContainerPackagePreflightSignalState
+  ) async throws -> CommandResult {
+    try await withTaskCancellationHandler {
+      try await runSignalProxiedPreflight(
+        executable: executable,
+        arguments: arguments,
+        signalProxy: signalProxy,
+        signalState: signalState
+      )
+      return try await completedPreflightResult(signalState: signalState)
+    } onCancel: {
+      cancelPreflight(signalState: signalState)
+    }
+  }
+
+  private static func runSignalProxiedPreflight(
+    executable: String,
+    arguments: [String],
+    signalProxy: ComposeSignalProxying,
+    signalState: ContainerPackagePreflightSignalState
+  ) async throws {
+    try await signalProxy.withSignalProxy(
+      signals: preflightSignals,
+      handler: { signal in
+        await recordPreflightSignal(signal, signalState: signalState)
+      },
+      operation: {
+        try await runPreflightCommand(
+          executable: executable,
+          arguments: arguments,
+          signalState: signalState
+        )
       }
+    )
+  }
+
+  private static func runPreflightCommand(
+    executable: String,
+    arguments: [String],
+    signalState: ContainerPackagePreflightSignalState
+  ) async throws {
+    let commandTask = preflightCommandTask(executable: executable, arguments: arguments)
+    await signalState.attach(commandTask)
+    let result = try await commandTask.value
+    await signalState.complete(result)
+  }
+
+  private static func preflightCommandTask(
+    executable: String,
+    arguments: [String]
+  ) -> Task<CommandResult, Error> {
+    Task {
+      try await ProcessRunner().runCapturingOutputPrefix(
+        executable,
+        arguments,
+        input: Data(),
+        maximumOutputBytes: maximumCapturedOutputBytes
+      )
+    }
+  }
+
+  private static func recordPreflightSignal(
+    _ signal: String,
+    signalState: ContainerPackagePreflightSignalState
+  ) async {
+    await signalState.record(signal)
+  }
+
+  private static func cancelPreflight(signalState: ContainerPackagePreflightSignalState) {
+    Task {
+      await signalState.cancel()
+    }
+  }
+
+  private static func completedPreflightResult(
+    signalState: ContainerPackagePreflightSignalState
+  ) async throws -> CommandResult {
+    if let signal = await signalState.signal {
+      throw ContainerPackagePreflightInterruption(signal: signal)
+    }
+    guard let result = await signalState.completedResult() else {
       throw CancellationError()
     }
+    return result
+  }
+
+  private static func rethrowPreflightCancellation(
+    signalState: ContainerPackagePreflightSignalState
+  ) async throws -> Never {
+    if let signal = await signalState.signal {
+      throw ContainerPackagePreflightInterruption(signal: signal)
+    }
+    throw CancellationError()
   }
 
   private static func boundedDiagnostic(_ data: Data, omittedByteCount: Int) -> String {
