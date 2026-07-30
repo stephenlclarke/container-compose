@@ -37,6 +37,7 @@ struct ComposeDockerTemplateJSONTests {
 
     @Test
     func `JSON repairs only invalid UTF8 bytes`() throws {
+        let replacementCharacter = "\u{FFFD}"
         let values: [String: DockerTemplateData] = [:]
 
         #expect(
@@ -47,9 +48,9 @@ struct ComposeDockerTemplateJSONTests {
         )
         #expect(
             try renderDockerTemplate(
-                #"{{json "a�"}}"#,
+                #"{{json "a\#(replacementCharacter)"}}"#,
                 values: values,
-            ) == #""a�""#,
+            ) == #""a\#(replacementCharacter)""#,
         )
     }
 
