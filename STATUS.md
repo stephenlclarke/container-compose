@@ -49,7 +49,7 @@ Current refs should come from checked-in source-of-truth files rather than dupli
 Use this validation floor when parity or runtime behavior changes:
 
 - `container-compose`: `make ci`; targeted tests while iterating; full `make docker-compose-parity` whenever Compose, Dockerfile/build, CLI, or runtime behavior changes; and `make release-gate` before stable package dispatch.
-- Performance-sensitive changes: run the macOS comparator once it is available; until then, include reproducible same-host Docker Compose comparison evidence using the workload and reporting requirements in [Project Goal](#project-goal-macos-docker-compose-parity-and-performance).
+- Performance-sensitive changes: `make docker-compose-host-namespaces-parity` records raw monotonic TSV, JUnit, exact runtime fingerprints, and a Markdown matrix for the live bridge lifecycle when `CONTAINER_COMPOSE_LIVE=1`; for other workloads, run the general macOS comparator once it is available and meanwhile include reproducible same-host Docker Compose comparison evidence using the workload and reporting requirements in [Project Goal](#project-goal-macos-docker-compose-parity-and-performance).
 - Apple-backed repositories: each affected repository's full source checks and unit tests, plus integration tests for changed runtime behavior.
 - Documentation-only changes: the repository Markdown gate over every tracked `.md` file.
 
