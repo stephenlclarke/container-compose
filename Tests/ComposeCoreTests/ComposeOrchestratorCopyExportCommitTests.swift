@@ -1415,61 +1415,43 @@ extension ComposeOrchestratorTests {
         ))
     }
 
-    @Test("commit preserves healthchecks from the service platform variant")
-    func commitPreservesServicePlatformHealthcheck() async throws {
+    @Test("commit preserves complete metadata from the service platform in one lookup")
+    func commitPreservesCompleteServicePlatformMetadataInOneLookup() async throws {
         let exporter = try RecordingContainerExporter(archiveData: rootfsArchiveData())
         let hostHealthCheck = ComposeImageHealthCheck(test: ["CMD-SHELL", "test -f /host-variant"])
         let serviceHealthCheck = ComposeImageHealthCheck(test: ["CMD-SHELL", "test -f /service-variant"])
         let imageManager = RecordingContainerImageManager(
-            platformHealthChecks: [
-                ImageHealthCheckRequestKey(reference: "example/api", platform: "linux/amd64"): serviceHealthCheck,
-            ],
             imageMetadata: [
                 "example/api": ComposeImageMetadata(reference: "example/api") {
+                    $0.user = "host-user"
+                    $0.environment = ["PLATFORM=host"]
+                    $0.entrypoint = ["/host-entrypoint"]
+                    $0.command = ["host-command"]
+                    $0.workingDir = "/host"
+                    $0.labels = ["variant": "host"]
+                    $0.exposedPorts = ["8080/tcp"]
+                    $0.stopSignal = "SIGTERM"
                     $0.healthCheck = hostHealthCheck
-                },
-            ]
-        )
-        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
-            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
-        ])
-        let project = ComposeProject(
-            name: "demo",
-            services: [
-                "api": composeService(name: "api", image: "example/api") {
-                    $0.platform = "linux/amd64"
-                },
-            ]
-        )
-        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), dependencies: orchestratorDependencies {
-            $0.discoveryManager = discoveryManager
-            $0.exporter = exporter
-            $0.imageManager = imageManager
-        })
-
-        try await orchestrator.commit(project: project, serviceName: "api")
-
-        let archiveData = try #require((await imageManager.loadedArchiveData).first)
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let archive = directory.appendingPathComponent("image.tar")
-        try archiveData.write(to: archive)
-        let config = try commitArchiveConfig(from: archive)
-        #expect(config.config.healthCheck?.test == serviceHealthCheck.test)
-        #expect(await imageManager.requests.contains(.healthCheck(reference: "example/api", platform: "linux/amd64")))
-    }
-
-    @Test("commit preserves volumes from the service platform variant")
-    func commitPreservesServicePlatformVolumes() async throws {
-        let exporter = try RecordingContainerExporter(archiveData: rootfsArchiveData())
-        let imageManager = RecordingContainerImageManager(
-            platformImageVolumeTargets: [
-                ImageVolumeTargetRequestKey(reference: "example/api", platform: "linux/amd64"): ["/service-data"],
-            ],
-            imageMetadata: [
-                "example/api": ComposeImageMetadata(reference: "example/api") {
                     $0.declaredVolumeTargets = ["/host-data"]
                 },
+            ],
+            platformImageMetadata: [
+                ImageMetadataRequestKey(
+                    reference: "example/api",
+                    platform: "linux/amd64",
+                ): ComposeImageMetadata(reference: "example/api@sha256:service") {
+                    $0.displayReference = "example/api:service"
+                    $0.user = "service-user"
+                    $0.environment = ["PLATFORM=service"]
+                    $0.entrypoint = ["/service-entrypoint"]
+                    $0.command = ["service-command"]
+                    $0.workingDir = "/service"
+                    $0.labels = ["variant": "service"]
+                    $0.exposedPorts = ["8443/tcp"]
+                    $0.stopSignal = "SIGUSR1"
+                    $0.healthCheck = serviceHealthCheck
+                    $0.declaredVolumeTargets = ["/service-data"]
+                },
             ]
         )
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
@@ -1497,8 +1479,118 @@ extension ComposeOrchestratorTests {
         let archive = directory.appendingPathComponent("image.tar")
         try archiveData.write(to: archive)
         let config = try commitArchiveConfig(from: archive)
+        #expect(config.config.user == "service-user")
+        #expect(config.config.env == ["PLATFORM=service"])
+        #expect(config.config.entrypoint == ["/service-entrypoint"])
+        #expect(config.config.cmd == ["service-command"])
+        #expect(config.config.workingDir == "/service")
+        #expect(config.config.labels == ["variant": "service"])
+        #expect(config.config.exposedPorts == ["8443/tcp": [:]])
+        #expect(config.config.stopSignal == "SIGUSR1")
+        #expect(config.config.healthCheck?.test == serviceHealthCheck.test)
         #expect(config.config.volumes == ["/service-data": [:]])
-        #expect(await imageManager.requests.contains(.volumeTargets(reference: "example/api", platform: "linux/amd64")))
+        let requests = await imageManager.requests
+        #expect(requests.first == .availableMetadata(reference: "example/api", platform: "linux/amd64"))
+        #expect(!requests.contains(.metadata("example/api")))
+        #expect(!requests.contains(.healthCheck(reference: "example/api", platform: "linux/amd64")))
+        #expect(!requests.contains(.volumeTargets(reference: "example/api", platform: "linux/amd64")))
+    }
+
+    @Test("commit retains default image metadata when the service platform is unavailable")
+    func commitRetainsDefaultMetadataWhenServicePlatformIsUnavailable() async throws {
+        let exporter = try RecordingContainerExporter(archiveData: rootfsArchiveData())
+        let unavailableRequest = ImageMetadataRequestKey(reference: "example/api", platform: "linux/amd64")
+        let imageManager = RecordingContainerImageManager(
+            imageMetadata: [
+                "example/api": ComposeImageMetadata(reference: "example/api") {
+                    $0.user = "host-user"
+                    $0.declaredVolumeTargets = ["/host-data"]
+                },
+            ],
+            unavailablePlatformImageMetadataRequests: [unavailableRequest]
+        )
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.platform = "linux/amd64"
+                },
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.exporter = exporter
+            $0.imageManager = imageManager
+        })
+
+        try await orchestrator.commit(project: project, serviceName: "api")
+
+        let archiveData = try #require((await imageManager.loadedArchiveData).first)
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archive = directory.appendingPathComponent("image.tar")
+        try archiveData.write(to: archive)
+        let config = try commitArchiveConfig(from: archive)
+        #expect(config.config.user == "host-user")
+        #expect(config.config.volumes == ["/host-data": [:]])
+        #expect(Array((await imageManager.requests).prefix(2)) == [
+            .availableMetadata(reference: "example/api", platform: "linux/amd64"),
+            .metadata("example/api"),
+        ])
+    }
+
+    @Test("commit clears default metadata when the service platform declares none")
+    func commitClearsDefaultMetadataWhenServicePlatformDeclaresNone() async throws {
+        let exporter = try RecordingContainerExporter(archiveData: rootfsArchiveData())
+        let imageManager = RecordingContainerImageManager(
+            imageMetadata: [
+                "example/api": ComposeImageMetadata(reference: "example/api") {
+                    $0.user = "host-user"
+                    $0.healthCheck = ComposeImageHealthCheck(test: ["CMD", "host-check"])
+                    $0.declaredVolumeTargets = ["/host-data"]
+                },
+            ],
+            platformImageMetadata: [
+                ImageMetadataRequestKey(
+                    reference: "example/api",
+                    platform: "linux/amd64",
+                ): ComposeImageMetadata(reference: "example/api"),
+            ]
+        )
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.platform = "linux/amd64"
+                },
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.exporter = exporter
+            $0.imageManager = imageManager
+        })
+
+        try await orchestrator.commit(project: project, serviceName: "api")
+
+        let archiveData = try #require((await imageManager.loadedArchiveData).first)
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archive = directory.appendingPathComponent("image.tar")
+        try archiveData.write(to: archive)
+        let config = try commitArchiveConfig(from: archive)
+        #expect(config.config.user == nil)
+        #expect(config.config.healthCheck == nil)
+        #expect(config.config.volumes == nil)
+        let requests = await imageManager.requests
+        #expect(requests.first == .availableMetadata(reference: "example/api", platform: "linux/amd64"))
+        #expect(!requests.contains(.metadata("example/api")))
     }
 
     @Test("commit resolves effective Compose healthchecks for image config")

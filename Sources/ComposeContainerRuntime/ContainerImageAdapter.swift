@@ -31,6 +31,11 @@ public protocol ContainerImageAPIClienting: Sendable {
     /// Returns image config metadata for `reference`.
     func imageMetadata(reference: String) async throws -> ComposeImageMetadata
 
+    /// Returns image config metadata when the requested platform is available.
+    ///
+    /// `nil` represents an unavailable platform variant.
+    func imageMetadataIfAvailable(reference: String, platform: String?) async throws -> ComposeImageMetadata?
+
     /// Returns Docker image config `VOLUME` destinations for `reference` and `platform`.
     func imageDeclaredVolumeTargets(reference: String, platform: String?) async throws -> [String]
 
@@ -55,6 +60,11 @@ public extension ContainerImageAPIClienting {
     func imageDeclaredVolumeTargets(reference: String, platform _: String?) async throws -> [String] {
         try await imageMetadata(reference: reference).declaredVolumeTargets
     }
+
+    /// Treats general metadata as available when a client cannot report variant availability.
+    func imageMetadataIfAvailable(reference: String, platform _: String?) async throws -> ComposeImageMetadata? {
+        try await imageMetadata(reference: reference)
+    }
 }
 
 /// Thin apple/container client wrapper around image API calls.
@@ -63,6 +73,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     public typealias Digest = @Sendable (String) async throws -> String
     public typealias HealthCheck = @Sendable (String, String?) async throws -> ComposeImageHealthCheck?
     public typealias Metadata = @Sendable (String) async throws -> ComposeImageMetadata
+    public typealias AvailableMetadata = @Sendable (String, String?) async throws -> ComposeImageMetadata?
     public typealias VolumeTargets = @Sendable (String, String?) async throws -> [String]
     public typealias Transformers = @Sendable () async throws -> [ComposeBridgeTransformer]
     public typealias Pull = @Sendable (String) async throws -> Void
@@ -74,6 +85,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     private let digestOperation: Digest
     private let healthCheckOperation: HealthCheck
     private let metadataOperation: Metadata
+    private let availableMetadataOperation: AvailableMetadata
     private let volumeTargetsOperation: VolumeTargets
     private let transformersOperation: Transformers
     private let pullOperation: Pull
@@ -87,6 +99,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
         public var digest: Digest
         public var healthCheck: HealthCheck
         public var metadata: Metadata
+        public var availableMetadata: AvailableMetadata?
         public var volumeTargets: VolumeTargets
         public var transformers: Transformers
 
@@ -97,6 +110,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
             },
             healthCheck: @escaping HealthCheck = { _, _ in nil },
             metadata: @escaping Metadata = { reference in ComposeImageMetadata(reference: reference) },
+            availableMetadata: AvailableMetadata? = nil,
             volumeTargets: @escaping VolumeTargets = { _, _ in [] },
             transformers: @escaping Transformers = { [] },
         ) {
@@ -104,6 +118,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
             self.digest = digest
             self.healthCheck = healthCheck
             self.metadata = metadata
+            self.availableMetadata = availableMetadata
             self.volumeTargets = volumeTargets
             self.transformers = transformers
         }
@@ -137,6 +152,9 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
                 digest: { try await client.imageDigest(reference: $0) },
                 healthCheck: { try await client.imageHealthCheck(reference: $0, platform: $1) },
                 metadata: { try await client.imageMetadata(reference: $0) },
+                availableMetadata: { reference, platform in
+                    try await client.imageMetadataIfAvailable(reference: reference, platform: platform)
+                },
                 volumeTargets: { try await client.imageDeclaredVolumeTargets(reference: $0, platform: $1) },
                 transformers: { try await client.bridgeTransformers() },
             ),
@@ -155,6 +173,9 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
         digestOperation = queries.digest
         healthCheckOperation = queries.healthCheck
         metadataOperation = queries.metadata
+        availableMetadataOperation = queries.availableMetadata ?? { reference, _ in
+            try await queries.metadata(reference)
+        }
         volumeTargetsOperation = queries.volumeTargets
         transformersOperation = queries.transformers
         pullOperation = mutations.pull
@@ -186,6 +207,11 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     /// Reads image config metadata through `ClientImage`.
     public func imageMetadata(reference: String) async throws -> ComposeImageMetadata {
         try await metadataOperation(reference)
+    }
+
+    /// Reads image config metadata while preserving unavailable-platform information.
+    public func imageMetadataIfAvailable(reference: String, platform: String?) async throws -> ComposeImageMetadata? {
+        try await availableMetadataOperation(reference, platform)
     }
 
     /// Reads Docker image `VOLUME` destinations through `ClientImage`.
@@ -245,6 +271,11 @@ public struct ContainerClientImageManager: ComposeRuntimeImageManaging {
     /// Reads image config metadata through the direct apple/container image API.
     public func imageMetadata(_ reference: String) async throws -> ComposeImageMetadata {
         try await client.imageMetadata(reference: reference)
+    }
+
+    /// Reads image config metadata while preserving unavailable-platform information.
+    public func imageMetadataIfAvailable(_ reference: String, platform: String?) async throws -> ComposeImageMetadata? {
+        try await client.imageMetadataIfAvailable(reference: reference, platform: platform)
     }
 
     /// Reads Docker image `VOLUME` destinations through the direct apple/container image API.

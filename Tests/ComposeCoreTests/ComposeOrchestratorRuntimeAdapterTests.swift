@@ -1695,6 +1695,28 @@ extension ComposeOrchestratorTests {
         ])
     }
 
+    @Test("image manager returns complete platform metadata through direct API")
+    func imageManagerReturnsCompletePlatformMetadataThroughDirectAPI() async throws {
+        let metadata = ComposeImageMetadata(reference: "example/api@sha256:platform") {
+            $0.user = "service-user"
+            $0.declaredVolumeTargets = ["/service-data"]
+        }
+        let client = RecordingContainerImageAPIClient(platformImageMetadata: [
+            ImageMetadataRequestKey(reference: "example/api", platform: "linux/arm64"): metadata,
+        ])
+        let manager = ContainerClientImageManager(client: client)
+
+        let resolved = try await manager.imageMetadataIfAvailable(
+            "example/api",
+            platform: "linux/arm64",
+        )
+
+        #expect(resolved == metadata)
+        #expect(await client.requests == [
+            .availableMetadata(reference: "example/api", platform: "linux/arm64"),
+        ])
+    }
+
     @Test("image manager returns platform image volume targets through direct API")
     func imageManagerReturnsPlatformImageVolumeTargetsThroughDirectAPI() async throws {
         let client = RecordingContainerImageAPIClient(platformImageVolumeTargets: [
@@ -1808,15 +1830,27 @@ extension ComposeOrchestratorTests {
 
     @Test("image API client forwards configured operations")
     func imageAPIClientForwardsConfiguredOperations() async throws {
+        let metadata = ComposeImageMetadata(reference: "example/api@sha256:platform") {
+            $0.user = "service-user"
+        }
         let recorder = RecordingContainerImageAPIClient(
             existingReferences: ["example/api:latest"],
+            platformImageMetadata: [
+                ImageMetadataRequestKey(
+                    reference: "example/api:latest",
+                    platform: "linux/arm64",
+                ): metadata,
+            ],
             pushOutputs: ["example/api:latest": "registry.example.com/example/api:latest"],
             deleteOutputs: ["example/api:latest": "example/api:latest"]
         )
         let client = ContainerImageAPIClient(
             queries: ContainerImageAPIClient.QueryOperations(
                 exists: { try await recorder.imageExists(reference: $0) },
-                healthCheck: { try await recorder.imageHealthCheck(reference: $0, platform: $1) }
+                healthCheck: { try await recorder.imageHealthCheck(reference: $0, platform: $1) },
+                availableMetadata: {
+                    try await recorder.imageMetadataIfAvailable(reference: $0, platform: $1)
+                }
             ),
             mutations: ContainerImageAPIClient.MutationOperations(
                 pull: { try await recorder.pullImage(reference: $0) },
@@ -1828,6 +1862,10 @@ extension ComposeOrchestratorTests {
 
         let exists = try await client.imageExists(reference: "example/api:latest")
         let healthCheck = try await client.imageHealthCheck(reference: "example/api:latest", platform: nil)
+        let platformMetadata = try await client.imageMetadataIfAvailable(
+            reference: "example/api:latest",
+            platform: "linux/arm64",
+        )
         try await client.pullImage(reference: "example/api:latest")
         let pushed = try await client.pushImage(reference: "example/api:latest")
         let deleted = try await client.deleteImage(reference: "example/api:latest", force: true)
@@ -1835,12 +1873,14 @@ extension ComposeOrchestratorTests {
 
         #expect(exists == true)
         #expect(healthCheck == nil)
+        #expect(platformMetadata == metadata)
         #expect(pushed == "registry.example.com/example/api:latest")
         #expect(deleted == "example/api:latest")
         #expect(loaded == ["loaded:latest"])
         #expect(await recorder.requests == [
             .exists("example/api:latest"),
             .healthCheck(reference: "example/api:latest", platform: nil),
+            .availableMetadata(reference: "example/api:latest", platform: "linux/arm64"),
             .pull("example/api:latest"),
             .push("example/api:latest"),
             .delete(reference: "example/api:latest", force: true),
@@ -1850,8 +1890,17 @@ extension ComposeOrchestratorTests {
 
     @Test("image API client wraps an injected lower level client")
     func imageAPIClientWrapsInjectedLowerLevelClient() async throws {
+        let metadata = ComposeImageMetadata(reference: "example/api@sha256:platform") {
+            $0.user = "service-user"
+        }
         let recorder = RecordingContainerImageAPIClient(
             existingReferences: ["example/api:latest"],
+            platformImageMetadata: [
+                ImageMetadataRequestKey(
+                    reference: "example/api:latest",
+                    platform: "linux/arm64",
+                ): metadata,
+            ],
             pushOutputs: ["example/api:latest": "registry.example.com/example/api:latest"],
             deleteOutputs: ["example/api:latest": "example/api:latest"]
         )
@@ -1859,6 +1908,10 @@ extension ComposeOrchestratorTests {
 
         let exists = try await client.imageExists(reference: "example/api:latest")
         let healthCheck = try await client.imageHealthCheck(reference: "example/api:latest", platform: nil)
+        let platformMetadata = try await client.imageMetadataIfAvailable(
+            reference: "example/api:latest",
+            platform: "linux/arm64",
+        )
         try await client.pullImage(reference: "example/api:latest")
         let pushed = try await client.pushImage(reference: "example/api:latest")
         let deleted = try await client.deleteImage(reference: "example/api:latest", force: true)
@@ -1866,12 +1919,14 @@ extension ComposeOrchestratorTests {
 
         #expect(exists == true)
         #expect(healthCheck == nil)
+        #expect(platformMetadata == metadata)
         #expect(pushed == "registry.example.com/example/api:latest")
         #expect(deleted == "example/api:latest")
         #expect(loaded == ["loaded:latest"])
         #expect(await recorder.requests == [
             .exists("example/api:latest"),
             .healthCheck(reference: "example/api:latest", platform: nil),
+            .availableMetadata(reference: "example/api:latest", platform: "linux/arm64"),
             .pull("example/api:latest"),
             .push("example/api:latest"),
             .delete(reference: "example/api:latest", force: true),

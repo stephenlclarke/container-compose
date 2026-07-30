@@ -1565,6 +1565,7 @@ enum ContainerImageRequest: Equatable {
     case exists(String)
     case digest(String)
     case healthCheck(reference: String, platform: String?)
+    case availableMetadata(reference: String, platform: String?)
     case volumeTargets(reference: String, platform: String?)
     case metadata(String)
     case bridgeTransformers
@@ -1576,6 +1577,11 @@ enum ContainerImageRequest: Equatable {
 }
 
 struct ImageHealthCheckRequestKey: Hashable {
+    var reference: String
+    var platform: String?
+}
+
+struct ImageMetadataRequestKey: Hashable {
     var reference: String
     var platform: String?
 }
@@ -2974,6 +2980,8 @@ actor RecordingContainerImageManager: ContainerImageManaging {
     private var healthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck]
     private var imageVolumeTargets: [ImageVolumeTargetRequestKey: [String]]
     private var imageMetadata: [String: ComposeImageMetadata]
+    private var platformImageMetadata: [ImageMetadataRequestKey: ComposeImageMetadata]
+    private let unavailablePlatformImageMetadataRequests: Set<ImageMetadataRequestKey>
     private var transformers: [ComposeBridgeTransformer]
     private let pullFailures: Set<String>
     private let pullMissingFailures: Set<String>
@@ -2993,6 +3001,8 @@ actor RecordingContainerImageManager: ContainerImageManaging {
         imageVolumeTargets: [String: [String]] = [:],
         platformImageVolumeTargets: [ImageVolumeTargetRequestKey: [String]] = [:],
         imageMetadata: [String: ComposeImageMetadata] = [:],
+        platformImageMetadata: [ImageMetadataRequestKey: ComposeImageMetadata] = [:],
+        unavailablePlatformImageMetadataRequests: Set<ImageMetadataRequestKey> = [],
         transformers: [ComposeBridgeTransformer] = [],
         pullFailures: Set<String> = [],
         pullMissingFailures: Set<String> = [],
@@ -3017,6 +3027,8 @@ actor RecordingContainerImageManager: ContainerImageManaging {
         }
         self.imageVolumeTargets = mappedImageVolumeTargets
         self.imageMetadata = imageMetadata
+        self.platformImageMetadata = platformImageMetadata
+        self.unavailablePlatformImageMetadataRequests = unavailablePlatformImageMetadataRequests
         self.transformers = transformers
         self.pullFailures = pullFailures
         self.pullMissingFailures = pullMissingFailures
@@ -3074,6 +3086,20 @@ actor RecordingContainerImageManager: ContainerImageManaging {
         }
         storage.append(.volumeTargets(reference: reference, platform: platform))
         return targets
+    }
+
+    func imageMetadataIfAvailable(_ reference: String, platform: String?) async throws -> ComposeImageMetadata? {
+        if let failure {
+            throw failure
+        }
+        let key = ImageMetadataRequestKey(reference: reference, platform: platform)
+        storage.append(.availableMetadata(reference: reference, platform: platform))
+        if unavailablePlatformImageMetadataRequests.contains(key) {
+            return nil
+        }
+        return platformImageMetadata[key]
+            ?? imageMetadata[reference]
+            ?? ComposeImageMetadata(reference: reference)
     }
 
     func imageMetadata(_ reference: String) async throws -> ComposeImageMetadata {
@@ -3163,6 +3189,8 @@ actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
     private var healthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck]
     private var imageVolumeTargets: [ImageVolumeTargetRequestKey: [String]]
     private var imageMetadata: [String: ComposeImageMetadata]
+    private var platformImageMetadata: [ImageMetadataRequestKey: ComposeImageMetadata]
+    private let unavailablePlatformImageMetadataRequests: Set<ImageMetadataRequestKey>
     private var transformers: [ComposeBridgeTransformer]
     private var pushOutputs: [String: String]
     private var deleteOutputs: [String: String?]
@@ -3177,6 +3205,8 @@ actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
         imageVolumeTargets: [String: [String]] = [:],
         platformImageVolumeTargets: [ImageVolumeTargetRequestKey: [String]] = [:],
         imageMetadata: [String: ComposeImageMetadata] = [:],
+        platformImageMetadata: [ImageMetadataRequestKey: ComposeImageMetadata] = [:],
+        unavailablePlatformImageMetadataRequests: Set<ImageMetadataRequestKey> = [],
         transformers: [ComposeBridgeTransformer] = [],
         pushOutputs: [String: String] = [:],
         deleteOutputs: [String: String?] = [:],
@@ -3195,6 +3225,8 @@ actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
         }
         self.imageVolumeTargets = mappedImageVolumeTargets
         self.imageMetadata = imageMetadata
+        self.platformImageMetadata = platformImageMetadata
+        self.unavailablePlatformImageMetadataRequests = unavailablePlatformImageMetadataRequests
         self.transformers = transformers
         self.pushOutputs = pushOutputs
         self.deleteOutputs = deleteOutputs
@@ -3230,6 +3262,17 @@ actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
         }
         storage.append(.volumeTargets(reference: reference, platform: platform))
         return targets
+    }
+
+    func imageMetadataIfAvailable(reference: String, platform: String?) async throws -> ComposeImageMetadata? {
+        let key = ImageMetadataRequestKey(reference: reference, platform: platform)
+        storage.append(.availableMetadata(reference: reference, platform: platform))
+        if unavailablePlatformImageMetadataRequests.contains(key) {
+            return nil
+        }
+        return platformImageMetadata[key]
+            ?? imageMetadata[reference]
+            ?? ComposeImageMetadata(reference: reference)
     }
 
     func imageMetadata(reference: String) async throws -> ComposeImageMetadata {

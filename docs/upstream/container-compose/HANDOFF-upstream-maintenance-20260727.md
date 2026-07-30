@@ -370,7 +370,13 @@ service-platform selection, duplicate, and multi-target cases. The strict live
 probe builds matched base images with `VOLUME ["/image-data", "/shared-data"]`,
 adds `/added-data` and `["/logs", "/shared-data"]`, and confirms Docker Compose
 v5.3.1 and the installed Container-backed Compose binary both retain the same
-four targets. No Apple runtime fork or stack pin changes.
+four targets. PR
+[#173](https://github.com/stephenlclarke/container-compose/pull/173) also
+resolves every inherited OCI config field from the selected service-platform
+variant. The successful explicit-platform path converts the local image to an
+`ImageResource` once instead of three times; unavailable or failed variant
+selection retains the default-metadata fallback with at most two reads. No
+Apple runtime fork or stack pin changes.
 
 CC-005 is complete on the matched supported stack. The command and `--archive`
 option are supported, and the live metadata fixture records exact behavioural
