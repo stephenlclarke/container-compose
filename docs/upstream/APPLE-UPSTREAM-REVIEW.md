@@ -2,14 +2,11 @@
 
 This is the current disposition of Apple work that affects the five-repository container stack. Re-check GitHub before changing an Apple-backed component because issue, review, and merge state can change independently.
 
-Apple/upstream snapshot updated 29 July 2026 after fetching every configured
-Apple and Stephen-owned remote, querying the live pull-request state, and
-completing the 31-pull-request stock-Apple port audit and the three
-strengthened stock submissions derived from that audit, including their strict
-follow-up review. The snapshot also includes the validated Apple #2038/#824
-integration branches and the resulting Compose stack pins. Compose-only
-implementation evidence was updated 30 July 2026 without claiming a fresh
-Apple-state query.
+Apple pull-request state was queried 29 July 2026 while completing the
+31-pull-request stock-Apple port audit and the three strengthened stock
+submissions derived from it. Fetched Apple and supported-fork baselines, fork
+classifications, and Compose-only implementation evidence were refreshed
+30 July 2026 without claiming a fresh query of every Apple pull request.
 
 ## Scope
 
@@ -25,32 +22,18 @@ left/right counts below are from `git rev-list --left-right --count
 
 | Repository | Apple `main` | Supported fork `main` | Apple-only | Fork-only |
 | --- | --- | --- | ---: | ---: |
-| `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `367430446959e3048da37f5f64d3c10e1293d3de` | 2 | 327 |
-| `containerization` | `7800b4642171561c95b5f55500b19e5dce5acd45` | `043193efa5f1a2e21a240041d6edd71d7673739e` | 2 | 133 |
-| `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `f97cddf5b3aae2426a094613793c11c41b1d2e53` | 0 | 33 |
+| `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `8657c4b8685865c8889b0171d953342fc9f427a7` | 0 | 338 |
+| `containerization` | `ff44a5b683c80fceab875dba8a20ed24d7648c07` | `971fc7e5e27467ebd6227e1ae54f3e5c23de87b4` | 0 | 135 |
+| `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `61832d4ca91715180a84dec0eab091170174c43c` | 0 | 34 |
 
-The supported `container` fork is two Apple commits behind: Apple PR #2027 at
-`48145ac7` and the 0.40.1 dependency update in #2038 at `6e65319f`. The
-supported `containerization` fork is two Apple commits behind: Apple PR #822 at
-`3a224e9f` and the virtiofs remount correction in #824 at `7800b464`. These
-deltas are not silently counted as fork functionality. The fork-only counts
-include merge commits and intentionally retained generic runtime work; they
-are not a count of changes that are ready for Apple.
-
-The fork default branches have not been changed. The reviewed integration
-branches that include these Apple heads and the existing Compose runtime
-capability work are:
-
-| Repository | Validated integration branch | Published head |
-| --- | --- | --- |
-| `container` | `feat/compose-runtime-capability-apple-2038` | `d0d4fbd098d3e4d7035b7b3f58946e943065e418` |
-| `containerization` | `feat/copy-stream-metadata-apple-824` | `3a74e96e337443b82148a582856aac6abcf8c349` |
-| `container-compose` | `feat/runtime-capability-apple-2038` | `0d9a111609eed8d4bc7e3503f18492059b0f194e` |
-
-The Compose branch pins the two exact runtime heads in `Package.swift`,
-`Package.resolved`, and `Tools/release/stack-refs.json`. The
-`container-builder-shim` pin remains
-`f97cddf5b3aae2426a094613793c11c41b1d2e53`.
+No Apple commit is missing from a supported fork at this refresh. The
+fork-only counts include merge commits and intentionally retained generic
+runtime work; they are not a count of changes ready for Apple. The current
+heads and all 440 patch-unique non-merge commits are classified in
+[FORK-COMMIT-CLASSIFICATIONS.md](FORK-COMMIT-CLASSIFICATIONS.md). Compose
+continues to promote exact runtime revisions through its stack references and
+linked-stack gates; a supported-fork default-branch update is not itself a
+Compose pin promotion.
 
 ## Submitted Stephen-Authored Apple Pull Requests
 
@@ -80,6 +63,7 @@ No Stephen-authored pull request has been submitted to
 
 | Pull request | Final state | Disposition |
 | --- | --- | --- |
+| [apple/containerization#813](https://github.com/apple/containerization/pull/813) | Merged 29 July 2026 | Apple now redacts OCI environment values through descriptions. The older fork vminitd call-site correction remains patch-unique and must be reconciled explicitly rather than retained as an assumed duplicate. |
 | [apple/containerization#798](https://github.com/apple/containerization/pull/798) | Merged 15 July 2026 | The CloudHypervisor SwiftPM exclusion is present in current Apple `main`; no fork-only replacement remains necessary. |
 | [apple/container#1933](https://github.com/apple/container/pull/1933) | Closed 22 July 2026 without merge | Superseded by merged production handler work in `apple/container#1981` and `apple/containerization#808`. |
 | [apple/container#1838](https://github.com/apple/container/pull/1838) | Closed 27 June 2026 without merge | Superseded by open replacement #1935. |
@@ -196,8 +180,11 @@ conflict with Apple `main`.
 
 ### `apple/containerization`
 
-Seven of the eight carried pull requests are mergeable with a blocked merge
-state. #748 currently conflicts with Apple `main`.
+Six of the seven remaining open carried pull requests are mergeable with a
+blocked merge state. #748 currently conflicts with Apple `main`. #813 merged
+29 July 2026 as `ff44a5b`; the older local vminitd correction remains
+patch-unique and requires explicit reconciliation with Apple's OCI-level
+redaction.
 
 | Apple pull request | Live head and state | Local disposition |
 | --- | --- | --- |
@@ -208,7 +195,6 @@ state. #748 currently conflicts with Apple `main`.
 | [#768](https://github.com/apple/containerization/pull/768) | `5835a86b3bc0`, open, mergeable, blocked | `d6322d3`: classify Basic-auth registry failures as credential errors. |
 | [#783](https://github.com/apple/containerization/pull/783) | `7eb0c7df41ee`, open, mergeable, blocked | `6a1370e`: canonicalise arm64 platform descriptions without redundant `v8`. |
 | [#796](https://github.com/apple/containerization/pull/796) | `6c46194ca394`, open, mergeable, blocked | `310932e`: reject invalid bridge interface names before indexing or allocation. |
-| [#813](https://github.com/apple/containerization/pull/813) | `542463261721`, open, mergeable, blocked | `1cec794`: redact environment values while retaining useful variable names in debug logs. |
 
 ### Strengthened Changes Submitted to Apple
 
@@ -390,9 +376,11 @@ validation before submission.
   ready, blocked, and awaiting review, with no actionable author review. PR
   #799's hosted build, signature, and Linux compile checks are green. No hosted
   check has yet been reported for #2031, #2035, #2036, #820, #821, or #823.
-- Refresh the supported `container` and `containerization` fork mains for Apple
-  #2027 and #822 respectively, then rerun the linked-stack gates before
-  claiming zero-behind status.
+- Keep the supported fork mains current with Apple and rerun the classification
+  and linked-stack gates before promoting changed runtime pins.
+- Reconcile the older fork vminitd redaction with merged
+  `apple/containerization#813`, removing duplicate behaviour while retaining
+  any independently required log coverage.
 - Rebase `apple/container#1935` after `apple/container#1862` lands so the preferred upstream XPC commit is not duplicated.
 - Split `stephenlclarke/container#33` into separate stock-shaped XPC ownership
   and ProcessIO backpressure proposals. Neither has been submitted to Apple.

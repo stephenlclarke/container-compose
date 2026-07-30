@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-07-29",
+  "reviewedAt": "2026-07-30",
   "repositories": {
     "container": {
       "upstreamHead": "6e65319fe476ffe8db8ddaf828a537ed36fe2859",
-      "forkHead": "367430446959e3048da37f5f64d3c10e1293d3de",
+      "forkHead": "8657c4b8685865c8889b0171d953342fc9f427a7",
       "slices": [
         {
           "id": "container-support-maintenance",
@@ -231,7 +231,13 @@
             "d67baa26e0fc166d349a189943e6f3dd6a5dbc72",
             "9e37266dbca3967acf92c2378a7d1fbe94899ec3",
             "f58209c6282838f153e2cf06ecb78d2cf3d71005",
-            "f81bb1430479b8617b34b731e65bd179d0f0d9ac"
+            "f81bb1430479b8617b34b731e65bd179d0f0d9ac",
+            "5119fea95e5c7820c4deceec75b59fadfa8f61c3",
+            "39f56bd8a1935ca45d5366a5a1f64a4c4e8c9d72",
+            "d956531cb6587bdda8b97875ed2d478ce2aed116",
+            "4a9847158f935335bfcb5e60d563814743f83dcd",
+            "ea128bf8656adc09da2ef022e6cc2bdfccadf309",
+            "3e5a219104f9a5359450e332b5ae783f68c55ac9"
           ]
         },
         {
@@ -301,7 +307,10 @@
             "735e8aaec538a1d043d97525074e4175ae1ac10f",
             "4bce15d507837e3f8bb58ebc4efd557a283bff82",
             "c194d298449ffbd0a8a30f3307e75900a0b11970",
-            "acad796bcd9e5a6cd0fd5afe7395eb7192073bf4"
+            "acad796bcd9e5a6cd0fd5afe7395eb7192073bf4",
+            "7ffac9dcf059bd62da87cebe40d20ce05742238c",
+            "f6b10ed6a0028f9df11837d738675263fdf23c94",
+            "2137ff00e0985d4df4872d08ab0eddc98af3a5ce"
           ]
         },
         {
@@ -371,8 +380,8 @@
       ]
     },
     "containerization": {
-      "upstreamHead": "7800b4642171561c95b5f55500b19e5dce5acd45",
-      "forkHead": "043193efa5f1a2e21a240041d6edd71d7673739e",
+      "upstreamHead": "ff44a5b683c80fceab875dba8a20ed24d7648c07",
+      "forkHead": "971fc7e5e27467ebd6227e1ae54f3e5c23de87b4",
       "slices": [
         {
           "id": "containerization-support-maintenance",
@@ -568,8 +577,8 @@
           "id": "containerization-apple-813-port",
           "classification": "temporary-upstream-port",
           "owner": "apple/containerization#813",
-          "reason": "Guest process-configuration redaction is equivalent to the open Apple #813 security fix.",
-          "upstreamDisposition": "Remove the local duplicate after Apple merges equivalent redaction and the log regression remains green.",
+          "reason": "Guest process-configuration redaction predates the now-merged Apple #813 security fix and remains patch-unique.",
+          "upstreamDisposition": "Reconcile the local vminitd logging correction with Apple's merged OCI description redaction, remove duplicate behaviour, and retain only independently required coverage after the full log regression stays green.",
           "commits": [
             "f17ec6997567021bf05204fa2d9ae2c30952ebc4"
           ]
@@ -598,7 +607,7 @@
     },
     "container-builder-shim": {
       "upstreamHead": "267b5ab98e1d7db7d98af98bdc90578bf5fd3192",
-      "forkHead": "f97cddf5b3aae2426a094613793c11c41b1d2e53",
+      "forkHead": "61832d4ca91715180a84dec0eab091170174c43c",
       "slices": [
         {
           "id": "container-builder-shim-support-maintenance",
@@ -638,7 +647,8 @@
           "commits": [
             "3856a00c69a4b045c17c7cf0cc7803b5c68030da",
             "db59b64513200c4ec247ce54c3a911a9b9a25104",
-            "af599a5c9cae51d7625da57d2220bd913f60d4a1"
+            "af599a5c9cae51d7625da57d2220bd913f60d4a1",
+            "61832d4ca91715180a84dec0eab091170174c43c"
           ]
         },
         {

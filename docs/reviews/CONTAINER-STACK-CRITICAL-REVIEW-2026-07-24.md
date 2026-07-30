@@ -23,7 +23,7 @@ bounded process, and no-surviving-process coverage.
 The largest engineering risk is now the runtime dependency model, not Compose
 file parsing. `ComposeRuntimeSPI` is presented as a clean provider boundary,
 but `ComposeCore` still imports and publicly exposes Apple package types. The
-three support forks contain 430 patch-unique non-merge commits beyond current
+three support forks contain 440 patch-unique non-merge commits beyond current
 Apple upstream heads. That gives the project valuable capabilities, but
 creates a large review, release, and convergence burden.
 
@@ -134,10 +134,10 @@ This was a systematic whole-tree audit with targeted deep review of
 parity-critical paths. It is not a formal proof that every line is
 defect-free.
 
-### 29 July 2026 Fork Classification Refresh
+### 30 July 2026 Fork Classification Refresh
 
-FORK-104 now has an exact, machine-checked classification for all 430 current
-patch-unique non-merge fork commits: 304 support-maintenance commits, 101
+FORK-104 now has an exact, machine-checked classification for all 440 current
+patch-unique non-merge fork commits: 310 support-maintenance commits, 105
 generic runtime primitives, 21 temporary upstream ports, and four rejected
 Compose-policy commits. The reviewed ownership, reason, and upstream
 disposition for every slice are in
@@ -148,12 +148,12 @@ current commit is unclassified, an obsolete commit remains classified, a
 commit appears twice, or a slice lacks its owner, reason, or upstream
 disposition. It does not infer a classification for new work.
 
-The refresh also makes the remaining upstream-sync gate explicit. `container`
-and `containerization` are each two Apple commits behind. The
-`containerization` merge check is clean, but `container` conflicts in its
-dependency pins and strengthened build-context, URL, TCP-forwarder, and
-regression files. Those conflicts must be resolved and validated on an
-isolated fork-sync branch before release.
+The refresh confirms all supported fork mains contain their fetched Apple
+heads. It classifies six new `container` release, signing, and dependency-pin
+commits as support maintenance; three XPC and ProcessIO corrections as generic
+runtime primitives; and the builder-shim DNS configuration as a generic
+runtime primitive. The registry gate still requires re-review whenever either
+side advances.
 
 ## Confirmed Findings
 
@@ -633,15 +633,14 @@ interception or compatibility framework around private Apple behaviour.
 
 ## Fork Divergence
 
-The builder-shim fork contains current Apple `main`. `container` and
-`containerization` are each two commits behind current Apple and require a
-normal reviewed sync. The fork-only surface is:
+All three supported forks contain current Apple `main`. The fork-only surface
+at the 30 July classification refresh is:
 
 | Fork | Behind Apple | Ahead of Apple | Patch-unique non-merge | Diff from Apple |
 | --- | ---: | ---: | ---: | --- |
-| `container` | 2 | 327 | 290 | 348 files, +31,499/-1,231 |
-| `containerization` | 2 | 133 | 112 | 110 files, +8,570/-493 |
-| `container-builder-shim` | 0 | 33 | 28 | 60 files, +2,533/-881 |
+| `container` | 0 | 338 | 299 | 353 files, +32,340/-1,240 |
+| `containerization` | 0 | 135 | 112 | 110 files, +8,570/-493 |
+| `container-builder-shim` | 0 | 34 | 29 | 61 files, +2,579/-881 |
 
 This should be managed as an upstream-convergence programme:
 
@@ -865,7 +864,7 @@ Goal: make ownership enforceable and reduce the cost of every later feature.
 | ARCH-101 | P1 | Compose | Remove Apple products from `ComposeCore` | `Package.swift` and source-import gate prove Core depends only on model/SPI targets |
 | ARCH-102 | P2 | Compose/runtime | Move DTO/archive/live API translation into provider | Public Core API contains no Apple types; existing CLI behaviour and tests remain stable |
 | ARCH-103 | P2 | Stack | Generate a typed runtime capability/version manifest | Startup reports exact missing capability; stock Apple and matched-fork behaviour are deterministic |
-| FORK-104 | Complete | Stack | Classify all 430 patch-unique non-merge fork commits against current Apple heads | Completed 29 July 2026 with one explicit slice, owner, reason, and upstream disposition per commit plus a strict no-unowned-delta gate; see [the classification review](../upstream/FORK-COMMIT-CLASSIFICATIONS.md) |
+| FORK-104 | Complete | Stack | Classify all 440 patch-unique non-merge fork commits against current Apple heads | Refreshed 30 July 2026 with one explicit slice, owner, reason, and upstream disposition per commit plus a strict no-unowned-delta gate; see [the classification review](../upstream/FORK-COMMIT-CLASSIFICATIONS.md) |
 | FORK-105 | P2 | Stack | Upstream generic slices and remove merged ports | Each retained slice has focused tests, Apple issue/PR, and deletion condition |
 | FORK-106 | P2 | Stack | Converge local #799, #813, #87 equivalents | Apple merge or explicit replacement is recorded; duplicate code is removed without behaviour loss |
 | DOC-107 | P2 | Compose | Replace 581 handoff documents with a compact generated registry plus active drafts | One row per capability/PR with owner, commit, state, last verification, and archive link; superseded drafts archived outside active tree |

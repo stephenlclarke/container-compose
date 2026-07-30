@@ -13,13 +13,13 @@ them.
 
 | Repository | Apple upstream head | Fork head | Fork divergence at audit | Diff from Apple baseline |
 | --- | --- | --- | --- | --- |
-| `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `367430446959e3048da37f5f64d3c10e1293d3de` | 2 behind, 327 ahead | 348 files, 31,499 additions, 1,231 deletions |
-| `containerization` | `7800b4642171561c95b5f55500b19e5dce5acd45` | `043193efa5f1a2e21a240041d6edd71d7673739e` | 2 behind, 133 ahead | 110 files, 8,570 additions, 493 deletions |
-| `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `f97cddf5b3aae2426a094613793c11c41b1d2e53` | 0 behind, 33 ahead | 60 files, 2,533 additions, 881 deletions |
+| `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `8657c4b8685865c8889b0171d953342fc9f427a7` | 0 behind, 338 ahead | 353 files, 32,340 additions, 1,240 deletions |
+| `containerization` | `ff44a5b683c80fceab875dba8a20ed24d7648c07` | `971fc7e5e27467ebd6227e1ae54f3e5c23de87b4` | 0 behind, 135 ahead | 110 files, 8,570 additions, 493 deletions |
+| `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `61832d4ca91715180a84dec0eab091170174c43c` | 0 behind, 34 ahead | 61 files, 2,579 additions, 881 deletions |
 
-The graph contains 493 fork-ahead commits. The refreshed audit reviewed and
-classified all 430 patch-unique non-merge semantic commits (`290` in
-`container`, `112` in `containerization`, and `28` in
+The graph contains 507 fork-ahead commits. The refreshed audit reviewed and
+classified all 440 patch-unique non-merge semantic commits (`299` in
+`container`, `112` in `containerization`, and `29` in
 `container-builder-shim`) with `git log --cherry-pick --right-only
 --no-merges` against those Apple heads. The exact ownership and disposition
 registry is
@@ -51,8 +51,8 @@ The remaining runtime-composition candidates are deliberately retained:
 - Copy/export, log/event streaming, health observation, and lifecycle paths require runtime-owned state or guest processes.
 - Build attestations, SSH forwarding, named-builder selection, checks, and BuildKit transport remain builder primitives. Recreating the builder-shim lifecycle in Compose would increase, rather than reduce, coupling.
 
-The complete refreshed classification contains 304 support-maintenance
-commits, 101 generic runtime primitives, 21 temporary upstream ports, and four
+The complete refreshed classification contains 310 support-maintenance
+commits, 105 generic runtime primitives, 21 temporary upstream ports, and four
 rejected Compose-policy commits. The rejected config, secret, and Keychain
 storage slices are explicit FORK-105 removal candidates.
 

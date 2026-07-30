@@ -1,6 +1,6 @@
 # Fork Commit Classifications
 
-Updated: 29 July 2026
+Updated: 30 July 2026
 
 This review classifies every patch-unique non-merge commit in the three
 Stephen-supported Apple forks. The machine-readable source is
@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `367430446959e3048da37f5f64d3c10e1293d3de` | 2 | 327 | 290 |
-| `containerization` | `7800b4642171561c95b5f55500b19e5dce5acd45` | `043193efa5f1a2e21a240041d6edd71d7673739e` | 2 | 133 | 112 |
-| `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `f97cddf5b3aae2426a094613793c11c41b1d2e53` | 0 | 33 | 28 |
-| **Total** | | | **4** | **493** | **430** |
+| `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `8657c4b8685865c8889b0171d953342fc9f427a7` | 0 | 338 | 299 |
+| `containerization` | `ff44a5b683c80fceab875dba8a20ed24d7648c07` | `971fc7e5e27467ebd6227e1ae54f3e5c23de87b4` | 0 | 135 | 112 |
+| `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `61832d4ca91715180a84dec0eab091170174c43c` | 0 | 34 | 29 |
+| **Total** | | | **0** | **507** | **440** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,8 +32,8 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 304 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
-| `generic-runtime-primitive` | 101 | Retain typed VM, guest, archive, network, process, storage, resource, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
+| `support-maintenance` | 310 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `generic-runtime-primitive` | 105 | Retain typed VM, guest, archive, network, process, storage, resource, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
 
@@ -62,7 +62,7 @@ historical commits remain classified until the removal branches are integrated
 into the fork default branches.
 
 Four early `containerization` ports have now been reconciled with Apple
-`main` at `7800b4642171561c95b5f55500b19e5dce5acd45`:
+`main` at `ff44a5b683c80fceab875dba8a20ed24d7648c07`:
 
 - Apple #685 freeze/thaw API: local `1eaaee814dad`, Apple `5887dc55f314`,
   stable patch ID `366f046411cb`.
@@ -79,9 +79,11 @@ to delete. Only immutable published history remains, and it will not be
 rewritten.
 
 The remaining temporary ports track Apple #1735, #1997, #2031, #753/#766,
-Apple #799, #813, #820, #821, `container-builder-shim` #83, and
-`container-builder-shim` #87. Their exact commits and deletion conditions are
-recorded in the JSON registry.
+Apple #799, #820, #821, `container-builder-shim` #83, and
+`container-builder-shim` #87. The local #813 redaction predates Apple's merged
+implementation and remains patch-unique, so its registry entry now requires
+explicit reconciliation rather than treating an upstream merge as sufficient.
+Every exact commit and deletion condition is recorded in the JSON registry.
 
 Manual subject and slice review corrected one generated candidate:
 `941a5d5961b2` introduced OOM-killer configuration but was explicitly reverted
@@ -110,14 +112,14 @@ rerun the strict report.
 
 ## Current Refresh State
 
-The earlier Apple #2027/#2038 `container` conflicts and Apple #822/#824
-`containerization` updates have been resolved and validated on isolated
-integration branches. The Compose integration head
-`0d9a111609eed8d4bc7e3503f18492059b0f194e` passed full CI before the
-FORK-105 removals above were applied and revalidated.
+All three supported fork default branches contain the fetched Apple heads at
+this refresh. The nine newly patch-unique `container` commits were reviewed:
+six release, signing, and dependency-pin changes are support maintenance; the
+XPC ownership correction and two ProcessIO backpressure commits are generic
+runtime primitives. The builder-shim DNS configuration commit is also a
+generic runtime primitive. No commit was assigned automatically.
 
-The fork default branches remain unchanged, so the registry baseline heads and
-their ahead/behind counts still describe those default branches. Release
-promotion must integrate the validated branches through normal signed commits
-without rewriting published history, then regenerate this registry against the
-new default heads.
+The registry records fork ownership; it does not promote a runtime or Compose
+stack pin. Release promotion must continue through the exact stack references,
+normal signed commits, and the full linked-stack gates without rewriting
+published history.
