@@ -2048,7 +2048,9 @@ struct ComposeOrchestratorTests {
                     $0.networkMode = "bridge"
                 },
             ]
-        )
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+        }
 
         try await ComposeOrchestrator(
             runner: runner,
@@ -3389,7 +3391,9 @@ struct ComposeOrchestratorTests {
                     $0.networkMode = "bridge"
                 },
             ]
-        )
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+        }
 
         try await ComposeOrchestrator(
             runner: runner,
@@ -28169,7 +28173,9 @@ struct ComposeOrchestratorTests {
                     $0.networkMode = "bridge"
                 },
             ]
-        )
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+        }
 
         try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
             .run(project: project, serviceName: "job", command: ["true"], remove: true)
