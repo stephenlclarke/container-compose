@@ -2,6 +2,40 @@
 
 This file is the current Docker Compose v2 parity ledger for `container-compose`. Keep branch, release, build, and validation policy in [BUILD.md](BUILD.md), installation guidance in [INSTALL.md](INSTALL.md), and Apple-facing handoff drafts under `docs/upstream/`.
 
+## Project Goal: macOS Docker Compose Parity and Performance
+
+The key product goal is 100% observable parity with Docker Compose v2 on
+macOS, with comparable or better performance on the same macOS host. Parity
+covers command and option discovery, configuration resolution and rendering,
+exit statuses and errors, resource and lifecycle results, and user-visible
+output; schema acceptance alone is not sufficient.
+
+The target follows Docker Compose's documented local macOS behavior. Every
+change to the pinned Docker Compose reference must update the reference
+oracle and this ledger in the same reviewed change. A project-owned
+difference may not become an implicit exception: it remains partial or
+unsupported until a behavior-level oracle is green. A behavior that Docker
+Compose cannot exercise on macOS may be excluded only when it is explicitly
+recorded as a platform or product non-goal with supporting evidence.
+
+Performance is part of parity, not a later optimization. The macOS
+comparator must measure median and P95 results against Docker Compose on the
+same host, with the same images, fixtures, isolated state, and recorded
+versions. Its representative workloads are single-service and 10/50-service
+startup, logs, sync, build-context transfer, and teardown. Comparable means
+no material regression outside the declared measurement-noise band; better
+means equal or lower results. Each benchmark record must identify the Mac and
+macOS version, component revisions, Docker Compose reference, fixture state,
+sample count, and warm or cold conditions.
+
+This goal is complete only when every macOS-exercisable Docker Compose
+behavior is accounted for by a green executable oracle or an explicit
+platform non-goal, and the representative performance gate is comparable or
+better than the reference.
+
+The current prioritized assessment is the [macOS Compose parity and
+performance review](docs/reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md).
+
 ## Current Integration Assumption
 
 `container-compose` is supported as part of the matched `stephenlclarke` runtime bundle. Keep each package lane pinned to the matching `stephenlclarke/container`, `stephenlclarke/containerization`, and `stephenlclarke/container-builder-shim` surfaces until equivalent Apple upstream APIs are accepted and the plugin has been updated to those upstream surfaces.
@@ -15,6 +49,7 @@ Current refs should come from checked-in source-of-truth files rather than dupli
 Use this validation floor when parity or runtime behavior changes:
 
 - `container-compose`: `make ci`; targeted tests while iterating; full `make docker-compose-parity` whenever Compose, Dockerfile/build, CLI, or runtime behavior changes; and `make release-gate` before stable package dispatch.
+- Performance-sensitive changes: run the macOS comparator once it is available; until then, include reproducible same-host Docker Compose comparison evidence using the workload and reporting requirements in [Project Goal](#project-goal-macos-docker-compose-parity-and-performance).
 - Apple-backed repositories: each affected repository's full source checks and unit tests, plus integration tests for changed runtime behavior.
 - Documentation-only changes: the repository Markdown gate over every tracked `.md` file.
 

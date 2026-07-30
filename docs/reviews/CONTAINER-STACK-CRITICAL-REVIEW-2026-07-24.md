@@ -800,8 +800,8 @@ Docker and Compose policy remains in this repository.
 
 Priority definitions:
 
-- **P1:** correctness, hang, data/metadata loss, security, or release-evidence
-  blocker;
+- **P1:** correctness, hang, data/metadata loss, security, release-evidence,
+  or explicit project-goal gate;
 - **P2:** material parity, architecture, maintainability, or reliability gap;
 - **P3:** useful extension, performance, or lower-risk hardening.
 
@@ -824,6 +824,7 @@ new Apple design work.
 | DOC-010 | P1 | Compose | Correct `DESIGN.md`, coupling audit, and `STATUS.md` claims | Documentation matches the actual package graph and tested command semantics |
 | APPLE-011 | P1 | Runtime forks | Review/port signal and log-tail fixes #1997/#2000 if they remain unmerged | Focused runtime tests and Compose kill/log-tail parity pass; local commits remain independently removable |
 | APPLE-012 | P1 | Runtime forks | Fix log fan-out after dead client (#2009) | One failed writer is removed or isolated; persisted log and healthy attach writer continue; no busy loop |
+| SQ-013 | P1 | Compose | Refactor preflight signal/cancellation closure nesting (`swift:S3087`) | Named helpers preserve signal, cancellation, and bounded-output behavior; the tracked SonarQube code smell is closed without a suppression |
 
 Phase gate:
 
@@ -932,16 +933,17 @@ Phase gate:
 | MODEL-503 | P3 | Runtime/Compose | Select and integrate a model-runner backend | Model lifecycle, endpoint readiness, variable injection, failure cleanup, and secrets reviewed |
 | LOG-504 | P2 | Runtime/Compose | Add distinct local/json-file and extensible logging drivers | Rotation, buffering, blocking mode, options, and plugin failure semantics pass |
 | LINK-505 | P2 | Compose | Complete legacy link behaviour after DNS | Shared-network selection, aliases, dynamic updates, and any retained env semantics match oracle |
-| PARITY-506 | P2 | Compose | Add regression probes for every confirmed gap | No fully-supported status row lacks a behaviour-level oracle or justified platform exemption |
+| PARITY-506 | P1 | Compose | Add regression probes for every confirmed gap | No macOS-exercisable status row lacks a behavior-level oracle or justified platform exemption |
 
 Phase gate:
 
-- no Compose-owned item remains in the runtime gap column;
+- no project-owned macOS Compose behavior remains partial or unsupported;
+- every macOS-exercisable status row has a behavior-level oracle or a justified platform exemption;
 - status is generated from executable capability tests where practical;
 - full local-mode Docker Compose parity suite passes against v5.3.1 or a
   deliberately updated pinned oracle.
 
-### Phase 6: Build Performance and Ecosystem Integration
+### Phase 6: macOS Performance Gate and Ecosystem Integration
 
 | ID | Priority | Owner | Work item | Acceptance |
 | --- | --- | --- | --- | --- |
@@ -951,12 +953,13 @@ Phase gate:
 | BUILD-604 | P3 | Container/Compose | Add image ID file support (#1998) where required | Atomic file write, no partial value, digest parity, and clear permission errors |
 | ECO-605 | P3 | Apple/Compose | Support Dev Containers through stable API capability, not CLI scraping | Attach, exec, copy, ports, lifecycle, and feature install have versioned contracts |
 | ECO-606 | P3 | Stack | Publish machine-readable capability and compatibility data | Tools can determine supported Compose/runtime/build features without parsing prose |
-| PERF-607 | P3 | Stack | Establish representative performance baselines | Startup, 10/50-service up, logs, sync, build context, and teardown regressions are gated |
+| PERF-607 | P1 | Stack | Gate macOS Compose performance against Docker Compose | Same-host Docker Compose comparisons record median and P95 startup, 10/50-service up, logs, sync, build context, and teardown; no metric is materially worse outside a declared noise band |
 
 Phase gate:
 
 - builder race and liveness tests are meaningful;
-- performance changes have before/after data;
+- the macOS performance gate is comparable or better than the Docker Compose reference;
+- performance changes have reproducible before/after data;
 - ecosystem integration uses stable public interfaces;
 - capability negotiation replaces version guessing.
 

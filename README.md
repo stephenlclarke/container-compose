@@ -75,6 +75,11 @@ The authoritative parity ledger is [STATUS.md](STATUS.md). It lists every
 tracked Compose file, service, Dockerfile/build, command, and long-option
 surface with ✅ yes, ⚠️ partial, or ❌ no, and explains every partial surface.
 
+The key project goal is [100% observable Docker Compose v2 parity on macOS
+with comparable or better performance](STATUS.md#project-goal-macos-docker-compose-parity-and-performance).
+The ledger and executable reference comparisons must expose every remaining
+project-owned difference; they must not become implicit exceptions.
+
 On macOS, `container-compose` honors the active pull policy, prepares missing default-pull images when needed, then reads image metadata before `up`, `create`, and one-off `run`. It creates deterministic implicit Dockerfile-declared volumes and seeds an empty local volume from the selected image path for both declared and ordinary local volume mounts (including inherited external volumes), preserving the selected directory's ownership and mode on the volume root. `volume.nocopy: true`, a pre-existing `volume.subpath`, and a mount at a missing image path remain empty; populated volumes are preserved across `down`/`up`, matching Docker. Service `pre_start` helpers inherit service runtime context and gate startup, while `post_start` and `pre_stop` cover detached, foreground, and interactive one-off lifecycle paths with Docker-compatible detach and exit-status behavior. Foreground `up --exit-code-from SERVICE` returns the selected service's terminal status even when teardown closes attached log streams. The matched runtime encodes foreground attach signals by Linux-resolvable name, returns complete long records at backward-read tail boundaries, and keeps persistent log capture alive after an attached client disconnects; the committed signal/log reliability fixture verifies all three behaviors against Docker Compose V2.
 
 Use `container system version` to see the running `container` runtime source, branch lane, commit, compiled `containerization` ref, and builder image metadata. Use `container compose version` to see the installed plugin lane, embedded `compose-go` version, and package/runtime compatibility metadata.
@@ -106,6 +111,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [BUILD.md](BUILD.md): build, test, package, validate parity, and promote the current build to a stable release, including the weekly minor-release scheduler and manual major-release dispatch.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](STATUS.md): get the current parity surfaces, blockers, active gaps, and validation handoff.
+- [macOS Compose parity and performance review](docs/reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md): review the current parity, performance, design, and SonarQube-quality gaps.
 - [docs/external-resources.md](docs/external-resources.md): provision Compose-owned external config files and Keychain secrets.
 - [CONTRIBUTING.md](CONTRIBUTING.md): prepare reviewable changes.
 - [docs/parity/compose-cli-surface.md](docs/parity/compose-cli-surface.md): review local Docker Compose CLI surface parity and documented differences.

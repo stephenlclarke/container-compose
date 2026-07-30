@@ -342,6 +342,12 @@ make docker-compose-parity
 
 The aggregate target requires Docker Compose `5.3.1`, pins Docker's e2e fixtures to commit `f32009d4a2c687dd405398cc7975d12dccaf8dff`, builds the sibling runtime when available, starts it with isolated state, builds `compose`, runs each target in `DOCKER_COMPOSE_PARITY_TARGETS`, and stops the runtime on exit. The reference scripts establish Docker behavior; the isolated runtime suite and the Compose side of each comparison establish local behavior. [STATUS.md](STATUS.md) owns the support ledger.
 
+This functional suite is part of the project's [macOS Docker Compose parity
+and performance goal](STATUS.md#project-goal-macos-docker-compose-parity-and-performance),
+not a substitute for performance evidence. Changes on a measured execution
+path must also retain same-host Docker Compose benchmark evidence for the
+representative workloads and reporting requirements in that goal.
+
 Run a focused target directly while iterating:
 
 | Area | Targets |
