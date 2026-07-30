@@ -358,12 +358,27 @@ budget. Signed correction `5b6f4880` proves a delivered handler cannot race the
 proxied operation result. The complete local gate passes 1,266 Swift tests in
 46 suites with 92.81% Swift and 89.88% Go coverage.
 
-The next parity blockers are:
+CC-004 is complete.
+`ComposeCommitImageArchive` seeds the committed OCI volume map from inherited
+image declarations before unioning repeated shell-form and JSON-form
+`--change VOLUME` targets. Four focused volume tests pass, including
+service-platform selection, duplicate, and multi-target cases. The strict live
+probe builds matched base images with `VOLUME ["/image-data", "/shared-data"]`,
+adds `/added-data` and `["/logs", "/shared-data"]`, and confirms Docker Compose
+v5.3.1 and the installed Container-backed Compose binary both retain the same
+four targets. PR
+[#173](https://github.com/stephenlclarke/container-compose/pull/173) also
+resolves every inherited OCI config field from the selected service-platform
+variant. The successful explicit-platform path converts the local image to an
+`ImageResource` once instead of three times; unavailable or failed variant
+selection retains the default-metadata fallback with at most two reads. No
+Apple runtime fork or stack pin changes.
 
-1. Preserve inherited OCI `VOLUME` declarations in `compose commit`.
-2. Replace archive-mode `compose cp` host staging with direct runtime streams
+The next parity blocker is:
+
+1. Replace archive-mode `compose cp` host staging with direct runtime streams
    so ownership metadata can be preserved.
 
 Continue the ordered inventory in
-`docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after the two
-remaining confirmed P1 items are complete.
+`docs/reviews/CONTAINER-STACK-CRITICAL-REVIEW-2026-07-24.md` after this
+remaining confirmed P1 item is complete.

@@ -202,6 +202,11 @@ public protocol ComposeRuntimeImageManaging: Sendable {
     /// Returns image config metadata for `reference`.
     func imageMetadata(_ reference: String) async throws -> ComposeImageMetadata
 
+    /// Returns image config metadata when the requested platform is available.
+    ///
+    /// `nil` means a platform-specific lookup could not resolve that variant.
+    func imageMetadataIfAvailable(_ reference: String, platform: String?) async throws -> ComposeImageMetadata?
+
     /// Returns Docker image config `VOLUME` destinations for `reference` and `platform`.
     func imageDeclaredVolumeTargets(_ reference: String, platform: String?) async throws -> [String]
 
@@ -254,5 +259,10 @@ public extension ComposeRuntimeImageManaging {
     /// Falls back to the runtime's general image metadata when it does not expose a narrower volume query.
     func imageDeclaredVolumeTargets(_ reference: String, platform _: String?) async throws -> [String] {
         try await imageMetadata(reference).declaredVolumeTargets
+    }
+
+    /// Treats general metadata as available when a backend cannot report variant availability.
+    func imageMetadataIfAvailable(_ reference: String, platform _: String?) async throws -> ComposeImageMetadata? {
+        try await imageMetadata(reference)
     }
 }

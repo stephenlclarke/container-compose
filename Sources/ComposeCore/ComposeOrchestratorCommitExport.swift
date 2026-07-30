@@ -152,23 +152,17 @@ public extension ComposeOrchestrator {
         guard let image = serviceImage(project: project, service: service) else {
             return nil
         }
-        guard var metadata = try? await imageManager.imageMetadata(image) else {
-            return nil
+        if let platform = service.platform {
+            do {
+                if let metadata = try await imageManager.imageMetadataIfAvailable(image, platform: platform) {
+                    return metadata
+                }
+            } catch {
+                // Metadata is best-effort for commit parity. Fall back to the
+                // runtime's default variant when the platform-aware query fails.
+            }
         }
-        guard service.platform != nil else {
-            return metadata
-        }
-        do {
-            // Image metadata uses the local default variant, while Compose can
-            // select a different service platform. Resolve this field again
-            // for the service so the committed config matches that variant.
-            metadata.healthCheck = try await imageManager.imageHealthCheck(image, platform: service.platform)
-        } catch {
-            // Metadata is best-effort for commit parity. Keep the complete
-            // metadata result when the more specific healthcheck query is
-            // unavailable, matching the existing metadata fallback policy.
-        }
-        return metadata
+        return try? await imageManager.imageMetadata(image)
     }
 
     /// Renders the Compose-owned archive creation step for dry-run output.

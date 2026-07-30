@@ -1,0 +1,79 @@
+# Correct service-platform metadata in `compose commit`
+
+## Compose surface
+
+`container compose commit` inherited OCI image configuration for a service
+with an explicit `platform`.
+
+Tracking issue:
+[`#172`](https://github.com/stephenlclarke/container-compose/issues/172).
+Implementation pull request:
+[`#173`](https://github.com/stephenlclarke/container-compose/pull/173).
+
+## Docker Compose v2 behavior
+
+Docker Compose commits the selected service container. Its resulting image
+inherits the configuration of the image variant used by that service,
+including user, environment, process defaults, working directory, labels,
+ports, stop signal, healthcheck, and declared volumes.
+
+## Previous container-compose behavior
+
+PR 173 initially loaded complete metadata for the host-default image variant,
+then performed separate requested-platform lookups for only healthcheck and
+declared-volume fields. A service targeting another available platform could
+therefore commit a hybrid config: host-default process and identity fields
+combined with requested-platform healthcheck and volume fields.
+
+That path also converted the same local image to an `ImageResource` up to three
+times for one commit.
+
+## Likely owner
+
+container-compose design gap. The live Apple adapter already exposes every
+required field on one selected `ImageResource.Variant`; no Apple runtime or
+stack-pin change is required.
+
+## Minimal example
+
+```yaml
+services:
+  api:
+    image: example/multi-platform:latest
+    platform: linux/amd64
+```
+
+If the host-default and `linux/amd64` variants have different OCI configs, the
+committed image must inherit the complete `linux/amd64` config.
+
+## Acceptance criteria
+
+- [x] A requested, available service platform supplies the complete inherited
+  OCI config.
+- [x] A successful requested-platform lookup converts the image to an
+  `ImageResource` once, rather than three times.
+- [x] An unavailable or failed platform lookup falls back to the existing
+  default-variant metadata policy.
+- [x] An available variant with empty fields clears host-default healthcheck
+  and volume declarations instead of restoring them.
+- [x] Focused tests distinguish every inherited field between host-default and
+  selected variants and assert the exact request sequence.
+- [x] Local CI, quality, accepted SonarQube analysis, and post-change Docker
+  Compose v5.3.1 parity are green.
+- [ ] Hosted CI, CodeQL, Quality, Documentation, and SonarQube checks are green
+  on the final PR head.
+
+## Known residual gaps
+
+The maintained runtime gap register remains authoritative. Container-facing
+DNS, direct tar-stream metadata fidelity, richer security/GPU behavior,
+custom network and volume drivers, Docker API socket support, and distinct
+logging-driver semantics require generic runtime primitives before their
+Compose adapters can be completed. PR 173 does not emulate those missing
+runtime capabilities in the Compose layer.
+
+## Code of Conduct and documentation
+
+- [x] I agree to follow this project's Code of Conduct.
+- [x] I checked `STATUS.md`, the current critical review, and the relevant
+  command help.

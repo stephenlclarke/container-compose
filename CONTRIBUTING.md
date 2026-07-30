@@ -31,6 +31,13 @@ Use pull requests for all changes.
 8. Run the validation described in [BUILD.md](BUILD.md) before requesting
    review.
 
+Keep a pull request in draft while active or iterative development is in
+progress. Draft pushes defer CodeQL analysis while retaining the stable
+required-check context. Mark the pull request ready for review when its
+candidate revision is ready for the full CodeQL path. Converting it back to
+draft cancels an in-progress CodeQL run and defers analysis until the next
+ready-for-review event.
+
 Maintainers review pull requests before merge. Direct pushes to protected
 branches should be limited to maintainers and automation that has passed the
 required checks.
