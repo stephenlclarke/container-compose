@@ -50,8 +50,41 @@ stop_runtime() {
     fi
 }
 
+# Start Container and verify an API round-trip, recovering once from transient XPC startup failure.
+start_runtime() {
+    local attempt
+    local start_log
+    local start_status
+
+    for attempt in 1 2; do
+        start_log=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-start.XXXXXX")
+        if "$container_binary" "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
+            if "$container_binary" list --all --format json >/dev/null; then
+                rm -f "$start_log"
+                return
+            else
+                start_status=$?
+            fi
+        else
+            start_status=$?
+            if ! grep -Eq 'XPC connection error: Connection (interrupted|invalid)' "$start_log"; then
+                rm -f "$start_log"
+                return "$start_status"
+            fi
+        fi
+        rm -f "$start_log"
+
+        if [[ "$attempt" == "2" ]]; then
+            return "$start_status"
+        fi
+        printf 'Container API was not ready; restarting the matched runtime once...\n' >&2
+        stop_runtime
+        sleep 3
+    done
+}
+
 prepare_runtime_root() {
-    [[ -n "$runtime_app_root" ]] || return
+    [[ -n "$runtime_app_root" ]] || return 0
 
     mkdir -p "$runtime_app_root"
     local marker_path="$runtime_app_root/$runtime_root_marker"
@@ -77,7 +110,7 @@ prepare_runtime_root() {
 }
 
 resolve_matched_init_image() {
-    has_matched_init_image_source || return
+    has_matched_init_image_source || return 0
 
     if [[ -z "$matched_init_image" ]]; then
         matched_init_image="vminit:container-compose"
@@ -85,8 +118,8 @@ resolve_matched_init_image() {
 }
 
 prepare_runtime_config_home() {
-    has_matched_init_image_source || return
-    [[ -n "$runtime_app_root" ]] || return
+    has_matched_init_image_source || return 0
+    [[ -n "$runtime_app_root" ]] || return 0
 
     runtime_config_home="$runtime_app_root/xdg-config"
     mkdir -p "$runtime_config_home"
@@ -94,7 +127,7 @@ prepare_runtime_config_home() {
 }
 
 configure_matched_init_image() {
-    [[ -n "$runtime_config_home" ]] || return
+    [[ -n "$runtime_config_home" ]] || return 0
 
     local container_config_dir="$runtime_config_home/container"
     mkdir -p "$container_config_dir"
@@ -113,7 +146,7 @@ cleanup() {
 
 # Install a guest init image built from the same source lane as the host runtime.
 install_matched_init_image() {
-    has_matched_init_image_source || return
+    has_matched_init_image_source || return 0
 
     if [[ -n "$runtime_init_image_archive" ]]; then
         if [[ ! -f "$runtime_init_image_archive" ]]; then
@@ -162,7 +195,7 @@ start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
 if [[ -n "$runtime_app_root" ]]; then
     start_arguments+=(--app-root "$runtime_app_root")
 fi
-"$container_binary" "${start_arguments[@]}"
+start_runtime
 install_matched_init_image
 configure_matched_init_image
 

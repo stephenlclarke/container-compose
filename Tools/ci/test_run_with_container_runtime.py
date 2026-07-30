@@ -126,6 +126,59 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             invocations = container_log.read_text(encoding="utf-8")
             self.assertIn(f"image load --input {init_archive}", invocations)
 
+    def test_restarts_once_after_transient_xpc_start_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            container_log = temporary_root / "container.log"
+            start_count = temporary_root / "start-count"
+            fake_container = temporary_root / "container-cli"
+            fake_container.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'printf "%s\\n" "$*" >>"${CONTAINER_TEST_LOG:?}"\n'
+                'if [[ "$*" == *"system start"* ]]; then\n'
+                "  count=0\n"
+                '  if [[ -f "${CONTAINER_START_COUNT:?}" ]]; then\n'
+                '    IFS= read -r count <"${CONTAINER_START_COUNT}"\n'
+                "  fi\n"
+                "  ((count += 1))\n"
+                '  printf "%s\\n" "$count" >"${CONTAINER_START_COUNT}"\n'
+                '  if [[ "$count" == "1" ]]; then\n'
+                '    printf \'Error: interrupted: "XPC connection error: Connection invalid"\\n\' >&2\n'
+                "    exit 1\n"
+                "  fi\n"
+                "fi\n"
+                'if [[ "$*" == "list --all --format json" ]]; then\n'
+                "  printf '[]\\n'\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            fake_container.chmod(0o755)
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_START_COUNT": str(start_count),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+            invocations = container_log.read_text(encoding="utf-8")
+            self.assertEqual(invocations.count("system start"), 2)
+            self.assertEqual(invocations.count("list --all --format json"), 1)
+
 
 class ContainerRuntimeLockTest(unittest.TestCase):
     def test_serializes_independent_runtime_users(self) -> None:

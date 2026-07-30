@@ -16,6 +16,7 @@
 
 import ComposeCore
 import ComposeRuntimeSPI
+import ContainerizationError
 
 /// Low-level apple/container image calls used by `ContainerClientImageManager`.
 public protocol ContainerImageAPIClienting: Sendable {
@@ -291,7 +292,7 @@ public struct ContainerClientImageManager: ComposeRuntimeImageManaging {
         guard pullIfMissing else {
             return false
         }
-        try await client.pullImage(reference: reference)
+        try await pullImageRecoveringInterruption(reference)
         return true
     }
 
@@ -302,7 +303,7 @@ public struct ContainerClientImageManager: ComposeRuntimeImageManaging {
 
     /// Pulls an image through the direct apple/container image API.
     public func pullImage(_ reference: String) async throws {
-        try await client.pullImage(reference: reference)
+        try await pullImageRecoveringInterruption(reference)
     }
 
     /// Pushes an image and emits the pushed reference.
@@ -327,5 +328,31 @@ public struct ContainerClientImageManager: ComposeRuntimeImageManaging {
         for reference in references where !reference.isEmpty {
             emit(reference)
         }
+    }
+
+    /// Repeats the idempotent pull once when the runtime drops its XPC connection.
+    private func pullImageRecoveringInterruption(_ reference: String) async throws {
+        do {
+            try await client.pullImage(reference: reference)
+        } catch {
+            guard Self.isInterrupted(error) else {
+                throw error
+            }
+            try await client.pullImage(reference: reference)
+        }
+    }
+
+    /// Returns true when an image operation or one of its causes was interrupted.
+    private static func isInterrupted(_ error: any Error) -> Bool {
+        guard let containerError = error as? ContainerizationError else {
+            return false
+        }
+        if containerError.code == .interrupted {
+            return true
+        }
+        guard let cause = containerError.cause else {
+            return false
+        }
+        return isInterrupted(cause)
     }
 }
