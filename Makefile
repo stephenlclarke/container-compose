@@ -14,8 +14,8 @@
 # limitations under the License.
 #===----------------------------------------------------------------------===#
 
-SHELL := /bin/bash
-.SHELLFLAGS := -euo pipefail -c
+override SHELL := /bin/bash
+override .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := all
 .PHONY: fork-classifications-check upstream-divergence-report upstream-divergence-check upstream-divergence-release-check upstream-handoff-registry-update upstream-handoff-registry-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
 
@@ -33,6 +33,23 @@ CODESIGN_OPTS ?= --force --sign - --timestamp=none
 PYTHON ?= python3
 MARKDOWNLINT ?= markdownlint
 HAWKEYE ?= $(shell command -v hawkeye 2>/dev/null || printf '%s' .local/bin/hawkeye)
+CODEQL_CACHE_ROOT ?= .local/share/codeql
+CODEQL_ARTIFACT_ROOT ?= .build/codeql
+CODEQL_UPLOAD_REPOSITORY ?= stephenlclarke/container-compose
+CODEQL_UPLOAD_REF ?=
+CODEQL_UPLOAD_COMMIT ?=
+CONTAINER_COMPOSE_CODEQL_CLEAN_MAKE_ENTRY ?=
+# Preserve caller values as data rather than recursively expanding them as Make
+# syntax, then pass them to the fixed Python entry point through its environment.
+override CODEQL_CACHE_ROOT := $(value CODEQL_CACHE_ROOT)
+override CODEQL_ARTIFACT_ROOT := $(value CODEQL_ARTIFACT_ROOT)
+override CODEQL_UPLOAD_REPOSITORY := $(value CODEQL_UPLOAD_REPOSITORY)
+override CODEQL_UPLOAD_REF := $(value CODEQL_UPLOAD_REF)
+override CODEQL_UPLOAD_COMMIT := $(value CODEQL_UPLOAD_COMMIT)
+override CONTAINER_COMPOSE_CODEQL_CLEAN_MAKE_ENTRY := $(value CONTAINER_COMPOSE_CODEQL_CLEAN_MAKE_ENTRY)
+export CODEQL_CACHE_ROOT CODEQL_ARTIFACT_ROOT
+export CODEQL_UPLOAD_REPOSITORY CODEQL_UPLOAD_REF CODEQL_UPLOAD_COMMIT
+export CONTAINER_COMPOSE_CODEQL_CLEAN_MAKE_ENTRY
 SWIFT_COVERAGE_MIN ?= 90
 SWIFT_CORE_COVERAGE_MIN ?= $(SWIFT_COVERAGE_MIN)
 SWIFT_RUNTIME_SPI_COVERAGE_MIN ?= 95
@@ -62,18 +79,18 @@ SONAR_SCAN_ATTEMPTS ?= 3
 XCODE_SELECT_DEVELOPER_DIR ?= $(shell xcode-select -p 2>/dev/null || true)
 SWIFT_RUNTIME_RESOURCE_PATH ?= $(shell $(SWIFT) -print-target-info 2>/dev/null | $(PYTHON) -c 'import json, sys; print(json.load(sys.stdin).get("paths", {}).get("runtimeResourcePath", ""))' 2>/dev/null || true)
 SWIFT_RUNTIME_LIBRARY_PATHS ?= $(shell $(SWIFT) -print-target-info 2>/dev/null | $(PYTHON) -c 'import json, sys; print(" ".join(json.load(sys.stdin).get("paths", {}).get("runtimeLibraryPaths", [])))' 2>/dev/null || true)
-SWIFT_TOOLCHAIN_USR_DIR := $(patsubst %/lib/swift,%,$(SWIFT_RUNTIME_RESOURCE_PATH))
-SWIFT_XCODE_DEVELOPER_DIR := $(patsubst %/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift,%,$(filter %/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift,$(SWIFT_RUNTIME_RESOURCE_PATH)))
-SWIFT_CLT_DEVELOPER_DIR := $(patsubst %/usr/lib/swift,%,$(filter-out %/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift,$(filter %/usr/lib/swift,$(SWIFT_RUNTIME_RESOURCE_PATH))))
+SWIFT_TOOLCHAIN_USR_DIR = $(patsubst %/lib/swift,%,$(SWIFT_RUNTIME_RESOURCE_PATH))
+SWIFT_XCODE_DEVELOPER_DIR = $(patsubst %/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift,%,$(filter %/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift,$(SWIFT_RUNTIME_RESOURCE_PATH)))
+SWIFT_CLT_DEVELOPER_DIR = $(patsubst %/usr/lib/swift,%,$(filter-out %/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift,$(filter %/usr/lib/swift,$(SWIFT_RUNTIME_RESOURCE_PATH))))
 SWIFT_ACTIVE_DEVELOPER_DIR ?= $(firstword $(SWIFT_XCODE_DEVELOPER_DIR) $(SWIFT_CLT_DEVELOPER_DIR) $(XCODE_SELECT_DEVELOPER_DIR))
 SWIFT_LLVM_COV ?= $(firstword $(wildcard $(SWIFT_TOOLCHAIN_USR_DIR)/bin/llvm-cov) $(shell xcrun --find llvm-cov 2>/dev/null || command -v llvm-cov 2>/dev/null || true))
 SWIFT_LLVM_PROFDATA ?= $(firstword $(wildcard $(SWIFT_TOOLCHAIN_USR_DIR)/bin/llvm-profdata) $(shell xcrun --find llvm-profdata 2>/dev/null || command -v llvm-profdata 2>/dev/null || true))
-SWIFT_TEST_FRAMEWORK_CANDIDATES := \
+SWIFT_TEST_FRAMEWORK_CANDIDATES = \
 	$(SWIFT_ACTIVE_DEVELOPER_DIR)/Platforms/MacOSX.platform/Developer/Library/Frameworks \
 	$(SWIFT_ACTIVE_DEVELOPER_DIR)/Library/Developer/Frameworks \
 	$(XCODE_SELECT_DEVELOPER_DIR)/Platforms/MacOSX.platform/Developer/Library/Frameworks \
 	$(XCODE_SELECT_DEVELOPER_DIR)/Library/Developer/Frameworks
-SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES := \
+SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES = \
 	$(foreach path,$(SWIFT_RUNTIME_LIBRARY_PATHS),$(path)/testing $(path)) \
 	$(SWIFT_RUNTIME_RESOURCE_PATH)/macosx/testing \
 	$(SWIFT_ACTIVE_DEVELOPER_DIR)/Platforms/MacOSX.platform/Developer/usr/lib \
@@ -124,7 +141,7 @@ PARITY_ENV = \
 	PARITY_EVIDENCE_DIR="$(PARITY_EVIDENCE_DIR)" \
 	PARITY_REPETITIONS="$(PARITY_REPETITIONS)" \
 	PARITY_TIMEOUT_SECONDS="$(PARITY_TIMEOUT_SECONDS)"
-MARKDOWN_FILES := $(shell git ls-files '*.md')
+MARKDOWN_FILES = $(shell /usr/bin/git ls-files '*.md')
 DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-cli-surface-parity \
 	docker-compose-environment-parity \
@@ -195,19 +212,14 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 # framework and interop library to SwiftPM's generated test runner. Derive
 # those paths from the selected Swift executable so `SWIFT=... make swift-test`
 # does not mix Xcode and Command Line Tools runtimes.
-ifneq ($(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),)
-SWIFT_TEST_FLAGS ?= -Xswiftc -F -Xswiftc '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' -Xlinker -rpath -Xlinker '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)'
-ifneq ($(strip $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)),)
-SWIFT_TEST_FLAGS += -Xlinker -rpath -Xlinker '$(SWIFT_TEST_RUNTIME_LIBRARY_PATH)'
-endif
-else
 SWIFT_TEST_FLAGS ?=
-endif
+SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -F -Xswiftc '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' -Xlinker -rpath -Xlinker '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' $(if $(strip $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)),-Xlinker -rpath -Xlinker '$(SWIFT_TEST_RUNTIME_LIBRARY_PATH)'))
 
 .PHONY: all workflow ci ci-fast release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: core-runtime-neutrality
+.PHONY: codeql-local codeql-sarif-upload codeql-sarif-upload-dry-run
 .PHONY: docker-compose-environment-parity docker-compose-named-volume-reuse-parity docker-compose-oci-annotations-parity docker-compose-exposed-ports-parity docker-compose-empty-process-overrides-parity docker-compose-provider-services-parity
 .PHONY: docker-compose-phase4-parity
 .PHONY: docker-compose-format-template-actions-parity
@@ -385,6 +397,22 @@ go-release-check:
 		printf 'compose-normalizer contains DWARF debug sections; Homebrew packages require stripped release Go binaries\n' >&2; \
 		exit 1; \
 	fi
+
+codeql-local:
+	/usr/bin/python3 -I Tools/ci/codeql-local.py \
+		--make-environment \
+		analyze
+
+codeql-sarif-upload:
+	/usr/bin/python3 -I Tools/ci/codeql-local.py \
+		--make-environment \
+		upload
+
+codeql-sarif-upload-dry-run:
+	/usr/bin/python3 -I Tools/ci/codeql-local.py \
+		--make-environment \
+		upload \
+		--dry-run
 
 cli-smoke: build cli-smoke-built
 

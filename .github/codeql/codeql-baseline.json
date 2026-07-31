@@ -1,0 +1,7 @@
+{
+  "allowedResults": [],
+  "category": "/language:swift-go",
+  "queryPack": "codeql/go-queries@1.6.7",
+  "schemaVersion": 1,
+  "toolVersion": "2.26.2"
+}
