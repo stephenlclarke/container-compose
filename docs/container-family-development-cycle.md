@@ -2,7 +2,7 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Process adopted for future implementation; general MBP CI, local CodeQL, shared-ledger, performance, release-review/direct-mode, release-signature, and upstream-registry baseline enablers pending |
+| Status | Process adopted for future implementation; upstream-registry baseline restored; general MBP CI, local CodeQL, shared-ledger, performance, release-review/direct-mode, and release-signature enablers pending |
 | Applies to | `container-engine-api`, `container-engine`, `container`, `containerization`, `container-compose`, `container-builder-shim`, `devcontainer`, and matched supporting repositories |
 | Architecture | [Coherent Container-family parity architecture](coherent-container-family-parity-design.md) |
 | Primary goal | Observable Docker parity with comparable or better performance |
@@ -454,7 +454,7 @@ Before large-scale implementation begins, add and prove these workflow capabilit
 9. A family-wide runner/runtime concurrency policy that protects shared launchd/XPC services, state roots, VMs, Docker references, and performance hardware.
 10. A one-time branch, pull-request, worktree, and dirty-state baseline review that preserves unique/user work but closes or removes verified obsolete state before implementation creates more parallel lanes.
 11. Fail-closed release-helper verification of the trusted signature and exact generator provenance for any pre-existing `container` package-pin recovery candidate, with tests that reject unsigned or lookalike commits before publication.
-12. Resolve the current pre-existing upstream-handoff registry failure by classifying `docs/upstream/container-compose/ISSUE-performance-matrix.md` and `PR-performance-matrix.md` through the documented register/archive lifecycle, regenerating the reader view, and proving `make upstream-handoff-registry-check` green before using `make check`/`make ci` as programme evidence.
+12. **Complete — upstream-handoff registry baseline.** The performance-matrix issue and pull-request records are classified through the documented archive lifecycle, the reader view is regenerated, and `make upstream-handoff-registry-check` and the exact-stack `make check` pass. The implementation and evidence are recorded in `docs/upstream/container-compose/ISSUE-180.md` and `PR-180.md`; this baseline no longer blocks repository-wide programme evidence.
 13. Change the release helper's Compose source-promotion path to post a literal `@codex review`, wait for review of the exact current pull-request head, surface and answer every query, request a fresh review after any diff change, and block auto-merge until the final pass is clean; add deterministic helper tests for stale-head, unanswered-query, review-timeout, and clean-merge cases.
 14. Remove or fail-close the legacy `CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE=direct` path. It is not an emergency exception to review, and the helper MUST reject direct Compose `main` promotion once this process is adopted; test that only the exact-head-reviewed pull-request path can promote Compose source.
 15. Add stable requirement/work-package IDs and one shared progress register for every focused/coherent design, plus a generated stale-link/status check that fails when a verified row lacks exact-head evidence or dependent documentation has not been reviewed.

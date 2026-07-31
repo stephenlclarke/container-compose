@@ -296,7 +296,7 @@ enum ComposeCLIHelp {
         "alpha dry-run": .supported,
         "alpha scale": .supported,
         "alpha watch": .supported,
-        "attach": .supported,
+        "attach": .partiallySupported,
         "bridge": .supported,
         "bridge convert": .supported,
         "bridge transformations": .supported,
@@ -316,7 +316,7 @@ enum ComposeCLIHelp {
         "help": .supported,
         "images": .supported,
         "kill": .supported,
-        "logs": .supported,
+        "logs": .partiallySupported,
         "ls": .supported,
         "pause": .supported,
         "port": .supported,
@@ -326,14 +326,14 @@ enum ComposeCLIHelp {
         "push": .supported,
         "restart": .supported,
         "rm": .supported,
-        "run": .supported,
+        "run": .partiallySupported,
         "scale": .supported,
         "start": .supported,
         "stats": .supported,
         "stop": .supported,
         "top": .supported,
         "unpause": .supported,
-        "up": .supported,
+        "up": .partiallySupported,
         "version": .supported,
         "volumes": .supported,
         "wait": .supported,
@@ -341,8 +341,12 @@ enum ComposeCLIHelp {
     ]
 
     private static let supportDetails: [String: String] = [
+        "attach": "Output-only attach still follows persisted logs instead of an independent live stream, so logging-driver reader failures remain incomplete.",
         "events": "OOM, explicit restart, rename, resize, update, and attach/detach actions are unavailable; automatic policy restarts emit die then start, and exec lifecycle actions are supported.",
         "exec": "Docker-complete privileged execution is unavailable.",
+        "logs": "Driver/cache read capability, unsupported-reader behavior, stopped-provider reconstruction, and distinct json-file/local histories are incomplete.",
+        "run": "Non-interactive foreground output still depends on the logging live-attach/read split for none and unreadable drivers.",
+        "up": "Foreground output still needs independent live attach when historical log readers are unavailable.",
     ]
 
     private static let supportByOption: [String: [String: SupportLevel]] = [

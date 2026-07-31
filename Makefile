@@ -466,7 +466,7 @@ cli-smoke-built:
 	root_help_output="$$(".build/debug/compose" --help)"; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32malpha$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mversion$${ansi_escape}[0m"* ]]; \
-	[[ "$$root_help_output" == *"$${ansi_escape}[32mup$${ansi_escape}[0m"* ]]; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[38;5;208mup$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[38;5;208mcommit$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mhelp$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mpause$${ansi_escape}[0m"* ]]; \
@@ -561,7 +561,7 @@ cli-smoke-built:
 	[[ "$$cp_help_output" == *"$${ansi_escape}[32m--follow-link$${ansi_escape}[0m"* ]]; \
 	logs_help_output="$$(".build/debug/compose" logs --help)"; \
 	[[ "$$logs_help_output" == *"-f, --follow"* ]]; \
-	[[ "$$logs_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$logs_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
 	[[ "$$logs_help_output" == *"$${ansi_escape}[32m--follow$${ansi_escape}[0m"* ]]; \
 	[[ "$$logs_help_output" == *"$${ansi_escape}[32m--tail$${ansi_escape}[0m"* ]]; \
 	[[ "$$logs_help_output" == *"$${ansi_escape}[32m--timestamps$${ansi_escape}[0m"* ]]; \
