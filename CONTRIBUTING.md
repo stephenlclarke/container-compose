@@ -14,7 +14,10 @@ upstream with minimal reshaping.
 
 ## Pull Requests
 
-Use pull requests for all changes.
+Use pull requests for all human-authored changes. The sole automation exception
+is the deterministic `container` package-pin commit published by the
+release helper under the allowlist, fast-forward, local-check, and assembled-stack
+gates in [BUILD.md](BUILD.md); it is not a feature-delivery or checkpoint path.
 
 1. Fork the repository or create a topic branch from `main`.
 2. Keep each pull request focused on one bug fix, feature, or documentation
@@ -50,6 +53,8 @@ discussion.
 
 ## Maintainer Development Cycle
 
+The [Container-family parity development cycle](docs/container-family-development-cycle.md) is the detailed cross-repository process for oracle-first vertical slices, proportionate local validation, full review convergence, self-hosted MBP jobs, main checkpoints, quality analysis, upstream surveillance, and cleanup. This document remains authoritative for general contribution, commit, pull-request, and worktree rules.
+
 For stephenlclarke-owned stack work, keep `main` as the current integration
 branch in `container-builder-shim`, `containerization`, `container`,
 `container-compose`, and `homebrew-tap` after each reviewed slice lands. Use a
@@ -62,10 +67,7 @@ Most contributions do not run release automation. Maintainers use the single
 current procedure in [BUILD.md](BUILD.md) after a validated slice lands on
 `main`.
 
-apple/container uses squash-and-merge for upstream pull requests, so make the
-pull request title and body clear enough to stand alone as the final change
-description. Use imperative wording, describe what changed, and include the
-reason for the change.
+For a local Apple-shaped handoff, keep the proposed change title and body clear enough to stand alone as a final change description. Use imperative wording, describe what changed, and include the reason. The parity programme does not submit, refresh, or comment on Apple issues, discussions, branches, or pull requests.
 
 ### Topic Worktree Close-Out
 
@@ -94,11 +96,13 @@ git worktree prune
 Do not delete a branch merely because its remote was removed: squash merges and
 closed pull requests can leave unique local commits. `make worktree-audit`
 separates active remote branches, safe integrated cleanup candidates, and local
-branches that need a pull request or an explicit retention decision. Use
-`make worktree-audit-strict` after close-out to fail when a clean integrated
-candidate is still present. The forced fallback is only appropriate after the
-pull request is confirmed merged or deliberately superseded and the audit shows
-no unique patches.
+branches that need a pull request or an explicit retention decision. Run the
+ordinary audit again after close-out and resolve only slice-owned candidates;
+report and preserve unrelated candidates. Reserve `make worktree-audit-strict`
+for a coordinated repository-wide maintenance pass after every reported
+candidate has been accounted for. The forced fallback is only appropriate after
+the pull request is confirmed merged or deliberately superseded and the audit
+shows no unique patches.
 
 ## Conventional Commits
 

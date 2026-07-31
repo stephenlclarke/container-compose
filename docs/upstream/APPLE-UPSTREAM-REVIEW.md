@@ -100,10 +100,11 @@ No Stephen-authored pull request has been submitted to
 
 The registry records 301 retired entries, 23 unsubmitted candidates, ten open Stephen-authored submissions, 16 tracked third-party pull requests, seven merged pull requests, and three closed pull requests. Submitted PRs #1965, #2031, #2035, #2036, #820, #821, and #823 are first-class registry rows without separate Markdown files. The two stock-shaped PR #33 follow-ups and the Apple pull requests that moved the fetched main branches are also first-class rows.
 
-An unsubmitted registry row is not automatically submission-ready. Before
-submission, rebase the smallest independent change on current stock Apple
-`main`, rerun stock validation, fill the current Apple issue and pull-request
-templates, and keep Stephen-only compatibility behaviour out of the patch.
+An unsubmitted registry row is not automatically handoff-ready. Rebase the
+smallest independent change on current stock Apple `main`, rerun stock
+validation, capture the information required by the current Apple issue and
+pull-request templates in the local handoff, and keep Stephen-only
+compatibility behaviour out of the patch.
 
 ## PR #33 Stock-Apple Review
 
@@ -138,7 +139,7 @@ ported as `ae66e3e2e69fee3c26fa84a402df79ccc45ca9bc`. Focused ProcessIO testing,
 head. These local corrections do not change the Apple submission state.
 
 The upstream disposition is to split PR #33 into two unsubmitted,
-stock-shaped proposals: one focused XPC `FileHandle` ownership correction
+stock-shaped handoffs: one focused XPC `FileHandle` ownership correction
 with a stock-compatible descriptor-reuse regression, and one ProcessIO input
 pump/backpressure correction adapted to Apple's simpler API. No Apple issue or
 pull request has been filed for either slice.
@@ -171,7 +172,7 @@ pull request has been filed for either slice.
 
 These candidates remain unsubmitted. Their source commits and tests were
 reviewed in the fork, but each still requires a fresh stock-Apple rebase and
-validation before submission.
+validation before the local handoff is complete.
 
 ## Overlapping Upstream Work
 
@@ -245,11 +246,11 @@ validation before submission.
   every new patch-unique commit, and rerun `make fork-classifications-check`.
 - Reconcile merged `apple/containerization#813` into the exact Compose
   Containerization development lane and reassess the older vminitd correction.
-- Keep Stephen-authored `apple/container#1934`, `#1935`, `#1965`, `#2031`,
-  `#2035`, and `#2036`, and `apple/containerization#799`, `#820`, `#821`, and
-  `#823` open until Apple merges, replaces, or explicitly rejects their
-  current changes. Track third-party `apple/container-builder-shim#87`
-  independently.
+- Track the existing open state of Stephen-authored `apple/container#1934`,
+  `#1935`, `#1965`, `#2031`, `#2035`, and `#2036`, and
+  `apple/containerization#799`, `#820`, `#821`, and `#823` read-only until
+  Apple merges, replaces, or closes them. Track third-party
+  `apple/container-builder-shim#87` independently.
 - The 29 July refresh found all ten open Stephen-authored Apple pull requests
   mergeable and awaiting review, with no actionable author review. PR #799's
   hosted build, signature, and Linux compile checks are green. Apple Actions
@@ -260,30 +261,30 @@ validation before submission.
 - Re-run `apple/container#2037` against the next matched Current package. The
   installed package's stale builder digest blocked the first probe before
   context transfer and is not evidence for or against the upstream report.
-- Rebase `apple/container#1935` after `apple/container#1862` lands so the preferred upstream XPC commit is not duplicated.
+- Refresh the local PR #1935 handoff/base analysis after `apple/container#1862` lands so the preferred upstream XPC commit is not duplicated; do not update the Apple pull request.
 - Split the supported XPC ownership and ProcessIO backpressure corrections
   derived from `stephenlclarke/container#33` into separate stock-shaped
-  proposals. Neither has been submitted to Apple.
+  handoffs. Neither has been submitted to Apple.
 - Track third-party direct-stream drafts `apple/containerization#812` and
   `apple/container#1947` without importing them verbatim. The supported fork
   now carries an independently reviewed and strengthened implementation; Apple
-  convergence still depends on a ready proposal with equivalent metadata,
+  convergence still depends on an equivalent Apple change with matching metadata,
   cancellation, backpressure, path-safety, sparse-file, and hard-link contracts.
-- Generic log-retrieval runtime primitives still need minimal Apple proposals; Docker timestamp parsing remains owned by `container-compose`.
+- Generic log-retrieval runtime primitives still need minimal Apple-shaped handoffs; Docker timestamp parsing remains owned by `container-compose`.
 - [apple/container#378](https://github.com/apple/container/issues/378) needs a running-process stream reattach primitive before Compose can support interactive `attach`; the required runtime contract and the deliberate output-only fallback are documented in [ISSUE-attach-stream-reattach.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-attach-stream-reattach.md).
 - The container storage-boundary follow-up must wait for `apple/container#1735` and retain only its residual `FilePath` and volume-disk-usage protections. The independent `containerization` handoff is ready in [PR-container-storage-path-validation.md](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/PR-container-storage-path-validation.md).
 - The four unsubmitted builder-shim handoffs have no matching open upstream
-  issue or pull request. Keep them separate from
+  issue or pull request. Keep the local handoffs separate from
   [apple/container-builder-shim#87](https://github.com/apple/container-builder-shim/pull/87),
   which changes `.dockerignore` filtering only.
-- The reporter's post-fix stop-interruption observation on [apple/containerization#799](https://github.com/apple/containerization/pull/799) is not a requested review change. Keep it under local macOS reproduction before widening the existing copy-failure proposal or opening a separate lifecycle fix.
+- The reporter's post-fix stop-interruption observation on [apple/containerization#799](https://github.com/apple/containerization/pull/799) is not a requested review change. Keep it under local macOS reproduction before widening the existing copy-failure handoff or recording a separate lifecycle handoff.
 - The connector review on
   [stephenlclarke/containerization#9](https://github.com/stephenlclarke/containerization/pull/9)
   identified that `LinuxPod` does not yet stage and rewrite a volume
   `sourceSubpath` like `LinuxContainer`. The author has acknowledged the
-  actionable thread; retain it as a separate generic runtime follow-up with
+  actionable thread; retain it as a separate generic runtime handoff with
   focused pod coverage rather than folding it into Compose CC-001.
 
 ## Submission Boundary
 
-Never push to an Apple remote. Upstream imports stay in standalone commits with their original PR and bug references. Locally authored Apple-shaped changes must have focused tests and matching issue/PR handoffs in this directory before their `stephenlclarke` fork branches are proposed to Apple.
+Never push to an Apple remote. Upstream imports stay in standalone commits with their original PR and bug references. Locally authored Apple-shaped changes must have focused tests and matching issue/PR handoffs in this directory, but this programme does not propose, open, refresh, or comment on Apple branches, issues, discussions, or pull requests.

@@ -8,7 +8,9 @@ and the deterministic release procedure. Target-machine installation lives in
 
 `container-compose` coordinates releases for the matched `stephenlclarke` stack. `container` supplies the runtime and CLI, `containerization` supplies its Swift runtime package, `container-builder-shim` supplies the pinned builder image, and `homebrew-tap` publishes the paired formulae.
 
-`main` is the releasable integration branch in each repository. Use short-lived review branches for all changes and land the sibling repositories through their own pull requests before promoting Compose. The release helper promotes `container-compose`; it can additionally publish only a fast-forwarded, release-generated `container` package-pin commit after that repository's `make check test` preflight, because Compose cannot resolve an unpublished immutable runtime revision. No feature or hand-written sibling source branch is promoted by the helper. Do not create long-lived integration or packaging branches.
+The [Container-family parity development cycle](docs/container-family-development-cycle.md) defines how cross-repository vertical slices are selected, reviewed, validated, checkpointed, handed off, and cleaned up. This guide remains authoritative for exact build, test, runner, package, and release commands.
+
+`main` is the releasable integration branch in each repository. Use short-lived review branches for every human-authored change and land the sibling repositories through their own pull requests before promoting Compose. The sole pre-authorised automation exception is the release helper's fast-forwarded, release-generated `container` package-pin commit, required because Compose cannot resolve an unpublished immutable runtime revision. The helper signs a commit it creates, accepts exactly one commit on reviewed `container` main, requires the generated subject, permits only `Package.swift` and `Package.resolved`, runs that repository's `make check test`, verifies the remote exact head, and then subjects the assembled revisions to the complete local release gate before Compose promotion. It aborts on any other diff, ancestry, or publication result. Recovery can currently retain a pre-existing matching local candidate without verifying its signature; the operator must verify its trusted signature/provenance before execution, and the development-cycle enabler must make that check fail closed. No feature, hand-written sibling source branch, ordinary checkpoint, or incomplete handoff uses this exception. Do not create long-lived integration or packaging branches.
 
 ## Requirements
 
@@ -210,9 +212,11 @@ checkout against immutable source, runtime, and tap checkouts instead. It
 validates the non-virtualized stack and Compose CI; the local full gate remains
 mandatory for runtime integration and Docker Compose parity. When release
 preparation changes `container`'s exact `containerization` package pin, the
-helper first runs `make check test` there and publishes that fast-forwarded,
-release-generated metadata commit so Compose SwiftPM can resolve the exact
-remote revision. It then runs the complete assembled-stack local gate before
+helper applies the sole deterministic automation exception above: it verifies
+one release-generated commit changes only `Package.swift` and
+`Package.resolved`, runs `make check test`, fast-forwards the reviewed remote
+main, and verifies the exact published head so Compose SwiftPM can resolve it.
+It then runs the complete assembled-stack local gate before
 it promotes `container-compose` through an automated pull request by default,
 verifies the promoted main tree still matches the locally gated candidate before
 it tags, and refuses to promote any other sibling source main: feature changes
@@ -353,8 +357,13 @@ that hosted gate, which exceeds its 120-minute workflow timeout; set
 different bound.
 
 The helper is the only supported version mutator. It updates the Compose version
-when necessary, preserves the exact runtime stack pin, opens and merges the
-source-promotion PR, creates a signed semantic tag, waits for the hosted Stable
+when necessary and preserves the exact runtime stack pin. Its current
+open-and-immediately-merge source-promotion path and legacy
+`CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE=direct` path do not yet
+satisfy the parity development cycle. Before the next programme source
+promotion, the helper must implement that document's fail-closed exact-head
+`@codex review` gate and remove or reject direct Compose-main promotion. It then
+opens and merges the reviewed source-promotion PR, creates a signed semantic tag, waits for the hosted Stable
 Release Gate, then dispatches the stable package workflow. That workflow
 rebuilds and publishes the immutable stable assets and atomically updates both
 stable Homebrew formulae. Do not create a semantic tag, copy a prerelease

@@ -3,7 +3,7 @@
 | Item | Value |
 | --- | --- |
 | Status | Design complete; implementation not started |
-| Scope | `container-compose`, the matched `container` fork, and the matched `containerization` fork |
+| Scope | `container-compose`, the matched `container` and `containerization` forks, the shared Engine API, devcontainer, and the common Engine Linux sandbox |
 | Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
 | Matched Container revision | `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1` |
@@ -21,7 +21,7 @@ Close the advanced network and IPAM row in [STATUS.md](../STATUS.md) without met
 - uses network and IPAM providers selected by name, including deterministic unavailable-provider errors;
 - implements IPv4 and IPv6 allocation ranges, named auxiliary reservations, durable endpoint leases, and opaque driver options;
 - preserves arbitrary ordered pool lists for capable providers while matching the built-in Docker bridge driver's one-pool-per-family limit; and
-- remains comparable to or faster than Docker Compose on the maintained same-host network lifecycle matrix.
+- remains comparable to or better than Docker Compose on the maintained same-host network lifecycle/data-plane matrix.
 
 The compatibility contract is observable Docker Compose behavior. It is not an assertion that Apple's vmnet implementation has Docker Engine's internal architecture.
 
@@ -32,13 +32,13 @@ The compatibility contract is observable Docker Compose behavior. It is not an a
 - Top-level network `driver`, `driver_opts`, `enable_ipv4`, `enable_ipv6`, `internal`, `attachable`, labels, and external/name resolution.
 - Top-level `ipam.driver`, ordered `ipam.config` entries, `subnet`, `ip_range`, `gateway`, named `aux_addresses`, and source preservation of `ipam.options`.
 - Service endpoint static addresses, link-local addresses, aliases, MAC address, interface name, attachment priority, gateway priority, and arbitrary endpoint `driver_opts`.
+- Arbitrary custom-name `network_mode: NAME`, resolved as an existing selected-Engine network reference with stable-ID attachment, inspect, lifecycle, and reconciliation semantics.
 - Runtime provider discovery, capability negotiation, network creation and inspection, durable IPAM leases, endpoint lifecycle, ownership, reconciliation, and error translation.
 - The lower-runtime changes required for genuinely optional IPv4, family-neutral interface configuration, DNS, and routes.
 
 ### Explicitly out of scope
 
-- Arbitrary custom-name `network_mode: NAME`, which STATUS tracks separately from top-level network/IPAM resources. Services can still consume a named external network through the in-scope top-level `networks` model.
-- `network_mode: service:NAME` and `network_mode: container:NAME`. Those modes share a complete network namespace and remain blocked on the separately tracked durable multi-container sandbox primitive.
+- Implementing the complete lifecycle of `network_mode: service:NAME` and `network_mode: container:NAME`, which is specified by the [shared namespaces design](shared-namespaces-privileged-isolation-design.md). This design supplies its required endpoint-delegation contract: a joiner allocates no endpoint, address, DNS identity, or port forward and references the donor by immutable ID.
 - Swarm overlay scheduling, routing mesh, and multi-host control-plane behavior.
 - Windows networking fields.
 - Shipping every third-party Docker driver or IPAM implementation.
@@ -135,9 +135,11 @@ Requested state is the normalized Compose model used for `config`, hashing, diag
 
 An endpoint address belongs to a container-network attachment, not to a helper connection. Reserve at container creation, activate at start, deactivate only after an orderly or observed stop, and release only at container deletion or explicit disconnect. Helper loss marks health degraded until reconciliation proves the data-plane state; it does not itself deactivate or release the endpoint. The same endpoint, DNS membership, and addresses survive control-client disconnect, API restart, and recoverable helper restart.
 
-### Extend the existing fast path
+### Make vmnet a sandbox backhaul, not a container endpoint
 
-Simple one-pool vmnet networks remain direct vmnet networks. No router VM or additional process is added to that bridge path. Capability checks, sparse allocation, and structured plugin configuration are in-process or use the existing per-network helper, preserving the current fast path.
+Complete namespace and shared-volume parity makes one per-user Engine Linux sandbox foundational. Simple one-pool networks still use vmnet directly as the VM-level backhaul, with no router VM on the bridge path, but each container endpoint is a dynamic guest network namespace with a veth/TAP peer, routes, DNS, and firewall/NAT state. VZ hardware is not added per workload.
+
+Capability checks, sparse allocation, structured provider configuration, and macOS port/backhaul policy remain in the authority or existing per-network helper. This preserves the fast data path while allowing private endpoints and Docker namespace donors in one kernel. The common topology and ownership rules are normative in [the coherent Container-family design](coherent-container-family-parity-design.md).
 
 ## Target Architecture
 
@@ -147,19 +149,20 @@ flowchart LR
     Normalizer --> Model["Lossless requested network model"]
     Model --> Orchestrator["Compose validation, hash, and reconciliation"]
     Orchestrator --> SPI["ComposeRuntimeSPI v2"]
-    SPI --> Controller["Container network controller"]
-    Controller --> Registry["Signed provider registry"]
-    Controller --> State["Network and endpoint store"]
+    SPI --> Authority["Selected Container authority and workload transaction"]
+    Authority --> Controller["Network and IPAM controller"]
+    Controller --> Registry["Common signed typed-provider registry"]
+    Controller --> State["Network, endpoint, and immutable-owner store"]
     Registry --> Driver["Network driver provider"]
     Registry --> IPAM["IPAM provider"]
     IPAM --> State
-    Driver --> Backend["vmnet or custom data plane"]
+    Driver --> Backend["VM-level vmnet or custom backhaul"]
     State --> Attachment["Family-neutral attachment plan"]
-    Attachment --> Containerization["Containerization interface and route API"]
-    Containerization --> Guest["Guest interfaces, routes, DNS, and sysctls"]
+    Attachment --> Containerization["EngineLinuxSandbox dynamic network API"]
+    Containerization --> Guest["Per-workload netns, veth/TAP, routes, DNS, and sysctls"]
 ```
 
-The network controller owns orchestration and persistence. Network drivers own data-plane realization and option interpretation. IPAM providers own pools and leases. Containerization applies a resolved attachment plan but does not interpret Compose or IPAM policy.
+The selected runtime authority owns the cross-resource workload transaction. The network controller owns network/IPAM orchestration and persistent leases within it. Native Container, Compose, shared Engine routes, and enhanced devcontainer all call this controller rather than keeping client-specific inventories. Network drivers own data-plane realisation and option interpretation. IPAM providers own pools and address leases. Containerization applies a resolved attachment or donor-delegation plan but does not interpret Compose or IPAM policy.
 
 ## Canonical Compose Model
 
@@ -293,6 +296,55 @@ The current create/delete methods remain as adapters for simple v1 providers dur
 
 Network endpoints MUST move into the typed service/one-off container creation contract. Extend the Compose runtime create request and Container create configuration with an ordered `[RuntimeNetworkAttachmentRequest]`; each entry carries the stable network ID, requested static/link-local addresses, aliases, MAC, interface name, attachment priority, gateway priority, and opaque endpoint options.
 
+```swift
+struct RuntimeCustomNetworkModeRequest: Codable, Sendable {
+    var requestedNameOrID: String
+}
+
+enum RuntimeNetworkModeIntentV2: Codable, Sendable {
+    case ordinaryAttachments
+    case builtInBridge
+    case host
+    case none
+    case donor(containerID: String)
+    case customExisting(RuntimeCustomNetworkModeRequest)
+}
+
+struct RuntimeNetworkAttachmentRequest: Codable, Sendable {
+    var networkID: String
+    var endpoint: ContainerNetworkEndpointRequestV1
+}
+
+struct ContainerNetworkEndpointRequestV1: Codable, Sendable {
+    var ipv4Address: String?
+    var ipv6Address: String?
+    var linkLocalAddresses: [String]
+    var aliases: [String]
+    var macAddress: String?
+    var interfaceName: String?
+    var priority: Int
+    var gatewayPriority: Int
+    var driverOptions: [String: String]
+}
+```
+
+`ComposeEndpointNetworkSpec` remains a ComposeCore source projection only.
+Compose maps it losslessly into `ContainerNetworkEndpointRequestV1`; Docker
+HTTP, native, and devcontainer clients construct that neutral request without
+depending on ComposeCore. The neutral endpoint and attachment types live in
+`container-engine-api`.
+
+The common network-mode intent distinguishes built-in host/none/bridge, namespace donor, ordinary ordered attachments, and `.customExisting(RuntimeCustomNetworkModeRequest)`. For an arbitrary custom-name mode, Compose preserves the opaque requested name/ID and the selected authority resolves it at the Docker-matched container-create phase. The network controller returns a stable network ID and creates one ordinary owning endpoint lease; it does not create, hash-reconcile, label, or delete the referenced network. Missing, ambiguous, invalid, conflicting-`networks`, port/DNS/alias, and inspect behaviour are pinned by the Docker Engine/Compose oracle rather than inherited from top-level external-network policy.
+
+`ordinaryAttachments` consumes the ordered attachment list; an empty list means
+the selected Engine's default network. All other cases require that list to be
+empty at the public contract. `customExisting` deliberately remains unresolved
+until the selected authority's create preflight; only its internal effective
+plan substitutes the resolved immutable network ID. Donor mode allocates no
+endpoint and uses the namespace controller's canonical dependency lease.
+
+The workload record stores both the requested custom reference and effective immutable network ID. Rename/replacement or same-name/different-ID drift never live-retargets a running/stopped container: reconciliation follows the pinned recreate/error result. Stop/start retains/reactivates the endpoint, removal releases only that endpoint, and `down` never deletes the custom referenced network. A service/container namespace donor remains a different intent and allocates no endpoint.
+
 The current comma-delimited `--network` encoding remains a CLI rendering detail for dry-run output only. It cannot be the runtime transport because commas and equals signs are valid inside provider option values, including endpoint sysctl lists.
 
 Container creation reserves every requested endpoint before committing the container entity. A multi-network reservation is transactional: if any endpoint fails, release reservations created by that attempt and do not create the container. The Compose layer orders attachments using Docker's priority and deterministic tie-break rules before transport; gateway priority independently determines default-route selection. Explicit interface names remain authoritative, and map iteration order must never influence attachment order, interface identity, or routes.
@@ -321,9 +373,46 @@ struct IPAMPoolConfiguration: Codable, Sendable {
     var gateway: IPAddress?
     var auxiliaryAddresses: [String: IPAddress]
 }
+
+struct ProviderGenerationReferenceV1: Codable, Sendable, Equatable {
+    var providerID: String
+    var providerGeneration: UInt64
+}
+
+struct IPAMPoolLeaseV1: Codable, Sendable, Equatable {
+    var leaseID: String
+    var leaseGeneration: UInt64
+    var networkID: String
+    var provider: ProviderGenerationReferenceV1
+    var providerPoolID: String
+}
+
+struct IPAMAddressLeaseV1: Codable, Sendable, Equatable {
+    var leaseID: String
+    var leaseGeneration: UInt64
+    var owner: IPAMAddressOwner
+    var provider: ProviderGenerationReferenceV1
+    var providerPoolID: String
+    var providerLeaseID: String
+    var address: IPAddress
+}
+
+struct NetworkEndpointActivationV1: Codable, Sendable, Equatable {
+    var endpointID: String
+    var leaseGeneration: UInt64
+    var containerID: String
+    var activeProcessGeneration: UInt64
+    var activeSandboxGeneration: UInt64
+    var networkProvider: ProviderGenerationReferenceV1
+    var ipamProviders: [ProviderGenerationReferenceV1]
+    var providerSessionGeneration: UInt64
+    var backendDescriptorDigest: String
+}
 ```
 
-`NetworkConfigurationV2` adds tri-state requested family flags, resolved effective flags, driver/IPAM configuration, ordered pools, ownership, and config hash. `NetworkStatusV2` and `AttachmentV2` use optional IPv4 and IPv6 values and include provider pool IDs. Legacy singular fields remain readable during the compatibility window.
+`NetworkConfigurationV2` adds tri-state requested family flags, resolved effective flags, driver/IPAM configuration, ordered pools, ownership, config hash, controller-owned `networkResourceRevision`, and separate immutable `networkProvider` and `ipamProvider` `ProviderGenerationReferenceV1` values. `NetworkStatusV2` and `AttachmentV2` use optional IPv4 and IPv6 values and refer to the exact pool/address leases rather than carrying unowned provider IDs. Legacy singular fields remain readable during the compatibility window.
+
+Every opaque network, pool, address, endpoint, backend, and helper identifier is meaningful only with its recorded canonical `providerID` and `providerGeneration`. Durable pool, address, and endpoint records use the exact domain field `leaseGeneration`; the live endpoint/backend activation additionally binds that lease to the current `activeProcessGeneration`, `activeSandboxGeneration`, and ephemeral `providerSessionGeneration`. These clocks are independent of `networkResourceRevision`, lifecycle `transitionRevision`, and the workload transaction's `operationGeneration`.
 
 ### API routes
 
@@ -336,15 +425,15 @@ Extend the Container API/XPC contract with:
 - exact-name list filtering; and
 - ownership-guarded deletion.
 
-The existing create/list/delete routes remain for old clients. New calls carry a protocol version and idempotency key. Mutating responses identify whether the operation created, reused, or reconciled a resource.
+The existing create/list/delete routes remain for old clients. New mutating calls carry a protocol version and the parent generic operation identity; a native/Compose caller may supply its idempotency key while the Docker gateway mints one. That generic key and its cached outcome remain solely in the common `identityLifecycleEvents` operation ledger. Mutating responses identify whether the operation created, reused, or reconciled a resource.
 
 ### Capability manifest
 
 Add independent capability identifiers so callers fail closed only when they use the corresponding behavior:
 
-- `io.github.stephenlclarke.container.compose.advanced-network-ipam.v1` for the full ordered plan, inspection, allocation ranges, named auxiliary addresses, and durable endpoint ledger;
-- `io.github.stephenlclarke.container.compose.ipv6-only-network.v1` for optional IPv4 through attachment, DNS, routes, and inspect; and
-- `io.github.stephenlclarke.container.compose.network-providers.v1` for named network and IPAM provider discovery and endpoint options.
+- `io.github.stephenlclarke.container.advanced-network-ipam.v1` for the full ordered plan, inspection, allocation ranges, named auxiliary addresses, and durable endpoint ledger;
+- `io.github.stephenlclarke.container.ipv6-only-network.v1` for optional IPv4 through attachment, DNS, routes, and inspect; and
+- `io.github.stephenlclarke.container.network-providers.v1` for named network and IPAM provider discovery and endpoint options.
 
 Update `Tools/release/runtime-capabilities.json`, Container's typed manifest, stack consistency checks, and [runtime capability documentation](runtime-capabilities.md) together when each implementation lands.
 
@@ -352,10 +441,11 @@ Update `Tools/release/runtime-capabilities.json`, Container's typed manifest, st
 
 ### Registry and discovery
 
-The Container service owns a signed provider registry. A manifest declares:
+Container uses the common signed typed-provider registry defined by [the coherent design](coherent-container-family-parity-design.md), with one trust root, manifest store, launch policy, `providerGeneration`, health, timeout/cancellation, and error taxonomy shared by network, IPAM, volume, logging, and device providers. Network/IPAM capability kinds remain independently typed. A manifest declares:
 
 - provider kind: network driver or IPAM;
 - canonical name and aliases;
+- immutable `providerGeneration`;
 - protocol versions;
 - local/global scope;
 - supported families and whether IPv4 can be disabled;
@@ -367,6 +457,8 @@ The Container service owns a signed provider registry. A manifest declares:
 
 Compose-provided names MUST only resolve registered aliases. A Compose file cannot supply an executable path. Provider executables remain subject to the existing code-signing, ownership, launchd, and XPC controls.
 
+A provider update stages generation N+1 and stops new allocations to N while every operation for an N-owned resource, opaque provider ID, or protected-effect reference continues to route to N. The controller drains or explicitly migrates every N network, pool, address, endpoint, backend descriptor, protected effect, and uncertain recovery record before atomically switching aliases to N+1. A provider restart may change an internal `providerSessionGeneration` without changing the registry's `providerGeneration`. N+1 never interprets N's opaque IDs or resolves N's protected-effect references. Raw bearer, credential, token, private host-path, and provider-request material remains only in N's controller-private protected store; the owning controller resolves it just in time for the exact authenticated call and never serialises it into Compose, general state, the operation ledger, logs, events, diagnostics, or handoff content. Crash recovery resumes the durable drain/migration state, and removal is refused while any resource, protected effect, or uncertain record still depends on that generation.
+
 ### Reference driver coverage
 
 The provider abstraction does not by itself prove parity. Each release records `docker info`/network-driver inventory for the reference context and classifies every advertised driver:
@@ -374,7 +466,7 @@ The provider abstraction does not by itself prove parity. Each release records `
 - `bridge` is bundled and implemented by the vmnet provider in this design.
 - `host` and `null` use the existing host/none runtime primitives where the reference permits attachment; attempts to create additional driver-owned networks reproduce the reference's singleton/name errors.
 - `overlay` reproduces the pinned inactive-Swarm prerequisite error. Multi-host overlay behavior remains a Swarm exclusion, not a silently unavailable local provider.
-- `ipvlan` and `macvlan` require bundled signed providers for this pinned reference. Valid explicit-pool/no-parent fixtures succeed there by creating a dummy parent, so a matched error is not sufficient. The Container providers can use vmnet external-interface controls or a provider-owned data plane, but MUST pass create, endpoint attach, driver-option, parent selection, mode, L2/L3 reachability, MAC behavior, isolation, routes, and host-reachability oracles. They do not alter the bridge fast path.
+- `ipvlan` and `macvlan` require bundled signed providers for this pinned reference. Valid explicit-pool/no-parent fixtures succeed there by creating a dummy parent, so a matched error is not sufficient. The Container providers use the common sandbox/raw-frame helper and, only where required by the host API, the coherent design's non-authoritative shared uplink appliance. They MUST pass create, endpoint attach, driver-option, parent selection, mode, L2/L3 reachability, MAC behavior, isolation, routes, and host-reachability oracles. They do not alter the bridge fast path.
 - Third-party driver and IPAM names succeed only when equivalent Container providers are installed. Missing on both engines is a matched failure; installed only on Docker is an evidence-backed candidate gap, not a pass.
 
 The release gate fails if an advertised, macOS-exercisable reference driver is unclassified or lacks either a green success oracle for every valid reference fixture or the same reference-side prerequisite failure for a failing fixture. In particular, classification alone cannot close the pinned `ipvlan` and `macvlan` success paths.
@@ -383,15 +475,17 @@ The release gate fails if an advertised, macOS-exercisable reference driver is u
 
 The pinned success paths use a concrete `Layer2Fabric` backend, not the vmnet bridge provider and not an unspecified plugin implementation:
 
-1. Each workload VM endpoint uses a datagram socket pair and [`VZFileHandleNetworkDeviceAttachment`](https://developer.apple.com/documentation/virtualization/vzfilehandlenetworkdeviceattachment), which carries raw Ethernet frames between the virtio NIC and the signed per-network helper.
-2. The helper implements a bounded userspace Ethernet fabric with persisted port IDs, endpoint MAC/IP bindings, VLAN, driver mode, policy, counters, and restart generation. A single event loop batches frame forwarding; it does not launch a process or VM per endpoint.
+1. The Engine Linux sandbox uses a bounded VM-level raw-frame/backhaul channel to the signed per-network helper. Inside the guest, each owning workload gets a private network namespace and veth/TAP endpoint; namespace joiners get no independent endpoint.
+2. The helper and guest network controller implement a bounded Ethernet fabric with persisted port IDs, immutable `containerID` ownership, endpoint/port `leaseGeneration`, optional paired `activeProcessGeneration` and `activeSandboxGeneration`, endpoint MAC/IP bindings, VLAN, driver mode, policy, counters, the registry-owned `providerGeneration`, and an independent ephemeral `providerSessionGeneration` for helper incarnation. A single event loop batches frame forwarding; it does not launch a process or VM per endpoint.
 3. An omitted parent creates a dummy fabric with no external uplink, matching the valid reference fixture. The runtime alias `eth0` resolves to Container's default external uplink, because the reference name denotes Colima's engine-VM uplink rather than a literal macOS interface. Inspect retains the requested name and reports the resolved runtime parent separately.
-4. A real macOS parent resolves from `VZBridgedNetworkInterface.networkInterfaces` and requires the signed bundle's `com.apple.vm.networking` entitlement. The uplink uses vmnet packet I/O when the selected interface supports the requested frame behavior. If direct packet I/O cannot preserve a required mode, one minimal provider-owned uplink VM connects one raw-fabric NIC to one [`VZBridgedNetworkDeviceAttachment`](https://developer.apple.com/documentation/virtualization/vzbridgednetworkdeviceattachment); it is shared by every endpoint on that logical network and never used for `bridge`.
+4. A real macOS parent resolves from `VZBridgedNetworkInterface.networkInterfaces` and requires the signed bundle's `com.apple.vm.networking` entitlement. The uplink uses vmnet packet I/O when the selected interface supports the requested frame behaviour. If direct packet I/O cannot preserve a required mode, the authority-supervised `Layer2UplinkAppliance` connects that physical parent through one [`VZBridgedNetworkDeviceAttachment`](https://developer.apple.com/documentation/virtualization/vzbridgednetworkdeviceattachment); one appliance is shared by every logical network and sandbox endpoint using that parent and is never used for `bridge`.
 5. A parent suffix such as `.50` is parsed as an 802.1Q VLAN ID. The fabric inserts/removes tags at the uplink boundary while endpoint frames remain untagged, matching Docker parent-subinterface semantics.
 
 For `macvlan`, the fabric preserves each endpoint's assigned MAC. `bridge`, `private`, `vepa`, and `passthru` modes control peer forwarding, forced uplink forwarding, host isolation, and the one-endpoint passthrough constraint. For `ipvlan`, endpoint IP identities share the parent MAC at the uplink; the fabric provides ARP/NDP proxying and deterministic L2, L3, and L3S forwarding/routes without exposing synthetic MACs in the guest. Driver-specific options are validated by these providers and remain opaque above them.
 
-Before the provider implementation can merge, a mandatory MBP feasibility gate proves raw frame exchange between two workload VMs, shared-MAC IPvlan forwarding, distinct-MAC Macvlan forwarding, dummy-parent isolation, default-uplink egress, VLAN tagging, helper restart restoration, and entitlement/signing in a release bundle. Failure keeps the STATUS gap open and selects the provider-owned uplink-VM branch; it never degrades to bridge or metadata-only success.
+Before the provider implementation can merge, a mandatory MBP feasibility gate proves raw frame exchange between two private workload network namespaces in the Engine Linux sandbox, shared-MAC IPvlan forwarding, distinct-MAC Macvlan forwarding, dummy-parent isolation, default-uplink egress, VLAN tagging, helper restart restoration, and entitlement/signing in a release bundle. If direct packet I/O fails only where the pinned bridged path succeeds, the implementation may select the coherent design's shared non-authoritative uplink-appliance branch after its isolation/recovery/performance gates pass; otherwise the STATUS gap remains open. It never degrades to bridge or metadata-only success.
+
+The Container network controller remains the sole source of network-resource, pool, address, endpoint, port, and domain `leaseGeneration` truth. The common provider registry owns `providerGeneration`, lifecycle owns `processGeneration`/`transitionRevision`, and the sandbox manager owns `sandboxGeneration`; the network controller records and validates those clocks but does not redefine them. The appliance receives only bounded generation-stamped effective fabric ports over a private authenticated channel, persists no authoritative resource record, runs no user workload, and receives no Engine socket, provider executable, registry credential, volume, or host path. Crash/restart advances only its `providerSessionGeneration`, marks affected parent-backed networks degraded, preserves their authority records, and replays current ports idempotently before recovery is reported.
 
 ### Structured transport
 
@@ -413,7 +507,9 @@ deactivateEndpoint
 releaseEndpoint
 ```
 
-`createNetwork` receives the effective pool plan after IPAM resolution. `prepareEndpoint` receives assigned addresses, aliases, MAC, interface name, attachment priority, gateway priority, link-local addresses, and the opaque endpoint option map. The driver returns a versioned backend/attachment descriptor; unknown descriptor kinds fail deterministically rather than being treated as vmnet.
+Every call carries the selected `ProviderGenerationReferenceV1`. Each mutating call additionally carries the immutable parent `operationID`, the workload or resource transaction's exact `operationGeneration`, and a stable controller-action ID and controller-action idempotency key derived beneath that parent. The action key is not the generic client/workload idempotency key, does not mint another client operation, and cannot replace or duplicate the generic operation's retry state or cached outcome. Operations on existing state additionally carry the expected `networkResourceRevision` or domain `leaseGeneration`; semantic and action digests bind the method, identities, generations, request, and protected input digest. `createNetwork` receives the effective pool plan after IPAM resolution. `prepareEndpoint` receives assigned addresses, aliases, MAC, interface name, attachment priority, gateway priority, link-local addresses, and the opaque endpoint option map. The driver returns a versioned backend/attachment descriptor stamped with the same provider reference; unknown descriptor kinds or mismatched generations fail deterministically rather than being treated as vmnet.
+
+Before a provider effect, the network controller persists the complete action request and its operation-ledger claim. If the provider returns bearer or cleanup material, it does so only through a bounded authenticated non-`Codable` private-wire envelope; the controller seals that material in its domain-owned protected store and persists only a controller-scoped protected-effect reference and integrity digest in the common ledger. The reference identifies the effect, owning controller/provider generation, protected-store object, and digest; it is not the raw material. Only the owning controller may resolve it, only just in time for the exact authenticated provider call, and the resolved bytes are bounded and destroyed after use. Opaque pool, address, endpoint, and backend IDs are ordinary generation-scoped provider identities rather than bearer material and remain distinct from protected-effect references. Lost replies and recovery reuse the original controller-action identity and reconcile the provider's exact reservation/effect before another action can be admitted.
 
 ### IPAM lifecycle
 
@@ -436,7 +532,33 @@ enum IPAMAddressSpaceScope: String, Codable, Sendable {
     case global
 }
 
+enum NetworkProviderEffectActionV1: String, Codable, Sendable {
+    case createNetwork
+    case deleteNetwork
+    case prepareEndpoint
+    case activateEndpoint
+    case deactivateEndpoint
+    case releaseEndpoint
+    case requestPool
+    case releasePool
+    case requestAddress
+    case releaseAddress
+    case reconcile
+}
+
+struct NetworkProviderActionIdentityV1: Codable, Sendable {
+    var provider: ProviderGenerationReferenceV1
+    var parentOperationID: String
+    var operationGeneration: UInt64
+    var action: NetworkProviderEffectActionV1
+    var actionID: String
+    var actionIdempotencyKey: String
+    var semanticRequestDigest: String
+    var actionRequestDigest: String
+}
+
 struct IPAMPoolRequest: Codable, Sendable {
+    var action: NetworkProviderActionIdentityV1
     var addressSpace: String
     var scope: IPAMAddressSpaceScope
     var family: IPAddressFamily
@@ -444,10 +566,10 @@ struct IPAMPoolRequest: Codable, Sendable {
     var requestedSubpool: IPPrefix?
     var providerOptions: [String: String]
     var networkID: String
-    var idempotencyKey: String
 }
 
 struct IPAMPoolResult: Codable, Sendable {
+    var provider: ProviderGenerationReferenceV1
     var providerPoolID: String
     var pool: IPPrefix
     var subpool: IPPrefix?
@@ -461,23 +583,24 @@ enum IPAMAddressOwner: Codable, Sendable {
 }
 
 struct IPAMAddressRequest: Codable, Sendable {
+    var action: NetworkProviderActionIdentityV1
     var providerPoolID: String
     var owner: IPAMAddressOwner
     var requestedAddress: IPAddress?
     var options: [String: String]
-    var idempotencyKey: String
 }
 
 struct IPAMAddressResult: Codable, Sendable {
+    var provider: ProviderGenerationReferenceV1
     var providerLeaseID: String
     var address: IPAddress
     var metadata: [String: String]
 }
 ```
 
-Capabilities return the provider's default local/global address-space names, equivalent to Docker remote IPAM's default-address-space discovery. When `requestedPool` is absent, the requested family tells the provider to choose a pool from that address space and return it in `IPAMPoolResult`. Provider pool and lease IDs are opaque, stable, and unique within the declared address space. Gateway and named-auxiliary leases are network-owned; endpoint leases are endpoint-owned. Release carries the same owner plus the provider lease ID so restart reconciliation never invents synthetic endpoint identities for network reservations. The controller enforces overlap and uniqueness across every active network sharing a local address space; a global-scope provider owns cross-node/global uniqueness and returns a conflict when that guarantee is unavailable. Network-driver scope and IPAM scope must be compatible before requesting a pool.
+Capabilities return the provider's default local/global address-space names, equivalent to Docker remote IPAM's default-address-space discovery. Every IPAM call uses the same generation-stamped call envelope as the network-driver operations. When `requestedPool` is absent, the requested family tells the provider to choose a pool from that address space and return it in `IPAMPoolResult`. Provider pool and lease IDs are opaque, stable, and unique only within the recorded canonical provider identity and `providerGeneration`. Gateway and named-auxiliary leases are network-owned; endpoint leases are endpoint-owned. Release carries the same owner, provider reference, domain `leaseGeneration`, and provider lease ID so restart reconciliation never invents synthetic endpoint identities for network reservations. The controller enforces overlap and uniqueness across every active network sharing a local address space; a global-scope provider owns cross-node/global uniqueness and returns a conflict when that guarantee is unavailable. Network-driver scope and IPAM scope must be compatible before requesting a pool.
 
-The controller creates a transaction across IPAM and network-driver work. On failure it releases only resources created by that transaction, in reverse order. Recovery replays idempotency keys and reconciles persisted state.
+`NetworkProviderActionIdentityV1` is the common mutating-call envelope described above: it contains the immutable parent `operationID`, exact `operationGeneration`, stable controller-action ID and action idempotency key, semantic/action digests, and selected provider reference. The network controller creates one child transaction across IPAM and network-driver work beneath that immutable parent operation. Each provider effect has its own stable action identity/key; no child record copies the generic client/workload key or its retry/cached-outcome state. On failure the controller releases only leases created by that child transaction, in reverse order; the parent then compensates the other domain controllers in dependency order. Recovery replays the controller-action keys, routes each operation and protected-effect reference to the recorded `providerGeneration`, reconciles persisted state, and publishes any Docker event only through the canonical lifecycle/event journal.
 
 For Docker Compose 5.3.1, top-level `ipam.options` are retained in requested state but the Compose adapter marks them `inspectionOnly` and does not send them to `requestPool`. This rule is versioned with the Docker reference and MUST be revisited when the pinned Compose implementation changes.
 
@@ -515,7 +638,7 @@ The built-in provider advertises:
 
 ### vmnet realization
 
-One IPv4 and one IPv6 pool map to vmnet's single subnet/prefix reservation. DHCP remains disabled; the persistent IPAM ledger supplies addresses. NAT44, NAT66, router advertisement, forwarding, and MTU are set from the effective family and driver plan.
+One IPv4 and one IPv6 pool map to vmnet's single sandbox-backhaul subnet/prefix reservation. DHCP remains disabled; the persistent IPAM ledger supplies workload addresses. NAT44, NAT66, router advertisement, forwarding, and MTU are set from the effective family and driver plan, then the guest controller applies the resolved addresses/routes to each workload namespace.
 
 For IPv6-only IPAM, the guest attachment includes an IPv6 primary and any explicitly requested link-local addresses, but no IPv4 primary or gateway. If vmnet requires an IPv4 reservation internally, the provider chooses a collision-free private transport prefix and records it only in backend-private state. It MUST NOT appear as an effective IPAM pool.
 
@@ -562,18 +685,20 @@ The built-in `default` provider operates on family-neutral 128-bit addresses and
 
 ### Durable endpoint ledger
 
-Persist a versioned ledger under each network entity directory. Each record contains stable endpoint ID, container ID, attachment ordinal, requested and effective addresses, pool IDs, MAC, aliases, endpoint options hash, lifecycle state, health/degraded reason, and creation/update generation.
+Persist a versioned owning-endpoint ledger under each network entity directory. Each record contains stable endpoint ID, immutable container ID, domain `leaseGeneration`, paired optional `activeProcessGeneration` and `activeSandboxGeneration`, exact network-provider reference, child IPAM pool/address lease references with their provider generations, attachment ordinal, requested and effective addresses, pool IDs, MAC, aliases, endpoint-options hash, lifecycle state, health/degraded reason, `createdOperationGeneration`, and `triggeringContainerTransitionRevision`. The last field is the lifecycle journal revision that caused the endpoint transition, not an endpoint-local generation.
 
-State transitions are:
+Network namespace delegation is not a second per-network lease. The namespace controller owns one canonical generation-bound donor-dependency lease for the joiner. The workload plan may carry that lease's opaque lease ID plus exact `leaseGeneration` so network inspection can derive the donor's current effective attachments, but the network controller persists no delegation state under each donor network and allocates no endpoint, address, pool, MAC, alias, DNS publication, IPAM reservation, or port forward for the joiner.
+
+Owning endpoint state transitions are:
 
 ```text
 reserved -> active -> inactive -> active
 reserved|active|inactive -> released
 ```
 
-A control client or XPC session disconnect does not change endpoint lifecycle or DNS state. An orderly container stop/deactivation changes `active` to `inactive` and retains the address. Unexpected helper loss marks endpoint health degraded/unknown while the controller reconciles the running container and data plane; lifecycle changes only after that observation proves the endpoint inactive. Container deletion or explicit network disconnect releases it. Network deletion is blocked while any non-released endpoint exists.
+A control client or XPC session disconnect does not change endpoint lifecycle or DNS state. Lifecycle `ProcessExitFinalizationV1` generation-fences live forwarding, changes the matching owning endpoint from `active` to `inactive`, clears the paired `activeProcessGeneration` and `activeSandboxGeneration`, and retains its address/DNS reservation after natural exit, stop, kill, or restart. Live activation/deactivation and callbacks require the exact endpoint `leaseGeneration`, network/IPAM `providerGeneration` values, current `providerSessionGeneration`, and active process/sandbox tuple. Durable release/recovery never depends on a dead helper session: it routes by recorded provider identity/generation plus resource/lease revision, resolves the current authenticated helper session, and reconciles or rewrites the activation before cleanup. A response from any prior session is rejected and cannot affect a later activation. Unexpected helper loss marks endpoint health degraded/unknown while the controller reconciles the running container and data plane; lifecycle changes only after that observation proves the endpoint inactive. Owning-container deletion or explicit network disconnect releases it. A namespace joiner changes only the canonical namespace controller lease and never the donor endpoint. Network deletion is blocked while any non-released owning endpoint exists.
 
-At API startup, reconciliation loads network configurations and ledgers, compares them with persisted container attachments, recreates missing provable reservations, marks ambiguous records degraded instead of deleting them, and removes only records proven orphaned. Atomic replace plus generation checks prevent partial writes and lost concurrent updates.
+At API startup, reconciliation loads network configurations and owning endpoint records, compares them with persisted attachments, recreates only provable reservations, marks ambiguous records degraded instead of deleting them, and removes only records proven orphaned. Namespace-controller reconciliation independently validates donor leases; network/Container inspection follows only a validated canonical lease ID plus `leaseGeneration`. Atomic replace plus exact revision/generation checks prevent partial writes and lost concurrent updates.
 
 ## Containerization Changes
 
@@ -616,13 +741,15 @@ struct InterfaceRoute: Sendable {
 
 Required lower-runtime work:
 
+- Productionise the common `EngineLinuxSandbox` dynamic workload-network surface; vmnet/VZ devices are attached at sandbox/backhaul scope, while workload endpoints are guest network namespaces and veth/TAP peers.
 - Make address collections valid with IPv4 absent, IPv6 absent, or both present according to the effective network plan.
 - Adapt legacy `Interface` values into the new plan so existing callers do not source-break.
 - Extend NAT/vmnet interface strategies and the vminit protobuf/service with additive address, route, MTU, and interface-sysctl operations.
 - Configure link routes before default routes and honor existing gateway/interface priority semantics.
 - Make runtime DNS address records family-optional.
 - Report interface and route state without synthesizing an IPv4 value.
-- Gate new guest-agent operations by capability and fail before VM launch when an advanced plan reaches an old agent.
+- Gate new guest-agent operations by capability and fail before endpoint/workload mutation when an advanced plan reaches an old agent; on a cold sandbox this is also before sandbox launch, but an existing sandbox serving unrelated workloads is never restarted for the failure.
+- Add an explicit donor-delegation plan that creates no endpoint and binds inspection/lifecycle to the donor `containerID`, namespace `leaseGeneration`, and active `processGeneration` where present.
 
 Containerization does not allocate addresses, interpret Compose driver options, or persist endpoint ownership.
 
@@ -641,15 +768,15 @@ Resolution follows Docker Compose 5.3.1:
 7. Retry one create conflict after exact-name inspection to handle concurrent Compose processes.
 8. During `down`, select networks by both expected project and logical-network labels, confirm the exact name, and delete by stable ID. A name-only delete is prohibited.
 
-Every mutating phase records an idempotency key and recovery marker. New-network failure leaves no partial replacement, while hash-divergent replacement failure preserves Docker's already-removed old-network state as an inspectable recovery record. No path silently adopts a unique unlabelled collision or performs a name-only delete.
+Every mutating phase records its controller-action identity/key and recovery marker beneath the generic operation record owned by `identityLifecycleEvents`. New-network failure leaves no partial replacement, while hash-divergent replacement failure preserves Docker's already-removed old-network state as an inspectable recovery record. No path silently adopts a unique unlabelled collision or performs a name-only delete.
 
 ## Migration and Compatibility
 
 Implementation proceeds additively:
 
-1. Land v2 value types, custom Codable decoding, capability identifiers, inspect DTOs, and v1 adapters without changing behavior.
-2. Land the persistent endpoint ledger, atomic transactions, startup reconciliation, and failure-injection tests. Continue using the v1 vmnet data plane initially.
-3. Land Containerization's optional-family interface/route plan and guest capability negotiation.
+1. Land the coherent architecture's immutable identity, common provider registry, workload transaction journal, selected-provider handshake, and v2 value types/inspect DTOs without changing behaviour.
+2. Land the persistent endpoint ledger as a network-controller child of the workload transaction, with atomic reconciliation and failure injection. Continue using the v1 vmnet data plane initially.
+3. Land the production Engine Linux sandbox, optional-family dynamic interface/route plan, per-workload network namespaces, and guest capability negotiation.
 4. Land structured provider configuration, backend descriptors, and the v2 built-in vmnet provider.
 5. Switch simple Compose networks to v2 and prove no behavior/performance regression.
 6. Switch advanced Compose projection on only when all required runtime capabilities are present; otherwise fail with the exact missing-capability diagnostic.
@@ -666,6 +793,16 @@ Legacy decoding rules are deterministic:
 
 An old client can continue creating a simple v1 network. An advanced create/recreate candidate can never reach an old server because capability preflight rejects it before replacement creation; external and equal-hash reuse paths do not require creation-only advanced capabilities that Docker would never exercise.
 
+### Devcontainer authority handoff
+
+Devcontainer network state contributes only to the coherent design's one canonical `networksAndIPAM` part package in `ProviderHandoffManifestV1`. It contains stable network/IPAM resource and endpoint IDs/names, requested/effective Docker-visible configurations and hashes, complete effective allocator state, pool/address ownership, endpoint/DNS/port intent, attachment dispositions, and source network/IPAM provider provenance. A network-domain record may reference its generic lifecycle operation by immutable operation ID, but canonical event/audit disposition, the generic operation/idempotency key, retry state, cached outcome, generic tombstone, and lifecycle finaliser exist solely in `identityLifecycleEvents` and are never copied into `networksAndIPAM`. The network part contains no live provider session, namespace FD, backend/forwarding handle, dereferenceable protected-effect reference, or raw bearer, credential, token, private host-path, or provider-request material.
+
+The destination validates the complete immutable part package without effects, including stable-ID and name collisions, same-ID/different-config or digest conflicts, provider identity/generation availability, pool/address overlap, endpoint ownership, and cross-domain container/namespace references. A source opaque provider pool/address/backend ID is preserved only when the exact provider identity/generation and its complete provider-owned state are transferred through a versioned digest-verified provider export/import contract. Otherwise the destination re-resolves through an explicitly mapped destination provider and tentatively creates new destination-owned opaque IDs and leases, but it must reproduce both the same Docker-visible requested semantics and the complete committed effective allocation state: every network/pool gateway and auxiliary reservation, stopped-container endpoint IP/MAC/DNS ownership, free/allocated/quarantined address sets, allocator cursor/reuse order, and next-allocation result. Any effect material needed for those tentative resources remains only in the network controller's handoff-token-owned protected staging namespace. Its controller-private tentative receipt records the protected-effect references/digests, the common part-staging record carries only the opaque receipt digest, and the controller resolves raw material just in time; ordinary operation-ledger claims are created only when signed commit promotion/reconciliation requires them. Source opaque IDs remain provenance only. Exact reproduction failure or a provider, mapping, semantic, allocation, identity, or capability conflict known while constructing and validating the unsigned candidate sets that candidate part's disposition to `explicitResolutionRequired`; it may not silently reallocate a stopped endpoint or reset allocator history. Once the manifest digest is signed and bound to its token, neither the package nor its disposition can change. A conflict first discovered during retrieval, protected import, or staging compare-and-swap aborts and compensates that token, retains the immutable failed evidence, and requires explicit resolution followed by a new token/manifest; it cannot relabel the signed part or continue towards commit. A destination generation never reinterprets a source opaque ID or resolves a source protected-effect reference. Running endpoints must be drained and recreated from durable intent; they are never imported as running merely because an old helper or devcontainer process was live.
+
+The signed `networksAndIPAM` payload descriptor and its one payload package are immutable. Retrieval, validation, tentative import, and compensation progress changes only the separate token/manifest/part-scoped `ProviderHandoffPartStagingRecordV1`; its common mutable state carries verification results and an opaque controller-verifiable import-receipt digest, never extracted canonical records or raw provider material. Controller-private protected staging is outside public indexes, canonical controller revision vectors, and the immutable package. The signed common commit authorises forward promotion and leaves the destination token-fenced in `destinationReconciling`; only that phase promotes the frozen import through ordinary controller transactions and tombstones source ownership. Network APIs, indexes, allocation and the destination writer remain non-public until the signed Complete outcome establishes `destinationActive`. A post-commit failure resumes forward reconciliation and cannot expose a partial network view or roll back to the source. The staging record remains staging/audit evidence and never becomes canonical resource state. Abort before commit compensates tentative effects and proves their absence without rewriting manifest or package bytes.
+
+The `networksAndIPAM` part cannot switch provider aliases or resource writers, start the destination writer, archive/tombstone the source, or commit independently. Those actions occur only under the coherent Wave 8 exclusive handoff token and single authoritative manifest commit. A pre-commit failure leaves the source authoritative; after commit, recovery completes destination reconciliation and source tombstoning without returning to dual writers.
+
 ## Security and Failure Atomicity
 
 - Only registered, signed, correctly owned provider executables can run.
@@ -674,12 +811,13 @@ An old client can continue creating a simple v1 network. An advanced create/recr
 - Plugin responses are schema/version validated and have timeouts, cancellation, and output limits.
 - Network, pool, and endpoint IDs are opaque and cannot contain filesystem paths.
 - State writes use atomic replacement, fsync where required, generation checks, and explicit rollback records.
-- A crash after pool allocation, helper launch, endpoint reserve, or activation is covered by replayable idempotency keys and startup reconciliation.
+- A crash after pool allocation, helper launch, endpoint reserve, or activation is covered by the parent generic operation plus replayable controller-action identities/keys, protected-effect references/digests, and startup reconciliation.
+- Raw provider effect material remains in the owning controller's protected store, is resolved only just in time for its authenticated call, and cannot enter Compose, general state, the operation ledger, inspect, events, logs, diagnostics, or handoff content.
 - Logs redact provider-defined secret fields and never expose hidden vmnet transport addressing.
 
 ## Performance Contract
 
-The design adds no VM or always-running process per endpoint. `bridge` reuses the existing per-network helper and adds no router/uplink VM. The `ipvlan`/`macvlan` fabric also uses one per-network helper; a parent-backed network MAY add the single shared uplink VM defined above only when direct packet I/O cannot preserve the reference behavior. Capability manifests are cached by provider generation, pool checks use indexed prefixes, and endpoint allocation uses sparse interval indexes.
+The design adds no VM or always-running process per endpoint. `bridge` uses the one Engine Linux sandbox and existing per-network helper, with no router/uplink VM. The `ipvlan`/`macvlan` fabric also uses one per-network helper; parent-backed networks MAY share the single lazy uplink appliance per physical parent defined above only when direct packet I/O cannot preserve the reference behaviour. Capability manifests are cached by provider generation, pool checks use indexed prefixes, and endpoint allocation uses sparse interval indexes.
 
 The maintained comparator runs release builds on the same Mac with identical images and isolated state. It records median and P95 for:
 
@@ -698,13 +836,14 @@ The primary release criterion is the repository definition of comparable: no mat
 | Order | Repository | Work package | Exit condition |
 | ---: | --- | --- | --- |
 | 1 | `container-compose` | Lossless compose-go projection and source model | Full ordered pools, named aux, drivers, options, and tri-state flags round-trip through `config`/`convert`; no runtime behavior enabled. |
-| 2 | `container` | v2 resources, inspect API, capabilities, and migration | Legacy fixtures dual-read; advanced values round-trip without loss; old clients remain green. |
-| 3 | `container` | Transactional endpoint ledger and sparse default IPAM | Lease conflicts, stop/start, service restart, exhaustion, and crash recovery are deterministic. |
-| 4 | `containerization` | Optional-family interface, route, DNS, and sysctl primitives | A live IPv6-only-IPAM guest has no IPv4 primary or IPv4 default route, permits an explicit IPv4 link-local address, and retains functional DNS/connectivity. |
-| 5 | `container` | Provider registry, structured contract, backend descriptors, and v2 vmnet provider | Built-in bridge passes family/range/aux/options oracles and exact repeated-pool negatives. |
-| 6 | `container-compose` | SPI v2 adapter, capability gating, hashing, ownership, and reconciliation | Advanced fields reach the runtime, same-name label rules match Docker, and hash-divergent networks recreate correctly. |
+| 2 | Shared authority | Immutable identity, common typed-provider registry, workload journal, v2 resources, inspect API, capabilities, and migration | Network mutations are one domain transaction under the selected authority; legacy fixtures dual-read and advanced values round-trip. |
+| 3 | `container` | Transactional endpoint ledger, canonical namespace-delegation reference, custom-mode resolver, and sparse default IPAM | Lease conflicts, custom existing-network attachment, donor joins, stop/start, service restart, exhaustion, and crash recovery are deterministic. |
+| 4 | `containerization` | Engine Linux sandbox dynamic netns, optional-family interface, route, DNS, and sysctl primitives | IPv6-only and private/joined live workloads have correct endpoints, routes, DNS, connectivity, and isolation. |
+| 5 | `container` | Structured provider contract, controller-action identity, protected-effect storage/reconciliation, backend descriptors, and v2 vmnet provider through the common registry | Built-in bridge passes family/range/aux/options oracles and exact repeated-pool negatives; raw effect material never enters general state and lost replies do not duplicate effects. |
+| 6 | `container-compose` | SPI v2 adapter, custom `network_mode` projection, capability gating, hashing, ownership, and reconciliation | Advanced fields and custom existing-network mode reach the runtime, same-name label rules match Docker, and hash-divergent networks recreate correctly. |
 | 7 | All three | `Layer2Fabric`, reference driver matrix, custom driver/IPAM fixtures, and endpoint options | Pinned `ipvlan`/`macvlan` create/attach/data-plane success paths are green; `host`/`null`/`overlay` match each fixture's success or prerequisite error; installed fixture providers receive the full ordered plan; missing providers and option errors match Docker phases. |
-| 8 | All three | Live differential and performance release gates | Complete behavior matrix is green and median/P95 is comparable or better. |
+| 8 | `devcontainer`, gateway, and `container` | Prepare and validate the sole canonical immutable `networksAndIPAM` part package, separate mutable part-staging record, protected controller import state, and client path; switch authority only inside the coherent Wave 8 single manifest/token/commit. | Exact part ownership, collision, staged-import/resume/abort, immutable package/disposition, post-bind conflict abort/new-token, protected-material, interrupted-handoff, source-tombstone, cross-domain, and one-writer tests pass; the part cannot cut over independently. |
+| 9 | All components | Live differential and performance release gates | Complete behavior matrix is green and median/P95 is comparable or better. |
 
 Each runtime behavior slice requires the matching Container/Containerization upstream issue and pull-request handoff records, exact stack-pin updates, and stack-consistency validation before the Compose adapter slice is enabled.
 
@@ -718,6 +857,7 @@ Each runtime behavior slice requires the matching Container/Containerization ups
 - IPv4 and IPv6 ranges, gateways, and named auxiliary maps.
 - Custom IPAM driver plus inspection-only IPAM options.
 - Endpoint options, interface name interaction, attachment and gateway priorities, static addresses, and link-local addresses.
+- Custom-name `network_mode` versus built-in/donor/ordinary attachments, conflict validation, exact name/ID resolution, and source rendering.
 - Malformed runtime values preserved by `config` and rejected only at the Docker-matched later phase.
 - Malformed endpoint addresses fail after network creation and leave the same project-network state as Docker; malformed network pool values follow the distinct create/recreate phase.
 
@@ -727,6 +867,13 @@ Each runtime behavior slice requires the matching Container/Containerization ups
 - Dual-stack, IPv6-only, named aux, arbitrary ordered pools, and provider options round-trip.
 - Corrupt, partial, and newer-version state fails closed without overwriting the source.
 - Advanced-to-old-server requests fail before side effects; simple old-client requests retain their v1 behavior.
+- Devcontainer handoff covers identical records, same-name/different-ID, same-ID/different-config or digest, provider-generation absence, address overlap, endpoint/container reference collision, and running-endpoint drain/recreate.
+- Handoff with an exact provider-state export preserves only digest-verified generation-scoped opaque IDs; a mapped destination provider creates new destination-owned IDs/leases and controller-private protected effect material and records protected-effect references/digests only in its tentative receipt and only that receipt's opaque digest in the common part-staging record. A known unmappable explicit provider produces an unsigned candidate `explicitResolutionRequired` disposition; the same fact first discovered after token/manifest binding aborts and compensates that token and requires explicit resolution plus a new token/manifest, without source mutation or signed-byte changes.
+- Before signing, a mapped-provider handoff proves it can preserve stopped-endpoint IP/MAC/DNS identity, gateway/auxiliary reservations, free/allocated/quarantined sets, allocator cursor, and exact next-allocation/free-reuse order across commit and destination restart; known unreproducible state fixes the unsigned candidate disposition as `explicitResolutionRequired`, while a contradictory result first discovered after binding aborts and compensates that token and requires a new token/manifest.
+- Handoff fixtures accept network/IPAM records only in `networksAndIPAM`, accept canonical event/audit disposition and generic operation/idempotency/retry/outcome/tombstone/finaliser records only in `identityLifecycleEvents`, resolve immutable cross-part operation-ID references after all parts stage, and reject a wrong-owner or duplicated record before commit.
+- Interrupted retrieval/import changes only `ProviderHandoffPartStagingRecordV1` and controller-private protected staging; resume and abort leave the signed descriptor/package byte-identical, expose no raw effect material, and verify or compensate the exact tentative receipt.
+- A conflict known before signing fixes the unsigned candidate disposition as `explicitResolutionRequired`; an equivalent conflict discovered after token/manifest binding cannot rewrite that disposition, CAS-aborts and compensates the exact token, and proceeds only through explicit resolution and a newly signed token/manifest.
+- Crash before and after the common handoff commit proves no independent network writer/alias switch or source tombstone and no dual-writer recovery.
 
 ### Default IPAM
 
@@ -761,6 +908,8 @@ Each runtime behavior slice requires the matching Container/Containerization ups
 - A fixture IPAM provider proves local/global default address spaces, requested pool/subpool forwarding, stable provider pool/lease IDs, opaque options, gateway/auxiliary/endpoint request and release ownership, and cross-network conflict behavior.
 - Capability mismatch, protocol mismatch, timeout, crash, malformed response, and unknown backend descriptor fail atomically.
 - Provider restart and controller restart reattach to persisted networks/endpoints without lease duplication.
+- Helper session N loss followed by session N+1 proves durable release/recovery succeeds through current-session re-resolution while every late N response is rejected.
+- Provider N to N+1 upgrade with active networks/endpoints, crash during drain or migration, old-generation release/recovery routing, rollback before alias switch, and stale-generation rejection.
 
 ### Ownership and lifecycle
 
@@ -771,7 +920,9 @@ Each runtime behavior slice requires the matching Container/Containerization ups
 - Wrong logical label and stable-ID deletion guards.
 - Owned equal/absent hash reuse and changed-hash network/service recreation.
 - Active endpoint deletion refusal and cleanup after explicit disconnect/container delete.
+- Custom-name mode exact name/ID attach, missing/ambiguous failure phase, requested/effective inspect, stop/start, same-name replacement, remove/down non-ownership, and no Compose aliases or ports beyond the pinned oracle.
 - Parallel `up` conflict retry and crash injection at every transaction boundary.
+- Sandbox/process N stale finalisation after N+1 endpoint activation cannot clear the newer forwarding tuple.
 
 ### Inspection and DNS
 
@@ -798,14 +949,20 @@ The STATUS gap can be marked complete only when every row below has durable evid
 | Network driver options | Opaque transport plus live, inspectable behavior for every pinned built-in bridge option class; unknown-option parity. |
 | Endpoint driver options | Opaque transport, interface-name behavior, live sysctl effects, and error-phase parity. |
 | Durable IPAM | Stop/start and API/helper restart retain addresses; concurrent/crash tests show no duplicates or leaks. |
+| Provider ownership | Every opaque network/IPAM/backend ID and protected-effect reference is generation-pinned; upgrades drain or migrate before one alias switch, raw material remains controller-private and is resolved just in time, and recovery never routes an old identity/reference to a new generation. |
+| Shared sandbox and donors | VM-level backhaul plus guest private endpoints preserve isolation; namespace joiners allocate no endpoint/address/DNS/port and delegate by immutable ID. |
+| Custom-name network mode | Arbitrary existing selected-Engine network names/IDs resolve to stable owning endpoint leases with Docker-matched conflicts, inspection, lifecycle, drift reconciliation, and no network ownership/deletion. |
 | Network ownership/reconciliation | External, unlabelled collision, cross-project warning/reuse, owned-equal, hash-divergent, ambiguous, concurrent, and label-filtered `down` cases match Docker without name-only deletion. |
 | Inspection | Requested and effective state is complete, stable, and contains no backend-private transport identity. |
+| Authority handoff | Network/IPAM/endpoint state migrates only in the complete Wave 8 manifest/token/commit through the sole immutable `networksAndIPAM` package, a separate mutable staging/receipt record, controller-private protected tentative state, exact part ownership, collision handling, immutable pre-sign disposition, abort/new-token handling for post-bind conflicts, explicit source-to-destination provider mapping/export rules, exact effective allocation/allocator-sequence reproduction with destination-owned opaque state, and one writer before and after cutover. |
 | Performance | Same-host release-build median/P95 network lifecycle and data-plane matrix is comparable to or better than Docker Compose. |
 
 No field may be described as supported solely because it parses, renders, is passed through, or appears in inspect. The corresponding runtime behavior or Docker-equivalent failure must be covered by an executable oracle.
 
 ## Primary References
 
+- [Coherent Container-family parity architecture](coherent-container-family-parity-design.md)
+- [Shared namespaces and privileged isolation](shared-namespaces-privileged-isolation-design.md)
 - [Compose networks reference](https://docs.docker.com/reference/compose-file/networks/)
 - [Compose service networking reference](https://docs.docker.com/reference/compose-file/services/#networks)
 - [Docker Compose 5.3.1 network creation and reconciliation](https://github.com/docker/compose/blob/v5.3.1/pkg/compose/create.go#L1239-L1413)
@@ -813,7 +970,7 @@ No field may be described as supported solely because it parses, renders, is pas
 - [Docker network creation and IPAM](https://docs.docker.com/reference/cli/docker/network/create/)
 - [Docker bridge driver](https://docs.docker.com/engine/network/drivers/bridge/)
 - [Docker network driver plugins](https://docs.docker.com/engine/extend/plugins_network/)
-- [Moby remote network-driver protocol](https://github.com/moby/moby/blob/master/daemon/libnetwork/docs/remote.md)
+- [Moby 29.2.1 remote network-driver protocol](https://github.com/moby/moby/blob/6bc6209b88a7a834c91f77d848e025c79e0227a1/daemon/libnetwork/docs/remote.md)
 - [Apple Container documentation](https://apple.github.io/container/documentation/)
 - [Apple Containerization documentation](https://apple.github.io/containerization/documentation/containerization/)
 - [Current macOS parity and performance review](reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md)

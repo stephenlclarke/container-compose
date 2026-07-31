@@ -125,6 +125,9 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [BUILD.md](BUILD.md): build, test, package, validate parity, and promote the current build to a stable release, including the weekly minor-release scheduler and manual major-release dispatch.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](STATUS.md): get the current parity surfaces, blockers, active gaps, and validation handoff.
+- [Container-family parity architecture](docs/coherent-container-family-parity-design.md): understand the integrated authority, runtime topology, dependency order, and devcontainer/shared Engine design.
+- [Container-family parity development cycle](docs/container-family-development-cycle.md): deliver vertical slices with local-first validation, review-to-clean convergence, MBP runners, clean GitHub state, upstream monitoring, and comparable-or-better performance.
+- [Remaining macOS parity closure](docs/remaining-macos-parity-closure-design.md): reconcile STATUS coverage, implement the release-grade performance plan, and distinguish actionable device/provider work from host-specific non-goals and stock-Apple dependencies.
 - [macOS Compose parity and performance review](docs/reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md): review the current parity, performance, design, and SonarQube-quality gaps.
 - [docs/external-resources.md](docs/external-resources.md): provision Compose-owned external config files and Keychain secrets.
 - [CONTRIBUTING.md](CONTRIBUTING.md): prepare reviewable changes.
@@ -132,10 +135,9 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [SUPPORT.md](SUPPORT.md): ask for help or report non-security issues.
 - [SECURITY.md](SECURITY.md): report security issues.
 
-The documents above are the maintained operational source of truth. The
-Apple-facing drafts under [docs/upstream/](docs/upstream/README.md) are current
-handoff records for unresolved or proposed upstream work; they are not install,
-release, or support runbooks.
+[INSTALL.md](INSTALL.md), [BUILD.md](BUILD.md), [STATUS.md](STATUS.md), and [CONTRIBUTING.md](CONTRIBUTING.md) are the maintained sources of truth for current operation. The coherent architecture and development cycle describe the approved future design/process and identify automation that still has to be implemented.
+
+The Apple-facing drafts under [docs/upstream/](docs/upstream/README.md) are current handoff records for unresolved or Apple-shaped work; they are not install, release, support, or Apple-submission runbooks.
 
 ## License
 
