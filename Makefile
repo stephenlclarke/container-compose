@@ -212,7 +212,7 @@ endif
 .PHONY: docker-compose-phase4-parity
 .PHONY: docker-compose-format-template-actions-parity
 .PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity
-.PHONY: docker-compose-up-exit-code-from-parity
+.PHONY: docker-compose-up-exit-code-from-parity docker-compose-performance-matrix
 
 all: workflow
 
@@ -1489,6 +1489,25 @@ docker-compose-up-menu-parity: build docker-compose-reference
 
 docker-compose-host-namespaces-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-host-namespaces.sh --strict
+
+docker-compose-performance-matrix: build docker-compose-reference
+	container_binary="$(CONTAINER_COMPOSE_CONTAINER)"; \
+	if [[ "$$container_binary" == "container" ]]; then \
+		for candidate in "$(LOCAL_CONTAINER_BINARY)" "$(LOCAL_CONTAINER_PACKAGE_BINARY)"; do \
+			if [[ -x "$$candidate" ]]; then container_binary="$$candidate"; break; fi; \
+		done; \
+	fi; \
+	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
+		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
+		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
+		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
+		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
+		./scripts/run-with-container-runtime.sh "$$container_binary" \
+			env CONTAINER_COMPOSE_CONTAINER="$$container_binary" \
+			PARITY_REPETITIONS="$${PARITY_REPETITIONS:-5}" \
+			PARITY_TIMEOUT_SECONDS="$${PARITY_TIMEOUT_SECONDS:-300}" \
+			PARITY_TIMING_MAX_RATIO="$${PARITY_TIMING_MAX_RATIO:-10}" \
+			./Tools/parity/check-compose-performance-matrix.sh --strict
 
 docker-compose-health-wait-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-health-wait.sh --strict

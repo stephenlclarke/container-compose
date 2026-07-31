@@ -1,12 +1,13 @@
 # macOS Docker Compose Parity and Performance Review
 
-Reviewed 30 July 2026 against `main` at
+Reviewed through 31 July 2026; baseline `main` was
 `8f7f56ec16998df79f456d5c93d5ace4e23cf060`.
 
 ## Scope and Evidence
 
-This is a documentation-only assessment. It changes no Swift, Go, shell,
-workflow, or product behavior. The review used:
+This review began as a documentation-only assessment. It is now the current
+evidence-backed assessment and records later implementation and measurement
+updates without treating them as proof of full parity. It uses:
 
 - the current [parity ledger](../../STATUS.md) and its executable-target
   references;
@@ -43,9 +44,9 @@ primitive work must not be worked around by silently changing Compose policy.
 
 | ID | Priority | Finding | Required next implementation phase | Done when |
 | --- | --- | --- | --- | --- |
-| PARITY-001 | P1 | The ledger has partial service/runtime, network, volume, build, deploy, and model surfaces. The CLI reports 42 fully supported commands, 4 partial commands, 261 fully supported long options, and 2 partial options. | Make every macOS-exercisable gap either an executable behavior-level oracle or an explicit, evidenced platform non-goal; retain the current runtime/Compose ownership split. | No project-owned partial or unsupported macOS surface remains, and each green row has an oracle. |
+| PARITY-001 | P1 | The ledger has partial service/runtime, network, volume, deploy, and model surfaces. The CLI reports 44 fully supported commands, 2 partial commands, 262 fully supported long options, and 1 partial option. | Make every macOS-exercisable gap either an executable behavior-level oracle or an explicit, evidenced platform non-goal; retain the current runtime/Compose ownership split. | No project-owned partial or unsupported macOS surface remains, and each green row has an oracle. |
 | NET-002 | Complete | The supported runtime now provides container-facing, network-scoped DNS. Service/container names, `networks.aliases`, scaled answers, `run --use-aliases`, recreate/address reconciliation, source-scoped `links`, and dynamic `external_links` pass live Docker Compose oracles. | Keep the generic primitive below `ComposeRuntimeSPI`, retain collision/lifecycle tests, and converge the fork implementation upstream where possible. | Complete on the supported stack: shared-network names and aliases update deterministically across create, scale, recreate, connect, disconnect, and teardown. |
-| PERF-003 | P1 | **Partial:** bridge, service-discovery, links, and archive-copy workloads now record same-host timings, but the representative single-service and 10/50-service startup, logs, sync, build-context, and teardown matrix is still absent. Latest candidate/reference ratios include bridge `up` 8.01×, service-discovery startup 8.81×, links startup 8.62×, and `cp` metadata 14.95×, so the product goal is not met even though the bounded bridge guard passes. | Complete and gate the same-host macOS comparator, add P95 reporting, and optimize measured paths until they are comparable to or faster than Docker Compose outside an explicit noise band. | Every representative path has reproducible median/P95 evidence and is comparable to or faster than the pinned reference. |
+| PERF-003 | P1 | **Partial:** bridge, service-discovery, links, and archive-copy workloads record same-host timings. `make docker-compose-performance-matrix` adds raw monotonic, fingerprinted median/P95 evidence for warm-image detached 1/10/50-service startup and teardown. Its one-repetition debug diagnostic is slower than Docker at 10 and 50 services; attached/detached logs, `develop.watch` initial/incremental sync, and build-context transfer are still absent. | Complete and gate the remaining same-host comparator lanes, then optimize measured paths until they are comparable to or faster than Docker Compose outside an explicit noise band. | Every representative path has reproducible median/P95 evidence and is comparable to or faster than the pinned reference. |
 | ARCH-004 | P2 | The matched four-repository runtime stack is intentionally coupled, while the support ledger is principally prose. This makes runtime-capability drift expensive to detect. | Promote the existing typed capability-manifest work (`ARCH-103` and `ECO-606`) so the runtime reports the exact primitive and version expected by each Compose capability. | Compatibility checks and the parity ledger consume one machine-readable capability source; no behavior is inferred from version guessing. |
 | SQ-005 | Complete | Signed refactor `98f2a7139b2e99a60cabdc8ca2d7190c33b7e994` extracted task creation, signal attachment, and result collection into named helpers without suppressing `swift:S3087` or weakening cancellation. | Keep the focused signal/cancellation regressions and zero-issue analyzer result in the final gate. | Complete: 25 focused preflight tests pass. Fresh branch analysis `39c6e9ff-0a90-4cd5-9b59-ed466f5fbdea` processed successfully with zero scanner warnings; SonarCloud rejects short-branch metric, issue, and quality-gate API reads on the current organization plan, so the hosted pull-request check remains the final gate authority. |
 
@@ -128,7 +129,7 @@ Same-day implementation continued after the documentation-only baseline:
 - Two SwiftNIO event-loop shutdown warnings were retained from image-volume builder teardown. They did not fail a build or assertion, but remain cleanup evidence rather than being filtered from the record.
 - CodeQL is manually disabled at the owner's request while its required context remains configured. No missing CodeQL run is counted as green, and the workflow must remain off until explicitly re-enabled.
 
-The implementation moves the goal forward but does not close it. `NET-002` is complete on the supported stack. `PERF-003` remains P1 because measured startup and archive paths are materially slower and the broader representative matrix is absent; `PARITY-001` and `ARCH-004` likewise remain open.
+The implementation moves the goal forward but does not close it. `NET-002` is complete on the supported stack. `PERF-003` remains P1 because measured startup and archive paths are materially slower, the current lifecycle run is diagnostic rather than release-grade, and logs/watch/build lanes remain absent; `PARITY-001` and `ARCH-004` likewise remain open.
 
 ## Latest Timing Detail
 
@@ -202,3 +203,24 @@ The aggregate 1,152.03s suite wall time is validation evidence, not a
 representative performance benchmark. `PERF-003` remains open until the
 specified median/P95 matrix is implemented and every material candidate
 regression is removed.
+
+### Lifecycle Matrix Diagnostic
+
+The 31 July one-repetition lifecycle matrix run used the matched stack but a
+debug candidate build, so it establishes neither a release baseline nor a
+comparable-performance result. It retained raw TSV, JUnit, a generated matrix,
+and fingerprints in `.build/parity/performance-matrix-smoke/`.
+
+| Fixture | Docker (s) | container-compose (s) | Candidate/reference |
+| --- | ---: | ---: | ---: |
+| 1-service startup | 0.191 | 1.487 | 7.77× |
+| 10-service startup | 0.523 | 6.644 | 12.71× |
+| 50-service startup | 2.093 | 30.745 | 14.69× |
+| 1-service teardown | 1.256 | 1.931 | 1.54× |
+| 10-service teardown | 1.528 | 15.915 | 10.42× |
+| 50-service teardown | 2.637 | 68.944 | 26.14× |
+
+The diagnostic validates the lifecycle lane and exposes the scaling work: the
+10× material-regression guard would reject the four 10/50-service results.
+The next authoritative result must use a matched non-debug bundle, the normal
+sample count, and the still-missing logs, watch, and build-context lanes.

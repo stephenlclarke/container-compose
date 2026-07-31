@@ -36,6 +36,31 @@ better than the reference.
 The current prioritized assessment is the [macOS Compose parity and
 performance review](docs/reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md).
 
+## What Prevents 100% Parity
+
+This is the authoritative short list of known macOS-local gaps. Every other
+section in this file supplies the surface-level detail and oracle history for
+these rows. A green maintained suite does not close any row below.
+
+| Incompatible or incomplete behavior | Why it is not 100% compatible | Required change to close it |
+| --- | --- | --- |
+| Comparable performance evidence | The lifecycle matrix exists for warm-image detached 1/10/50-service `up` and `down`, but it does not yet measure logs, `develop.watch` sync, or build-context transfer. Its one-repetition diagnostic run was slower than Docker at 10 and 50 services, so it is not release-grade performance evidence. | Add the missing same-host median/P95 lanes, run the complete matrix from a matched non-debug bundle, retain artifacts, and optimize every measured path until it is comparable to or faster than Docker Compose outside the declared noise band. |
+| Shared namespaces and Docker-complete privileged isolation | The one-VM-per-container runtime cannot join PID, IPC, or network namespaces without collapsing network isolation. It also lacks host-device, device-cgroup, security-profile, and host-isolation behavior for full Docker `privileged`. | Add a durable generic multi-container sandbox primitive with per-container network lifecycle, plus the required device, cgroup, security-profile, and isolation controls; then map and oracle `network_mode`, `pid`, `ipc`, and privileged forms. |
+| Advanced network and IPAM semantics | The vmnet backend has no custom network/IPAM drivers, disabled IPv4, IPv6 allocation ranges or auxiliary addresses, or multiple same-family pools. | Expose those network/IPAM primitives in the runtime and add Docker-oracle fixtures for each behavior. |
+| Non-local volumes, advanced mounts, and `use_api_socket` | The runtime always creates local ext4 volumes; it has no plugin driver, recursive bind, cache/consistency, or Docker-compatible socket-proxy boundary. | Provide a volume-driver/plugin contract and mount flags, and implement a credential-safe Docker API socket proxy before enabling `use_api_socket`. |
+| Docker logging-driver semantics | `json-file` and `local` use the same Apple local logger. Remote/plugin drivers and their buffering/options do not exist. | Implement distinct local-driver semantics and a generic pluggable/remote logging-driver model, then map driver options and add behavioral oracles. |
+| Devices and GPU parity | The runtime supports one virtio GPU/DRM subset only; it lacks vendor GPUs, multiple GPUs, driver capabilities/options, CDI selectors, generic device reservations, and arbitrary hardware passthrough. | Add capability-addressable device passthrough and reservation primitives, then validate real device behavior rather than metadata alone. |
+| Remaining resource and security controls | The runtime lacks realtime CPU controls, swappiness/OOM-kill control, custom user-namespace mappings, profile-based security options, and storage options. | Add the missing Linux guest cgroup, user-namespace, security-profile, and storage primitives; map them through `ComposeRuntimeSPI` with Docker reference tests. |
+| Docker lifecycle states and actions | `dead`, `restarting`, and `removing` inspect states, and explicit restart, OOM, rename, resize, update, attach/detach event actions are not emitted by the runtime. | Extend runtime state/event reporting with Docker-shaped state transitions and action attributes, then extend `ps`, `events`, and inspect parity fixtures. |
+| Model-runner services | Compose can parse and render models, but there is no backend that starts a model or supplies an endpoint. | Add a model-runner backend and endpoint/model-variable injection lifecycle, with a live Compose oracle. |
+| Local Deploy device/resource subset | Local memory/GPU subsets are mapped, but CPU, pids, generic reservations, non-GPU devices, and device/generic limits lack matching primitives. | Implement the relevant resource-reservation and device primitives; preserve Swarm-only scheduling as an explicit local macOS non-goal. |
+| Stock Apple `container` release support | Runtime-backed behavior depends on the matched `stephenlclarke` stack; released Apple APIs do not yet expose equivalent primitives. | Upstream or adopt equivalent Apple APIs, update the adapter, and rerun the behavior/performance evidence against the released Apple lane. |
+
+Platform exclusions remain visible rather than silently treated as gaps:
+Windows-only settings and Docker Swarm scheduling are not exercisable by
+local macOS Docker Compose. They must remain explicitly documented and must
+not be used to exempt any macOS-local behavior above.
+
 ## Current Integration Assumption
 
 `container-compose` is supported as part of the matched `stephenlclarke` runtime bundle. Keep each package lane pinned to the matching `stephenlclarke/container`, `stephenlclarke/containerization`, and `stephenlclarke/container-builder-shim` surfaces until equivalent Apple upstream APIs are accepted and the plugin has been updated to those upstream surfaces.
@@ -64,7 +89,7 @@ Use this validation floor when parity or runtime behavior changes:
 
 - `container-compose`: `make ci`; targeted tests while iterating; full `make docker-compose-parity` whenever Compose, Dockerfile/build, CLI, or runtime behavior changes; and `make release-gate` before stable package dispatch.
 - Normal CI explicitly reports the 25 runtime smoke tests as skipped when the isolated runtime lane is not enabled. Coverage gates `ComposeCore`, `ComposeRuntimeSPI`, the Apple-backed provider, `ComposePlugin`, aggregate first-party Swift, and Go separately.
-- Performance-sensitive changes: `make docker-compose-host-namespaces-parity` records raw monotonic TSV, JUnit, exact runtime fingerprints, and a Markdown matrix for the live bridge lifecycle when `CONTAINER_COMPOSE_LIVE=1`; for other workloads, run the general macOS comparator once it is available and meanwhile include reproducible same-host Docker Compose comparison evidence using the workload and reporting requirements in [Project Goal](#project-goal-macos-docker-compose-parity-and-performance).
+- Performance-sensitive changes: `make docker-compose-performance-matrix` runs the local, warm-image Docker Compose comparator for detached 1/10/50-service startup and teardown. It retains raw monotonic TSV, JUnit, exact runtime fingerprints, and a Markdown median/P95 matrix. The matrix currently does not cover attached/detached logs, `develop.watch` initial/incremental sync, or build-context transfer; those remain explicit `PERF-003` work. `make docker-compose-host-namespaces-parity` retains the bridge-lifecycle comparator.
 - Apple-backed repositories: each affected repository's full source checks and unit tests, plus integration tests for changed runtime behavior.
 - Documentation-only changes: the repository Markdown gate over every tracked `.md` file.
 
@@ -84,6 +109,8 @@ The embedded equivalent warm-image bridge lifecycle comparator ran three repetit
 The new three-repetition service-discovery and links comparators also passed every behavioral assertion. Service-discovery startup measured 0.490196s for Docker and 4.317872s for container-compose (8.81×); this is 13.0% faster than the 4.965816s pre-optimization candidate baseline. Links startup measured 0.603993s and 5.209138s (8.62×). The `cp` oracle preserved content, ownership, modes, timestamps, hard links, and sparse allocation, but its observed operations remained 4.69× to 14.95× slower. The complete per-operation timing tables are recorded in the [macOS Compose parity and performance review](docs/reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md#latest-timing-detail).
 
 The executable bridge timing rule fails only on timeout, incomplete execution, or a candidate median at least 10× its corresponding Docker median. The 8.01× startup result therefore passes that regression guard, but it does **not** satisfy the product goal of comparable or better performance. `PERF-003`/`PERF-607` remains open until startup and archive operations are materially improved and the single-service plus 10/50-service startup, logs, sync, build-context, and teardown matrix records median and P95 evidence.
+
+On 31 July 2026, the new lifecycle matrix completed one warm-image diagnostic repetition using the exact matched stack, but that stack was a debug build and the run is not release-grade evidence. It measured Docker/container-compose startup at 0.191s/1.487s (7.77×), 0.523s/6.644s (12.71×), and 2.093s/30.745s (14.69×) for 1, 10, and 50 independent services. Teardown was 1.256s/1.931s (1.54×), 1.528s/15.915s (10.42×), and 2.637s/68.944s (26.14×). Raw data, JUnit, the generated matrix, and fingerprints are retained in `.build/parity/performance-matrix-smoke/`. The result both confirms that the lane works and records the optimization work still required; it must not be presented as a passing comparable-performance result.
 
 This result also does not convert known partial surfaces into full parity. The CLI oracle still records four documented intentional command-surface differences, and the service/runtime gaps below remain authoritative. Two SwiftNIO warnings about scheduling on an already-shut-down event loop appeared during image-volume builder teardown; every affected build and parity assertion completed, so they are retained as backend cleanup evidence rather than hidden or misclassified as a Compose parity failure.
 

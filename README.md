@@ -71,9 +71,11 @@ side effects with an explicit `unsupported compose feature` message.
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
 
-The authoritative parity ledger is [STATUS.md](STATUS.md). It lists every
-tracked Compose file, service, Dockerfile/build, command, and long-option
-surface with ✅ yes, ⚠️ partial, or ❌ no, and explains every partial surface.
+The authoritative parity ledger is [STATUS.md](STATUS.md). Start with its
+[short list of what prevents 100% parity](STATUS.md#what-prevents-100-parity):
+each gap states why it exists and the change required to close it. The
+remaining tables retain every tracked Compose file, service, Dockerfile/build,
+command, and long-option surface with ✅ yes, ⚠️ partial, or ❌ no.
 
 The key project goal is [100% observable Docker Compose v2 parity on macOS
 with comparable or better performance](STATUS.md#project-goal-macos-docker-compose-parity-and-performance).
@@ -85,7 +87,7 @@ project-owned difference; they must not become implicit exceptions.
 >
 > The complete maintained 62-target Docker Compose comparison suite passed in one uninterrupted 1,152.03-second run against Docker Compose 5.3.1 and Docker Engine 29.2.1 on a Mac17,9 running macOS 26.5.2. Its three-sample warm-image bridge comparator measured `up` at 0.153s for Docker Compose and 1.228s for container-compose (8.01×), while `down` measured 10.178s and 5.916s respectively (0.58×). Named-network service discovery, aliases, one-off aliases, recreate behavior, and source-scoped links all passed their live Docker oracles. Exact revisions, timing tables, fingerprints, and interpretation are recorded in [STATUS.md](STATUS.md#latest-controlled-full-suite-evidence).
 >
-> This is a green maintained-suite result, not a claim that the project goal is complete. Bridge, service-discovery, links, and archive-copy startup/operation paths remain materially slower than Docker Compose, the representative single/10/50-service performance matrix is not yet implemented, and every partial surface in the ledger remains open.
+> This is a green maintained-suite result, not a claim that the project goal is complete. The lifecycle matrix now covers warm-image 1/10/50-service detached startup and teardown, but its 31 July one-repetition debug diagnostic was slower than Docker at 10 and 50 services and is not release-grade evidence. Logs, `develop.watch` sync, and build-context lanes are still absent; every partial surface in the ledger remains open.
 
 <!-- Separate GitHub callouts. -->
 

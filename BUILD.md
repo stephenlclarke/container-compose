@@ -389,6 +389,23 @@ not a substitute for performance evidence. Changes on a measured execution
 path must also retain same-host Docker Compose benchmark evidence for the
 representative workloads and reporting requirements in that goal.
 
+### Lifecycle Performance Matrix
+
+Run the standalone local comparator when changing lifecycle performance:
+
+```sh
+make docker-compose-performance-matrix
+```
+
+It serializes ownership of the local runtime and compares warm-image detached
+`up` and `down --volumes --remove-orphans` for 1, 10, and 50 independent
+services. It writes raw monotonic TSV, JUnit XML, exact runtime fingerprints,
+and a median/P95 Markdown matrix under `PARITY_EVIDENCE_DIR` (or its default
+performance-matrix path). `PARITY_REPETITIONS` defaults to five; do not use a
+debug candidate or fewer samples as release-grade performance evidence. Logs,
+`develop.watch` sync, and build-context transfer still require their own
+matrix lanes; see [the remaining-gap register](STATUS.md#what-prevents-100-parity).
+
 Run a focused target directly while iterating:
 
 | Area | Targets |
