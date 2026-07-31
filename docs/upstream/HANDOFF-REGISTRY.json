@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-07-30",
+  "generatedAt": "2026-07-31",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -5482,6 +5482,26 @@
       ]
     },
     {
+      "id": "container-compose-performance-matrix",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Add reproducible same-host Compose performance-matrix evidence",
+      "state": "archived",
+      "lastVerified": "2026-07-31",
+      "commits": [
+        "e4e93f43481bc5cfef803263507a9f68031d7f19"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "archive": "https://github.com/stephenlclarke/container-compose/blob/e4e93f43481bc5cfef803263507a9f68031d7f19/docs/upstream/container-compose/ISSUE-performance-matrix.md"
+        },
+        {
+          "kind": "pull-request",
+          "archive": "https://github.com/stephenlclarke/container-compose/blob/e4e93f43481bc5cfef803263507a9f68031d7f19/docs/upstream/container-compose/PR-performance-matrix.md"
+        }
+      ]
+    },
+    {
       "id": "container-compose-package-compatibility-preflight-drain",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: drain package preflight output while the child runs",
@@ -6602,6 +6622,25 @@
           "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-upstream-builder-race-sync-20260724.md"
         }
       ]
+    },
+    {
+      "id": "container-compose-180",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Restore the parity foundation validation gates",
+      "state": "submitted",
+      "lastVerified": "2026-07-31",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-180.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-180.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/180"
     },
     {
       "id": "container-compose-upstream-maintenance-20260727",

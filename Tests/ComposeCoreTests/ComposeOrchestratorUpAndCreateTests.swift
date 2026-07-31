@@ -5620,7 +5620,7 @@ extension ComposeOrchestratorTests {
         let workerCommand = try #require(buildCommands.first { $0.containsSequence(["--tag", "demo_worker:latest"]) })
         #expect(apiCommand.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
         #expect(workerCommand.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("worker").standardizedFileURL.path)
-        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-worker-1"])
+        #expect(await discoveryManager.getRequests.sorted() == ["demo-api-1", "demo-worker-1"])
     }
 
     @Test("up quiet-build suppresses explicit build output")

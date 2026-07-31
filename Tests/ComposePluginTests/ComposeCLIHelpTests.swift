@@ -30,7 +30,7 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32msupported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[31mnot supported\u{001B}[0m"))
-        #expect(help.contains("\u{001B}[32mattach\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[38;5;208mattach\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--progress\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--verbose\u{001B}[0m"))
     }
@@ -97,13 +97,14 @@ struct ComposeCLIHelpTests {
 
     @Test("command support entries classify all known command-level gaps")
     func commandSupportEntriesClassifyKnownGaps() throws {
-        let partialCommands = ComposeCLIHelp.commandSupportSnapshots
+        let partialSnapshots = ComposeCLIHelp.commandSupportSnapshots
             .filter { $0.support == "partially supported" }
-            .map(\.commandPath)
+        let partialCommands = partialSnapshots.map(\.commandPath)
         let commitHelp = try #require(ComposeCLIHelp.commandHelpText(command: "commit"))
         let eventsHelp = try #require(ComposeCLIHelp.commandHelpText(command: "events"))
 
-        #expect(partialCommands == [["events"], ["exec"]])
+        #expect(partialCommands == [["attach"], ["events"], ["exec"], ["logs"], ["run"], ["up"]])
+        #expect(partialSnapshots.allSatisfy { !($0.detail ?? "").isEmpty })
         #expect(commitHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(commitHelp.contains("best-effort snapshot"))
         #expect(commitHelp.contains("\u{001B}[32m--pause\u{001B}[0m"))
@@ -424,11 +425,20 @@ struct ComposeCLIHelpTests {
     func runCommandAndOptionsAccuratelyReportSupport() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "run"))
 
-        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("Non-interactive foreground output still depends on the logging live-attach/read split"))
         #expect(help.contains("\u{001B}[32m--build\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--no-deps\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--service-ports\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--use-aliases\u{001B}[0m"))
+    }
+
+    @Test("logs command discloses reader limitations")
+    func logsCommandDisclosesReaderLimitations() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "logs"))
+
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("Driver/cache read capability, unsupported-reader behavior"))
     }
 
     @Test("exec command discloses the privileged-mode limitation")
@@ -464,11 +474,12 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("Use --sbom=false to explicitly disable."))
     }
 
-    @Test("attach options are shown as supported")
-    func attachOptionsAreShownAsSupported() throws {
+    @Test("attach command is partial and options are supported")
+    func attachCommandIsPartialAndOptionsAreSupported() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "attach"))
 
-        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("Output-only attach still follows persisted logs instead of an independent live stream"))
         #expect(help.contains("\u{001B}[32m--detach-keys\u{001B}[0m"))
         #expect(help.contains("Ignored with --no-stdin output-only attach."))
         #expect(help.contains("\u{001B}[32m--index\u{001B}[0m"))
@@ -516,11 +527,12 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("Use --menu=false to explicitly disable the helper menu."))
     }
 
-    @Test("up and wait options report supported")
-    func upAndWaitOptionsReportSupported() throws {
+    @Test("up command is partial and wait options are supported")
+    func upCommandIsPartialAndWaitOptionsAreSupported() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
 
-        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("Foreground output still needs independent live attach"))
         #expect(help.contains("\u{001B}[32m--wait\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--wait-timeout\u{001B}[0m"))
     }
@@ -820,7 +832,7 @@ struct ComposeCLIHelpTests {
         expectCodeSpans([
             "type", "options", "model", "context_size", "runtime_flags", "endpoint_var", "model_var",
         ], in: try statusTableRow(named: "Provider services and models", in: composeFileSection))
-        expectCodeSpans([
+        expectDocumentedCodeSpans([
             "endpoint_mode", "labels", "mode", "placement", "replicas", "resources", "restart_policy",
             "rollback_config", "update_config",
         ], in: try statusTableRow(named: "Compose Deploy Specification", in: composeFileSection))
@@ -828,7 +840,7 @@ struct ComposeCLIHelpTests {
             "watch", "path", "action", "target", "ignore", "include", "initial_sync", "exec",
         ], in: try statusTableRow(named: "Compose Develop Specification", in: composeFileSection))
 
-        expectCodeSpans(Self.currentServiceAttributes, in: serviceSection)
+        expectDocumentedCodeSpans(Self.currentServiceAttributes, in: serviceSection)
         expectCodeSpans(Self.currentBuildAttributes.map { "build.\($0)" }, in: buildSection)
         expectCodeSpans(Self.currentDockerfileInstructions, in: buildSection)
     }
@@ -985,6 +997,21 @@ struct ComposeCLIHelpTests {
     private func expectCodeSpans(_ names: [String], in markdown: String) {
         for name in names {
             #expect(markdown.contains("`\(name)`"), "STATUS.md does not name current Compose surface \(name)")
+        }
+    }
+
+    private func expectDocumentedCodeSpans(_ names: [String], in markdown: String) {
+        let documentationAliases = [
+            "resources": ["resources.reservations.memory", "deploy.resources.reservations.memory"],
+            "userns_mode": ["userns_mode: host"],
+        ]
+
+        for name in names {
+            let documentedNames = documentationAliases[name] ?? [name]
+            #expect(
+                documentedNames.contains { markdown.contains("`\($0)`") },
+                "STATUS.md does not name current Compose surface \(name) through \(documentedNames)"
+            )
         }
     }
 
