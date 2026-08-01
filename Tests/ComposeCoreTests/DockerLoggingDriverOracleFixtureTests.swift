@@ -152,10 +152,10 @@ struct DockerLoggingDriverOracleFixtureTests {
       ) == 4096
     )
     #expect(
-      try integer(
+      try string(
         fixture,
-        "cases", "optionSemantics", "sizeUnits", "cacheMaxSize4kBytes"
-      ) == 4096
+        "cases", "optionSemantics", "sizeUnits", "cachePrefixedLocalOptions"
+      ) == "retained-but-ignored"
     )
     #expect(
       try string(fixture, "cases", "optionSemantics", "sizeUnits", "maxSizeParser")
@@ -168,10 +168,22 @@ struct DockerLoggingDriverOracleFixtureTests {
       ) == "units.RAMInBytes"
     )
     #expect(
-      try string(
+      try integer(
         fixture,
-        "cases", "optionSemantics", "sizeUnits", "cacheMaxSizeParser"
-      ) == "units.RAMInBytes"
+        "cases", "optionSemantics", "sizeUnits", "cacheLocalDefaults", "maxSizeBytes"
+      ) == 20 * 1024 * 1024
+    )
+    #expect(
+      try integer(
+        fixture,
+        "cases", "optionSemantics", "sizeUnits", "cacheLocalDefaults", "maxFile"
+      ) == 5
+    )
+    #expect(
+      try boolean(
+        fixture,
+        "cases", "optionSemantics", "sizeUnits", "cacheLocalDefaults", "compress"
+      )
     )
 
     #expect(

@@ -11,14 +11,14 @@ The capture covers:
 - omitted `HostConfig.LogConfig` resolving to the daemon's `json-file` default;
 - explicit `json-file`, `local`, `none`, and `syslog` driver identities and arbitrary option preservation, including Engine acceptance of options on `none`;
 - create-time option-name rejection versus start-time option-value rejection, including container residue and inspect state;
-- empty driver resolution and the exact create/start validation phases for `mode`, `compress`, `max-size`, `max-file`, and `max-buffer-size`, including the pinned Moby distinction between decimal `max-size` (`4k` is 4,000 bytes) and binary `max-buffer-size`/`cache-max-size` (`4k` is 4,096 bytes);
+- empty driver resolution and the exact create/start validation phases for `mode`, `compress`, `max-size`, `max-file`, and `max-buffer-size`, including the pinned Moby distinction between decimal `max-size` (`4k` is 4,000 bytes) and binary `max-buffer-size` (`4k` is 4,096 bytes);
 - representative Go `strconv.ParseBool` spellings, Docker/go-units size spellings, and whitespace behavior;
 - `HostConfig.LogConfig`, `LogPath`, stopped-container reads, restart retention, and the effect of a created-container follow read;
 - non-TTY stdout/stderr selection and Docker's eight-byte multiplex framing;
 - TTY raw, merged output and stream-filter behavior;
 - raw `json-file` record keys, streams, labels, and RFC 3339 nanosecond timestamp shape;
 - native-reader behavior for `local`; and
-- the default dual-logging cache, `cache-disabled` grammar, and retention without create/start rejection of the other `cache-*` options for both reader and non-reader drivers;
+- the default dual-logging cache, `cache-disabled` grammar, and retention without create/start rejection of the other `cache-*` options for both reader and non-reader drivers; pinned Moby 29.2.1 retains but does not remap `cache-max-size`, `cache-max-file`, or `cache-compress`, so the local cache keeps its fixed 20 MiB/five-file/compressed defaults;
 - sustained `json-file` and `local` rotation at a 4,000-byte (`4k`) limit, three-file retention, valid gzip compression, one-record threshold overflow, retained ranges, and `json-file` suffix-to-record ordering;
 - non-blocking delivery under a controlled two-second Unix-stream sink stall, including guest write completion before sink release, observable dropped-new gaps, order, uniqueness, and final-record loss; and
 - Docker Compose foreground output for `json-file`, `none`, and cache-disabled `syslog`, proving that early stdout/stderr remains visible exactly once even when later historical reads are unsupported.

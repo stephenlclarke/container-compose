@@ -2828,8 +2828,12 @@
         }
       },
       "sizeUnits": {
-        "cacheMaxSize4kBytes": 4096,
-        "cacheMaxSizeParser": "units.RAMInBytes",
+        "cacheLocalDefaults": {
+          "compress": true,
+          "maxFile": 5,
+          "maxSizeBytes": 20971520
+        },
+        "cachePrefixedLocalOptions": "retained-but-ignored",
         "maxBufferSize4kBytes": 4096,
         "maxBufferSizeParser": "units.RAMInBytes",
         "maxSize4kBytes": 4000,

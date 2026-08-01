@@ -163,7 +163,7 @@ Container MAY add counters, rate-limited warnings, and health diagnostics becaus
 
 ### Dual logging and read-back
 
-`json-file`, `local`, `journald`, and a plugin advertising `ReadLogs` are direct readers. A non-reader driver is wrapped with a `local` cache by default. The documented cache defaults are five 20 MiB files with compression enabled, controlled by `cache-disabled`, `cache-max-size`, `cache-max-file`, and `cache-compress`.
+`json-file`, `local`, `journald`, and a plugin advertising `ReadLogs` are direct readers. A non-reader driver is wrapped with a `local` cache by default. In pinned Engine 29.2.1, that cache uses the local driver's fixed five 20 MiB files with compression enabled. `cache-disabled` controls whether the wrapper is installed. The Engine retains `cache-max-size`, `cache-max-file`, and `cache-compress` in inspect state but does not strip their prefix before calling the local driver, so those values are ignored rather than changing the cache defaults.
 
 Wrapper order is observable and MUST match the pinned oracle:
 
@@ -179,7 +179,7 @@ Consequences:
 - `cache-disabled=true` leaves a non-reader unreadable and logs return the exact unsupported-reader error.
 - Direct readers do not expose or use the dual cache.
 
-Current Docker documentation and Moby source appear inconsistent about whether prefixed cache size/file/compress values reach the local writer. The implementation MUST first capture exact Engine 29.2.1 results and encode them in a versioned compatibility manifest; it must not rationalise the behaviour from documentation alone.
+This retained-but-ignored behaviour is an intentional compatibility requirement even though Docker documentation describes the prefixed values as controls. The versioned Engine 29.2.1 oracle and pinned Moby source, rather than the documentation, are authoritative for this implementation.
 
 ### Driver lifecycle
 
