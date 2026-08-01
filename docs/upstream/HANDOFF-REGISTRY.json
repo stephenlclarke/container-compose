@@ -2263,6 +2263,26 @@
       "documents": []
     },
     {
+      "id": "apple-container-xpc-unknown-error-code",
+      "owner": "apple/container",
+      "title": "Reject unknown XPC peer error codes without trapping",
+      "state": "active-draft",
+      "lastVerified": "2026-08-01",
+      "commits": [
+        "ec60a81d3d47a76e8a356c2bc3e457807c38d10c"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/apple-container/ISSUE-xpc-unknown-error-code.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/apple-container/PR-xpc-unknown-error-code.md"
+        }
+      ]
+    },
+    {
       "id": "apple-container-xpc-variable-descriptor-arrays",
       "owner": "apple/container",
       "title": "Pull Request: preserve variable XPC descriptor arrays",

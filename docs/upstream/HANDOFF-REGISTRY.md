@@ -8,9 +8,9 @@ links to an immutable Git snapshot.
 
 Last verified: 2026-07-31
 
-Entries: 366. Document snapshots: 634. Current supporting documents: 24.
+Entries: 367. Document snapshots: 636. Current supporting documents: 26.
 
-States: `archived` 305, `closed` 3, `merged` 7, `submitted` 12, `tracked-upstream` 16, `unsubmitted` 23.
+States: `active-draft` 1, `archived` 305, `closed` 3, `merged` 7, `submitted` 12, `tracked-upstream` 16, `unsubmitted` 23.
 
 | Owner | Capability or pull request | State | Referenced commits | Documents |
 | --- | --- | --- | --- | --- |
@@ -134,6 +134,7 @@ States: `archived` 305, `closed` 3, `merged` 7, `submitted` 12, `tracked-upstrea
 | `apple/container` | PR handoff: build public ContainerTestSupport without Swift Testing | `archived` | `79415eee4d2f`, `1c9c8abdf167`, `dd1763755e22` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-test-support-production-build.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-test-support-production-build.md) |
 | `apple/container` | Version Output Truncates The Unspecified Commit Placeholder | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-version-unspecified-commit.md) |
 | `apple/container` | Preserve XPC-transferred FileHandle ownership | `unsubmitted` | `6320cf8203a8` | None |
+| `apple/container` | Reject unknown XPC peer error codes without trapping | `active-draft` | `ec60a81d3d47` | [Issue details](apple-container/ISSUE-xpc-unknown-error-code.md); [PR details](apple-container/PR-xpc-unknown-error-code.md) |
 | `apple/container` | Pull Request: preserve variable XPC descriptor arrays | `archived` | `a8f6cae4fc49` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-xpc-variable-descriptor-arrays.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-xpc-variable-descriptor-arrays.md) |
 | `apple/container` | Pull request: accept an explicit unlimited CPU limit | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-zero-cpu-limit.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-zero-cpu-limit.md) |
 | `apple/container-builder-shim` | `.dockerignore` negation re-includes can stream orphan descendants | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/ISSUE-1800.md) |

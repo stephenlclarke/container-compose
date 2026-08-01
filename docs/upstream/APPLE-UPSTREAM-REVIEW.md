@@ -81,7 +81,12 @@ No Stephen-authored pull request has been submitted to
 
 ## Handoff Inventory
 
-[HANDOFF-REGISTRY.json](HANDOFF-REGISTRY.json) is now the source of truth. Its generated [reader view](HANDOFF-REGISTRY.md) contains 360 capability or pull-request rows, 616 immutable document snapshots, 473 unique referenced commits, and 14 current supporting documents:
+[HANDOFF-REGISTRY.json](HANDOFF-REGISTRY.json) is now the source of truth. Its generated [reader view](HANDOFF-REGISTRY.md) contains 366 capability or pull-request rows, 634 document snapshots, and 24 current supporting documents. The newest active documents are:
+
+- `apple-container/ISSUE-xpc-unknown-error-code.md`
+- `apple-container/PR-xpc-unknown-error-code.md`
+
+The previously current supporting documents include:
 
 - `apple-container-builder-shim/PR-87.md`
 - `apple-container/PR-1926.md`
@@ -98,7 +103,7 @@ No Stephen-authored pull request has been submitted to
 - `container-compose/ISSUE-package-compatibility-preflight-drain.md`
 - `container-compose/PR-package-compatibility-preflight-drain.md`
 
-The registry records 301 retired entries, 23 unsubmitted candidates, ten open Stephen-authored submissions, 16 tracked third-party pull requests, seven merged pull requests, and three closed pull requests. Submitted PRs #1965, #2031, #2035, #2036, #820, #821, and #823 are first-class registry rows without separate Markdown files. The two stock-shaped PR #33 follow-ups and the Apple pull requests that moved the fetched main branches are also first-class rows.
+The registry records 305 archived entries, one active development draft, 23 unsubmitted candidates, 11 submitted candidates, 16 tracked third-party pull requests, seven merged pull requests, and three closed pull requests. Submitted PRs #1965, #2031, #2035, #2036, #820, #821, and #823 are first-class registry rows without separate Markdown files. The two stock-shaped PR #33 follow-ups and the Apple pull requests that moved the fetched main branches are also first-class rows.
 
 An unsubmitted registry row is not automatically handoff-ready. Rebase the
 smallest independent change on current stock Apple `main`, rerun stock
@@ -145,6 +150,15 @@ pump/backpressure correction adapted to Apple's simpler API. No Apple issue or
 pull request has been filed for either slice.
 
 ## Unsubmitted Review Candidates
+
+The active development draft for
+[unknown XPC peer error codes](apple-container/PR-xpc-unknown-error-code.md)
+is a signed stock-Apple commit on
+`upstream/fix-xpc-unknown-error-code`. It rejects version-skewed or malformed
+peer codes without calling the trapping raw-code initializer. Focused normal
+and Thread Sanitizer tests, formatting, licence, and independent review pass.
+It remains an `active-draft` until the full stock suite and the deferred
+programme-wide overlap/publication review are complete.
 
 | Repository | Current purpose |
 | --- | --- |
