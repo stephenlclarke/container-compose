@@ -389,17 +389,28 @@ that hosted gate, which exceeds its 120-minute workflow timeout; set
 different bound.
 
 The helper is the only supported version mutator. It updates the Compose version
-when necessary and preserves the exact runtime stack pin. Its current
-open-and-immediately-merge source-promotion path and legacy
-`CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE=direct` path do not yet
-satisfy the parity development cycle. Before the next programme source
-promotion, the helper must implement that document's fail-closed exact-head
-`@codex review` gate and remove or reject direct Compose-main promotion. It then
-opens and merges the reviewed source-promotion PR, creates a signed semantic tag, waits for the hosted Stable
-Release Gate, then dispatches the stable package workflow. That workflow
-rebuilds and publishes the immutable stable assets and atomically updates both
-stable Homebrew formulae. Do not create a semantic tag, copy a prerelease
-asset, or edit either stable formula by hand.
+when necessary and preserves the exact runtime stack pin. Compose source can be
+promoted only through a short-lived pull request. The helper verifies the PR
+still names the locally gated full commit, requires every earlier Codex thread
+to have a later Stephen response and be resolved, posts the literal
+`@codex review`, and waits for either the connector's thumbs-up on that request
+or its explicit no-major-issues comment naming the expected commit prefix. A
+new query, changed head, truncated review response, malformed evidence, or
+timeout fails closed. Answer and resolve a surfaced query, revalidate any diff
+change, and rerun the release command; the rerun posts a fresh exact-head review
+request. Only after that clean decision does the helper wait for PR checks. It
+immediately revalidates the head, review threads, and clean signal before a
+`--match-head-commit` merge, and repeats those gates before the optional
+solo-maintainer checked-admin merge. It never enables auto-merge.
+
+`CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE=pr` is the only supported
+mode. The retired `direct` value is rejected even for maintenance or security
+releases; neither intent bypasses review. After the reviewed PR merges, the
+helper creates a signed semantic tag, waits for the hosted Stable Release Gate,
+then dispatches the stable package workflow. That workflow rebuilds and
+publishes the immutable stable assets and atomically updates both stable
+Homebrew formulae. Do not create a semantic tag, copy a prerelease asset, or
+edit either stable formula by hand.
 
 If a hosted gate fails before the semantic GitHub release is created, correct the release automation on `main` and rerun the same explicit version, for example `make release VERSION_SELECTOR=X.Y.Z`. The helper reuses only the latest existing GitHub-verified signed source tag, reruns the gates and package workflow, and refuses to change a tag or overwrite an existing semantic release. The package job checks out and verifies the workflow commit's immutable release-control tools before it stages notes or publishes assets, while compiling package content only from the signed source tag. A stable retry can therefore repair release automation on `main` without retagging or changing the release payload. If the semantic GitHub release is published but its stable Homebrew formula pair is absent or incomplete, the same command dispatches formula-only recovery. It validates the existing immutable Compose and runtime assets and updates only the paired stable formulae; it never rebuilds a package, changes a signed tag, or replaces release assets.
 
