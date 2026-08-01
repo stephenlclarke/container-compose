@@ -231,6 +231,14 @@ Any operation capable of touching the Container/devcontainer runtime must acquir
 
 `main` is the current integration branch for the Stephen-owned Container-family repositories. Stable reviewed progress should reach `main` frequently enough that a machine failure or handoff does not strand a large private delta.
 
+Any branch that carries a change intended for an upstream fork must use the
+`upstream/` prefix. Product integration, local parity, and release branches do
+not use that prefix merely because their repository has an upstream remote.
+Before a branch is retained or handed off, classify its destination from its
+unique commits and rename a misclassified branch without rewriting those
+commits. Record any deliberately retained upstream branch and its exact head in
+the handoff.
+
 `container-compose` treats `main` as releasable, and a successful main push can trigger Current packaging and Homebrew movement. A main checkpoint is therefore a completed, exact-head-reviewed slice boundary, not a time-based backup. Preserve incomplete progress on a short-lived topic branch/draft pull request containing signed commits instead.
 
 Required durability/checkpoint points are:
