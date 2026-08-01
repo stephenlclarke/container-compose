@@ -750,17 +750,17 @@ Paired median/P95 tests cover create/start/stop/restart/remove, list/inspect 1/1
 
 ## Implementation Work Packages
 
-| Order | Owner | Work package | Exit evidence |
+| Stable ID | Owner | Work package | Exit evidence |
 | --- | --- | --- | --- |
-| 1 | Oracle harness | Freeze inspect/list/filter/wait/action/attribute/order behaviour for every state and operation on Engine 29.2.1. | Versioned black-box state/action ledger and failure fixtures. |
-| 2 | Shared Engine types and runtime provider | Add immutable identity, mutable names, versioned lifecycle DTOs, event records, API routes, and provider capability. | Stock/enhanced adapters round-trip without lossy fields. |
-| 3 | `container` | Migrate persisted container records/name indexes and implement central state transaction/journal. | Crash/reload/migration/collision tests pass. |
-| 4 | `containerization` and guest | Add `processGeneration`-bound workload activation, `sandboxGeneration` validation, OOM observation, pause/resize/update acknowledgements, and idempotent status/cleanup. | Shared-sandbox isolation and injected-failure tests pass. |
-| 5 | `container` | Implement atomic restart, waits, removal/dead recovery, rename, resize, update, attach/detach, and complete action ledger. | State machine/property/oracle tests pass. |
-| 6 | `container-engine` | Route Docker and native mutations through one selected authority and one journal without cutting over another resource owner. | Docker/native stable ID/name/state/action sequence passes. |
-| 7 | `container-compose` | Adopt lifecycle v2 discovery/restart/events/ps/wait and retain hook semantics. | Compose state/filter/output/restart/event oracles pass. |
-| 8 | `devcontainer`, gateway, and `container` | Prepare the exact `identityLifecycleEvents` payload/client path, enforce its sole ownership of the operation/idempotency/finaliser records, then execute its writer switch only inside the coherent Wave 8 single manifest/token/commit; retain the isolated standalone stock profile. | Canonical ownership and collision tests pass, and all clients observe one stable ID/name/revision/event sequence with no partial cutover. |
-| 9 | Whole stack | Migration rehearsal, fault/security/performance matrix, docs/status, pins, release and rollback. | No orphan or phantom event; comparable performance. |
+| <a id="lifecycle-wp-01"></a>`LIFECYCLE-WP-01` | Oracle harness | Freeze inspect/list/filter/wait/action/attribute/order behaviour for every state and operation on Engine 29.2.1. | Versioned black-box state/action ledger and failure fixtures. |
+| <a id="lifecycle-wp-02"></a>`LIFECYCLE-WP-02` | Shared Engine types and runtime provider | Add immutable identity, mutable names, versioned lifecycle DTOs, event records, API routes, and provider capability. | Stock/enhanced adapters round-trip without lossy fields. |
+| <a id="lifecycle-wp-03"></a>`LIFECYCLE-WP-03` | `container` | Migrate persisted container records/name indexes and implement central state transaction/journal. | Crash/reload/migration/collision tests pass. |
+| <a id="lifecycle-wp-04"></a>`LIFECYCLE-WP-04` | `containerization` and guest | Add `processGeneration`-bound workload activation, `sandboxGeneration` validation, OOM observation, pause/resize/update acknowledgements, and idempotent status/cleanup. | Shared-sandbox isolation and injected-failure tests pass. |
+| <a id="lifecycle-wp-05"></a>`LIFECYCLE-WP-05` | `container` | Implement atomic restart, waits, removal/dead recovery, rename, resize, update, attach/detach, and complete action ledger. | State machine/property/oracle tests pass. |
+| <a id="lifecycle-wp-06"></a>`LIFECYCLE-WP-06` | `container-engine` | Route Docker and native mutations through one selected authority and one journal without cutting over another resource owner. | Docker/native stable ID/name/state/action sequence passes. |
+| <a id="lifecycle-wp-07"></a>`LIFECYCLE-WP-07` | `container-compose` | Adopt lifecycle v2 discovery/restart/events/ps/wait and retain hook semantics. | Compose state/filter/output/restart/event oracles pass. |
+| <a id="lifecycle-wp-08"></a>`LIFECYCLE-WP-08` | `devcontainer`, gateway, and `container` | Prepare the exact `identityLifecycleEvents` payload/client path, enforce its sole ownership of the operation/idempotency/finaliser records, then execute its writer switch only inside the coherent Wave 8 single manifest/token/commit; retain the isolated standalone stock profile. | Canonical ownership and collision tests pass, and all clients observe one stable ID/name/revision/event sequence with no partial cutover. |
+| <a id="lifecycle-wp-09"></a>`LIFECYCLE-WP-09` | Whole stack | Migration rehearsal, fault/security/performance matrix, docs/status, pins, release and rollback. | No orphan or phantom event; comparable performance. |
 
 ## Required Test and Evidence Matrix
 

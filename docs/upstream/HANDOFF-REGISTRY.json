@@ -6669,9 +6669,12 @@
       "id": "container-compose-182",
       "owner": "stephenlclarke/container-compose",
       "title": "Require exact-head-reviewed PR-only Compose promotion",
-      "state": "submitted",
+      "state": "archived",
       "lastVerified": "2026-08-01",
-      "commits": [],
+      "commits": [
+        "528756ba791f2d2299a9487fe3ffd3cf700f8203",
+        "f62c3eac2f5d6bc5d49d484af15d6d19ed0e58de"
+      ],
       "documents": [
         {
           "kind": "issue",
@@ -6681,8 +6684,26 @@
           "kind": "pull-request",
           "path": "docs/upstream/container-compose/PR-182.md"
         }
+      ]
+    },
+    {
+      "id": "container-compose-183",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Make parity programme progress exact-head verifiable",
+      "state": "submitted",
+      "lastVerified": "2026-08-01",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-183.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-183.md"
+        }
       ],
-      "upstream": "https://github.com/stephenlclarke/container-compose/pull/182"
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/183"
     },
     {
       "id": "container-compose-upstream-maintenance-20260727",

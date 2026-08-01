@@ -17,7 +17,7 @@
 override SHELL := /bin/bash
 override .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := all
-.PHONY: fork-classifications-check upstream-divergence-report upstream-divergence-check upstream-divergence-release-check upstream-handoff-registry-update upstream-handoff-registry-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
+.PHONY: fork-classifications-check upstream-divergence-report upstream-divergence-check upstream-divergence-release-check upstream-handoff-registry-update upstream-handoff-registry-check programme-progress-update programme-progress-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
 
 SWIFT ?= swift
 SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
@@ -111,6 +111,7 @@ COMPOSE_TEST_BINARY ?= $(abspath .build/debug/compose)
 CONTAINER_STACK_REPO ?= $(abspath ../container)
 CONTAINERIZATION_STACK_REPO ?= $(abspath ../containerization)
 CONTAINER_BUILDER_SHIM_STACK_REPO ?= $(abspath ../container-builder-shim)
+CONTAINER_K8S_STACK_REPO ?= $(abspath ../container-k8s)
 HOMEBREW_TAP_REPO ?= $(abspath ../homebrew-tap)
 LOCAL_CONTAINER_BINARY ?= $(abspath $(CONTAINER_STACK_REPO)/bin/container)
 LOCAL_CONTAINER_PACKAGE_BINARY ?= $(abspath $(CONTAINER_STACK_REPO)/usr/local/bin/container)
@@ -1687,6 +1688,12 @@ upstream-handoff-registry-update:
 upstream-handoff-registry-check:
 	$(PYTHON) Tools/ci/upstream-handoff-registry.py check
 
+programme-progress-update:
+	$(PYTHON) Tools/ci/programme-progress.py render
+
+programme-progress-check:
+	$(PYTHON) Tools/ci/programme-progress.py check
+
 readme-upstream-metrics-update:
 	$(PYTHON) Tools/ci/update-readme-upstream-metrics.py --fetch
 
@@ -1717,7 +1724,7 @@ worktree-audit:
 worktree-audit-strict:
 	$(PYTHON) Tools/ci/worktree-audit.py --repository "$(CURDIR)" --main main --strict
 
-check: lint core-runtime-neutrality stack-consistency upstream-handoff-registry-check check-licenses
+check: lint core-runtime-neutrality stack-consistency upstream-handoff-registry-check programme-progress-check check-licenses
 
 lint: coverage-tools-test
 	@while IFS= read -r -d '' script; do \

@@ -55,6 +55,23 @@ discussion.
 
 The [Container-family parity development cycle](docs/container-family-development-cycle.md) is the detailed cross-repository process for oracle-first vertical slices, proportionate local validation, full review convergence, self-hosted MBP jobs, main checkpoints, quality analysis, upstream surveillance, and cleanup. This document remains authoritative for general contribution, commit, pull-request, and worktree rules.
 
+When a parity slice changes a registered design state or its evidence, update
+`docs/parity/PROGRAMME-PROGRESS.json`, run
+`make programme-progress-update`, and include
+`make programme-progress-check` in focused validation. Do not edit the generated
+Markdown reader directly. A verified row must refer to an already-existing
+commit accepted through the trusted pre-change main/PR-base checkpoint, verify
+exactly the default or item-overridden repository set declared by the design,
+verify each required head against fetched `main` in its authenticated
+repository-specific checkout, require each SHA to name a commit object directly
+rather than peel from a tag, include every dependent-document review rationale,
+and use only kind-specific GitHub authorities that the checker can resolve and
+bind to the same accepted head. Run the focused check with normal `gh`
+authentication available. Both hosted validation paths provision full history
+for every supported evidence repository and a read-only GitHub token. The
+current implementation commit remains `in progress` until a later checkpoint
+can identify it without a floating or self-referential hash.
+
 For stephenlclarke-owned stack work, keep `main` as the current integration
 branch in `container-builder-shim`, `containerization`, `container`,
 `container-compose`, and `homebrew-tap` after each reviewed slice lands. Use a
