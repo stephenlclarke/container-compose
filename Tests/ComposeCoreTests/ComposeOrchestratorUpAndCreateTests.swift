@@ -2028,10 +2028,10 @@ extension ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.logging = .object([
-                        "driver": .string("local"),
-                        "options": .object(["max-file": .string("3")]),
-                    ])
+                    $0.logging = ComposeLogConfiguration(
+                        driver: "local",
+                        options: ["max-file": "3"],
+                    )
                 },
             ]
         )
@@ -2040,9 +2040,8 @@ extension ComposeOrchestratorTests {
 
         #expect(plan.name == "demo-api-1")
         #expect(plan.imageReference == "example/api")
-        #expect(plan.logging.storage == .local)
-        #expect(plan.logging.maxFileCount == 3)
-        #expect(plan.logging.maxSizeInBytes == nil)
+        #expect(plan.logging.driver == "local")
+        #expect(plan.logging.options == ["max-file": "3"])
     }
 
     @Test("service create plan maps disabled logging to typed policy")
@@ -2051,16 +2050,39 @@ extension ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.logging = .object(["driver": .string("none")])
+                    $0.logging = ComposeLogConfiguration(driver: "none")
                 },
             ]
         )
 
         let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "api")
 
-        #expect(plan.logging.storage == .none)
-        #expect(plan.logging.maxFileCount == nil)
-        #expect(plan.logging.maxSizeInBytes == nil)
+        #expect(plan.logging.driver == "none")
+        #expect(plan.logging.options.isEmpty)
+    }
+
+    @Test("service create plan preserves arbitrary logging and structured precedence")
+    func serviceCreatePlanPreservesArbitraryLoggingAndStructuredPrecedence() async throws {
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.logging = ComposeLogConfiguration(
+                        driver: "example/provider",
+                        options: ["custom": "structured", "cache-disabled": "true"],
+                    )
+                    $0.logDriver = "none"
+                    $0.logOptions = ["custom": "legacy", "max-file": "2"]
+                },
+            ]
+        )
+
+        let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "api")
+
+        #expect(plan.logging == ComposeLogConfiguration(
+            driver: "example/provider",
+            options: ["custom": "structured", "cache-disabled": "true"],
+        ))
     }
 
     @Test("service create plan maps create-time runtime primitives")

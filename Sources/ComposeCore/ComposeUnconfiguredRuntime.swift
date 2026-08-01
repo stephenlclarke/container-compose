@@ -24,7 +24,7 @@ import Foundation
 /// particular runtime implementation merely to construct default dependencies.
 struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExporting, ComposeRuntimeExecManaging,
     ComposeRuntimeEventsManaging, ComposeRuntimeLifecycleManaging, ComposeRuntimeStatsManaging,
-    ComposeRuntimeTopManaging, ComposeRuntimeLogManaging, ComposeRuntimeConfigReading,
+    ComposeRuntimeTopManaging, ComposeRuntimeLogManaging, ComposeRuntimeAttachManaging, ComposeRuntimeConfigReading,
     ComposeRuntimeSecretReading, ComposeRuntimeDiscoveryManaging, ComposeRuntimeImageManaging,
     ComposeRuntimeImageVolumeInitializing, ComposeArchiveManaging,
     ComposeRuntimeResourceManaging
@@ -160,6 +160,15 @@ struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExportin
         throw unavailable("container logs")
     }
 
+    func attachOutput(
+        id _: String,
+        stdout _: Bool,
+        stderr _: Bool,
+        emit _: @escaping @Sendable (ComposeLogRecord) -> Void,
+    ) async throws {
+        throw unavailable("container attach")
+    }
+
     func readConfig(name _: String) async throws -> Data {
         throw unavailable("external config read")
     }
@@ -289,6 +298,10 @@ public enum ComposeRuntimeProviderDefaults {
     }
 
     public static func logs() -> any ComposeRuntimeLogManaging {
+        ComposeUnconfiguredRuntime()
+    }
+
+    public static func attach() -> any ComposeRuntimeAttachManaging {
         ComposeUnconfiguredRuntime()
     }
 

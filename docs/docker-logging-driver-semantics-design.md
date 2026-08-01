@@ -2,13 +2,13 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Design complete; implementation not started |
+| Status | Implementation in progress; Docker oracle and lossless Compose contracts complete, lower-runtime delivery/read/provider work pending |
 | Scope | `container-compose`, the matched `container` fork, the matched `containerization` fork, the shared Engine API, and versioned logging providers |
 | Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
-| Matched Container revision | `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1` |
-| Matched Containerization revision | `d7377b962af724f8d7c2b640f3ab12184d33f1af` |
-| Design date | 31 July 2026 |
+| Matched Container revision | `6c3f7d3701cf9400855849fa0e29dd75d7b9c45d` |
+| Matched Containerization revision | `77f06d4c44341e04241941072fb69e2b85a6f5c1` |
+| Last implementation review | 1 August 2026 |
 
 ## Goal
 
@@ -61,9 +61,9 @@ This gap crosses Compose policy, the production create path, Container persisten
 
 | Layer | Current boundary | Consequence |
 | --- | --- | --- |
-| Compose normalisation | [`Tools/compose-normalizer/main.go`](../Tools/compose-normalizer/main.go) already preserves structured/legacy logging and arbitrary options. | Parsing is not the blocker; later layers discard valid data. |
-| Compose policy | [`ComposeOrchestratorRuntimeSupport.swift`](../Sources/ComposeCore/ComposeOrchestratorRuntimeSupport.swift) allows only absent/`json-file`/`local`/`none`, accepts only `max-size`/`max-file`, and maps absent, `json-file`, and `local` to one local policy. | Driver identity, generic options, and remote options are rejected or flattened before runtime resolution. |
-| Compose runtime SPI | [`ComposeRuntimeCreateModels.swift`](../Sources/ComposeRuntimeSPI/ComposeRuntimeCreateModels.swift) models only `.local`/`.none` plus parsed size/count. | It cannot carry omission, an arbitrary name, raw options, delivery mode, or cache policy. |
+| Compose normalisation | [`Tools/compose-normalizer/main.go`](../Tools/compose-normalizer/main.go) emits a typed optional driver and complete compose-go-normalised string option map, preserving an explicit empty driver separately from an omitted logging object. | Normalisation is complete; the compose-go 2.13.0/2.14.0 skew remains a whole-project differential input. |
+| Compose policy | [`ComposeOrchestratorRuntimeSupport.swift`](../Sources/ComposeCore/ComposeOrchestratorRuntimeSupport.swift) now carries the lossless request into config, hashing, and create planning while retaining the v1 runtime allowlist at the execution boundary. | Arbitrary requests remain deliberately unavailable until the lower runtime advertises and implements the logging capability. |
+| Compose runtime SPI | [`ComposeRuntimeCreateModels.swift`](../Sources/ComposeRuntimeSPI/ComposeRuntimeCreateModels.swift) carries the exact optional driver and complete option map; [`ComposeRuntimeLogging.swift`](../Sources/ComposeRuntimeSPI/ComposeRuntimeLogging.swift) adds driver-neutral binary records, historical-read requests, and a distinct live-attach contract. | The new record and attach contracts are additive and are not yet backed by the Container authority. |
 | Production create | [`ComposeOrchestratorRunCopyStart.swift`](../Sources/ComposeCore/ComposeOrchestratorRunCopyStart.swift) converts the typed plan back to CLI arguments and emits a log-driver flag only for `none`. | Extending the typed test projection alone leaves production behaviour unchanged. |
 | Container CLI/model | The matched Container parser accepts `json-file`, `local`, and `none` but collapses the first two; `ContainerLogConfiguration` stores only local/none. | Direct clients can neither preserve identity nor select a future provider. |
 | Runtime writer | The matched `ContainerLogFileWriter` writes raw `stdio.log` and a Base64-bearing `stdio.jsonl` sidecar, rotating both when either representation crosses the limit. | Neither representation is Docker `json-file` or `local`; sidecar overhead changes retention. |
@@ -75,6 +75,17 @@ This gap crosses Compose policy, the production create path, Container persisten
 | Containerization | Its pinned synchronous throwing writer receives host-vsock stdout/stderr; TTY is already merged to stdout. | This is sufficient for a blocking writer or a host-side bounded queue. No initial guest protocol change is justified. |
 
 The current Docker rotated-tail fixture is useful evidence rather than an implementation gate: at the same 2 KiB/three-file settings it retains 40 `json-file` lines and 61 `local` lines. [`DockerComposeLogFixtureTests.swift`](../Tests/ComposeCoreTests/DockerComposeLogFixtureTests.swift) only verifies captured reference text; it does not exercise Container Compose.
+
+The first versioned Engine oracle is now maintained by [`capture-docker-logging-driver-oracle.py`](../Tools/parity/capture-docker-logging-driver-oracle.py) and documented in [Docker logging-driver oracle](parity/docker-logging-driver-oracle.md). Its deterministic Engine 29.2.1 fixture freezes default/explicit identity, validation phases and residue, the `none` option quirk, inspect paths, native and cached reads, disabled-cache failure, framing, raw `json-file` records, and restart retention. Remote receiver payloads, sustained rotation/backpressure, Compose foreground fallback, plugins, and cloud providers remain separate required oracle additions.
+
+## Implementation Progress
+
+As of 1 August 2026:
+
+- Work package 1 has a deterministic initial Engine 29.2.1 oracle and focused fixture tests; the additional provider, pressure, and foreground cases named above remain open.
+- Work package 2 preserves logging through compose-go normalisation, Swift decoding, offline config, stable hashing, create planning, and a guarded v1 down-conversion. Structured `logging` is authoritative over retained legacy fields.
+- The SPI has additive driver-neutral historical-read and live-attach contracts plus an explicit unsupported-reader error category. Production orchestration continues to use the old reader until the matched authority supplies the new contract.
+- Work packages 3 through 11 remain release blockers. In particular, no support claim is made for distinct file formats, logging defaults, delivery queues, dual cache, providers/plugins, shared Engine routes, production typed create, or devcontainer handoff.
 
 ## Docker Reference Contract
 

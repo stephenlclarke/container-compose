@@ -170,14 +170,13 @@ public struct ComposeProcessConfiguration: Codable, Sendable {
 
 /// Runtime logging policy projected from a Compose service.
 public struct ComposeLogConfiguration: Codable, Equatable, Sendable {
-    public enum Storage: String, Codable, Equatable, Sendable {
-        case local
-        case none
-    }
+    /// The exact driver requested by Compose. `nil` delegates selection to the
+    /// runtime default and remains distinct from an explicitly named driver.
+    public var driver: String?
 
-    public var storage: Storage
-    public var maxSizeInBytes: UInt64?
-    public var maxFileCount: Int?
+    /// The complete compose-go-normalised option map. Driver-specific parsing
+    /// and default resolution belong to the runtime authority.
+    public var options: [String: String]
 
     public static let standard = ComposeLogConfiguration()
 
@@ -187,13 +186,30 @@ public struct ComposeLogConfiguration: Codable, Equatable, Sendable {
     }
 
     public init(
-        storage: Storage = .local,
-        maxSizeInBytes: UInt64? = nil,
-        maxFileCount: Int? = nil,
+        driver: String? = nil,
+        options: [String: String] = [:],
     ) {
-        self.storage = storage
-        self.maxSizeInBytes = maxSizeInBytes
-        self.maxFileCount = maxFileCount
+        self.driver = driver
+        self.options = options
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case driver
+        case options
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        driver = try container.decodeIfPresent(String.self, forKey: .driver)
+        options = try container.decodeIfPresent([String: String].self, forKey: .options) ?? [:]
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(driver, forKey: .driver)
+        if !options.isEmpty {
+            try container.encode(options, forKey: .options)
+        }
     }
 }
 

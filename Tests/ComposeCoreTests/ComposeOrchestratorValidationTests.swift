@@ -30,6 +30,35 @@ import Foundation
 import Testing
 
 extension ComposeOrchestratorTests {
+    @Test("logging request participates canonically in the service config hash")
+    func loggingRequestParticipatesCanonicallyInServiceConfigHash() throws {
+        func project(driver: String?, options: [String: String]) -> ComposeProject {
+            composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        $0.logging = ComposeLogConfiguration(driver: driver, options: options)
+                    },
+                ]
+            )
+        }
+
+        let first = project(driver: "example/provider", options: ["alpha": "1", "beta": "2"])
+        let reordered = project(driver: "example/provider", options: ["beta": "2", "alpha": "1"])
+        let changedDriver = project(driver: "another/provider", options: ["alpha": "1", "beta": "2"])
+        let changedOption = project(driver: "example/provider", options: ["alpha": "1", "beta": "3"])
+        let omitted = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")],
+        )
+
+        let firstHash = try configHash(project: first, service: #require(first.services["api"]))
+        #expect(try configHash(project: reordered, service: #require(reordered.services["api"])) == firstHash)
+        #expect(try configHash(project: changedDriver, service: #require(changedDriver.services["api"])) != firstHash)
+        #expect(try configHash(project: changedOption, service: #require(changedOption.services["api"])) != firstHash)
+        #expect(try configHash(project: omitted, service: #require(omitted.services["api"])) != firstHash)
+    }
+
     @Test("up applies labels from service label files")
     func upAppliesLabelsFromServiceLabelFiles() async throws {
         let directory = try temporaryDirectory()

@@ -478,21 +478,15 @@ struct ComposeNormalizerTests {
         #expect(project.name == "compose-log-fixture")
         #expect(project.services.count == 9)
         #expect(project.services["replicas"]?.scale == 2)
-        #expect(project.services["disabled-capture"]?.logging == .object(["driver": .string("none")]))
-        #expect(project.services["rotating-json"]?.logging == .object([
-            "driver": .string("json-file"),
-            "options": .object([
-                "max-file": .string("3"),
-                "max-size": .string("2k"),
-            ]),
-        ]))
-        #expect(project.services["rotating-local"]?.logging == .object([
-            "driver": .string("local"),
-            "options": .object([
-                "max-file": .string("3"),
-                "max-size": .string("2k"),
-            ]),
-        ]))
+        #expect(project.services["disabled-capture"]?.logging == ComposeLogConfiguration(driver: "none"))
+        #expect(project.services["rotating-json"]?.logging == ComposeLogConfiguration(
+            driver: "json-file",
+            options: ["max-file": "3", "max-size": "2k"],
+        ))
+        #expect(project.services["rotating-local"]?.logging == ComposeLogConfiguration(
+            driver: "local",
+            options: ["max-file": "3", "max-size": "2k"],
+        ))
 
         let followCommand = try #require(project.services["follow"]?.command?.last)
         #expect(followCommand.contains(#""$i" -le "${LOG_LINES}""#))

@@ -1050,16 +1050,16 @@ struct DisabledServiceLoggingFieldCase: Sendable {
 func supportedLocalServiceLoggingFieldCases() -> [SupportedServiceLoggingFieldCase] {
     [
         SupportedServiceLoggingFieldCase(
-            configure: { $0.logging = .object(["driver": .string("json-file")]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "json-file") }
         ),
         SupportedServiceLoggingFieldCase(
-            configure: { $0.logging = .object(["driver": .string("json-file"), "options": .object([:])]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "json-file") }
         ),
         SupportedServiceLoggingFieldCase(
-            configure: { $0.logging = .object(["driver": .string("local")]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "local") }
         ),
         SupportedServiceLoggingFieldCase(
-            configure: { $0.logging = .object(["driver": .string("local"), "options": .object([:])]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "local") }
         ),
         SupportedServiceLoggingFieldCase(
             configure: { $0.logDriver = "json-file" }
@@ -1074,25 +1074,25 @@ func supportedLocalServiceLoggingOptionCases() -> [SupportedServiceLoggingOption
     [
         SupportedServiceLoggingOptionCase(
             configure: {
-                $0.logging = .object([
-                    "driver": .string("json-file"),
-                    "options": .object(["max-size": .string("10m"), "max-file": .string("3")]),
-                ])
+                $0.logging = ComposeLogConfiguration(
+                    driver: "json-file",
+                    options: ["max-size": "10m", "max-file": "3"],
+                )
             },
             expectedOptions: ["max-size=10m", "max-file=3"]
         ),
         SupportedServiceLoggingOptionCase(
             configure: {
-                $0.logging = .object([
-                    "driver": .string("local"),
-                    "options": .object(["max-size": .string("512b")]),
-                ])
+                $0.logging = ComposeLogConfiguration(
+                    driver: "local",
+                    options: ["max-size": "512b"],
+                )
             },
             expectedOptions: ["max-size=512b"]
         ),
         SupportedServiceLoggingOptionCase(
             configure: {
-                $0.logging = .object(["options": .object(["max-file": .string("5")])])
+                $0.logging = ComposeLogConfiguration(options: ["max-file": "5"])
             },
             expectedOptions: ["max-file=5"]
         ),
@@ -1115,10 +1115,10 @@ func supportedLocalServiceLoggingOptionCases() -> [SupportedServiceLoggingOption
 func disabledServiceLoggingFieldCases() -> [DisabledServiceLoggingFieldCase] {
     [
         DisabledServiceLoggingFieldCase(
-            configure: { $0.logging = .object(["driver": .string("none")]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "none") }
         ),
         DisabledServiceLoggingFieldCase(
-            configure: { $0.logging = .object(["driver": .string("none"), "options": .object([:])]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "none") }
         ),
         DisabledServiceLoggingFieldCase(
             configure: { $0.logDriver = "none" }
@@ -1131,17 +1131,17 @@ func unsupportedServiceMetadataAndLoggingFieldCases() -> [UnsupportedServiceMeta
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "logging",
             reason: "service logging driver/options need an apple/container runtime gap PR",
-            configure: { $0.logging = .object(["driver": .string("syslog")]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "syslog") }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "logging",
             reason: "service logging driver/options need an apple/container runtime gap PR",
-            configure: { $0.logging = .object(["driver": .string("local"), "options": .object(["mode": .string("non-blocking")])]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "local", options: ["mode": "non-blocking"]) }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "logging",
             reason: "service logging driver/options need an apple/container runtime gap PR",
-            configure: { $0.logging = .object(["driver": .string("none"), "options": .object(["max-size": .string("10m")])]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "none", options: ["max-size": "10m"]) }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "log_driver",

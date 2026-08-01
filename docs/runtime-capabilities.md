@@ -60,3 +60,18 @@ operation.
    preflight tests, full repository CI, and the live release gate.
 5. Record the capability's upstream disposition and remove it only after an
    Apple-native equivalent is merged, consumed, and parity-tested.
+
+## Pending Logging Capability
+
+`io.github.stephenlclarke.container.logging-drivers.v1` is reserved for the
+complete contract in the [Docker logging-driver design](docker-logging-driver-semantics-design.md).
+It is intentionally absent from the required manifest while the runtime still
+uses its legacy local/none writer. The capability may be published only when
+the matched Container authority implements lossless requested/resolved state,
+defaults, distinct built-in drivers, delivery/cache/read semantics, provider
+lifecycle, independent attach, migration, and the maintained conformance gates.
+
+Compose config and hashing never require a runtime lookup. Commands that need
+advanced logging continue to fail at the existing v1 gate until this exact
+identifier is negotiated; catalogue discovery is diagnostic and never replaces
+authoritative create/start validation.
