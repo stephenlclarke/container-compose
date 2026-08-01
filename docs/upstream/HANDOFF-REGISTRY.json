@@ -6627,9 +6627,12 @@
       "id": "container-compose-180",
       "owner": "stephenlclarke/container-compose",
       "title": "Restore the parity foundation validation gates",
-      "state": "submitted",
+      "state": "archived",
       "lastVerified": "2026-07-31",
-      "commits": [],
+      "commits": [
+        "73f9a4b1314a86339cc388b89af67118f72ee664",
+        "74d0c3670e369e048fb36177b6de72a5ea30c601"
+      ],
       "documents": [
         {
           "kind": "issue",
@@ -6639,8 +6642,26 @@
           "kind": "pull-request",
           "path": "docs/upstream/container-compose/PR-180.md"
         }
+      ]
+    },
+    {
+      "id": "container-compose-181",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Add reproducible local CodeQL analysis and exact SARIF upload",
+      "state": "submitted",
+      "lastVerified": "2026-07-31",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-181.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-181.md"
+        }
       ],
-      "upstream": "https://github.com/stephenlclarke/container-compose/pull/180"
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/181"
     },
     {
       "id": "container-compose-upstream-maintenance-20260727",
