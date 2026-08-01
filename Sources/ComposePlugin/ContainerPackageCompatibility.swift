@@ -153,6 +153,7 @@ extension ContainerPackageCompatibility {
     lane: String,
     expectedContainerRef: String? = nil,
     expectedContainerizationRef: String? = nil,
+    onCompatibleRuntime: @escaping @Sendable (ComposeRuntimeCapabilities) -> Void = { _ in },
     run: ([String]) async throws -> Data = runContainerCommand
   ) async throws -> String? {
     guard requiresRuntimeCheck(arguments: arguments) else {
@@ -183,6 +184,10 @@ extension ContainerPackageCompatibility {
             "container system status: \(error.localizedDescription)"
           ])
       }
+      let runtimeCapabilities = components
+        .first(where: { $0.appName == "container" })?
+        .runtimeCapabilities ?? []
+      onCompatibleRuntime(ComposeRuntimeCapabilities(identifiers: runtimeCapabilities))
       return nil
     } catch let interruption as ContainerPackagePreflightInterruption {
       throw interruption

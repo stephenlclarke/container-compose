@@ -71,7 +71,11 @@ the matched Container authority implements lossless requested/resolved state,
 defaults, distinct built-in drivers, delivery/cache/read semantics, provider
 lifecycle, independent attach, migration, and the maintained conformance gates.
 
-Compose config and hashing never require a runtime lookup. Commands that need
+Compose config and hashing never require a runtime lookup. Runtime preflight
+retains optional and unknown installed identifiers separately from the mandatory
+manifest, and passes the immutable selection into runtime execution options only
+after stack compatibility and service readiness succeed. Commands that need
 advanced logging continue to fail at the existing v1 gate until this exact
-identifier is negotiated; catalogue discovery is diagnostic and never replaces
-authoritative create/start validation.
+identifier is both negotiated and backed by the typed production path;
+catalogue discovery is diagnostic and never replaces authoritative create/start
+validation.
