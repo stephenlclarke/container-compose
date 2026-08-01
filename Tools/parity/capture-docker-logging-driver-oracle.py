@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import difflib
 import http.client
 import json
@@ -28,6 +29,7 @@ from pathlib import Path
 import re
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -171,6 +173,7 @@ class LoggingOracle:
         command: list[str],
         log_config: dict[str, Any] | None = None,
         tty: bool = False,
+        environment: list[str] | None = None,
         labels: dict[str, str] | None = None,
         expected_status: int = 201,
     ) -> tuple[str | None, dict[str, Any]]:
@@ -180,6 +183,8 @@ class LoggingOracle:
             "Image": self.image,
             "Tty": tty,
         }
+        if environment is not None:
+            request["Env"] = environment
         if labels is not None:
             request["Labels"] = labels
         if log_config is not None:
@@ -1055,6 +1060,1302 @@ def capture_nonblocking_pressure(
         )
 
 
+REMOTE_LOG_RECEIVER_SCRIPT = r"""
+import json
+import os
+import socket
+import ssl
+import struct
+import sys
+
+
+class IncompleteMessagePack(Exception):
+    pass
+
+
+def need(data, offset, count):
+    if offset + count > len(data):
+        raise IncompleteMessagePack()
+
+
+def sized_node(kind, started, ended, **fields):
+    return {"byteCount": ended - started, "type": kind, **fields}
+
+
+def decode_string(data, offset, size, kind, started):
+    need(data, offset, size)
+    raw = bytes(data[offset : offset + size])
+    ended = offset + size
+    try:
+        return sized_node(
+            kind,
+            started,
+            ended,
+            byteCountValue=size,
+            utf8=raw.decode("utf-8"),
+        ), ended
+    except UnicodeDecodeError:
+        return sized_node(
+            kind,
+            started,
+            ended,
+            byteCountValue=size,
+            invalidUTF8Hex=raw.hex(),
+        ), ended
+
+
+def decode_messagepack(data, offset=0):
+    started = offset
+    need(data, offset, 1)
+    prefix = data[offset]
+    offset += 1
+
+    if prefix <= 0x7f:
+        return sized_node("positive-fixint", started, offset, value=prefix), offset
+    if prefix >= 0xe0:
+        return sized_node("negative-fixint", started, offset, value=prefix - 256), offset
+    if 0xa0 <= prefix <= 0xbf:
+        return decode_string(data, offset, prefix & 0x1f, "fixstr", started)
+    if 0x90 <= prefix <= 0x9f:
+        count = prefix & 0x0f
+        items = []
+        for _ in range(count):
+            item, offset = decode_messagepack(data, offset)
+            items.append(item)
+        return sized_node("fixarray", started, offset, items=items), offset
+    if 0x80 <= prefix <= 0x8f:
+        count = prefix & 0x0f
+        entries = []
+        for _ in range(count):
+            key, offset = decode_messagepack(data, offset)
+            value, offset = decode_messagepack(data, offset)
+            entries.append({"key": key, "value": value})
+        return sized_node("fixmap", started, offset, entries=entries), offset
+
+    if prefix == 0xc0:
+        return sized_node("nil", started, offset, value=None), offset
+    if prefix in (0xc2, 0xc3):
+        return sized_node("bool", started, offset, value=prefix == 0xc3), offset
+
+    binary_sizes = {0xc4: (1, "bin8"), 0xc5: (2, "bin16"), 0xc6: (4, "bin32")}
+    if prefix in binary_sizes:
+        width, kind = binary_sizes[prefix]
+        need(data, offset, width)
+        size = int.from_bytes(data[offset : offset + width], "big")
+        offset += width
+        need(data, offset, size)
+        raw = bytes(data[offset : offset + size])
+        offset += size
+        return sized_node(
+            kind, started, offset, byteCountValue=size, binaryHex=raw.hex()
+        ), offset
+
+    extension_sizes = {0xc7: (1, "ext8"), 0xc8: (2, "ext16"), 0xc9: (4, "ext32")}
+    if prefix in extension_sizes:
+        width, kind = extension_sizes[prefix]
+        need(data, offset, width)
+        size = int.from_bytes(data[offset : offset + width], "big")
+        offset += width
+        need(data, offset, size + 1)
+        extension_type = data[offset]
+        if extension_type >= 128:
+            extension_type -= 256
+        offset += 1
+        raw = bytes(data[offset : offset + size])
+        offset += size
+        return sized_node(
+            kind,
+            started,
+            offset,
+            byteCountValue=size,
+            extensionType=extension_type,
+            extensionHex=raw.hex(),
+        ), offset
+
+    if prefix in (0xca, 0xcb):
+        width, kind, fmt = (4, "float32", ">f") if prefix == 0xca else (8, "float64", ">d")
+        need(data, offset, width)
+        value = struct.unpack(fmt, bytes(data[offset : offset + width]))[0]
+        offset += width
+        return sized_node(kind, started, offset, value=value), offset
+
+    integer_formats = {
+        0xcc: (1, "uint8", ">B"),
+        0xcd: (2, "uint16", ">H"),
+        0xce: (4, "uint32", ">I"),
+        0xcf: (8, "uint64", ">Q"),
+        0xd0: (1, "int8", ">b"),
+        0xd1: (2, "int16", ">h"),
+        0xd2: (4, "int32", ">i"),
+        0xd3: (8, "int64", ">q"),
+    }
+    if prefix in integer_formats:
+        width, kind, fmt = integer_formats[prefix]
+        need(data, offset, width)
+        value = struct.unpack(fmt, bytes(data[offset : offset + width]))[0]
+        offset += width
+        return sized_node(kind, started, offset, value=value), offset
+
+    fixed_extensions = {
+        0xd4: (1, "fixext1"),
+        0xd5: (2, "fixext2"),
+        0xd6: (4, "fixext4"),
+        0xd7: (8, "fixext8"),
+        0xd8: (16, "fixext16"),
+    }
+    if prefix in fixed_extensions:
+        size, kind = fixed_extensions[prefix]
+        need(data, offset, size + 1)
+        extension_type = data[offset]
+        if extension_type >= 128:
+            extension_type -= 256
+        offset += 1
+        raw = bytes(data[offset : offset + size])
+        offset += size
+        return sized_node(
+            kind,
+            started,
+            offset,
+            byteCountValue=size,
+            extensionType=extension_type,
+            extensionHex=raw.hex(),
+        ), offset
+
+    string_sizes = {0xd9: (1, "str8"), 0xda: (2, "str16"), 0xdb: (4, "str32")}
+    if prefix in string_sizes:
+        width, kind = string_sizes[prefix]
+        need(data, offset, width)
+        size = int.from_bytes(data[offset : offset + width], "big")
+        offset += width
+        return decode_string(data, offset, size, kind, started)
+
+    collection_sizes = {
+        0xdc: (2, "array16", "array"),
+        0xdd: (4, "array32", "array"),
+        0xde: (2, "map16", "map"),
+        0xdf: (4, "map32", "map"),
+    }
+    if prefix in collection_sizes:
+        width, kind, collection = collection_sizes[prefix]
+        need(data, offset, width)
+        count = int.from_bytes(data[offset : offset + width], "big")
+        offset += width
+        if collection == "array":
+            items = []
+            for _ in range(count):
+                item, offset = decode_messagepack(data, offset)
+                items.append(item)
+            return sized_node(kind, started, offset, items=items), offset
+        entries = []
+        for _ in range(count):
+            key, offset = decode_messagepack(data, offset)
+            value, offset = decode_messagepack(data, offset)
+            entries.append({"key": key, "value": value})
+        return sized_node(kind, started, offset, entries=entries), offset
+
+    raise ValueError(f"unsupported MessagePack prefix 0x{prefix:02x}")
+
+
+def node_string_bytes(node):
+    if "utf8" in node:
+        return node["utf8"].encode("utf-8")
+    if "invalidUTF8Hex" in node:
+        return bytes.fromhex(node["invalidUTF8Hex"])
+    if "binaryHex" in node:
+        return bytes.fromhex(node["binaryHex"])
+    return None
+
+
+def map_value(node, wanted):
+    for entry in node.get("entries", []):
+        key = node_string_bytes(entry["key"])
+        if key == wanted:
+            return entry["value"]
+    return None
+
+
+def chunk_node(node):
+    items = node.get("items", [])
+    if not items:
+        return None
+    return map_value(items[-1], b"chunk")
+
+
+def encode_string(raw):
+    size = len(raw)
+    if size < 32:
+        return bytes([0xa0 | size]) + raw
+    if size <= 0xff:
+        return b"\xd9" + bytes([size]) + raw
+    if size <= 0xffff:
+        return b"\xda" + size.to_bytes(2, "big") + raw
+    return b"\xdb" + size.to_bytes(4, "big") + raw
+
+
+def encode_ack(chunk):
+    raw = node_string_bytes(chunk)
+    if raw is None:
+        raise ValueError("Fluentd chunk identifier is not a string or binary value")
+    if "binaryHex" in chunk:
+        size = len(raw)
+        if size <= 0xff:
+            encoded = b"\xc4" + bytes([size]) + raw
+        elif size <= 0xffff:
+            encoded = b"\xc5" + size.to_bytes(2, "big") + raw
+        else:
+            encoded = b"\xc6" + size.to_bytes(4, "big") + raw
+    else:
+        encoded = encode_string(raw)
+    return b"\x81\xa3ack" + encoded
+
+
+(
+    mode,
+    ready_path,
+    result_path,
+    pid_path,
+    socket_path,
+    cert_path,
+    key_path,
+    expected_text,
+) = sys.argv[1:]
+expected = int(expected_text)
+for path in (ready_path, result_path, pid_path, socket_path):
+    if path == "-":
+        continue
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+with open(pid_path, "w", encoding="ascii") as pid_file:
+    pid_file.write(str(os.getpid()))
+
+server = None
+connection = None
+try:
+    if mode.endswith("-udp"):
+        server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        server.bind(("127.0.0.1", 0))
+    elif mode.endswith("-unix"):
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(socket_path)
+        server.listen(1)
+    else:
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+    server.settimeout(20.0)
+
+    ready = {"mode": mode}
+    if mode.endswith("-unix"):
+        ready["socketPath"] = socket_path
+    else:
+        ready["host"] = "127.0.0.1"
+        ready["port"] = server.getsockname()[1]
+    with open(ready_path, "w", encoding="utf-8") as ready_file:
+        json.dump(ready, ready_file, separators=(",", ":"), sort_keys=True)
+
+    if mode.endswith("-udp"):
+        datagrams = []
+        for _ in range(expected):
+            datagram, _ = server.recvfrom(1024 * 1024)
+            datagrams.append(datagram.hex())
+        result = {
+            "datagramsHex": datagrams,
+            "mode": mode,
+            "peerClosed": None,
+        }
+    else:
+        connection, _ = server.accept()
+        if mode.endswith("-tls"):
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(certfile=cert_path, keyfile=key_path)
+            connection = context.wrap_socket(connection, server_side=True)
+        connection.settimeout(20.0)
+        received = bytearray()
+        peer_closed = False
+        if mode.startswith("syslog-"):
+            while True:
+                try:
+                    chunk = connection.recv(65536)
+                except socket.timeout:
+                    break
+                if not chunk:
+                    peer_closed = True
+                    break
+                received.extend(chunk)
+            result = {
+                "mode": mode,
+                "peerClosed": peer_closed,
+                "streamHex": bytes(received).hex(),
+            }
+        else:
+            objects = []
+            decoded_offset = 0
+            acknowledgements = []
+            while True:
+                while len(objects) < expected:
+                    try:
+                        node, next_offset = decode_messagepack(received, decoded_offset)
+                    except IncompleteMessagePack:
+                        break
+                    objects.append(node)
+                    decoded_offset = next_offset
+                    chunk = chunk_node(node)
+                    if chunk is not None:
+                        connection.sendall(encode_ack(chunk))
+                        acknowledgements.append(chunk["type"])
+                try:
+                    chunk = connection.recv(65536)
+                except socket.timeout:
+                    break
+                if not chunk:
+                    peer_closed = True
+                    break
+                received.extend(chunk)
+            while len(objects) < expected:
+                node, next_offset = decode_messagepack(received, decoded_offset)
+                objects.append(node)
+                decoded_offset = next_offset
+                chunk = chunk_node(node)
+                if chunk is not None:
+                    connection.sendall(encode_ack(chunk))
+                    acknowledgements.append(chunk["type"])
+            if len(objects) != expected:
+                raise ValueError(
+                    f"received {len(objects)} Fluentd objects, expected {expected}"
+                )
+            result = {
+                "acknowledgedChunkTypes": acknowledgements,
+                "decodedByteCount": decoded_offset,
+                "mode": mode,
+                "objects": objects,
+                "peerClosed": peer_closed,
+                "rawByteCount": len(received),
+                "trailingByteCount": len(received) - decoded_offset,
+            }
+    with open(result_path, "w", encoding="utf-8") as result_file:
+        json.dump(result, result_file, separators=(",", ":"), sort_keys=True)
+finally:
+    if connection is not None:
+        connection.close()
+    if server is not None:
+        server.close()
+"""
+
+
+def read_colima_json(path: str) -> dict[str, Any]:
+    """Read one exact JSON result produced inside the Colima VM."""
+
+    completed = subprocess.run(
+        ["colima", "ssh", "--", "cat", path],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    result = json.loads(completed.stdout)
+    if not isinstance(result, dict):
+        raise OracleFailure(f"Colima receiver result is not an object: {result!r}")
+    return result
+
+
+def start_colima_log_receiver(
+    oracle: LoggingOracle,
+    *,
+    label: str,
+    mode: str,
+    expected_messages: int,
+) -> dict[str, Any]:
+    """Start one bounded receiver with unique, exact VM-side state paths."""
+
+    stem = f"/tmp/{oracle.prefix}-{label}"
+    ready_path = f"{stem}.ready.json"
+    result_path = f"{stem}.result.json"
+    pid_path = f"{stem}.pid"
+    socket_path = f"{stem}.sock" if mode.endswith("-unix") else "-"
+    cert_path = f"{stem}.crt" if mode.endswith("-tls") else "-"
+    key_path = f"{stem}.key" if mode.endswith("-tls") else "-"
+    paths = [ready_path, result_path, pid_path]
+    paths.extend(path for path in (socket_path, cert_path, key_path) if path != "-")
+    subprocess.run(
+        ["colima", "ssh", "--", "rm", "-f", *paths],
+        check=True,
+        capture_output=True,
+        timeout=10,
+    )
+    process: subprocess.Popen[str] | None = None
+    receiver: dict[str, Any] | None = None
+    try:
+        if mode.endswith("-tls"):
+            subprocess.run(
+                [
+                    "colima",
+                    "ssh",
+                    "--",
+                    "openssl",
+                    "req",
+                    "-x509",
+                    "-nodes",
+                    "-newkey",
+                    "rsa:2048",
+                    "-keyout",
+                    key_path,
+                    "-out",
+                    cert_path,
+                    "-days",
+                    "1",
+                    "-subj",
+                    "/CN=127.0.0.1",
+                    "-addext",
+                    "subjectAltName=IP:127.0.0.1",
+                ],
+                check=True,
+                capture_output=True,
+                timeout=20,
+            )
+
+        process = subprocess.Popen(
+            [
+                "colima",
+                "ssh",
+                "--",
+                "python3",
+                "-u",
+                "-c",
+                REMOTE_LOG_RECEIVER_SCRIPT,
+                mode,
+                ready_path,
+                result_path,
+                pid_path,
+                socket_path,
+                cert_path,
+                key_path,
+                str(expected_messages),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+        receiver = {
+            "certPath": cert_path,
+            "keyPath": key_path,
+            "paths": paths,
+            "pidPath": pid_path,
+            "process": process,
+            "readyPath": ready_path,
+            "resultPath": result_path,
+            "socketPath": socket_path,
+        }
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            if colima_path_exists(ready_path):
+                try:
+                    receiver["ready"] = read_colima_json(ready_path)
+                except (json.JSONDecodeError, subprocess.CalledProcessError):
+                    time.sleep(0.05)
+                    continue
+                return receiver
+            if process.poll() is not None:
+                _, stderr = process.communicate()
+                raise OracleFailure(f"{mode} receiver exited before ready: {stderr}")
+            time.sleep(0.05)
+        raise OracleFailure(f"timed out waiting for {mode} receiver")
+    except BaseException:
+        if receiver is not None:
+            cleanup_colima_log_receiver(receiver)
+        else:
+            subprocess.run(
+                ["colima", "ssh", "--", "rm", "-f", *paths],
+                check=False,
+                capture_output=True,
+                timeout=10,
+            )
+        raise
+
+
+def finish_colima_log_receiver(receiver: dict[str, Any]) -> dict[str, Any]:
+    """Wait for one bounded receiver and return its exact result."""
+
+    process: subprocess.Popen[str] = receiver["process"]
+    try:
+        _, stderr = process.communicate(timeout=25)
+    except subprocess.TimeoutExpired as error:
+        raise OracleFailure("remote logging receiver did not terminate") from error
+    if process.returncode != 0:
+        raise OracleFailure(f"remote logging receiver failed: {stderr}")
+    if not colima_path_exists(receiver["resultPath"]):
+        raise OracleFailure("remote logging receiver did not write a result")
+    return read_colima_json(receiver["resultPath"])
+
+
+def cleanup_colima_log_receiver(receiver: dict[str, Any]) -> dict[str, Any]:
+    """Stop one exact receiver, remove its paths, and prove zero VM residue."""
+
+    process: subprocess.Popen[str] = receiver["process"]
+    pid_path: str = receiver["pidPath"]
+    if process.poll() is None and colima_path_exists(pid_path):
+        cleanup_script = (
+            "import os,signal,sys; "
+            "pid=int(open(sys.argv[1],encoding='ascii').read()); "
+            "cmd=open(f'/proc/{pid}/cmdline','rb').read(); "
+            "os.kill(pid,signal.SIGTERM) if sys.argv[2].encode() in cmd else None"
+        )
+        subprocess.run(
+            [
+                "colima",
+                "ssh",
+                "--",
+                "python3",
+                "-c",
+                cleanup_script,
+                pid_path,
+                receiver["readyPath"],
+            ],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+    subprocess.run(
+        ["colima", "ssh", "--", "rm", "-f", *receiver["paths"]],
+        check=True,
+        capture_output=True,
+        timeout=10,
+    )
+    residue = [
+        path for path in receiver["paths"] if colima_path_exists(path)
+    ]
+    if residue:
+        raise OracleFailure(f"remote logging receiver cleanup left state: {residue}")
+    return {
+        "receiverProcessRunning": False,
+        "vmPathsRemaining": [],
+    }
+
+
+REMOTE_LOG_COMMAND = [
+    "sh",
+    "-c",
+    "printf 'stdout-ascii\\n'; sleep 0.2; "
+    "printf 'stderr-utf8-\\342\\230\\203\\n' >&2; sleep 0.2; "
+    "printf 'stdout-binary-\\377\\000-end\\n'",
+]
+REMOTE_LOG_MARKERS = (
+    b"stdout-ascii",
+    "stderr-utf8-☃".encode(),
+    b"stdout-binary-\xff\x00-end",
+)
+SYSLOG_MESSAGE_PATTERN = re.compile(
+    rb"^<(\d+)>1 (\S+) (\S+) (\S+) (\d+) (\S+) - (.*)$",
+    re.DOTALL,
+)
+
+
+def receiver_address(receiver: dict[str, Any], scheme: str) -> str:
+    """Build a Docker logging address from one ready receiver."""
+
+    ready = receiver["ready"]
+    if scheme in ("unix", "unixgram"):
+        return f"{scheme}://{ready['socketPath']}"
+    return f"{scheme}://{ready['host']}:{ready['port']}"
+
+
+def parse_syslog_frames(mode: str, raw: dict[str, Any]) -> tuple[list[bytes], dict[str, Any]]:
+    """Split syslog transport bytes without preserving read chunk boundaries."""
+
+    if mode == "syslog-udp":
+        frames = [bytes.fromhex(value) for value in raw["datagramsHex"]]
+        return frames, {
+            "datagramBoundariesAreMessageBoundaries": True,
+            "framing": "one RFC 5424 message per UDP datagram; no delimiter",
+        }
+
+    stream = bytes.fromhex(raw["streamHex"])
+    if mode == "syslog-tls":
+        frames: list[bytes] = []
+        prefixes: list[int] = []
+        offset = 0
+        while offset < len(stream):
+            separator = stream.find(b" ", offset)
+            if separator < 0:
+                raise OracleFailure("TLS syslog stream has no octet-count separator")
+            prefix = stream[offset:separator]
+            if not prefix.isdigit():
+                raise OracleFailure(f"invalid TLS syslog octet count: {prefix!r}")
+            size = int(prefix)
+            started = separator + 1
+            ended = started + size
+            if ended > len(stream):
+                raise OracleFailure("TLS syslog octet count exceeds stream length")
+            frames.append(stream[started:ended])
+            prefixes.append(size)
+            offset = ended
+        return frames, {
+            "framing": "RFC 6587 octet counting",
+            "octetCounts": prefixes,
+            "trailingByteCount": len(stream) - offset,
+        }
+
+    if stream and not stream.endswith(b"\n"):
+        raise OracleFailure(f"{mode} syslog stream is not LF terminated")
+    frames = stream[:-1].split(b"\n") if stream else []
+    return frames, {
+        "framing": "RFC 6587 non-transparent LF delimiter",
+        "streamEndsWithLF": stream.endswith(b"\n"),
+    }
+
+
+def normalize_syslog_wire(
+    raw: dict[str, Any],
+    *,
+    mode: str,
+    container_id: str,
+    container_name: str,
+) -> dict[str, Any]:
+    """Normalize only volatile syslog fields while retaining exact bytes."""
+
+    frames, framing = parse_syslog_frames(mode, raw)
+    normalized_frames: list[dict[str, Any]] = []
+    for frame in frames:
+        match = SYSLOG_MESSAGE_PATTERN.match(frame)
+        if match is None:
+            raise OracleFailure(f"invalid RFC 5424 syslog payload: {frame!r}")
+        priority = int(match.group(1))
+        timestamp = match.group(2).decode("ascii")
+        if re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}(?:Z|[+-]\d{2}:\d{2})",
+            timestamp,
+        ) is None:
+            raise OracleFailure(f"invalid RFC 5424 microsecond timestamp: {timestamp}")
+        hostname, tag, pid, message_id, content = match.group(3, 4, 5, 6, 7)
+        dynamic_replacements = (
+            (container_id.encode(), b"<container-id>"),
+            (container_id[:12].encode(), b"<container-id-short>"),
+            (container_name.lstrip("/").encode(), b"<container-name>"),
+        )
+
+        def normalized(value: bytes) -> bytes:
+            for actual, replacement in dynamic_replacements:
+                value = value.replace(actual, replacement)
+            return value
+
+        normalized_hostname = normalized(hostname)
+        normalized_tag = normalized(tag)
+        normalized_message_id = normalized(message_id)
+        normalized_message = (
+            f"<{priority}>1 <rfc3339-micro-utc> ".encode()
+            + normalized_hostname
+            + b" "
+            + normalized_tag
+            + b" <daemon-pid> "
+            + normalized_message_id
+            + b" - "
+            + content
+        )
+        try:
+            content_utf8: str | None = content.decode("utf-8")
+        except UnicodeDecodeError:
+            content_utf8 = None
+        normalized_frames.append(
+            {
+                "appName": normalized_tag.decode("ascii"),
+                "contentBase64": base64.b64encode(content).decode("ascii"),
+                "contentHex": content.hex(),
+                "contentUTF8": content_utf8,
+                "facility": priority >> 3,
+                "hostname": normalized_hostname.decode("ascii"),
+                "messageID": normalized_message_id.decode("ascii"),
+                "normalizedMessageByteCount": len(normalized_message),
+                "normalizedMessageHex": normalized_message.hex(),
+                "priority": priority,
+                "processID": "<daemon-pid>",
+                "severity": priority & 7,
+                "structuredData": "-",
+                "timestamp": "<rfc3339-micro-utc>",
+                "timestampFractionDigits": 6,
+                "version": 1,
+            }
+        )
+    observed_content = [
+        bytes.fromhex(frame["contentHex"]).removesuffix(b"\n")
+        for frame in normalized_frames
+    ]
+    if observed_content != list(REMOTE_LOG_MARKERS):
+        raise OracleFailure(
+            f"syslog receiver observed unexpected content order: {observed_content!r}"
+        )
+    if mode == "syslog-tls":
+        original_counts = framing.pop("octetCounts")
+        framing["octetCountsMatchPayloadByteCounts"] = original_counts == [
+            len(frame) for frame in frames
+        ]
+        framing["normalizedOctetCounts"] = [
+            frame["normalizedMessageByteCount"] for frame in normalized_frames
+        ]
+    return {
+        "frames": normalized_frames,
+        "framing": framing,
+        "peerClosedAfterContainerExit": raw["peerClosed"],
+        "readChunkBoundariesNormalizedAway": True,
+    }
+
+
+def capture_syslog_wire_transport(
+    oracle: LoggingOracle,
+    *,
+    label: str,
+    mode: str,
+    scheme: str,
+) -> dict[str, Any]:
+    """Capture one exact Docker syslog wire transport inside Colima."""
+
+    receiver = start_colima_log_receiver(
+        oracle,
+        label=label,
+        mode=mode,
+        expected_messages=len(REMOTE_LOG_MARKERS),
+    )
+    result: dict[str, Any] | None = None
+    try:
+        address = receiver_address(receiver, scheme)
+        options = {
+            "cache-disabled": "true",
+            "syslog-address": address,
+            "syslog-facility": "local1",
+            "syslog-format": "rfc5424micro",
+            "tag": "oracle-{{.Name}}-{{.ID}}",
+        }
+        if mode == "syslog-tls":
+            options["syslog-tls-ca-cert"] = receiver["certPath"]
+        identifier, create = oracle.create(
+            f"syslog-wire-{label}",
+            command=REMOTE_LOG_COMMAND,
+            log_config={"Type": "syslog", "Config": options},
+        )
+        assert identifier is not None
+        inspect_before = oracle.inspect(identifier)
+        start = oracle.start(identifier)
+        wait = oracle.wait(identifier)
+        raw = finish_colima_log_receiver(receiver)
+        inspect = normalized_inspect(oracle.inspect(identifier))
+        inspect_options = inspect["logConfig"]["Config"]
+        inspect_options["syslog-address"] = f"{scheme}://<colima-oracle-receiver>"
+        if "syslog-tls-ca-cert" in inspect_options:
+            inspect_options["syslog-tls-ca-cert"] = "<unique-colima-ca-cert>"
+        result = {
+            "create": create,
+            "inspectAfterExit": inspect,
+            "phase": {
+                "configurationAcceptedAtCreate": create["httpStatus"] == 201,
+                "connectionEstablishedAtStart": start["httpStatus"] == 204,
+                "containerExitCode": wait["exitCode"],
+            },
+            "requestedTransport": scheme,
+            "wire": normalize_syslog_wire(
+                raw,
+                mode=mode,
+                container_id=identifier,
+                container_name=inspect_before["Name"],
+            ),
+        }
+    finally:
+        cleanup = cleanup_colima_log_receiver(receiver)
+    assert result is not None
+    result["cleanup"] = cleanup
+    return result
+
+
+def node_utf8(node: dict[str, Any]) -> str | None:
+    value = node.get("utf8")
+    return value if isinstance(value, str) else None
+
+
+def messagepack_map_value(node: dict[str, Any], key: str) -> dict[str, Any] | None:
+    for entry in node.get("entries", []):
+        if node_utf8(entry["key"]) == key:
+            return entry["value"]
+    return None
+
+
+def normalize_messagepack_node(
+    node: dict[str, Any],
+    *,
+    replacements: tuple[tuple[str, str], ...],
+) -> dict[str, Any]:
+    """Normalize dynamic strings and map order while retaining wire scalar types."""
+
+    normalized = dict(node)
+    value = normalized.get("utf8")
+    if isinstance(value, str):
+        for actual, replacement in replacements:
+            value = value.replace(actual, replacement)
+        normalized["utf8"] = value
+    if "items" in normalized:
+        normalized["items"] = [
+            normalize_messagepack_node(item, replacements=replacements)
+            for item in normalized["items"]
+        ]
+    if "entries" in normalized:
+        entries = [
+            {
+                "key": normalize_messagepack_node(
+                    entry["key"], replacements=replacements
+                ),
+                "value": normalize_messagepack_node(
+                    entry["value"], replacements=replacements
+                ),
+            }
+            for entry in normalized["entries"]
+        ]
+        entries.sort(
+            key=lambda entry: json.dumps(
+                entry["key"], separators=(",", ":"), sort_keys=True
+            )
+        )
+        normalized["entries"] = entries
+    return normalized
+
+
+def recompute_normalized_messagepack_byte_counts(node: dict[str, Any]) -> int:
+    """Recompute canonical sizes after volatile scalar values are normalized."""
+
+    kind = node["type"]
+    if "items" in node:
+        header = 1 if kind == "fixarray" else 3 if kind == "array16" else 5
+        node["byteCount"] = header + sum(
+            recompute_normalized_messagepack_byte_counts(item)
+            for item in node["items"]
+        )
+        return node["byteCount"]
+    if "entries" in node:
+        header = 1 if kind == "fixmap" else 3 if kind == "map16" else 5
+        node["byteCount"] = header + sum(
+            recompute_normalized_messagepack_byte_counts(entry["key"])
+            + recompute_normalized_messagepack_byte_counts(entry["value"])
+            for entry in node["entries"]
+        )
+        return node["byteCount"]
+    if "utf8" in node:
+        size = len(node["utf8"].encode("utf-8"))
+        node["byteCountValue"] = size
+        header = 1 if kind == "fixstr" else 2 if kind == "str8" else 3 if kind == "str16" else 5
+        node["byteCount"] = header + size
+        return node["byteCount"]
+    if "invalidUTF8Hex" in node:
+        size = len(bytes.fromhex(node["invalidUTF8Hex"]))
+        node["byteCountValue"] = size
+        header = 1 if kind == "fixstr" else 2 if kind == "str8" else 3 if kind == "str16" else 5
+        node["byteCount"] = header + size
+        return node["byteCount"]
+    if "binaryHex" in node and node["binaryHex"] != "<chunk-id-bytes>":
+        size = len(bytes.fromhex(node["binaryHex"]))
+        node["byteCountValue"] = size
+        header = 2 if kind == "bin8" else 3 if kind == "bin16" else 5
+        node["byteCount"] = header + size
+        return node["byteCount"]
+    if node.get("binaryHex") == "<chunk-id-bytes>":
+        size = len(b"<chunk-id-bytes>")
+        node["byteCountValue"] = size
+        header = 2 if kind == "bin8" else 3 if kind == "bin16" else 5
+        node["byteCount"] = header + size
+        return node["byteCount"]
+    return node["byteCount"]
+
+
+def messagepack_plain_value(node: dict[str, Any]) -> Any:
+    if "utf8" in node:
+        return node["utf8"]
+    if "invalidUTF8Hex" in node:
+        return {"invalidUTF8StringHex": node["invalidUTF8Hex"]}
+    if "binaryHex" in node:
+        return {"binaryHex": node["binaryHex"]}
+    if "value" in node:
+        return node["value"]
+    if "items" in node:
+        return [messagepack_plain_value(item) for item in node["items"]]
+    if "entries" in node:
+        return {
+            str(messagepack_plain_value(entry["key"])): messagepack_plain_value(
+                entry["value"]
+            )
+            for entry in node["entries"]
+        }
+    if "extensionHex" in node:
+        return {
+            "extensionHex": node["extensionHex"],
+            "extensionType": node["extensionType"],
+        }
+    raise OracleFailure(f"unsupported normalized MessagePack node: {node}")
+
+
+def normalize_fluentd_wire(
+    raw: dict[str, Any],
+    *,
+    container_id: str,
+    container_name: str,
+) -> dict[str, Any]:
+    """Normalize Fluent Forward envelopes while retaining MessagePack wire types."""
+
+    replacements = (
+        (container_id, "<container-id>"),
+        (container_id[:12], "<container-id-short>"),
+        (container_name, "<container-name>"),
+        (container_name.lstrip("/"), "<container-name>"),
+    )
+    records: list[dict[str, Any]] = []
+    for original in raw["objects"]:
+        items = original.get("items", [])
+        if len(items) not in (3, 4):
+            raise OracleFailure(f"unexpected Fluentd envelope shape: {original}")
+        timestamp_node = items[1]
+        timestamp: dict[str, Any]
+        if "extensionHex" in timestamp_node:
+            encoded = bytes.fromhex(timestamp_node["extensionHex"])
+            if timestamp_node.get("extensionType") != 0 or len(encoded) != 8:
+                raise OracleFailure(f"unexpected Fluentd EventTime value: {timestamp_node}")
+            seconds, nanoseconds = struct.unpack(">II", encoded)
+            if nanoseconds >= 1_000_000_000:
+                raise OracleFailure("Fluentd EventTime nanoseconds are out of range")
+            timestamp = {
+                "encoding": "MessagePack EventTime extension type 0",
+                "nanosecondsInRange": True,
+                "secondsArePositive": seconds > 0,
+                "wireType": timestamp_node["type"],
+            }
+        elif isinstance(timestamp_node.get("value"), int):
+            timestamp = {
+                "encoding": "MessagePack integer Unix seconds",
+                "secondsArePositive": timestamp_node["value"] > 0,
+                "wireType": timestamp_node["type"],
+            }
+        else:
+            raise OracleFailure(f"unsupported Fluentd timestamp: {timestamp_node}")
+
+        normalized = normalize_messagepack_node(
+            original,
+            replacements=replacements,
+        )
+        normalized_timestamp = normalized["items"][1]
+        if "extensionHex" in normalized_timestamp:
+            normalized_timestamp["extensionHex"] = "<event-time-bytes>"
+        else:
+            normalized_timestamp["value"] = "<unix-seconds>"
+
+        chunk_type: str | None = None
+        if len(items) == 4:
+            original_chunk = messagepack_map_value(items[3], "chunk")
+            normalized_chunk = messagepack_map_value(normalized["items"][3], "chunk")
+            if original_chunk is not None and normalized_chunk is not None:
+                chunk_type = original_chunk["type"]
+                if "utf8" in normalized_chunk:
+                    normalized_chunk["utf8"] = "<chunk-id>"
+                elif "binaryHex" in normalized_chunk:
+                    normalized_chunk["binaryHex"] = "<chunk-id-bytes>"
+                else:
+                    raise OracleFailure(
+                        f"unsupported Fluentd chunk identifier: {original_chunk}"
+                    )
+
+        normalized_byte_count = recompute_normalized_messagepack_byte_counts(
+            normalized
+        )
+
+        semantic = messagepack_plain_value(normalized)
+        records.append(
+            {
+                "chunkIdentifierWireType": chunk_type,
+                "normalizedMessagePackByteCount": normalized_byte_count,
+                "semanticEnvelope": semantic,
+                "timestamp": timestamp,
+                "wireEnvelope": normalized,
+            }
+        )
+
+    payloads = [record["semanticEnvelope"][2] for record in records]
+    observed_content: list[bytes] = []
+    for payload in payloads:
+        log_value = payload["log"]
+        if isinstance(log_value, str):
+            observed_content.append(log_value.encode().removesuffix(b"\n"))
+        else:
+            observed_content.append(
+                bytes.fromhex(log_value["invalidUTF8StringHex"]).removesuffix(b"\n")
+            )
+        if payload.get("oracle.label") != "alpha" or payload.get("ORACLE_ENV") != "bravo":
+            raise OracleFailure(f"Fluentd metadata is incomplete: {payload}")
+    if observed_content != list(REMOTE_LOG_MARKERS):
+        raise OracleFailure(
+            f"Fluentd receiver observed unexpected content order: {observed_content!r}"
+        )
+    return {
+        "acknowledgedChunkTypes": raw["acknowledgedChunkTypes"],
+        "decodedByteCountEqualsRawByteCount": (
+            raw["decodedByteCount"] == raw["rawByteCount"]
+        ),
+        "framing": "concatenated self-delimiting MessagePack objects",
+        "mapEntryOrderNormalizedAway": True,
+        "peerClosedAfterContainerExit": raw["peerClosed"],
+        "records": records,
+        "topLevelObjectCount": len(records),
+        "trailingByteCount": raw["trailingByteCount"],
+    }
+
+
+def capture_fluentd_wire_transport(
+    oracle: LoggingOracle,
+    *,
+    label: str,
+    mode: str,
+    scheme: str,
+    request_ack: bool,
+    sub_second_precision: bool,
+) -> dict[str, Any]:
+    """Capture one exact Docker Fluentd Forward transport inside Colima."""
+
+    receiver = start_colima_log_receiver(
+        oracle,
+        label=label,
+        mode=mode,
+        expected_messages=len(REMOTE_LOG_MARKERS),
+    )
+    result: dict[str, Any] | None = None
+    try:
+        address = receiver_address(receiver, scheme)
+        identifier, create = oracle.create(
+            f"fluentd-wire-{label}",
+            command=REMOTE_LOG_COMMAND,
+            environment=["ORACLE_ENV=bravo"],
+            labels={"oracle.label": "alpha"},
+            log_config={
+                "Type": "fluentd",
+                "Config": {
+                    "cache-disabled": "true",
+                    "env": "ORACLE_ENV",
+                    "fluentd-address": address,
+                    "fluentd-request-ack": str(request_ack).lower(),
+                    "fluentd-sub-second-precision": str(sub_second_precision).lower(),
+                    "labels": "oracle.label",
+                    "tag": "oracle.{{.Name}}.{{.ID}}",
+                },
+            },
+        )
+        assert identifier is not None
+        inspect_before = oracle.inspect(identifier)
+        start = oracle.start(identifier)
+        wait = oracle.wait(identifier)
+        raw = finish_colima_log_receiver(receiver)
+        inspect = normalized_inspect(oracle.inspect(identifier))
+        inspect["logConfig"]["Config"]["fluentd-address"] = (
+            f"{scheme}://<colima-oracle-receiver>"
+        )
+        result = {
+            "ackRequested": request_ack,
+            "create": create,
+            "inspectAfterExit": inspect,
+            "phase": {
+                "configurationAcceptedAtCreate": create["httpStatus"] == 201,
+                "connectionEstablishedAtStart": start["httpStatus"] == 204,
+                "containerExitCode": wait["exitCode"],
+            },
+            "requestedTransport": scheme,
+            "subSecondPrecisionRequested": sub_second_precision,
+            "wire": normalize_fluentd_wire(
+                raw,
+                container_id=identifier,
+                container_name=inspect_before["Name"],
+            ),
+        }
+    finally:
+        cleanup = cleanup_colima_log_receiver(receiver)
+    assert result is not None
+    result["cleanup"] = cleanup
+    return result
+
+
+def capture_fluentd_async_reconnect(oracle: LoggingOracle) -> dict[str, Any]:
+    """Prove buffered async delivery after an initially absent Unix receiver."""
+
+    label = "async-reconnect"
+    socket_path = f"/tmp/{oracle.prefix}-{label}.sock"
+    subprocess.run(
+        ["colima", "ssh", "--", "rm", "-f", socket_path],
+        check=True,
+        capture_output=True,
+        timeout=10,
+    )
+    receiver: dict[str, Any] | None = None
+    result: dict[str, Any] | None = None
+    try:
+        identifier, create = oracle.create(
+            "fluentd-wire-async-reconnect",
+            command=[*REMOTE_LOG_COMMAND[:-1], REMOTE_LOG_COMMAND[-1] + "; sleep 2"],
+            environment=["ORACLE_ENV=bravo"],
+            labels={"oracle.label": "alpha"},
+            log_config={
+                "Type": "fluentd",
+                "Config": {
+                    "cache-disabled": "true",
+                    "env": "ORACLE_ENV",
+                    "fluentd-address": f"unix://{socket_path}",
+                    "fluentd-async": "true",
+                    "fluentd-async-reconnect-interval": "100ms",
+                    "fluentd-request-ack": "false",
+                    "fluentd-sub-second-precision": "false",
+                    "labels": "oracle.label",
+                    "tag": "oracle.{{.Name}}.{{.ID}}",
+                },
+            },
+        )
+        assert identifier is not None
+        inspect_before = oracle.inspect(identifier)
+        receiver_absent_at_start = not colima_path_exists(
+            socket_path,
+            socket_path=True,
+        )
+        start = oracle.start(identifier)
+        listener_delay_seconds = 0.75
+        time.sleep(listener_delay_seconds)
+        receiver = start_colima_log_receiver(
+            oracle,
+            label=label,
+            mode="fluentd-unix",
+            expected_messages=len(REMOTE_LOG_MARKERS),
+        )
+        wait = oracle.wait(identifier)
+        raw = finish_colima_log_receiver(receiver)
+        inspect = normalized_inspect(oracle.inspect(identifier))
+        inspect["logConfig"]["Config"]["fluentd-address"] = (
+            "unix://<colima-oracle-receiver>"
+        )
+        wire = normalize_fluentd_wire(
+            raw,
+            container_id=identifier,
+            container_name=inspect_before["Name"],
+        )
+        result = {
+            "ackRequested": False,
+            "create": create,
+            "inspectAfterExit": inspect,
+            "phase": {
+                "configurationAcceptedAtCreate": create["httpStatus"] == 201,
+                "containerExitCode": wait["exitCode"],
+                "listenerDelaySeconds": listener_delay_seconds,
+                "receiverSocketAbsentAtStart": receiver_absent_at_start,
+                "startSucceededWithoutReceiver": start["httpStatus"] == 204,
+            },
+            "requestedTransport": "unix",
+            "subSecondPrecisionRequested": False,
+            "wire": wire,
+        }
+    finally:
+        if receiver is not None:
+            cleanup = cleanup_colima_log_receiver(receiver)
+        else:
+            subprocess.run(
+                ["colima", "ssh", "--", "rm", "-f", socket_path],
+                check=True,
+                capture_output=True,
+                timeout=10,
+            )
+            if colima_path_exists(socket_path):
+                raise OracleFailure(
+                    "Fluentd reconnect cleanup left its receiver socket"
+                )
+            cleanup = {
+                "receiverProcessRunning": False,
+                "vmPathsRemaining": [],
+            }
+    assert result is not None
+    result["cleanup"] = cleanup
+    return result
+
+
+def capture_fluentd_tls_trust_gap(oracle: LoggingOracle) -> dict[str, Any]:
+    """Freeze why a self-contained Fluentd TLS wire oracle cannot authenticate."""
+
+    receiver = start_colima_log_receiver(
+        oracle,
+        label="fluentd-tls-gap",
+        mode="fluentd-tls",
+        expected_messages=1,
+    )
+    result: dict[str, Any] | None = None
+    try:
+        identifier, create = oracle.create(
+            "fluentd-wire-tls-gap",
+            command=["sh", "-c", "printf 'tls-gap\\n'"],
+            log_config={
+                "Type": "fluentd",
+                "Config": {
+                    "cache-disabled": "true",
+                    "fluentd-address": receiver_address(receiver, "tls"),
+                    "fluentd-max-retries": "0",
+                },
+            },
+        )
+        assert identifier is not None
+        start_status, start_response = oracle.engine.request_json(
+            "POST",
+            f"/v{REQUIRED_API_VERSION}/containers/{identifier}/start",
+            timeout=15,
+        )
+        start_message = start_response.get("message")
+        expected_message = (
+            "failed to create task for container: failed to initialize logging driver: "
+            "tls: failed to verify certificate: x509: certificate signed by unknown authority"
+        )
+        if start_status != 500 or start_message != expected_message:
+            raise OracleFailure(
+                "unexpected Fluentd TLS trust result: "
+                f"HTTP {start_status} {start_message!r}"
+            )
+        process: subprocess.Popen[str] = receiver["process"]
+        try:
+            _, receiver_stderr = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            receiver_stderr = ""
+        inspect = normalized_inspect(oracle.inspect(identifier))
+        inspect["logConfig"]["Config"]["fluentd-address"] = (
+            "tls://<colima-oracle-receiver>"
+        )
+        result = {
+            "create": create,
+            "evidenceGap": {
+                "decryptedPayloadCaptured": False,
+                "reason": (
+                    "Docker Fluentd exposes no CA-file or skip-verification log option; "
+                    "capturing this local self-signed endpoint would require mutating "
+                    "the Colima trust store"
+                ),
+            },
+            "inspectAfterFailedStart": inspect,
+            "phase": {
+                "configurationAcceptedAtCreate": create["httpStatus"] == 201,
+                "containerStateAfterFailedStart": inspect["state"]["status"],
+                "startHTTPStatus": start_status,
+                "startMessage": start_message,
+            },
+            "receiverObservedBadCertificateAlert": (
+                "SSLV3_ALERT_BAD_CERTIFICATE" in receiver_stderr.upper()
+            ),
+            "requestedTransport": "tls",
+        }
+    finally:
+        cleanup = cleanup_colima_log_receiver(receiver)
+    assert result is not None
+    result["cleanup"] = cleanup
+    return result
+
+
 FOREGROUND_MARKERS = ("early-out", "early-err", "late-out")
 
 
@@ -1749,6 +3050,58 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
         timings["nonBlockingPressureDrop"] = monotonic_timing(case_started)
 
         case_started = time.monotonic()
+        cases["syslogRemoteWire"] = {
+            "tcp": capture_syslog_wire_transport(
+                oracle,
+                label="tcp",
+                mode="syslog-tcp",
+                scheme="tcp",
+            ),
+            "tls": capture_syslog_wire_transport(
+                oracle,
+                label="tls",
+                mode="syslog-tls",
+                scheme="tcp+tls",
+            ),
+            "udp": capture_syslog_wire_transport(
+                oracle,
+                label="udp",
+                mode="syslog-udp",
+                scheme="udp",
+            ),
+            "unix": capture_syslog_wire_transport(
+                oracle,
+                label="unix",
+                mode="syslog-unix",
+                scheme="unix",
+            ),
+        }
+        timings["syslogRemoteWire"] = monotonic_timing(case_started)
+
+        case_started = time.monotonic()
+        cases["fluentdRemoteWire"] = {
+            "tlsLocalTrustFailure": capture_fluentd_tls_trust_gap(oracle),
+            "unixAsyncReconnect": capture_fluentd_async_reconnect(oracle),
+            "tcpAcknowledgedEventTime": capture_fluentd_wire_transport(
+                oracle,
+                label="tcp-ack",
+                mode="fluentd-tcp",
+                scheme="tcp",
+                request_ack=True,
+                sub_second_precision=True,
+            ),
+            "unixIntegerTime": capture_fluentd_wire_transport(
+                oracle,
+                label="unix",
+                mode="fluentd-unix",
+                scheme="unix",
+                request_ack=False,
+                sub_second_precision=False,
+            ),
+        }
+        timings["fluentdRemoteWire"] = monotonic_timing(case_started)
+
+        case_started = time.monotonic()
         tty_id, tty_create = oracle.create(
             "tty",
             command=[
@@ -1854,7 +3207,7 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
         return {
             "cases": cases,
             "metadata": metadata,
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "timings": timings,
         }
     finally:

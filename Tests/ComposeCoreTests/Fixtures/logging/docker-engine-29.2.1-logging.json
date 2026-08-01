@@ -218,6 +218,1486 @@
         "exitCode": 0
       }
     },
+    "fluentdRemoteWire": {
+      "tcpAcknowledgedEventTime": {
+        "ackRequested": true,
+        "cleanup": {
+          "receiverProcessRunning": false,
+          "vmPathsRemaining": []
+        },
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {
+              "cache-disabled": "true",
+              "env": "ORACLE_ENV",
+              "fluentd-address": "tcp://<colima-oracle-receiver>",
+              "fluentd-request-ack": "true",
+              "fluentd-sub-second-precision": "true",
+              "labels": "oracle.label",
+              "tag": "oracle.{{.Name}}.{{.ID}}"
+            },
+            "Type": "fluentd"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        },
+        "phase": {
+          "configurationAcceptedAtCreate": true,
+          "connectionEstablishedAtStart": true,
+          "containerExitCode": 0
+        },
+        "requestedTransport": "tcp",
+        "subSecondPrecisionRequested": true,
+        "wire": {
+          "acknowledgedChunkTypes": [
+            "fixstr",
+            "fixstr",
+            "fixstr"
+          ],
+          "decodedByteCountEqualsRawByteCount": true,
+          "framing": "concatenated self-delimiting MessagePack objects",
+          "mapEntryOrderNormalizedAway": true,
+          "peerClosedAfterContainerExit": true,
+          "records": [
+            {
+              "chunkIdentifierWireType": "fixstr",
+              "normalizedMessagePackByteCount": 205,
+              "semanticEnvelope": [
+                "oracle.<container-name>.<container-id-short>",
+                {
+                  "extensionHex": "<event-time-bytes>",
+                  "extensionType": 0
+                },
+                {
+                  "ORACLE_ENV": "bravo",
+                  "container_id": "<container-id>",
+                  "container_name": "<container-name>",
+                  "log": "stdout-ascii",
+                  "oracle.label": "alpha",
+                  "source": "stdout"
+                },
+                {
+                  "chunk": "<chunk-id>"
+                }
+              ],
+              "timestamp": {
+                "encoding": "MessagePack EventTime extension type 0",
+                "nanosecondsInRange": true,
+                "secondsArePositive": true,
+                "wireType": "fixext8"
+              },
+              "wireEnvelope": {
+                "byteCount": 205,
+                "items": [
+                  {
+                    "byteCount": 46,
+                    "byteCountValue": 44,
+                    "type": "str8",
+                    "utf8": "oracle.<container-name>.<container-id-short>"
+                  },
+                  {
+                    "byteCount": 10,
+                    "byteCountValue": 8,
+                    "extensionHex": "<event-time-bytes>",
+                    "extensionType": 0,
+                    "type": "fixext8"
+                  },
+                  {
+                    "byteCount": 130,
+                    "entries": [
+                      {
+                        "key": {
+                          "byteCount": 11,
+                          "byteCountValue": 10,
+                          "type": "fixstr",
+                          "utf8": "ORACLE_ENV"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "bravo"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "container_id"
+                        },
+                        "value": {
+                          "byteCount": 16,
+                          "byteCountValue": 14,
+                          "type": "str8",
+                          "utf8": "<container-id>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "oracle.label"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "alpha"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 15,
+                          "byteCountValue": 14,
+                          "type": "fixstr",
+                          "utf8": "container_name"
+                        },
+                        "value": {
+                          "byteCount": 18,
+                          "byteCountValue": 16,
+                          "type": "str8",
+                          "utf8": "<container-name>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 4,
+                          "byteCountValue": 3,
+                          "type": "fixstr",
+                          "utf8": "log"
+                        },
+                        "value": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "stdout-ascii"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "source"
+                        },
+                        "value": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "stdout"
+                        }
+                      }
+                    ],
+                    "type": "fixmap"
+                  },
+                  {
+                    "byteCount": 18,
+                    "entries": [
+                      {
+                        "key": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "chunk"
+                        },
+                        "value": {
+                          "byteCount": 11,
+                          "byteCountValue": 10,
+                          "type": "fixstr",
+                          "utf8": "<chunk-id>"
+                        }
+                      }
+                    ],
+                    "type": "fixmap"
+                  }
+                ],
+                "type": "fixarray"
+              }
+            },
+            {
+              "chunkIdentifierWireType": "fixstr",
+              "normalizedMessagePackByteCount": 208,
+              "semanticEnvelope": [
+                "oracle.<container-name>.<container-id-short>",
+                {
+                  "extensionHex": "<event-time-bytes>",
+                  "extensionType": 0
+                },
+                {
+                  "ORACLE_ENV": "bravo",
+                  "container_id": "<container-id>",
+                  "container_name": "<container-name>",
+                  "log": "stderr-utf8-\u2603",
+                  "oracle.label": "alpha",
+                  "source": "stderr"
+                },
+                {
+                  "chunk": "<chunk-id>"
+                }
+              ],
+              "timestamp": {
+                "encoding": "MessagePack EventTime extension type 0",
+                "nanosecondsInRange": true,
+                "secondsArePositive": true,
+                "wireType": "fixext8"
+              },
+              "wireEnvelope": {
+                "byteCount": 208,
+                "items": [
+                  {
+                    "byteCount": 46,
+                    "byteCountValue": 44,
+                    "type": "str8",
+                    "utf8": "oracle.<container-name>.<container-id-short>"
+                  },
+                  {
+                    "byteCount": 10,
+                    "byteCountValue": 8,
+                    "extensionHex": "<event-time-bytes>",
+                    "extensionType": 0,
+                    "type": "fixext8"
+                  },
+                  {
+                    "byteCount": 133,
+                    "entries": [
+                      {
+                        "key": {
+                          "byteCount": 11,
+                          "byteCountValue": 10,
+                          "type": "fixstr",
+                          "utf8": "ORACLE_ENV"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "bravo"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "container_id"
+                        },
+                        "value": {
+                          "byteCount": 16,
+                          "byteCountValue": 14,
+                          "type": "str8",
+                          "utf8": "<container-id>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "oracle.label"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "alpha"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 15,
+                          "byteCountValue": 14,
+                          "type": "fixstr",
+                          "utf8": "container_name"
+                        },
+                        "value": {
+                          "byteCount": 18,
+                          "byteCountValue": 16,
+                          "type": "str8",
+                          "utf8": "<container-name>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 4,
+                          "byteCountValue": 3,
+                          "type": "fixstr",
+                          "utf8": "log"
+                        },
+                        "value": {
+                          "byteCount": 16,
+                          "byteCountValue": 15,
+                          "type": "fixstr",
+                          "utf8": "stderr-utf8-\u2603"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "source"
+                        },
+                        "value": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "stderr"
+                        }
+                      }
+                    ],
+                    "type": "fixmap"
+                  },
+                  {
+                    "byteCount": 18,
+                    "entries": [
+                      {
+                        "key": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "chunk"
+                        },
+                        "value": {
+                          "byteCount": 11,
+                          "byteCountValue": 10,
+                          "type": "fixstr",
+                          "utf8": "<chunk-id>"
+                        }
+                      }
+                    ],
+                    "type": "fixmap"
+                  }
+                ],
+                "type": "fixarray"
+              }
+            },
+            {
+              "chunkIdentifierWireType": "fixstr",
+              "normalizedMessagePackByteCount": 213,
+              "semanticEnvelope": [
+                "oracle.<container-name>.<container-id-short>",
+                {
+                  "extensionHex": "<event-time-bytes>",
+                  "extensionType": 0
+                },
+                {
+                  "ORACLE_ENV": "bravo",
+                  "container_id": "<container-id>",
+                  "container_name": "<container-name>",
+                  "log": {
+                    "invalidUTF8StringHex": "7374646f75742d62696e6172792dff002d656e64"
+                  },
+                  "oracle.label": "alpha",
+                  "source": "stdout"
+                },
+                {
+                  "chunk": "<chunk-id>"
+                }
+              ],
+              "timestamp": {
+                "encoding": "MessagePack EventTime extension type 0",
+                "nanosecondsInRange": true,
+                "secondsArePositive": true,
+                "wireType": "fixext8"
+              },
+              "wireEnvelope": {
+                "byteCount": 213,
+                "items": [
+                  {
+                    "byteCount": 46,
+                    "byteCountValue": 44,
+                    "type": "str8",
+                    "utf8": "oracle.<container-name>.<container-id-short>"
+                  },
+                  {
+                    "byteCount": 10,
+                    "byteCountValue": 8,
+                    "extensionHex": "<event-time-bytes>",
+                    "extensionType": 0,
+                    "type": "fixext8"
+                  },
+                  {
+                    "byteCount": 138,
+                    "entries": [
+                      {
+                        "key": {
+                          "byteCount": 11,
+                          "byteCountValue": 10,
+                          "type": "fixstr",
+                          "utf8": "ORACLE_ENV"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "bravo"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "container_id"
+                        },
+                        "value": {
+                          "byteCount": 16,
+                          "byteCountValue": 14,
+                          "type": "str8",
+                          "utf8": "<container-id>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "oracle.label"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "alpha"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 15,
+                          "byteCountValue": 14,
+                          "type": "fixstr",
+                          "utf8": "container_name"
+                        },
+                        "value": {
+                          "byteCount": 18,
+                          "byteCountValue": 16,
+                          "type": "str8",
+                          "utf8": "<container-name>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 4,
+                          "byteCountValue": 3,
+                          "type": "fixstr",
+                          "utf8": "log"
+                        },
+                        "value": {
+                          "byteCount": 21,
+                          "byteCountValue": 20,
+                          "invalidUTF8Hex": "7374646f75742d62696e6172792dff002d656e64",
+                          "type": "fixstr"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "source"
+                        },
+                        "value": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "stdout"
+                        }
+                      }
+                    ],
+                    "type": "fixmap"
+                  },
+                  {
+                    "byteCount": 18,
+                    "entries": [
+                      {
+                        "key": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "chunk"
+                        },
+                        "value": {
+                          "byteCount": 11,
+                          "byteCountValue": 10,
+                          "type": "fixstr",
+                          "utf8": "<chunk-id>"
+                        }
+                      }
+                    ],
+                    "type": "fixmap"
+                  }
+                ],
+                "type": "fixarray"
+              }
+            }
+          ],
+          "topLevelObjectCount": 3,
+          "trailingByteCount": 0
+        }
+      },
+      "tlsLocalTrustFailure": {
+        "cleanup": {
+          "receiverProcessRunning": false,
+          "vmPathsRemaining": []
+        },
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "evidenceGap": {
+          "decryptedPayloadCaptured": false,
+          "reason": "Docker Fluentd exposes no CA-file or skip-verification log option; capturing this local self-signed endpoint would require mutating the Colima trust store"
+        },
+        "inspectAfterFailedStart": {
+          "logConfig": {
+            "Config": {
+              "cache-disabled": "true",
+              "fluentd-address": "tls://<colima-oracle-receiver>",
+              "fluentd-max-retries": "0"
+            },
+            "Type": "fluentd"
+          },
+          "logPath": "",
+          "state": {
+            "error": "failed to create task for container: failed to initialize logging driver: tls: failed to verify certificate: x509: certificate signed by unknown authority",
+            "status": "created"
+          },
+          "tty": false
+        },
+        "phase": {
+          "configurationAcceptedAtCreate": true,
+          "containerStateAfterFailedStart": "created",
+          "startHTTPStatus": 500,
+          "startMessage": "failed to create task for container: failed to initialize logging driver: tls: failed to verify certificate: x509: certificate signed by unknown authority"
+        },
+        "receiverObservedBadCertificateAlert": true,
+        "requestedTransport": "tls"
+      },
+      "unixAsyncReconnect": {
+        "ackRequested": false,
+        "cleanup": {
+          "receiverProcessRunning": false,
+          "vmPathsRemaining": []
+        },
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {
+              "cache-disabled": "true",
+              "env": "ORACLE_ENV",
+              "fluentd-address": "unix://<colima-oracle-receiver>",
+              "fluentd-async": "true",
+              "fluentd-async-reconnect-interval": "100ms",
+              "fluentd-request-ack": "false",
+              "fluentd-sub-second-precision": "false",
+              "labels": "oracle.label",
+              "tag": "oracle.{{.Name}}.{{.ID}}"
+            },
+            "Type": "fluentd"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        },
+        "phase": {
+          "configurationAcceptedAtCreate": true,
+          "containerExitCode": 0,
+          "listenerDelaySeconds": 0.75,
+          "receiverSocketAbsentAtStart": true,
+          "startSucceededWithoutReceiver": true
+        },
+        "requestedTransport": "unix",
+        "subSecondPrecisionRequested": false,
+        "wire": {
+          "acknowledgedChunkTypes": [],
+          "decodedByteCountEqualsRawByteCount": true,
+          "framing": "concatenated self-delimiting MessagePack objects",
+          "mapEntryOrderNormalizedAway": true,
+          "peerClosedAfterContainerExit": true,
+          "records": [
+            {
+              "chunkIdentifierWireType": null,
+              "normalizedMessagePackByteCount": 183,
+              "semanticEnvelope": [
+                "oracle.<container-name>.<container-id-short>",
+                "<unix-seconds>",
+                {
+                  "ORACLE_ENV": "bravo",
+                  "container_id": "<container-id>",
+                  "container_name": "<container-name>",
+                  "log": "stdout-ascii",
+                  "oracle.label": "alpha",
+                  "source": "stdout"
+                },
+                {}
+              ],
+              "timestamp": {
+                "encoding": "MessagePack integer Unix seconds",
+                "secondsArePositive": true,
+                "wireType": "int32"
+              },
+              "wireEnvelope": {
+                "byteCount": 183,
+                "items": [
+                  {
+                    "byteCount": 46,
+                    "byteCountValue": 44,
+                    "type": "str8",
+                    "utf8": "oracle.<container-name>.<container-id-short>"
+                  },
+                  {
+                    "byteCount": 5,
+                    "type": "int32",
+                    "value": "<unix-seconds>"
+                  },
+                  {
+                    "byteCount": 130,
+                    "entries": [
+                      {
+                        "key": {
+                          "byteCount": 11,
+                          "byteCountValue": 10,
+                          "type": "fixstr",
+                          "utf8": "ORACLE_ENV"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "bravo"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "container_id"
+                        },
+                        "value": {
+                          "byteCount": 16,
+                          "byteCountValue": 14,
+                          "type": "str8",
+                          "utf8": "<container-id>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "oracle.label"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "alpha"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 15,
+                          "byteCountValue": 14,
+                          "type": "fixstr",
+                          "utf8": "container_name"
+                        },
+                        "value": {
+                          "byteCount": 18,
+                          "byteCountValue": 16,
+                          "type": "str8",
+                          "utf8": "<container-name>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 4,
+                          "byteCountValue": 3,
+                          "type": "fixstr",
+                          "utf8": "log"
+                        },
+                        "value": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "stdout-ascii"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "source"
+                        },
+                        "value": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "stdout"
+                        }
+                      }
+                    ],
+                    "type": "fixmap"
+                  },
+                  {
+                    "byteCount": 1,
+                    "entries": [],
+                    "type": "fixmap"
+                  }
+                ],
+                "type": "fixarray"
+              }
+            },
+            {
+              "chunkIdentifierWireType": null,
+              "normalizedMessagePackByteCount": 186,
+              "semanticEnvelope": [
+                "oracle.<container-name>.<container-id-short>",
+                "<unix-seconds>",
+                {
+                  "ORACLE_ENV": "bravo",
+                  "container_id": "<container-id>",
+                  "container_name": "<container-name>",
+                  "log": "stderr-utf8-\u2603",
+                  "oracle.label": "alpha",
+                  "source": "stderr"
+                },
+                {}
+              ],
+              "timestamp": {
+                "encoding": "MessagePack integer Unix seconds",
+                "secondsArePositive": true,
+                "wireType": "int32"
+              },
+              "wireEnvelope": {
+                "byteCount": 186,
+                "items": [
+                  {
+                    "byteCount": 46,
+                    "byteCountValue": 44,
+                    "type": "str8",
+                    "utf8": "oracle.<container-name>.<container-id-short>"
+                  },
+                  {
+                    "byteCount": 5,
+                    "type": "int32",
+                    "value": "<unix-seconds>"
+                  },
+                  {
+                    "byteCount": 133,
+                    "entries": [
+                      {
+                        "key": {
+                          "byteCount": 11,
+                          "byteCountValue": 10,
+                          "type": "fixstr",
+                          "utf8": "ORACLE_ENV"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "bravo"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "container_id"
+                        },
+                        "value": {
+                          "byteCount": 16,
+                          "byteCountValue": 14,
+                          "type": "str8",
+                          "utf8": "<container-id>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "oracle.label"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "alpha"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 15,
+                          "byteCountValue": 14,
+                          "type": "fixstr",
+                          "utf8": "container_name"
+                        },
+                        "value": {
+                          "byteCount": 18,
+                          "byteCountValue": 16,
+                          "type": "str8",
+                          "utf8": "<container-name>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 4,
+                          "byteCountValue": 3,
+                          "type": "fixstr",
+                          "utf8": "log"
+                        },
+                        "value": {
+                          "byteCount": 16,
+                          "byteCountValue": 15,
+                          "type": "fixstr",
+                          "utf8": "stderr-utf8-\u2603"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "source"
+                        },
+                        "value": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "stderr"
+                        }
+                      }
+                    ],
+                    "type": "fixmap"
+                  },
+                  {
+                    "byteCount": 1,
+                    "entries": [],
+                    "type": "fixmap"
+                  }
+                ],
+                "type": "fixarray"
+              }
+            },
+            {
+              "chunkIdentifierWireType": null,
+              "normalizedMessagePackByteCount": 191,
+              "semanticEnvelope": [
+                "oracle.<container-name>.<container-id-short>",
+                "<unix-seconds>",
+                {
+                  "ORACLE_ENV": "bravo",
+                  "container_id": "<container-id>",
+                  "container_name": "<container-name>",
+                  "log": {
+                    "invalidUTF8StringHex": "7374646f75742d62696e6172792dff002d656e64"
+                  },
+                  "oracle.label": "alpha",
+                  "source": "stdout"
+                },
+                {}
+              ],
+              "timestamp": {
+                "encoding": "MessagePack integer Unix seconds",
+                "secondsArePositive": true,
+                "wireType": "int32"
+              },
+              "wireEnvelope": {
+                "byteCount": 191,
+                "items": [
+                  {
+                    "byteCount": 46,
+                    "byteCountValue": 44,
+                    "type": "str8",
+                    "utf8": "oracle.<container-name>.<container-id-short>"
+                  },
+                  {
+                    "byteCount": 5,
+                    "type": "int32",
+                    "value": "<unix-seconds>"
+                  },
+                  {
+                    "byteCount": 138,
+                    "entries": [
+                      {
+                        "key": {
+                          "byteCount": 11,
+                          "byteCountValue": 10,
+                          "type": "fixstr",
+                          "utf8": "ORACLE_ENV"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "bravo"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "container_id"
+                        },
+                        "value": {
+                          "byteCount": 16,
+                          "byteCountValue": 14,
+                          "type": "str8",
+                          "utf8": "<container-id>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "oracle.label"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "alpha"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 15,
+                          "byteCountValue": 14,
+                          "type": "fixstr",
+                          "utf8": "container_name"
+                        },
+                        "value": {
+                          "byteCount": 18,
+                          "byteCountValue": 16,
+                          "type": "str8",
+                          "utf8": "<container-name>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 4,
+                          "byteCountValue": 3,
+                          "type": "fixstr",
+                          "utf8": "log"
+                        },
+                        "value": {
+                          "byteCount": 21,
+                          "byteCountValue": 20,
+                          "invalidUTF8Hex": "7374646f75742d62696e6172792dff002d656e64",
+                          "type": "fixstr"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "source"
+                        },
+                        "value": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "stdout"
+                        }
+                      }
+                    ],
+                    "type": "fixmap"
+                  },
+                  {
+                    "byteCount": 1,
+                    "entries": [],
+                    "type": "fixmap"
+                  }
+                ],
+                "type": "fixarray"
+              }
+            }
+          ],
+          "topLevelObjectCount": 3,
+          "trailingByteCount": 0
+        }
+      },
+      "unixIntegerTime": {
+        "ackRequested": false,
+        "cleanup": {
+          "receiverProcessRunning": false,
+          "vmPathsRemaining": []
+        },
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {
+              "cache-disabled": "true",
+              "env": "ORACLE_ENV",
+              "fluentd-address": "unix://<colima-oracle-receiver>",
+              "fluentd-request-ack": "false",
+              "fluentd-sub-second-precision": "false",
+              "labels": "oracle.label",
+              "tag": "oracle.{{.Name}}.{{.ID}}"
+            },
+            "Type": "fluentd"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        },
+        "phase": {
+          "configurationAcceptedAtCreate": true,
+          "connectionEstablishedAtStart": true,
+          "containerExitCode": 0
+        },
+        "requestedTransport": "unix",
+        "subSecondPrecisionRequested": false,
+        "wire": {
+          "acknowledgedChunkTypes": [],
+          "decodedByteCountEqualsRawByteCount": true,
+          "framing": "concatenated self-delimiting MessagePack objects",
+          "mapEntryOrderNormalizedAway": true,
+          "peerClosedAfterContainerExit": true,
+          "records": [
+            {
+              "chunkIdentifierWireType": null,
+              "normalizedMessagePackByteCount": 183,
+              "semanticEnvelope": [
+                "oracle.<container-name>.<container-id-short>",
+                "<unix-seconds>",
+                {
+                  "ORACLE_ENV": "bravo",
+                  "container_id": "<container-id>",
+                  "container_name": "<container-name>",
+                  "log": "stdout-ascii",
+                  "oracle.label": "alpha",
+                  "source": "stdout"
+                },
+                {}
+              ],
+              "timestamp": {
+                "encoding": "MessagePack integer Unix seconds",
+                "secondsArePositive": true,
+                "wireType": "int32"
+              },
+              "wireEnvelope": {
+                "byteCount": 183,
+                "items": [
+                  {
+                    "byteCount": 46,
+                    "byteCountValue": 44,
+                    "type": "str8",
+                    "utf8": "oracle.<container-name>.<container-id-short>"
+                  },
+                  {
+                    "byteCount": 5,
+                    "type": "int32",
+                    "value": "<unix-seconds>"
+                  },
+                  {
+                    "byteCount": 130,
+                    "entries": [
+                      {
+                        "key": {
+                          "byteCount": 11,
+                          "byteCountValue": 10,
+                          "type": "fixstr",
+                          "utf8": "ORACLE_ENV"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "bravo"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "container_id"
+                        },
+                        "value": {
+                          "byteCount": 16,
+                          "byteCountValue": 14,
+                          "type": "str8",
+                          "utf8": "<container-id>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "oracle.label"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "alpha"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 15,
+                          "byteCountValue": 14,
+                          "type": "fixstr",
+                          "utf8": "container_name"
+                        },
+                        "value": {
+                          "byteCount": 18,
+                          "byteCountValue": 16,
+                          "type": "str8",
+                          "utf8": "<container-name>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 4,
+                          "byteCountValue": 3,
+                          "type": "fixstr",
+                          "utf8": "log"
+                        },
+                        "value": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "stdout-ascii"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "source"
+                        },
+                        "value": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "stdout"
+                        }
+                      }
+                    ],
+                    "type": "fixmap"
+                  },
+                  {
+                    "byteCount": 1,
+                    "entries": [],
+                    "type": "fixmap"
+                  }
+                ],
+                "type": "fixarray"
+              }
+            },
+            {
+              "chunkIdentifierWireType": null,
+              "normalizedMessagePackByteCount": 186,
+              "semanticEnvelope": [
+                "oracle.<container-name>.<container-id-short>",
+                "<unix-seconds>",
+                {
+                  "ORACLE_ENV": "bravo",
+                  "container_id": "<container-id>",
+                  "container_name": "<container-name>",
+                  "log": "stderr-utf8-\u2603",
+                  "oracle.label": "alpha",
+                  "source": "stderr"
+                },
+                {}
+              ],
+              "timestamp": {
+                "encoding": "MessagePack integer Unix seconds",
+                "secondsArePositive": true,
+                "wireType": "int32"
+              },
+              "wireEnvelope": {
+                "byteCount": 186,
+                "items": [
+                  {
+                    "byteCount": 46,
+                    "byteCountValue": 44,
+                    "type": "str8",
+                    "utf8": "oracle.<container-name>.<container-id-short>"
+                  },
+                  {
+                    "byteCount": 5,
+                    "type": "int32",
+                    "value": "<unix-seconds>"
+                  },
+                  {
+                    "byteCount": 133,
+                    "entries": [
+                      {
+                        "key": {
+                          "byteCount": 11,
+                          "byteCountValue": 10,
+                          "type": "fixstr",
+                          "utf8": "ORACLE_ENV"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "bravo"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "container_id"
+                        },
+                        "value": {
+                          "byteCount": 16,
+                          "byteCountValue": 14,
+                          "type": "str8",
+                          "utf8": "<container-id>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "oracle.label"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "alpha"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 15,
+                          "byteCountValue": 14,
+                          "type": "fixstr",
+                          "utf8": "container_name"
+                        },
+                        "value": {
+                          "byteCount": 18,
+                          "byteCountValue": 16,
+                          "type": "str8",
+                          "utf8": "<container-name>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 4,
+                          "byteCountValue": 3,
+                          "type": "fixstr",
+                          "utf8": "log"
+                        },
+                        "value": {
+                          "byteCount": 16,
+                          "byteCountValue": 15,
+                          "type": "fixstr",
+                          "utf8": "stderr-utf8-\u2603"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "source"
+                        },
+                        "value": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "stderr"
+                        }
+                      }
+                    ],
+                    "type": "fixmap"
+                  },
+                  {
+                    "byteCount": 1,
+                    "entries": [],
+                    "type": "fixmap"
+                  }
+                ],
+                "type": "fixarray"
+              }
+            },
+            {
+              "chunkIdentifierWireType": null,
+              "normalizedMessagePackByteCount": 191,
+              "semanticEnvelope": [
+                "oracle.<container-name>.<container-id-short>",
+                "<unix-seconds>",
+                {
+                  "ORACLE_ENV": "bravo",
+                  "container_id": "<container-id>",
+                  "container_name": "<container-name>",
+                  "log": {
+                    "invalidUTF8StringHex": "7374646f75742d62696e6172792dff002d656e64"
+                  },
+                  "oracle.label": "alpha",
+                  "source": "stdout"
+                },
+                {}
+              ],
+              "timestamp": {
+                "encoding": "MessagePack integer Unix seconds",
+                "secondsArePositive": true,
+                "wireType": "int32"
+              },
+              "wireEnvelope": {
+                "byteCount": 191,
+                "items": [
+                  {
+                    "byteCount": 46,
+                    "byteCountValue": 44,
+                    "type": "str8",
+                    "utf8": "oracle.<container-name>.<container-id-short>"
+                  },
+                  {
+                    "byteCount": 5,
+                    "type": "int32",
+                    "value": "<unix-seconds>"
+                  },
+                  {
+                    "byteCount": 138,
+                    "entries": [
+                      {
+                        "key": {
+                          "byteCount": 11,
+                          "byteCountValue": 10,
+                          "type": "fixstr",
+                          "utf8": "ORACLE_ENV"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "bravo"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "container_id"
+                        },
+                        "value": {
+                          "byteCount": 16,
+                          "byteCountValue": 14,
+                          "type": "str8",
+                          "utf8": "<container-id>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 13,
+                          "byteCountValue": 12,
+                          "type": "fixstr",
+                          "utf8": "oracle.label"
+                        },
+                        "value": {
+                          "byteCount": 6,
+                          "byteCountValue": 5,
+                          "type": "fixstr",
+                          "utf8": "alpha"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 15,
+                          "byteCountValue": 14,
+                          "type": "fixstr",
+                          "utf8": "container_name"
+                        },
+                        "value": {
+                          "byteCount": 18,
+                          "byteCountValue": 16,
+                          "type": "str8",
+                          "utf8": "<container-name>"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 4,
+                          "byteCountValue": 3,
+                          "type": "fixstr",
+                          "utf8": "log"
+                        },
+                        "value": {
+                          "byteCount": 21,
+                          "byteCountValue": 20,
+                          "invalidUTF8Hex": "7374646f75742d62696e6172792dff002d656e64",
+                          "type": "fixstr"
+                        }
+                      },
+                      {
+                        "key": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "source"
+                        },
+                        "value": {
+                          "byteCount": 7,
+                          "byteCountValue": 6,
+                          "type": "fixstr",
+                          "utf8": "stdout"
+                        }
+                      }
+                    ],
+                    "type": "fixmap"
+                  },
+                  {
+                    "byteCount": 1,
+                    "entries": [],
+                    "type": "fixmap"
+                  }
+                ],
+                "type": "fixarray"
+              }
+            }
+          ],
+          "topLevelObjectCount": 3,
+          "trailingByteCount": 0
+        }
+      }
+    },
     "jsonFileStoppedReadAndFraming": {
       "combinedRead": {
         "contentType": "application/vnd.docker.multiplexed-stream",
@@ -2884,6 +4364,411 @@
       },
       "stopHTTPStatus": 204
     },
+    "syslogRemoteWire": {
+      "tcp": {
+        "cleanup": {
+          "receiverProcessRunning": false,
+          "vmPathsRemaining": []
+        },
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {
+              "cache-disabled": "true",
+              "syslog-address": "tcp://<colima-oracle-receiver>",
+              "syslog-facility": "local1",
+              "syslog-format": "rfc5424micro",
+              "tag": "oracle-{{.Name}}-{{.ID}}"
+            },
+            "Type": "syslog"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        },
+        "phase": {
+          "configurationAcceptedAtCreate": true,
+          "connectionEstablishedAtStart": true,
+          "containerExitCode": 0
+        },
+        "requestedTransport": "tcp",
+        "wire": {
+          "frames": [
+            {
+              "appName": "oracle-<container-name>-<container-id-short>",
+              "contentBase64": "c3Rkb3V0LWFzY2lp",
+              "contentHex": "7374646f75742d6173636969",
+              "contentUTF8": "stdout-ascii",
+              "facility": 17,
+              "hostname": "colima",
+              "messageID": "oracle-<container-name>-<container-id-short>",
+              "normalizedMessageByteCount": 151,
+              "normalizedMessageHex": "3c3134323e31203c726663333333392d6d6963726f2d7574633e20636f6c696d61206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e203c6461656d6f6e2d7069643e206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e202d207374646f75742d6173636969",
+              "priority": 142,
+              "processID": "<daemon-pid>",
+              "severity": 6,
+              "structuredData": "-",
+              "timestamp": "<rfc3339-micro-utc>",
+              "timestampFractionDigits": 6,
+              "version": 1
+            },
+            {
+              "appName": "oracle-<container-name>-<container-id-short>",
+              "contentBase64": "c3RkZXJyLXV0Zjgt4piD",
+              "contentHex": "7374646572722d757466382de29883",
+              "contentUTF8": "stderr-utf8-\u2603",
+              "facility": 17,
+              "hostname": "colima",
+              "messageID": "oracle-<container-name>-<container-id-short>",
+              "normalizedMessageByteCount": 154,
+              "normalizedMessageHex": "3c3133393e31203c726663333333392d6d6963726f2d7574633e20636f6c696d61206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e203c6461656d6f6e2d7069643e206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e202d207374646572722d757466382de29883",
+              "priority": 139,
+              "processID": "<daemon-pid>",
+              "severity": 3,
+              "structuredData": "-",
+              "timestamp": "<rfc3339-micro-utc>",
+              "timestampFractionDigits": 6,
+              "version": 1
+            },
+            {
+              "appName": "oracle-<container-name>-<container-id-short>",
+              "contentBase64": "c3Rkb3V0LWJpbmFyeS3/AC1lbmQ=",
+              "contentHex": "7374646f75742d62696e6172792dff002d656e64",
+              "contentUTF8": null,
+              "facility": 17,
+              "hostname": "colima",
+              "messageID": "oracle-<container-name>-<container-id-short>",
+              "normalizedMessageByteCount": 159,
+              "normalizedMessageHex": "3c3134323e31203c726663333333392d6d6963726f2d7574633e20636f6c696d61206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e203c6461656d6f6e2d7069643e206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e202d207374646f75742d62696e6172792dff002d656e64",
+              "priority": 142,
+              "processID": "<daemon-pid>",
+              "severity": 6,
+              "structuredData": "-",
+              "timestamp": "<rfc3339-micro-utc>",
+              "timestampFractionDigits": 6,
+              "version": 1
+            }
+          ],
+          "framing": {
+            "framing": "RFC 6587 non-transparent LF delimiter",
+            "streamEndsWithLF": true
+          },
+          "peerClosedAfterContainerExit": true,
+          "readChunkBoundariesNormalizedAway": true
+        }
+      },
+      "tls": {
+        "cleanup": {
+          "receiverProcessRunning": false,
+          "vmPathsRemaining": []
+        },
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {
+              "cache-disabled": "true",
+              "syslog-address": "tcp+tls://<colima-oracle-receiver>",
+              "syslog-facility": "local1",
+              "syslog-format": "rfc5424micro",
+              "syslog-tls-ca-cert": "<unique-colima-ca-cert>",
+              "tag": "oracle-{{.Name}}-{{.ID}}"
+            },
+            "Type": "syslog"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        },
+        "phase": {
+          "configurationAcceptedAtCreate": true,
+          "connectionEstablishedAtStart": true,
+          "containerExitCode": 0
+        },
+        "requestedTransport": "tcp+tls",
+        "wire": {
+          "frames": [
+            {
+              "appName": "oracle-<container-name>-<container-id-short>",
+              "contentBase64": "c3Rkb3V0LWFzY2lpCg==",
+              "contentHex": "7374646f75742d61736369690a",
+              "contentUTF8": "stdout-ascii\n",
+              "facility": 17,
+              "hostname": "colima",
+              "messageID": "oracle-<container-name>-<container-id-short>",
+              "normalizedMessageByteCount": 152,
+              "normalizedMessageHex": "3c3134323e31203c726663333333392d6d6963726f2d7574633e20636f6c696d61206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e203c6461656d6f6e2d7069643e206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e202d207374646f75742d61736369690a",
+              "priority": 142,
+              "processID": "<daemon-pid>",
+              "severity": 6,
+              "structuredData": "-",
+              "timestamp": "<rfc3339-micro-utc>",
+              "timestampFractionDigits": 6,
+              "version": 1
+            },
+            {
+              "appName": "oracle-<container-name>-<container-id-short>",
+              "contentBase64": "c3RkZXJyLXV0Zjgt4piDCg==",
+              "contentHex": "7374646572722d757466382de298830a",
+              "contentUTF8": "stderr-utf8-\u2603\n",
+              "facility": 17,
+              "hostname": "colima",
+              "messageID": "oracle-<container-name>-<container-id-short>",
+              "normalizedMessageByteCount": 155,
+              "normalizedMessageHex": "3c3133393e31203c726663333333392d6d6963726f2d7574633e20636f6c696d61206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e203c6461656d6f6e2d7069643e206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e202d207374646572722d757466382de298830a",
+              "priority": 139,
+              "processID": "<daemon-pid>",
+              "severity": 3,
+              "structuredData": "-",
+              "timestamp": "<rfc3339-micro-utc>",
+              "timestampFractionDigits": 6,
+              "version": 1
+            },
+            {
+              "appName": "oracle-<container-name>-<container-id-short>",
+              "contentBase64": "c3Rkb3V0LWJpbmFyeS3/AC1lbmQK",
+              "contentHex": "7374646f75742d62696e6172792dff002d656e640a",
+              "contentUTF8": null,
+              "facility": 17,
+              "hostname": "colima",
+              "messageID": "oracle-<container-name>-<container-id-short>",
+              "normalizedMessageByteCount": 160,
+              "normalizedMessageHex": "3c3134323e31203c726663333333392d6d6963726f2d7574633e20636f6c696d61206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e203c6461656d6f6e2d7069643e206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e202d207374646f75742d62696e6172792dff002d656e640a",
+              "priority": 142,
+              "processID": "<daemon-pid>",
+              "severity": 6,
+              "structuredData": "-",
+              "timestamp": "<rfc3339-micro-utc>",
+              "timestampFractionDigits": 6,
+              "version": 1
+            }
+          ],
+          "framing": {
+            "framing": "RFC 6587 octet counting",
+            "normalizedOctetCounts": [
+              152,
+              155,
+              160
+            ],
+            "octetCountsMatchPayloadByteCounts": true,
+            "trailingByteCount": 0
+          },
+          "peerClosedAfterContainerExit": true,
+          "readChunkBoundariesNormalizedAway": true
+        }
+      },
+      "udp": {
+        "cleanup": {
+          "receiverProcessRunning": false,
+          "vmPathsRemaining": []
+        },
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {
+              "cache-disabled": "true",
+              "syslog-address": "udp://<colima-oracle-receiver>",
+              "syslog-facility": "local1",
+              "syslog-format": "rfc5424micro",
+              "tag": "oracle-{{.Name}}-{{.ID}}"
+            },
+            "Type": "syslog"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        },
+        "phase": {
+          "configurationAcceptedAtCreate": true,
+          "connectionEstablishedAtStart": true,
+          "containerExitCode": 0
+        },
+        "requestedTransport": "udp",
+        "wire": {
+          "frames": [
+            {
+              "appName": "oracle-<container-name>-<container-id-short>",
+              "contentBase64": "c3Rkb3V0LWFzY2lpCg==",
+              "contentHex": "7374646f75742d61736369690a",
+              "contentUTF8": "stdout-ascii\n",
+              "facility": 17,
+              "hostname": "colima",
+              "messageID": "oracle-<container-name>-<container-id-short>",
+              "normalizedMessageByteCount": 152,
+              "normalizedMessageHex": "3c3134323e31203c726663333333392d6d6963726f2d7574633e20636f6c696d61206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e203c6461656d6f6e2d7069643e206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e202d207374646f75742d61736369690a",
+              "priority": 142,
+              "processID": "<daemon-pid>",
+              "severity": 6,
+              "structuredData": "-",
+              "timestamp": "<rfc3339-micro-utc>",
+              "timestampFractionDigits": 6,
+              "version": 1
+            },
+            {
+              "appName": "oracle-<container-name>-<container-id-short>",
+              "contentBase64": "c3RkZXJyLXV0Zjgt4piDCg==",
+              "contentHex": "7374646572722d757466382de298830a",
+              "contentUTF8": "stderr-utf8-\u2603\n",
+              "facility": 17,
+              "hostname": "colima",
+              "messageID": "oracle-<container-name>-<container-id-short>",
+              "normalizedMessageByteCount": 155,
+              "normalizedMessageHex": "3c3133393e31203c726663333333392d6d6963726f2d7574633e20636f6c696d61206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e203c6461656d6f6e2d7069643e206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e202d207374646572722d757466382de298830a",
+              "priority": 139,
+              "processID": "<daemon-pid>",
+              "severity": 3,
+              "structuredData": "-",
+              "timestamp": "<rfc3339-micro-utc>",
+              "timestampFractionDigits": 6,
+              "version": 1
+            },
+            {
+              "appName": "oracle-<container-name>-<container-id-short>",
+              "contentBase64": "c3Rkb3V0LWJpbmFyeS3/AC1lbmQK",
+              "contentHex": "7374646f75742d62696e6172792dff002d656e640a",
+              "contentUTF8": null,
+              "facility": 17,
+              "hostname": "colima",
+              "messageID": "oracle-<container-name>-<container-id-short>",
+              "normalizedMessageByteCount": 160,
+              "normalizedMessageHex": "3c3134323e31203c726663333333392d6d6963726f2d7574633e20636f6c696d61206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e203c6461656d6f6e2d7069643e206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e202d207374646f75742d62696e6172792dff002d656e640a",
+              "priority": 142,
+              "processID": "<daemon-pid>",
+              "severity": 6,
+              "structuredData": "-",
+              "timestamp": "<rfc3339-micro-utc>",
+              "timestampFractionDigits": 6,
+              "version": 1
+            }
+          ],
+          "framing": {
+            "datagramBoundariesAreMessageBoundaries": true,
+            "framing": "one RFC 5424 message per UDP datagram; no delimiter"
+          },
+          "peerClosedAfterContainerExit": null,
+          "readChunkBoundariesNormalizedAway": true
+        }
+      },
+      "unix": {
+        "cleanup": {
+          "receiverProcessRunning": false,
+          "vmPathsRemaining": []
+        },
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {
+              "cache-disabled": "true",
+              "syslog-address": "unix://<colima-oracle-receiver>",
+              "syslog-facility": "local1",
+              "syslog-format": "rfc5424micro",
+              "tag": "oracle-{{.Name}}-{{.ID}}"
+            },
+            "Type": "syslog"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        },
+        "phase": {
+          "configurationAcceptedAtCreate": true,
+          "connectionEstablishedAtStart": true,
+          "containerExitCode": 0
+        },
+        "requestedTransport": "unix",
+        "wire": {
+          "frames": [
+            {
+              "appName": "oracle-<container-name>-<container-id-short>",
+              "contentBase64": "c3Rkb3V0LWFzY2lp",
+              "contentHex": "7374646f75742d6173636969",
+              "contentUTF8": "stdout-ascii",
+              "facility": 17,
+              "hostname": "colima",
+              "messageID": "oracle-<container-name>-<container-id-short>",
+              "normalizedMessageByteCount": 151,
+              "normalizedMessageHex": "3c3134323e31203c726663333333392d6d6963726f2d7574633e20636f6c696d61206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e203c6461656d6f6e2d7069643e206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e202d207374646f75742d6173636969",
+              "priority": 142,
+              "processID": "<daemon-pid>",
+              "severity": 6,
+              "structuredData": "-",
+              "timestamp": "<rfc3339-micro-utc>",
+              "timestampFractionDigits": 6,
+              "version": 1
+            },
+            {
+              "appName": "oracle-<container-name>-<container-id-short>",
+              "contentBase64": "c3RkZXJyLXV0Zjgt4piD",
+              "contentHex": "7374646572722d757466382de29883",
+              "contentUTF8": "stderr-utf8-\u2603",
+              "facility": 17,
+              "hostname": "colima",
+              "messageID": "oracle-<container-name>-<container-id-short>",
+              "normalizedMessageByteCount": 154,
+              "normalizedMessageHex": "3c3133393e31203c726663333333392d6d6963726f2d7574633e20636f6c696d61206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e203c6461656d6f6e2d7069643e206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e202d207374646572722d757466382de29883",
+              "priority": 139,
+              "processID": "<daemon-pid>",
+              "severity": 3,
+              "structuredData": "-",
+              "timestamp": "<rfc3339-micro-utc>",
+              "timestampFractionDigits": 6,
+              "version": 1
+            },
+            {
+              "appName": "oracle-<container-name>-<container-id-short>",
+              "contentBase64": "c3Rkb3V0LWJpbmFyeS3/AC1lbmQ=",
+              "contentHex": "7374646f75742d62696e6172792dff002d656e64",
+              "contentUTF8": null,
+              "facility": 17,
+              "hostname": "colima",
+              "messageID": "oracle-<container-name>-<container-id-short>",
+              "normalizedMessageByteCount": 159,
+              "normalizedMessageHex": "3c3134323e31203c726663333333392d6d6963726f2d7574633e20636f6c696d61206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e203c6461656d6f6e2d7069643e206f7261636c652d3c636f6e7461696e65722d6e616d653e2d3c636f6e7461696e65722d69642d73686f72743e202d207374646f75742d62696e6172792dff002d656e64",
+              "priority": 142,
+              "processID": "<daemon-pid>",
+              "severity": 6,
+              "structuredData": "-",
+              "timestamp": "<rfc3339-micro-utc>",
+              "timestampFractionDigits": 6,
+              "version": 1
+            }
+          ],
+          "framing": {
+            "framing": "RFC 6587 non-transparent LF delimiter",
+            "streamEndsWithLF": true
+          },
+          "peerClosedAfterContainerExit": true,
+          "readChunkBoundariesNormalizedAway": true
+        }
+      }
+    },
     "ttyRawMergedFraming": {
       "combinedRead": {
         "bytes": "stdout-line\r\nstderr-line\r\n",
@@ -3001,63 +4886,71 @@
       "syslog"
     ]
   },
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "timings": {
     "composeForeground": {
       "clock": "time.monotonic",
-      "durationSeconds": 2.214947
+      "durationSeconds": 2.19201
     },
     "emptyDriver": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.121738
+      "durationSeconds": 0.139718
+    },
+    "fluentdRemoteWire": {
+      "clock": "time.monotonic",
+      "durationSeconds": 13.434316
     },
     "jsonFileStoppedReadAndFraming": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.312121
+      "durationSeconds": 0.417701
     },
     "jsonFileSustainedRotationCompression": {
       "clock": "time.monotonic",
-      "durationSeconds": 1.529535
+      "durationSeconds": 1.547032
     },
     "localNativeReader": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.133375
+      "durationSeconds": 0.146295
     },
     "localSustainedRotationCompression": {
       "clock": "time.monotonic",
-      "durationSeconds": 1.069543
+      "durationSeconds": 1.017538
     },
     "nonBlockingPressureDrop": {
       "clock": "time.monotonic",
-      "durationSeconds": 4.706681
+      "durationSeconds": 4.841154
     },
     "nonReaderDualCache": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.215178
+      "durationSeconds": 0.225653
     },
     "noneArbitraryOptions": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.138936
+      "durationSeconds": 0.132058
     },
     "omittedDefault": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.039535
+      "durationSeconds": 0.045042
     },
     "optionSemantics": {
       "clock": "time.monotonic",
-      "durationSeconds": 4.026179
+      "durationSeconds": 3.912675
     },
     "restartRetention": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.225915
+      "durationSeconds": 0.244641
+    },
+    "syslogRemoteWire": {
+      "clock": "time.monotonic",
+      "durationSeconds": 12.122075
     },
     "ttyRawMergedFraming": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.164332
+      "durationSeconds": 0.143865
     },
     "validationPhases": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.045156
+      "durationSeconds": 0.044073
     }
   }
 }
