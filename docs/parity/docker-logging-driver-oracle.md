@@ -11,12 +11,14 @@ The capture covers:
 - omitted `HostConfig.LogConfig` resolving to the daemon's `json-file` default;
 - explicit `json-file`, `local`, `none`, and `syslog` driver identities and arbitrary option preservation, including Engine acceptance of options on `none`;
 - create-time option-name rejection versus start-time option-value rejection, including container residue and inspect state;
+- empty driver resolution and the exact create/start validation phases for `mode`, `compress`, `max-size`, `max-file`, and `max-buffer-size`;
+- representative Go `strconv.ParseBool` spellings, Docker/go-units size spellings, and whitespace behavior;
 - `HostConfig.LogConfig`, `LogPath`, stopped-container reads, restart retention, and the effect of a created-container follow read;
 - non-TTY stdout/stderr selection and Docker's eight-byte multiplex framing;
 - TTY raw, merged output and stream-filter behavior;
 - raw `json-file` record keys, streams, labels, and RFC 3339 nanosecond timestamp shape;
 - native-reader behavior for `local`; and
-- the default dual-logging cache and `cache-disabled=true` behavior for the non-reader `syslog` driver.
+- the default dual-logging cache, `cache-disabled` grammar, and retention-without-parsing of the other `cache-*` options for both reader and non-reader drivers.
 
 The `none` option case deliberately calls the Engine API directly. Docker's CLI performs additional client-side validation and rejects that request before it reaches the daemon; the runtime compatibility contract is the Engine behavior captured here.
 
@@ -52,4 +54,4 @@ Each run uses unique `cc-log-oracle-*` container names and force-removes every t
 
 Volatile container IDs in `LogPath` are replaced with `<container-id>`, valid JSON timestamps are replaced with `<rfc3339-nano-utc>`, and raw JSON records are sorted by stream. Docker may vary transport chunk boundaries and scheduling between stdout and stderr, so the fixture preserves byte order within each stream while intentionally not asserting cross-stream order or chunk boundaries.
 
-The oracle does not provision external logging services or installed logging plugins. The non-reader coverage is limited to Docker's built-in `syslog` path and its local dual-logging cache; cloud-driver delivery, remote receiver payloads, rotation under sustained load, blocking/backpressure, and plugin lifecycle behavior require separate focused oracles.
+The oracle does not provision external logging services or installed logging plugins. The non-reader coverage is limited to Docker's built-in `syslog` path and its local dual-logging cache; cloud-driver delivery, remote receiver payloads, rotation under sustained load, blocking/backpressure, and plugin lifecycle behavior require separate focused oracles. Successful start with deliberately invalid `cache-max-size`, `cache-max-file`, and `cache-compress` values proves that Engine 29.2.1 retains but does not parse those prefixes; a sustained-rotation probe is still required to measure their effective cache behavior directly.

@@ -339,6 +339,60 @@ class LoggingOracle:
             time.sleep(0.05)
         raise OracleFailure(f"timed out waiting for log marker {expected!r}")
 
+    def create_start_probe(
+        self,
+        suffix: str,
+        *,
+        driver: str,
+        options: dict[str, str],
+    ) -> dict[str, Any]:
+        """Capture create/start validation without assuming either phase."""
+
+        name = self.name(suffix)
+        status, response = self.engine.request_json(
+            "POST",
+            f"/v{REQUIRED_API_VERSION}/containers/create?name={quote(name, safe='')}",
+            payload={
+                "Cmd": ["true"],
+                "HostConfig": {
+                    "LogConfig": {
+                        "Config": options,
+                        "Type": driver,
+                    }
+                },
+                "Image": self.image,
+            },
+        )
+        result: dict[str, Any] = {
+            "create": {
+                "httpStatus": status,
+                "message": response.get("message"),
+                "warnings": response.get("Warnings", []),
+            },
+            "requestedLogConfig": {
+                "Config": options,
+                "Type": driver,
+            },
+        }
+        identifier = response.get("Id")
+        if status != 201 or identifier is None:
+            result["containerResidue"] = self.exists(name)
+            return result
+
+        result["inspectAfterCreate"] = normalized_inspect(self.inspect(identifier))
+        start_status, start_response = self.engine.request_json(
+            "POST",
+            f"/v{REQUIRED_API_VERSION}/containers/{quote(identifier, safe='')}/start",
+        )
+        result["start"] = {
+            "httpStatus": start_status,
+            "message": start_response.get("message"),
+        }
+        if start_status == 204:
+            result["wait"] = self.wait(identifier)
+        result["inspectAfterStart"] = normalized_inspect(self.inspect(identifier))
+        return result
+
 
 def parse_multiplexed_frames(body: bytes) -> list[dict[str, Any]]:
     """Decode Docker's eight-byte stdout/stderr frame headers."""
@@ -544,6 +598,12 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
             "createdFollowRead": omitted_read,
         }
 
+        cases["emptyDriver"] = oracle.create_start_probe(
+            "empty-driver",
+            driver="",
+            options={},
+        )
+
         json_id, json_create = oracle.create(
             "json",
             command=[
@@ -668,6 +728,147 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
                 },
             },
         }
+
+        option_semantics: dict[str, Any] = {
+            "mode": {},
+            "compress": {},
+            "maxSize": {},
+            "maxFile": {},
+            "maxBufferSize": {},
+            "cacheDisabled": {},
+            "cachePrefixRetention": {},
+        }
+        for label, value in {
+            "blocking": "blocking",
+            "nonBlocking": "non-blocking",
+            "empty": "",
+            "uppercase": "BLOCKING",
+        }.items():
+            option_semantics["mode"][label] = oracle.create_start_probe(
+                f"mode-{label}",
+                driver="json-file",
+                options={"mode": value},
+            )
+
+        for label, value in {
+            "trueMixed": "True",
+            "falseUpper": "FALSE",
+            "trueOne": "1",
+            "falseZero": "0",
+            "trueShort": "t",
+            "falseShort": "f",
+            "invalid": "yes",
+            "empty": "",
+        }.items():
+            option_semantics["compress"][label] = oracle.create_start_probe(
+                f"compress-{label}",
+                driver="json-file",
+                options={
+                    "compress": value,
+                    "max-file": "2",
+                    "max-size": "1m",
+                },
+            )
+        option_semantics["compress"]["missingRotation"] = (
+            oracle.create_start_probe(
+                "compress-missing-rotation",
+                driver="json-file",
+                options={"compress": "true"},
+            )
+        )
+
+        for label, value in {
+            "bytes": "1",
+            "zero": "0",
+            "negative": "-1",
+            "fractionalUnit": "1.5k",
+            "binaryUnit": "1KiB",
+            "spaceSeparator": "1 k",
+            "outerWhitespace": " 1k ",
+            "leadingPlus": "+1m",
+            "leadingFraction": ".5m",
+            "exponent": "1e3",
+        }.items():
+            option_semantics["maxSize"][label] = oracle.create_start_probe(
+                f"max-size-{label}",
+                driver="json-file",
+                options={"max-size": value},
+            )
+
+        for label, value in {
+            "one": "1",
+            "zero": "0",
+            "negative": "-1",
+            "leadingPlus": "+1",
+            "leadingZero": "01",
+            "fractional": "1.5",
+            "outerWhitespace": " 1 ",
+        }.items():
+            option_semantics["maxFile"][label] = oracle.create_start_probe(
+                f"max-file-{label}",
+                driver="json-file",
+                options={"max-file": value},
+            )
+
+        for label, value in {
+            "zero": "0",
+            "fractionalUnit": "1.5k",
+            "upperUnit": "1KB",
+            "outerWhitespace": " 1k ",
+            "negative": "-1",
+        }.items():
+            option_semantics["maxBufferSize"][label] = oracle.create_start_probe(
+                f"max-buffer-{label}",
+                driver="json-file",
+                options={
+                    "max-buffer-size": value,
+                    "mode": "non-blocking",
+                },
+            )
+
+        for label, value in {
+            "trueMixed": "True",
+            "falseUpper": "FALSE",
+            "trueOne": "1",
+            "falseZero": "0",
+            "trueShort": "t",
+            "falseShort": "f",
+            "invalid": "yes",
+            "empty": "",
+        }.items():
+            option_semantics["cacheDisabled"][label] = oracle.create_start_probe(
+                f"cache-disabled-{label}",
+                driver="syslog",
+                options={
+                    "cache-disabled": value,
+                    "syslog-address": "udp://127.0.0.1:55142",
+                },
+            )
+
+        option_semantics["cachePrefixRetention"]["syslogArbitrary"] = (
+            oracle.create_start_probe(
+                "cache-prefix-syslog",
+                driver="syslog",
+                options={
+                    "cache-compress": "not-a-boolean",
+                    "cache-max-file": "not-an-integer",
+                    "cache-max-size": "not-a-size",
+                    "syslog-address": "udp://127.0.0.1:55143",
+                },
+            )
+        )
+        option_semantics["cachePrefixRetention"]["jsonFileArbitrary"] = (
+            oracle.create_start_probe(
+                "cache-prefix-json-file",
+                driver="json-file",
+                options={
+                    "cache-compress": "not-a-boolean",
+                    "cache-max-file": "not-an-integer",
+                    "cache-max-size": "not-a-size",
+                },
+            )
+        )
+        cases["optionSemantics"] = option_semantics
 
         tty_id, tty_create = oracle.create(
             "tty",

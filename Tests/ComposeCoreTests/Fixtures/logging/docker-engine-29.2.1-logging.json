@@ -1,5 +1,47 @@
 {
   "cases": {
+    "emptyDriver": {
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "inspectAfterCreate": {
+        "logConfig": {
+          "Config": {},
+          "Type": "json-file"
+        },
+        "logPath": "",
+        "state": {
+          "error": "",
+          "status": "created"
+        },
+        "tty": false
+      },
+      "inspectAfterStart": {
+        "logConfig": {
+          "Config": {},
+          "Type": "json-file"
+        },
+        "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+        "state": {
+          "error": "",
+          "status": "exited"
+        },
+        "tty": false
+      },
+      "requestedLogConfig": {
+        "Config": {},
+        "Type": ""
+      },
+      "start": {
+        "httpStatus": 204,
+        "message": null
+      },
+      "wait": {
+        "exitCode": 0
+      }
+    },
     "jsonFileStoppedReadAndFraming": {
       "combinedRead": {
         "contentType": "application/vnd.docker.multiplexed-stream",
@@ -348,6 +390,2112 @@
       },
       "requestedLogConfig": "omitted",
       "runningWasStarted": false
+    },
+    "optionSemantics": {
+      "cacheDisabled": {
+        "empty": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "cache-disabled": "",
+              "syslog-address": "udp://127.0.0.1:55142"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "falseShort": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "f",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "f",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "cache-disabled": "f",
+              "syslog-address": "udp://127.0.0.1:55142"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "falseUpper": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "FALSE",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "FALSE",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "cache-disabled": "FALSE",
+              "syslog-address": "udp://127.0.0.1:55142"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "falseZero": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "0",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "0",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "cache-disabled": "0",
+              "syslog-address": "udp://127.0.0.1:55142"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "invalid": {
+          "containerResidue": false,
+          "create": {
+            "httpStatus": 400,
+            "message": "invalid value for option cache-disabled: yes",
+            "warnings": []
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "cache-disabled": "yes",
+              "syslog-address": "udp://127.0.0.1:55142"
+            },
+            "Type": "syslog"
+          }
+        },
+        "trueMixed": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "True",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "True",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "cache-disabled": "True",
+              "syslog-address": "udp://127.0.0.1:55142"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "trueOne": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "1",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "1",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "cache-disabled": "1",
+              "syslog-address": "udp://127.0.0.1:55142"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "trueShort": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "t",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "cache-disabled": "t",
+                "syslog-address": "udp://127.0.0.1:55142"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "cache-disabled": "t",
+              "syslog-address": "udp://127.0.0.1:55142"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        }
+      },
+      "cachePrefixRetention": {
+        "jsonFileArbitrary": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "cache-compress": "not-a-boolean",
+                "cache-max-file": "not-an-integer",
+                "cache-max-size": "not-a-size"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "cache-compress": "not-a-boolean",
+                "cache-max-file": "not-an-integer",
+                "cache-max-size": "not-a-size"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "cache-compress": "not-a-boolean",
+              "cache-max-file": "not-an-integer",
+              "cache-max-size": "not-a-size"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "syslogArbitrary": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "cache-compress": "not-a-boolean",
+                "cache-max-file": "not-an-integer",
+                "cache-max-size": "not-a-size",
+                "syslog-address": "udp://127.0.0.1:55143"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "cache-compress": "not-a-boolean",
+                "cache-max-file": "not-an-integer",
+                "cache-max-size": "not-a-size",
+                "syslog-address": "udp://127.0.0.1:55143"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "cache-compress": "not-a-boolean",
+              "cache-max-file": "not-an-integer",
+              "cache-max-size": "not-a-size",
+              "syslog-address": "udp://127.0.0.1:55143"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        }
+      },
+      "compress": {
+        "empty": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "compress": "",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "compress": "",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: strconv.ParseBool: parsing \"\": invalid syntax",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "compress": "",
+              "max-file": "2",
+              "max-size": "1m"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: strconv.ParseBool: parsing \"\": invalid syntax"
+          }
+        },
+        "falseShort": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "compress": "f",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "compress": "f",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "compress": "f",
+              "max-file": "2",
+              "max-size": "1m"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "falseUpper": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "compress": "FALSE",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "compress": "FALSE",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "compress": "FALSE",
+              "max-file": "2",
+              "max-size": "1m"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "falseZero": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "compress": "0",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "compress": "0",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "compress": "0",
+              "max-file": "2",
+              "max-size": "1m"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "invalid": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "compress": "yes",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "compress": "yes",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: strconv.ParseBool: parsing \"yes\": invalid syntax",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "compress": "yes",
+              "max-file": "2",
+              "max-size": "1m"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: strconv.ParseBool: parsing \"yes\": invalid syntax"
+          }
+        },
+        "missingRotation": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "compress": "true"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "compress": "true"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: compress cannot be true when max-file is less than 2 or max-size is not set",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "compress": "true"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: compress cannot be true when max-file is less than 2 or max-size is not set"
+          }
+        },
+        "trueMixed": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "compress": "True",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "compress": "True",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "compress": "True",
+              "max-file": "2",
+              "max-size": "1m"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "trueOne": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "compress": "1",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "compress": "1",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "compress": "1",
+              "max-file": "2",
+              "max-size": "1m"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "trueShort": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "compress": "t",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "compress": "t",
+                "max-file": "2",
+                "max-size": "1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "compress": "t",
+              "max-file": "2",
+              "max-size": "1m"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        }
+      },
+      "maxBufferSize": {
+        "fractionalUnit": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-buffer-size": "1.5k",
+                "mode": "non-blocking"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-buffer-size": "1.5k",
+                "mode": "non-blocking"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-buffer-size": "1.5k",
+              "mode": "non-blocking"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "negative": {
+          "containerResidue": false,
+          "create": {
+            "httpStatus": 400,
+            "message": "error parsing option max-buffer-size: invalid size: '-1'",
+            "warnings": []
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-buffer-size": "-1",
+              "mode": "non-blocking"
+            },
+            "Type": "json-file"
+          }
+        },
+        "outerWhitespace": {
+          "containerResidue": false,
+          "create": {
+            "httpStatus": 400,
+            "message": "error parsing option max-buffer-size: strconv.ParseFloat: parsing \" 1k\": invalid syntax",
+            "warnings": []
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-buffer-size": " 1k ",
+              "mode": "non-blocking"
+            },
+            "Type": "json-file"
+          }
+        },
+        "upperUnit": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-buffer-size": "1KB",
+                "mode": "non-blocking"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-buffer-size": "1KB",
+                "mode": "non-blocking"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-buffer-size": "1KB",
+              "mode": "non-blocking"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "zero": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-buffer-size": "0",
+                "mode": "non-blocking"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-buffer-size": "0",
+                "mode": "non-blocking"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-buffer-size": "0",
+              "mode": "non-blocking"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        }
+      },
+      "maxFile": {
+        "fractional": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-file": "1.5"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-file": "1.5"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: strconv.Atoi: parsing \"1.5\": invalid syntax",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-file": "1.5"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: strconv.Atoi: parsing \"1.5\": invalid syntax"
+          }
+        },
+        "leadingPlus": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-file": "+1"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-file": "+1"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-file": "+1"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "leadingZero": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-file": "01"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-file": "01"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-file": "01"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "negative": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-file": "-1"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-file": "-1"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: max-file cannot be less than 1",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-file": "-1"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: max-file cannot be less than 1"
+          }
+        },
+        "one": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-file": "1"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-file": "1"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-file": "1"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "outerWhitespace": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-file": " 1 "
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-file": " 1 "
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: strconv.Atoi: parsing \" 1 \": invalid syntax",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-file": " 1 "
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: strconv.Atoi: parsing \" 1 \": invalid syntax"
+          }
+        },
+        "zero": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-file": "0"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-file": "0"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: max-file cannot be less than 1",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-file": "0"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: max-file cannot be less than 1"
+          }
+        }
+      },
+      "maxSize": {
+        "binaryUnit": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-size": "1KiB"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-size": "1KiB"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-size": "1KiB"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "bytes": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-size": "1"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-size": "1"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-size": "1"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "exponent": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-size": "1e3"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-size": "1e3"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-size": "1e3"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "fractionalUnit": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-size": "1.5k"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-size": "1.5k"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-size": "1.5k"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "leadingFraction": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-size": ".5m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-size": ".5m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-size": ".5m"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "leadingPlus": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-size": "+1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-size": "+1m"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-size": "+1m"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "negative": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-size": "-1"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-size": "-1"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: invalid size: '-1'",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-size": "-1"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: invalid size: '-1'"
+          }
+        },
+        "outerWhitespace": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-size": " 1k "
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-size": " 1k "
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: strconv.ParseFloat: parsing \" 1k\": invalid syntax",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-size": " 1k "
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: strconv.ParseFloat: parsing \" 1k\": invalid syntax"
+          }
+        },
+        "spaceSeparator": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-size": "1 k"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-size": "1 k"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-size": "1 k"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "zero": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "max-size": "0"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "max-size": "0"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: max-size must be a positive number",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "max-size": "0"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: max-size must be a positive number"
+          }
+        }
+      },
+      "mode": {
+        "blocking": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "mode": "blocking"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "mode": "blocking"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "mode": "blocking"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "empty": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "mode": ""
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "mode": ""
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "mode": ""
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "nonBlocking": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "mode": "non-blocking"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "mode": "non-blocking"
+              },
+              "Type": "json-file"
+            },
+            "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "mode": "non-blocking"
+            },
+            "Type": "json-file"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "uppercase": {
+          "containerResidue": false,
+          "create": {
+            "httpStatus": 400,
+            "message": "logger: logging mode not supported: BLOCKING",
+            "warnings": []
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "mode": "BLOCKING"
+            },
+            "Type": "json-file"
+          }
+        }
+      }
     },
     "restartRetention": {
       "create": {

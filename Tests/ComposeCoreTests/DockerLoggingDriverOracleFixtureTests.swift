@@ -51,6 +51,12 @@ struct DockerLoggingDriverOracleFixtureTests {
         "cases", "omittedDefault", "createdFollowRead", "httpStatus"
       ) == 200
     )
+    #expect(
+      try string(
+        fixture,
+        "cases", "emptyDriver", "inspectAfterCreate", "logConfig", "Type"
+      ) == "json-file"
+    )
 
     #expect(
       try string(
@@ -106,6 +112,126 @@ struct DockerLoggingDriverOracleFixtureTests {
         "inspectAfterFailedStart", "logPath"
       ) == "/var/lib/docker/containers/<container-id>/<container-id>-json.log"
     )
+  }
+
+  @Test
+  func `pins create and start option grammars`() throws {
+    let fixture = try Self.fixture()
+
+    #expect(
+      try integer(
+        fixture, "cases", "optionSemantics", "mode", "empty", "create", "httpStatus"
+      ) == 201
+    )
+    #expect(
+      try string(
+        fixture, "cases", "optionSemantics", "mode", "empty", "inspectAfterCreate",
+        "logConfig", "Config", "mode"
+      ) == ""
+    )
+    #expect(
+      try integer(
+        fixture, "cases", "optionSemantics", "mode", "uppercase", "create", "httpStatus"
+      ) == 400
+    )
+
+    for label in ["trueMixed", "falseUpper", "trueOne", "falseZero", "trueShort", "falseShort"] {
+      #expect(
+        try integer(
+          fixture, "cases", "optionSemantics", "compress", label, "start", "httpStatus"
+        ) == 204
+      )
+    }
+    for label in ["invalid", "empty", "missingRotation"] {
+      #expect(
+        try integer(
+          fixture, "cases", "optionSemantics", "compress", label, "start", "httpStatus"
+        ) == 500
+      )
+    }
+
+    for label in [
+      "bytes", "fractionalUnit", "binaryUnit", "spaceSeparator", "leadingPlus", "leadingFraction",
+      "exponent",
+    ] {
+      #expect(
+        try integer(
+          fixture, "cases", "optionSemantics", "maxSize", label, "start", "httpStatus"
+        ) == 204
+      )
+    }
+    for label in ["zero", "negative", "outerWhitespace"] {
+      #expect(
+        try integer(
+          fixture, "cases", "optionSemantics", "maxSize", label, "start", "httpStatus"
+        ) == 500
+      )
+    }
+
+    for label in ["one", "leadingPlus", "leadingZero"] {
+      #expect(
+        try integer(
+          fixture, "cases", "optionSemantics", "maxFile", label, "start", "httpStatus"
+        ) == 204
+      )
+    }
+    for label in ["zero", "negative", "fractional", "outerWhitespace"] {
+      #expect(
+        try integer(
+          fixture, "cases", "optionSemantics", "maxFile", label, "start", "httpStatus"
+        ) == 500
+      )
+    }
+
+    for label in ["zero", "fractionalUnit", "upperUnit"] {
+      #expect(
+        try integer(
+          fixture, "cases", "optionSemantics", "maxBufferSize", label, "create", "httpStatus"
+        ) == 201
+      )
+    }
+    for label in ["outerWhitespace", "negative"] {
+      #expect(
+        try integer(
+          fixture, "cases", "optionSemantics", "maxBufferSize", label, "create", "httpStatus"
+        ) == 400
+      )
+    }
+  }
+
+  @Test
+  func `pins cache prefix validation and retention quirks`() throws {
+    let fixture = try Self.fixture()
+
+    for label in [
+      "trueMixed", "falseUpper", "trueOne", "falseZero", "trueShort", "falseShort", "empty",
+    ] {
+      #expect(
+        try integer(
+          fixture, "cases", "optionSemantics", "cacheDisabled", label, "create", "httpStatus"
+        ) == 201
+      )
+    }
+    #expect(
+      try integer(
+        fixture, "cases", "optionSemantics", "cacheDisabled", "invalid", "create", "httpStatus"
+      ) == 400
+    )
+
+    for driverCase in ["syslogArbitrary", "jsonFileArbitrary"] {
+      #expect(
+        try integer(
+          fixture, "cases", "optionSemantics", "cachePrefixRetention", driverCase,
+          "start", "httpStatus"
+        ) == 204
+      )
+      #expect(
+        try string(
+          fixture, "cases", "optionSemantics", "cachePrefixRetention", driverCase,
+          "inspectAfterCreate", "logConfig", "Config", "cache-max-size"
+        ) == "not-a-size"
+      )
+    }
   }
 
   @Test
