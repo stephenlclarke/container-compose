@@ -156,18 +156,23 @@ public extension ComposeOrchestrator {
             : selectedServices(project: project, selected: down.services)
         let declaredContainers = try declaredServiceContainerNames(project: project, scaleOverrides: [:])
         let targets = try await serviceContainerTargets(project: project, services: services)
-        for service in services.reversed() {
-            if service.provider != nil {
+        let downTimeout = down.timeout
+        for serviceLayer in try serviceDependencyLayers(services: services).reversed() {
+            let serviceNames = Set(serviceLayer.map(\.name))
+            for service in serviceLayer.reversed() where service.provider != nil {
                 _ = try await runProvider(project: project, service: service, action: .down)
+            }
+            let lifecycleTargets = targets.filter {
+                serviceNames.contains($0.service.name) && $0.service.provider == nil
+            }
+            guard let limit = try engineOperationParallelLimit(operationCount: lifecycleTargets.count) else {
+                for target in lifecycleTargets.reversed() {
+                    try await removeDownTarget(target, timeout: downTimeout)
+                }
                 continue
             }
-            for target in targets.filter({ $0.service.name == service.name }).reversed() {
-                try await ignoringMissingContainer {
-                    try await stopContainer(service: service, containerName: target.name, timeout: down.timeout)
-                }
-                try await ignoringMissingContainer {
-                    try await deleteContainer(target.name)
-                }
+            try await runBoundedEngineOperations(lifecycleTargets, limit: limit) { [self] target in
+                try await removeDownTarget(target, timeout: downTimeout)
             }
         }
         if down.removeOrphans || options.removeOrphans {
@@ -227,6 +232,16 @@ public extension ComposeOrchestrator {
         }
 
         try await removeImages(project: project, services: services, policy: imageRemovalPolicy)
+    }
+
+    /// Stops and removes one target while retaining per-container lifecycle order.
+    private func removeDownTarget(_ target: ServiceContainerTarget, timeout: Int?) async throws {
+        try await ignoringMissingContainer {
+            try await stopContainer(service: target.service, containerName: target.name, timeout: timeout)
+        }
+        try await ignoringMissingContainer {
+            try await deleteContainer(target.name)
+        }
     }
 
     /// Builds images for services that declare a build section.

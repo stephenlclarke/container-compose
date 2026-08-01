@@ -1498,6 +1498,23 @@ enum ContainerLifecycleRequest: Equatable {
     case delete(id: String, force: Bool)
 }
 
+extension ContainerLifecycleRequest {
+    var containerID: String {
+        switch self {
+        case let .start(id), let .pause(id), let .unpause(id), let .wait(id), let .get(id):
+            id
+        case let .kill(id, _), let .stop(id, _, _), let .delete(id, _):
+            id
+        }
+    }
+}
+
+func lifecycleRequestsByContainer(
+    _ requests: [ContainerLifecycleRequest]
+) -> [String: [ContainerLifecycleRequest]] {
+    Dictionary(grouping: requests, by: \.containerID)
+}
+
 struct ContainerLogRequest: Equatable {
     var id: String
     var tail: Int?
@@ -2041,6 +2058,7 @@ actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
     private let deleteErrorsByID: [String: any Error]
     private let waitExitCodes: [String: Int32]
     private let waitDelaysByID: [String: Duration]
+    private let operationConcurrency: OperationConcurrencyRecorder?
     private var storage: [ContainerLifecycleRequest] = []
 
     init(
@@ -2049,7 +2067,8 @@ actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
         stopErrorsByID: [String: any Error] = [:],
         deleteErrorsByID: [String: any Error] = [:],
         waitExitCodes: [String: Int32] = [:],
-        waitDelaysByID: [String: Duration] = [:]
+        waitDelaysByID: [String: Duration] = [:],
+        operationConcurrency: OperationConcurrencyRecorder? = nil
     ) {
         self.stopError = stopError
         self.deleteError = deleteError
@@ -2057,6 +2076,7 @@ actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
         self.deleteErrorsByID = deleteErrorsByID
         self.waitExitCodes = waitExitCodes
         self.waitDelaysByID = waitDelaysByID
+        self.operationConcurrency = operationConcurrency
     }
 
     var requests: [ContainerLifecycleRequest] {
@@ -2072,6 +2092,9 @@ actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
     }
 
     func stopContainer(id: String, signal: String?, timeoutInSeconds: Int?) async throws {
+        if let operationConcurrency {
+            await operationConcurrency.recordOperation()
+        }
         storage.append(.stop(id: id, signal: signal, timeoutInSeconds: timeoutInSeconds))
         if let error = stopErrorsByID[id] {
             throw error
@@ -2098,6 +2121,9 @@ actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
     }
 
     func deleteContainer(id: String, force: Bool) async throws {
+        if let operationConcurrency {
+            await operationConcurrency.recordOperation()
+        }
         storage.append(.delete(id: id, force: force))
         if let error = deleteErrorsByID[id] {
             throw error

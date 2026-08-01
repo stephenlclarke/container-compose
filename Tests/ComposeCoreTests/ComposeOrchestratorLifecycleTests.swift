@@ -30,6 +30,42 @@ import Foundation
 import Testing
 
 extension ComposeOrchestratorTests {
+    @Test("down removes independent services concurrently")
+    func downRemovesIndependentServicesConcurrently() async throws {
+        let concurrency = OperationConcurrencyRecorder(delay: .milliseconds(50))
+        let lifecycleManager = RecordingContainerLifecycleManager(operationConcurrency: concurrency)
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "cache": ComposeService(name: "cache", image: "example/cache"),
+                "worker": ComposeService(name: "worker", image: "example/worker"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(maxParallelism: -1),
+            lifecycleManager: lifecycleManager
+        ).down(project: project, options: ComposeDownOptions())
+
+        #expect(await concurrency.maximumActiveOperations == 3)
+        #expect(lifecycleRequestsByContainer(await lifecycleManager.requests) == [
+            "demo-api-1": [
+                .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+                .delete(id: "demo-api-1", force: false),
+            ],
+            "demo-cache-1": [
+                .stop(id: "demo-cache-1", signal: nil, timeoutInSeconds: nil),
+                .delete(id: "demo-cache-1", force: false),
+            ],
+            "demo-worker-1": [
+                .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil),
+                .delete(id: "demo-worker-1", force: false),
+            ],
+        ])
+    }
+
     @Test("down removes project resources in dependency order")
     func downRemovesProjectResourcesInDependencyOrder() async throws {
         let runner = RecordingRunner(responses: [
@@ -108,11 +144,15 @@ extension ComposeOrchestratorTests {
         ).down(project: project, options: ComposeDownOptions(volumes: true))
 
         #expect(runner.commands.isEmpty)
-        #expect(await lifecycleManager.requests == [
-            .stop(id: "demo-api-2", signal: nil, timeoutInSeconds: nil),
-            .delete(id: "demo-api-2", force: false),
-            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
-            .delete(id: "demo-api-1", force: false),
+        #expect(lifecycleRequestsByContainer(await lifecycleManager.requests) == [
+            "demo-api-1": [
+                .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+                .delete(id: "demo-api-1", force: false),
+            ],
+            "demo-api-2": [
+                .stop(id: "demo-api-2", signal: nil, timeoutInSeconds: nil),
+                .delete(id: "demo-api-2", force: false),
+            ],
         ])
         let resources = await resourceManager.requests
         #expect(resources.count == 3)
@@ -435,13 +475,19 @@ extension ComposeOrchestratorTests {
             .delete(reference: "example/web:dev", force: true),
         ])
         #expect(emitted.messages == ["demo_worker:latest", "example/api:dev", "example/web:dev"])
-        #expect(await lifecycleManager.requests == [
-            .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil),
-            .delete(id: "demo-worker-1", force: false),
-            .stop(id: "demo-web-1", signal: nil, timeoutInSeconds: nil),
-            .delete(id: "demo-web-1", force: false),
-            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
-            .delete(id: "demo-api-1", force: false),
+        #expect(lifecycleRequestsByContainer(await lifecycleManager.requests) == [
+            "demo-api-1": [
+                .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+                .delete(id: "demo-api-1", force: false),
+            ],
+            "demo-web-1": [
+                .stop(id: "demo-web-1", signal: nil, timeoutInSeconds: nil),
+                .delete(id: "demo-web-1", force: false),
+            ],
+            "demo-worker-1": [
+                .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil),
+                .delete(id: "demo-worker-1", force: false),
+            ],
         ])
     }
 
@@ -496,13 +542,19 @@ extension ComposeOrchestratorTests {
         #expect(await imageManager.requests == [
             .delete(reference: "demo_worker:latest", force: true),
         ])
-        #expect(await lifecycleManager.requests == [
-            .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil),
-            .delete(id: "demo-worker-1", force: false),
-            .stop(id: "demo-web-1", signal: nil, timeoutInSeconds: nil),
-            .delete(id: "demo-web-1", force: false),
-            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
-            .delete(id: "demo-api-1", force: false),
+        #expect(lifecycleRequestsByContainer(await lifecycleManager.requests) == [
+            "demo-api-1": [
+                .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+                .delete(id: "demo-api-1", force: false),
+            ],
+            "demo-web-1": [
+                .stop(id: "demo-web-1", signal: nil, timeoutInSeconds: nil),
+                .delete(id: "demo-web-1", force: false),
+            ],
+            "demo-worker-1": [
+                .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil),
+                .delete(id: "demo-worker-1", force: false),
+            ],
         ])
     }
 
