@@ -20,6 +20,29 @@ import Testing
 @Suite("Docker Engine logging-driver oracle fixture")
 struct DockerLoggingDriverOracleFixtureTests {
   @Test
+  func `pins evidence host and monotonic case timings`() throws {
+    let fixture = try Self.fixture()
+
+    #expect(try integer(fixture, "schemaVersion") == 2)
+    #expect(try string(fixture, "metadata", "composeVersion") == "5.3.1")
+    #expect(try string(fixture, "metadata", "engineGitCommit") == "6bc6209")
+    #expect(try string(fixture, "metadata", "hostArchitecture") == "arm64")
+    #expect(try string(fixture, "metadata", "hostModel") == "Mac17,9")
+    #expect(try string(fixture, "metadata", "macOSVersion") == "26.5.2")
+
+    let cases: [String: Any] = try value(fixture, "cases")
+    let timings: [String: Any] = try value(fixture, "timings")
+    #expect(Set(cases.keys) == Set(timings.keys))
+    for name in timings.keys {
+      #expect(
+        try string(fixture, path: ["timings", name, "clock"])
+          == "time.monotonic"
+      )
+      #expect(try double(fixture, path: ["timings", name, "durationSeconds"]) > 0)
+    }
+  }
+
+  @Test
   func `pins identity option quirks and validation phases`() throws {
     let fixture = try Self.fixture()
 
@@ -117,6 +140,39 @@ struct DockerLoggingDriverOracleFixtureTests {
   @Test
   func `pins create and start option grammars`() throws {
     let fixture = try Self.fixture()
+
+    #expect(
+      try integer(fixture, "cases", "optionSemantics", "sizeUnits", "maxSize4kBytes")
+        == 4000
+    )
+    #expect(
+      try integer(
+        fixture,
+        "cases", "optionSemantics", "sizeUnits", "maxBufferSize4kBytes"
+      ) == 4096
+    )
+    #expect(
+      try integer(
+        fixture,
+        "cases", "optionSemantics", "sizeUnits", "cacheMaxSize4kBytes"
+      ) == 4096
+    )
+    #expect(
+      try string(fixture, "cases", "optionSemantics", "sizeUnits", "maxSizeParser")
+        == "units.FromHumanSize"
+    )
+    #expect(
+      try string(
+        fixture,
+        "cases", "optionSemantics", "sizeUnits", "maxBufferSizeParser"
+      ) == "units.RAMInBytes"
+    )
+    #expect(
+      try string(
+        fixture,
+        "cases", "optionSemantics", "sizeUnits", "cacheMaxSizeParser"
+      ) == "units.RAMInBytes"
+    )
 
     #expect(
       try integer(
@@ -377,6 +433,216 @@ struct DockerLoggingDriverOracleFixtureTests {
     )
   }
 
+  @Test
+  func `pins sustained rotation compression and retained ranges`() throws {
+    let fixture = try Self.fixture()
+
+    for driverCase in [
+      "jsonFileSustainedRotationCompression",
+      "localSustainedRotationCompression",
+    ] {
+      #expect(
+        try boolean(
+          fixture,
+          path: ["cases", driverCase, "activeFileExceedsConfiguredMaximum"]
+        )
+      )
+      #expect(
+        try integer(fixture, path: ["cases", driverCase, "configuredMaximumBytes"])
+          == 4000
+      )
+      #expect(
+        try integer(fixture, path: ["cases", driverCase, "retainedRead", "recordCount"])
+          == 15
+      )
+      #expect(
+        try integer(fixture, path: ["cases", driverCase, "retainedRead", "firstRecord"])
+          == 26
+      )
+      #expect(
+        try integer(fixture, path: ["cases", driverCase, "retainedRead", "lastRecord"])
+          == 40
+      )
+      #expect(
+        try boolean(
+          fixture,
+          path: ["cases", driverCase, "retainedRead", "recordsAreContiguous"]
+        )
+      )
+
+      let files: [[String: Any]] = try value(
+        fixture,
+        path: ["cases", driverCase, "files"]
+      )
+      #expect(files.count == 3)
+      #expect(try string(files[0], "compression") == "none")
+      #expect(try string(files[1], "compression") == "gzip")
+      #expect(try boolean(files[1], "gzipStreamValid"))
+      #expect(try string(files[2], "compression") == "gzip")
+      #expect(try boolean(files[2], "gzipStreamValid"))
+    }
+
+    #expect(
+      try integers(
+        fixture,
+        path: [
+          "cases", "jsonFileSustainedRotationCompression", "segmentRecords", "active",
+        ]
+      ) == [36, 37, 38, 39, 40]
+    )
+    #expect(
+      try integers(
+        fixture,
+        path: [
+          "cases", "jsonFileSustainedRotationCompression", "segmentRecords", "rotated1",
+        ]
+      ) == [31, 32, 33, 34, 35]
+    )
+    #expect(
+      try integers(
+        fixture,
+        path: [
+          "cases", "jsonFileSustainedRotationCompression", "segmentRecords", "rotated2",
+        ]
+      ) == [26, 27, 28, 29, 30]
+    )
+  }
+
+  @Test
+  func `pins non-blocking pressure invariants`() throws {
+    let fixture = try Self.fixture()
+
+    #expect(
+      try integer(fixture, "cases", "nonBlockingPressureDrop", "configuredBufferBytes")
+        == 4096
+    )
+    #expect(
+      try integer(fixture, "cases", "nonBlockingPressureDrop", "sourceRecordCount")
+        == 5000
+    )
+    #expect(
+      try boolean(
+        fixture,
+        "cases", "nonBlockingPressureDrop", "workloadWriteCompletedBeforeReceiverRelease"
+      )
+    )
+    #expect(
+      try integer(
+        fixture,
+        "cases", "nonBlockingPressureDrop", "receiver", "firstRecord"
+      ) == 1
+    )
+    for invariant in [
+      "deliveredFewerThanSource",
+      "dropGapObserved",
+      "recordsAreOrdered",
+      "recordsAreUnique",
+      "sourceFinalRecordWasDropped",
+    ] {
+      #expect(
+        try boolean(
+          fixture,
+          path: ["cases", "nonBlockingPressureDrop", "receiver", invariant]
+        )
+      )
+    }
+  }
+
+  @Test
+  func `pins Compose foreground independence from historical readers`() throws {
+    let fixture = try Self.fixture()
+
+    for driverCase in ["jsonFileReadable", "none", "syslogCacheDisabled"] {
+      #expect(
+        try integer(
+          fixture,
+          path: ["cases", "composeForeground", driverCase, "foreground", "exitCode"]
+        ) == 0
+      )
+      #expect(
+        try boolean(
+          fixture,
+          path: [
+            "cases", "composeForeground", driverCase, "foreground", "markers",
+            "allMarkersExactlyOnce",
+          ]
+        )
+      )
+      #expect(
+        try integer(
+          fixture,
+          path: ["cases", "composeForeground", driverCase, "historicalRead", "exitCode"]
+        ) == 0
+      )
+      #expect(
+        try integer(
+          fixture,
+          path: [
+            "cases", "composeForeground", driverCase, "foreground", "markers",
+            "stderrMarkers", "early-err",
+          ]
+        ) == 1
+      )
+      for marker in ["early-out", "early-err", "late-out"] {
+        #expect(
+          try integer(
+            fixture,
+            path: [
+              "cases", "composeForeground", driverCase, "foreground", "markers", "counts",
+              marker,
+            ]
+          ) == 1
+        )
+      }
+    }
+
+    #expect(
+      try boolean(
+        fixture,
+        "cases", "composeForeground", "jsonFileReadable", "historicalRead", "markers",
+        "allMarkersExactlyOnce"
+      )
+    )
+    #expect(
+      try boolean(
+        fixture,
+        "cases", "composeForeground", "jsonFileReadable", "historicalRead",
+        "unsupportedReaderWarning"
+      ) == false
+    )
+    for driverCase in ["none", "syslogCacheDisabled"] {
+      #expect(
+        try boolean(
+          fixture,
+          path: [
+            "cases", "composeForeground", driverCase, "historicalRead",
+            "unsupportedReaderWarning",
+          ]
+        )
+      )
+      #expect(
+        try boolean(
+          fixture,
+          path: [
+            "cases", "composeForeground", driverCase, "historicalRead", "markers",
+            "allMarkersExactlyOnce",
+          ]
+        ) == false
+      )
+      for marker in ["early-out", "early-err", "late-out"] {
+        #expect(
+          try integer(
+            fixture,
+            path: [
+              "cases", "composeForeground", driverCase, "historicalRead", "markers", "counts",
+              marker,
+            ]
+          ) == 0
+        )
+      }
+    }
+  }
+
   private static func fixture() throws -> [String: Any] {
     guard
       let url = Bundle.module.url(
@@ -427,12 +693,36 @@ private func string(_ root: [String: Any], _ path: String...) throws -> String {
   try value(root, path: path)
 }
 
+private func string(_ root: [String: Any], path: [String]) throws -> String {
+  try value(root, path: path)
+}
+
 private func integer(_ root: [String: Any], _ path: String...) throws -> Int {
   let number: NSNumber = try value(root, path: path)
   return number.intValue
 }
 
+private func integer(_ root: [String: Any], path: [String]) throws -> Int {
+  let number: NSNumber = try value(root, path: path)
+  return number.intValue
+}
+
+private func integers(_ root: [String: Any], path: [String]) throws -> [Int] {
+  let numbers: [NSNumber] = try value(root, path: path)
+  return numbers.map(\.intValue)
+}
+
+private func double(_ root: [String: Any], path: [String]) throws -> Double {
+  let number: NSNumber = try value(root, path: path)
+  return number.doubleValue
+}
+
 private func boolean(_ root: [String: Any], _ path: String...) throws -> Bool {
+  let number: NSNumber = try value(root, path: path)
+  return number.boolValue
+}
+
+private func boolean(_ root: [String: Any], path: [String]) throws -> Bool {
   let number: NSNumber = try value(root, path: path)
   return number.boolValue
 }

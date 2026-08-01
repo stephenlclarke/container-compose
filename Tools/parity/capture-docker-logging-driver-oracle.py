@@ -30,6 +30,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Any
 from urllib.parse import quote, urlencode
@@ -39,7 +40,11 @@ import uuid
 REQUIRED_CONTEXT = "colima"
 REQUIRED_ENGINE_VERSION = "29.2.1"
 REQUIRED_API_VERSION = "1.53"
+REQUIRED_COMPOSE_VERSION = "5.3.1"
 REQUIRED_IMAGE = "alpine:3.20"
+REQUIRED_HOST_ARCHITECTURE = "arm64"
+REQUIRED_HOST_MODEL = "Mac17,9"
+REQUIRED_MACOS_VERSION = "26.5.2"
 RFC3339_NANO_PATTERN = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$"
 )
@@ -339,6 +344,34 @@ class LoggingOracle:
             time.sleep(0.05)
         raise OracleFailure(f"timed out waiting for log marker {expected!r}")
 
+    def wait_for_container_path(
+        self,
+        identifier: str,
+        path: str,
+        *,
+        timeout: float = 10.0,
+    ) -> float:
+        """Wait for a container path and return monotonic elapsed seconds."""
+
+        started = time.monotonic()
+        deadline = started + timeout
+        query = urlencode({"path": path})
+        while time.monotonic() < deadline:
+            status, _, _ = self.engine.request(
+                "GET",
+                f"/v{REQUIRED_API_VERSION}/containers/"
+                f"{quote(identifier, safe='')}/archive?{query}",
+                timeout=2.0,
+            )
+            if status == 200:
+                return time.monotonic() - started
+            if status not in (400, 404):
+                raise OracleFailure(
+                    f"container archive probe returned HTTP {status} for {path!r}"
+                )
+            time.sleep(0.02)
+        raise OracleFailure(f"timed out waiting for container path {path!r}")
+
     def create_start_probe(
         self,
         suffix: str,
@@ -499,6 +532,734 @@ def read_json_file_records(identifier: str, log_path: str) -> list[dict[str, Any
     return sorted(records, key=lambda record: record["stream"])
 
 
+def monotonic_timing(started: float) -> dict[str, Any]:
+    """Return a machine-readable monotonic fixture duration."""
+
+    return {
+        "clock": "time.monotonic",
+        "durationSeconds": round(time.monotonic() - started, 6),
+    }
+
+
+def numbered_record_command(
+    *,
+    count: int,
+    digits: int,
+    payload_bytes: int,
+    completion_path: str | None = None,
+    sleep_after: float | None = None,
+) -> list[str]:
+    """Build a deterministic Alpine command that emits numbered records."""
+
+    suffix = ""
+    if completion_path is not None:
+        suffix += f"; printf complete >{completion_path}"
+    if sleep_after is not None:
+        suffix += f"; sleep {sleep_after}"
+    payload = "x" * payload_bytes
+    return [
+        "sh",
+        "-c",
+        f"i=1; while [ $i -le {count} ]; do "
+        f"printf 'record-%0{digits}d:{payload}\\n' $i; "
+        f"i=$((i+1)); done{suffix}",
+    ]
+
+
+def parse_numbered_records(
+    output: str,
+    *,
+    digits: int,
+    payload_bytes: int,
+) -> list[int]:
+    """Validate deterministic numbered output and return its record numbers."""
+
+    pattern = re.compile(rf"^record-(\d{{{digits}}}):(x{{{payload_bytes}}})$")
+    records: list[int] = []
+    for line in output.splitlines():
+        match = pattern.fullmatch(line)
+        if match is None:
+            raise OracleFailure(f"unexpected numbered log record: {line[:80]!r}")
+        records.append(int(match.group(1)))
+    return records
+
+
+def summarized_numbered_read(
+    read: dict[str, Any],
+    *,
+    digits: int,
+    payload_bytes: int,
+) -> dict[str, Any]:
+    """Summarize a large logs response without committing repeated payload bytes."""
+
+    if read.get("httpStatus") != 200:
+        raise OracleFailure(f"numbered logs read failed: {read}")
+    records = parse_numbered_records(
+        read.get("stdout", ""),
+        digits=digits,
+        payload_bytes=payload_bytes,
+    )
+    return {
+        "firstRecord": records[0] if records else None,
+        "httpStatus": read["httpStatus"],
+        "lastRecord": records[-1] if records else None,
+        "recordCount": len(records),
+        "recordsAreContiguous": all(
+            following == current + 1
+            for current, following in zip(records, records[1:])
+        ),
+    }
+
+
+def docker_container_root(identifier: str) -> str:
+    """Return the validated daemon-side root for a Docker container."""
+
+    if re.fullmatch(r"[0-9a-f]{64}", identifier) is None:
+        raise OracleFailure(f"unexpected Docker container ID: {identifier!r}")
+    return f"/var/lib/docker/containers/{identifier}"
+
+
+def colima_file_bytes(path: str, *, compressed: bool) -> bytes:
+    """Read one validated daemon-side logging file through Colima."""
+
+    command = ["gzip", "-cd", "--", path] if compressed else ["cat", "--", path]
+    result = subprocess.run(
+        ["colima", "ssh", "--", "sudo", *command],
+        check=True,
+        capture_output=True,
+        env={**os.environ, "LC_ALL": "C"},
+        timeout=30,
+    )
+    return result.stdout
+
+
+def capture_rotation_files(
+    identifier: str,
+    *,
+    driver: str,
+    configured_maximum: int,
+) -> tuple[list[dict[str, Any]], dict[str, list[int]] | None, bool]:
+    """Capture stable file names, compression, and JSON segment order."""
+
+    root = docker_container_root(identifier)
+    if driver == "json-file":
+        relative_paths = [
+            f"{identifier}-json.log",
+            f"{identifier}-json.log.1.gz",
+            f"{identifier}-json.log.2.gz",
+        ]
+        normalized_paths = [
+            "<container-id>-json.log",
+            "<container-id>-json.log.1.gz",
+            "<container-id>-json.log.2.gz",
+        ]
+    elif driver == "local":
+        relative_paths = [
+            "local-logs/container.log",
+            "local-logs/container.log.1.gz",
+            "local-logs/container.log.2.gz",
+        ]
+        normalized_paths = relative_paths
+    else:
+        raise OracleFailure(f"unsupported rotation probe driver: {driver}")
+
+    expected = set(relative_paths)
+    deadline = time.monotonic() + 10.0
+    observed: set[str] = set()
+    while time.monotonic() < deadline:
+        listing = subprocess.run(
+            [
+                "colima",
+                "ssh",
+                "--",
+                "sudo",
+                "find",
+                root,
+                "-maxdepth",
+                "3",
+                "-type",
+                "f",
+                "-printf",
+                "%P\\n",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "LC_ALL": "C"},
+            timeout=10,
+        )
+        observed = {
+            line
+            for line in listing.stdout.splitlines()
+            if line.startswith(f"{identifier}-json.log")
+            or line.startswith("local-logs/container.log")
+        }
+        if observed == expected:
+            gzip_valid = all(
+                subprocess.run(
+                    [
+                        "colima",
+                        "ssh",
+                        "--",
+                        "sudo",
+                        "gzip",
+                        "-t",
+                        "--",
+                        f"{root}/{relative_path}",
+                    ],
+                    capture_output=True,
+                    check=False,
+                    timeout=10,
+                ).returncode
+                == 0
+                for relative_path in relative_paths[1:]
+            )
+            if gzip_valid:
+                break
+        time.sleep(0.05)
+    else:
+        raise OracleFailure(
+            f"timed out waiting for {driver} rotation files: {sorted(observed)}"
+        )
+
+    active_size = int(
+        subprocess.run(
+            [
+                "colima",
+                "ssh",
+                "--",
+                "sudo",
+                "stat",
+                "-c",
+                "%s",
+                "--",
+                f"{root}/{relative_paths[0]}",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "LC_ALL": "C"},
+            timeout=10,
+        ).stdout.strip()
+    )
+    inventory: list[dict[str, Any]] = []
+    for index, normalized_path in enumerate(normalized_paths):
+        entry: dict[str, Any] = {
+            "compression": "gzip" if index else "none",
+            "path": normalized_path,
+        }
+        if index:
+            entry["gzipStreamValid"] = True
+        inventory.append(entry)
+
+    segment_records: dict[str, list[int]] | None = None
+    if driver == "json-file":
+        segment_records = {}
+        for index, relative_path in enumerate(relative_paths):
+            content = colima_file_bytes(
+                f"{root}/{relative_path}",
+                compressed=index > 0,
+            )
+            records: list[int] = []
+            for line in content.splitlines():
+                record = json.loads(line)
+                marker = parse_numbered_records(
+                    record["log"],
+                    digits=3,
+                    payload_bytes=900,
+                )
+                if len(marker) != 1:
+                    raise OracleFailure("json-file segment did not contain one record")
+                records.append(marker[0])
+            segment_records[["active", "rotated1", "rotated2"][index]] = records
+
+    return inventory, segment_records, active_size > configured_maximum
+
+
+def capture_rotation_case(
+    oracle: LoggingOracle,
+    *,
+    driver: str,
+) -> dict[str, Any]:
+    """Capture sustained rotation and compression for one built-in driver."""
+
+    identifier, create = oracle.create(
+        f"{driver}-rotation",
+        command=numbered_record_command(count=40, digits=3, payload_bytes=900),
+        log_config={
+            "Type": driver,
+            "Config": {
+                "compress": "true",
+                "max-file": "3",
+                "max-size": "4k",
+            },
+        },
+    )
+    assert identifier is not None
+    oracle.start(identifier)
+    oracle.wait(identifier)
+    inventory, segments, active_exceeds_maximum = capture_rotation_files(
+        identifier,
+        driver=driver,
+        configured_maximum=4000,
+    )
+    result: dict[str, Any] = {
+        "activeFileExceedsConfiguredMaximum": active_exceeds_maximum,
+        "configuredMaximumBytes": 4000,
+        "create": create,
+        "files": inventory,
+        "inspectAfterExit": normalized_inspect(oracle.inspect(identifier)),
+        "retainedRead": summarized_numbered_read(
+            oracle.logs(identifier, tty=False),
+            digits=3,
+            payload_bytes=900,
+        ),
+    }
+    if segments is not None:
+        result["segmentRecords"] = segments
+    return result
+
+
+PRESSURE_SINK_SCRIPT = r"""
+import json
+import os
+import re
+import socket
+import sys
+import time
+
+socket_path, result_path, pid_path, stall_text = sys.argv[1:]
+for path in (socket_path, result_path, pid_path):
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+with open(pid_path, "w", encoding="ascii") as pid_file:
+    pid_file.write(str(os.getpid()))
+server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+server.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+server.bind(socket_path)
+server.listen(1)
+connection, _ = server.accept()
+time.sleep(float(stall_text))
+received = bytearray()
+while True:
+    chunk = connection.recv(65536)
+    if not chunk:
+        break
+    received.extend(chunk)
+markers = [
+    int(value)
+    for value in re.findall(rb"record-(\d{5})", bytes(received))
+]
+with open(result_path, "w", encoding="utf-8") as result_file:
+    json.dump({"markers": markers}, result_file, separators=(",", ":"))
+connection.close()
+server.close()
+"""
+
+
+def colima_path_exists(path: str, *, socket_path: bool = False) -> bool:
+    """Check one exact Colima path without following shell interpolation."""
+
+    predicate = "-S" if socket_path else "-e"
+    return (
+        subprocess.run(
+            ["colima", "ssh", "--", "test", predicate, path],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        ).returncode
+        == 0
+    )
+
+
+def stop_pressure_sink(
+    process: subprocess.Popen[str],
+    *,
+    socket_path: str,
+    result_path: str,
+    pid_path: str,
+) -> None:
+    """Stop one exact pressure sink and remove all of its VM-side state."""
+
+    if process.poll() is None and colima_path_exists(pid_path):
+        cleanup_script = (
+            "import os,signal,sys; "
+            "pid=int(open(sys.argv[1],encoding='ascii').read()); "
+            "cmd=open(f'/proc/{pid}/cmdline','rb').read(); "
+            "os.kill(pid,signal.SIGTERM) if sys.argv[2].encode() in cmd else None"
+        )
+        subprocess.run(
+            [
+                "colima",
+                "ssh",
+                "--",
+                "python3",
+                "-c",
+                cleanup_script,
+                pid_path,
+                socket_path,
+            ],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+
+    subprocess.run(
+        [
+            "colima",
+            "ssh",
+            "--",
+            "rm",
+            "-f",
+            socket_path,
+            result_path,
+            pid_path,
+        ],
+        check=True,
+        capture_output=True,
+        timeout=10,
+    )
+    residue = [
+        path
+        for path in (socket_path, result_path, pid_path)
+        if colima_path_exists(path)
+    ]
+    if residue:
+        raise OracleFailure(f"pressure sink cleanup left state: {residue}")
+
+
+def capture_nonblocking_pressure(
+    oracle: LoggingOracle,
+) -> dict[str, Any]:
+    """Prove observable non-blocking drops with a locally controlled slow sink."""
+
+    socket_path = f"/tmp/{oracle.prefix}-pressure.sock"
+    result_path = f"/tmp/{oracle.prefix}-pressure.json"
+    pid_path = f"/tmp/{oracle.prefix}-pressure.pid"
+    stall_seconds = 2.0
+    process = subprocess.Popen(
+        [
+            "colima",
+            "ssh",
+            "--",
+            "python3",
+            "-c",
+            PRESSURE_SINK_SCRIPT,
+            socket_path,
+            result_path,
+            pid_path,
+            str(stall_seconds),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env={**os.environ, "LC_ALL": "C"},
+    )
+    try:
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            if colima_path_exists(socket_path, socket_path=True):
+                break
+            if process.poll() is not None:
+                _, stderr = process.communicate()
+                raise OracleFailure(f"pressure sink exited before ready: {stderr}")
+            time.sleep(0.05)
+        else:
+            raise OracleFailure("timed out waiting for pressure sink socket")
+
+        source_count = 5000
+        identifier, create = oracle.create(
+            "nonblocking-pressure",
+            command=numbered_record_command(
+                count=source_count,
+                digits=5,
+                payload_bytes=900,
+                completion_path="/oracle-write-complete",
+                sleep_after=3.0,
+            ),
+            log_config={
+                "Type": "syslog",
+                "Config": {
+                    "cache-disabled": "true",
+                    "max-buffer-size": "4k",
+                    "mode": "non-blocking",
+                    "syslog-address": f"unix://{socket_path}",
+                },
+            },
+        )
+        assert identifier is not None
+        oracle.start(identifier)
+        write_completion_seconds = oracle.wait_for_container_path(
+            identifier,
+            "/oracle-write-complete",
+        )
+        oracle.wait(identifier)
+        try:
+            _, stderr = process.communicate(timeout=10)
+        except subprocess.TimeoutExpired as error:
+            raise OracleFailure("pressure sink did not terminate after container exit") from error
+        if process.returncode != 0:
+            raise OracleFailure(f"pressure sink failed: {stderr}")
+        result = json.loads(
+            subprocess.run(
+                ["colima", "ssh", "--", "cat", result_path],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            ).stdout
+        )
+        markers = result.get("markers", [])
+        if not markers or not all(isinstance(marker, int) for marker in markers):
+            raise OracleFailure(f"pressure sink returned invalid markers: {result}")
+        inspect = normalized_inspect(oracle.inspect(identifier))
+        inspect["logConfig"]["Config"]["syslog-address"] = (
+            "unix://<unique-colima-pressure-socket>"
+        )
+        return {
+            "configuredBufferBytes": 4096,
+            "create": create,
+            "inspectAfterExit": inspect,
+            "receiver": {
+                "deliveredFewerThanSource": len(markers) < source_count,
+                "dropGapObserved": any(
+                    following != current + 1
+                    for current, following in zip(markers, markers[1:])
+                ),
+                "firstRecord": markers[0],
+                "recordsAreOrdered": markers == sorted(markers),
+                "recordsAreUnique": len(markers) == len(set(markers)),
+                "sourceFinalRecordWasDropped": source_count not in markers,
+            },
+            "receiverStallSeconds": stall_seconds,
+            "sourceRecordCount": source_count,
+            "workloadWriteCompletedBeforeReceiverRelease": (
+                write_completion_seconds < stall_seconds
+            ),
+        }
+    finally:
+        stop_pressure_sink(
+            process,
+            socket_path=socket_path,
+            result_path=result_path,
+            pid_path=pid_path,
+        )
+
+
+FOREGROUND_MARKERS = ("early-out", "early-err", "late-out")
+
+
+def compose_marker_summary(stdout: str, stderr: str) -> dict[str, Any]:
+    """Normalize Compose foreground or historical output to marker counts."""
+
+    combined = stdout + stderr
+    return {
+        "allMarkersExactlyOnce": all(combined.count(marker) == 1 for marker in FOREGROUND_MARKERS),
+        "counts": {marker: combined.count(marker) for marker in FOREGROUND_MARKERS},
+        "stderrMarkers": {
+            marker: stderr.count(marker) for marker in FOREGROUND_MARKERS
+        },
+        "stdoutMarkers": {
+            marker: stdout.count(marker) for marker in FOREGROUND_MARKERS
+        },
+    }
+
+
+def capture_compose_foreground_case(
+    engine: DockerEngine,
+    *,
+    prefix: str,
+    label: str,
+    driver: str,
+    options: dict[str, str],
+) -> dict[str, Any]:
+    """Capture Docker Compose foreground attachment and later read-back."""
+
+    project = f"ccfg{uuid.uuid4().hex[:12]}"
+    container_id: str | None = None
+    with tempfile.TemporaryDirectory(prefix=f"{prefix}-{label}-") as directory:
+        compose_path = Path(directory) / "compose.json"
+        compose_path.write_text(
+            json.dumps(
+                {
+                    "services": {
+                        "probe": {
+                            "command": [
+                                "sh",
+                                "-c",
+                                "printf 'early-out\\n'; "
+                                "printf 'early-err\\n' >&2; "
+                                "sleep 0.2; printf 'late-out\\n'",
+                            ],
+                            "image": REQUIRED_IMAGE,
+                            "logging": {
+                                "driver": driver,
+                                "options": options,
+                            },
+                        }
+                    }
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        base = [
+            "docker",
+            "compose",
+            "--project-name",
+            project,
+            "--file",
+            str(compose_path),
+            "--ansi",
+            "never",
+        ]
+        environment = {
+            **os.environ,
+            "COMPOSE_ANSI": "never",
+            "LC_ALL": "C",
+        }
+        try:
+            foreground = subprocess.run(
+                [
+                    *base,
+                    "up",
+                    "--abort-on-container-exit",
+                    "--exit-code-from",
+                    "probe",
+                    "--no-color",
+                ],
+                capture_output=True,
+                check=False,
+                text=True,
+                env=environment,
+                timeout=30,
+            )
+            container_id = subprocess.run(
+                [*base, "ps", "--quiet", "--all", "probe"],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=environment,
+                timeout=10,
+            ).stdout.strip()
+            if re.fullmatch(r"[0-9a-f]{64}", container_id) is None:
+                raise OracleFailure(
+                    f"Compose foreground probe returned invalid container ID: {container_id!r}"
+                )
+            historical = subprocess.run(
+                [*base, "logs", "--no-color"],
+                capture_output=True,
+                check=False,
+                text=True,
+                env=environment,
+                timeout=10,
+            )
+            _, inspect = engine.request_json(
+                "GET",
+                f"/v{REQUIRED_API_VERSION}/containers/{container_id}/json",
+                expected_status=200,
+            )
+            return {
+                "foreground": {
+                    "exitCode": foreground.returncode,
+                    "markers": compose_marker_summary(
+                        foreground.stdout,
+                        foreground.stderr,
+                    ),
+                },
+                "historicalRead": {
+                    "exitCode": historical.returncode,
+                    "markers": compose_marker_summary(
+                        historical.stdout,
+                        historical.stderr,
+                    ),
+                    "unsupportedReaderWarning": (
+                        UNSUPPORTED_READER_MESSAGE in historical.stderr
+                    ),
+                },
+                "inspectAfterExit": normalized_inspect(inspect),
+            }
+        finally:
+            cleanup = subprocess.run(
+                [
+                    *base,
+                    "down",
+                    "--volumes",
+                    "--remove-orphans",
+                    "--timeout",
+                    "0",
+                ],
+                capture_output=True,
+                check=False,
+                text=True,
+                env=environment,
+                timeout=30,
+            )
+            if cleanup.returncode != 0:
+                raise OracleFailure(
+                    f"Compose foreground cleanup failed for {label}: {cleanup.stderr}"
+                )
+            if container_id is not None:
+                status, _, _ = engine.request(
+                    "GET",
+                    f"/v{REQUIRED_API_VERSION}/containers/{container_id}/json",
+                )
+                if status != 404:
+                    raise OracleFailure(
+                        f"Compose foreground cleanup retained container {container_id}"
+                    )
+            network_status, _, _ = engine.request(
+                "GET",
+                f"/v{REQUIRED_API_VERSION}/networks/"
+                f"{quote(f'{project}_default', safe='')}",
+            )
+            if network_status != 404:
+                raise OracleFailure(
+                    f"Compose foreground cleanup retained network {project}_default"
+                )
+
+
+def capture_compose_foreground(engine: DockerEngine, prefix: str) -> dict[str, Any]:
+    """Capture foreground behavior for readable and unreadable loggers."""
+
+    return {
+        "jsonFileReadable": capture_compose_foreground_case(
+            engine,
+            prefix=prefix,
+            label="json-file",
+            driver="json-file",
+            options={},
+        ),
+        "none": capture_compose_foreground_case(
+            engine,
+            prefix=prefix,
+            label="none",
+            driver="none",
+            options={},
+        ),
+        "syslogCacheDisabled": capture_compose_foreground_case(
+            engine,
+            prefix=prefix,
+            label="syslog-disabled",
+            driver="syslog",
+            options={
+                "cache-disabled": "true",
+                "syslog-address": "udp://127.0.0.1:55144",
+            },
+        ),
+    }
+
+
 def docker_context_socket() -> str:
     result = subprocess.run(
         ["docker", "context", "inspect", REQUIRED_CONTEXT],
@@ -536,6 +1297,50 @@ def check_prerequisites() -> tuple[DockerEngine, dict[str, Any]]:
             f"Docker context is {selected_context!r}; expected {REQUIRED_CONTEXT!r}"
         )
 
+    compose_version = subprocess.run(
+        ["docker", "compose", "version", "--short"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    if compose_version != REQUIRED_COMPOSE_VERSION:
+        raise PrerequisiteUnavailable(
+            f"Docker Compose is {compose_version!r}; expected {REQUIRED_COMPOSE_VERSION!r}"
+        )
+
+    host_architecture = subprocess.run(
+        ["uname", "-m"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    host_model = subprocess.run(
+        ["sysctl", "-n", "hw.model"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    macos_version = subprocess.run(
+        ["sw_vers", "-productVersion"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    expected_host = (
+        REQUIRED_HOST_ARCHITECTURE,
+        REQUIRED_HOST_MODEL,
+        REQUIRED_MACOS_VERSION,
+    )
+    actual_host = (host_architecture, host_model, macos_version)
+    if actual_host != expected_host:
+        raise PrerequisiteUnavailable(
+            f"evidence host is {actual_host!r}; expected {expected_host!r}"
+        )
+
     engine = DockerEngine(docker_context_socket())
     _, version = engine.request_json(
         "GET", f"/v{REQUIRED_API_VERSION}/version", expected_status=200
@@ -561,14 +1366,38 @@ def check_prerequisites() -> tuple[DockerEngine, dict[str, Any]]:
             f"required preloaded image is unavailable: {REQUIRED_IMAGE}"
         )
 
+    docker_client_version = subprocess.run(
+        ["docker", "version", "--format", "{{.Client.Version}}"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    colima_version = subprocess.run(
+        ["colima", "version"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.splitlines()[0].removeprefix("colima version ").strip()
+
     metadata = {
         "apiVersion": version["ApiVersion"],
         "architecture": version["Arch"],
+        "colimaVersion": colima_version,
+        "composeVersion": compose_version,
         "context": selected_context,
         "defaultLoggingDriver": info["LoggingDriver"],
+        "dockerClientVersion": docker_client_version,
+        "engineGitCommit": version["GitCommit"],
+        "engineGoVersion": version["GoVersion"],
+        "engineKernelVersion": version["KernelVersion"],
         "engineVersion": version["Version"],
+        "hostArchitecture": host_architecture,
+        "hostModel": host_model,
         "image": REQUIRED_IMAGE,
         "imageRepoDigests": sorted(image.get("RepoDigests", [])),
+        "macOSVersion": macos_version,
         "minimumAPIVersion": version["MinAPIVersion"],
         "operatingSystem": version["Os"],
         "registeredLoggingDrivers": sorted(info["Plugins"]["Log"]),
@@ -581,7 +1410,9 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
     oracle = LoggingOracle(engine, REQUIRED_IMAGE, prefix)
     try:
         cases: dict[str, Any] = {}
+        timings: dict[str, Any] = {}
 
+        case_started = time.monotonic()
         omitted_id, omitted_create = oracle.create(
             "omitted",
             command=["true"],
@@ -597,13 +1428,17 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
             "runningWasStarted": False,
             "createdFollowRead": omitted_read,
         }
+        timings["omittedDefault"] = monotonic_timing(case_started)
 
+        case_started = time.monotonic()
         cases["emptyDriver"] = oracle.create_start_probe(
             "empty-driver",
             driver="",
             options={},
         )
+        timings["emptyDriver"] = monotonic_timing(case_started)
 
+        case_started = time.monotonic()
         json_id, json_create = oracle.create(
             "json",
             command=[
@@ -637,7 +1472,9 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
                 json_id, tty=False, stdout=True, stderr=False
             ),
         }
+        timings["jsonFileStoppedReadAndFraming"] = monotonic_timing(case_started)
 
+        case_started = time.monotonic()
         local_id, local_create = oracle.create(
             "local",
             command=["sh", "-c", 'printf "local-line\\n"'],
@@ -658,7 +1495,27 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
             "inspectAfterExit": normalized_inspect(oracle.inspect(local_id)),
             "stoppedRead": oracle.logs(local_id, tty=False),
         }
+        timings["localNativeReader"] = monotonic_timing(case_started)
 
+        case_started = time.monotonic()
+        cases["jsonFileSustainedRotationCompression"] = capture_rotation_case(
+            oracle,
+            driver="json-file",
+        )
+        timings["jsonFileSustainedRotationCompression"] = monotonic_timing(
+            case_started
+        )
+
+        case_started = time.monotonic()
+        cases["localSustainedRotationCompression"] = capture_rotation_case(
+            oracle,
+            driver="local",
+        )
+        timings["localSustainedRotationCompression"] = monotonic_timing(
+            case_started
+        )
+
+        case_started = time.monotonic()
         none_id, none_create = oracle.create(
             "none-options",
             command=["sh", "-c", 'printf "not-retained\\n"'],
@@ -679,7 +1536,9 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
             "requestTransport": "Docker Engine API",
             "stoppedRead": oracle.logs(none_id, tty=False),
         }
+        timings["noneArbitraryOptions"] = monotonic_timing(case_started)
 
+        case_started = time.monotonic()
         invalid_local_name = oracle.name("invalid-local")
         invalid_local_status, invalid_local_response = engine.request_json(
             "POST",
@@ -728,7 +1587,9 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
                 },
             },
         }
+        timings["validationPhases"] = monotonic_timing(case_started)
 
+        case_started = time.monotonic()
         option_semantics: dict[str, Any] = {
             "mode": {},
             "compress": {},
@@ -737,6 +1598,14 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
             "maxBufferSize": {},
             "cacheDisabled": {},
             "cachePrefixRetention": {},
+            "sizeUnits": {
+                "cacheMaxSize4kBytes": 4096,
+                "cacheMaxSizeParser": "units.RAMInBytes",
+                "maxBufferSize4kBytes": 4096,
+                "maxBufferSizeParser": "units.RAMInBytes",
+                "maxSize4kBytes": 4000,
+                "maxSizeParser": "units.FromHumanSize",
+            },
         }
         for label, value in {
             "blocking": "blocking",
@@ -869,7 +1738,13 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
             )
         )
         cases["optionSemantics"] = option_semantics
+        timings["optionSemantics"] = monotonic_timing(case_started)
 
+        case_started = time.monotonic()
+        cases["nonBlockingPressureDrop"] = capture_nonblocking_pressure(oracle)
+        timings["nonBlockingPressureDrop"] = monotonic_timing(case_started)
+
+        case_started = time.monotonic()
         tty_id, tty_create = oracle.create(
             "tty",
             command=[
@@ -894,7 +1769,9 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
                 tty_id, tty=True, stdout=True, stderr=False
             ),
         }
+        timings["ttyRawMergedFraming"] = monotonic_timing(case_started)
 
+        case_started = time.monotonic()
         restart_id, restart_create = oracle.create(
             "restart",
             command=[
@@ -919,7 +1796,9 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
             "retainedRead": oracle.logs(restart_id, tty=False),
             "stopHTTPStatus": stop_status,
         }
+        timings["restartRetention"] = monotonic_timing(case_started)
 
+        case_started = time.monotonic()
         cached_id, cached_create = oracle.create(
             "syslog-cache",
             command=[
@@ -962,11 +1841,17 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
                 "stoppedRead": oracle.logs(cached_id, tty=False),
             },
         }
+        timings["nonReaderDualCache"] = monotonic_timing(case_started)
+
+        case_started = time.monotonic()
+        cases["composeForeground"] = capture_compose_foreground(engine, prefix)
+        timings["composeForeground"] = monotonic_timing(case_started)
 
         return {
             "cases": cases,
             "metadata": metadata,
-            "schemaVersion": 1,
+            "schemaVersion": 2,
+            "timings": timings,
         }
     finally:
         oracle.close()
@@ -976,21 +1861,76 @@ def render_fixture(value: dict[str, Any]) -> str:
     return json.dumps(value, indent=2, sort_keys=True) + "\n"
 
 
+def normalize_timing_comparison(
+    expected: dict[str, Any],
+    actual: dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    """Normalize raw timings while enforcing timeout and 10x regression rules."""
+
+    expected_timings = expected.get("timings", {})
+    actual_timings = actual.get("timings", {})
+    if not isinstance(expected_timings, dict) or not isinstance(actual_timings, dict):
+        return [], ["oracle timings are not objects"]
+
+    observations: list[str] = []
+    failures: list[str] = []
+    for name in sorted(set(expected_timings) & set(actual_timings)):
+        expected_timing = expected_timings[name]
+        actual_timing = actual_timings[name]
+        if not isinstance(expected_timing, dict) or not isinstance(actual_timing, dict):
+            failures.append(f"{name}: timing record is not an object")
+            continue
+        baseline = expected_timing.get("durationSeconds")
+        captured = actual_timing.get("durationSeconds")
+        if (
+            not isinstance(baseline, (int, float))
+            or isinstance(baseline, bool)
+            or baseline <= 0
+            or not isinstance(captured, (int, float))
+            or isinstance(captured, bool)
+            or captured <= 0
+        ):
+            failures.append(f"{name}: timing durations must be positive numbers")
+            continue
+        ratio = captured / baseline
+        observations.append(
+            f"{name}: {captured:.6f}s monotonic ({ratio:.2f}x captured baseline)"
+        )
+        if ratio >= 10.0:
+            failures.append(
+                f"{name}: {captured:.6f}s is {ratio:.2f}x the "
+                f"{baseline:.6f}s baseline"
+            )
+        actual_timing["durationSeconds"] = baseline
+    return observations, failures
+
+
 def compare_fixture(expected_path: Path, actual: str) -> bool:
     if not expected_path.is_file():
         raise OracleFailure(f"expected fixture is missing: {expected_path}")
-    expected = expected_path.read_text(encoding="utf-8")
-    if expected == actual:
+    expected_value = json.loads(expected_path.read_text(encoding="utf-8"))
+    actual_value = json.loads(actual)
+    timing_observations, timing_failures = normalize_timing_comparison(
+        expected_value,
+        actual_value,
+    )
+    expected = render_fixture(expected_value)
+    normalized_actual = render_fixture(actual_value)
+    if expected == normalized_actual and not timing_failures:
         print(f"Docker logging oracle matches {expected_path}")
+        for observation in timing_observations:
+            print(f"timing {observation}")
         return True
     sys.stderr.writelines(
         difflib.unified_diff(
             expected.splitlines(keepends=True),
-            actual.splitlines(keepends=True),
+            normalized_actual.splitlines(keepends=True),
             fromfile=str(expected_path),
             tofile="captured-docker-logging-oracle",
         )
     )
+    for failure in timing_failures:
+        print(f"timing failure: {failure}", file=sys.stderr)
     return False
 
 

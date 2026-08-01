@@ -1,5 +1,181 @@
 {
   "cases": {
+    "composeForeground": {
+      "jsonFileReadable": {
+        "foreground": {
+          "exitCode": 0,
+          "markers": {
+            "allMarkersExactlyOnce": true,
+            "counts": {
+              "early-err": 1,
+              "early-out": 1,
+              "late-out": 1
+            },
+            "stderrMarkers": {
+              "early-err": 1,
+              "early-out": 0,
+              "late-out": 0
+            },
+            "stdoutMarkers": {
+              "early-err": 0,
+              "early-out": 1,
+              "late-out": 1
+            }
+          }
+        },
+        "historicalRead": {
+          "exitCode": 0,
+          "markers": {
+            "allMarkersExactlyOnce": true,
+            "counts": {
+              "early-err": 1,
+              "early-out": 1,
+              "late-out": 1
+            },
+            "stderrMarkers": {
+              "early-err": 0,
+              "early-out": 0,
+              "late-out": 0
+            },
+            "stdoutMarkers": {
+              "early-err": 1,
+              "early-out": 1,
+              "late-out": 1
+            }
+          },
+          "unsupportedReaderWarning": false
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {},
+            "Type": "json-file"
+          },
+          "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        }
+      },
+      "none": {
+        "foreground": {
+          "exitCode": 0,
+          "markers": {
+            "allMarkersExactlyOnce": true,
+            "counts": {
+              "early-err": 1,
+              "early-out": 1,
+              "late-out": 1
+            },
+            "stderrMarkers": {
+              "early-err": 1,
+              "early-out": 0,
+              "late-out": 0
+            },
+            "stdoutMarkers": {
+              "early-err": 0,
+              "early-out": 1,
+              "late-out": 1
+            }
+          }
+        },
+        "historicalRead": {
+          "exitCode": 0,
+          "markers": {
+            "allMarkersExactlyOnce": false,
+            "counts": {
+              "early-err": 0,
+              "early-out": 0,
+              "late-out": 0
+            },
+            "stderrMarkers": {
+              "early-err": 0,
+              "early-out": 0,
+              "late-out": 0
+            },
+            "stdoutMarkers": {
+              "early-err": 0,
+              "early-out": 0,
+              "late-out": 0
+            }
+          },
+          "unsupportedReaderWarning": true
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {},
+            "Type": "none"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        }
+      },
+      "syslogCacheDisabled": {
+        "foreground": {
+          "exitCode": 0,
+          "markers": {
+            "allMarkersExactlyOnce": true,
+            "counts": {
+              "early-err": 1,
+              "early-out": 1,
+              "late-out": 1
+            },
+            "stderrMarkers": {
+              "early-err": 1,
+              "early-out": 0,
+              "late-out": 0
+            },
+            "stdoutMarkers": {
+              "early-err": 0,
+              "early-out": 1,
+              "late-out": 1
+            }
+          }
+        },
+        "historicalRead": {
+          "exitCode": 0,
+          "markers": {
+            "allMarkersExactlyOnce": false,
+            "counts": {
+              "early-err": 0,
+              "early-out": 0,
+              "late-out": 0
+            },
+            "stderrMarkers": {
+              "early-err": 0,
+              "early-out": 0,
+              "late-out": 0
+            },
+            "stdoutMarkers": {
+              "early-err": 0,
+              "early-out": 0,
+              "late-out": 0
+            }
+          },
+          "unsupportedReaderWarning": true
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {
+              "cache-disabled": "true",
+              "syslog-address": "udp://127.0.0.1:55144"
+            },
+            "Type": "syslog"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        }
+      }
+    },
     "emptyDriver": {
       "create": {
         "httpStatus": 201,
@@ -189,6 +365,77 @@
         "stdout": "stdout-line\n"
       }
     },
+    "jsonFileSustainedRotationCompression": {
+      "activeFileExceedsConfiguredMaximum": true,
+      "configuredMaximumBytes": 4000,
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "files": [
+        {
+          "compression": "none",
+          "path": "<container-id>-json.log"
+        },
+        {
+          "compression": "gzip",
+          "gzipStreamValid": true,
+          "path": "<container-id>-json.log.1.gz"
+        },
+        {
+          "compression": "gzip",
+          "gzipStreamValid": true,
+          "path": "<container-id>-json.log.2.gz"
+        }
+      ],
+      "inspectAfterExit": {
+        "logConfig": {
+          "Config": {
+            "compress": "true",
+            "max-file": "3",
+            "max-size": "4k"
+          },
+          "Type": "json-file"
+        },
+        "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+        "state": {
+          "error": "",
+          "status": "exited"
+        },
+        "tty": false
+      },
+      "retainedRead": {
+        "firstRecord": 26,
+        "httpStatus": 200,
+        "lastRecord": 40,
+        "recordCount": 15,
+        "recordsAreContiguous": true
+      },
+      "segmentRecords": {
+        "active": [
+          36,
+          37,
+          38,
+          39,
+          40
+        ],
+        "rotated1": [
+          31,
+          32,
+          33,
+          34,
+          35
+        ],
+        "rotated2": [
+          26,
+          27,
+          28,
+          29,
+          30
+        ]
+      }
+    },
     "localNativeReader": {
       "create": {
         "httpStatus": 201,
@@ -234,6 +481,90 @@
         "stderr": "",
         "stdout": "local-line\n"
       }
+    },
+    "localSustainedRotationCompression": {
+      "activeFileExceedsConfiguredMaximum": true,
+      "configuredMaximumBytes": 4000,
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "files": [
+        {
+          "compression": "none",
+          "path": "local-logs/container.log"
+        },
+        {
+          "compression": "gzip",
+          "gzipStreamValid": true,
+          "path": "local-logs/container.log.1.gz"
+        },
+        {
+          "compression": "gzip",
+          "gzipStreamValid": true,
+          "path": "local-logs/container.log.2.gz"
+        }
+      ],
+      "inspectAfterExit": {
+        "logConfig": {
+          "Config": {
+            "compress": "true",
+            "max-file": "3",
+            "max-size": "4k"
+          },
+          "Type": "local"
+        },
+        "logPath": "",
+        "state": {
+          "error": "",
+          "status": "exited"
+        },
+        "tty": false
+      },
+      "retainedRead": {
+        "firstRecord": 26,
+        "httpStatus": 200,
+        "lastRecord": 40,
+        "recordCount": 15,
+        "recordsAreContiguous": true
+      }
+    },
+    "nonBlockingPressureDrop": {
+      "configuredBufferBytes": 4096,
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "inspectAfterExit": {
+        "logConfig": {
+          "Config": {
+            "cache-disabled": "true",
+            "max-buffer-size": "4k",
+            "mode": "non-blocking",
+            "syslog-address": "unix://<unique-colima-pressure-socket>"
+          },
+          "Type": "syslog"
+        },
+        "logPath": "",
+        "state": {
+          "error": "",
+          "status": "exited"
+        },
+        "tty": false
+      },
+      "receiver": {
+        "deliveredFewerThanSource": true,
+        "dropGapObserved": true,
+        "firstRecord": 1,
+        "recordsAreOrdered": true,
+        "recordsAreUnique": true,
+        "sourceFinalRecordWasDropped": true
+      },
+      "receiverStallSeconds": 2.0,
+      "sourceRecordCount": 5000,
+      "workloadWriteCompletedBeforeReceiverRelease": true
     },
     "nonReaderDualCache": {
       "cacheDisabled": {
@@ -2495,6 +2826,14 @@
             "Type": "json-file"
           }
         }
+      },
+      "sizeUnits": {
+        "cacheMaxSize4kBytes": 4096,
+        "cacheMaxSizeParser": "units.RAMInBytes",
+        "maxBufferSize4kBytes": 4096,
+        "maxBufferSizeParser": "units.RAMInBytes",
+        "maxSize4kBytes": 4000,
+        "maxSizeParser": "units.FromHumanSize"
       }
     },
     "restartRetention": {
@@ -2628,13 +2967,22 @@
   "metadata": {
     "apiVersion": "1.53",
     "architecture": "arm64",
+    "colimaVersion": "0.10.3",
+    "composeVersion": "5.3.1",
     "context": "colima",
     "defaultLoggingDriver": "json-file",
+    "dockerClientVersion": "29.6.2",
+    "engineGitCommit": "6bc6209",
+    "engineGoVersion": "go1.25.6",
+    "engineKernelVersion": "6.8.0-100-generic",
     "engineVersion": "29.2.1",
+    "hostArchitecture": "arm64",
+    "hostModel": "Mac17,9",
     "image": "alpine:3.20",
     "imageRepoDigests": [
       "alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
     ],
+    "macOSVersion": "26.5.2",
     "minimumAPIVersion": "1.44",
     "operatingSystem": "linux",
     "registeredLoggingDrivers": [
@@ -2649,5 +2997,63 @@
       "syslog"
     ]
   },
-  "schemaVersion": 1
+  "schemaVersion": 2,
+  "timings": {
+    "composeForeground": {
+      "clock": "time.monotonic",
+      "durationSeconds": 2.214947
+    },
+    "emptyDriver": {
+      "clock": "time.monotonic",
+      "durationSeconds": 0.121738
+    },
+    "jsonFileStoppedReadAndFraming": {
+      "clock": "time.monotonic",
+      "durationSeconds": 0.312121
+    },
+    "jsonFileSustainedRotationCompression": {
+      "clock": "time.monotonic",
+      "durationSeconds": 1.529535
+    },
+    "localNativeReader": {
+      "clock": "time.monotonic",
+      "durationSeconds": 0.133375
+    },
+    "localSustainedRotationCompression": {
+      "clock": "time.monotonic",
+      "durationSeconds": 1.069543
+    },
+    "nonBlockingPressureDrop": {
+      "clock": "time.monotonic",
+      "durationSeconds": 4.706681
+    },
+    "nonReaderDualCache": {
+      "clock": "time.monotonic",
+      "durationSeconds": 0.215178
+    },
+    "noneArbitraryOptions": {
+      "clock": "time.monotonic",
+      "durationSeconds": 0.138936
+    },
+    "omittedDefault": {
+      "clock": "time.monotonic",
+      "durationSeconds": 0.039535
+    },
+    "optionSemantics": {
+      "clock": "time.monotonic",
+      "durationSeconds": 4.026179
+    },
+    "restartRetention": {
+      "clock": "time.monotonic",
+      "durationSeconds": 0.225915
+    },
+    "ttyRawMergedFraming": {
+      "clock": "time.monotonic",
+      "durationSeconds": 0.164332
+    },
+    "validationPhases": {
+      "clock": "time.monotonic",
+      "durationSeconds": 0.045156
+    }
+  }
 }
