@@ -17,6 +17,7 @@
 
 """Regression tests for stable release policy in the stack helper."""
 
+import json
 import os
 import re
 import shlex
@@ -1376,7 +1377,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             root = Path(directory)
             _remote, local, candidate_tree, remote_head = self.create_equivalent_squash(root)
 
-            result = self.promote_compose_main(root / "github")
+            result = self.promote_compose_main(
+                root / "github",
+                shell_setup="PATH=/usr/bin:/bin",
+            )
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("already promoted", result.stdout)
@@ -1415,7 +1419,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
             self.run_command("git", "-C", str(remote_change), "push", "origin", "main")
 
-            result = self.promote_compose_main(root / "github")
+            result = self.promote_compose_main(
+                root / "github",
+                shell_setup="PATH=/usr/bin:/bin",
+            )
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("not based on origin/main", result.stderr)
@@ -1445,55 +1452,173 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn("tree differs from the locally gated candidate", result.stderr)
             self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
 
-    def test_merge_promotion_accepts_external_merge_after_auto_merge_rejection(self) -> None:
+    def test_compose_promotion_rejects_a_head_change_after_review_request(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            bin_directory = root / "bin"
-            bin_directory.mkdir()
-            state_file = root / "gh-view-state"
-            fake_gh = bin_directory / "gh"
-            fake_gh.write_text(
-                """#!/usr/bin/env bash
-set -euo pipefail
-
-if [[ \"$1\" != \"pr\" ]]; then
-  exit 1
-fi
-
-case \"$2\" in
-  view)
-    if [[ ! -e \"${GH_STATE_FILE}\" ]]; then
-      : > \"${GH_STATE_FILE}\"
-      exit 0
-    fi
-    printf '%s\\n' '2026-07-13T12:00:00Z'
-    ;;
-  merge)
-    exit 1
-    ;;
-  *)
-    exit 1
-    ;;
-esac
-""",
-                encoding="utf-8",
+            fixture = self.create_promotion_review_fixture(
+                root,
+                stale_head="b" * 40,
             )
-            fake_gh.chmod(0o755)
 
             result = self.run_release_function(
                 root,
-                "merge_compose_promotion_pr 42",
+                f"merge_compose_promotion_pr 42 {'a' * 40}",
+                shell_setup=fixture["shell_setup"],
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("head changed", result.stderr)
+            self.assertTrue(fixture["request_marker"].exists())
+            self.assertFalse(fixture["merge_marker"].exists())
+
+    def test_compose_promotion_surfaces_an_unanswered_query_before_request(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            query = {
+                "author": {"login": "chatgpt-codex-connector"},
+                "createdAt": "2026-08-01T11:00:00Z",
+                "body": "Please handle this exact query.",
+                "url": "https://example.invalid/query",
+            }
+            fixture = self.create_promotion_review_fixture(
+                root,
+                threads=[
+                    {
+                        "isResolved": False,
+                        "comments": {
+                            "nodes": [query],
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                        },
+                    }
+                ],
+            )
+
+            result = self.run_release_function(
+                root,
+                f"merge_compose_promotion_pr 42 {'a' * 40}",
+                shell_setup=fixture["shell_setup"],
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("later owner response", result.stderr)
+            self.assertIn("https://example.invalid/query", result.stderr)
+            self.assertFalse(fixture["request_marker"].exists())
+            self.assertFalse(fixture["merge_marker"].exists())
+
+    def test_compose_promotion_review_timeout_never_merges(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture = self.create_promotion_review_fixture(root)
+
+            result = self.run_release_function(
+                root,
+                f"merge_compose_promotion_pr 42 {'a' * 40}",
+                shell_setup="\n".join(
+                    [fixture["shell_setup"], "PROMOTION_WAIT_SECONDS=0"],
+                ),
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("timed out waiting for exact-head Codex review", result.stderr)
+            self.assertTrue(fixture["request_marker"].exists())
+            self.assertFalse(fixture["merge_marker"].exists())
+
+    def test_compose_promotion_clean_review_merges_only_the_expected_head(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture = self.create_promotion_review_fixture(
+                root,
+                comments=[
+                    {
+                        "user": {"login": "chatgpt-codex-connector[bot]"},
+                        "created_at": "2026-08-01T12:00:01Z",
+                        "body": (
+                            "Codex Review: Didn't find any major issues.\n\n"
+                            "**Reviewed commit:** `aaaaaaaaaa`"
+                        ),
+                        "html_url": "https://example.invalid/pr/42/clean-review",
+                    }
+                ],
+                require_admin=True,
+            )
+
+            result = self.run_release_function(
+                root,
+                f"merge_compose_promotion_pr 42 {'a' * 40}",
+                shell_setup=fixture["shell_setup"],
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("exact-head review passed", result.stdout)
+            self.assertTrue(fixture["request_marker"].exists())
+            self.assertTrue(fixture["merge_marker"].exists())
+            merge_arguments = fixture["merge_arguments"].read_text(encoding="utf-8")
+            self.assertIn("--match-head-commit", merge_arguments)
+            self.assertIn("a" * 40, merge_arguments)
+            self.assertIn("--admin", merge_arguments)
+            self.assertNotIn("--auto", merge_arguments)
+
+    def test_compose_promotion_rejects_the_retired_direct_mode(self) -> None:
+        merge_policy = self.script[
+            self.script.index("merge_compose_promotion_pr() {") : self.script.index(
+                "# Align local main after GitHub"
+            )
+        ]
+        promotion = self.script[
+            self.script.index("promote_compose_main() {") : self.script.index(
+                "push_all_main() {"
+            )
+        ]
+        self.assertNotIn("--auto", merge_policy)
+        self.assertIn("--match-head-commit", merge_policy)
+        self.assertIn("body='@codex review'", self.script)
+        self.assertNotIn('push "${remote}" "refs/heads/main"', promotion)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.run_release_function(
+                root,
+                "ensure_compose_promotion_mode",
+                shell_setup="COMPOSE_MAIN_PROMOTION_MODE=direct",
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("direct container-compose main promotion is retired", result.stderr)
+
+            prepare_marker = root / "prepare-called"
+            result = self.run_release_function(
+                root,
+                "main release --+ --execute",
                 shell_setup="\n".join(
                     [
-                        f"export GH_STATE_FILE={shlex.quote(str(state_file))}",
-                        f"export PATH={shlex.quote(str(bin_directory))}:$PATH",
+                        "COMPOSE_MAIN_PROMOTION_MODE=direct",
+                        f"prepare_all_main() {{ : > {shlex.quote(str(prepare_marker))}; }}",
+                        "release_current_stack() { return 0; }",
                     ]
                 ),
             )
 
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("auto-merge was not available", result.stdout)
-            self.assertIn("promotion PR already merged: #42", result.stdout)
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse(prepare_marker.exists())
+
+            release_marker = root / "release-read-called"
+            result = self.run_release_function(
+                root,
+                "VERSION_SELECTOR=--+; release_current_stack",
+                shell_setup="\n".join(
+                    [
+                        "COMPOSE_MAIN_PROMOTION_MODE=direct",
+                        (
+                            "latest_local_semver_tag() { "
+                            f": > {shlex.quote(str(release_marker))}; "
+                            "printf '%s\\n' 0.6.70; }"
+                        ),
+                    ]
+                ),
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse(release_marker.exists())
 
     def test_retry_requires_an_unpublished_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1663,6 +1788,166 @@ esac
             self.assertNotEqual(stale.returncode, 0)
             self.assertIn("stable tag 0.6.70 is not the latest semantic source tag (0.6.71)", stale.stderr)
 
+    def create_promotion_review_fixture(
+        self,
+        root: Path,
+        *,
+        threads: list[dict[str, object]] | None = None,
+        reactions: list[dict[str, object]] | None = None,
+        comments: list[dict[str, object]] | None = None,
+        stale_head: str = "",
+        require_admin: bool = False,
+    ) -> dict[str, object]:
+        bin_directory = root / "bin"
+        bin_directory.mkdir(parents=True)
+        expected_head = "a" * 40
+        request_marker = root / "review-requested"
+        merge_marker = root / "merged"
+        merge_arguments = root / "merge-arguments"
+        threads_file = root / "threads.json"
+        reactions_file = root / "reactions.json"
+        comments_file = root / "comments.json"
+        threads_file.write_text(
+            json.dumps(
+                [
+                    {
+                        "data": {
+                            "repository": {
+                                "pullRequest": {
+                                    "reviewThreads": {
+                                        "nodes": threads or [],
+                                        "pageInfo": {
+                                            "hasNextPage": False,
+                                            "endCursor": None,
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        reactions_file.write_text(json.dumps([reactions or []]), encoding="utf-8")
+        comments_file.write_text(json.dumps([comments or []]), encoding="utf-8")
+
+        fake_gh = bin_directory / "gh"
+        fake_gh.write_text(
+            """#!/usr/bin/env bash
+set -euo pipefail
+
+current_head() {
+  if [[ -n "${GH_STALE_HEAD:-}" && -e "${GH_REQUEST_MARKER}" ]]; then
+    printf '%s' "${GH_STALE_HEAD}"
+  else
+    printf '%s' "${GH_EXPECTED_HEAD}"
+  fi
+}
+
+if [[ "$1" == "pr" && "$2" == "view" ]]; then
+  head="$(current_head)"
+  case "$*" in
+    *headRefOid,state,mergedAt,url,reviewDecision*)
+      if [[ -e "${GH_MERGE_MARKER}" ]]; then
+        printf '%s\tMERGED\t2026-08-01T12:05:00Z\thttps://example.invalid/pr/42\tREVIEW_REQUIRED\n' "$head"
+      else
+        printf '%s\tOPEN\t-\thttps://example.invalid/pr/42\tREVIEW_REQUIRED\n' "$head"
+      fi
+      ;;
+    *headRefOid,state,mergedAt,url*)
+      if [[ -e "${GH_MERGE_MARKER}" ]]; then
+        printf '%s\tMERGED\t2026-08-01T12:05:00Z\thttps://example.invalid/pr/42\n' "$head"
+      else
+        printf '%s\tOPEN\t-\thttps://example.invalid/pr/42\n' "$head"
+      fi
+      ;;
+    *headRefOid,mergedAt*)
+      if [[ -e "${GH_MERGE_MARKER}" ]]; then
+        printf '%s\t2026-08-01T12:05:00Z\n' "$head"
+      else
+        printf '%s\t-\n' "$head"
+      fi
+      ;;
+    *reviewDecision*)
+      printf '%s\n' REVIEW_REQUIRED
+      ;;
+    *)
+      printf 'unexpected fake gh pr view: %s\n' "$*" >&2
+      exit 64
+      ;;
+  esac
+  exit 0
+fi
+
+if [[ "$1" == "pr" && "$2" == "checks" ]]; then
+  exit 0
+fi
+
+if [[ "$1" == "pr" && "$2" == "merge" ]]; then
+  if [[ "${GH_REQUIRE_ADMIN}" == "1" && "$*" != *"--admin"* ]]; then
+    exit 1
+  fi
+  printf '%s\n' "$*" > "${GH_MERGE_ARGUMENTS}"
+  : > "${GH_MERGE_MARKER}"
+  exit 0
+fi
+
+if [[ "$1" == "api" && "$2" == "graphql" ]]; then
+  /bin/cat "${GH_THREADS_FILE}"
+  exit 0
+fi
+
+if [[ "$1" == "api" ]]; then
+  path=""
+  for argument in "$@"; do
+    if [[ "$argument" == repos/* ]]; then
+      path="$argument"
+    fi
+  done
+  if [[ "$path" == */issues/42/comments && "$*" == *"--method POST"* ]]; then
+    : > "${GH_REQUEST_MARKER}"
+    printf '5150000042\t2026-08-01T12:00:00Z\thttps://example.invalid/pr/42/review-request\n'
+    exit 0
+  fi
+  if [[ "$path" == "repos/stephenlclarke/container-compose/issues/comments/5150000042/reactions?per_page=100" ]]; then
+    /bin/cat "${GH_REACTIONS_FILE}"
+    exit 0
+  fi
+  if [[ "$path" == "repos/stephenlclarke/container-compose/issues/42/comments?per_page=100" ]]; then
+    /bin/cat "${GH_COMMENTS_FILE}"
+    exit 0
+  fi
+fi
+
+printf 'unexpected fake gh invocation: %s\n' "$*" >&2
+exit 64
+""",
+            encoding="utf-8",
+        )
+        fake_gh.chmod(0o755)
+        shell_setup = "\n".join(
+            [
+                f"export PATH={shlex.quote(str(bin_directory))}:$PATH",
+                f"export GH_EXPECTED_HEAD={expected_head}",
+                f"export GH_STALE_HEAD={shlex.quote(stale_head)}",
+                f"export GH_REQUIRE_ADMIN={'1' if require_admin else '0'}",
+                f"export GH_REQUEST_MARKER={shlex.quote(str(request_marker))}",
+                f"export GH_MERGE_MARKER={shlex.quote(str(merge_marker))}",
+                f"export GH_MERGE_ARGUMENTS={shlex.quote(str(merge_arguments))}",
+                f"export GH_THREADS_FILE={shlex.quote(str(threads_file))}",
+                f"export GH_REACTIONS_FILE={shlex.quote(str(reactions_file))}",
+                f"export GH_COMMENTS_FILE={shlex.quote(str(comments_file))}",
+                "PROMOTION_POLL_SECONDS=0",
+            ]
+        )
+        return {
+            "shell_setup": shell_setup,
+            "request_marker": request_marker,
+            "merge_marker": merge_marker,
+            "merge_arguments": merge_arguments,
+        }
+
     def create_compose_checkout(self, root: Path) -> tuple[Path, Path]:
         remote = root / "remote.git"
         local = root / "github" / "container-compose"
@@ -1703,10 +1988,15 @@ esac
         self.run_command("git", "-C", str(repo), "add", name)
         self.run_command("git", "-C", str(repo), "commit", "-m", subject)
 
-    def promote_compose_main(self, root: Path) -> subprocess.CompletedProcess[str]:
+    def promote_compose_main(
+        self,
+        root: Path,
+        shell_setup: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         return self.run_release_function(
             root,
             "promote_compose_main 0.6.70 source 'test promotion' 'test body'",
+            shell_setup=shell_setup,
         )
 
     def synchronize_promoted_compose_main(self, root: Path) -> subprocess.CompletedProcess[str]:
@@ -1782,7 +2072,7 @@ gh() {
             f"source {shlex.quote(str(SCRIPT))}",
             f"ROOT={shlex.quote(str(root))}",
             "EXECUTE=1",
-            "COMPOSE_MAIN_PROMOTION_MODE=direct",
+            "COMPOSE_MAIN_PROMOTION_MODE=pr",
             "COMPOSE_MAIN_MERGE_MODE=checked-admin",
         ]
         if shell_setup is not None:

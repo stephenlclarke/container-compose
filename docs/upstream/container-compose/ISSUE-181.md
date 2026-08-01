@@ -52,7 +52,7 @@ Internal implementation and contributor/release workflow. This does not change C
 
 ## Post-merge operational follow-through
 
-- [ ] Run and upload the first exact-main analysis in time for immutable Current release quality capture, without weakening the quality controller.
+- [x] Run and upload the first exact-main analysis in time for immutable Current release quality capture, without weakening the quality controller. Verified merge `243b4f4ebe305e69a430a293c02c6e4bfaace577` received exact `refs/heads/main` CodeQL analysis `1557995366` from receipt `599c5aee-8d86-11f1-8bb8-ce8f1ece494e`; all 36 pinned queries produced 34 rules and zero results. Current package run `30692873017` then published the exact commit's signed runtime and Compose assets plus matching Homebrew formula SHA-256 values.
 
 ## Code of Conduct
 

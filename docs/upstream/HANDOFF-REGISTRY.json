@@ -6648,9 +6648,12 @@
       "id": "container-compose-181",
       "owner": "stephenlclarke/container-compose",
       "title": "Add reproducible local CodeQL analysis and exact SARIF upload",
-      "state": "submitted",
-      "lastVerified": "2026-07-31",
-      "commits": [],
+      "state": "archived",
+      "lastVerified": "2026-08-01",
+      "commits": [
+        "060aa99666b5fc5ef969b7f9834b4ad432b6a328",
+        "243b4f4ebe305e69a430a293c02c6e4bfaace577"
+      ],
       "documents": [
         {
           "kind": "issue",
@@ -6660,8 +6663,26 @@
           "kind": "pull-request",
           "path": "docs/upstream/container-compose/PR-181.md"
         }
+      ]
+    },
+    {
+      "id": "container-compose-182",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Require exact-head-reviewed PR-only Compose promotion",
+      "state": "submitted",
+      "lastVerified": "2026-08-01",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-182.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-182.md"
+        }
       ],
-      "upstream": "https://github.com/stephenlclarke/container-compose/pull/181"
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/182"
     },
     {
       "id": "container-compose-upstream-maintenance-20260727",

@@ -8,9 +8,9 @@ links to an immutable Git snapshot.
 
 Last verified: 2026-07-31
 
-Entries: 363. Document snapshots: 628. Current supporting documents: 18.
+Entries: 364. Document snapshots: 630. Current supporting documents: 20.
 
-States: `archived` 303, `closed` 3, `merged` 7, `submitted` 11, `tracked-upstream` 16, `unsubmitted` 23.
+States: `archived` 304, `closed` 3, `merged` 7, `submitted` 11, `tracked-upstream` 16, `unsubmitted` 23.
 
 | Owner | Capability or pull request | State | Referenced commits | Documents |
 | --- | --- | --- | --- | --- |
@@ -195,7 +195,8 @@ States: `archived` 303, `closed` 3, `merged` 7, `submitted` 11, `tracked-upstrea
 | `stephenlclarke/container-compose` | Pull request: preserve the complete Sonar retry budget | `archived` | `2f6fa7842253` | [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-155.md) |
 | `stephenlclarke/container-compose` | Pull request 173: preserve complete inherited commit metadata | `archived` | `aa273273536b`, `31b83499abec` | [Issue details](container-compose/ISSUE-173.md); [PR details](container-compose/PR-173.md) |
 | `stephenlclarke/container-compose` | Restore the parity foundation validation gates | `archived` | `73f9a4b1314a`, `74d0c3670e36` | [Issue details](container-compose/ISSUE-180.md); [PR details](container-compose/PR-180.md) |
-| `stephenlclarke/container-compose` | [Add reproducible local CodeQL analysis and exact SARIF upload](https://github.com/stephenlclarke/container-compose/pull/181) | `submitted` | None recorded | [Issue details](container-compose/ISSUE-181.md); [PR details](container-compose/PR-181.md) |
+| `stephenlclarke/container-compose` | Add reproducible local CodeQL analysis and exact SARIF upload | `archived` | `060aa99666b5`, `243b4f4ebe30` | [Issue details](container-compose/ISSUE-181.md); [PR details](container-compose/PR-181.md) |
+| `stephenlclarke/container-compose` | [Require exact-head-reviewed PR-only Compose promotion](https://github.com/stephenlclarke/container-compose/pull/182) | `submitted` | None recorded | [Issue details](container-compose/ISSUE-182.md); [PR details](container-compose/PR-182.md) |
 | `stephenlclarke/container-compose` | Isolate deterministic anonymous volume identities | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-anonymous-volume-identity.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-anonymous-volume-identity.md) |
 | `stephenlclarke/container-compose` | Support bind create_host_path policy | `archived` | `12c6ed0b8a1e` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-create-host-path.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-create-host-path.md) |
 | `stephenlclarke/container-compose` | Support bind propagation mount options | `archived` | `5fbe9f0937d8` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-propagation.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-propagation.md) |

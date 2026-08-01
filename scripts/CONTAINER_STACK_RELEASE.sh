@@ -18,6 +18,9 @@
 set -Eeuo pipefail
 
 readonly SELF_PATH="${BASH_SOURCE[0]:-$0}"
+SELF_DIRECTORY="$(cd "$(dirname "${SELF_PATH}")" && pwd -P)"
+readonly SELF_DIRECTORY
+readonly COMPOSE_PROMOTION_REVIEW_TOOL="${SELF_DIRECTORY}/../Tools/release/compose_promotion_review.py"
 SCRIPT_NAME="$(basename "${SELF_PATH}")"
 readonly SCRIPT_NAME
 readonly SCRIPT_USAGE="scripts/${SCRIPT_NAME}"
@@ -51,10 +54,10 @@ Modes:
       immutable release assets and atomically updates the matching Homebrew
       formula pair. If publication succeeds but tap promotion does not, rerun
       the same explicit semantic version to validate the existing immutable
-      assets and repair only the formula pair. container-compose main promotions use an automated
-      short-lived PR by default so pull-request checks and review state remain
-      visible before tagging. The Homebrew tap is the only owner of live
-      formulae.
+      assets and repair only the formula pair. container-compose main promotions use a
+      short-lived PR with exact-head Codex review and completed pull-request
+      checks before merge and tagging. The Homebrew tap is the only owner of
+      live formulae.
 
       Version selectors:
         9.0.2  use the explicit 9.0.2 stable release version
@@ -84,22 +87,22 @@ Rules enforced:
   - Stable package and Homebrew tap updates are explicitly dispatched and waited for.
   - Stable package assets and the Homebrew tap SHA are verified before success.
   - Published stable releases are immutable; the latest GitHub-verified signed tag may repair only its matching formula pair from immutable assets.
-  - container-compose main updates use pull-request promotion by default.
+  - container-compose main updates use only exact-head-reviewed pull-request promotion.
   - An equivalent tree already squash-merged on main is reconciled before tagging.
   - Long-lived release branches are not used.
   - Companion source repositories must already be merged to their fork mains
     through their own reviewable pull requests; this helper never pushes them.
 
 Environment:
-  CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE=pr|direct
-      Use "pr" by default. Use "direct" only for emergency maintenance on
-      stephenlclarke/container-compose when branch protection intentionally
-      permits direct pushes.
+  CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE=pr
+      The only supported value is "pr". The retired "direct" value fails
+      closed; no maintenance or security intent bypasses exact-head review.
 
   CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE=checked-admin|strict
-      Use "checked-admin" by default. The helper waits for PR checks, tries a
-      normal merge, then uses an admin merge only when GitHub blocks the merge
-      on the solo-maintainer review requirement. Use "strict" to fail instead.
+      Use "checked-admin" by default. After a clean exact-head Codex review and
+      passing PR checks, the helper tries a head-matched normal merge, then uses
+      a head-matched admin merge only when GitHub blocks the merge on the
+      solo-maintainer review requirement. Use "strict" to fail instead.
 
   CONTAINER_STACK_RELEASE_INTENT=milestone|maintenance|security
       Required for a new stable release. milestone requires the current build
@@ -232,11 +235,15 @@ push_remote() {
 
 ensure_compose_promotion_mode() {
   case "${COMPOSE_MAIN_PROMOTION_MODE}" in
-    pr|direct)
+    pr)
+      ;;
+    direct)
+      printf 'direct container-compose main promotion is retired; exact-head-reviewed PR promotion is required\n' >&2
+      exit 2
       ;;
     *)
       printf 'invalid CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE: %s\n' "${COMPOSE_MAIN_PROMOTION_MODE}" >&2
-      printf 'expected pr or direct\n' >&2
+      printf 'expected pr\n' >&2
       exit 2
       ;;
   esac
@@ -250,8 +257,18 @@ ensure_compose_promotion_mode() {
       ;;
   esac
 
-  if [[ "${EXECUTE}" == "1" && "${COMPOSE_MAIN_PROMOTION_MODE}" == "pr" ]]; then
-    need_command gh
+}
+
+# Require the local tools used only after promotion reaches the GitHub PR path.
+# Equivalent-tree reconciliation and divergent-history rejection deliberately
+# complete before this check because neither operation calls GitHub or the
+# review-evidence evaluator.
+ensure_compose_promotion_dependencies() {
+  need_command gh
+  need_command python3
+  if [[ ! -f "${COMPOSE_PROMOTION_REVIEW_TOOL}" ]]; then
+    printf 'Compose promotion review evaluator is missing: %s\n' "${COMPOSE_PROMOTION_REVIEW_TOOL}" >&2
+    exit 1
   fi
 }
 
@@ -1261,6 +1278,205 @@ open_compose_promotion_pr() {
   printf 'container-compose promotion PR opened: %s\n' "${COMPOSE_PROMOTION_PR_URL}"
 }
 
+# Require an open promotion pull request to retain the exact locally gated head.
+require_compose_pr_open_exact_head() {
+  local number="$1" expected_head="$2" repo details head state merged_at url review_decision
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  details="$(
+    github_cli pr view "${number}" \
+      --repo "${repo}" \
+      --json headRefOid,state,mergedAt,url,reviewDecision \
+      --jq '[.headRefOid, .state, (.mergedAt // "-"), .url, (.reviewDecision // "-")] | @tsv'
+  )"
+  IFS=$'\t' read -r head state merged_at url review_decision <<<"${details}"
+
+  if [[ ! "${head}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'unable to resolve a full head for container-compose promotion PR #%s\n' "${number}" >&2
+    return 1
+  fi
+  if [[ "${head}" != "${expected_head}" ]]; then
+    printf 'container-compose promotion PR #%s head changed: expected %s, got %s\n' \
+      "${number}" "${expected_head}" "${head}" >&2
+    printf 'revalidate the new diff and rerun promotion to request a fresh exact-head review\n' >&2
+    return 1
+  fi
+  if [[ "${state}" != "OPEN" || "${merged_at}" != "-" ]]; then
+    printf 'container-compose promotion PR is no longer open for exact-head review: %s (%s)\n' \
+      "${url}" "${state}" >&2
+    return 1
+  fi
+}
+
+# Fetch every review thread. gh follows the top-level connection cursor; the
+# evaluator separately rejects a nested thread with more than 100 comments.
+compose_review_threads_json() {
+  local number="$1" repo owner name
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  owner="${repo%%/*}"
+  name="${repo#*/}"
+  # GraphQL variables must remain literal for gh's pagination support.
+  # shellcheck disable=SC2016
+  github_cli api graphql --paginate --slurp \
+    -F owner="${owner}" \
+    -F name="${name}" \
+    -F number="${number}" \
+    -f query='query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $number) {
+          reviewThreads(first: 100, after: $endCursor) {
+            nodes {
+              isResolved
+              comments(first: 100) {
+                nodes {
+                  author { login }
+                  createdAt
+                  body
+                  url
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+      }
+    }'
+}
+
+# Require every Codex query to have a later Stephen response and a resolved
+# thread. When a request timestamp is supplied, any newer query invalidates the
+# current pass even after it is answered; the next invocation posts a fresh
+# exact-head review request.
+ensure_compose_review_queries_answered() {
+  local number="$1" since="${2:-}" repo owner payload
+  local evaluator_args=(queries)
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  owner="${repo%%/*}"
+  payload="$(compose_review_threads_json "${number}")"
+  evaluator_args+=(--owner "${owner}")
+  if [[ -n "${since}" ]]; then
+    evaluator_args+=(--since "${since}")
+  fi
+  printf '%s' "${payload}" | python3 "${COMPOSE_PROMOTION_REVIEW_TOOL}" "${evaluator_args[@]}"
+}
+
+# Post the literal review command only after all earlier Codex queries have
+# been answered and resolved. Recheck the head after posting so a request can
+# never silently migrate to a changed diff.
+post_compose_exact_head_review_request() {
+  local number="$1" expected_head="$2" repo response
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  require_compose_pr_open_exact_head "${number}" "${expected_head}"
+  ensure_compose_review_queries_answered "${number}"
+  response="$(
+    github_cli api "repos/${repo}/issues/${number}/comments" \
+      --method POST \
+      --raw-field body='@codex review' \
+      --jq '[.id, .created_at, .html_url] | @tsv'
+  )"
+  IFS=$'\t' read -r COMPOSE_REVIEW_REQUEST_ID COMPOSE_REVIEW_REQUEST_CREATED_AT COMPOSE_REVIEW_REQUEST_URL <<<"${response}"
+  if [[ ! "${COMPOSE_REVIEW_REQUEST_ID}" =~ ^[0-9]+$ || \
+        -z "${COMPOSE_REVIEW_REQUEST_CREATED_AT}" || \
+        -z "${COMPOSE_REVIEW_REQUEST_URL}" ]]; then
+    printf 'GitHub returned incomplete Compose promotion review-request evidence\n' >&2
+    return 1
+  fi
+  require_compose_pr_open_exact_head "${number}" "${expected_head}"
+  printf 'requested exact-head Codex review for container-compose PR #%s at %s: %s\n' \
+    "${number}" "${expected_head}" "${COMPOSE_REVIEW_REQUEST_URL}"
+}
+
+# Return 0 only for the connector's thumbs-up reaction on this exact request or
+# its explicit no-major-issues comment naming the expected commit prefix. Return
+# 1 while no clean signal exists and propagate malformed-evidence failures.
+compose_review_signal_is_clean() {
+  local number="$1" expected_head="$2" request_id="$3" request_created_at="$4"
+  local repo reactions reaction_status comments clean_url comment_status
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  reactions="$(
+    github_cli api --paginate --slurp \
+      "repos/${repo}/issues/comments/${request_id}/reactions?per_page=100"
+  )"
+  if printf '%s' "${reactions}" | python3 "${COMPOSE_PROMOTION_REVIEW_TOOL}" reaction-clean; then
+    COMPOSE_REVIEW_CLEAN_URL="${COMPOSE_REVIEW_REQUEST_URL}"
+    return 0
+  else
+    reaction_status="$?"
+  fi
+  if [[ "${reaction_status}" -ne 1 ]]; then
+    return "${reaction_status}"
+  fi
+
+  comments="$(
+    github_cli api --paginate --slurp \
+      "repos/${repo}/issues/${number}/comments?per_page=100"
+  )"
+  if clean_url="$(
+    printf '%s' "${comments}" | python3 "${COMPOSE_PROMOTION_REVIEW_TOOL}" comment-clean \
+      --head "${expected_head}" \
+      --since "${request_created_at}"
+  )"; then
+    COMPOSE_REVIEW_CLEAN_URL="${clean_url:-${COMPOSE_REVIEW_REQUEST_URL}}"
+    return 0
+  else
+    comment_status="$?"
+  fi
+  return "${comment_status}"
+}
+
+# Wait for a clean decision on the exact request. A changed head, new query,
+# malformed evidence, or timeout fails closed without enabling auto-merge.
+wait_for_compose_exact_head_review() {
+  local number="$1" expected_head="$2" request_id="$3" request_created_at="$4"
+  local deadline now signal_status
+  deadline=$((SECONDS + PROMOTION_WAIT_SECONDS))
+  while true; do
+    require_compose_pr_open_exact_head "${number}" "${expected_head}"
+    ensure_compose_review_queries_answered "${number}" "${request_created_at}"
+    if compose_review_signal_is_clean \
+      "${number}" "${expected_head}" "${request_id}" "${request_created_at}"; then
+      printf 'container-compose promotion PR exact-head review passed: %s at %s\n' \
+        "${COMPOSE_REVIEW_CLEAN_URL}" "${expected_head}"
+      return 0
+    else
+      signal_status="$?"
+    fi
+    if [[ "${signal_status}" -ne 1 ]]; then
+      return "${signal_status}"
+    fi
+
+    now="${SECONDS}"
+    if (( now >= deadline )); then
+      printf 'timed out waiting for exact-head Codex review of container-compose PR #%s at %s\n' \
+        "${number}" "${expected_head}" >&2
+      return 1
+    fi
+    printf 'waiting for exact-head Codex review of container-compose PR #%s; next check in %ss\n' \
+      "${number}" "${PROMOTION_POLL_SECONDS}"
+    sleep "${PROMOTION_POLL_SECONDS}"
+  done
+}
+
+# Immediately revalidate all review invariants before either normal or checked
+# admin merge. Passing checks cannot substitute for this authority.
+require_compose_exact_head_review_authority() {
+  local number="$1" expected_head="$2" request_id="$3" request_created_at="$4"
+  local signal_status
+  require_compose_pr_open_exact_head "${number}" "${expected_head}"
+  ensure_compose_review_queries_answered "${number}" "${request_created_at}"
+  if compose_review_signal_is_clean \
+    "${number}" "${expected_head}" "${request_id}" "${request_created_at}"; then
+    return 0
+  else
+    signal_status="$?"
+  fi
+  if [[ "${signal_status}" -eq 1 ]]; then
+    printf 'clean exact-head Codex review authority disappeared for container-compose PR #%s\n' \
+      "${number}" >&2
+  fi
+  return "${signal_status}"
+}
+
 wait_for_compose_pr_checks() {
   local number="$1" repo deadline now status check_mode output
   local check_args=()
@@ -1338,7 +1554,7 @@ compose_pr_check_mode() {
 
 # Wait for a promotion pull request to reach GitHub's merged state.
 wait_for_compose_pr_merged() {
-  local number="$1" repo deadline now details state merged_at url
+  local number="$1" expected_head="$2" repo deadline now details head state merged_at url
   repo="$(github_repo "${COMPOSE_REPO}")"
   deadline=$((SECONDS + PROMOTION_WAIT_SECONDS))
 
@@ -1346,12 +1562,18 @@ wait_for_compose_pr_merged() {
     details="$(
       github_cli pr view "${number}" \
         --repo "${repo}" \
-        --json state,mergedAt,url \
-        --jq '[.state, (.mergedAt // ""), .url] | @tsv'
+        --json headRefOid,state,mergedAt,url \
+        --jq '[.headRefOid, .state, (.mergedAt // "-"), .url] | @tsv'
     )"
-    IFS=$'\t' read -r state merged_at url <<<"${details}"
+    IFS=$'\t' read -r head state merged_at url <<<"${details}"
 
-    if [[ -n "${merged_at}" ]]; then
+    if [[ "${head}" != "${expected_head}" ]]; then
+      printf 'merged container-compose promotion PR #%s no longer names reviewed head %s: %s\n' \
+        "${number}" "${expected_head}" "${head}" >&2
+      exit 1
+    fi
+
+    if [[ "${merged_at}" != "-" ]]; then
       printf 'container-compose promotion PR merged: %s\n' "${url}"
       return 0
     fi
@@ -1374,52 +1596,53 @@ wait_for_compose_pr_merged() {
 
 # Return success when GitHub already records the promotion pull request as merged.
 compose_pr_is_merged() {
-  local number="$1" repo merged_at
+  local number="$1" expected_head="$2" repo details head merged_at
   repo="$(github_repo "${COMPOSE_REPO}")"
-  if ! merged_at="$(
+  if ! details="$(
     github_cli pr view "${number}" \
       --repo "${repo}" \
-      --json mergedAt \
-      --jq '.mergedAt // ""'
+      --json headRefOid,mergedAt \
+      --jq '[.headRefOid, (.mergedAt // "-")] | @tsv'
   )"; then
     return 1
   fi
-  [[ -n "${merged_at}" ]]
+  IFS=$'\t' read -r head merged_at <<<"${details}"
+  [[ "${head}" == "${expected_head}" && "${merged_at}" != "-" ]]
 }
 
-# Merge the validated promotion pull request or accept an equivalent external merge.
+# Request and require a clean review of the exact candidate, wait for checks,
+# then merge only that head. Auto-merge is intentionally never enabled.
 merge_compose_promotion_pr() {
-  local number="$1" repo review_decision
+  local number="$1" expected_head="$2" repo review_decision
   repo="$(github_repo "${COMPOSE_REPO}")"
-  if compose_pr_is_merged "${number}"; then
-    printf 'container-compose promotion PR already merged: #%s\n' "${number}"
-    return 0
+  if [[ ! "${expected_head}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'container-compose promotion requires a full expected pull-request head\n' >&2
+    exit 2
   fi
+
+  post_compose_exact_head_review_request "${number}" "${expected_head}"
+  wait_for_compose_exact_head_review \
+    "${number}" \
+    "${expected_head}" \
+    "${COMPOSE_REVIEW_REQUEST_ID}" \
+    "${COMPOSE_REVIEW_REQUEST_CREATED_AT}"
+  wait_for_compose_pr_checks "${number}"
+  require_compose_exact_head_review_authority \
+    "${number}" \
+    "${expected_head}" \
+    "${COMPOSE_REVIEW_REQUEST_ID}" \
+    "${COMPOSE_REVIEW_REQUEST_CREATED_AT}"
 
   if github_cli pr merge "${number}" \
     --repo "${repo}" \
     --merge \
     --delete-branch \
-    --auto; then
-    wait_for_compose_pr_merged "${number}"
+    --match-head-commit "${expected_head}"; then
+    wait_for_compose_pr_merged "${number}" "${expected_head}"
     return 0
   fi
 
-  printf 'auto-merge was not available for container-compose PR #%s; waiting for checks before merge\n' "${number}"
-  if compose_pr_is_merged "${number}"; then
-    printf 'container-compose promotion PR already merged: #%s\n' "${number}"
-    return 0
-  fi
-  wait_for_compose_pr_checks "${number}"
-  if github_cli pr merge "${number}" \
-    --repo "${repo}" \
-    --merge \
-    --delete-branch; then
-    wait_for_compose_pr_merged "${number}"
-    return 0
-  fi
-
-  if compose_pr_is_merged "${number}"; then
+  if compose_pr_is_merged "${number}" "${expected_head}"; then
     printf 'container-compose promotion PR already merged: #%s\n' "${number}"
     return 0
   fi
@@ -1431,19 +1654,26 @@ merge_compose_promotion_pr() {
       --jq '.reviewDecision // ""'
   )"
   if [[ "${COMPOSE_MAIN_MERGE_MODE}" == "checked-admin" && "${review_decision}" == "REVIEW_REQUIRED" ]]; then
-    printf 'normal merge is blocked by the solo-maintainer review requirement; using checked admin merge after PR checks passed\n'
+    printf 'normal merge is blocked by the solo-maintainer review requirement; revalidating exact-head review and checks before checked admin merge\n'
+    wait_for_compose_pr_checks "${number}"
+    require_compose_exact_head_review_authority \
+      "${number}" \
+      "${expected_head}" \
+      "${COMPOSE_REVIEW_REQUEST_ID}" \
+      "${COMPOSE_REVIEW_REQUEST_CREATED_AT}"
     run github_cli pr merge "${number}" \
       --repo "${repo}" \
       --merge \
       --delete-branch \
-      --admin
-    wait_for_compose_pr_merged "${number}"
+      --admin \
+      --match-head-commit "${expected_head}"
+    wait_for_compose_pr_merged "${number}" "${expected_head}"
     return 0
   fi
 
   printf 'container-compose promotion PR merge failed: #%s\n' "${number}" >&2
   printf 'review decision: %s\n' "${review_decision}" >&2
-  printf 'set CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE=checked-admin only after confirming PR checks are sufficient for this release\n' >&2
+  printf 'checked-admin never bypasses exact-head Codex review or pull-request checks\n' >&2
   exit 1
 }
 
@@ -1502,7 +1732,7 @@ synchronize_promoted_compose_main() {
   fi
 }
 
-# Promote the gated Compose candidate through the configured main-branch policy.
+# Promote the gated Compose candidate only through an exact-head-reviewed PR.
 promote_compose_main() {
   local version="$1" purpose="$2" title="$3" body="$4" path remote local_head remote_head branch candidate_tree remote_tree pushed_head
   path="$(repo_path "${COMPOSE_REPO}")"
@@ -1533,20 +1763,15 @@ promote_compose_main() {
     exit 1
   fi
 
-  if [[ "${COMPOSE_MAIN_PROMOTION_MODE}" == "direct" ]]; then
-    printf 'using emergency direct container-compose main promotion mode\n' >&2
-    run git -C "${path}" push "${remote}" "refs/heads/main"
-    return 0
-  fi
-
   branch="$(compose_promotion_branch_name "${purpose}" "${version}")"
   if [[ "${EXECUTE}" != "1" ]]; then
     printf 'would push container-compose promotion branch %s at %s\n' "${branch}" "${local_head}"
-    printf 'would open and merge a PR titled: %s\n' "${title}"
+    printf 'would open a PR, require exact-head Codex review plus PR checks, and merge: %s\n' "${title}"
     printf 'would fast-forward local container-compose main after merge\n'
     return 0
   fi
 
+  ensure_compose_promotion_dependencies
   pushed_head="$(git -C "${path}" ls-remote --heads "${remote}" "refs/heads/${branch}" | awk '{print $1}')"
   if [[ -n "${pushed_head}" && "${pushed_head}" != "${local_head}" ]]; then
     printf 'promotion branch already exists with a different head: %s -> %s\n' "${branch}" "${pushed_head}" >&2
@@ -1559,7 +1784,7 @@ promote_compose_main() {
   fi
 
   open_compose_promotion_pr "${branch}" "${title}" "${body}"
-  merge_compose_promotion_pr "${COMPOSE_PROMOTION_PR_NUMBER}"
+  merge_compose_promotion_pr "${COMPOSE_PROMOTION_PR_NUMBER}" "${local_head}"
   synchronize_promoted_compose_main "${path}" "${remote}" "${candidate_tree}"
 }
 
@@ -1953,6 +2178,7 @@ require_release_upstream_alignment() {
 
 release_current_stack() {
   local latest current version path
+  ensure_compose_promotion_mode
   latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
   if [[ -z "${latest}" ]]; then
     latest="$(current_compose_version)"
@@ -2092,6 +2318,7 @@ main() {
       plan
       ;;
     release)
+      ensure_compose_promotion_mode
       prepare_all_main
       release_current_stack
       ;;
