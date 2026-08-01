@@ -11,6 +11,7 @@ The capture covers:
 - omitted `HostConfig.LogConfig` resolving to the daemon's `json-file` default;
 - explicit `json-file`, `local`, `none`, and `syslog` driver identities and arbitrary option preservation, including Engine acceptance of options on `none`;
 - create-time option-name rejection versus start-time option-value rejection, including container residue and inspect state;
+- Syslog address, facility, format, metadata-regex, tag-template, and TLS-material validation phases, including accepted empty UDP ports and case-insensitive schemes, the pinned IPv6 default-port failure, Go integer facility spellings, unused invalid regexes, control-flow and whitespace-trimming template actions, and transport-dependent TLS file loading;
 - empty driver resolution and the exact create/start validation phases for `mode`, `compress`, `max-size`, `max-file`, and `max-buffer-size`, including the pinned Moby distinction between decimal `max-size` (`4k` is 4,000 bytes) and binary `max-buffer-size` (`4k` is 4,096 bytes);
 - representative Go `strconv.ParseBool` spellings, Docker/go-units size spellings, and whitespace behavior;
 - `HostConfig.LogConfig`, `LogPath`, stopped-container reads, restart retention, and the effect of a created-container follow read;

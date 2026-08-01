@@ -4769,6 +4769,1211 @@
         }
       }
     },
+    "syslogValidation": {
+      "address": {
+        "emptyUDPPort": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "explicitIPv6EmptyPort": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://[::1]:"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://[::1]:"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://[::1]:"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "explicitIPv6Port": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://[::1]:55145"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://[::1]:55145"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://[::1]:55145"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "ipv6DefaultPortBug": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://[::1]"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://[::1]"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: dial udp: address [[::1]]:514: missing port in address",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://[::1]"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: dial udp: address [[::1]]:514: missing port in address"
+          }
+        },
+        "leadingZeroPort": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:01"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:01"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:01"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "opaqueTarget": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp:localhost"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp:localhost"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp:localhost"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "outOfRangePort": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:65536"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:65536"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: dial udp: address 65536: invalid port",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:65536"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: dial udp: address 65536: invalid port"
+          }
+        },
+        "servicePort": {
+          "containerResidue": false,
+          "create": {
+            "httpStatus": 400,
+            "message": "parse \"udp://127.0.0.1:syslog\": invalid port \":syslog\" after host",
+            "warnings": []
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:syslog"
+            },
+            "Type": "syslog"
+          }
+        },
+        "signedPort": {
+          "containerResidue": false,
+          "create": {
+            "httpStatus": 400,
+            "message": "parse \"udp://127.0.0.1:+1\": invalid port \":+1\" after host",
+            "warnings": []
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:+1"
+            },
+            "Type": "syslog"
+          }
+        },
+        "unixExistingNonSocket": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "unix:/dev/null"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "unix:/dev/null"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: dial unix /dev/null: connect: connection refused",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "unix:/dev/null"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: dial unix /dev/null: connect: connection refused"
+          }
+        },
+        "unixOpaquePath": {
+          "containerResidue": false,
+          "create": {
+            "httpStatus": 400,
+            "message": "stat : no such file or directory",
+            "warnings": []
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "unix:dev/null"
+            },
+            "Type": "syslog"
+          }
+        },
+        "uppercaseScheme": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "UDP://127.0.0.1:55145"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "UDP://127.0.0.1:55145"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "UDP://127.0.0.1:55145"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        }
+      },
+      "facility": {
+        "leadingPlus": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "syslog-facility": "+1"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "syslog-facility": "+1"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55145",
+              "syslog-facility": "+1"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "leadingWhitespace": {
+          "containerResidue": false,
+          "create": {
+            "httpStatus": 400,
+            "message": "invalid syslog facility",
+            "warnings": []
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55145",
+              "syslog-facility": " 1"
+            },
+            "Type": "syslog"
+          }
+        },
+        "leadingZero": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "syslog-facility": "01"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "syslog-facility": "01"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55145",
+              "syslog-facility": "01"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "maximumNumeric": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "syslog-facility": "23"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "syslog-facility": "23"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55145",
+              "syslog-facility": "23"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "negativeZero": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "syslog-facility": "-0"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "syslog-facility": "-0"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55145",
+              "syslog-facility": "-0"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "outOfRange": {
+          "containerResidue": false,
+          "create": {
+            "httpStatus": 400,
+            "message": "invalid syslog facility",
+            "warnings": []
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55145",
+              "syslog-facility": "24"
+            },
+            "Type": "syslog"
+          }
+        },
+        "uppercaseName": {
+          "containerResidue": false,
+          "create": {
+            "httpStatus": 400,
+            "message": "invalid syslog facility",
+            "warnings": []
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55145",
+              "syslog-facility": "LOCAL1"
+            },
+            "Type": "syslog"
+          }
+        }
+      },
+      "format": {
+        "microseconds": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "syslog-format": "rfc5424micro"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "syslog-format": "rfc5424micro"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55145",
+              "syslog-format": "rfc5424micro"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "uppercase": {
+          "containerResidue": false,
+          "create": {
+            "httpStatus": 400,
+            "message": "Invalid syslog format",
+            "warnings": []
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55145",
+              "syslog-format": "RFC5424"
+            },
+            "Type": "syslog"
+          }
+        }
+      },
+      "metadataRegex": {
+        "invalidUnusedEnvironment": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "env-regex": "[",
+                "syslog-address": "udp://127.0.0.1:55145"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "env-regex": "[",
+                "syslog-address": "udp://127.0.0.1:55145"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "env-regex": "[",
+              "syslog-address": "udp://127.0.0.1:55145"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "invalidUnusedLabels": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "labels-regex": "(",
+                "syslog-address": "udp://127.0.0.1:55145"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "labels-regex": "(",
+                "syslog-address": "udp://127.0.0.1:55145"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "labels-regex": "(",
+              "syslog-address": "udp://127.0.0.1:55145"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        }
+      },
+      "tagTemplate": {
+        "controlAction": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "tag": "{{if .Name}}{{.Name}}{{else}}fallback{{end}}"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "tag": "{{if .Name}}{{.Name}}{{else}}fallback{{end}}"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55145",
+              "tag": "{{if .Name}}{{.Name}}{{else}}fallback{{end}}"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "invalidFunction": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "tag": "{{missing .ID}}"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "tag": "{{missing .ID}}"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: template: log-tag:1: function \"missing\" not defined",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55145",
+              "tag": "{{missing .ID}}"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: template: log-tag:1: function \"missing\" not defined"
+          }
+        },
+        "whitespaceTrim": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "tag": "{{- .ID -}}"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "tag": "{{- .ID -}}"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55145",
+              "tag": "{{- .ID -}}"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        }
+      },
+      "tlsMaterial": {
+        "plainTransportIgnoresMissingFiles": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "syslog-tls-ca-cert": "/missing/ca",
+                "syslog-tls-cert": "/missing/cert",
+                "syslog-tls-key": "/missing/key"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "udp://127.0.0.1:55145",
+                "syslog-tls-ca-cert": "/missing/ca",
+                "syslog-tls-cert": "/missing/cert",
+                "syslog-tls-key": "/missing/key"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "exited"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55145",
+              "syslog-tls-ca-cert": "/missing/ca",
+              "syslog-tls-cert": "/missing/cert",
+              "syslog-tls-key": "/missing/key"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 204,
+            "message": null
+          },
+          "wait": {
+            "exitCode": 0
+          }
+        },
+        "skipVerifyUsesPresence": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "tcp+tls://127.0.0.1:1",
+                "syslog-tls-skip-verify": "not-a-boolean"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "tcp+tls://127.0.0.1:1",
+                "syslog-tls-skip-verify": "not-a-boolean"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: dial tcp 127.0.0.1:1: connect: connection refused",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "tcp+tls://127.0.0.1:1",
+              "syslog-tls-skip-verify": "not-a-boolean"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 500,
+            "message": "failed to create task for container: failed to initialize logging driver: dial tcp 127.0.0.1:1: connect: connection refused"
+          }
+        },
+        "tlsTransportLoadsFilesAtStart": {
+          "create": {
+            "httpStatus": 201,
+            "message": null,
+            "warnings": []
+          },
+          "inspectAfterCreate": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "tcp+tls://127.0.0.1:6514",
+                "syslog-tls-ca-cert": "/missing/ca",
+                "syslog-tls-cert": "/missing/cert",
+                "syslog-tls-key": "/missing/key"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "inspectAfterStart": {
+            "logConfig": {
+              "Config": {
+                "syslog-address": "tcp+tls://127.0.0.1:6514",
+                "syslog-tls-ca-cert": "/missing/ca",
+                "syslog-tls-cert": "/missing/cert",
+                "syslog-tls-key": "/missing/key"
+              },
+              "Type": "syslog"
+            },
+            "logPath": "",
+            "state": {
+              "error": "failed to create task for container: failed to initialize logging driver: could not read CA certificate \"/missing/ca\": open /missing/ca: no such file or directory",
+              "status": "created"
+            },
+            "tty": false
+          },
+          "requestedLogConfig": {
+            "Config": {
+              "syslog-address": "tcp+tls://127.0.0.1:6514",
+              "syslog-tls-ca-cert": "/missing/ca",
+              "syslog-tls-cert": "/missing/cert",
+              "syslog-tls-key": "/missing/key"
+            },
+            "Type": "syslog"
+          },
+          "start": {
+            "httpStatus": 400,
+            "message": "failed to create task for container: failed to initialize logging driver: could not read CA certificate \"/missing/ca\": open /missing/ca: no such file or directory"
+          }
+        }
+      }
+    },
     "ttyRawMergedFraming": {
       "combinedRead": {
         "bytes": "stdout-line\r\nstderr-line\r\n",
@@ -4890,67 +6095,71 @@
   "timings": {
     "composeForeground": {
       "clock": "time.monotonic",
-      "durationSeconds": 2.19201
+      "durationSeconds": 3.218053
     },
     "emptyDriver": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.139718
+      "durationSeconds": 0.124521
     },
     "fluentdRemoteWire": {
       "clock": "time.monotonic",
-      "durationSeconds": 13.434316
+      "durationSeconds": 17.709783
     },
     "jsonFileStoppedReadAndFraming": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.417701
+      "durationSeconds": 0.364436
     },
     "jsonFileSustainedRotationCompression": {
       "clock": "time.monotonic",
-      "durationSeconds": 1.547032
+      "durationSeconds": 1.621268
     },
     "localNativeReader": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.146295
+      "durationSeconds": 0.114264
     },
     "localSustainedRotationCompression": {
       "clock": "time.monotonic",
-      "durationSeconds": 1.017538
+      "durationSeconds": 0.895594
     },
     "nonBlockingPressureDrop": {
       "clock": "time.monotonic",
-      "durationSeconds": 4.841154
+      "durationSeconds": 4.441374
     },
     "nonReaderDualCache": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.225653
+      "durationSeconds": 0.281158
     },
     "noneArbitraryOptions": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.132058
+      "durationSeconds": 0.153923
     },
     "omittedDefault": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.045042
+      "durationSeconds": 0.043015
     },
     "optionSemantics": {
       "clock": "time.monotonic",
-      "durationSeconds": 3.912675
+      "durationSeconds": 3.819541
     },
     "restartRetention": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.244641
+      "durationSeconds": 0.223755
     },
     "syslogRemoteWire": {
       "clock": "time.monotonic",
-      "durationSeconds": 12.122075
+      "durationSeconds": 18.49805
+    },
+    "syslogValidation": {
+      "clock": "time.monotonic",
+      "durationSeconds": 2.11016
     },
     "ttyRawMergedFraming": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.143865
+      "durationSeconds": 0.136876
     },
     "validationPhases": {
       "clock": "time.monotonic",
-      "durationSeconds": 0.044073
+      "durationSeconds": 0.060218
     }
   }
 }

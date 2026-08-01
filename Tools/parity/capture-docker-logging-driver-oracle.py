@@ -2891,6 +2891,185 @@ def capture_oracle(engine: DockerEngine, metadata: dict[str, Any]) -> dict[str, 
         timings["validationPhases"] = monotonic_timing(case_started)
 
         case_started = time.monotonic()
+        syslog_base = {"syslog-address": "udp://127.0.0.1:55145"}
+        cases["syslogValidation"] = {
+            "address": {
+                "emptyUDPPort": oracle.create_start_probe(
+                    "syslog-address-empty-port",
+                    driver="syslog",
+                    options={"syslog-address": "udp://127.0.0.1:"},
+                ),
+                "explicitIPv6EmptyPort": oracle.create_start_probe(
+                    "syslog-address-ipv6-empty-port",
+                    driver="syslog",
+                    options={"syslog-address": "udp://[::1]:"},
+                ),
+                "explicitIPv6Port": oracle.create_start_probe(
+                    "syslog-address-ipv6-port",
+                    driver="syslog",
+                    options={"syslog-address": "udp://[::1]:55145"},
+                ),
+                "ipv6DefaultPortBug": oracle.create_start_probe(
+                    "syslog-address-ipv6-default",
+                    driver="syslog",
+                    options={"syslog-address": "udp://[::1]"},
+                ),
+                "leadingZeroPort": oracle.create_start_probe(
+                    "syslog-address-leading-zero-port",
+                    driver="syslog",
+                    options={"syslog-address": "udp://127.0.0.1:01"},
+                ),
+                "opaqueTarget": oracle.create_start_probe(
+                    "syslog-address-opaque-target",
+                    driver="syslog",
+                    options={"syslog-address": "udp:localhost"},
+                ),
+                "outOfRangePort": oracle.create_start_probe(
+                    "syslog-address-port-range",
+                    driver="syslog",
+                    options={"syslog-address": "udp://127.0.0.1:65536"},
+                ),
+                "servicePort": oracle.create_start_probe(
+                    "syslog-address-service-port",
+                    driver="syslog",
+                    options={"syslog-address": "udp://127.0.0.1:syslog"},
+                ),
+                "signedPort": oracle.create_start_probe(
+                    "syslog-address-signed-port",
+                    driver="syslog",
+                    options={"syslog-address": "udp://127.0.0.1:+1"},
+                ),
+                "unixExistingNonSocket": oracle.create_start_probe(
+                    "syslog-address-unix-existing",
+                    driver="syslog",
+                    options={"syslog-address": "unix:/dev/null"},
+                ),
+                "unixOpaquePath": oracle.create_start_probe(
+                    "syslog-address-unix-opaque",
+                    driver="syslog",
+                    options={"syslog-address": "unix:dev/null"},
+                ),
+                "uppercaseScheme": oracle.create_start_probe(
+                    "syslog-address-uppercase",
+                    driver="syslog",
+                    options={"syslog-address": "UDP://127.0.0.1:55145"},
+                ),
+            },
+            "facility": {
+                "leadingPlus": oracle.create_start_probe(
+                    "syslog-facility-plus",
+                    driver="syslog",
+                    options={**syslog_base, "syslog-facility": "+1"},
+                ),
+                "leadingZero": oracle.create_start_probe(
+                    "syslog-facility-leading-zero",
+                    driver="syslog",
+                    options={**syslog_base, "syslog-facility": "01"},
+                ),
+                "negativeZero": oracle.create_start_probe(
+                    "syslog-facility-negative-zero",
+                    driver="syslog",
+                    options={**syslog_base, "syslog-facility": "-0"},
+                ),
+                "maximumNumeric": oracle.create_start_probe(
+                    "syslog-facility-maximum",
+                    driver="syslog",
+                    options={**syslog_base, "syslog-facility": "23"},
+                ),
+                "outOfRange": oracle.create_start_probe(
+                    "syslog-facility-range",
+                    driver="syslog",
+                    options={**syslog_base, "syslog-facility": "24"},
+                ),
+                "leadingWhitespace": oracle.create_start_probe(
+                    "syslog-facility-whitespace",
+                    driver="syslog",
+                    options={**syslog_base, "syslog-facility": " 1"},
+                ),
+                "uppercaseName": oracle.create_start_probe(
+                    "syslog-facility-uppercase",
+                    driver="syslog",
+                    options={**syslog_base, "syslog-facility": "LOCAL1"},
+                ),
+            },
+            "format": {
+                "microseconds": oracle.create_start_probe(
+                    "syslog-format-micro",
+                    driver="syslog",
+                    options={**syslog_base, "syslog-format": "rfc5424micro"},
+                ),
+                "uppercase": oracle.create_start_probe(
+                    "syslog-format-uppercase",
+                    driver="syslog",
+                    options={**syslog_base, "syslog-format": "RFC5424"},
+                ),
+            },
+            "metadataRegex": {
+                "invalidUnusedEnvironment": oracle.create_start_probe(
+                    "syslog-env-regex-unused",
+                    driver="syslog",
+                    options={**syslog_base, "env-regex": "["},
+                ),
+                "invalidUnusedLabels": oracle.create_start_probe(
+                    "syslog-labels-regex-unused",
+                    driver="syslog",
+                    options={**syslog_base, "labels-regex": "("},
+                ),
+            },
+            "tagTemplate": {
+                "controlAction": oracle.create_start_probe(
+                    "syslog-tag-control",
+                    driver="syslog",
+                    options={
+                        **syslog_base,
+                        "tag": "{{if .Name}}{{.Name}}{{else}}fallback{{end}}",
+                    },
+                ),
+                "invalidFunction": oracle.create_start_probe(
+                    "syslog-tag-invalid",
+                    driver="syslog",
+                    options={**syslog_base, "tag": "{{missing .ID}}"},
+                ),
+                "whitespaceTrim": oracle.create_start_probe(
+                    "syslog-tag-trim",
+                    driver="syslog",
+                    options={**syslog_base, "tag": "{{- .ID -}}"},
+                ),
+            },
+            "tlsMaterial": {
+                "plainTransportIgnoresMissingFiles": oracle.create_start_probe(
+                    "syslog-tls-plain-ignore",
+                    driver="syslog",
+                    options={
+                        **syslog_base,
+                        "syslog-tls-ca-cert": "/missing/ca",
+                        "syslog-tls-cert": "/missing/cert",
+                        "syslog-tls-key": "/missing/key",
+                    },
+                ),
+                "tlsTransportLoadsFilesAtStart": oracle.create_start_probe(
+                    "syslog-tls-start-load",
+                    driver="syslog",
+                    options={
+                        "syslog-address": "tcp+tls://127.0.0.1:6514",
+                        "syslog-tls-ca-cert": "/missing/ca",
+                        "syslog-tls-cert": "/missing/cert",
+                        "syslog-tls-key": "/missing/key",
+                    },
+                ),
+                "skipVerifyUsesPresence": oracle.create_start_probe(
+                    "syslog-tls-skip-verify-presence",
+                    driver="syslog",
+                    options={
+                        "syslog-address": "tcp+tls://127.0.0.1:1",
+                        "syslog-tls-skip-verify": "not-a-boolean",
+                    },
+                ),
+            },
+        }
+        timings["syslogValidation"] = monotonic_timing(case_started)
+
+        case_started = time.monotonic()
         option_semantics: dict[str, Any] = {
             "mode": {},
             "compress": {},

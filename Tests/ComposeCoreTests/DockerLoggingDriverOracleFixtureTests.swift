@@ -143,6 +143,193 @@ struct DockerLoggingDriverOracleFixtureTests {
     }
 
     @Test
+    func `pins syslog address and facility validation phases`() throws {
+        let fixture = try Self.fixture()
+
+        for label in [
+            "emptyUDPPort", "explicitIPv6EmptyPort", "explicitIPv6Port", "leadingZeroPort",
+            "opaqueTarget", "uppercaseScheme",
+        ] {
+            #expect(
+                try integer(
+                    fixture, "cases", "syslogValidation", "address", label, "create", "httpStatus",
+                ) == 201,
+            )
+            #expect(
+                try integer(
+                    fixture, "cases", "syslogValidation", "address", label, "start", "httpStatus",
+                ) == 204,
+            )
+        }
+        #expect(
+            try string(
+                fixture, "cases", "syslogValidation", "address", "opaqueTarget",
+                "inspectAfterCreate", "logConfig", "Config", "syslog-address",
+            ) == "udp:localhost",
+        )
+
+        for label in ["ipv6DefaultPortBug", "outOfRangePort", "unixExistingNonSocket"] {
+            #expect(
+                try integer(
+                    fixture, "cases", "syslogValidation", "address", label, "create", "httpStatus",
+                ) == 201,
+            )
+            #expect(
+                try integer(
+                    fixture, "cases", "syslogValidation", "address", label, "start", "httpStatus",
+                ) == 500,
+            )
+            #expect(
+                try string(
+                    fixture, "cases", "syslogValidation", "address", label, "inspectAfterStart",
+                    "state", "status",
+                ) == "created",
+            )
+        }
+        #expect(
+            try string(
+                fixture, "cases", "syslogValidation", "address", "ipv6DefaultPortBug", "start",
+                "message",
+            ).contains("address [[::1]]:514: missing port in address"),
+        )
+
+        for label in ["servicePort", "signedPort", "unixOpaquePath"] {
+            #expect(
+                try integer(
+                    fixture, "cases", "syslogValidation", "address", label, "create", "httpStatus",
+                ) == 400,
+            )
+            #expect(
+                try boolean(
+                    fixture, "cases", "syslogValidation", "address", label, "containerResidue",
+                ) == false,
+            )
+        }
+
+        for label in ["leadingPlus", "leadingZero", "maximumNumeric", "negativeZero"] {
+            #expect(
+                try integer(
+                    fixture, "cases", "syslogValidation", "facility", label, "start", "httpStatus",
+                ) == 204,
+            )
+        }
+        for label in ["leadingWhitespace", "outOfRange", "uppercaseName"] {
+            #expect(
+                try integer(
+                    fixture, "cases", "syslogValidation", "facility", label, "create", "httpStatus",
+                ) == 400,
+            )
+            #expect(
+                try string(
+                    fixture, "cases", "syslogValidation", "facility", label, "create", "message",
+                ) == "invalid syslog facility",
+            )
+        }
+    }
+
+    @Test
+    func `pins syslog format metadata and tag validation phases`() throws {
+        let fixture = try Self.fixture()
+
+        #expect(
+            try integer(
+                fixture, "cases", "syslogValidation", "format", "microseconds", "start", "httpStatus",
+            ) == 204,
+        )
+        #expect(
+            try integer(
+                fixture, "cases", "syslogValidation", "format", "uppercase", "create", "httpStatus",
+            ) == 400,
+        )
+        #expect(
+            try string(
+                fixture, "cases", "syslogValidation", "format", "uppercase", "create", "message",
+            ) == "Invalid syslog format",
+        )
+
+        for label in ["invalidUnusedEnvironment", "invalidUnusedLabels"] {
+            #expect(
+                try integer(
+                    fixture, "cases", "syslogValidation", "metadataRegex", label, "start", "httpStatus",
+                ) == 204,
+            )
+        }
+        for label in ["controlAction", "whitespaceTrim"] {
+            #expect(
+                try integer(
+                    fixture, "cases", "syslogValidation", "tagTemplate", label, "start", "httpStatus",
+                ) == 204,
+            )
+        }
+        #expect(
+            try integer(
+                fixture, "cases", "syslogValidation", "tagTemplate", "invalidFunction", "create",
+                "httpStatus",
+            ) == 201,
+        )
+        #expect(
+            try integer(
+                fixture, "cases", "syslogValidation", "tagTemplate", "invalidFunction", "start",
+                "httpStatus",
+            ) == 500,
+        )
+        #expect(
+            try string(
+                fixture, "cases", "syslogValidation", "tagTemplate", "invalidFunction", "start",
+                "message",
+            ).contains("function \"missing\" not defined"),
+        )
+    }
+
+    @Test
+    func `pins syslog transport dependent TLS validation`() throws {
+        let fixture = try Self.fixture()
+
+        #expect(
+            try integer(
+                fixture, "cases", "syslogValidation", "tlsMaterial",
+                "plainTransportIgnoresMissingFiles", "start", "httpStatus",
+            ) == 204,
+        )
+        #expect(
+            try integer(
+                fixture, "cases", "syslogValidation", "tlsMaterial",
+                "tlsTransportLoadsFilesAtStart", "create", "httpStatus",
+            ) == 201,
+        )
+        #expect(
+            try integer(
+                fixture, "cases", "syslogValidation", "tlsMaterial",
+                "tlsTransportLoadsFilesAtStart", "start", "httpStatus",
+            ) == 400,
+        )
+        #expect(
+            try string(
+                fixture, "cases", "syslogValidation", "tlsMaterial",
+                "tlsTransportLoadsFilesAtStart", "inspectAfterStart", "state", "status",
+            ) == "created",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "syslogValidation", "tlsMaterial",
+                "tlsTransportLoadsFilesAtStart", "start", "message",
+            ).contains("could not read CA certificate \"/missing/ca\""),
+        )
+        #expect(
+            try integer(
+                fixture, "cases", "syslogValidation", "tlsMaterial", "skipVerifyUsesPresence",
+                "create", "httpStatus",
+            ) == 201,
+        )
+        #expect(
+            try string(
+                fixture, "cases", "syslogValidation", "tlsMaterial", "skipVerifyUsesPresence",
+                "inspectAfterCreate", "logConfig", "Config", "syslog-tls-skip-verify",
+            ) == "not-a-boolean",
+        )
+    }
+
+    @Test
     // swiftlint:disable:next function_body_length
     func `pins create and start option grammars`() throws {
         let fixture = try Self.fixture()
