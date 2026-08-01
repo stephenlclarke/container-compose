@@ -2,7 +2,19 @@
 
 This directory is the durable handoff area for Apple-facing work that affects `container-compose`. [HANDOFF-REGISTRY.json](HANDOFF-REGISTRY.json) is the maintained source of truth; [HANDOFF-REGISTRY.md](HANDOFF-REGISTRY.md) is its generated reader view. Current installation, release, support, and build instructions remain at the repository root.
 
-For the coherent parity programme, the [Container-family parity development cycle](../container-family-development-cycle.md) is normative: Apple repositories and their issues, pull requests, discussions, and comments are read-only. New generic work stops at an Apple-shaped signed commit series plus an `active-draft` or `unsubmitted` handoff. Existing submitted records remain tracked historically, but this programme does not open, refresh, or comment on an Apple submission.
+For the coherent parity programme, the [Container-family parity development cycle](../container-family-development-cycle.md) is normative: Apple repositories and their issues, pull requests, discussions, and comments remain read-only throughout every development wave. New generic work stops at an Apple-shaped signed commit series plus an `active-draft` or `unsubmitted` handoff. Existing submitted records remain tracked historically. New or refreshed Apple submissions are deferred to one programme-wide publication step after all planned development and integrated gates are complete, and still require explicit authorisation.
+
+## Programme-Wide Publication Gate
+
+Completing one capability, repository, design, or implementation wave never authorises an Apple write. During development, every upstream-applicable defect fix is:
+
+1. reproduced against the relevant current Apple repository;
+2. isolated from Docker-, Compose-, Stephen-, and programme-specific policy;
+3. committed as the narrowest Apple-shaped source and test series;
+4. documented and registered as `active-draft` or `unsubmitted`; and
+5. kept local or in the supported forks with Apple push URLs disabled.
+
+The accumulated queue is reviewed for publication only after all planned Container-family development is complete and the programme-wide compatibility, fault, security, migration, performance, documentation, and repository-hygiene gates pass. Publication then requires explicit authorisation and a fresh upstream review; no earlier wave can partially drain the queue.
 
 ## Registry
 
@@ -51,7 +63,7 @@ entries; it never assigns a disposition automatically.
 
 ## Handoff Lifecycle
 
-1. Re-check current Apple issues and pull requests before selecting a slice and record overlaps. Do not open or comment on an Apple issue, discussion, branch, or pull request.
+1. Re-check current Apple issues and pull requests before selecting a slice and record overlaps. During development, do not open or comment on an Apple issue, discussion, branch, or pull request.
 2. Add or update the structured registry row first. Keep a detailed Markdown document only while it contains current review, construction, testing, or submission information that does not fit the row.
 3. Keep one coherent Apple-shaped handoff series per repository. Split a cross-repository capability into independently reviewable lower-runtime and API/CLI slices.
 4. Keep Compose-specific parsing, formatting, filtering, orchestration, and Docker compatibility in `container-compose`. Apple-facing work should expose generic typed primitives and tests.

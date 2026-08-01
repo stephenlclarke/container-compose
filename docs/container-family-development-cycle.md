@@ -16,7 +16,7 @@ Work is local-first. Focused tests provide fast feedback while a change is being
 
 Every completed slice receives a full final review. Findings are fixed, the affected focused tests are rerun, and the complete slice is reviewed again. The review loop ends only when a full pass finds no new actionable issue, all earlier findings and `@codex` queries have explicit resolutions, and the applicable slice gates pass.
 
-This document describes how already-authorised implementation and publication work proceeds. It does not independently authorise a destructive operation, release, branch-protection change, or external submission. Changes are never submitted to an Apple upstream repository; generic Apple-ready work is retained as an Apple-shaped commit series with complete handoff documentation.
+This document describes how already-authorised implementation and publication work proceeds. It does not independently authorise a destructive operation, release, branch-protection change, or external submission. During development, generic Apple-ready work is retained as an Apple-shaped commit series with complete handoff documentation. No Apple issue, pull request, comment, branch, or push is created until every planned programme development wave and the integrated gates are complete; that later programme-wide publication step still requires explicit authorisation.
 
 ## Delivery Model
 
@@ -332,7 +332,7 @@ Each relevant upstream change is classified and acted on by:
 - updating the provider/capability or migration plan; or
 - recording why no action is required.
 
-Do not open an issue, pull request, discussion, comment, or push to an Apple upstream remote. Configure Apple upstream push URLs as disabled where practical. Monitoring is read-only.
+During every development wave, do not open an issue, pull request, discussion, comment, or push to an Apple upstream remote. Configure Apple upstream push URLs as disabled where practical. Monitoring is read-only. This freeze is lifted only by the programme-wide upstream publication gate after all development and integrated validation are complete, never by completing one feature or wave.
 
 Any change that could be handed to Apple is kept Apple-shaped:
 
@@ -343,7 +343,7 @@ Any change that could be handed to Apple is kept Apple-shaped:
 - signed commits that can be reviewed or replayed independently of the Container-family integration; and
 - a handoff document under `docs/upstream/` describing the problem, upstream evidence, design, exact patch/commit sequence, tests, performance, compatibility, risks, and replay instructions.
 
-Update the generated upstream handoff registry whenever a handoff is added or changed. The handoff remains local or in Stephen's forks; this programme never submits it upstream.
+Update the generated upstream handoff registry whenever a handoff is added or changed. The handoff remains local or in Stephen's forks throughout development. A later Apple submission is considered only in the final programme-wide publication step, after all planned development and integrated gates are complete and explicit authorisation is given.
 
 ## Parity and Performance Discipline
 
