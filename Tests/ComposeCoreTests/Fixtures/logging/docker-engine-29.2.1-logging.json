@@ -1,0 +1,505 @@
+{
+  "cases": {
+    "jsonFileStoppedReadAndFraming": {
+      "combinedRead": {
+        "contentType": "application/vnd.docker.multiplexed-stream",
+        "frames": [
+          {
+            "bytes": "stdout-line\n",
+            "header": {
+              "padding": [
+                0,
+                0,
+                0
+              ],
+              "payloadLength": 12,
+              "streamID": 1
+            },
+            "stream": "stdout"
+          },
+          {
+            "bytes": "stderr-line\n",
+            "header": {
+              "padding": [
+                0,
+                0,
+                0
+              ],
+              "payloadLength": 12,
+              "streamID": 2
+            },
+            "stream": "stderr"
+          }
+        ],
+        "framing": "docker-multiplexed-8-byte-header",
+        "httpStatus": 200,
+        "normalization": "preserve per-stream bytes; do not assert cross-stream order or transport chunk boundaries",
+        "stderr": "stderr-line\n",
+        "stdout": "stdout-line\n"
+      },
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "inspectAfterExit": {
+        "logConfig": {
+          "Config": {
+            "labels": "oracle.label"
+          },
+          "Type": "json-file"
+        },
+        "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+        "state": {
+          "error": "",
+          "status": "exited"
+        },
+        "tty": false
+      },
+      "inspectBeforeStart": {
+        "logConfig": {
+          "Config": {
+            "labels": "oracle.label"
+          },
+          "Type": "json-file"
+        },
+        "logPath": "",
+        "state": {
+          "error": "",
+          "status": "created"
+        },
+        "tty": false
+      },
+      "jsonFileRecords": [
+        {
+          "attrs": {
+            "oracle.label": "alpha"
+          },
+          "keys": [
+            "log",
+            "stream",
+            "attrs",
+            "time"
+          ],
+          "log": "stderr-line\n",
+          "stream": "stderr",
+          "time": "<rfc3339-nano-utc>"
+        },
+        {
+          "attrs": {
+            "oracle.label": "alpha"
+          },
+          "keys": [
+            "log",
+            "stream",
+            "attrs",
+            "time"
+          ],
+          "log": "stdout-line\n",
+          "stream": "stdout",
+          "time": "<rfc3339-nano-utc>"
+        }
+      ],
+      "stderrOnlyRead": {
+        "contentType": "application/vnd.docker.multiplexed-stream",
+        "frames": [
+          {
+            "bytes": "stderr-line\n",
+            "header": {
+              "padding": [
+                0,
+                0,
+                0
+              ],
+              "payloadLength": 12,
+              "streamID": 2
+            },
+            "stream": "stderr"
+          }
+        ],
+        "framing": "docker-multiplexed-8-byte-header",
+        "httpStatus": 200,
+        "normalization": "preserve per-stream bytes; do not assert cross-stream order or transport chunk boundaries",
+        "stderr": "stderr-line\n",
+        "stdout": ""
+      },
+      "stdoutOnlyRead": {
+        "contentType": "application/vnd.docker.multiplexed-stream",
+        "frames": [
+          {
+            "bytes": "stdout-line\n",
+            "header": {
+              "padding": [
+                0,
+                0,
+                0
+              ],
+              "payloadLength": 12,
+              "streamID": 1
+            },
+            "stream": "stdout"
+          }
+        ],
+        "framing": "docker-multiplexed-8-byte-header",
+        "httpStatus": 200,
+        "normalization": "preserve per-stream bytes; do not assert cross-stream order or transport chunk boundaries",
+        "stderr": "",
+        "stdout": "stdout-line\n"
+      }
+    },
+    "localNativeReader": {
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "inspectAfterExit": {
+        "logConfig": {
+          "Config": {
+            "compress": "true",
+            "max-file": "2",
+            "max-size": "1m"
+          },
+          "Type": "local"
+        },
+        "logPath": "",
+        "state": {
+          "error": "",
+          "status": "exited"
+        },
+        "tty": false
+      },
+      "stoppedRead": {
+        "contentType": "application/vnd.docker.multiplexed-stream",
+        "frames": [
+          {
+            "bytes": "local-line\n",
+            "header": {
+              "padding": [
+                0,
+                0,
+                0
+              ],
+              "payloadLength": 11,
+              "streamID": 1
+            },
+            "stream": "stdout"
+          }
+        ],
+        "framing": "docker-multiplexed-8-byte-header",
+        "httpStatus": 200,
+        "normalization": "preserve per-stream bytes; do not assert cross-stream order or transport chunk boundaries",
+        "stderr": "",
+        "stdout": "local-line\n"
+      }
+    },
+    "nonReaderDualCache": {
+      "cacheDisabled": {
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {
+              "cache-disabled": "true",
+              "syslog-address": "udp://127.0.0.1:55141"
+            },
+            "Type": "syslog"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        },
+        "stoppedRead": {
+          "contentType": "application/json",
+          "httpStatus": 501,
+          "message": "configured logging driver does not support reading"
+        }
+      },
+      "defaultCache": {
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {
+              "syslog-address": "udp://127.0.0.1:55140"
+            },
+            "Type": "syslog"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        },
+        "stoppedRead": {
+          "contentType": "application/vnd.docker.multiplexed-stream",
+          "frames": [
+            {
+              "bytes": "cached-out\n",
+              "header": {
+                "padding": [
+                  0,
+                  0,
+                  0
+                ],
+                "payloadLength": 11,
+                "streamID": 1
+              },
+              "stream": "stdout"
+            },
+            {
+              "bytes": "cached-err\n",
+              "header": {
+                "padding": [
+                  0,
+                  0,
+                  0
+                ],
+                "payloadLength": 11,
+                "streamID": 2
+              },
+              "stream": "stderr"
+            }
+          ],
+          "framing": "docker-multiplexed-8-byte-header",
+          "httpStatus": 200,
+          "normalization": "preserve per-stream bytes; do not assert cross-stream order or transport chunk boundaries",
+          "stderr": "cached-err\n",
+          "stdout": "cached-out\n"
+        }
+      }
+    },
+    "noneArbitraryOptions": {
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "inspectAfterExit": {
+        "logConfig": {
+          "Config": {
+            "max-size": "1m",
+            "opaque-option": "opaque-value"
+          },
+          "Type": "none"
+        },
+        "logPath": "",
+        "state": {
+          "error": "",
+          "status": "exited"
+        },
+        "tty": false
+      },
+      "requestTransport": "Docker Engine API",
+      "stoppedRead": {
+        "contentType": "application/json",
+        "httpStatus": 501,
+        "message": "configured logging driver does not support reading"
+      }
+    },
+    "omittedDefault": {
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "createdFollowRead": {
+        "contentType": "application/vnd.docker.multiplexed-stream",
+        "frames": [],
+        "framing": "docker-multiplexed-8-byte-header",
+        "httpStatus": 200,
+        "normalization": "preserve per-stream bytes; do not assert cross-stream order or transport chunk boundaries",
+        "stderr": "",
+        "stdout": ""
+      },
+      "inspectAfterCreatedRead": {
+        "logConfig": {
+          "Config": {},
+          "Type": "json-file"
+        },
+        "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+        "state": {
+          "error": "",
+          "status": "created"
+        },
+        "tty": false
+      },
+      "inspectBeforeRead": {
+        "logConfig": {
+          "Config": {},
+          "Type": "json-file"
+        },
+        "logPath": "",
+        "state": {
+          "error": "",
+          "status": "created"
+        },
+        "tty": false
+      },
+      "requestedLogConfig": "omitted",
+      "runningWasStarted": false
+    },
+    "restartRetention": {
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "inspectAfterStop": {
+        "logConfig": {
+          "Config": {},
+          "Type": "json-file"
+        },
+        "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+        "state": {
+          "error": "",
+          "status": "exited"
+        },
+        "tty": false
+      },
+      "restartHTTPStatus": 204,
+      "retainedRead": {
+        "contentType": "application/vnd.docker.multiplexed-stream",
+        "frames": [
+          {
+            "bytes": "restart-1\nrestart-2\n",
+            "header": {
+              "padding": [
+                0,
+                0,
+                0
+              ],
+              "payloadLength": 20,
+              "streamID": 1
+            },
+            "stream": "stdout"
+          }
+        ],
+        "framing": "docker-multiplexed-8-byte-header",
+        "httpStatus": 200,
+        "normalization": "preserve per-stream bytes; do not assert cross-stream order or transport chunk boundaries",
+        "stderr": "",
+        "stdout": "restart-1\nrestart-2\n"
+      },
+      "stopHTTPStatus": 204
+    },
+    "ttyRawMergedFraming": {
+      "combinedRead": {
+        "bytes": "stdout-line\r\nstderr-line\r\n",
+        "contentType": "application/vnd.docker.raw-stream",
+        "framing": "raw",
+        "httpStatus": 200
+      },
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "inspectAfterExit": {
+        "logConfig": {
+          "Config": {},
+          "Type": "json-file"
+        },
+        "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+        "state": {
+          "error": "",
+          "status": "exited"
+        },
+        "tty": true
+      },
+      "stderrOnlyRead": {
+        "bytes": "",
+        "contentType": "application/vnd.docker.raw-stream",
+        "framing": "raw",
+        "httpStatus": 200
+      },
+      "stdoutOnlyRead": {
+        "bytes": "stdout-line\r\nstderr-line\r\n",
+        "contentType": "application/vnd.docker.raw-stream",
+        "framing": "raw",
+        "httpStatus": 200
+      }
+    },
+    "validationPhases": {
+      "createTimeUnknownLocalOption": {
+        "containerResidue": false,
+        "httpStatus": 400,
+        "message": "unknown log opt 'opaque-option' for log driver local"
+      },
+      "startTimeInvalidJSONFileValue": {
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterFailedStart": {
+          "logConfig": {
+            "Config": {
+              "max-file": "bogus"
+            },
+            "Type": "json-file"
+          },
+          "logPath": "/var/lib/docker/containers/<container-id>/<container-id>-json.log",
+          "state": {
+            "error": "failed to create task for container: failed to initialize logging driver: strconv.Atoi: parsing \"bogus\": invalid syntax",
+            "status": "created"
+          },
+          "tty": false
+        },
+        "inspectBeforeStart": {
+          "logConfig": {
+            "Config": {
+              "max-file": "bogus"
+            },
+            "Type": "json-file"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "created"
+          },
+          "tty": false
+        },
+        "start": {
+          "httpStatus": 500,
+          "message": "failed to create task for container: failed to initialize logging driver: strconv.Atoi: parsing \"bogus\": invalid syntax"
+        }
+      }
+    }
+  },
+  "metadata": {
+    "apiVersion": "1.53",
+    "architecture": "arm64",
+    "context": "colima",
+    "defaultLoggingDriver": "json-file",
+    "engineVersion": "29.2.1",
+    "image": "alpine:3.20",
+    "imageRepoDigests": [
+      "alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
+    ],
+    "minimumAPIVersion": "1.44",
+    "operatingSystem": "linux",
+    "registeredLoggingDrivers": [
+      "awslogs",
+      "fluentd",
+      "gcplogs",
+      "gelf",
+      "journald",
+      "json-file",
+      "local",
+      "splunk",
+      "syslog"
+    ]
+  },
+  "schemaVersion": 1
+}
