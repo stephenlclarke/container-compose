@@ -680,7 +680,7 @@ extension ComposeOrchestrator {
         logging: ComposeLogConfiguration? = nil,
     ) async throws -> CommandResult {
         if options.dryRun {
-            options.emit("+ " + shellQuoted([options.containerBinary] + arguments))
+            options.emit("+ " + shellQuoted([options.containerBinary] + redactedLoggingArguments(arguments)))
             return CommandResult(status: 0, stdout: "", stderr: "")
         }
         if options.runtimeCapabilities.supportsLoggingDriversV1, let logging {
@@ -732,6 +732,34 @@ extension ComposeOrchestrator {
             )
         }
         return result
+    }
+
+    /// Preserves logging option names in diagnostics without exposing values.
+    func redactedLoggingArguments(_ arguments: [String]) -> [String] {
+        var result = arguments
+        var index = result.startIndex
+        while index < result.endIndex {
+            if result[index] == "--log-opt" {
+                let valueIndex = result.index(after: index)
+                if valueIndex < result.endIndex {
+                    result[valueIndex] = redactedLoggingOption(result[valueIndex])
+                    index = result.index(after: valueIndex)
+                    continue
+                }
+            } else if result[index].hasPrefix("--log-opt=") {
+                let option = String(result[index].dropFirst("--log-opt=".count))
+                result[index] = "--log-opt=\(redactedLoggingOption(option))"
+            }
+            index = result.index(after: index)
+        }
+        return result
+    }
+
+    private func redactedLoggingOption(_ option: String) -> String {
+        guard let separator = option.firstIndex(of: "=") else {
+            return "<redacted>"
+        }
+        return "\(option[..<separator])=<redacted>"
     }
 
     /// Runs a runtime command while emitting progress for captured operations.

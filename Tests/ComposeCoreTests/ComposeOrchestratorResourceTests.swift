@@ -407,6 +407,36 @@ extension ComposeOrchestratorTests {
         #expect(!request.arguments.contains("--log-opt"))
     }
 
+    @Test("dry run redacts logging option values")
+    func dryRunRedactsLoggingOptionValues() async throws {
+        let protectedValue = "protected-value"
+        let emitted = LockedStringRecorder()
+        let options = ComposeExecutionOptions {
+            $0.dryRun = true
+            $0.runtimeCapabilities = .init(identifiers: [
+                ComposeRuntimeCapabilities.loggingDriversV1Identifier,
+            ])
+            $0.emit = { emitted.append($0) }
+        }
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.logging = ComposeLogConfiguration(
+                        driver: "splunk",
+                        options: ["splunk-token": protectedValue],
+                    )
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(options: options)
+            .up(project: project, options: ComposeUpOptions())
+
+        #expect(emitted.snapshot.contains(where: { $0.contains("splunk-token=<redacted>") }))
+        #expect(!emitted.snapshot.contains(where: { $0.contains(protectedValue) }))
+    }
+
     @Test("up accepts local logging drivers without options")
     func upAcceptsLocalLoggingDriversWithoutOptions() async throws {
         for testCase in supportedLocalServiceLoggingFieldCases() {
