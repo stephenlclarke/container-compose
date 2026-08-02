@@ -213,6 +213,39 @@ public struct ComposeLogConfiguration: Codable, Equatable, Sendable {
     }
 }
 
+/// Create command selected after Compose has completed service planning.
+public enum ComposeRuntimeContainerLaunchCommand: String, Equatable, Sendable {
+    case create
+    case run
+}
+
+/// In-process create/run request for a negotiated Container authority.
+///
+/// `arguments` contains the non-logging Container command arguments. Logging
+/// travels as a separate typed value so protected provider options never enter
+/// a child-process argument vector.
+public struct ComposeRuntimeContainerLaunchRequest: Equatable, Sendable {
+    public var command: ComposeRuntimeContainerLaunchCommand
+    public var arguments: [String]
+    public var logging: ComposeLogConfiguration
+
+    public init(
+        command: ComposeRuntimeContainerLaunchCommand,
+        arguments: [String],
+        logging: ComposeLogConfiguration,
+    ) {
+        self.command = command
+        self.arguments = arguments
+        self.logging = logging
+    }
+}
+
+/// Authority-backed container creation without a child `container` process.
+public protocol ComposeRuntimeContainerLaunching: Sendable {
+    /// Creates or runs one container and returns its process status.
+    func launchContainer(_ request: ComposeRuntimeContainerLaunchRequest) async throws -> Int32
+}
+
 /// Runtime healthcheck projected from Compose or inherited image metadata.
 public struct ComposeHealthCheck: Codable, Sendable {
     public static let defaultIntervalInNanoseconds: UInt64 = 30_000_000_000

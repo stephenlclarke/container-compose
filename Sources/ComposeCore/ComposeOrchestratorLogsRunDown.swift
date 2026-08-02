@@ -533,6 +533,7 @@ public extension ComposeOrchestrator {
         try await launchOneOffRun(
             arguments: arguments,
             serviceName: preparation.service.name,
+            logging: runtimeLogConfiguration(service: preparation.service),
             options: run,
             inheritedIO: launchWithInheritedIO,
         )
@@ -577,6 +578,7 @@ public extension ComposeOrchestrator {
     private func launchOneOffRun(
         arguments: [String],
         serviceName: String,
+        logging: ComposeLogConfiguration,
         options run: ComposeRunOptions,
         inheritedIO: Bool,
     ) async throws {
@@ -587,6 +589,7 @@ public extension ComposeOrchestrator {
                 quiet: run.quiet,
                 inheritedIO: inheritedIO,
                 replaceProcess: inheritedIO,
+                logging: logging,
             )
         } catch let error as ComposeError {
             guard case let .commandFailed(_, status, _) = error else {

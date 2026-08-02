@@ -326,6 +326,87 @@ extension ComposeOrchestratorTests {
         }
     }
 
+    @Test("up sends negotiated logging as a typed in-process request")
+    func upSendsNegotiatedLoggingAsTypedRequest() async throws {
+        let runner = RecordingRunner()
+        let launchManager = RecordingContainerLaunchManager()
+        let options = ComposeExecutionOptions {
+            $0.runtimeCapabilities = .init(identifiers: [
+                "io.github.stephenlclarke.container.logging-drivers.v1",
+            ])
+        }
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.logging = ComposeLogConfiguration(
+                        driver: "splunk",
+                        options: [
+                            "splunk-token": "protected-value",
+                            "splunk-url": "https://127.0.0.1:8088",
+                        ],
+                    )
+                },
+            ]
+        )
+        let dependencies = orchestratorDependencies {
+            $0.launchManager = launchManager
+        }
+
+        try await ComposeOrchestrator(runner: runner, options: options, dependencies: dependencies)
+            .up(project: project, options: ComposeUpOptions())
+
+        #expect(runner.commands.isEmpty)
+        let request = try #require(await launchManager.requests.first)
+        #expect(request.command == .run)
+        #expect(request.logging == ComposeLogConfiguration(
+            driver: "splunk",
+            options: [
+                "splunk-token": "protected-value",
+                "splunk-url": "https://127.0.0.1:8088",
+            ],
+        ))
+        #expect(!request.arguments.contains("--log-driver"))
+        #expect(!request.arguments.contains("--log-opt"))
+        #expect(!request.arguments.contains(where: { $0.contains("protected-value") }))
+    }
+
+    @Test("create uses the negotiated typed logging path")
+    func createUsesNegotiatedTypedLoggingPath() async throws {
+        let runner = RecordingRunner()
+        let launchManager = RecordingContainerLaunchManager()
+        let options = ComposeExecutionOptions {
+            $0.runtimeCapabilities = .init(identifiers: [
+                "io.github.stephenlclarke.container.logging-drivers.v1",
+            ])
+        }
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.logging = ComposeLogConfiguration(
+                        driver: "syslog",
+                        options: ["syslog-address": "tcp://127.0.0.1:5514"],
+                    )
+                },
+            ]
+        )
+        let dependencies = orchestratorDependencies {
+            $0.launchManager = launchManager
+        }
+
+        try await ComposeOrchestrator(runner: runner, options: options, dependencies: dependencies)
+            .create(project: project, options: ComposeCreateOptions())
+
+        #expect(runner.commands.isEmpty)
+        let request = try #require(await launchManager.requests.first)
+        #expect(request.command == .create)
+        #expect(request.logging.driver == "syslog")
+        #expect(request.logging.options == ["syslog-address": "tcp://127.0.0.1:5514"])
+        #expect(!request.arguments.contains("--log-driver"))
+        #expect(!request.arguments.contains("--log-opt"))
+    }
+
     @Test("up accepts local logging drivers without options")
     func upAcceptsLocalLoggingDriversWithoutOptions() async throws {
         for testCase in supportedLocalServiceLoggingFieldCases() {

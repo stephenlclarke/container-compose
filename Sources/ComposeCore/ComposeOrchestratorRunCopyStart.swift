@@ -101,10 +101,12 @@ extension ComposeOrchestrator {
         for label in run.labelOverrides {
             args.append(contentsOf: ["--label", label.rawValue])
         }
-        if createPlan.logging.driver == "none" {
-            args.append(contentsOf: ["--log-driver", "none"])
+        if !options.runtimeCapabilities.supportsLoggingDriversV1 || options.dryRun {
+            if let logDriver = try runtimeLogDriverArgument(service: service) {
+                args.append(contentsOf: ["--log-driver", logDriver])
+            }
+            try args.append(contentsOf: runtimeLogOptionArguments(service: service))
         }
-        try args.append(contentsOf: runtimeLogOptionArguments(service: service))
         try await args.append(contentsOf: runtimeHealthCheckArguments(
             project: project,
             service: service,
@@ -451,17 +453,19 @@ extension ComposeOrchestrator {
                 try await deleteContainer(name)
             }
 
+            let arguments = try await runArguments(
+                project: workingProject,
+                service: service,
+                options: RunArgumentOptions {
+                    $0.command = hasPreStartHooks(service) ? "create" : "run"
+                    $0.detach = !hasPreStartHooks(service)
+                },
+                externalVolumeMounts: externalVolumeMounts,
+                imageHealthCheckCache: imageHealthCheckCache
+            )
             try await runContainer(
-                runArguments(
-                    project: workingProject,
-                    service: service,
-                    options: RunArgumentOptions {
-                        $0.command = hasPreStartHooks(service) ? "create" : "run"
-                        $0.detach = !hasPreStartHooks(service)
-                    },
-                    externalVolumeMounts: externalVolumeMounts,
-                    imageHealthCheckCache: imageHealthCheckCache
-                )
+                arguments,
+                logging: try runtimeLogConfiguration(service: service)
             )
             if hasPreStartHooks(service) {
                 try await startServiceTargets(

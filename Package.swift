@@ -29,7 +29,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/stephenlclarke/container.git",
-            revision: "6c3f7d3701cf9400855849fa0e29dd75d7b9c45d",
+            revision: "0102c6ef153dc29a8f28684f253f978f73a28bc2",
         ),
         .package(
             url: "https://github.com/stephenlclarke/containerization.git",
@@ -68,9 +68,11 @@ let package = Package(
         .target(
             name: "ComposeContainerRuntime",
             dependencies: [
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 "ComposeCore",
                 "ComposeRuntimeSPI",
                 .product(name: "ContainerAPIClient", package: "container"),
+                .product(name: "ContainerCommands", package: "container"),
                 .product(name: "ContainerPersistence", package: "container"),
                 .product(name: "ContainerResource", package: "container"),
                 .product(name: "Containerization", package: "containerization"),
@@ -125,6 +127,7 @@ let package = Package(
             name: "ComposeContainerRuntimeTests",
             dependencies: [
                 "ComposeContainerRuntime",
+                "ComposeRuntimeSPI",
                 .product(name: "ContainerResource", package: "container"),
                 .product(name: "ContainerizationEXT4", package: "containerization"),
                 .product(name: "ContainerizationOCI", package: "containerization"),

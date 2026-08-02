@@ -341,10 +341,12 @@ extension ComposeOrchestrator {
     func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [ComposeRuntimeUnsupportedField] {
         var fields: [ComposeRuntimeUnsupportedField] = []
         let loggingReason = "service logging driver/options need an apple/container runtime gap PR"
-        if !isSupportedRuntimeLogging(service.logging) {
+        if !options.runtimeCapabilities.supportsLoggingDriversV1,
+           !isSupportedRuntimeLogging(service.logging)
+        {
             fields.append(.init(composeName: "logging", reason: loggingReason))
         }
-        if service.logging == nil {
+        if !options.runtimeCapabilities.supportsLoggingDriversV1, service.logging == nil {
             if let logDriver = service.logDriver,
                !logDriver.isEmpty,
                !isSupportedRuntimeLogDriver(logDriver)
@@ -432,14 +434,19 @@ extension ComposeOrchestrator {
     /// Returns the runtime log driver override needed for non-default Compose logging.
     func runtimeLogDriverArgument(service: ComposeService) throws -> String? {
         let configuration = try runtimeLogConfiguration(service: service)
+        if options.runtimeCapabilities.supportsLoggingDriversV1 {
+            return configuration.driver
+        }
         try validateLegacyRuntimeLogConfiguration(configuration, serviceName: service.name)
         return configuration.driver == "none" ? "none" : nil
     }
 
-    /// Returns local apple/container logging options for service create/run.
+    /// Returns lossless negotiated options or the legacy local-only projection.
     func runtimeLogOptionArguments(service: ComposeService) throws -> [String] {
         let configuration = try runtimeLogConfiguration(service: service)
-        try validateLegacyRuntimeLogConfiguration(configuration, serviceName: service.name)
+        if !options.runtimeCapabilities.supportsLoggingDriversV1 {
+            try validateLegacyRuntimeLogConfiguration(configuration, serviceName: service.name)
+        }
         return configuration.options.sorted(by: { $0.key < $1.key }).flatMap { key, value in
             ["--log-opt", "\(key)=\(value)"]
         }
