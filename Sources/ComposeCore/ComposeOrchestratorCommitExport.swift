@@ -119,8 +119,10 @@ public extension ComposeOrchestrator {
             output: archive,
             service: service,
             options: commit,
-            baseImage: baseImageMetadata,
-            healthCheck: healthCheck,
+            image: .init(
+                baseImage: baseImageMetadata,
+                healthCheck: healthCheck,
+            ),
             temporaryDirectory: options.temporaryDirectory,
         ))
         try ComposeTemporaryFiles.secureFile(at: archive)

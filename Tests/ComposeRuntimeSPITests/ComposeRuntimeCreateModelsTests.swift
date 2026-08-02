@@ -93,4 +93,40 @@ struct ComposeRuntimeCreateModelsTests {
         #expect(disabled.successfulRunDurationInNanoseconds == nil)
         #expect(unlimited.maximumRetryCount == nil)
     }
+
+    @Test
+    func `legacy process initializer forwards every runtime option`() {
+        let process = ComposeProcessConfiguration(
+            executable: "/usr/bin/worker",
+            arguments: ["--serve"],
+            environment: ["A=1"],
+            workingDirectory: "/srv",
+            terminal: true,
+            user: .raw(userString: "app:staff"),
+            supplementalGroups: [10, 20],
+            supplementalGroupNames: ["video"],
+            rlimits: [.init(limit: "RLIMIT_NOFILE", soft: 1024, hard: 2048)],
+            oomScoreAdj: -50,
+            privileged: true,
+            noNewPrivileges: true,
+        )
+
+        #expect(process.executable == "/usr/bin/worker")
+        #expect(process.arguments == ["--serve"])
+        #expect(process.environment == ["A=1"])
+        #expect(process.workingDirectory == "/srv")
+        #expect(process.terminal)
+        #expect(process.user == .raw(userString: "app:staff"))
+        #expect(process.supplementalGroups == [10, 20])
+        #expect(process.supplementalGroupNames == ["video"])
+        #expect(process.rlimits == [.init(limit: "RLIMIT_NOFILE", soft: 1024, hard: 2048)])
+        #expect(process.oomScoreAdj == -50)
+        #expect(process.privileged)
+        #expect(process.noNewPrivileges)
+    }
+
+    @Test
+    func `legacy logging default forwards to standard configuration`() {
+        #expect(ComposeLogConfiguration.default == .standard)
+    }
 }

@@ -61,7 +61,7 @@ public struct ContainerServiceCreateRuntime: Sendable {
 
     public init() {
         initProcess = ComposeRuntimeDefaults.shellProcess()
-        logging = ComposeLogConfiguration.default
+        logging = ComposeLogConfiguration.standard
         healthCheck = nil
         restartPolicy = ComposeRestartPolicy.no
         hostname = nil

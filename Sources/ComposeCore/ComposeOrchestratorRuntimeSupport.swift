@@ -433,7 +433,7 @@ extension ComposeOrchestrator {
         var configuration: ComposeLogConfiguration
         switch driver {
         case nil, "", "json-file", "local":
-            configuration = .default
+            configuration = .standard
         case "none":
             configuration = ComposeLogConfiguration(storage: .none)
         case let driver?:

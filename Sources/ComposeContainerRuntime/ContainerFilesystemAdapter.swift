@@ -143,7 +143,7 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
 
     /// Streams service container files directly between native copy APIs.
     public func copyBetweenContainers(sourceID: String, source: String, destinationID: String, destination: String, options: ContainerCopyTransferOptions = ContainerCopyTransferOptions()) async throws {
-        let archiveSource = Self.archiveSource(source)
+        let archiveSource = ComposeArchivePath.source(source)
         let (reader, writer) = try Self.archivePipe()
         let destinationOptions = ContainerCopyTransferOptions(preserveOwnership: options.preserveOwnership)
 
@@ -169,7 +169,9 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
                     )
                 }
                 do {
-                    while try await group.next() != nil {}
+                    for try await _ in group {
+                        // Drain both child completions so neither transfer outlives the pipe.
+                    }
                 } catch {
                     try? writer.close()
                     try? reader.close()
@@ -182,17 +184,6 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
             try? reader.close()
             throw error
         }
-    }
-
-    private static func archiveSource(_ source: String) -> (path: String, copyContents: Bool) {
-        if source == "/." {
-            return ("/", true)
-        }
-        guard source.hasSuffix("/.") else {
-            return (source, false)
-        }
-        let path = String(source.dropLast(2))
-        return (path.isEmpty ? "/" : path, true)
     }
 
     private static func archivePipe() throws -> (reader: FileHandle, writer: FileHandle) {

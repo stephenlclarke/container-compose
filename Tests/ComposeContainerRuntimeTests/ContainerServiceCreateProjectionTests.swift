@@ -34,12 +34,14 @@ struct ContainerServiceCreateProjectionTests {
             workingDirectory: "/srv",
             terminal: true,
             user: .raw(userString: "app:staff"),
-            supplementalGroups: [10, 20],
-            supplementalGroupNames: ["video"],
-            rlimits: [.init(limit: "RLIMIT_NOFILE", soft: 1024, hard: 2048)],
-            oomScoreAdj: -50,
-            privileged: true,
-            noNewPrivileges: true,
+            runtimeOptions: .init(
+                supplementalGroups: [10, 20],
+                supplementalGroupNames: ["video"],
+                rlimits: [.init(limit: "RLIMIT_NOFILE", soft: 1024, hard: 2048)],
+                oomScoreAdj: -50,
+                privileged: true,
+                noNewPrivileges: true,
+            ),
         )
         var runtime = ContainerServiceCreateRuntime()
         runtime.initProcess = process
@@ -168,7 +170,7 @@ struct ContainerServiceCreateProjectionTests {
         ).containerProcessConfiguration
 
         #expect(process.user == .id(uid: 501, gid: 20))
-        #expect(ComposeLogConfiguration.default.containerLogConfiguration == .default)
+        #expect(ComposeLogConfiguration.standard.containerLogConfiguration == .default)
     }
 
     private func expectProcess(_ process: ProcessConfiguration) {
