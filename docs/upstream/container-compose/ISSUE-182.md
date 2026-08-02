@@ -26,7 +26,7 @@ Release workflow only. This changes no Compose parsing, runtime operation, packa
 - [x] The helper never enables `--auto` and contains no Compose direct-main push branch.
 - [x] Deterministic evaluator and release-helper tests cover stale head, unanswered query, post-request query, timeout, clean-comment merge, stale clean comment, pagination, and direct-mode rejection.
 - [x] BUILD and the normative development cycle describe the delivered fail-closed protocol.
-- [ ] Exact final-head local gates, CodeQL, Sonar, hosted checks, and clean review are recorded in `PR-182.md`.
+- [x] Exact final-head local gates, CodeQL, Sonar, hosted checks, signed Current publication, and clean review are recorded in `PR-182.md`.
 
 ## Code of Conduct
 

@@ -137,6 +137,15 @@ matrix changes.
 
 ### Single coverage manifest
 
+Stable workflow, coherent-wave, residual-wave, and focused work-package state
+is already controlled by the shared
+[programme progress register](parity/PROGRAMME-PROGRESS.md). That register
+proves stable design anchors, immutable accepted-head evidence, and reviewed
+documentation dependencies. `CLOSURE-R0` extends this control to the detailed
+STATUS/capability requirement coverage and generated aggregate projections
+described below; the progress register does not prematurely claim that R0
+reconciliation is complete.
+
 Add a versioned `ParityCoverageManifestV1` as the source for STATUS aggregates,
 help markers, and design-progress checks. Each entry contains:
 
@@ -441,14 +450,14 @@ Apple-shaped signed commits with complete local handoff documentation.
 
 ## Delivery Order
 
-| Residual wave | Coherent dependency | Work | Exit evidence |
+| Stable ID | Coherent dependency | Work | Exit evidence |
 | --- | --- | --- | --- |
-| R0 | Before implementation Wave 0 | Add the coverage manifest schema and requirement IDs; reconcile links, identity, Build, userns, logging command/count, and credential wording through pinned oracles and generated ledger projections. | No partial marker lacks a concrete open requirement; command counts match detailed rows; no implementation is started from contradictory prose. |
-| R1 | Coherent Waves 0-1 | Land the local release-artefact builder, scheduler, collectors, raw schema, evaluator, and current-main baselines. | Reproducible local smoke lanes produce immutable raw/JUnit/summary evidence without claiming parity. |
-| R2 | Coherent Waves 2-7 | Attach requirement/progress/performance IDs to each focused vertical slice; implement a links delta only if R0 proves one. | Each slice updates exact STATUS/design evidence and its targeted performance lane. |
-| R3 | Coherent Wave 5 | Run provider feasibility probes and implement only host-feasible advertised providers behind DeviceBroker. | Positive live proof or exact negative/platform classification per provider fingerprint. |
-| R4 | Coherent Wave 9 | Optimise all material regressions and run the complete paired release matrix. | Every required median/P95 metric is comparable or better outside its noise band and all semantic gates pass. |
-| R5 | After usable Apple releases | Adopt equivalent stock APIs without changing enhanced authority or submitting upstream. | Truthful stock capability expansion with isolated-state and performance evidence. |
+| <a id="closure-r0"></a>`CLOSURE-R0` | Before implementation Wave 0 | Add the coverage manifest schema and requirement IDs; reconcile links, identity, Build, userns, logging command/count, and credential wording through pinned oracles and generated ledger projections. | No partial marker lacks a concrete open requirement; command counts match detailed rows; no implementation is started from contradictory prose. |
+| <a id="closure-r1"></a>`CLOSURE-R1` | Coherent Waves 0-1 | Land the local release-artefact builder, scheduler, collectors, raw schema, evaluator, and current-main baselines. | Reproducible local smoke lanes produce immutable raw/JUnit/summary evidence without claiming parity. |
+| <a id="closure-r2"></a>`CLOSURE-R2` | Coherent Waves 2-7 | Attach requirement/progress/performance IDs to each focused vertical slice; implement a links delta only if R0 proves one. | Each slice updates exact STATUS/design evidence and its targeted performance lane. |
+| <a id="closure-r3"></a>`CLOSURE-R3` | Coherent Wave 5 | Run provider feasibility probes and implement only host-feasible advertised providers behind DeviceBroker. | Positive live proof or exact negative/platform classification per provider fingerprint. |
+| <a id="closure-r4"></a>`CLOSURE-R4` | Coherent Wave 9 | Optimise all material regressions and run the complete paired release matrix. | Every required median/P95 metric is comparable or better outside its noise band and all semantic gates pass. |
+| <a id="closure-r5"></a>`CLOSURE-R5` | After usable Apple releases | Adopt equivalent stock APIs without changing enhanced authority or submitting upstream. | Truthful stock capability expansion with isolated-state and performance evidence. |
 
 ## Validation Matrix
 

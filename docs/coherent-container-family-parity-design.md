@@ -1811,6 +1811,10 @@ flowchart LR
     A --> G["9. integrated fault, security, migration and performance gates"]
 ```
 
+<a id="coherent-wave-00"></a>
+
+Stable ID: `COHERENT-WAVE-00`.
+
 ### Wave 0: freeze references and evidence
 
 - Pin Docker Compose 5.3.1, its embedded compose-go 2.13.0, Engine 29.2.1 API 1.53, Docker Model Runner, the repository's compose-go 2.14.0 candidate, Container/Containerization, guest image, and accepted devcontainer extraction revision.
@@ -1818,12 +1822,20 @@ flowchart LR
 - Build reusable oracles for Engine routes, state/events, namespaces, cgroups/security, devices, networks, volumes/mounts, logging, models, socket relay, failure phases, and performance.
 - Record host/kernel/controller capability fingerprints and distinguish environmental unsupported behaviour from design gaps.
 
+<a id="coherent-wave-01"></a>
+
+Stable ID: `COHERENT-WAVE-01`.
+
 ### Wave 1: gateway/provider separation
 
 - Extract the neutral Engine wire/router/server/test package from a clean devcontainer head.
 - Generate/maintain the API 1.53 route/field/capability ledger and close known bounded-router gaps.
 - Implement one `container-engine` service, stock/enhanced adapters, immutable fingerprint, exclusive selection, discovery, and drain/handoff protocol.
 - Keep existing products on adapters until cross-client wire/performance evidence passes.
+
+<a id="coherent-wave-02"></a>
+
+Stable ID: `COHERENT-WAVE-02`.
 
 ### Wave 2: authority foundations
 
@@ -1833,11 +1845,19 @@ flowchart LR
 
 No namespace, API-socket, devcontainer resource import, or complete event claim proceeds before this wave.
 
+<a id="coherent-wave-03"></a>
+
+Stable ID: `COHERENT-WAVE-03`.
+
 ### Wave 3: sandbox productionisation
 
 - Refactor `LinuxPod`/`LinuxContainer` into `EngineLinuxSandbox` plus complete per-workload configuration.
 - Add protected host/service namespaces, dynamic workload namespace/cgroup/rootfs/process lifecycle, guest-agent recovery, storage pool, and VM backhaul.
 - Retain compatibility wrappers only for migration; do not build new parity features into the old per-container topology.
+
+<a id="coherent-wave-04"></a>
+
+Stable ID: `COHERENT-WAVE-04`.
 
 ### Wave 4: data planes and policy
 
@@ -1847,12 +1867,20 @@ No namespace, API-socket, devcontainer resource import, or complete event claim 
 
 These may proceed in parallel after the sandbox/ledger contracts freeze, but integrated create/remove failure tests gate the next wave.
 
+<a id="coherent-wave-05"></a>
+
+Stable ID: `COHERENT-WAVE-05`.
+
 ### Wave 5: shared semantic primitives
 
 - Implement DeviceBroker providers/CDI/inventory/leases and block conflicts.
 - Implement arbitrary namespace donor graphs/dependency reconciliation.
 - Complete privileged create/exec policy and outer-boundary tests.
 - Correct Local Deploy preservation/ignore mapping and route all reservation devices through DeviceBroker.
+
+<a id="coherent-wave-06"></a>
+
+Stable ID: `COHERENT-WAVE-06`.
 
 ### Wave 6: logging and models
 
@@ -1867,10 +1895,18 @@ workload-ledger children: create persists their intent, start activates them,
 `ProcessExitFinalizationV1` deactivates them after natural exit, stop, kill, or
 restart, and remove releases them in the canonical dependency order.
 
+<a id="coherent-wave-07"></a>
+
+Stable ID: `COHERENT-WAVE-07`.
+
 ### Wave 7: Compose projection
 
 - Replace Compose CLI-shaped runtime hand-off with typed v2 policies/capability preflight.
 - Exercise each completed authority/controller contract through Compose reconciliation without manufacturing state.
+
+<a id="coherent-wave-08"></a>
+
+Stable ID: `COHERENT-WAVE-08`.
 
 ### Wave 8: devcontainer migration and cutover
 
@@ -1883,6 +1919,10 @@ restart, and remove releases them in the canonical dependency order.
 - Change enhanced devcontainer to socket discovery only and retain a tested stock standalone provider.
 - Drain legacy per-container VMs and rematerialise their imported stopped records in the shared sandbox under the same v2 container IDs; never fake live namespace import. Only ordinary Docker/Compose replacement semantics create a new ID.
 
+<a id="coherent-wave-08b"></a>
+
+Stable ID: `COHERENT-WAVE-08B`.
+
 ### Wave 8b: Engine-socket enablement
 
 - Enable the already typed/gated Compose `use_api_socket` projection only after
@@ -1891,6 +1931,10 @@ restart, and remove releases them in the canonical dependency order.
 - Prove full-authority root/non-root socket use, credentials, revocation,
   restart/recovery, recursive client-created resources, and zero-artifact
   opt-out through the singular authority before integrated release gates.
+
+<a id="coherent-wave-09"></a>
+
+Stable ID: `COHERENT-WAVE-09`.
 
 ### Wave 9: integrated gates and publication
 
