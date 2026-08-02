@@ -4,12 +4,12 @@
 
 Programme base: `6a0a7e608632a7e4b1fd05f50f3f687370325e88`.
 
-Register generated: 2026-08-01.
+Register generated: 2026-08-02.
 
 | State | Count |
 | --- | ---: |
-| not started | 107 |
-| in progress | 1 |
+| not started | 97 |
+| in progress | 11 |
 | blocked | 0 |
 | verified | 4 |
 
@@ -217,17 +217,17 @@ Default required repository heads: `stephenlclarke/container`, `stephenlclarke/c
 
 | Stable ID | State | Exact accepted head | Evidence / blocker |
 | --- | --- | --- | --- |
-| [`LOGGING-WP-01`](../docker-logging-driver-semantics-design.md#logging-wp-01) | not started | — | — |
-| [`LOGGING-WP-02`](../docker-logging-driver-semantics-design.md#logging-wp-02) | not started | — | — |
-| [`LOGGING-WP-03`](../docker-logging-driver-semantics-design.md#logging-wp-03) | not started | — | — |
-| [`LOGGING-WP-04`](../docker-logging-driver-semantics-design.md#logging-wp-04) | not started | — | — |
-| [`LOGGING-WP-05`](../docker-logging-driver-semantics-design.md#logging-wp-05) | not started | — | — |
-| [`LOGGING-WP-06`](../docker-logging-driver-semantics-design.md#logging-wp-06) | not started | — | — |
-| [`LOGGING-WP-07`](../docker-logging-driver-semantics-design.md#logging-wp-07) | not started | — | — |
-| [`LOGGING-WP-08`](../docker-logging-driver-semantics-design.md#logging-wp-08) | not started | — | — |
-| [`LOGGING-WP-09`](../docker-logging-driver-semantics-design.md#logging-wp-09) | not started | — | — |
+| [`LOGGING-WP-01`](../docker-logging-driver-semantics-design.md#logging-wp-01) | in progress | — | — |
+| [`LOGGING-WP-02`](../docker-logging-driver-semantics-design.md#logging-wp-02) | in progress | — | — |
+| [`LOGGING-WP-03`](../docker-logging-driver-semantics-design.md#logging-wp-03) | in progress | — | — |
+| [`LOGGING-WP-04`](../docker-logging-driver-semantics-design.md#logging-wp-04) | in progress | — | — |
+| [`LOGGING-WP-05`](../docker-logging-driver-semantics-design.md#logging-wp-05) | in progress | — | — |
+| [`LOGGING-WP-06`](../docker-logging-driver-semantics-design.md#logging-wp-06) | in progress | — | — |
+| [`LOGGING-WP-07`](../docker-logging-driver-semantics-design.md#logging-wp-07) | in progress | — | — |
+| [`LOGGING-WP-08`](../docker-logging-driver-semantics-design.md#logging-wp-08) | in progress | — | — |
+| [`LOGGING-WP-09`](../docker-logging-driver-semantics-design.md#logging-wp-09) | in progress | — | — |
 | [`LOGGING-WP-10`](../docker-logging-driver-semantics-design.md#logging-wp-10) | not started | — | — |
-| [`LOGGING-WP-11`](../docker-logging-driver-semantics-design.md#logging-wp-11) | not started | — | — |
+| [`LOGGING-WP-11`](../docker-logging-driver-semantics-design.md#logging-wp-11) | in progress | — | — |
 
 ## Model Runner Services
 
