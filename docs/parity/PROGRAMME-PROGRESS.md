@@ -8,8 +8,8 @@ Register generated: 2026-08-02.
 
 | State | Count |
 | --- | ---: |
-| not started | 97 |
-| in progress | 11 |
+| not started | 96 |
+| in progress | 12 |
 | blocked | 0 |
 | verified | 4 |
 
@@ -152,7 +152,7 @@ Default required repository heads: `stephenlclarke/container`, `stephenlclarke/c
 | Stable ID | State | Exact accepted head | Evidence / blocker |
 | --- | --- | --- | --- |
 | [`STORAGE-WP-01`](../non-local-volumes-advanced-mounts-api-socket-design.md#storage-wp-01) | not started | — | — |
-| [`STORAGE-WP-02`](../non-local-volumes-advanced-mounts-api-socket-design.md#storage-wp-02) | not started | — | — |
+| [`STORAGE-WP-02`](../non-local-volumes-advanced-mounts-api-socket-design.md#storage-wp-02) | in progress | — | — |
 | [`STORAGE-WP-03`](../non-local-volumes-advanced-mounts-api-socket-design.md#storage-wp-03) | not started | — | — |
 | [`STORAGE-WP-04`](../non-local-volumes-advanced-mounts-api-socket-design.md#storage-wp-04) | not started | — | — |
 | [`STORAGE-WP-05`](../non-local-volumes-advanced-mounts-api-socket-design.md#storage-wp-05) | not started | — | — |

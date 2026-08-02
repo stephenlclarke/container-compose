@@ -13,9 +13,18 @@
       "ref": "61832d4ca91715180a84dec0eab091170174c43c",
       "repository": "stephenlclarke/container-builder-shim"
     },
+    "container-engine-api": {
+      "ref": "5f8e01beeef9823d65d0d029817e6cb3e5c59efb",
+      "repository": "stephenlclarke/container-engine-api",
+      "version": "0.1.0"
+    },
     "containerization": {
       "ref": "77f06d4c44341e04241941072fb69e2b85a6f5c1",
       "repository": "stephenlclarke/containerization"
+    },
+    "devcontainer": {
+      "ref": "4d98d240fab885bb0da817af4aeb41704f081f73",
+      "repository": "stephenlclarke/devcontainer"
     }
   },
   "schemaVersion": 1

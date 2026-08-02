@@ -286,7 +286,6 @@
       "items": {
         "not started": [
           "STORAGE-WP-01",
-          "STORAGE-WP-02",
           "STORAGE-WP-03",
           "STORAGE-WP-04",
           "STORAGE-WP-05",
@@ -299,7 +298,9 @@
           "STORAGE-WP-12",
           "STORAGE-WP-13"
         ],
-        "in progress": [],
+        "in progress": [
+          "STORAGE-WP-02"
+        ],
         "blocked": [],
         "verified": []
       }
