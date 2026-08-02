@@ -562,7 +562,7 @@ extension ComposeOrchestratorTests {
         ).up(project: projectWithDeployLabels, options: ComposeUpOptions())
 
         let newRun = try #require(runner.commands.first?.arguments)
-        #expect(newRun.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(newRun.starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(composeConfigHash(in: newRun) != hash)
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
         #expect(await lifecycleManager.requests == [
@@ -597,7 +597,7 @@ extension ComposeOrchestratorTests {
         ).up(project: newProject, options: ComposeUpOptions())
 
         let newRun = runner.commands[0].arguments
-        #expect(newRun.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(newRun.starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(newRun.containsSequence(["--network", "new-net"]))
         #expect(newRun.containsSequence(["--volume", "new-cache:/cache"]))
         #expect(composeConfigHash(in: newRun) != oldHash)
@@ -633,7 +633,7 @@ extension ComposeOrchestratorTests {
             lifecycleManager: lifecycleManager
         ).up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(runner.commands[0].arguments.starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(composeConfigHash(in: runner.commands[0].arguments) != "stale")
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
         #expect(await lifecycleManager.requests == [
@@ -717,7 +717,7 @@ extension ComposeOrchestratorTests {
             $0.timeout = 12
         })
 
-        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(runner.commands[0].arguments.starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 12),
@@ -747,7 +747,7 @@ extension ComposeOrchestratorTests {
             $0.forceRecreate = true
         })
 
-        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(runner.commands[0].arguments.starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
@@ -800,7 +800,8 @@ extension ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 1)
         #expect(commands[0].containsSequence(["--name", "demo-db-1"]))
-        #expect(commands[0].contains("--detach"))
+        #expect(commands[0].starts(with: ["container", "create"]))
+        #expect(!commands[0].contains("--detach"))
         #expect(!commands.contains { $0.contains("demo-api-1") })
         #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-api-1"])
         #expect(await lifecycleManager.requests == [
@@ -855,7 +856,8 @@ extension ComposeOrchestratorTests {
 
         let messages = emitted.messages
         #expect(messages.contains("+ container inspect demo-api-1"))
-        #expect(messages.contains { $0.hasPrefix("+ container run ") && $0.contains("--detach") })
+        #expect(messages.contains { $0.hasPrefix("+ container create ") && !$0.contains("--detach") })
+        #expect(messages.contains("+ compose-runtime attach --no-stdin demo-api-1"))
         #expect(!messages.contains("compose: reusing existing container demo-api-1"))
         #expect(!messages.contains { $0.contains("container stop demo-api-1") })
         #expect(!messages.contains { $0.contains("container delete demo-api-1") })

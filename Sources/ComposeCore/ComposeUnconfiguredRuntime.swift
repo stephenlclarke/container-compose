@@ -168,6 +168,9 @@ struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExportin
         id _: String,
         stdout _: Bool,
         stderr _: Bool,
+        mode _: ComposeOutputAttachmentMode,
+        onReady _: @escaping @Sendable () -> Void,
+        onStarted _: @escaping @Sendable () -> Void,
         emit _: @escaping @Sendable (ComposeLogRecord) -> Void,
     ) async throws {
         throw unavailable("container attach")

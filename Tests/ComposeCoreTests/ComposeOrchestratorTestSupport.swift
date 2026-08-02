@@ -590,6 +590,7 @@ func orchestratorDependencies(
 ) -> ComposeOrchestratorDependencies {
     var dependencies = ComposeOrchestratorDependencies()
     dependencies.archiveManager = ContainerArchiveManager()
+    dependencies.attachManager = RecordingContainerAttachManager()
     dependencies.copier = RecordingContainerCopier()
     dependencies.discoveryManager = RecordingContainerDiscoveryManager()
     dependencies.eventsManager = RecordingContainerEventsManager()
@@ -2276,6 +2277,57 @@ actor RecordingContainerLogManager: ContainerLogManaging {
         }
         for output in outputs {
             emit(Data(output.utf8))
+        }
+    }
+}
+
+struct ContainerAttachRequest: Equatable, Sendable {
+    let id: String
+    let stdout: Bool
+    let stderr: Bool
+    let mode: ComposeOutputAttachmentMode
+}
+
+actor RecordingContainerAttachManager: ComposeRuntimeAttachManaging {
+    private let outputs: [ComposeLogRecord]
+    private let delay: Duration?
+    private let error: (any Error)?
+    private var storage: [ContainerAttachRequest] = []
+
+    init(
+        outputs: [ComposeLogRecord] = [],
+        delay: Duration? = nil,
+        error: (any Error)? = nil,
+    ) {
+        self.outputs = outputs
+        self.delay = delay
+        self.error = error
+    }
+
+    var requests: [ContainerAttachRequest] {
+        storage
+    }
+
+    func attachOutput(
+        id: String,
+        stdout: Bool,
+        stderr: Bool,
+        mode: ComposeOutputAttachmentMode,
+        onReady: @escaping @Sendable () -> Void,
+        onStarted: @escaping @Sendable () -> Void,
+        emit: @escaping @Sendable (ComposeLogRecord) -> Void,
+    ) async throws {
+        storage.append(ContainerAttachRequest(id: id, stdout: stdout, stderr: stderr, mode: mode))
+        onReady()
+        onStarted()
+        if let delay {
+            try await Task.sleep(for: delay)
+        }
+        if let error {
+            throw error
+        }
+        for output in outputs {
+            emit(output)
         }
     }
 }

@@ -138,8 +138,7 @@ extension ComposeOrchestrator {
 
         let status: Int32
         do {
-            try await lifecycleManager.startContainer(id: helperName)
-            status = try await followOneOffRunLogsAndWait(containerName: helperName)
+            status = try await followOneOffRunOutputAndWait(containerName: helperName)
         } catch {
             try? await lifecycleManager.deleteContainer(id: helperName, force: true)
             throw error
@@ -156,8 +155,8 @@ extension ComposeOrchestrator {
 
     /// Emits the helper lifecycle commands used by Compose dry-run output.
     private func renderPreStartHelperLifecycle(_ helperName: String) async throws {
+        emitComposeRuntimeOperation(["attach", "--no-stdin", helperName])
         try await runContainer(["start", helperName])
-        try await runContainer(["logs", "--follow", helperName])
         try await runContainer(["wait", helperName])
         try await runContainer(["delete", helperName])
     }
