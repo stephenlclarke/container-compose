@@ -46,20 +46,20 @@ validated branches without changing the fork default branches:
 
 - `container` persistent config storage and its handoff:
   `f1f8ce6b33fa`, `7261ac9cfe33`; the removal is at
-  `stephenlclarke/container:refactor/remove-compose-resource-stores`
+  `stephenlclarke/container:upstream/remove-compose-resource-stores`
   `9b1a49b53ff73417d1b4cfbf39fa5a9dffa06023`.
 - `container` local secret storage: `468a85e233dd`; the removal is in the same
   `container` branch and head.
 - `containerization` opaque Keychain storage: `9f63d1890ebb`; the removal is at
-  `stephenlclarke/containerization:refactor/remove-compose-keychain-store`
+  `stephenlclarke/containerization:upstream/remove-compose-keychain-store`
   `66f0963cbe2b59170f9164c4dae5828baf59fdd8`.
 
-Compose pins those exact heads on
-`stephenlclarke/container-compose:refactor/remove-compose-resource-stores` at
-`3d77ec228c7f55a04f689d5e1453752fc0c27f72`. Full lower-repository tests and
-checks passed, followed by `HAWKEYE_AUTO_INSTALL=1 make ci` in Compose. The
-historical commits remain classified until the removal branches are integrated
-into the fork default branches.
+Compose pins those exact heads through
+`3d77ec228c7f55a04f689d5e1453752fc0c27f72`, now contained in the Compose
+default branch. Full lower-repository tests and checks passed, followed by
+`HAWKEYE_AUTO_INSTALL=1 make ci` in Compose. The historical commits remain
+classified until the lower-repository removal branches are integrated into
+their fork default branches.
 
 Four early `containerization` ports have now been reconciled with Apple
 `main` at `ff44a5b683c80fceab875dba8a20ed24d7648c07`:

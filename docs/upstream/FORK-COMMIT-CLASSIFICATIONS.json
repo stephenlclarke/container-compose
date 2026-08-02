@@ -318,7 +318,7 @@
           "classification": "rejected-compose-policy",
           "owner": "stephenlclarke/container-compose",
           "reason": "Persistent external-config storage is Compose policy and has moved to the Compose-owned provider.",
-          "upstreamDisposition": "Removed and fully validated on stephenlclarke/container:refactor/remove-compose-resource-stores at 9b1a49b53ff73417d1b4cfbf39fa5a9dffa06023; retain this historical classification until that branch is integrated into the fork default branch.",
+          "upstreamDisposition": "Removed and fully validated on stephenlclarke/container:upstream/remove-compose-resource-stores at 9b1a49b53ff73417d1b4cfbf39fa5a9dffa06023; retain this historical classification until that branch is integrated into the fork default branch.",
           "commits": [
             "f1f8ce6b33fa3580a142d35312517b0ffa0833ac",
             "7261ac9cfe33bd2fd7efd38ac29ccbbfc13ea3d0"
@@ -329,7 +329,7 @@
           "classification": "rejected-compose-policy",
           "owner": "stephenlclarke/container-compose",
           "reason": "External-secret lookup is Compose policy and now uses the Compose-owned Keychain reader.",
-          "upstreamDisposition": "Removed and fully validated on stephenlclarke/container:refactor/remove-compose-resource-stores at 9b1a49b53ff73417d1b4cfbf39fa5a9dffa06023; retain this historical classification until that branch is integrated into the fork default branch.",
+          "upstreamDisposition": "Removed and fully validated on stephenlclarke/container:upstream/remove-compose-resource-stores at 9b1a49b53ff73417d1b4cfbf39fa5a9dffa06023; retain this historical classification until that branch is integrated into the fork default branch.",
           "commits": [
             "468a85e233dd9ee71897adfada3d812d1da0d4cf"
           ]
@@ -538,7 +538,7 @@
           "classification": "rejected-compose-policy",
           "owner": "stephenlclarke/container-compose",
           "reason": "Opaque Keychain storage was added for Compose external secrets, which now use a Compose-owned reader.",
-          "upstreamDisposition": "Removed and fully validated on stephenlclarke/containerization:refactor/remove-compose-keychain-store at 66f0963cbe2b59170f9164c4dae5828baf59fdd8; retain this historical classification until that branch is integrated into the fork default branch.",
+          "upstreamDisposition": "Removed and fully validated on stephenlclarke/containerization:upstream/remove-compose-keychain-store at 66f0963cbe2b59170f9164c4dae5828baf59fdd8; retain this historical classification until that branch is integrated into the fork default branch.",
           "commits": [
             "9f63d1890ebbb999f552e88124cbcc6e7813e631"
           ]
