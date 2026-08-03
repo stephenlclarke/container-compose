@@ -5,19 +5,22 @@
   @PageImage(purpose: card, source: "container-compose-docc-card.png", alt: "The container project family illustration: a light-blue octopus beside a frosted three-row container service panel.")
 }
 
-This is the central API documentation site for the `container` project family. It hosts the Swift API references for the runtime, Containerization library, Kubernetes plugin, and Compose plugin under one GitHub Pages domain. The BuildKit shim is written in Go, so this portal provides its project and architecture documentation rather than a Swift DocC API reference.
+The [container developer API collection](https://stephenlclarke.github.io/api/) publishes documentation generated from Stephen's Engine transport, runtime, Containerization, Kubernetes, builder-shim, and Compose forks under one GitHub Pages namespace. Fork DocC is the primary reference; Apple upstream DocC or source repositories remain linked on the relevant project pages for comparison. Each source repository owns its documentation build, while the user-site workflow assembles the validated outputs into one atomic deployment.
 
 ## API References
 
-- [container-compose](https://stephenlclarke.github.io/container-compose/documentation/composecore/)
-- [container](https://stephenlclarke.github.io/container-compose/container/documentation/)
-- [containerization](https://stephenlclarke.github.io/container-compose/containerization/documentation/)
-- [container-k8s](https://stephenlclarke.github.io/container-compose/k8s/documentation/)
+- [container-engine-api](https://stephenlclarke.github.io/api/container-engine-api/)
+- [container](https://stephenlclarke.github.io/api/container/)
+- [containerization](https://stephenlclarke.github.io/api/containerization/)
+- [container-k8s](https://stephenlclarke.github.io/api/container-k8s/)
+- [container-builder-shim](https://stephenlclarke.github.io/api/container-builder-shim/)
+- [container-compose](https://stephenlclarke.github.io/api/container-compose/)
 
 ## Topics
 
 ### Runtime and Libraries
 
+- <doc:ContainerEngineAPI>
 - <doc:Container>
 - <doc:Containerization>
 
