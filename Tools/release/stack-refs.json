@@ -14,9 +14,9 @@
       "repository": "stephenlclarke/container-builder-shim"
     },
     "container-engine-api": {
-      "ref": "bb6144ba79284829e6bf0e00b938b6aa19a6f0c1",
+      "ref": "fd6ad4f3736fc1fb1d3b9e43ce51ea01adb7de1a",
       "repository": "stephenlclarke/container-engine-api",
-      "version": "0.2.2"
+      "version": "0.2.3"
     },
     "containerization": {
       "ref": "77f06d4c44341e04241941072fb69e2b85a6f5c1",
