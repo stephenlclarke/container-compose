@@ -191,7 +191,7 @@ type normalizedService struct {
 	Restart                 string                              `json:"restart,omitempty"`
 	Init                    *bool                               `json:"init,omitempty"`
 	Scale                   *int                                `json:"scale,omitempty"`
-	Logging                 *normalizedLoggingConfig            `json:"logging,omitempty"`
+	Logging                 any                                 `json:"logging,omitempty"`
 	LogDriver               string                              `json:"logDriver,omitempty"`
 	LogOptions              map[string]string                   `json:"logOptions,omitempty"`
 	StorageOptions          map[string]string                   `json:"storageOptions,omitempty"`
@@ -230,14 +230,6 @@ type normalizedService struct {
 	Configs                 any                                 `json:"configs,omitempty"`
 	Secrets                 any                                 `json:"secrets,omitempty"`
 	Extensions              map[string]any                      `json:"extensions,omitempty"`
-}
-
-// normalizedLoggingConfig is the lossless, runtime-neutral logging request.
-// Driver is deliberately not omitempty so an explicit empty driver remains
-// distinguishable from an omitted logging object.
-type normalizedLoggingConfig struct {
-	Driver  string            `json:"driver"`
-	Options map[string]string `json:"options,omitempty"`
 }
 
 // normalizedBlkioConfig preserves Compose block I/O controls for the runtime
@@ -928,7 +920,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		Restart:                 service.Restart,
 		Init:                    service.Init,
 		Scale:                   serviceScale(service),
-		Logging:                 loggingConfigValue(service.Logging),
+		Logging:                 service.Logging,
 		LogDriver:               service.LogDriver,
 		LogOptions:              mapStringMap(service.LogOpt),
 		StorageOptions:          mapStringMap(service.StorageOpt),
@@ -1012,16 +1004,6 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		result.Extensions = service.Extensions
 	}
 	return result
-}
-
-func loggingConfigValue(logging *types.LoggingConfig) *normalizedLoggingConfig {
-	if logging == nil {
-		return nil
-	}
-	return &normalizedLoggingConfig{
-		Driver:  logging.Driver,
-		Options: mapStringMap(logging.Options),
-	}
 }
 
 // providerValue copies provider metadata into stable JSON for Swift.

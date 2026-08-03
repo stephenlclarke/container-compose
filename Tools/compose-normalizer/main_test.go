@@ -1372,8 +1372,8 @@ volumes:
 	if got, want := api.LabelFiles, []string{labelFile}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.LabelFiles = %#v, want %#v", got, want)
 	}
-	logging := api.Logging
-	if logging == nil || logging.Driver != "syslog" || logging.Options["syslog-address"] != "tcp://192.168.0.42:123" {
+	logging, ok := api.Logging.(*types.LoggingConfig)
+	if !ok || logging.Driver != "syslog" || logging.Options["syslog-address"] != "tcp://192.168.0.42:123" {
 		t.Fatalf("api.Logging = %#v, want syslog config", api.Logging)
 	}
 	if got, want := api.StorageOptions, map[string]string{"size": "10G"}; !reflect.DeepEqual(got, want) {
@@ -1531,46 +1531,6 @@ func TestNormalizeServicePreservesLegacyLoggingFields(t *testing.T) {
 	}
 	if got, want := service.LogOptions, map[string]string{"mode": "non-blocking"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("service.LogOptions = %#v, want %#v", got, want)
-	}
-}
-
-func TestNormalizeServicePreservesLosslessStructuredLogging(t *testing.T) {
-	service := normalizeService(types.ServiceConfig{
-		Name:  "api",
-		Image: "nginx:alpine",
-		Logging: &types.LoggingConfig{
-			Driver: "example/provider",
-			Options: types.Options{
-				"cache-disabled": "true",
-				"custom":         "value=with=equals",
-			},
-		},
-	}, nil)
-
-	if service.Logging == nil || service.Logging.Driver != "example/provider" {
-		t.Fatalf("service.Logging = %#v, want example/provider", service.Logging)
-	}
-	if got, want := service.Logging.Options, map[string]string{
-		"cache-disabled": "true",
-		"custom":         "value=with=equals",
-	}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("service.Logging.Options = %#v, want %#v", got, want)
-	}
-}
-
-func TestNormalizeServiceEncodesExplicitEmptyLoggingDriver(t *testing.T) {
-	service := normalizeService(types.ServiceConfig{
-		Name:    "api",
-		Image:   "nginx:alpine",
-		Logging: &types.LoggingConfig{},
-	}, nil)
-
-	encoded, err := json.Marshal(service)
-	if err != nil {
-		t.Fatalf("json.Marshal returned error: %v", err)
-	}
-	if !strings.Contains(string(encoded), `"logging":{"driver":""}`) {
-		t.Fatalf("encoded service = %s, want explicit empty logging driver", encoded)
 	}
 }
 

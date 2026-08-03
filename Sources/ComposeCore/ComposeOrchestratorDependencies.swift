@@ -17,7 +17,6 @@
 /// Container command collaborators used by the Compose orchestrator.
 public struct ComposeOrchestratorCommandDependencies: Sendable {
     public var archiveManager: ComposeArchiveManaging
-    public var attachManager: ComposeRuntimeAttachManaging
     public var copier: ComposeRuntimeCopying
     public var execManager: ComposeRuntimeExecManaging
     public var exporter: ComposeRuntimeExporting
@@ -27,7 +26,6 @@ public struct ComposeOrchestratorCommandDependencies: Sendable {
 
     public init(
         archiveManager: ComposeArchiveManaging = ComposeRuntimeProviderDefaults.archives(),
-        attachManager: ComposeRuntimeAttachManaging = ComposeRuntimeProviderDefaults.attach(),
         copier: ComposeRuntimeCopying = ComposeRuntimeProviderDefaults.copying(),
         execManager: ComposeRuntimeExecManaging = ComposeRuntimeProviderDefaults.executing(),
         exporter: ComposeRuntimeExporting = ComposeRuntimeProviderDefaults.exporting(),
@@ -36,7 +34,6 @@ public struct ComposeOrchestratorCommandDependencies: Sendable {
         signalProxy: ComposeSignalProxying = DispatchComposeSignalProxy(),
     ) {
         self.archiveManager = archiveManager
-        self.attachManager = attachManager
         self.copier = copier
         self.execManager = execManager
         self.exporter = exporter
@@ -157,11 +154,6 @@ public struct ComposeOrchestratorDependencies: Sendable {
     public var archiveManager: ComposeArchiveManaging {
         get { commands.archiveManager }
         set { commands.archiveManager = newValue }
-    }
-
-    public var attachManager: ComposeRuntimeAttachManaging {
-        get { commands.attachManager }
-        set { commands.attachManager = newValue }
     }
 
     public var configReader: ComposeRuntimeConfigReading {

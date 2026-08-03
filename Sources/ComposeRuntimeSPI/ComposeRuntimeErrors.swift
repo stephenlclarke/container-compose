@@ -18,7 +18,6 @@
 public enum ComposeRuntimeErrorCode: Sendable {
     case notFound
     case interrupted
-    case unsupportedLogReader
     case other
 }
 

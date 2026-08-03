@@ -101,7 +101,7 @@ extension ComposeOrchestrator {
         for label in run.labelOverrides {
             args.append(contentsOf: ["--label", label.rawValue])
         }
-        if createPlan.logging.driver == "none" {
+        if createPlan.logging.storage == .none {
             args.append(contentsOf: ["--log-driver", "none"])
         }
         try args.append(contentsOf: runtimeLogOptionArguments(service: service))

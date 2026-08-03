@@ -15,7 +15,6 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
-import ComposeRuntimeSPI
 
 /// Canonical Compose project data emitted by the Go normalizer.
 public struct ComposeProject: Codable, Equatable {
@@ -319,7 +318,7 @@ public struct ComposeService: Codable, Equatable {
     public var restart: String?
     public var initEnabled: Bool?
     public var scale: Int?
-    public var logging: ComposeLogConfiguration?
+    public var logging: ComposeValue?
     public var logDriver: String?
     public var logOptions: [String: String]?
     public var storageOptions: [String: String]?

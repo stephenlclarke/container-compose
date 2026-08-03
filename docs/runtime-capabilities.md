@@ -60,7 +60,6 @@ operation.
    preflight tests, full repository CI, and the live release gate.
 5. Record the capability's upstream disposition and remove it only after an
    Apple-native equivalent is merged, consumed, and parity-tested.
-
 ## Logging Capability
 
 `io.github.stephenlclarke.container.logging-drivers.v1` requires the typed

@@ -3076,31 +3076,6 @@ extension ComposeOrchestratorTests {
         #expect(lines.allSatisfy { $0.range(of: #"^(api|worker) [0-9a-f]{64}$"#, options: .regularExpression) != nil })
     }
 
-    @Test("config renders only the requested logging policy without runtime lookup")
-    func configRendersOnlyRequestedLoggingPolicyWithoutRuntimeLookup() throws {
-        let project = composeProject(
-            name: "demo",
-            services: [
-                "api": composeService(name: "api", image: "example/api") {
-                    $0.logging = ComposeLogConfiguration(
-                        driver: "example/provider",
-                        options: ["custom": "value", "cache-disabled": "true"],
-                    )
-                },
-            ]
-        )
-
-        let json = try ComposeOrchestrator().config(
-            project: project,
-            options: ComposeConfigOptions { $0.format = "json" },
-        )
-        let decoded = try JSONDecoder().decode(ComposeProject.self, from: Data(json.utf8))
-
-        #expect(decoded.services["api"]?.logging == project.services["api"]?.logging)
-        #expect(!json.contains("resolved"))
-        #expect(!json.contains("providerGeneration"))
-    }
-
     @Test("config resolve image digests pins selected service images")
     func configResolveImageDigestsPinsSelectedServiceImages() async throws {
         let imageManager = RecordingContainerImageManager(digests: [
