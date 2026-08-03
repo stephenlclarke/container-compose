@@ -5,7 +5,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//   https://www.apache.org/licenses/LICENSE-2.0
+// https://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -103,63 +103,11 @@ public protocol ComposeRuntimeLogRecordManaging: Sendable {
 }
 
 /// Live process output attachment, deliberately independent of log storage.
-public enum ComposeOutputAttachmentMode: Equatable, Sendable {
-    /// Attach only when the process already exists and is running.
-    case runningProcess
-    /// Bootstrap a stopped container's process so the caller can start it only
-    /// after the attachment readiness callback has fired.
-    case beforeStart
-}
-
 public protocol ComposeRuntimeAttachManaging: Sendable {
     func attachOutput(
         id: String,
         stdout: Bool,
         stderr: Bool,
-        mode: ComposeOutputAttachmentMode,
-        onReady: @escaping @Sendable () -> Void,
-        onStarted: @escaping @Sendable () -> Void,
         emit: @escaping @Sendable (ComposeLogRecord) -> Void,
     ) async throws
-}
-
-public extension ComposeRuntimeAttachManaging {
-    /// Attaches to an already-running process with a readiness callback.
-    func attachOutput(
-        id: String,
-        stdout: Bool,
-        stderr: Bool,
-        onReady: @escaping @Sendable () -> Void,
-        onStarted: @escaping @Sendable () -> Void = {},
-        emit: @escaping @Sendable (ComposeLogRecord) -> Void,
-    ) async throws {
-        try await attachOutput(
-            id: id,
-            stdout: stdout,
-            stderr: stderr,
-            mode: .runningProcess,
-            onReady: onReady,
-            onStarted: onStarted,
-            emit: emit,
-        )
-    }
-
-    /// Attaches to an already-running process when the caller does not need a
-    /// pre-start readiness barrier.
-    func attachOutput(
-        id: String,
-        stdout: Bool,
-        stderr: Bool,
-        emit: @escaping @Sendable (ComposeLogRecord) -> Void,
-    ) async throws {
-        try await attachOutput(
-            id: id,
-            stdout: stdout,
-            stderr: stderr,
-            mode: .runningProcess,
-            onReady: {},
-            onStarted: {},
-            emit: emit,
-        )
-    }
 }

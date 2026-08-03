@@ -31,13 +31,11 @@ private struct ComposeUpServiceContext {
     let changedServices: Set<String>
     let validateDependencies: Bool
     let detachStartedContainers: Bool
-    let outputAttachedServiceNames: Set<String>
 }
 
 private struct ComposeUpServiceResult {
     let serviceName: String
     let waitTargets: [ServiceContainerTarget]
-    let outputAttachments: [ComposeUpOutputAttachment]
     let changed: Bool
 }
 
@@ -190,26 +188,11 @@ extension ComposeOrchestrator {
         let attachLogMode = upUsesAttachLogFollow(up)
         let exitControlMode = upUsesExitControl(up)
         let attachedLogServices = try upAttachedLogServices(project: workingProject, services: services, options: up)
-        let outputAttachedServices = up.menu
-            ? try upMenuLogServices(
-                project: workingProject,
-                services: services,
-                attachLogServices: attachedLogServices,
-                options: up,
-            )
-            : attachedLogServices
-        let outputAttachedServiceNames = Set(outputAttachedServices.map(\.name))
         let externalVolumeMounts = try await resolveExternalVolumeMounts(project: workingProject, services: services)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
         let detachStartedContainers = up.detach || up.wait || attachLogMode || exitControlMode || up.menu
         let imageHealthCheckCache = ComposeImageHealthCheckCache()
-        var outputAttachments: [ComposeUpOutputAttachment] = []
-        defer {
-            for attachment in outputAttachments {
-                attachment.cancel()
-            }
-        }
 
         let buildBeforePull = up.build && !up.noBuild && isMissingPullPolicy(up.pullPolicy)
         if buildBeforePull {
@@ -274,11 +257,9 @@ extension ComposeOrchestrator {
                             changedServices: changedServices,
                             validateDependencies: validateDependencies,
                             detachStartedContainers: detachStartedContainers,
-                            outputAttachedServiceNames: outputAttachedServiceNames,
                         ),
                     )
                     waitTargets.append(contentsOf: result.waitTargets)
-                    outputAttachments.append(contentsOf: result.outputAttachments)
                     if result.changed {
                         changedServices.insert(result.serviceName)
                     }
@@ -299,7 +280,6 @@ extension ComposeOrchestrator {
                 changedServices: changedServices,
                 validateDependencies: validateDependencies,
                 detachStartedContainers: detachStartedContainers,
-                outputAttachedServiceNames: outputAttachedServiceNames,
             ))
             let results = try await runBoundedEngineOperationResults(
                 activeServices,
@@ -312,7 +292,6 @@ extension ComposeOrchestrator {
             }
             for result in results {
                 waitTargets.append(contentsOf: result.waitTargets)
-                outputAttachments.append(contentsOf: result.outputAttachments)
                 if result.changed {
                     changedServices.insert(result.serviceName)
                 }
@@ -348,11 +327,6 @@ extension ComposeOrchestrator {
                 options: up,
             )
             let targets = try await serviceContainerTargets(project: workingProject, services: menuServices)
-            outputAttachments = try await completeUpOutputAttachments(
-                targets: targets,
-                prepared: outputAttachments,
-                options: up,
-            )
             let startedTargets = try await serviceContainerTargets(project: workingProject, services: services)
             let exitControlOperation: (@Sendable () async throws -> Int32)?
             if exitControlMode {
@@ -373,7 +347,6 @@ extension ComposeOrchestrator {
                 project: workingProject,
                 services: services,
                 targets: targets,
-                outputAttachments: outputAttachments,
                 startedTargets: startedTargets,
                 options: up,
                 exitControlOperation: exitControlOperation,
@@ -381,11 +354,6 @@ extension ComposeOrchestrator {
         }
         if attachLogMode {
             let targets = try await serviceContainerTargets(project: workingProject, services: attachedLogServices)
-            outputAttachments = try await completeUpOutputAttachments(
-                targets: targets,
-                prepared: outputAttachments,
-                options: up,
-            )
             if exitControlMode {
                 let startedTargets = try await serviceContainerTargets(project: workingProject, services: services)
                 let exitControlProject = UncheckedSendable(value: workingProject)
@@ -395,7 +363,6 @@ extension ComposeOrchestrator {
                     session: ComposeUpLogSession(
                         project: workingProject,
                         targets: targets,
-                        outputAttachments: outputAttachments,
                         startedTargets: startedTargets,
                         stopServices: services.map(\.name),
                         options: up,
@@ -413,7 +380,6 @@ extension ComposeOrchestrator {
                 session: ComposeUpLogSession(
                     project: workingProject,
                     targets: targets,
-                    outputAttachments: outputAttachments,
                     startedTargets: [],
                     stopServices: services.map(\.name),
                     options: up,
@@ -441,10 +407,7 @@ extension ComposeOrchestrator {
         var serviceChanged = false
         var jobTargets: [ServiceContainerTarget] = []
         var preStartTargets: [ServiceContainerTarget] = []
-        var outputStartTargets: [ServiceContainerTarget] = []
-        var outputAttachments: [ComposeUpOutputAttachment] = []
         var waitTargets: [ServiceContainerTarget] = []
-        let outputAttached = context.outputAttachedServiceNames.contains(service.name)
         if replicaCount > 0 {
             for replicaIndex in 1 ... replicaCount {
                 let name = try serviceContainerName(project: project, service: service, index: replicaIndex)
@@ -459,8 +422,8 @@ extension ComposeOrchestrator {
                         name: name,
                         existing: existing,
                         runOptions: RunArgumentOptions {
-                            $0.command = hasPreStartHooks(service) || outputAttached ? "create" : "run"
-                            $0.detach = !hasPreStartHooks(service) && !outputAttached
+                            $0.command = hasPreStartHooks(service) ? "create" : "run"
+                            $0.detach = !hasPreStartHooks(service)
                                 && (context.detachStartedContainers || isDeployJobService(service))
                             $0.containerIndex = replicaIndex
                             $0.replicaCount = replicaCount
@@ -483,28 +446,12 @@ extension ComposeOrchestrator {
                         status: reconcileOutcome.changed ? "created" : existing?.status,
                     ))
                 }
-                let target = ServiceContainerTarget(
-                    service: service,
-                    index: replicaIndex,
-                    name: name,
-                    status: reconcileOutcome.changed ? "created" : existing?.status,
-                )
-                if outputAttached {
-                    outputStartTargets.append(target)
-                }
                 if up.wait, !isDeployJobService(service) {
                     waitTargets.append(ServiceContainerTarget(service: service, index: replicaIndex, name: name))
                 }
             }
         }
-        if outputAttached, !outputStartTargets.isEmpty {
-            outputAttachments = try await startOutputAttachedServiceTargets(
-                project: project,
-                service: service,
-                targets: outputStartTargets,
-                options: up,
-            )
-        } else if !preStartTargets.isEmpty {
+        if !preStartTargets.isEmpty {
             try await startServiceTargets(
                 project: project,
                 service: service,
@@ -525,7 +472,6 @@ extension ComposeOrchestrator {
             return ComposeUpServiceResult(
                 serviceName: service.name,
                 waitTargets: waitTargets,
-                outputAttachments: outputAttachments,
                 changed: true,
             )
         }
@@ -536,91 +482,19 @@ extension ComposeOrchestrator {
             return ComposeUpServiceResult(
                 serviceName: service.name,
                 waitTargets: waitTargets,
-                outputAttachments: outputAttachments,
                 changed: false,
             )
         }
 
         let targets = try await serviceContainerTargets(project: project, services: [service])
         for target in targets {
-            if outputAttached {
-                try await stopContainer(service: service, containerName: target.name, timeout: up.timeout)
-                let attachment = try await prepareUpOutputAttachment(
-                    target: target,
-                    mode: .beforeStart,
-                    options: up,
-                )
-                do {
-                    if options.dryRun {
-                        try await startContainer(service: service, containerName: target.name)
-                    } else {
-                        try await runPostStartHooks(service: service, containerID: target.name)
-                    }
-                    outputAttachments.append(attachment)
-                } catch {
-                    attachment.cancel()
-                    throw error
-                }
-            } else {
-                try await restartContainer(service: service, containerName: target.name, timeout: up.timeout)
-            }
+            try await restartContainer(service: service, containerName: target.name, timeout: up.timeout)
         }
         return ComposeUpServiceResult(
             serviceName: service.name,
             waitTargets: waitTargets,
-            outputAttachments: outputAttachments,
             changed: !targets.isEmpty,
         )
-    }
-
-    /// Runs service-level pre-start hooks, attaches each stopped replica, and
-    /// starts it only after the runtime has registered output descriptors.
-    private func startOutputAttachedServiceTargets(
-        project: ComposeProject,
-        service: ComposeService,
-        targets: [ServiceContainerTarget],
-        options up: ComposeUpOptions,
-    ) async throws -> [ComposeUpOutputAttachment] {
-        let orderedTargets = targets.sorted { $0.index < $1.index }
-        let targetsToStart = orderedTargets.filter { !isStartedServiceTarget($0) }
-        guard !targetsToStart.isEmpty else {
-            return []
-        }
-        if hasPreStartHooks(service), targetsToStart.count == orderedTargets.count {
-            try await runPreStartHooks(
-                project: project,
-                service: service,
-                target: targetsToStart[0],
-            )
-        }
-
-        var attachments: [ComposeUpOutputAttachment] = []
-        do {
-            for target in targetsToStart {
-                let attachment = try await prepareUpOutputAttachment(
-                    target: target,
-                    mode: .beforeStart,
-                    options: up,
-                )
-                do {
-                    if options.dryRun {
-                        try await startContainer(service: service, containerName: target.name)
-                    } else {
-                        try await runPostStartHooks(service: service, containerID: target.name)
-                    }
-                    attachments.append(attachment)
-                } catch {
-                    attachment.cancel()
-                    throw error
-                }
-            }
-            return attachments
-        } catch {
-            for attachment in attachments {
-                attachment.cancel()
-            }
-            throw error
-        }
     }
 
     /// Returns whether foreground `up` should aggregate service output through followed logs.
@@ -698,39 +572,113 @@ extension ComposeOrchestrator {
         return services.filter { attachNames.contains($0.name) && !noAttachNames.contains($0.name) }
     }
 
-    /// Follows attached `up` output while a Compose-owned menu handles shortcuts.
+    /// Follows service logs for `up --attach` and `up --attach-dependencies`.
+    func followAttachedUpLogs(targets: [ServiceContainerTarget], options up: ComposeUpOptions) async throws {
+        guard !targets.isEmpty else {
+            return
+        }
+        if options.dryRun {
+            for target in targets {
+                emitComposeRuntimeOperation(
+                    logRuntimeArguments(
+                        .init(
+                            id: target.name,
+                            follow: true,
+                            tail: nil,
+                            since: nil,
+                            until: nil,
+                            timestamps: up.timestamps,
+                        )
+                    )
+                )
+            }
+            return
+        }
+
+        let runtimeOptions = RuntimeLogOptions(
+            tail: nil,
+            since: nil,
+            until: nil,
+            timestamps: up.timestamps,
+            noLogPrefix: up.noLogPrefix,
+            colorPrefixes: up.colorPrefixes,
+        )
+        if targets.count > 1 {
+            try await followLogTargets(targets, options: runtimeOptions)
+            return
+        }
+        guard let target = targets.first else {
+            return
+        }
+        try await emitLogs(
+            RuntimeLogRequest(
+                id: target.name,
+                follow: true,
+                tail: nil,
+                since: nil,
+                until: nil,
+                timestamps: up.timestamps,
+                emit: logEmitter(
+                    for: target,
+                    noLogPrefix: up.noLogPrefix,
+                    colorPrefixes: up.colorPrefixes,
+                ),
+            ),
+        )
+    }
+
+    /// Follows attached `up` logs while a Compose-owned menu handles shortcuts.
     func followMenuUpLogs(
         project: ComposeProject,
         services: [ComposeService],
         targets: [ServiceContainerTarget],
-        outputAttachments: [ComposeUpOutputAttachment],
         startedTargets: [ServiceContainerTarget],
         options up: ComposeUpOptions,
         exitControlOperation: (@Sendable () async throws -> Int32)? = nil,
     ) async throws -> Int32? {
         if options.dryRun {
             for target in targets {
-                emitComposeRuntimeOperation(["attach", "--no-stdin", target.name])
+                emitComposeRuntimeOperation(
+                    logRuntimeArguments(
+                        .init(
+                            id: target.name,
+                            follow: true,
+                            tail: nil,
+                            since: nil,
+                            until: nil,
+                            timestamps: up.timestamps,
+                        )
+                    )
+                )
             }
             if let exitControlOperation {
                 return try await exitControlOperation()
             }
             return nil
         }
-        guard !outputAttachments.isEmpty || !startedTargets.isEmpty || exitControlOperation != nil else {
+        guard !targets.isEmpty || !startedTargets.isEmpty || exitControlOperation != nil else {
             return nil
         }
 
         let watchToggle = ComposeUpMenuWatchToggle()
         let menuExitCode = ComposeUpExitCode()
+        let runtimeOptions = RuntimeLogOptions(
+            tail: nil,
+            since: nil,
+            until: nil,
+            timestamps: up.timestamps,
+            noLogPrefix: up.noLogPrefix,
+            colorPrefixes: up.colorPrefixes,
+        )
         let sendableProject = UncheckedSendable(value: project)
         let sendableServices = UncheckedSendable(value: services)
+        let sendableTargets = UncheckedSendable(value: targets)
         let sendableStartedTargets = UncheckedSendable(value: startedTargets)
+        let sendableRuntimeOptions = UncheckedSendable(value: runtimeOptions)
         let serviceNames = services.map(\.name)
         let menuLogSession = UncheckedSendable(value: ComposeUpLogSession(
             project: project,
             targets: targets,
-            outputAttachments: outputAttachments,
             startedTargets: startedTargets,
             stopServices: serviceNames,
             options: up,
@@ -790,7 +738,7 @@ extension ComposeOrchestrator {
         do {
             try await upMenuController.runMenuSession(
                 configuration: configuration,
-            ) { [self, sendableStartedTargets, menuLogSession, exitControlOperation, menuExitCode] in
+            ) { [self, sendableTargets, sendableStartedTargets, sendableRuntimeOptions, menuLogSession, exitControlOperation, menuExitCode] in
                 if let exitControlOperation {
                     let code = try await runUpLogOperationUntilExitControl(
                         session: menuLogSession.value,
@@ -799,11 +747,11 @@ extension ComposeOrchestrator {
                     await menuExitCode.set(code)
                     return
                 }
-                if menuLogSession.value.outputAttachments.isEmpty {
+                if sendableTargets.value.isEmpty {
                     try await waitForUpServiceTargets(sendableStartedTargets.value)
                     return
                 }
-                try await upLogFollowOperation(menuLogSession.value)()
+                try await followLogTargets(sendableTargets.value, options: sendableRuntimeOptions.value)
             }
         } catch {
             await watchToggle.stop()
@@ -1029,7 +977,6 @@ extension ComposeOrchestrator {
         try await runContainerWithProgress(
             arguments,
             message: reconcileProgressMessage(service: service, command: request.runOptions.command),
-            emitOutput: false,
             logging: try runtimeLogConfiguration(service: service),
         )
         if request.runOptions.command == "run" {

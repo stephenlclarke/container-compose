@@ -31,30 +31,23 @@ actor ComposeUpExitCode {
 struct ComposeUpLogSession {
     let project: ComposeProject
     let targets: [ServiceContainerTarget]
-    let outputAttachments: [ComposeUpOutputAttachment]
     let startedTargets: [ServiceContainerTarget]
     let stopServices: [String]
     let options: ComposeUpOptions
-}
-
-/// One live service-output attachment retained across `up` reconciliation.
-struct ComposeUpOutputAttachment: Sendable {
-    let containerName: String
-    let task: Task<Void, any Error>?
-
-    func cancel() {
-        task?.cancel()
-    }
-
-    func wait() async throws {
-        try await task?.value
-    }
 }
 
 private struct ComposeUpSignalContext {
     let project: ComposeProject
     let services: [String]
     let timeout: Int?
+}
+
+private struct ComposeUpLogFollowContext {
+    let targets: [ServiceContainerTarget]
+    let options: RuntimeLogOptions
+    let timestamps: Bool
+    let noLogPrefix: Bool
+    let colorPrefixes: Bool
 }
 
 struct UncheckedSendable<Value>: @unchecked Sendable {
@@ -64,7 +57,7 @@ struct UncheckedSendable<Value>: @unchecked Sendable {
 extension ComposeOrchestrator {
     /// Follows aggregate service logs for foreground `up` and stops services on interruption.
     func followAttachedUpLogs(session: ComposeUpLogSession) async throws {
-        guard !session.outputAttachments.isEmpty else { return }
+        guard !session.targets.isEmpty else { return }
         if options.dryRun {
             emitUpLogDryRun(session)
             return
@@ -102,16 +95,33 @@ extension ComposeOrchestrator {
 
     /// Builds the shared foreground logging operation.
     func upLogFollowOperation(_ session: ComposeUpLogSession) -> @Sendable () async throws -> Void {
-        let attachments = session.outputAttachments
-        return {
-            try await withThrowingTaskGroup(of: Void.self) { group in
-                for attachment in attachments {
-                    group.addTask {
-                        try await attachment.wait()
-                    }
-                }
-                try await group.waitForAll()
+        let context = UncheckedSendable(value: ComposeUpLogFollowContext(
+            targets: session.targets,
+            options: upLogRuntimeOptions(session.options),
+            timestamps: session.options.timestamps,
+            noLogPrefix: session.options.noLogPrefix,
+            colorPrefixes: session.options.colorPrefixes,
+        ))
+        return { [self, context] in
+            let values = context.value
+            if values.targets.count > 1 {
+                try await followLogTargets(values.targets, options: values.options)
+                return
             }
+            guard let target = values.targets.first else { return }
+            try await emitLogs(RuntimeLogRequest(
+                id: target.name,
+                follow: true,
+                tail: nil,
+                since: nil,
+                until: nil,
+                timestamps: values.timestamps,
+                emit: logEmitter(
+                    for: target,
+                    noLogPrefix: values.noLogPrefix,
+                    colorPrefixes: values.colorPrefixes,
+                ),
+            ))
         }
     }
 
@@ -141,8 +151,31 @@ extension ComposeOrchestrator {
     /// Emits the foreground log-follow plan for dry runs.
     func emitUpLogDryRun(_ session: ComposeUpLogSession) {
         for target in session.targets {
-            emitComposeRuntimeOperation(["attach", "--no-stdin", target.name])
+            emitComposeRuntimeOperation(
+                logRuntimeArguments(
+                    .init(
+                        id: target.name,
+                        follow: true,
+                        tail: nil,
+                        since: nil,
+                        until: nil,
+                        timestamps: session.options.timestamps,
+                    ),
+                ),
+            )
         }
+    }
+
+    /// Returns runtime log options for foreground `up` output.
+    func upLogRuntimeOptions(_ options: ComposeUpOptions) -> RuntimeLogOptions {
+        RuntimeLogOptions(
+            tail: nil,
+            since: nil,
+            until: nil,
+            timestamps: options.timestamps,
+            noLogPrefix: options.noLogPrefix,
+            colorPrefixes: options.colorPrefixes,
+        )
     }
 
     /// Follows service logs until an exit-control operation decides the `up` result.
@@ -151,13 +184,11 @@ extension ComposeOrchestrator {
         exitControlOperation: @Sendable @escaping () async throws -> Int32,
     ) async throws -> Int32 {
         let session = UncheckedSendable(value: session)
-        let logTask: Task<Void, Error>? = if session.value.outputAttachments.isEmpty,
-                                             !session.value.startedTargets.isEmpty
-        {
+        let logTask: Task<Void, Error>? = if session.value.targets.isEmpty, !session.value.startedTargets.isEmpty {
             Task { [self, session] in
                 try await waitForUpServiceTargets(session.value.startedTargets)
             }
-        } else if !session.value.outputAttachments.isEmpty {
+        } else if !session.value.targets.isEmpty {
             Task { [self, session] in
                 try await upLogFollowOperation(session.value)()
             }
@@ -192,179 +223,5 @@ extension ComposeOrchestrator {
             }
             try await group.waitForAll()
         }
-    }
-
-    /// Adds live attachment tasks for targets that were already running when
-    /// reconciliation began; newly created targets already carry prepared tasks.
-    func completeUpOutputAttachments(
-        targets: [ServiceContainerTarget],
-        prepared: [ComposeUpOutputAttachment],
-        options up: ComposeUpOptions,
-    ) async throws -> [ComposeUpOutputAttachment] {
-        var attachmentsByName = Dictionary(uniqueKeysWithValues: prepared.map { ($0.containerName, $0) })
-        do {
-            for target in targets where attachmentsByName[target.name] == nil {
-                attachmentsByName[target.name] = try await prepareUpOutputAttachment(
-                    target: target,
-                    mode: .runningProcess,
-                    options: up,
-                )
-            }
-        } catch {
-            for attachment in attachmentsByName.values {
-                attachment.cancel()
-            }
-            throw error
-        }
-        return targets.compactMap { attachmentsByName[$0.name] }
-    }
-
-    /// Starts one output attachment and waits until its descriptors are ready.
-    func prepareUpOutputAttachment(
-        target: ServiceContainerTarget,
-        mode: ComposeOutputAttachmentMode,
-        options up: ComposeUpOptions,
-    ) async throws -> ComposeUpOutputAttachment {
-        guard !options.dryRun else {
-            return ComposeUpOutputAttachment(containerName: target.name, task: nil)
-        }
-
-        let started = ComposeOutputAttachReadiness()
-        let attachManager = attachManager
-        let containerName = target.name
-        let renderer = ComposeUpAttachedOutputRenderer(
-            target: target,
-            timestamps: up.timestamps,
-            noLogPrefix: up.noLogPrefix,
-            colorPrefixes: up.colorPrefixes,
-            currentDate: options.currentDate,
-            emit: options.emitAttachedData,
-        )
-        let task = Task {
-            do {
-                try await attachManager.attachOutput(
-                    id: containerName,
-                    stdout: true,
-                    stderr: true,
-                    mode: mode,
-                    onReady: {},
-                    onStarted: { started.ready() },
-                    emit: { renderer.append($0) },
-                )
-                renderer.flush()
-            } catch {
-                started.fail(error)
-                throw error
-            }
-        }
-        do {
-            try await started.wait()
-            return ComposeUpOutputAttachment(containerName: containerName, task: task)
-        } catch {
-            task.cancel()
-            throw error
-        }
-    }
-}
-
-/// Incrementally frames attach chunks so Compose prefixes exactly once per
-/// logical line, including blank and unterminated final lines.
-private final class ComposeUpAttachedOutputRenderer: @unchecked Sendable {
-    private let lock = NSLock()
-    private let prefix: Data
-    private let timestamps: Bool
-    private let currentDate: @Sendable () -> Date
-    private let emit: @Sendable (Data) -> Void
-    private let timestampFormatter: ISO8601DateFormatter
-    private var pending: [ComposeLogStream: Data] = [:]
-
-    init(
-        target: ServiceContainerTarget,
-        timestamps: Bool,
-        noLogPrefix: Bool,
-        colorPrefixes: Bool,
-        currentDate: @escaping @Sendable () -> Date,
-        emit: @escaping @Sendable (Data) -> Void,
-    ) {
-        if noLogPrefix {
-            prefix = Data()
-        } else {
-            let value = colorPrefixes
-                ? "\u{001B}[\(ComposeUpAttachedOutputRenderer.colorCode(for: target))m\(Self.name(for: target))\u{001B}[0m"
-                : Self.name(for: target)
-            prefix = Data("\(value) | ".utf8)
-        }
-        self.timestamps = timestamps
-        self.currentDate = currentDate
-        self.emit = emit
-        timestampFormatter = ISO8601DateFormatter()
-        timestampFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    }
-
-    func append(_ record: ComposeLogRecord) {
-        lock.lock()
-        var buffer = pending[record.stream] ?? Data()
-        buffer.append(record.payload)
-        let lines = Self.completeLines(in: &buffer)
-        pending[record.stream] = buffer
-        let rendered = lines.map { render($0, timestamp: record.timestamp, terminated: true) }
-        lock.unlock()
-        for line in rendered {
-            emit(line)
-        }
-    }
-
-    func flush() {
-        lock.lock()
-        let lines = [ComposeLogStream.stdout, .stderr].compactMap { stream -> Data? in
-            guard let data = pending[stream], !data.isEmpty else { return nil }
-            return render(data, timestamp: nil, terminated: false)
-        }
-        pending.removeAll()
-        lock.unlock()
-        for line in lines {
-            emit(line)
-        }
-    }
-
-    private func render(_ line: Data, timestamp: Date?, terminated: Bool) -> Data {
-        var output = prefix
-        if timestamps {
-            output.append(Data("\(timestampFormatter.string(from: timestamp ?? currentDate())) ".utf8))
-        }
-        output.append(line)
-        if terminated {
-            output.append(UInt8(ascii: "\n"))
-        }
-        return output
-    }
-
-    private static func completeLines(in data: inout Data) -> [Data] {
-        var lines: [Data] = []
-        while let newline = data.firstIndex(of: UInt8(ascii: "\n")) {
-            var line = Data(data[..<newline])
-            if line.last == UInt8(ascii: "\r") {
-                line.removeLast()
-            }
-            lines.append(line)
-            data.removeSubrange(...newline)
-        }
-        return lines
-    }
-
-    private static func name(for target: ServiceContainerTarget) -> String {
-        if let containerName = target.service.containerName, !containerName.isEmpty {
-            return containerName
-        }
-        return target.index == Int.max ? target.name : "\(target.service.name)-\(target.index)"
-    }
-
-    private static func colorCode(for target: ServiceContainerTarget) -> String {
-        let palette = ["36", "32", "33", "35", "34", "31"]
-        let replicaSeed = target.index == Int.max ? 0 : target.index
-        let seed = target.service.name.unicodeScalars.reduce(replicaSeed) { partial, scalar in
-            partial + Int(scalar.value)
-        }
-        return palette[seed % palette.count]
     }
 }

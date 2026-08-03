@@ -33,12 +33,12 @@ public struct ContainerCommandLaunchManager: ComposeRuntimeContainerLaunching {
     public init() {
         create = { arguments, loggingRequest in
             let command = try Application.ContainerCreate.parse(arguments)
-            try await command.run(loggingRequest: loggingRequest, emitsCLIOutput: false)
+            try await command.run(loggingRequest: loggingRequest)
             return 0
         }
         run = { arguments, loggingRequest in
             let command = try Application.ContainerRun.parse(arguments)
-            try await command.run(loggingRequest: loggingRequest, emitsCLIOutput: false)
+            try await command.run(loggingRequest: loggingRequest)
             return 0
         }
     }
