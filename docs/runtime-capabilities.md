@@ -82,5 +82,8 @@ after stack compatibility and service readiness succeed. Commands that need
 advanced logging require this exact identifier before execution. Catalogue
 discovery is diagnostic and never replaces authoritative create/start
 validation. AWS Logs and Google Cloud Logs are present on the matched Container
-head; a request for journald or the production plugin plane still fails until
-its provider slice is implemented.
+head. The local journald provider contract is implemented, but a request still
+fails deterministically because the production signed Linux journal service is
+not installed and the unavailable provider is therefore not advertised. The
+production plugin plane is likewise not advertised until its isolated service
+exists.
