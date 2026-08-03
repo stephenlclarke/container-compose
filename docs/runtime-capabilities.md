@@ -61,21 +61,25 @@ operation.
 5. Record the capability's upstream disposition and remove it only after an
    Apple-native equivalent is merged, consumed, and parity-tested.
 
-## Pending Logging Capability
+## Logging Capability
 
-`io.github.stephenlclarke.container.logging-drivers.v1` is reserved for the
-complete contract in the [Docker logging-driver design](docker-logging-driver-semantics-design.md).
-It is intentionally absent from the required manifest while the runtime still
-uses its legacy local/none writer. The capability may be published only when
-the matched Container authority implements lossless requested/resolved state,
-defaults, distinct built-in drivers, delivery/cache/read semantics, provider
-lifecycle, independent attach, migration, and the maintained conformance gates.
+`io.github.stephenlclarke.container.logging-drivers.v1` requires the typed
+logging create request, authority-owned protected options, native and remote
+provider lifecycle, canonical reads, dual cache, and exact-process foreground
+attachment in the
+[Docker logging-driver design](docker-logging-driver-semantics-design.md).
+It is present in the required manifest because the matched Container authority
+now implements lossless requested/resolved state, defaults, distinct built-in
+drivers, delivery/cache/read semantics, generation-fenced provider lifecycle,
+and independent foreground attachment. The identifier describes that typed
+authority contract; individual provider availability remains discoverable and
+validated separately.
 
 Compose config and hashing never require a runtime lookup. Runtime preflight
 retains optional and unknown installed identifiers separately from the mandatory
 manifest, and passes the immutable selection into runtime execution options only
 after stack compatibility and service readiness succeed. Commands that need
-advanced logging continue to fail at the existing v1 gate until this exact
-identifier is both negotiated and backed by the typed production path;
-catalogue discovery is diagnostic and never replaces authoritative create/start
-validation.
+advanced logging require this exact identifier before execution. Catalogue
+discovery is diagnostic and never replaces authoritative create/start
+validation; a request for AWS Logs, Google Cloud, journald, or the production
+plugin plane still fails until its provider slice is implemented.
