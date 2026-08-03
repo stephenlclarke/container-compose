@@ -2,10 +2,10 @@
 
 This is the current disposition of Apple work that affects the five-repository container stack. Re-check GitHub before changing an Apple-backed component because issue, review, and merge state can change independently.
 
-Apple pull-request state was queried 29 July 2026. Fetched Apple and
-supported-fork baselines, fork classifications, and Compose development pins
-were refreshed 30 July 2026 without claiming a fresh query of every Apple pull
-request.
+All submitted and tracked Apple pull-request states were queried 3 August
+2026. Fetched Apple and supported-fork baselines and fork classifications were
+last refreshed 30 July 2026; the tables below keep that baseline date explicit
+instead of presenting it as a fresh fetch.
 
 ## Scope
 
@@ -33,32 +33,25 @@ Their 440 patch-unique non-merge commits are classified in
 are not a count of changes ready for Apple.
 
 Compose currently pins the separately validated development heads
-`container` `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1`,
-`containerization` `d7377b962af724f8d7c2b640f3ab12184d33f1af`,
+`container` `2a79b4553a342e33411666a88ad20ccd2ce46551`,
+`containerization` `77f06d4c44341e04241941072fb69e2b85a6f5c1`,
 and `container-builder-shim`
 `61832d4ca91715180a84dec0eab091170174c43c`. The Container pin contains the
-current Apple head. The Containerization pin predates merged Apple PR #813 by
-one Apple commit and retains an older patch-unique vminitd correction, so it
-requires explicit reconciliation rather than an assumed duplicate removal.
+current fetched Apple head. The Containerization pin also contains the current
+fetched Apple head and retains the separately reviewed guest-DNS proxy work.
 
 ## Submitted Stephen-Authored Apple Pull Requests
 
 ### Open
 
-All ten open pull requests are ready rather than drafts, mergeable, and
-awaiting Apple maintainer review.
+Four Stephen-authored pull requests remain open and await Apple maintainer
+review. No Apple write was performed during this refresh.
 
 | Pull request | Published head | Current state and purpose |
 | --- | --- | --- |
-| [apple/container#2036](https://github.com/apple/container/pull/2036) | `f2f248fbb80092d47945e30eaf0e0b79ace9ff16` | Review required. Close the path-specific directory watcher descriptor after failed startup; deterministic repeated leak tests and the full 590-test stock suite pass locally. Apple Actions are `action_required`; no hosted job has run. |
-| [apple/container#2035](https://github.com/apple/container/pull/2035) | `a8d3b5c87e468a3641ef075c3fce686e206817ad` | Review required. Preserve unloadable bundles, restore state before insertion, and atomically replace root-filesystem metadata; focused persistence regressions and the full stock suite pass locally. Apple Actions are `action_required`; no hosted job has run. |
-| [apple/container#2031](https://github.com/apple/container/pull/2031) | `58b07fcaa6f09426adc6cd792732c855496ed80f` | Review required. Preserve active and infrastructure image aliases. Apple Actions are `action_required`; no hosted job has run. |
-| [apple/container#1965](https://github.com/apple/container/pull/1965) | `618d28197a20baf643dbdc87272e9f768f57f888` | Review required. Honour generic XPC request timeouts. Apple Actions are `action_required`; no hosted job has run. |
-| [apple/container#1935](https://github.com/apple/container/pull/1935) | `f4f908606d4a7693f9bfc958593f7671b35caa0f` | Review required. Keep root help responsive for [apple/container#1459](https://github.com/apple/container/issues/1459); stacked on the preferred cancellation work in [apple/container#1862](https://github.com/apple/container/pull/1862). Apple Actions are `action_required`; no hosted job has run. |
-| [apple/container#1934](https://github.com/apple/container/pull/1934) | `d5d73ef1a95ca9f78ffa287b7c2e5204bfd9d569` | Review required. Preserve the complete `unspecified` version placeholder. Apple Actions are `action_required`; no hosted job has run. |
-| [apple/containerization#823](https://github.com/apple/containerization/pull/823) | `3ed10bf1a0dda802cb46c1f0b55934c55a4bd395` | Review required. Prevent deferred directory metadata from following an intermediate symlink or applying to a removed and recreated directory; all 579 stock tests and `make check` pass locally. Apple Actions are `action_required`; no hosted job has run. |
-| [apple/containerization#821](https://github.com/apple/containerization/pull/821) | `726e1ffdceada5cc62d32c8fc939aef30220e6ff` | Review required. Restore permissions after ownership so `fchown` cannot clear set-ID bits. This pull request intentionally depends on #820. Apple Actions are `action_required`; no hosted job has run. |
-| [apple/containerization#820](https://github.com/apple/containerization/pull/820) | `6e32963617b3ed8f4b63432dbcf834f94807342b` | Review required. Preserve sticky, set-user-ID, and set-group-ID archive permission bits. Apple Actions are `action_required`; no hosted job has run. |
+| [apple/containerization#823](https://github.com/apple/containerization/pull/823) | `3ed10bf1a0dda802cb46c1f0b55934c55a4bd395` | Review required. Prevent deferred directory metadata from following an intermediate symlink or applying to a removed and recreated directory; all 579 stock tests and `make check` pass locally. GitHub reports no checks on the branch. |
+| [apple/containerization#821](https://github.com/apple/containerization/pull/821) | `726e1ffdceada5cc62d32c8fc939aef30220e6ff` | Review required. Restore permissions after ownership so `fchown` cannot clear set-ID bits. This pull request intentionally depends on #820. GitHub reports no checks on the branch. |
+| [apple/containerization#820](https://github.com/apple/containerization/pull/820) | `6e32963617b3ed8f4b63432dbcf834f94807342b` | Review required. Preserve sticky, set-user-ID, and set-group-ID archive permission bits. GitHub reports no checks on the branch. |
 | [apple/containerization#799](https://github.com/apple/containerization/pull/799) | `9c5b9ee19796dc13f0d7d1b0687d780f0db04e29` | Review required with hosted build, signature, and Linux compile checks green. Missing copy sources fail promptly and no longer block later lifecycle operations. |
 
 No Stephen-authored pull request has been submitted to
@@ -68,6 +61,13 @@ No Stephen-authored pull request has been submitted to
 
 | Pull request | Final state | Disposition |
 | --- | --- | --- |
+| [apple/container#2036](https://github.com/apple/container/pull/2036) | Closed 3 August 2026 without merge | The exact fork head remains recoverable for the programme-wide upstream review; it is not an open Apple submission. |
+| [apple/container#2035](https://github.com/apple/container/pull/2035) | Closed 3 August 2026 without merge | The exact fork head remains recoverable for the programme-wide upstream review; it is not an open Apple submission. |
+| [apple/container#2031](https://github.com/apple/container/pull/2031) | Closed 3 August 2026 without merge | The exact fork head remains recoverable for the programme-wide upstream review; it is not an open Apple submission. |
+| [apple/container#1965](https://github.com/apple/container/pull/1965) | Closed 3 August 2026 without merge | Its exact ledger head is protected by the local `upstream-pr-1965-618d28197a20` ref for the programme-wide review; remote archive publication remains deferred. |
+| [apple/container#1935](https://github.com/apple/container/pull/1935) | Closed 3 August 2026 without merge | Its exact ledger head is protected by the local `upstream-pr-1935-f4f908606d4a` ref for the programme-wide review; remote archive publication remains deferred. |
+| [apple/container#1934](https://github.com/apple/container/pull/1934) | Closed 3 August 2026 without merge | Its exact ledger head is protected by the local `upstream-pr-1934-d5d73ef1a95c` ref for the programme-wide review; remote archive publication remains deferred. |
+| [apple/container#1630](https://github.com/apple/container/pull/1630) | Merged 2 August 2026 | Apple now supports exporting a live container; downstream fork classification and pin reconciliation remain a separate baseline-refresh task. |
 | [apple/containerization#813](https://github.com/apple/containerization/pull/813) | Merged 29 July 2026 | Apple now redacts OCI environment values through descriptions. The older fork vminitd call-site correction remains patch-unique and must be reconciled explicitly rather than retained as an assumed duplicate. |
 | [apple/containerization#798](https://github.com/apple/containerization/pull/798) | Merged 15 July 2026 | The CloudHypervisor SwiftPM exclusion is present in current Apple `main`; no fork-only replacement remains necessary. |
 | [apple/container#1933](https://github.com/apple/container/pull/1933) | Closed 22 July 2026 without merge | Superseded by merged production handler work in `apple/container#1981` and `apple/containerization#808`. |
@@ -77,11 +77,11 @@ No Stephen-authored pull request has been submitted to
 | [apple/container#1764](https://github.com/apple/container/pull/1764) | Closed 27 June 2026 without merge | The broader log retrieval proposal was not merged; generic log retrieval still needs smaller Apple-shaped primitives. |
 | [apple/container#1758](https://github.com/apple/container/pull/1758) | Closed 27 June 2026 without merge | Superseded first by #1933 and then by Apple's merged production handler changes. |
 
-[PR-ARCHIVE.json](PR-ARCHIVE.json) currently retains immutable snapshots for Apple PRs #1933, #1934, #1935, #1965, containerization PRs #798 and #799, and third-party builder-shim PR #87. It does not yet archive the current heads of `apple/container` PRs #730, #1508, #1630, #1660, #1708, #1735, #1862, #1926, #1947, #1997, #2031, #2035, or #2036, or `apple/containerization` PRs #753, #792, #812, #820, #821, or #823. The code archive is therefore incomplete until immutable Stephen-owned refs for those heads are added and verified.
+[PR-ARCHIVE.json](PR-ARCHIVE.json) records exact archive heads for Apple PRs #1933, #1934, #1935, #1965, containerization PRs #798 and #799, and third-party builder-shim PR #87. Matching local `upstream-pr-NUMBER-SHORTSHA` refs protect all seven commits on this MacBook Pro, but the remote verifier confirms that none of those immutable fork refs has been published; publication remains deferred to the programme-wide gate. The ledger does not yet cover the current heads of `apple/container` PRs #730, #1508, #1630, #1660, #1708, #1735, #1862, #1926, #1947, #1997, #2031, #2035, or #2036, or `apple/containerization` PRs #753, #792, #812, #820, #821, or #823. The remote code archive therefore remains incomplete.
 
 ## Handoff Inventory
 
-[HANDOFF-REGISTRY.json](HANDOFF-REGISTRY.json) is now the source of truth. Its generated [reader view](HANDOFF-REGISTRY.md) contains 366 capability or pull-request rows, 634 document snapshots, and 24 current supporting documents. The newest active documents are:
+[HANDOFF-REGISTRY.json](HANDOFF-REGISTRY.json) is now the source of truth. Its generated [reader view](HANDOFF-REGISTRY.md) carries the current entry, document, and state counts. The newest active documents are:
 
 - `apple-container/ISSUE-xpc-unknown-error-code.md`
 - `apple-container/PR-xpc-unknown-error-code.md`

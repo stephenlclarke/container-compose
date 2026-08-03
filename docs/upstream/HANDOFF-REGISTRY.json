@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-07-31",
+  "generatedAt": "2026-08-03",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -50,7 +50,7 @@
       "owner": "apple/container",
       "title": "[builder]: enable ssh forwarding for container build",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "58fc6089ec7abb44c284ebbab724a571e2c767ce"
       ],
@@ -61,8 +61,8 @@
       "id": "apple-container-1630",
       "owner": "apple/container",
       "title": "[container]: add --live flag to export command",
-      "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "state": "merged",
+      "lastVerified": "2026-08-03",
       "commits": [
         "72ebcc7e17545c49cc96dba8ebe059f2cb121778"
       ],
@@ -74,7 +74,7 @@
       "owner": "apple/container",
       "title": "Exclude application data directory from backups",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "1bb033af6c8d52b7a434608d8cd28b16f918b597"
       ],
@@ -86,7 +86,7 @@
       "owner": "apple/container",
       "title": "docs: add [machine] section to config.toml reference",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "34556d208809d6cfcd39202eb118a96efc12066a"
       ],
@@ -98,7 +98,7 @@
       "owner": "apple/container",
       "title": "add ID validation to daemon service",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "00223ad3671a8370180a1886bc400ad2b5e7ee06"
       ],
@@ -136,7 +136,7 @@
       "owner": "apple/container",
       "title": "fix: reply to unknown XPC routes and make request timeout cancellable",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "2999168307d76c30f9f6a11a52834eb892991cfb"
       ],
@@ -174,7 +174,7 @@
       "owner": "apple/container",
       "title": "Fix exec hang and stop timeout",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "36f58fb62efe3ca3fa554cb6a41f5bc966fc58c4"
       ],
@@ -208,8 +208,8 @@
       "id": "apple-container-1934",
       "owner": "apple/container",
       "title": "fix(version): preserve unspecified commit placeholder",
-      "state": "submitted",
-      "lastVerified": "2026-07-29",
+      "state": "closed",
+      "lastVerified": "2026-08-03",
       "commits": [
         "d5d73ef1a95ca9f78ffa287b7c2e5204bfd9d569"
       ],
@@ -226,8 +226,8 @@
       "id": "apple-container-1935",
       "owner": "apple/container",
       "title": "fix(plugins): keep root help responsive",
-      "state": "submitted",
-      "lastVerified": "2026-07-29",
+      "state": "closed",
+      "lastVerified": "2026-08-03",
       "commits": [
         "f4f908606d4a7693f9bfc958593f7671b35caa0f"
       ],
@@ -291,7 +291,7 @@
       "owner": "apple/container",
       "title": "Fix cp tar stream support for stdin and stdout",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "7199840b57504963e0f76370a72dfcd74d927eb9"
       ],
@@ -302,8 +302,8 @@
       "id": "apple-container-1965",
       "owner": "apple/container",
       "title": "fix(xpc): honor request timeouts",
-      "state": "submitted",
-      "lastVerified": "2026-07-29",
+      "state": "closed",
+      "lastVerified": "2026-08-03",
       "commits": [
         "618d28197a20baf643dbdc87272e9f768f57f888"
       ],
@@ -315,7 +315,7 @@
       "owner": "apple/container",
       "title": "Send signal as a string in ClientProcess.kill",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "221fafc24ebd19502f4553e0b5d38c14be3f2b22",
         "26cc778b80ef847ff0fbf75579675981e5982613",
@@ -360,8 +360,8 @@
       "id": "apple-container-2031",
       "owner": "apple/container",
       "title": "fix(image): preserve active and infrastructure aliases",
-      "state": "submitted",
-      "lastVerified": "2026-07-29",
+      "state": "closed",
+      "lastVerified": "2026-08-03",
       "commits": [
         "58b07fcaa6f09426adc6cd792732c855496ed80f"
       ],
@@ -372,8 +372,8 @@
       "id": "apple-container-2035",
       "owner": "apple/container",
       "title": "Preserve unloadable bundles and write metadata atomically",
-      "state": "submitted",
-      "lastVerified": "2026-07-29",
+      "state": "closed",
+      "lastVerified": "2026-08-03",
       "commits": [
         "a8d3b5c87e468a3641ef075c3fce686e206817ad"
       ],
@@ -384,8 +384,8 @@
       "id": "apple-container-2036",
       "owner": "apple/container",
       "title": "Close directory watcher descriptors after failed startup",
-      "state": "submitted",
-      "lastVerified": "2026-07-29",
+      "state": "closed",
+      "lastVerified": "2026-08-03",
       "commits": [
         "f2f248fbb80092d47945e30eaf0e0b79ace9ff16"
       ],
@@ -409,7 +409,7 @@
       "owner": "apple/container",
       "title": "[builder-tests]: add test for meta args parsing",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "f27d3e37cf7c6470b65c8e4a6f6af36fa0b20b68"
       ],
@@ -435,7 +435,7 @@
       "owner": "apple/container",
       "title": "cli: accept global flags after subcommands",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "9a43fa83941a893c0087f23cdaf8d036f23d6255"
       ],
@@ -639,7 +639,7 @@
       "owner": "apple/container-builder-shim",
       "title": "Emit excluded parent dirs of files re-included by dockerignore negations",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "27784072098425af0d1f1201b5073121de8cb6a1",
         "2f03287827469df80d7afb9ffb35775dc636118b",
@@ -660,7 +660,7 @@
       "owner": "apple/container-builder-shim",
       "title": "[frontend]: resolve meta args",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "134c7381dc3b1a06afe2d2025fab30c597f26bdd"
       ],
@@ -2341,7 +2341,7 @@
       "owner": "apple/containerization",
       "title": "Send a User-Agent header on registry requests",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "34296b5a1b24e42eb821c07da0be80595d68476a"
       ],
@@ -2353,7 +2353,7 @@
       "owner": "apple/containerization",
       "title": "Fix ECR BLOB_UPLOAD_INVALID by forcing new session on push retry",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "c0591b4cf53ea11e214c49c70916c4f6c22a4c07"
       ],
@@ -2387,7 +2387,7 @@
       "owner": "apple/containerization",
       "title": "fix(copy): keep lifecycle usable after missing source",
       "state": "submitted",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "9c5b9ee19796dc13f0d7d1b0687d780f0db04e29"
       ],
@@ -2405,7 +2405,7 @@
       "owner": "apple/containerization",
       "title": "Add stream-based copyIn/copyOut for tar stream cp support",
       "state": "tracked-upstream",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "570a56f74bf79aa3fa383e708d4741043c1e4f6f"
       ],
@@ -2429,7 +2429,7 @@
       "owner": "apple/containerization",
       "title": "fix(archive): preserve special permission bits",
       "state": "submitted",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "6e32963617b3ed8f4b63432dbcf834f94807342b"
       ],
@@ -2441,7 +2441,7 @@
       "owner": "apple/containerization",
       "title": "fix(archive): restore permissions after ownership",
       "state": "submitted",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "726e1ffdceada5cc62d32c8fc939aef30220e6ff"
       ],
@@ -2465,7 +2465,7 @@
       "owner": "apple/containerization",
       "title": "Defer directory attributes without following symlinks",
       "state": "submitted",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-03",
       "commits": [
         "3ed10bf1a0dda802cb46c1f0b55934c55a4bd395"
       ],
@@ -6457,8 +6457,8 @@
       "id": "container-compose-sonarqube-zero-debt",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request 179: eliminate exact-main Sonar design debt",
-      "state": "submitted",
-      "lastVerified": "2026-07-30",
+      "state": "merged",
+      "lastVerified": "2026-08-03",
       "commits": [],
       "documents": [
         {
@@ -6469,7 +6469,8 @@
           "kind": "pull-request",
           "path": "docs/upstream/container-compose/PR-179.md"
         }
-      ]
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/179"
     },
     {
       "id": "container-compose-stable-sonarqube-retention-evidence",
@@ -6728,8 +6729,8 @@
       "id": "container-compose-183",
       "owner": "stephenlclarke/container-compose",
       "title": "Make parity programme progress exact-head verifiable",
-      "state": "submitted",
-      "lastVerified": "2026-08-01",
+      "state": "merged",
+      "lastVerified": "2026-08-03",
       "commits": [],
       "documents": [
         {
