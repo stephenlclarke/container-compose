@@ -1,8 +1,8 @@
 # Container Projects
 
 @Metadata {
-  @PageImage(purpose: icon, source: "container-compose-docc-card.png", alt: "The container project family illustration: a light-blue octopus beside a frosted three-row container service panel.")
-  @PageImage(purpose: card, source: "container-compose-docc-card.png", alt: "The container project family illustration: a light-blue octopus beside a frosted three-row container service panel.")
+  @PageImage(purpose: icon, source: "container-compose-docc-card.png", alt: "The container project family illustration: a light-blue octopus beside the standard three-row container service panel.")
+  @PageImage(purpose: card, source: "container-compose-docc-card.png", alt: "The container project family illustration: a light-blue octopus beside the standard three-row container service panel.")
 }
 
 The [container developer API collection](https://stephenlclarke.github.io/api/) publishes documentation generated from Stephen's Engine transport, runtime, Containerization, Kubernetes, builder-shim, Compose, and Dev Container repositories under one GitHub Pages namespace. Fork DocC is the primary reference; Apple upstream DocC or source repositories remain linked on the relevant project pages for comparison. Each source repository owns its documentation build, while the user-site workflow assembles the validated outputs into one atomic deployment.
