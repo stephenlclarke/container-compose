@@ -83,9 +83,10 @@ advanced logging require this exact identifier before execution. Catalogue
 discovery is diagnostic and never replaces authoritative create/start
 validation. AWS Logs and Google Cloud Logs are present on the matched Container
 head. The local journald provider contract, exact-generation shared-sandbox
-service transport, and bounded reconnect-safe journald client/server wire are
-implemented, but a request still fails deterministically because the production
-signed Linux journal workload/listener and durable system-journal backend are
-not installed; the unavailable provider is therefore not advertised. The
+service transport, bounded reconnect-safe journald client/server wire, and
+restart-safe writer/reader state backend are implemented, but a request still
+fails deterministically because the production signed Linux journal
+workload/listener and concrete systemd append/query adapter are not installed;
+the unavailable provider is therefore not advertised. The
 production plugin plane is likewise not advertised until its isolated service
 exists.
