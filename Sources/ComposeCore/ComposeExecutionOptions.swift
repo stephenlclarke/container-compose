@@ -142,7 +142,6 @@ public struct ComposeExecutionOptions {
     public var watchPollInterval: Duration
     public var materializedConfigSecretDirectory: URL
     public var temporaryDirectory: URL
-    public var runtimeCapabilities: ComposeRuntimeCapabilities
     public var sleep: @Sendable (Duration) async throws -> Void {
         didSet {
             usesDefaultSleep = false
@@ -175,7 +174,6 @@ public struct ComposeExecutionOptions {
         watchPollInterval = .seconds(1)
         materializedConfigSecretDirectory = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
         temporaryDirectory = FileManager.default.temporaryDirectory
-        runtimeCapabilities = ComposeRuntimeCapabilities()
         sleep = { try await Task.sleep(for: $0) }
         usesDefaultSleep = true
         confirm = ComposeExecutionOptions.defaultConfirmation
