@@ -37,7 +37,6 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     let imageManager: ComposeRuntimeImageManaging
     let imageVolumeInitializer: ComposeRuntimeImageVolumeInitializing
     let lifecycleManager: ComposeRuntimeLifecycleManaging
-    let launchManager: ComposeRuntimeContainerLaunching
     let logManager: ComposeRuntimeLogManaging
     let upMenuController: ComposeUpMenuControlling
     let pullMetadataStore: ComposePullMetadataStoring
@@ -66,7 +65,6 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         imageManager = dependencies.imageManager
         imageVolumeInitializer = dependencies.imageVolumeInitializer
         lifecycleManager = dependencies.lifecycleManager
-        launchManager = dependencies.launchManager
         logManager = dependencies.logManager
         upMenuController = dependencies.upMenuController
         pullMetadataStore = dependencies.pullMetadataStore

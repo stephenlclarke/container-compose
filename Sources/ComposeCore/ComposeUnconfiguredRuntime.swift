@@ -27,7 +27,7 @@ struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExportin
     ComposeRuntimeTopManaging, ComposeRuntimeLogManaging, ComposeRuntimeAttachManaging, ComposeRuntimeConfigReading,
     ComposeRuntimeSecretReading, ComposeRuntimeDiscoveryManaging, ComposeRuntimeImageManaging,
     ComposeRuntimeImageVolumeInitializing, ComposeArchiveManaging,
-    ComposeRuntimeResourceManaging, ComposeRuntimeContainerLaunching
+    ComposeRuntimeResourceManaging
 {
     private func unavailable(_ operation: String) -> ComposeError {
         .unsupported("\(operation) requires an installed Compose runtime provider")
@@ -131,10 +131,6 @@ struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExportin
 
     func deleteContainer(id _: String, force _: Bool) async throws {
         throw unavailable("container remove")
-    }
-
-    func launchContainer(_: ComposeRuntimeContainerLaunchRequest) async throws -> Int32 {
-        throw unavailable("container create")
     }
 
     func stats(
@@ -282,10 +278,6 @@ public enum ComposeRuntimeProviderDefaults {
     }
 
     public static func executing() -> any ComposeRuntimeExecManaging {
-        ComposeUnconfiguredRuntime()
-    }
-
-    public static func launching() -> any ComposeRuntimeContainerLaunching {
         ComposeUnconfiguredRuntime()
     }
 

@@ -977,7 +977,6 @@ extension ComposeOrchestrator {
         try await runContainerWithProgress(
             arguments,
             message: reconcileProgressMessage(service: service, command: request.runOptions.command),
-            logging: try runtimeLogConfiguration(service: service),
         )
         if request.runOptions.command == "run" {
             try await runPostStartHooks(service: service, containerID: name)

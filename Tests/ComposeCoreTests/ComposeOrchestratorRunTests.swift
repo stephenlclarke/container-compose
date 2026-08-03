@@ -2328,51 +2328,6 @@ extension ComposeOrchestratorTests {
         }
     }
 
-    @Test("run uses negotiated typed logging without process arguments")
-    func runUsesNegotiatedTypedLoggingWithoutProcessArguments() async throws {
-        let runner = RecordingRunner()
-        let launchManager = RecordingContainerLaunchManager()
-        let options = ComposeExecutionOptions {
-            $0.runtimeCapabilities = .init(identifiers: [
-                "io.github.stephenlclarke.container.logging-drivers.v1",
-            ])
-            $0.oneOffIdentifier = { "abc123" }
-        }
-        let project = composeProject(
-            name: "demo",
-            services: [
-                "job": composeService(name: "job", image: "alpine") {
-                    $0.logging = ComposeLogConfiguration(
-                        driver: "fluentd",
-                        options: [
-                            "fluentd-address": "127.0.0.1:24224",
-                            "labels": "com.example.private",
-                        ],
-                    )
-                },
-            ]
-        )
-        let dependencies = orchestratorDependencies {
-            $0.launchManager = launchManager
-        }
-
-        try await ComposeOrchestrator(runner: runner, options: options, dependencies: dependencies)
-            .run(project: project, serviceName: "job", command: ["true"], remove: true)
-
-        #expect(runner.commands.isEmpty)
-        let request = try #require(await launchManager.requests.first)
-        #expect(request.command == .run)
-        #expect(request.logging == ComposeLogConfiguration(
-            driver: "fluentd",
-            options: [
-                "fluentd-address": "127.0.0.1:24224",
-                "labels": "com.example.private",
-            ],
-        ))
-        #expect(!request.arguments.contains("--log-driver"))
-        #expect(!request.arguments.contains("--log-opt"))
-    }
-
     @Test("run accepts local logging drivers without options")
     func runAcceptsLocalLoggingDriversWithoutOptions() async throws {
         for testCase in supportedLocalServiceLoggingFieldCases() {

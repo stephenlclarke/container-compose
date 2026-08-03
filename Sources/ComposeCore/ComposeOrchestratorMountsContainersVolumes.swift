@@ -677,34 +677,10 @@ extension ComposeOrchestrator {
         emitOutput: Bool = true,
         inheritedIO: Bool = false,
         replaceProcess: Bool = false,
-        logging: ComposeLogConfiguration? = nil,
     ) async throws -> CommandResult {
         if options.dryRun {
             options.emit("+ " + shellQuoted([options.containerBinary] + arguments))
             return CommandResult(status: 0, stdout: "", stderr: "")
-        }
-        if options.runtimeCapabilities.supportsLoggingDriversV1, let logging {
-            guard let commandName = arguments.first,
-                  let command = ComposeRuntimeContainerLaunchCommand(rawValue: commandName)
-            else {
-                throw ComposeError.invalidProject("typed container launch requires create or run")
-            }
-            let status = try await launchManager.launchContainer(
-                ComposeRuntimeContainerLaunchRequest(
-                    command: command,
-                    arguments: Array(arguments.dropFirst()),
-                    logging: logging,
-                )
-            )
-            let result = CommandResult(status: status, stdout: "", stderr: "")
-            if check, !result.succeeded {
-                throw ComposeError.commandFailed(
-                    command: shellQuoted([options.containerBinary] + arguments),
-                    status: result.status,
-                    stderr: result.stderr,
-                )
-            }
-            return result
         }
         let commandIO: CommandIO = if replaceProcess {
             .replacingProcess
@@ -744,7 +720,6 @@ extension ComposeOrchestrator {
         emitOutput: Bool = true,
         inheritedIO: Bool = false,
         replaceProcess: Bool = false,
-        logging: ComposeLogConfiguration? = nil,
     ) async throws -> CommandResult {
         guard !inheritedIO, !replaceProcess else {
             if !quiet {
@@ -756,7 +731,6 @@ extension ComposeOrchestrator {
                 emitOutput: emitOutput,
                 inheritedIO: inheritedIO,
                 replaceProcess: replaceProcess,
-                logging: logging,
             )
         }
         return try await progressActivity(message, quiet: quiet, emitsExternalOutput: emitOutput) {
@@ -766,7 +740,6 @@ extension ComposeOrchestrator {
                 emitOutput: emitOutput,
                 inheritedIO: inheritedIO,
                 replaceProcess: replaceProcess,
-                logging: logging,
             )
         }
     }

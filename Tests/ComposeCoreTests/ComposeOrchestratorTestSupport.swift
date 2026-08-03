@@ -598,7 +598,6 @@ func orchestratorDependencies(
     dependencies.imageManager = RecordingContainerImageManager()
     dependencies.imageVolumeInitializer = RecordingContainerImageVolumeInitializer()
     dependencies.lifecycleManager = RecordingContainerLifecycleManager()
-    dependencies.launchManager = RecordingContainerLaunchManager()
     dependencies.logManager = RecordingContainerLogManager()
     dependencies.pullMetadataStore = RecordingPullMetadataStore()
     dependencies.resourceManager = RecordingContainerResourceManager()
@@ -2049,24 +2048,6 @@ actor RecordingContainerCopyOperations {
     ) {
         storage.append(.archiveFrom(id: id, source: source, copyContents: copyContents))
         optionStorage.append(options)
-    }
-}
-
-actor RecordingContainerLaunchManager: ComposeRuntimeContainerLaunching {
-    private let status: Int32
-    private var storage: [ComposeRuntimeContainerLaunchRequest] = []
-
-    init(status: Int32 = 0) {
-        self.status = status
-    }
-
-    var requests: [ComposeRuntimeContainerLaunchRequest] {
-        storage
-    }
-
-    func launchContainer(_ request: ComposeRuntimeContainerLaunchRequest) async throws -> Int32 {
-        storage.append(request)
-        return status
     }
 }
 

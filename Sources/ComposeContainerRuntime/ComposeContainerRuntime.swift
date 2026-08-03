@@ -32,7 +32,6 @@ public enum ComposeContainerRuntime {
             copier: ContainerClientCopier(),
             execManager: ContainerClientExecManager(),
             exporter: ContainerClientExporter(temporaryDirectory: options.temporaryDirectory),
-            launchManager: ContainerCommandLaunchManager(),
             logManager: ContainerClientLogManager(),
         )
         let runtime = ComposeOrchestratorRuntimeDependencies(
