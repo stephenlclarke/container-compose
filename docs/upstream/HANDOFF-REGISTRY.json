@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-08-03",
+  "generatedAt": "2026-08-04",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -6748,9 +6748,12 @@
       "id": "container-compose-191",
       "owner": "stephenlclarke/container-compose",
       "title": "Keep public main independent of unpublished Container revisions",
-      "state": "active-draft",
-      "lastVerified": "2026-08-03",
-      "commits": [],
+      "state": "closed",
+      "lastVerified": "2026-08-04",
+      "commits": [
+        "38e0a7ee3c88b9eb6137d4398d2322c93a77b05d",
+        "1f0f944b3d918a39ad97d1f12bb7b7c5ef6146a0"
+      ],
       "documents": [
         {
           "kind": "issue",
@@ -6759,6 +6762,26 @@
         {
           "kind": "pull-request",
           "path": "docs/upstream/container-compose/PR-191.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-192",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Strict Swift build rejects deprecated compatibility tests",
+      "state": "closed",
+      "lastVerified": "2026-08-04",
+      "commits": [
+        "784aacaa26f2ad698460044a573adae30665628a"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-192.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-192.md"
         }
       ]
     },

@@ -68,14 +68,19 @@ logging create request, authority-owned protected options, native and remote
 provider lifecycle, canonical reads, dual cache, and exact-process foreground
 attachment in the
 [Docker logging-driver design](docker-logging-driver-semantics-design.md).
-It is deliberately absent from the public required manifest. The active public
-build is pinned to the published Container baseline at
+It is deliberately absent from the required release manifest because it is an
+optional capability negotiated only for services that request advanced logging.
+Published `origin/main` remains at reproducible Compose checkpoint
+`1f0f944b3d918a39ad97d1f12bb7b7c5ef6146a0` and published Container baseline
 `6c3f7d3701cf9400855849fa0e29dd75d7b9c45d`, which does not expose this
-contract. The complete Compose-side negotiation and projection are preserved at
-signed checkpoint `d6361aab6ef636246709f452b5483b54493a9764`, and the matching
-Container authority implementation is preserved locally at signed commit
-`2a79b4553a342e33411666a88ad20ccd2ce46551`. They must not be re-enabled in a
-public manifest until hosted builds can fetch the matched Container revision.
+contract. Signed local Compose `main` at
+`784aacaa26f2ad698460044a573adae30665628a` has the complete negotiation and
+typed projection active. Its manifest still names unpublished Container
+checkpoint `2a79b4553a342e33411666a88ad20ccd2ce46551`; validation used the later
+signed local Container implementation
+`6a668b2b5d42246efcad3316374f6d0e0d2eaf14` and matched local Containerization
+head `864455bf1a104f0215b7c912a45800b0a0538973`. This local source must not be
+pushed until hosted builds can fetch a coordinated matched Container revision.
 
 Compose config and hashing never require a runtime lookup. Runtime preflight
 retains optional and unknown installed identifiers separately from the mandatory
@@ -87,9 +92,10 @@ discovery is diagnostic and never replaces authoritative create/start
 validation. AWS Logs and Google Cloud Logs are present on the matched Container
 head. The local journald provider contract, exact-generation shared-sandbox
 service transport, bounded reconnect-safe client/server wire, restart-safe
-writer/reader state, Linux/arm64 AF_VSOCK workload, and concrete systemd
-append/query adapter are implemented. A request still fails deterministically
-because the authority does not yet supervise, install, verify, route, and
-readiness-gate the release-signed workload; the unavailable provider is
-therefore not advertised. The production plugin plane is likewise not
-advertised until its isolated service exists.
+writer/reader state, verified Linux/arm64 AF_VSOCK workload, concrete systemd
+append/query adapter, protected materialisation, exact routing, readiness
+withdrawal, generation rollover, and terminal reclamation are implemented.
+Journald is catalog-visible only while that authority-owned service passes its
+readiness contract. Release trust, coordinated dependency publication, and
+paired Docker certification remain; the production plugin plane is likewise
+not advertised until its isolated service exists.
