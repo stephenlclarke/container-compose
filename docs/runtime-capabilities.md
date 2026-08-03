@@ -81,5 +81,6 @@ manifest, and passes the immutable selection into runtime execution options only
 after stack compatibility and service readiness succeed. Commands that need
 advanced logging require this exact identifier before execution. Catalogue
 discovery is diagnostic and never replaces authoritative create/start
-validation; a request for AWS Logs, Google Cloud, journald, or the production
-plugin plane still fails until its provider slice is implemented.
+validation. AWS Logs and Google Cloud Logs are present on the matched Container
+head; a request for journald or the production plugin plane still fails until
+its provider slice is implemented.
