@@ -291,8 +291,9 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 2)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-2", "--detach"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-2"]))
+        #expect(commands.allSatisfy { !$0.contains("--detach") })
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
         #expect(await discoveryManager.listRequests == [true, true])
     }
@@ -326,6 +327,117 @@ extension ComposeOrchestratorTests {
         }
     }
 
+    @Test("up sends negotiated logging as a typed in-process request")
+    func upSendsNegotiatedLoggingAsTypedRequest() async throws {
+        let runner = RecordingRunner()
+        let launchManager = RecordingContainerLaunchManager()
+        let options = ComposeExecutionOptions {
+            $0.runtimeCapabilities = .init(identifiers: [
+                "io.github.stephenlclarke.container.logging-drivers.v1",
+            ])
+        }
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.logging = ComposeLogConfiguration(
+                        driver: "splunk",
+                        options: [
+                            "splunk-token": "protected-value",
+                            "splunk-url": "https://127.0.0.1:8088",
+                        ],
+                    )
+                },
+            ]
+        )
+        let dependencies = orchestratorDependencies {
+            $0.launchManager = launchManager
+        }
+
+        try await ComposeOrchestrator(runner: runner, options: options, dependencies: dependencies)
+            .up(project: project, options: ComposeUpOptions())
+
+        #expect(runner.commands.isEmpty)
+        let request = try #require(await launchManager.requests.first)
+        #expect(request.command == .create)
+        #expect(request.logging == ComposeLogConfiguration(
+            driver: "splunk",
+            options: [
+                "splunk-token": "protected-value",
+                "splunk-url": "https://127.0.0.1:8088",
+            ],
+        ))
+        #expect(!request.arguments.contains("--log-driver"))
+        #expect(!request.arguments.contains("--log-opt"))
+        #expect(!request.arguments.contains(where: { $0.contains("protected-value") }))
+    }
+
+    @Test("create uses the negotiated typed logging path")
+    func createUsesNegotiatedTypedLoggingPath() async throws {
+        let runner = RecordingRunner()
+        let launchManager = RecordingContainerLaunchManager()
+        let options = ComposeExecutionOptions {
+            $0.runtimeCapabilities = .init(identifiers: [
+                "io.github.stephenlclarke.container.logging-drivers.v1",
+            ])
+        }
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.logging = ComposeLogConfiguration(
+                        driver: "syslog",
+                        options: ["syslog-address": "tcp://127.0.0.1:5514"],
+                    )
+                },
+            ]
+        )
+        let dependencies = orchestratorDependencies {
+            $0.launchManager = launchManager
+        }
+
+        try await ComposeOrchestrator(runner: runner, options: options, dependencies: dependencies)
+            .create(project: project, options: ComposeCreateOptions())
+
+        #expect(runner.commands.isEmpty)
+        let request = try #require(await launchManager.requests.first)
+        #expect(request.command == .create)
+        #expect(request.logging.driver == "syslog")
+        #expect(request.logging.options == ["syslog-address": "tcp://127.0.0.1:5514"])
+        #expect(!request.arguments.contains("--log-driver"))
+        #expect(!request.arguments.contains("--log-opt"))
+    }
+
+    @Test("dry run redacts logging option values")
+    func dryRunRedactsLoggingOptionValues() async throws {
+        let protectedValue = "protected-value"
+        let emitted = LockedStringRecorder()
+        let options = ComposeExecutionOptions {
+            $0.dryRun = true
+            $0.runtimeCapabilities = .init(identifiers: [
+                ComposeRuntimeCapabilities.loggingDriversV1Identifier,
+            ])
+            $0.emit = { emitted.append($0) }
+        }
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.logging = ComposeLogConfiguration(
+                        driver: "splunk",
+                        options: ["splunk-token": protectedValue],
+                    )
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(options: options)
+            .up(project: project, options: ComposeUpOptions())
+
+        #expect(emitted.snapshot.contains(where: { $0.contains("splunk-token=<redacted>") }))
+        #expect(!emitted.snapshot.contains(where: { $0.contains(protectedValue) }))
+    }
+
     @Test("up accepts local logging drivers without options")
     func upAcceptsLocalLoggingDriversWithoutOptions() async throws {
         for testCase in supportedLocalServiceLoggingFieldCases() {
@@ -344,7 +456,7 @@ extension ComposeOrchestratorTests {
                 .up(project: project, options: ComposeUpOptions())
 
             let command = try #require(runner.commands.first?.arguments)
-            #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
+            #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
             #expect(!command.contains("--log-driver"))
             #expect(!command.contains("--log-opt"))
         }
@@ -368,7 +480,7 @@ extension ComposeOrchestratorTests {
                 .up(project: project, options: ComposeUpOptions())
 
             let command = try #require(runner.commands.first?.arguments)
-            #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
+            #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
             #expect(!command.contains("--log-driver"))
             for option in testCase.expectedOptions {
                 #expect(command.containsSequence(["--log-opt", option]))
@@ -394,7 +506,7 @@ extension ComposeOrchestratorTests {
                 .up(project: project, options: ComposeUpOptions())
 
             let command = try #require(runner.commands.first?.arguments)
-            #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
+            #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
             #expect(command.containsSequence(["--log-driver", "none"]))
             #expect(!command.contains("--log-opt"))
         }
@@ -462,7 +574,7 @@ extension ComposeOrchestratorTests {
         #expect(volumeRequest.resolvedDriver == "local")
         #expect(volumeRequest.driverOpts == [:])
         #expect(volumeRequest.labels[composeProjectLabel] == "demo")
-        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
         #expect(run.containsSequence(["--volume", "demo_cache:/cache"]))
     }
 
@@ -490,7 +602,7 @@ extension ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner, discoveryManager: RecordingContainerDiscoveryManager())
             .up(project: project, options: ComposeUpOptions())
 
-        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
         #expect(run.containsSequence(["--volume", "demo_cache:/cache"]))
     }
 
@@ -526,7 +638,7 @@ extension ComposeOrchestratorTests {
         var isDirectory = ObjCBool(false)
         #expect(fileManager.fileExists(atPath: source.path, isDirectory: &isDirectory))
         #expect(isDirectory.boolValue)
-        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
         #expect(run.containsSequence(["--volume", "\(source.path):/data"]))
     }
 
@@ -604,7 +716,7 @@ extension ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner, discoveryManager: RecordingContainerDiscoveryManager())
             .up(project: project, options: ComposeUpOptions())
 
-        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
         #expect(run.containsSequence(["--volume", "\(directory.path):/host:ro,rslave"]))
     }
 
@@ -633,7 +745,7 @@ extension ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
             .up(project: project, options: ComposeUpOptions())
 
-        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
         #expect(run.containsSequence(["--mount", "type=volume,source=demo_cache,destination=/cache,volume-subpath=logs/app"]))
     }
 
@@ -659,7 +771,7 @@ extension ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner, discoveryManager: RecordingContainerDiscoveryManager())
             .up(project: project, options: ComposeUpOptions())
 
-        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
         #expect(run.containsSequence([
             "--mount",
             "type=image,source=alpine:3.20,destination=/assets,readonly,image-subpath=etc",
@@ -1382,7 +1494,7 @@ extension ComposeOrchestratorTests {
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
-        #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(command.contains("--no-healthcheck"))
     }
 
@@ -2195,7 +2307,7 @@ extension ComposeOrchestratorTests {
             resourceManager: resourceManager
         ).up(project: project, options: ComposeUpOptions())
 
-        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
         #expect(runArguments.contains("--restart"))
         #expect(runArguments.contains("unless-stopped"))
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
@@ -2231,7 +2343,7 @@ extension ComposeOrchestratorTests {
             resourceManager: resourceManager
         ).up(project: project, options: ComposeUpOptions())
 
-        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
         #expect(runArguments.contains("--restart"))
         #expect(runArguments.contains("on-failure:3"))
         #expect(!runArguments.contains("unless-stopped"))
@@ -2262,7 +2374,7 @@ extension ComposeOrchestratorTests {
             resourceManager: resourceManager
         ).up(project: project, options: ComposeUpOptions())
 
-        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
         #expect(runArguments.containsSequence(["--restart", "on-failure"]))
         #expect(!runArguments.contains("on-failure:0"))
     }
@@ -2364,7 +2476,7 @@ extension ComposeOrchestratorTests {
             lifecycleManager: lifecycleManager
         ).up(project: project, options: ComposeUpOptions())
 
-        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
         #expect(runArguments.containsSequence(["--restart", "no"]))
         #expect(await lifecycleManager.requests == [.wait(id: "demo-migrate-1")])
     }
@@ -2388,7 +2500,7 @@ extension ComposeOrchestratorTests {
             lifecycleManager: lifecycleManager
         ).up(project: project, options: ComposeUpOptions())
 
-        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
         #expect(runArguments.containsSequence(["--restart", "no"]))
         #expect(await lifecycleManager.requests == [.wait(id: "demo-migrate-1")])
     }
@@ -2452,7 +2564,7 @@ extension ComposeOrchestratorTests {
             resourceManager: resourceManager
         ).up(project: project, options: ComposeUpOptions())
 
-        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
         #expect(runArguments.contains("--restart"))
         #expect(runArguments.contains("on-failure:3"))
         #expect(runArguments.contains("--restart-delay"))

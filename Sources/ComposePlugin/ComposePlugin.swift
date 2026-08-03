@@ -352,7 +352,8 @@ struct ComposePluginMain {
                 arguments: rewritten,
                 lane: composeBuildInfo.lane,
                 expectedContainerRef: composeBuildInfo.containerRef,
-                expectedContainerizationRef: composeBuildInfo.containerizationRef
+                expectedContainerizationRef: composeBuildInfo.containerizationRef,
+                onCompatibleRuntime: { installedRuntimeCapabilities.replace(with: $0) }
             ) {
                 FileHandle.standardError.write(Data((failure + "\n").utf8))
                 exit(1)
@@ -520,6 +521,7 @@ struct GlobalOptions: ParsableArguments {
             $0.reportOrphans = true
             $0.emitStatus = { statusOutput.write(Data(($0 + "\n").utf8)) }
             $0.progress = progressReporter()
+            $0.runtimeCapabilities = installedRuntimeCapabilities.snapshot()
         }
         return ComposeOrchestrator(
             options: options,
@@ -714,7 +716,10 @@ struct BridgeRuntimeOptions: ParsableArguments {
 
     /// Creates the runtime orchestrator for commands that execute containers.
     func orchestrator() -> ComposeOrchestrator {
-        let options = ComposeExecutionOptions(dryRun: effectiveDryRun)
+        let options = ComposeExecutionOptions {
+            $0.dryRun = effectiveDryRun
+            $0.runtimeCapabilities = installedRuntimeCapabilities.snapshot()
+        }
         return ComposeOrchestrator(
             options: options,
             dependencies: ComposeContainerRuntime.dependencies(options: options),

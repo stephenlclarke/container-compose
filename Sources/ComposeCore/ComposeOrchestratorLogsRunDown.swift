@@ -264,16 +264,13 @@ public extension ComposeOrchestrator {
             return
         }
 
-        let args = ["logs", "--follow", id]
-        let followLogs: @Sendable () async throws -> Void = {
-            try await self.logManager.logs(
+        let args = ["attach", "--no-stdin", id]
+        let attachOutput: @Sendable () async throws -> Void = {
+            try await self.attachManager.attachOutput(
                 id: id,
-                tail: nil,
-                follow: true,
-                since: nil,
-                until: nil,
-                timestamps: false,
-                emit: self.options.emit,
+                stdout: true,
+                stderr: true,
+                emit: { self.options.emitAttachedData($0.payload) },
             )
         }
         if options.dryRun {
@@ -284,10 +281,10 @@ public extension ComposeOrchestrator {
                 handler: { [lifecycleManager] signal in
                     try? await lifecycleManager.killContainer(id: id, signal: signal)
                 },
-                operation: followLogs,
+                operation: attachOutput,
             )
         } else {
-            try await followLogs()
+            try await attachOutput()
         }
     }
 
@@ -533,6 +530,7 @@ public extension ComposeOrchestrator {
         try await launchOneOffRun(
             arguments: arguments,
             serviceName: preparation.service.name,
+            logging: runtimeLogConfiguration(service: preparation.service),
             options: run,
             inheritedIO: launchWithInheritedIO,
         )
@@ -577,6 +575,7 @@ public extension ComposeOrchestrator {
     private func launchOneOffRun(
         arguments: [String],
         serviceName: String,
+        logging: ComposeLogConfiguration,
         options run: ComposeRunOptions,
         inheritedIO: Bool,
     ) async throws {
@@ -587,6 +586,7 @@ public extension ComposeOrchestrator {
                 quiet: run.quiet,
                 inheritedIO: inheritedIO,
                 replaceProcess: inheritedIO,
+                logging: logging,
             )
         } catch let error as ComposeError {
             guard case let .commandFailed(_, status, _) = error else {
@@ -633,12 +633,15 @@ public extension ComposeOrchestrator {
             project: preparation.project,
             service: preparation.service,
             options: RunArgumentOptions {
-                $0.detach = run.detach || invocation.managedLifecycleRun
-                // A lifecycle-managed foreground run starts detached so it can
-                // run hooks before following output. Non-interactive cleanup
-                // stays manual to avoid racing log collection. Interactive
-                // runs retain runtime auto-remove so a detach-key exit can
-                // leave the process running and still clean it up later.
+                $0.command = invocation.managedLifecycleRun && !invocation.foregroundInteractive
+                    ? "create"
+                    : "run"
+                $0.detach = run.detach
+                    || (invocation.managedLifecycleRun && invocation.foregroundInteractive)
+                // An interactive lifecycle-managed run starts detached before
+                // native terminal reattachment. A non-interactive managed run
+                // is created without starting so output can be attached first.
+                // Cleanup stays manual to avoid racing output collection.
                 $0.remove = run.remove
                     && (!invocation.managedLifecycleRun
                         || isForegroundInteractiveRun(
@@ -660,8 +663,8 @@ public extension ComposeOrchestrator {
     private func finishManagedLifecycleRun(_ request: ComposeManagedLifecycleRunRequest) async throws {
         let attachmentResult: ComposeRunAttachmentResult
         do {
-            try await runPostStartHooks(service: request.service, containerID: request.containerName)
             if request.interactive {
+                try await runPostStartHooks(service: request.service, containerID: request.containerName)
                 attachmentResult = try await attachForegroundOneOffRun(
                     service: request.service,
                     containerName: request.containerName,

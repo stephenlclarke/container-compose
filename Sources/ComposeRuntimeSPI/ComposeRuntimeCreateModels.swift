@@ -170,14 +170,13 @@ public struct ComposeProcessConfiguration: Codable, Sendable {
 
 /// Runtime logging policy projected from a Compose service.
 public struct ComposeLogConfiguration: Codable, Equatable, Sendable {
-    public enum Storage: String, Codable, Equatable, Sendable {
-        case local
-        case none
-    }
+    /// The exact driver requested by Compose. `nil` delegates selection to the
+    /// runtime default and remains distinct from an explicitly named driver.
+    public var driver: String?
 
-    public var storage: Storage
-    public var maxSizeInBytes: UInt64?
-    public var maxFileCount: Int?
+    /// The complete compose-go-normalised option map. Driver-specific parsing
+    /// and default resolution belong to the runtime authority.
+    public var options: [String: String]
 
     public static let standard = ComposeLogConfiguration()
 
@@ -187,14 +186,64 @@ public struct ComposeLogConfiguration: Codable, Equatable, Sendable {
     }
 
     public init(
-        storage: Storage = .local,
-        maxSizeInBytes: UInt64? = nil,
-        maxFileCount: Int? = nil,
+        driver: String? = nil,
+        options: [String: String] = [:],
     ) {
-        self.storage = storage
-        self.maxSizeInBytes = maxSizeInBytes
-        self.maxFileCount = maxFileCount
+        self.driver = driver
+        self.options = options
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case driver
+        case options
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        driver = try container.decodeIfPresent(String.self, forKey: .driver)
+        options = try container.decodeIfPresent([String: String].self, forKey: .options) ?? [:]
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(driver, forKey: .driver)
+        if !options.isEmpty {
+            try container.encode(options, forKey: .options)
+        }
+    }
+}
+
+/// Create command selected after Compose has completed service planning.
+public enum ComposeRuntimeContainerLaunchCommand: String, Equatable, Sendable {
+    case create
+    case run
+}
+
+/// In-process create/run request for a negotiated Container authority.
+///
+/// `arguments` contains the non-logging Container command arguments. Logging
+/// travels as a separate typed value so protected provider options never enter
+/// a child-process argument vector.
+public struct ComposeRuntimeContainerLaunchRequest: Equatable, Sendable {
+    public var command: ComposeRuntimeContainerLaunchCommand
+    public var arguments: [String]
+    public var logging: ComposeLogConfiguration
+
+    public init(
+        command: ComposeRuntimeContainerLaunchCommand,
+        arguments: [String],
+        logging: ComposeLogConfiguration,
+    ) {
+        self.command = command
+        self.arguments = arguments
+        self.logging = logging
+    }
+}
+
+/// Authority-backed container creation without a child `container` process.
+public protocol ComposeRuntimeContainerLaunching: Sendable {
+    /// Creates or runs one container and returns its process status.
+    func launchContainer(_ request: ComposeRuntimeContainerLaunchRequest) async throws -> Int32
 }
 
 /// Runtime healthcheck projected from Compose or inherited image metadata.

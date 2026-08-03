@@ -196,6 +196,56 @@ struct ContainerPackageCompatibilityTests {
         == nil)
   }
 
+  @Test("compatible preflight publishes optional runtime capabilities")
+  func compatiblePreflightPublishesOptionalRuntimeCapabilities() async throws {
+    let optionalCapability = ComposeRuntimeCapabilities.loggingDriversV1Identifier
+    #expect(optionalCapability == ComposeOptionalRuntimeCapability.loggingDrivers.rawValue)
+    let data = Data(
+      matchingSystemVersionJSON.replacingOccurrences(
+        of: "\"io.github.stephenlclarke.container.compose.observation.v1\"",
+        with: "\"io.github.stephenlclarke.container.compose.observation.v1\", \"\(optionalCapability)\""
+      ).utf8)
+    let selection = InstalledRuntimeCapabilities()
+
+    let failure = try await ContainerPackageCompatibility.compatibilityFailure(
+      arguments: ["up"],
+      lane: "main",
+      expectedContainerRef: "matched-container",
+      expectedContainerizationRef: "matched-containerization",
+      onCompatibleRuntime: { selection.replace(with: $0) },
+      run: { arguments in
+        if arguments == ["system", "version", "--format", "json"] {
+          return data
+        }
+        return Data()
+      }
+    )
+
+    #expect(failure == nil)
+    #expect(selection.snapshot().supportsLoggingDriversV1)
+    #expect(selection.snapshot().identifiers.contains(optionalCapability))
+  }
+
+  @Test("failed preflight does not publish optional runtime capabilities")
+  func failedPreflightDoesNotPublishOptionalRuntimeCapabilities() async throws {
+    let selection = InstalledRuntimeCapabilities()
+
+    let failure = try await ContainerPackageCompatibility.compatibilityFailure(
+      arguments: ["up"],
+      lane: "main",
+      onCompatibleRuntime: { selection.replace(with: $0) },
+      run: { arguments in
+        if arguments == ["system", "version", "--format", "json"] {
+          return Data(appleSystemVersionJSON.utf8)
+        }
+        return Data()
+      }
+    )
+
+    #expect(failure != nil)
+    #expect(selection.snapshot().identifiers.isEmpty)
+  }
+
   @Test("mismatched package pins report install guidance")
   func mismatchedPackagePinsReportInstallGuidance() throws {
     let components = [

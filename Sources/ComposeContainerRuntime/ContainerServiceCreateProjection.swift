@@ -18,6 +18,18 @@ import ComposeCore
 import ComposeRuntimeSPI
 import ContainerizationOCI
 import ContainerResource
+import Foundation
+
+/// Failures produced by the temporary v1 Container logging projection.
+///
+/// The lossless Compose request remains intact; these errors disappear when
+/// the negotiated Container logging-v2 request is available.
+public enum ContainerServiceCreateProjectionError: Error, Equatable, Sendable {
+    case unsupportedLoggingDriver(String)
+    case unsupportedLoggingOption(String)
+    case invalidLoggingOption(key: String, value: String)
+    case loggingOptionsDisabled
+}
 
 /// Apple runtime DTOs projected from a runtime-neutral Compose create plan.
 public struct ContainerServiceCreateRuntimeProjection {
@@ -35,9 +47,9 @@ public struct ContainerServiceCreateRuntimeProjection {
     public var memoryReservationInBytes: Int64?
     public var memorySwapLimitInBytes: Int64?
 
-    public init(_ plan: ContainerServiceCreatePlan) {
+    public init(_ plan: ContainerServiceCreatePlan) throws {
         initProcess = plan.initProcess.containerProcessConfiguration
-        logging = plan.logging.containerLogConfiguration
+        logging = try plan.logging.containerV1LogConfiguration
         healthCheck = plan.healthCheck?.containerHealthCheck
         restartPolicy = plan.restartPolicy.containerRestartPolicy
         hostname = plan.hostname
@@ -55,7 +67,9 @@ public struct ContainerServiceCreateRuntimeProjection {
 public extension ContainerServiceCreatePlan {
     /// Translates the Compose-owned create plan into Apple runtime DTOs.
     var containerRuntimeProjection: ContainerServiceCreateRuntimeProjection {
-        ContainerServiceCreateRuntimeProjection(self)
+        get throws {
+            try ContainerServiceCreateRuntimeProjection(self)
+        }
     }
 }
 
@@ -93,13 +107,73 @@ private extension ComposeProcessConfiguration.User {
 }
 
 public extension ComposeLogConfiguration {
-    /// Translates the runtime-neutral logging policy to apple/container.
-    var containerLogConfiguration: ContainerLogConfiguration {
-        ContainerLogConfiguration(
-            storage: storage == .local ? .local : .none,
-            maxSizeInBytes: maxSizeInBytes,
-            maxFileCount: maxFileCount,
-        )
+    /// Down-converts the lossless request only for the capabilities available
+    /// in Container's v1 logging contract.
+    var containerV1LogConfiguration: ContainerLogConfiguration {
+        get throws {
+            let storage: ContainerLogConfiguration.Storage
+            switch driver {
+            case nil, "", "json-file", "local":
+                storage = .local
+            case "none":
+                guard options.isEmpty else {
+                    throw ContainerServiceCreateProjectionError.loggingOptionsDisabled
+                }
+                storage = .none
+            case let driver?:
+                throw ContainerServiceCreateProjectionError.unsupportedLoggingDriver(driver)
+            }
+
+            var maxSizeInBytes: UInt64?
+            var maxFileCount: Int?
+            for (key, value) in options {
+                switch key {
+                case "max-size":
+                    guard let parsed = Self.v1LogSizeInBytes(value) else {
+                        throw ContainerServiceCreateProjectionError.invalidLoggingOption(key: key, value: value)
+                    }
+                    maxSizeInBytes = parsed
+                case "max-file":
+                    guard let parsed = Int(value), parsed > 0 else {
+                        throw ContainerServiceCreateProjectionError.invalidLoggingOption(key: key, value: value)
+                    }
+                    maxFileCount = parsed
+                default:
+                    throw ContainerServiceCreateProjectionError.unsupportedLoggingOption(key)
+                }
+            }
+            return ContainerLogConfiguration(
+                storage: storage,
+                maxSizeInBytes: maxSizeInBytes,
+                maxFileCount: maxFileCount,
+            )
+        }
+    }
+
+    private static func v1LogSizeInBytes(_ input: String) -> UInt64? {
+        let value = input.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !value.isEmpty else {
+            return nil
+        }
+        let unitIndex = value.firstIndex { !$0.isNumber && $0 != "." }
+        let numberText = unitIndex.map { value[..<$0].trimmingCharacters(in: .whitespaces) } ?? value
+        let unitText = unitIndex.map { value[$0...].trimmingCharacters(in: .whitespaces) } ?? ""
+        guard let number = Double(numberText), number.isFinite, number > 0 else {
+            return nil
+        }
+        let unit = unitText.first ?? "b"
+        guard let exponent = "bkmgtp".firstIndex(of: unit).map({ "bkmgtp".distance(from: "bkmgtp".startIndex, to: $0) }) else {
+            return nil
+        }
+        let suffix = String(unitText.dropFirst())
+        guard suffix.isEmpty || suffix == "b" || suffix == "ib" else {
+            return nil
+        }
+        let bytes = number * pow(1024, Double(exponent))
+        guard bytes.isFinite, bytes <= Double(UInt64.max) else {
+            return nil
+        }
+        return UInt64(bytes)
     }
 }
 

@@ -341,17 +341,21 @@ extension ComposeOrchestrator {
     func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [ComposeRuntimeUnsupportedField] {
         var fields: [ComposeRuntimeUnsupportedField] = []
         let loggingReason = "service logging driver/options need an apple/container runtime gap PR"
-        if !isSupportedRuntimeLogging(service.logging) {
+        if !options.runtimeCapabilities.supportsLoggingDriversV1,
+           !isSupportedRuntimeLogging(service.logging)
+        {
             fields.append(.init(composeName: "logging", reason: loggingReason))
         }
-        if let logDriver = service.logDriver,
-           !logDriver.isEmpty,
-           !isSupportedRuntimeLogDriver(logDriver)
-        {
-            fields.append(.init(composeName: "log_driver", reason: loggingReason))
-        }
-        if !isSupportedLegacyRuntimeLogOptions(service: service) {
-            fields.append(.init(composeName: "log_opt", reason: loggingReason))
+        if !options.runtimeCapabilities.supportsLoggingDriversV1, service.logging == nil {
+            if let logDriver = service.logDriver,
+               !logDriver.isEmpty,
+               !isSupportedRuntimeLogDriver(logDriver)
+            {
+                fields.append(.init(composeName: "log_driver", reason: loggingReason))
+            }
+            if !isSupportedLegacyRuntimeLogOptions(service: service) {
+                fields.append(.init(composeName: "log_opt", reason: loggingReason))
+            }
         }
         if let storageOptions = service.storageOptions, !storageOptions.isEmpty {
             fields.append(.init(
@@ -363,24 +367,12 @@ extension ComposeOrchestrator {
     }
 
     /// Returns whether Compose logging maps to an apple/container runtime log policy.
-    func isSupportedRuntimeLogging(_ logging: ComposeValue?) -> Bool {
+    func isSupportedRuntimeLogging(_ logging: ComposeLogConfiguration?) -> Bool {
         guard let logging else {
             return true
         }
-        switch logging {
-        case .null:
-            return true
-        case let .object(fields):
-            let knownKeys = Set(["driver", "options"])
-            guard fields.keys.allSatisfy({ knownKeys.contains($0) }) else {
-                return false
-            }
-            let driver = fields["driver"]?.stringValue
-            let options = fields["options"]
-            return isSupportedRuntimeLogDriver(driver) && isSupportedRuntimeLogOptions(options, driver: driver)
-        default:
-            return false
-        }
+        return isSupportedRuntimeLogDriver(logging.driver) &&
+            isSupportedRuntimeLogOptions(logging.options, driver: logging.driver)
     }
 
     /// Returns whether a logging driver can be represented by apple/container.
@@ -389,26 +381,14 @@ extension ComposeOrchestrator {
     }
 
     /// Returns whether Compose logging options map to local apple/container options.
-    func isSupportedRuntimeLogOptions(_ options: ComposeValue?, driver: String?) -> Bool {
-        guard let options else {
+    func isSupportedRuntimeLogOptions(_ options: [String: String], driver: String?) -> Bool {
+        if options.isEmpty {
             return true
         }
-        switch options {
-        case .null:
-            return true
-        case let .object(fields):
-            if fields.isEmpty {
-                return true
-            }
-            guard driver != "none" else {
-                return false
-            }
-            return fields.allSatisfy { key, value in
-                isSupportedRuntimeLogOptionKey(key) && value.stringValue != nil
-            }
-        default:
+        guard driver != "none" else {
             return false
         }
+        return options.keys.allSatisfy(isSupportedRuntimeLogOptionKey)
     }
 
     /// Returns whether legacy Compose log options map to local apple/container options.
@@ -429,77 +409,76 @@ extension ComposeOrchestrator {
 
     /// Returns the Compose-owned typed logging policy for service create/run.
     func runtimeLogConfiguration(service: ComposeService) throws -> ComposeLogConfiguration {
-        let driver = runtimeLogDriver(service: service)
-        var configuration: ComposeLogConfiguration
-        switch driver {
-        case nil, "", "json-file", "local":
-            configuration = .standard
-        case "none":
-            configuration = ComposeLogConfiguration(storage: .none)
-        case let driver?:
-            throw ComposeError.unsupported("service '\(service.name)' uses unsupported logging driver '\(driver)'; supported drivers are json-file, local, and none")
-        }
-
-        let options = runtimeLogOptions(service: service)
-        guard options.isEmpty else {
-            guard configuration.storage == .local else {
-                let driverName = driver ?? "local"
-                throw ComposeError.unsupported("service '\(service.name)' uses logging options with driver '\(driverName)'; log options are only supported with local logging")
-            }
-            for (key, value) in options {
-                switch key {
-                case "max-size":
-                    configuration.maxSizeInBytes = try logOptionSizeInBytes(value, serviceName: service.name)
-                case "max-file":
-                    configuration.maxFileCount = try logOptionFileCount(value, serviceName: service.name)
-                default:
-                    throw ComposeError.unsupported("service '\(service.name)' uses unsupported logging option '\(key)'; supported options are max-size and max-file")
-                }
-            }
-            return configuration
-        }
-
-        return configuration
+        ComposeLogConfiguration(
+            driver: runtimeLogDriver(service: service),
+            options: runtimeLogOptions(service: service),
+        )
     }
 
     /// Returns the runtime log driver name from Compose's legacy and structured fields.
     func runtimeLogDriver(service: ComposeService) -> String? {
-        if case let .object(fields)? = service.logging,
-           let driver = fields["driver"]?.stringValue
-        {
-            return driver
+        if let logging = service.logging {
+            return logging.driver
         }
         return service.logDriver
     }
 
     /// Returns normalized local logging options from Compose's legacy and structured fields.
     func runtimeLogOptions(service: ComposeService) -> [String: String] {
-        var options: [String: String] = [:]
-        if case let .object(fields)? = service.logging,
-           case let .object(logOptions)? = fields["options"]
-        {
-            for (key, value) in logOptions {
-                if let stringValue = value.stringValue {
-                    options[key] = stringValue
-                }
-            }
+        if let logging = service.logging {
+            return logging.options
         }
-        for (key, value) in service.logOptions ?? [:] {
-            options[key] = value
-        }
-        return options
+        return service.logOptions ?? [:]
     }
 
     /// Returns the runtime log driver override needed for non-default Compose logging.
     func runtimeLogDriverArgument(service: ComposeService) throws -> String? {
-        try runtimeLogConfiguration(service: service).storage == .none ? "none" : nil
+        let configuration = try runtimeLogConfiguration(service: service)
+        if options.runtimeCapabilities.supportsLoggingDriversV1 {
+            return configuration.driver
+        }
+        try validateLegacyRuntimeLogConfiguration(configuration, serviceName: service.name)
+        return configuration.driver == "none" ? "none" : nil
     }
 
-    /// Returns local apple/container logging options for service create/run.
+    /// Returns lossless negotiated options or the legacy local-only projection.
     func runtimeLogOptionArguments(service: ComposeService) throws -> [String] {
-        _ = try runtimeLogConfiguration(service: service)
-        return runtimeLogOptions(service: service).sorted(by: { $0.key < $1.key }).flatMap { key, value in
+        let configuration = try runtimeLogConfiguration(service: service)
+        if !options.runtimeCapabilities.supportsLoggingDriversV1 {
+            try validateLegacyRuntimeLogConfiguration(configuration, serviceName: service.name)
+        }
+        return configuration.options.sorted(by: { $0.key < $1.key }).flatMap { key, value in
             ["--log-opt", "\(key)=\(value)"]
+        }
+    }
+
+    /// Validates the temporary v1 CLI projection without changing the
+    /// lossless request carried by the Compose plan.
+    func validateLegacyRuntimeLogConfiguration(
+        _ configuration: ComposeLogConfiguration,
+        serviceName: String,
+    ) throws {
+        switch configuration.driver {
+        case nil, "", "json-file", "local":
+            break
+        case "none":
+            guard configuration.options.isEmpty else {
+                throw ComposeError.unsupported("service '\(serviceName)' uses logging options with driver 'none'; log options are only supported with local logging")
+            }
+            return
+        case let driver?:
+            throw ComposeError.unsupported("service '\(serviceName)' uses unsupported logging driver '\(driver)'; supported drivers are json-file, local, and none")
+        }
+
+        for (key, value) in configuration.options {
+            switch key {
+            case "max-size":
+                _ = try logOptionSizeInBytes(value, serviceName: serviceName)
+            case "max-file":
+                _ = try logOptionFileCount(value, serviceName: serviceName)
+            default:
+                throw ComposeError.unsupported("service '\(serviceName)' uses unsupported logging option '\(key)'; supported options are max-size and max-file")
+            }
         }
     }
 
