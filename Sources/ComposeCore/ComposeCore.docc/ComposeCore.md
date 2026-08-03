@@ -7,8 +7,6 @@
 
 Parse, normalize, and execute Compose projects with the `container` runtime.
 
-@Image(source: "container-compose-docc-card.png", alt: "The container-compose DocC illustration: a light-blue octopus beside a frosted three-row container service panel.")
-
 ## Overview
 
 `ComposeCore` is the reusable Swift library behind the `compose` container plugin. It models Compose configuration, prepares runtime-neutral service execution plans, and orchestrates them through `ComposeRuntimeSPI` providers. The plugin supplies the [`container`](https://github.com/apple/container)-backed provider.
