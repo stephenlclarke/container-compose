@@ -8,9 +8,9 @@ links to an immutable Git snapshot.
 
 Last verified: 2026-08-03
 
-Entries: 367. Document snapshots: 636. Current supporting documents: 26.
+Entries: 368. Document snapshots: 638. Current supporting documents: 28.
 
-States: `active-draft` 1, `archived` 305, `closed` 9, `merged` 10, `submitted` 4, `tracked-upstream` 15, `unsubmitted` 23.
+States: `active-draft` 2, `archived` 305, `closed` 9, `merged` 10, `submitted` 4, `tracked-upstream` 15, `unsubmitted` 23.
 
 | Owner | Capability or pull request | State | Referenced commits | Documents |
 | --- | --- | --- | --- | --- |
@@ -199,6 +199,7 @@ States: `active-draft` 1, `archived` 305, `closed` 9, `merged` 10, `submitted` 4
 | `stephenlclarke/container-compose` | Add reproducible local CodeQL analysis and exact SARIF upload | `archived` | `060aa99666b5`, `243b4f4ebe30` | [Issue details](container-compose/ISSUE-181.md); [PR details](container-compose/PR-181.md) |
 | `stephenlclarke/container-compose` | Require exact-head-reviewed PR-only Compose promotion | `archived` | `528756ba791f`, `f62c3eac2f5d` | [Issue details](container-compose/ISSUE-182.md); [PR details](container-compose/PR-182.md) |
 | `stephenlclarke/container-compose` | [Make parity programme progress exact-head verifiable](https://github.com/stephenlclarke/container-compose/pull/183) | `merged` | None recorded | [Issue details](container-compose/ISSUE-183.md); [PR details](container-compose/PR-183.md) |
+| `stephenlclarke/container-compose` | Keep public main independent of unpublished Container revisions | `active-draft` | None recorded | [Issue details](container-compose/ISSUE-191.md); [PR details](container-compose/PR-191.md) |
 | `stephenlclarke/container-compose` | Isolate deterministic anonymous volume identities | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-anonymous-volume-identity.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-anonymous-volume-identity.md) |
 | `stephenlclarke/container-compose` | Support bind create_host_path policy | `archived` | `12c6ed0b8a1e` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-create-host-path.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-create-host-path.md) |
 | `stephenlclarke/container-compose` | Support bind propagation mount options | `archived` | `5fbe9f0937d8` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-propagation.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-propagation.md) |

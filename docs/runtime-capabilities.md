@@ -60,6 +60,7 @@ operation.
    preflight tests, full repository CI, and the live release gate.
 5. Record the capability's upstream disposition and remove it only after an
    Apple-native equivalent is merged, consumed, and parity-tested.
+
 ## Logging Capability
 
 `io.github.stephenlclarke.container.logging-drivers.v1` requires the typed
@@ -67,18 +68,21 @@ logging create request, authority-owned protected options, native and remote
 provider lifecycle, canonical reads, dual cache, and exact-process foreground
 attachment in the
 [Docker logging-driver design](docker-logging-driver-semantics-design.md).
-It is present in the required manifest because the matched Container authority
-now implements lossless requested/resolved state, defaults, distinct built-in
-drivers, delivery/cache/read semantics, generation-fenced provider lifecycle,
-and independent foreground attachment. The identifier describes that typed
-authority contract; individual provider availability remains discoverable and
-validated separately.
+It is deliberately absent from the public required manifest. The active public
+build is pinned to the published Container baseline at
+`6c3f7d3701cf9400855849fa0e29dd75d7b9c45d`, which does not expose this
+contract. The complete Compose-side negotiation and projection are preserved at
+signed checkpoint `d6361aab6ef636246709f452b5483b54493a9764`, and the matching
+Container authority implementation is preserved locally at signed commit
+`2a79b4553a342e33411666a88ad20ccd2ce46551`. They must not be re-enabled in a
+public manifest until hosted builds can fetch the matched Container revision.
 
 Compose config and hashing never require a runtime lookup. Runtime preflight
 retains optional and unknown installed identifiers separately from the mandatory
 manifest, and passes the immutable selection into runtime execution options only
 after stack compatibility and service readiness succeed. Commands that need
-advanced logging require this exact identifier before execution. Catalogue
+advanced logging on the preserved development stack require this exact
+identifier before execution. Catalogue
 discovery is diagnostic and never replaces authoritative create/start
 validation. AWS Logs and Google Cloud Logs are present on the matched Container
 head. The local journald provider contract, exact-generation shared-sandbox

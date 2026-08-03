@@ -6745,6 +6745,24 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/183"
     },
     {
+      "id": "container-compose-191",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Keep public main independent of unpublished Container revisions",
+      "state": "active-draft",
+      "lastVerified": "2026-08-03",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-191.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-191.md"
+        }
+      ]
+    },
+    {
       "id": "container-compose-upstream-maintenance-20260727",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: refresh upstreams and publish reviewed runtime corrections",

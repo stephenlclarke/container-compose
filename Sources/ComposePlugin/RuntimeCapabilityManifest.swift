@@ -23,7 +23,6 @@ enum ComposeRuntimeCapability: String, CaseIterable, Codable, Sendable {
     case lifecycle = "io.github.stephenlclarke.container.compose.lifecycle.v1"
     case networkScopedAliases = "io.github.stephenlclarke.container.compose.network-scoped-aliases.v1"
     case observation = "io.github.stephenlclarke.container.compose.observation.v1"
-    case loggingDrivers = "io.github.stephenlclarke.container.logging-drivers.v1"
 }
 
 /// The complete runtime contract required by this Compose binary.
