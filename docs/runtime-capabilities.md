@@ -73,14 +73,17 @@ optional capability negotiated only for services that request advanced logging.
 Published `origin/main` remains at reproducible Compose checkpoint
 `1f0f944b3d918a39ad97d1f12bb7b7c5ef6146a0` and published Container baseline
 `6c3f7d3701cf9400855849fa0e29dd75d7b9c45d`, which does not expose this
-contract. Signed local Compose `main` at
-`784aacaa26f2ad698460044a573adae30665628a` has the complete negotiation and
-typed projection active. Its manifest still names unpublished Container
+contract. Signed local Compose `main` through
+`9479e0aaba2bca3402d30fb7b77e21478e0455bd` has the complete negotiation,
+typed projection, and reconciled public-gateway evidence active. Its manifest
+still names unpublished Container
 checkpoint `2a79b4553a342e33411666a88ad20ccd2ce46551`; validation used the later
 signed local Container implementation
-`ac1803ec555960ce49fcec1d6a5b718d781629e0` and matched local
+`08677dc8b5a677533de80cf634fee1d14f4da069` and matched local
 Containerization head `864455bf1a104f0215b7c912a45800b0a0538973`. The matched
-suite passes 1,835 Swift Testing tests plus 94 XCTest tests, while the public
+scoped package suite passes 1,852 Swift Testing tests plus 94 XCTest tests,
+and 54 focused plugin/provider/authority tests plus macOS/Linux Go race suites
+at 70.2%/74.1% statement coverage pass. The public
 `77f06d4c44341e04241941072fb69e2b85a6f5c1` Containerization pin cannot compile
 the existing branch because it lacks the required sandbox/workload/network
 APIs. This local source must not be pushed until hosted builds can fetch a
@@ -105,6 +108,12 @@ service passes its readiness contract. This prevents Docker `/info` from
 materialising the journald sandbox. The signed local Container package installs
 and supervises Engine API 0.3.5 at `/tmp/container-engine-<uid>/docker.sock`;
 isolated `/_ping`, Docker CLI unversioned and `/v1.53/info`, and ordered cleanup
-pass. Release trust, coordinated dependency publication, and paired Docker
-certification remain; the production plugin plane is likewise not advertised
-until its isolated service exists.
+pass. The isolated Docker-plugin service verifies a closed
+digest-pinned installation, runs the plugin beside its authenticated lifecycle
+service in a read-only bounded shared-sandbox workload, persists replay-safe
+writer and reader claims, and exposes direct `ReadLogs` only after the exact
+generation is ready. Dynamic driver discovery therefore advertises an installed
+plugin only after manifest, asset, generation, and readiness checks succeed.
+Release trust, coordinated dependency publication, staged multi-generation
+activation/drain, whole-stack distributable-plugin certification, and paired
+Docker certification remain.
