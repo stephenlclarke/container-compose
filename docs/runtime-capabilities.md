@@ -79,11 +79,13 @@ typed projection, and reconciled public-gateway evidence active. Its manifest
 still names unpublished Container
 checkpoint `2a79b4553a342e33411666a88ad20ccd2ce46551`; validation used the later
 signed local Container implementation
-`08677dc8b5a677533de80cf634fee1d14f4da069` and matched local
+`70f976611bd5e39a9bfeb4965df7c073bbd789ad`, signed handoff
+`25eced9d673fde4104e8276456fc3e7b2709b0a2`, and matched local
 Containerization head `864455bf1a104f0215b7c912a45800b0a0538973`. The matched
-scoped package suite passes 1,852 Swift Testing tests plus 94 XCTest tests,
-and 54 focused plugin/provider/authority tests plus macOS/Linux Go race suites
-at 70.2%/74.1% statement coverage pass. The public
+scoped package suite passes 1,861 Swift Testing tests plus 94 XCTest tests, and
+the staged-generation gate passes 35 focused registry/provider/discovery/
+authority tests. macOS Go race/vet passes at 70.2% statement coverage; the
+preceding Linux/arm64 plugin-service race gate remains green at 74.1%. The public
 `77f06d4c44341e04241941072fb69e2b85a6f5c1` Containerization pin cannot compile
 the existing branch because it lacks the required sandbox/workload/network
 APIs. This local source must not be pushed until hosted builds can fetch a
@@ -114,6 +116,12 @@ service in a read-only bounded shared-sandbox workload, persists replay-safe
 writer and reader claims, and exposes direct `ReadLogs` only after the exact
 generation is ready. Dynamic driver discovery therefore advertises an installed
 plugin only after manifest, asset, generation, and readiness checks succeed.
-Release trust, coordinated dependency publication, staged multi-generation
-activation/drain, whole-stack distributable-plugin certification, and paired
-Docker certification remain.
+Signed local Container `70f976611bd5e39a9bfeb4965df7c073bbd789ad`
+now permits distinct generations of one provider, persists immutable
+staged/active/draining state, publishes one active generation, retains exact
+draining-generation routing, rolls back failed/unhealthy activation, and
+recovers after restart without provider lifecycle effects. Reference-aware N
+quiescence, durable configuration/history migration, terminal proof before
+alias cutover, final N reclamation, release trust, coordinated dependency
+publication, whole-stack distributable-plugin certification, and paired Docker
+certification remain.
