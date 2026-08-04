@@ -53,7 +53,7 @@ discussion.
 
 ## Maintainer Development Cycle
 
-The [Container-family parity development cycle](docs/container-family-development-cycle.md) is the detailed cross-repository process for oracle-first vertical slices, proportionate local validation, full review convergence, self-hosted MBP jobs, main checkpoints, quality analysis, upstream surveillance, and cleanup. This document remains authoritative for general contribution, commit, pull-request, and worktree rules.
+The [Container-family parity development cycle](docs/container-family-development-cycle.md) is the detailed cross-repository process for oracle-first vertical slices, one coherent critical-path implementation stream, focused feedback during development, one immutable full-gate checkpoint, full review convergence, self-hosted MBP jobs, main checkpoints, quality analysis, upstream surveillance, and transactional cleanup. This document remains authoritative for general contribution, commit, pull-request, and worktree rules.
 
 When a parity slice changes a registered design state or its evidence, update
 `docs/parity/PROGRAMME-PROGRESS.json`, run

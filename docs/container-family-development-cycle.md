@@ -12,7 +12,7 @@
 
 The parity programme is delivered as a sequence of small, reviewable vertical slices across the Container family. A slice begins with a pinned Docker oracle and ends only when the same behaviour, identity, lifecycle, events, errors, cleanup, security boundaries, and performance are proved through every affected client and runtime layer.
 
-Work is local-first. Focused tests provide fast feedback while a change is being shaped; broader regression, fault, security, migration, and performance gates run at coherent checkpoints rather than after every edit. Long-running validation executes from an immutable verification worktree so independent useful work can continue without invalidating the result.
+Work is local-first. Focused tests provide fast feedback while a change is being shaped; broader regression, fault, security, migration, and performance gates run once at coherent checkpoints rather than after every edit. Long-running validation executes from an immutable verification worktree so independent useful work can continue without invalidating the result.
 
 Every completed slice receives a full final review. Findings are fixed, the affected focused tests are rerun, and the complete slice is reviewed again. The review loop ends only when a full pass finds no new actionable issue, all earlier findings and `@codex` queries have explicit resolutions, and the applicable slice gates pass.
 
@@ -37,6 +37,23 @@ The dependency waves in the [coherent architecture](coherent-container-family-pa
 | 9. Integrated gates | Run complete fault, security, migration, rollback, compatibility, and performance matrices. | The matched published stack satisfies the integrated definition of done. |
 
 Cycles 0 to 3 are dependency-ordered. After the shared contracts freeze, independent parts of cycles 4 to 6 may proceed concurrently. Parallel work must not create competing definitions of identity, capabilities, leases, events, providers, or runtime topology.
+
+## Critical-Path Execution Contract
+
+A goal is implemented as one coherent critical-path stream until its user-visible vertical contract is complete or a concrete external dependency prevents further useful local work. Work-package identifiers partition design and evidence; they do not require separate implementation pauses, full regression runs, documentation passes, branches, pull requests, or releases. In particular, an unfinished cross-stack contract must not be split into small administrative slices merely to produce green intermediate checkpoints.
+
+The following rules are mandatory:
+
+1. Keep one active implementation stream for the selected contract. Finish its lower-runtime behavior, authority transaction, client projection, recovery, and focused tests before moving to unrelated parity work.
+2. During implementation, run only the narrow deterministic tests needed to shape the current code and prove the directly affected boundary. Batch related edits before running a component test.
+3. Run repository-wide, matched-stack, security, migration, and performance gates once against the immutable completed slice head. Repeat a broad gate only when a subsequent maintained-source, generated-output, dependency, or runtime-fingerprint change invalidates that evidence.
+4. Reconcile programme-wide status, capability tables, handoffs, exact heads, issue comments, and release records at the coherent checkpoint. Do not interrupt active implementation for repeated prose-only refreshes that cannot change a support claim.
+5. Treat repository hygiene as part of each Git transaction. A necessary issue, branch, pull request, or linked worktree is created with its owner and terminal condition already known, and it is commented, closed or retained with evidence, and cleaned up in the same close-out transaction. Do not defer a pile of branch, pull-request, issue, or filesystem cleanup to a later maintenance cycle.
+6. Prefer `main` for authorised Stephen-owned integration work where review policy permits it. Use a topic branch only for an active review or isolated upstream handoff; Apple-bound work uses an `upstream/` prefix and remains local until the programme-wide publication boundary.
+7. Report progress against the active contract and its remaining critical path. The generated programme-wide state count remains the authoritative completeness ledger, but it is not a substitute for explaining which concrete behavior changed during the current implementation stream.
+8. If two consecutive work periods produce only repeated validation, documentation, or hygiene activity with no implementation or blocker-evidence delta, stop that loop, identify why the current approach is not advancing the contract, and change the execution plan before doing more of the same.
+
+These rules do not weaken the exit criteria. They move expensive proof to the point where it can establish completion once, while preserving focused failure feedback during development.
 
 ## Vertical Slice Contract
 
