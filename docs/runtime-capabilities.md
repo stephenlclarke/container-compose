@@ -78,9 +78,13 @@ contract. Signed local Compose `main` at
 typed projection active. Its manifest still names unpublished Container
 checkpoint `2a79b4553a342e33411666a88ad20ccd2ce46551`; validation used the later
 signed local Container implementation
-`6a668b2b5d42246efcad3316374f6d0e0d2eaf14` and matched local Containerization
-head `864455bf1a104f0215b7c912a45800b0a0538973`. This local source must not be
-pushed until hosted builds can fetch a coordinated matched Container revision.
+`ac1803ec555960ce49fcec1d6a5b718d781629e0` and matched local
+Containerization head `864455bf1a104f0215b7c912a45800b0a0538973`. The matched
+suite passes 1,835 Swift Testing tests plus 94 XCTest tests, while the public
+`77f06d4c44341e04241941072fb69e2b85a6f5c1` Containerization pin cannot compile
+the existing branch because it lacks the required sandbox/workload/network
+APIs. This local source must not be pushed until hosted builds can fetch a
+coordinated matched Container revision.
 
 Compose config and hashing never require a runtime lookup. Runtime preflight
 retains optional and unknown installed identifiers separately from the mandatory
@@ -95,7 +99,12 @@ service transport, bounded reconnect-safe client/server wire, restart-safe
 writer/reader state, verified Linux/arm64 AF_VSOCK workload, concrete systemd
 append/query adapter, protected materialisation, exact routing, readiness
 withdrawal, generation rollover, and terminal reclamation are implemented.
-Journald is catalog-visible only while that authority-owned service passes its
-readiness contract. Release trust, coordinated dependency publication, and
-paired Docker certification remain; the production plugin plane is likewise
-not advertised until its isolated service exists.
+Journald remains present in side-effect-free advertised discovery, while
+concrete create/start resolution admits it only when the authority-owned
+service passes its readiness contract. This prevents Docker `/info` from
+materialising the journald sandbox. The signed local Container package installs
+and supervises Engine API 0.3.5 at `/tmp/container-engine-<uid>/docker.sock`;
+isolated `/_ping`, Docker CLI unversioned and `/v1.53/info`, and ordered cleanup
+pass. Release trust, coordinated dependency publication, and paired Docker
+certification remain; the production plugin plane is likewise not advertised
+until its isolated service exists.
