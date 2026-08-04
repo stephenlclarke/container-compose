@@ -10,7 +10,7 @@
 
 ## Outcome
 
-The parity programme is delivered as a sequence of small, reviewable vertical slices across the Container family. A slice begins with a pinned Docker oracle and ends only when the same behaviour, identity, lifecycle, events, errors, cleanup, security boundaries, and performance are proved through every affected client and runtime layer.
+The parity programme is delivered as a sequence of substantial, reviewable vertical slices across the Container family. Each slice groups related functionality across the affected layers instead of treating individual fixes or administrative checkpoints as slices. A slice begins with a pinned Docker oracle and ends only when the same behaviour, identity, lifecycle, events, errors, cleanup, security boundaries, and performance are proved through every affected client and runtime layer.
 
 Work is local-first. Focused tests provide fast feedback while a change is being shaped; broader regression, fault, security, migration, and performance gates run once at coherent checkpoints rather than after every edit. Long-running validation executes from an immutable verification worktree so independent useful work can continue without invalidating the result.
 
@@ -44,9 +44,9 @@ A goal is implemented as one coherent critical-path stream until its user-visibl
 
 The following rules are mandatory:
 
-1. Keep one active implementation stream for the selected contract. Finish its lower-runtime behavior, authority transaction, client projection, recovery, and focused tests before moving to unrelated parity work.
-2. During implementation, run only the narrow deterministic tests needed to shape the current code and prove the directly affected boundary. Batch related edits before running a component test.
-3. Run repository-wide, matched-stack, security, migration, and performance gates once against the immutable completed slice head. Repeat a broad gate only when a subsequent maintained-source, generated-output, dependency, or runtime-fingerprint change invalidates that evidence.
+1. Keep one active implementation stream for the selected contract. A development slice is a substantial related vertical contract covering its lower-runtime behavior, authority transaction, client projection, recovery, and focused tests; a small fix, test rerun, documentation update, or hygiene action is not a separate slice.
+2. During implementation, run only the narrow deterministic unit or component tests needed to shape the current code and prove the directly affected boundary. Batch related edits before running a component test.
+3. Accumulate several related completed slices before running repository-wide, matched-stack, security, migration, and performance gates once against their immutable checkpoint head. Run a broad gate earlier only when a dependency boundary makes later implementation unsafe, and repeat it only when a subsequent maintained-source, generated-output, dependency, or runtime-fingerprint change invalidates that evidence.
 4. Reconcile programme-wide status, capability tables, handoffs, exact heads, issue comments, and release records at the coherent checkpoint. Do not interrupt active implementation for repeated prose-only refreshes that cannot change a support claim.
 5. Treat repository hygiene as part of each Git transaction. A necessary issue, branch, pull request, or linked worktree is created with its owner and terminal condition already known, and it is commented, closed or retained with evidence, and cleaned up in the same close-out transaction. Do not defer a pile of branch, pull-request, issue, or filesystem cleanup to a later maintenance cycle.
 6. Prefer `main` for authorised Stephen-owned integration work where review policy permits it. Use a topic branch only for an active review or isolated upstream handoff; Apple-bound work uses an `upstream/` prefix and remains local until the programme-wide publication boundary.
@@ -131,7 +131,7 @@ Each lower-layer change is independently tested and remains narrow enough to han
 
 Run the smallest deterministic test that can fail for the current edit. A parser change runs its parser tests; a lifecycle transition runs that transition and journal recovery tests; a provider fix runs its protocol fixture; a documentation change runs Markdown/link checks.
 
-When several related fixes affect the same component, make the coherent batch and run the component gate once. Do not run the full stack regression after each small edit merely because it exists.
+When several related fixes affect the same component, keep them in the same substantial development slice, make the coherent batch, and run the component gate once. Do not define every fix as its own slice, and do not run the full stack regression after each small edit merely because it exists.
 
 ### 6. Integrate across the actual boundary
 
@@ -175,8 +175,8 @@ Update `STATUS.md` only when the capability is genuinely available on the matche
 | 0. Edit feedback | Prove the line or local behaviour being changed. | Every meaningful edit or related edit batch. | One Swift test/filter, one Go package test, one parity script, Markdown lint for touched documents, `git diff --check`. |
 | 1. Component | Prove the changed package/controller and its immediate contracts. | Before sharing a local checkpoint or changing another layer. | `make check`, selected Swift suite, `make go-test`, provider fixtures, recovery tests. |
 | 2. Vertical slice | Prove the behaviour through affected repositories and clients. | When the slice first works and after review fixes affecting the contract. | Selected Docker parity target, runtime integration test, cross-client state/event comparison. |
-| 3. Repository | Detect unrelated regressions in each changed repository. | After a clean full-slice review and before merge; optionally earlier when risk warrants. | `make ci-fast` during development, `make ci` for the final repository checkpoint. |
-| 4. Matched stack | Prove exact pins and cross-repository compatibility. | End of a slice that changes shared contracts; wave checkpoint. | Stack consistency, runtime tests, selected/full parity, fault and migration matrix. |
+| 3. Repository | Detect unrelated regressions in each changed repository. | At the checkpoint after several related slices; earlier only when a dependency boundary makes continued implementation unsafe. | `make ci-fast` for an early dependency gate, `make ci` for the final repository checkpoint. |
+| 4. Matched stack | Prove exact pins and cross-repository compatibility. | Checkpoint after several related slices; wave checkpoint. | Stack consistency, runtime tests, selected/full parity, fault and migration matrix. |
 | 5. Release | Prove the publishable artefact and exact-head GitHub-recorded authorities. | Release candidate only. | Release gate, packaging/signing/notarisation, full parity/performance, SonarQube, CodeQL, install and rollback. |
 
 ### Test selection rules
