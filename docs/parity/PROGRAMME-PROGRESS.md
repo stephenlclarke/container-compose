@@ -8,8 +8,8 @@ Register generated: 2026-08-04.
 
 | State | Count |
 | --- | ---: |
-| not started | 96 |
-| in progress | 12 |
+| not started | 95 |
+| in progress | 13 |
 | blocked | 0 |
 | verified | 4 |
 
@@ -226,7 +226,7 @@ Default required repository heads: `stephenlclarke/container`, `stephenlclarke/c
 | [`LOGGING-WP-07`](../docker-logging-driver-semantics-design.md#logging-wp-07) | in progress | — | — |
 | [`LOGGING-WP-08`](../docker-logging-driver-semantics-design.md#logging-wp-08) | in progress | — | — |
 | [`LOGGING-WP-09`](../docker-logging-driver-semantics-design.md#logging-wp-09) | in progress | — | — |
-| [`LOGGING-WP-10`](../docker-logging-driver-semantics-design.md#logging-wp-10) | not started | — | — |
+| [`LOGGING-WP-10`](../docker-logging-driver-semantics-design.md#logging-wp-10) | in progress | — | — |
 | [`LOGGING-WP-11`](../docker-logging-driver-semantics-design.md#logging-wp-11) | in progress | — | — |
 
 ## Model Runner Services

@@ -408,9 +408,7 @@
       ],
       "repositoryRequirementOverrides": {},
       "items": {
-        "not started": [
-          "LOGGING-WP-10"
-        ],
+        "not started": [],
         "in progress": [
           "LOGGING-WP-01",
           "LOGGING-WP-02",
@@ -421,6 +419,7 @@
           "LOGGING-WP-07",
           "LOGGING-WP-08",
           "LOGGING-WP-09",
+          "LOGGING-WP-10",
           "LOGGING-WP-11"
         ],
         "blocked": [],
