@@ -1346,6 +1346,153 @@ struct DockerLoggingDriverOracleFixtureTests {
 
     @Test
     // swiftlint:disable:next function_body_length
+    func `pins GELF tag template metadata precedence and deferred validation`() throws {
+        let fixture = try Self.gelfMetadataFixture()
+
+        #expect(try integer(fixture, "schemaVersion") == 1)
+        #expect(
+            try string(fixture, "scope")
+                == "direct Docker Engine GELF metadata and tag validation contract",
+        )
+        #expect(try string(fixture, "metadata", "engineVersion") == "29.2.1")
+        #expect(try string(fixture, "metadata", "apiVersion") == "1.53")
+        #expect(try string(fixture, "metadata", "context") == "colima")
+        #expect(try string(fixture, "metadata", "image") == "alpine:3.20")
+        #expect(
+            try string(fixture, "timings", "gelfMetadata", "clock") == "time.monotonic",
+        )
+        #expect(
+            try double(fixture, path: ["timings", "gelfMetadata", "durationSeconds"]) > 0,
+        )
+        #expect(try boolean(fixture, "cleanup", "containersRemoved"))
+
+        let metadataPath = ["cases", "metadataPrecedenceAndTag"]
+        #expect(
+            try boolean(
+                fixture,
+                path: metadataPath + ["phase", "configurationAcceptedAtCreate"],
+            ),
+        )
+        #expect(
+            try boolean(
+                fixture,
+                path: metadataPath + ["phase", "connectionEstablishedAtStart"],
+            ),
+        )
+        #expect(
+            try integer(fixture, path: metadataPath + ["phase", "containerExitCode"]) == 0,
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Type"],
+            ) == "gelf",
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Config", "tag"],
+            ) == "{{.Name}}/{{.ID}}",
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Config", "env"],
+            ) == "shared,container_id",
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Config", "labels"],
+            ) == "team,shared",
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Config", "env-regex"],
+            ) == "^MATCH_",
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Config", "labels-regex"],
+            ) == "^com\\.",
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Config", "gelf-address"],
+            ) == "udp://<colima-oracle-receiver>",
+        )
+        #expect(
+            try boolean(fixture, path: metadataPath + ["cleanup", "receiverProcessRunning"])
+                == false,
+        )
+        let metadataResidue: [Any] = try value(
+            fixture,
+            path: metadataPath + ["cleanup", "vmPathsRemaining"],
+        )
+        #expect(metadataResidue.isEmpty)
+
+        let records: [[String: Any]] = try value(
+            fixture,
+            path: metadataPath + ["wire", "records"],
+        )
+        #expect(
+            try records.map { try string($0, "shortMessage") }
+                == ["stdout-ascii", "stderr-utf8-☃", "stdout-binary-�\u{0000}-end"],
+        )
+        #expect(try records.map { try integer($0, "level") } == [6, 3, 6])
+        for record in records {
+            let extras: [String: Any] = try value(record, "extras")
+            #expect(extras["_MATCH_ONE"] as? String == "matched")
+            #expect(extras["_com.example.role"] as? String == "frontend")
+            #expect(extras["_container_id"] as? String == "metadata-id")
+            #expect(extras["_shared"] as? String == "environment")
+            #expect(extras["_team"] as? String == "runtime")
+            #expect(extras["_tag"] as? String == "<container-name>/<container-id-short>")
+            #expect(extras["_ignored"] == nil)
+            #expect(try string(record, "timestampPrecision") == "at-most-milliseconds")
+        }
+
+        let rejections = [
+            ("tagMissingField", "can't evaluate field Missing"),
+            ("labelsRegexLookahead", "invalid or unsupported Perl syntax"),
+            ("envRegexSyntax", "missing closing )"),
+        ]
+        for (label, message) in rejections {
+            let path = ["cases", "startTimeInvalid", label]
+            #expect(try integer(fixture, path: path + ["create", "httpStatus"]) == 201)
+            #expect(try integer(fixture, path: path + ["start", "httpStatus"]) == 500)
+            #expect(
+                try boolean(
+                    fixture,
+                    path: path + ["phase", "configurationAcceptedAtCreate"],
+                ),
+            )
+            #expect(
+                try boolean(
+                    fixture,
+                    path: path + ["phase", "configurationRejectedAtStart"],
+                ),
+            )
+            #expect(
+                try boolean(fixture, path: path + ["phase", "containerRemainsCreated"]),
+            )
+            #expect(
+                try string(
+                    fixture,
+                    path: path + ["inspectAfterFailedStart", "state", "status"],
+                ) == "created",
+            )
+            #expect(
+                try string(fixture, path: path + ["start", "message"]).contains(message),
+            )
+        }
+    }
+
+    @Test
+    // swiftlint:disable:next function_body_length
     func `pins Compose foreground independence from historical readers`() throws {
         let fixture = try Self.fixture()
 
@@ -1490,6 +1637,24 @@ struct DockerLoggingDriverOracleFixtureTests {
         let data = try Data(contentsOf: url)
         guard let fixture = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw FixtureError.invalid("GELF configuration root is not a JSON object")
+        }
+        return fixture
+    }
+
+    private static func gelfMetadataFixture() throws -> [String: Any] {
+        guard
+            let url = Bundle.module.url(
+                forResource: "docker-engine-29.2.1-gelf-metadata",
+                withExtension: "json",
+            )
+        else {
+            throw FixtureError.missing(
+                "Fixtures/logging/docker-engine-29.2.1-gelf-metadata.json",
+            )
+        }
+        let data = try Data(contentsOf: url)
+        guard let fixture = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw FixtureError.invalid("GELF metadata root is not a JSON object")
         }
         return fixture
     }

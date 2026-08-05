@@ -1,0 +1,350 @@
+{
+  "cases": {
+    "metadataPrecedenceAndTag": {
+      "cleanup": {
+        "receiverProcessRunning": false,
+        "vmPathsRemaining": []
+      },
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "inspectAfterExit": {
+        "logConfig": {
+          "Config": {
+            "cache-disabled": "true",
+            "env": "shared,container_id",
+            "env-regex": "^MATCH_",
+            "gelf-address": "udp://<colima-oracle-receiver>",
+            "labels": "team,shared",
+            "labels-regex": "^com\\.",
+            "tag": "{{.Name}}/{{.ID}}"
+          },
+          "Type": "gelf"
+        },
+        "logPath": "",
+        "state": {
+          "error": "",
+          "status": "exited"
+        },
+        "tty": false
+      },
+      "phase": {
+        "configurationAcceptedAtCreate": true,
+        "connectionEstablishedAtStart": true,
+        "containerExitCode": 0
+      },
+      "wire": {
+        "framing": {
+          "compression": "gzip",
+          "datagramBoundariesAreMessageBoundaries": true,
+          "framing": "one gzip-compressed GELF JSON object per UDP datagram"
+        },
+        "jsonObjectFieldOrderNormalizedAway": true,
+        "records": [
+          {
+            "extras": {
+              "_MATCH_ONE": "matched",
+              "_com.example.role": "frontend",
+              "_command": "sh -c printf 'stdout-ascii\\n'; sleep 0.2; printf 'stderr-utf8-\\342\\230\\203\\n' >&2; sleep 0.2; printf 'stdout-binary-\\377\\000-end\\n'",
+              "_container_id": "metadata-id",
+              "_container_name": "<container-name>",
+              "_created": "<rfc3339-nano-utc>",
+              "_image_id": "<image-id>",
+              "_image_name": "alpine:3.20",
+              "_shared": "environment",
+              "_tag": "<container-name>/<container-id-short>",
+              "_team": "runtime"
+            },
+            "fieldNames": [
+              "_MATCH_ONE",
+              "_com.example.role",
+              "_command",
+              "_container_id",
+              "_container_name",
+              "_created",
+              "_image_id",
+              "_image_name",
+              "_shared",
+              "_tag",
+              "_team",
+              "host",
+              "level",
+              "short_message",
+              "timestamp",
+              "version"
+            ],
+            "host": "colima",
+            "level": 6,
+            "shortMessage": "stdout-ascii",
+            "timestamp": "<unix-seconds-milliseconds>",
+            "timestampPrecision": "at-most-milliseconds",
+            "version": "1.1"
+          },
+          {
+            "extras": {
+              "_MATCH_ONE": "matched",
+              "_com.example.role": "frontend",
+              "_command": "sh -c printf 'stdout-ascii\\n'; sleep 0.2; printf 'stderr-utf8-\\342\\230\\203\\n' >&2; sleep 0.2; printf 'stdout-binary-\\377\\000-end\\n'",
+              "_container_id": "metadata-id",
+              "_container_name": "<container-name>",
+              "_created": "<rfc3339-nano-utc>",
+              "_image_id": "<image-id>",
+              "_image_name": "alpine:3.20",
+              "_shared": "environment",
+              "_tag": "<container-name>/<container-id-short>",
+              "_team": "runtime"
+            },
+            "fieldNames": [
+              "_MATCH_ONE",
+              "_com.example.role",
+              "_command",
+              "_container_id",
+              "_container_name",
+              "_created",
+              "_image_id",
+              "_image_name",
+              "_shared",
+              "_tag",
+              "_team",
+              "host",
+              "level",
+              "short_message",
+              "timestamp",
+              "version"
+            ],
+            "host": "colima",
+            "level": 3,
+            "shortMessage": "stderr-utf8-\u2603",
+            "timestamp": "<unix-seconds-milliseconds>",
+            "timestampPrecision": "at-most-milliseconds",
+            "version": "1.1"
+          },
+          {
+            "extras": {
+              "_MATCH_ONE": "matched",
+              "_com.example.role": "frontend",
+              "_command": "sh -c printf 'stdout-ascii\\n'; sleep 0.2; printf 'stderr-utf8-\\342\\230\\203\\n' >&2; sleep 0.2; printf 'stdout-binary-\\377\\000-end\\n'",
+              "_container_id": "metadata-id",
+              "_container_name": "<container-name>",
+              "_created": "<rfc3339-nano-utc>",
+              "_image_id": "<image-id>",
+              "_image_name": "alpine:3.20",
+              "_shared": "environment",
+              "_tag": "<container-name>/<container-id-short>",
+              "_team": "runtime"
+            },
+            "fieldNames": [
+              "_MATCH_ONE",
+              "_com.example.role",
+              "_command",
+              "_container_id",
+              "_container_name",
+              "_created",
+              "_image_id",
+              "_image_name",
+              "_shared",
+              "_tag",
+              "_team",
+              "host",
+              "level",
+              "short_message",
+              "timestamp",
+              "version"
+            ],
+            "host": "colima",
+            "level": 6,
+            "shortMessage": "stdout-binary-\ufffd\u0000-end",
+            "timestamp": "<unix-seconds-milliseconds>",
+            "timestampPrecision": "at-most-milliseconds",
+            "version": "1.1"
+          }
+        ]
+      }
+    },
+    "startTimeInvalid": {
+      "envRegexSyntax": {
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterCreate": {
+          "logConfig": {
+            "Config": {
+              "env-regex": "(",
+              "gelf-address": "udp://127.0.0.1:1"
+            },
+            "Type": "gelf"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "created"
+          },
+          "tty": false
+        },
+        "inspectAfterFailedStart": {
+          "logConfig": {
+            "Config": {
+              "env-regex": "(",
+              "gelf-address": "udp://127.0.0.1:1"
+            },
+            "Type": "gelf"
+          },
+          "logPath": "",
+          "state": {
+            "error": "failed to create task for container: failed to initialize logging driver: error parsing regexp: missing closing ): `(`",
+            "status": "created"
+          },
+          "tty": false
+        },
+        "phase": {
+          "configurationAcceptedAtCreate": true,
+          "configurationRejectedAtStart": true,
+          "containerRemainsCreated": true
+        },
+        "start": {
+          "httpStatus": 500,
+          "message": "failed to create task for container: failed to initialize logging driver: error parsing regexp: missing closing ): `(`"
+        }
+      },
+      "labelsRegexLookahead": {
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterCreate": {
+          "logConfig": {
+            "Config": {
+              "gelf-address": "udp://127.0.0.1:1",
+              "labels-regex": "(?=secret)"
+            },
+            "Type": "gelf"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "created"
+          },
+          "tty": false
+        },
+        "inspectAfterFailedStart": {
+          "logConfig": {
+            "Config": {
+              "gelf-address": "udp://127.0.0.1:1",
+              "labels-regex": "(?=secret)"
+            },
+            "Type": "gelf"
+          },
+          "logPath": "",
+          "state": {
+            "error": "failed to create task for container: failed to initialize logging driver: error parsing regexp: invalid or unsupported Perl syntax: `(?=`",
+            "status": "created"
+          },
+          "tty": false
+        },
+        "phase": {
+          "configurationAcceptedAtCreate": true,
+          "configurationRejectedAtStart": true,
+          "containerRemainsCreated": true
+        },
+        "start": {
+          "httpStatus": 500,
+          "message": "failed to create task for container: failed to initialize logging driver: error parsing regexp: invalid or unsupported Perl syntax: `(?=`"
+        }
+      },
+      "tagMissingField": {
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterCreate": {
+          "logConfig": {
+            "Config": {
+              "gelf-address": "udp://127.0.0.1:1",
+              "tag": "{{.Missing}}"
+            },
+            "Type": "gelf"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "created"
+          },
+          "tty": false
+        },
+        "inspectAfterFailedStart": {
+          "logConfig": {
+            "Config": {
+              "gelf-address": "udp://127.0.0.1:1",
+              "tag": "{{.Missing}}"
+            },
+            "Type": "gelf"
+          },
+          "logPath": "",
+          "state": {
+            "error": "failed to create task for container: failed to initialize logging driver: template: log-tag:1:2: executing \"log-tag\" at <.Missing>: can't evaluate field Missing in type *logger.Info",
+            "status": "created"
+          },
+          "tty": false
+        },
+        "phase": {
+          "configurationAcceptedAtCreate": true,
+          "configurationRejectedAtStart": true,
+          "containerRemainsCreated": true
+        },
+        "start": {
+          "httpStatus": 500,
+          "message": "failed to create task for container: failed to initialize logging driver: template: log-tag:1:2: executing \"log-tag\" at <.Missing>: can't evaluate field Missing in type *logger.Info"
+        }
+      }
+    }
+  },
+  "cleanup": {
+    "containersRemoved": true
+  },
+  "metadata": {
+    "apiVersion": "1.53",
+    "architecture": "arm64",
+    "colimaVersion": "0.10.3",
+    "context": "colima",
+    "defaultLoggingDriver": "json-file",
+    "dockerClientVersion": "29.7.1",
+    "engineGitCommit": "6bc6209",
+    "engineGoVersion": "go1.25.6",
+    "engineKernelVersion": "6.8.0-100-generic",
+    "engineVersion": "29.2.1",
+    "hostArchitecture": "arm64",
+    "hostModel": "Mac17,9",
+    "image": "alpine:3.20",
+    "imageRepoDigests": [
+      "alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
+    ],
+    "macOSVersion": "26.5.2",
+    "minimumAPIVersion": "1.44",
+    "operatingSystem": "linux",
+    "registeredLoggingDrivers": [
+      "awslogs",
+      "fluentd",
+      "gcplogs",
+      "gelf",
+      "journald",
+      "json-file",
+      "local",
+      "splunk",
+      "syslog"
+    ]
+  },
+  "schemaVersion": 1,
+  "scope": "direct Docker Engine GELF metadata and tag validation contract",
+  "timings": {
+    "gelfMetadata": {
+      "clock": "time.monotonic",
+      "durationSeconds": 3.078461
+    }
+  }
+}

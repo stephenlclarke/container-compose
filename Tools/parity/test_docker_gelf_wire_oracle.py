@@ -15,7 +15,7 @@
 ## limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-"""Focused unit tests for Docker GELF wire and configuration normalizers."""
+"""Focused unit tests for Docker GELF wire, configuration, and metadata normalizers."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ ORACLE = importlib.util.module_from_spec(SPECIFICATION)
 SPECIFICATION.loader.exec_module(ORACLE)
 
 
-class GELFWireOracleTests(unittest.TestCase):
+class GELFOracleTests(unittest.TestCase):
     """Keep normalizer-only failures independent from a live Docker oracle."""
 
     container_id = "a" * 64
@@ -72,6 +72,38 @@ class GELFWireOracleTests(unittest.TestCase):
             self.record("stdout-ascii", 6),
             self.record("stderr-utf8-☃", 3),
             self.record("stdout-binary-�\x00-end", 6),
+        ]
+
+    def metadata_record(self, message: str, level: int) -> bytes:
+        """Build a Docker-shaped GELF object for selected metadata precedence."""
+
+        payload = {
+            "version": "1.1",
+            "host": "colima",
+            "short_message": message,
+            "timestamp": 1_785_957_109.812,
+            "level": level,
+            "_MATCH_ONE": "matched",
+            "_com.example.role": "frontend",
+            "_command": " ".join(ORACLE.REMOTE_LOG_COMMAND),
+            "_container_id": "metadata-id",
+            "_container_name": self.container_name.lstrip("/"),
+            "_created": "2026-08-05T19:11:49.727848561Z",
+            "_image_id": "sha256:" + "b" * 64,
+            "_image_name": "alpine:3.20",
+            "_shared": "environment",
+            "_tag": self.container_name.lstrip("/") + "/" + self.container_id[:12],
+            "_team": "runtime",
+        }
+        return json.dumps(payload, separators=(",", ":")).encode()
+
+    def metadata_records(self) -> list[bytes]:
+        """Return the selected-metadata sequence for the direct Docker oracle."""
+
+        return [
+            self.metadata_record("stdout-ascii", 6),
+            self.metadata_record("stderr-utf8-☃", 3),
+            self.metadata_record("stdout-binary-�\x00-end", 6),
         ]
 
     def test_udp_gzip_normalizes_each_datagram_without_hiding_semantics(self) -> None:
@@ -156,6 +188,49 @@ class GELFWireOracleTests(unittest.TestCase):
             ORACLE.normalize_gelf_wire(
                 {"peerClosed": True, "streamHex": self.records()[0].hex()},
                 mode="gelf-tcp",
+                container_id=self.container_id,
+                container_name=self.container_name,
+            )
+
+    def test_metadata_normalizer_pins_selected_values_and_builtin_override(self) -> None:
+        raw = {
+            "datagramsHex": [
+                gzip.compress(record, mtime=0).hex()
+                for record in self.metadata_records()
+            ],
+        }
+
+        normalized = ORACLE.normalize_gelf_metadata_wire(
+            raw,
+            mode="gelf-udp",
+            container_id=self.container_id,
+            container_name=self.container_name,
+        )
+
+        extras = normalized["records"][0]["extras"]
+        self.assertEqual(extras["_MATCH_ONE"], "matched")
+        self.assertEqual(extras["_com.example.role"], "frontend")
+        self.assertEqual(extras["_container_id"], "metadata-id")
+        self.assertEqual(extras["_shared"], "environment")
+        self.assertEqual(extras["_team"], "runtime")
+        self.assertEqual(
+            extras["_tag"],
+            "<container-name>/<container-id-short>",
+        )
+
+        invalid = json.loads(self.metadata_records()[0])
+        invalid["_shared"] = "label"
+        with self.assertRaises(ORACLE.OracleFailure):
+            ORACLE.normalize_gelf_metadata_wire(
+                {
+                    "datagramsHex": [
+                        gzip.compress(
+                            json.dumps(invalid, separators=(",", ":")).encode(),
+                            mtime=0,
+                        ).hex(),
+                    ],
+                },
+                mode="gelf-udp",
                 container_id=self.container_id,
                 container_name=self.container_name,
             )
