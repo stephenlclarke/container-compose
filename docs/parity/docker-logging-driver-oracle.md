@@ -73,6 +73,34 @@ That target defaults to `/tmp/container-engine-$(id -u)/docker.sock`; override `
 
 Signed local Engine API `c7973ac641fb6f6e07df1358114f36222bd9ca59` and Container `a10ad44d8675b27a665d72fbe054f12f403f8412` pass this semantic and <10× regression gate. The candidate improved from 4.359129 seconds before the peer-identity cache to 1.238173 seconds on the first post-start capture and 0.920554 seconds warm; the committed Docker reference is 0.184992 seconds. The remaining 6.69× cold and 4.98× warm ratios are retained as a comparable-performance gap rather than being hidden by the regression threshold.
 
+## Docker REST Logging CLI Gate
+
+The same Bash fixture drives the Docker CLI against the pinned Docker Engine
+and the isolated Container public socket:
+
+```sh
+make docker-rest-logging-parity \
+  CONTAINER_COMPOSE_CONTAINER=/path/to/exact/signed/container \
+  DOCKER_REST_LOGGING_CANDIDATE_SOCKET=/tmp/container-engine-$(id -u)/docker.sock
+```
+
+It proves create, start, inspect, static and followed non-TTY output, separate
+stdout/stderr selection, global tailing, history retention after a second
+start, graceful-stop output, the direct `none` reader error, cross-client
+native visibility, and exact deletion. The fixture uses a marker-protected
+temporary root, preloaded `docker.io/library/alpine:3.20`, unique container
+names, bounded polling, exact follower PIDs, and residue checks in both Docker
+and native Container views.
+
+The 5 August 2026 checkpoint uses Compose `eb9b43c0`, Container
+`267991f22171ce6e438703f68a12159c1c57839c`, Containerization
+`38d9c695e7a6915e5ce45d12c893dc323a661af7`, and Engine API
+`c7973ac641fb6f6e07df1358114f36222bd9ca59`. The first paired run found that
+the candidate exposed `json-file` `LogPath` while Docker still reported
+`created`; [Container issue 72](https://github.com/stephenlclarke/container/issues/72)
+tracks the fix. Docker and the rebuilt signed candidate pass the corrected
+create-empty, first-start-populated, and stopped-retained `LogPath` phases.
+
 ## Compose Signal and Log Reliability Gate
 
 The same-host Docker Compose 5.3.1/candidate CLI gate runs the committed [`signal-log-reliability`](../../Tools/parity/fixtures/signal-log-reliability/compose.yaml) project and Bash harness:
