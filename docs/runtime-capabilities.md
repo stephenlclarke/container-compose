@@ -91,6 +91,17 @@ the existing branch because it lacks the required sandbox/workload/network
 APIs. This local source must not be pushed until hosted builds can fetch a
 coordinated matched Container revision.
 
+The latest signed local checkpoint is Container
+`ac77f7a38819c4f96581220bb58d89107b51826a` with Engine API
+`9008251c444af483a60ff95efa4a9d745a444ed5` and
+`fe4094d0d7a2372ad586d177aea3f9b0e299ebcb`, plus devcontainer
+`63d2b4a122dfa0eb187ae82e48d14dc21b73c79e`. It adds typed public Docker
+create/start/stop/delete, durable stopped-state projection, protected-effect
+reconciliation, provider-root-scoped trust, and a protected read-only plugin
+root. The isolated MBP certificate passes two native lifecycle cycles and one
+public REST lifecycle with exact readable history; the focused plugin suite
+passes 10/10 under warnings-as-errors.
+
 Compose config and hashing never require a runtime lookup. Runtime preflight
 retains optional and unknown installed identifiers separately from the mandatory
 manifest, and passes the immutable selection into runtime execution options only
@@ -117,11 +128,11 @@ writer and reader claims, and exposes direct `ReadLogs` only after the exact
 generation is ready. Dynamic driver discovery therefore advertises an installed
 plugin only after manifest, asset, generation, and readiness checks succeed.
 Signed local Container `70f976611bd5e39a9bfeb4965df7c073bbd789ad`
-now permits distinct generations of one provider, persists immutable
+permits distinct generations of one provider, persists immutable
 staged/active/draining state, publishes one active generation, retains exact
 draining-generation routing, rolls back failed/unhealthy activation, and
-recovers after restart without provider lifecycle effects. Reference-aware N
-quiescence, durable configuration/history migration, terminal proof before
-alias cutover, final N reclamation, release trust, coordinated dependency
-publication, whole-stack distributable-plugin certification, and paired Docker
-certification remain.
+recovers after restart without provider lifecycle effects. Later signed heads
+complete reference-aware quiescence, durable configuration/history migration,
+terminal proof before alias cutover, final N reclamation, and distributable
+plugin certification. Release trust, coordinated dependency publication, and
+paired Docker certification remain.
