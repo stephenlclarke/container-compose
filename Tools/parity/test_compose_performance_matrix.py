@@ -1,21 +1,39 @@
 #!/usr/bin/env python3
-# Copyright 2026 container-compose project authors.
-# Licensed under the Apache License, Version 2.0.
+##===----------------------------------------------------------------------===##
+## Copyright © 2026 container-compose project authors.
+##
+## Licensed under the Apache License, Version 2.0 (the "License");
+## you may not use this file except in compliance with the License.
+## You may obtain a copy of the License at
+##
+##   https://www.apache.org/licenses/LICENSE-2.0
+##
+## Unless required by applicable law or agreed to in writing, software
+## distributed under the License is distributed on an "AS IS" BASIS,
+## WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+## See the License for the specific language governing permissions and
+## limitations under the License.
+##===----------------------------------------------------------------------===##
 
 """Focused tests for the Compose performance evidence harness."""
 
 from __future__ import annotations
 
 import csv
+import json
 import os
+import socket
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
 
 REPOSITORY = Path(__file__).parents[2]
 HARNESS = REPOSITORY / "Tools" / "parity" / "check-compose-performance-matrix.sh"
+SINK = REPOSITORY / "Tools" / "parity" / "logging_performance_sink.py"
 FIXTURES = [
     "startup-1-services",
     "teardown-1-services",
@@ -24,19 +42,81 @@ FIXTURES = [
     "startup-50-services",
     "teardown-50-services",
     "logging-startup-first-output",
+    "logging-startup-first-output-attached",
     "logging-throughput-stdout-small",
     "logging-throughput-stderr-small",
     "logging-throughput-mixed-small",
     "logging-throughput-stdout-16k",
     "logging-throughput-stdout-1m",
+    "logging-blocking-slow-sink",
+    "logging-nonblocking-64k",
+    "logging-nonblocking-1m",
+    "logging-nonblocking-4m",
+    "logging-write-json-compression",
+    "logging-write-local-rotation",
     "logging-read-tail-10",
     "logging-read-tail-1000",
     "logging-read-all",
+    "logging-read-since-until",
     "logging-follow-rotation",
+    "logging-dual-cache-delivery",
+    "logging-dual-cache-read",
     "logging-aggregate-1-services",
     "logging-aggregate-10-services",
     "logging-aggregate-50-services",
 ]
+
+
+class LoggingPerformanceSinkTests(unittest.TestCase):
+    def test_sink_retains_unique_markers_after_a_stall(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="logging-sink-test-") as directory:
+            root = Path(directory)
+            port_file = root / "port"
+            result_file = root / "result.json"
+            stop_file = root / "stop"
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    SINK,
+                    "--port-file",
+                    port_file,
+                    "--result-file",
+                    result_file,
+                    "--stop-file",
+                    stop_file,
+                    "--stall-seconds",
+                    "0.05",
+                    "--idle-timeout-seconds",
+                    "0.05",
+                ],
+                cwd=REPOSITORY,
+            )
+            try:
+                deadline = time.monotonic() + 5
+                while not port_file.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                port = int(port_file.read_text(encoding="utf-8"))
+                with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
+                    client.sendall(
+                        b"perf-record-000000\n"
+                        b"perf-record-000001\n"
+                        b"perf-record-000002\n"
+                    )
+                stop_file.touch()
+                process.wait(timeout=5)
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=5)
+
+            result = json.loads(result_file.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["connectionCount"], 1)
+        self.assertEqual(result["recordCount"], 3)
+        self.assertEqual(result["firstRecord"], 0)
+        self.assertEqual(result["lastRecord"], 2)
+        self.assertTrue(result["recordsAreOrdered"])
+        self.assertTrue(result["recordsAreUnique"])
 
 
 class PerformanceMatrixInventoryTests(unittest.TestCase):
@@ -50,6 +130,64 @@ class PerformanceMatrixInventoryTests(unittest.TestCase):
         )
 
         self.assertEqual(result.stdout.splitlines(), FIXTURES)
+
+
+class PerformanceMatrixCompletionMarkerTests(unittest.TestCase):
+    def test_completion_marker_times_workload_enqueue_not_process_teardown(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-marker-test-") as directory:
+            evidence = Path(directory)
+            timing = evidence / "timings.tsv"
+            marker = evidence / "complete"
+            with timing.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+                writer.writerow(
+                    [
+                        "fixture",
+                        "lane",
+                        "repetition",
+                        "schedule_position",
+                        "direction",
+                        "duration_seconds",
+                        "outcome",
+                        "command",
+                    ]
+                )
+            environment = dict(os.environ)
+            environment.update(
+                {
+                    "PARITY_EVIDENCE_DIR": str(evidence),
+                    "PARITY_TIMEOUT_SECONDS": "2",
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    (
+                        'source "$1"; run_to_completion_marker marker-test '
+                        'docker 1 1 "$2" python3 -c '
+                        "'import pathlib,sys,time; time.sleep(0.05); "
+                        "pathlib.Path(sys.argv[1]).touch()' \"$2\""
+                    ),
+                    "_",
+                    HARNESS,
+                    marker,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            with timing.open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["outcome"], "success")
+        self.assertGreaterEqual(float(rows[0]["duration_seconds"]), 0.04)
+        self.assertIn(f"until-file:{marker}", rows[0]["command"])
 
 
 class PerformanceMatrixEvidenceTests(unittest.TestCase):
