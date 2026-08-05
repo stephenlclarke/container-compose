@@ -52,6 +52,7 @@ The following rules are mandatory:
 6. Prefer `main` for authorised Stephen-owned integration work where review policy permits it. Use a topic branch only for an active review or isolated upstream handoff; Apple-bound work uses an `upstream/` prefix and remains local until the programme-wide publication boundary.
 7. Report progress against the active contract and its remaining critical path. The generated programme-wide state count remains the authoritative completeness ledger, but it is not a substitute for explaining which concrete behavior changed during the current implementation stream.
 8. If two consecutive work periods produce only repeated validation, documentation, or hygiene activity with no implementation or blocker-evidence delta, stop that loop, identify why the current approach is not advancing the contract, and change the execution plan before doing more of the same.
+9. Use one Slack-check workflow that reads new user messages in `#codex` every five minutes and again before each slice START or END update. Execute every unhandled authorised instruction and reply to that exact message with its concrete result; never report a Slack-originated request only as a separate channel post. It remains silent when there is no new instruction and must not repeat completed work.
 
 These rules do not weaken the exit criteria. They move expensive proof to the point where it can establish completion once, while preserving focused failure feedback during development.
 
