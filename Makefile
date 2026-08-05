@@ -244,7 +244,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: docker-compose-format-template-actions-parity
 .PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity
 .PHONY: docker-compose-up-exit-code-from-parity docker-compose-performance-matrix performance-matrix-harness-test signal-log-reliability-harness-test
-.PHONY: docker-terminal-session-oracle docker-terminal-session-oracle-update docker-terminal-session-candidate-oracle docker-rest-logging-oracle docker-rest-logging-candidate docker-rest-logging-parity docker-rest-discovery-oracle docker-rest-discovery-candidate docker-rest-discovery-parity docker-rest-image-discovery-oracle docker-rest-image-discovery-candidate docker-rest-image-discovery-parity
+.PHONY: docker-terminal-session-oracle docker-terminal-session-oracle-update docker-terminal-session-candidate-oracle docker-rest-logging-oracle docker-rest-logging-candidate docker-rest-logging-parity docker-rest-discovery-oracle docker-rest-discovery-candidate docker-rest-discovery-parity docker-rest-image-discovery-oracle docker-rest-image-discovery-candidate docker-rest-image-discovery-parity docker-rest-image-mutation-oracle docker-rest-image-mutation-candidate docker-rest-image-mutation-parity
 
 all: workflow
 
@@ -1348,6 +1348,16 @@ docker-rest-image-discovery-candidate:
 		--native-cli "$(CONTAINER_COMPOSE_CONTAINER)"
 
 docker-rest-image-discovery-parity: docker-rest-image-discovery-oracle docker-rest-image-discovery-candidate
+
+docker-rest-image-mutation-oracle:
+	./Tools/parity/check-docker-rest-image-mutation-contract.sh --strict --reference
+
+docker-rest-image-mutation-candidate:
+	./Tools/parity/check-docker-rest-image-mutation-contract.sh --strict \
+		--host "unix://$(DOCKER_REST_LOGGING_CANDIDATE_SOCKET)" \
+		--native-cli "$(CONTAINER_COMPOSE_CONTAINER)"
+
+docker-rest-image-mutation-parity: docker-rest-image-mutation-oracle docker-rest-image-mutation-candidate
 
 container-stack-build:
 	@if [[ -f "$(CONTAINER_STACK_REPO)/Makefile" ]]; then \
