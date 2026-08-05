@@ -2,12 +2,13 @@
 
 This file is the current Docker Compose v2 parity ledger for `container-compose`. Keep branch, release, build, and validation policy in [BUILD.md](BUILD.md), use the [Container-family parity development cycle](docs/container-family-development-cycle.md) for coherent implementation slices, keep installation guidance in [INSTALL.md](INSTALL.md), and retain the generated upstream registry plus current supporting records under `docs/upstream/`.
 
-Stable workflow, coherent-wave, residual-wave, and focused work-package state
-is generated from the shared
-[Container-family programme progress register](docs/parity/PROGRAMME-PROGRESS.md).
-That delivery record does not upgrade a parity marker by itself. Detailed
-STATUS/capability requirement projections remain a `CLOSURE-R0` prerequisite
-and support changes only when their pinned executable evidence is green.
+This is the single current programme status. It is intentionally gap-only:
+each partial or unsupported row says what is not yet 100% compatible, why it is
+not compatible, and what implementation or evidence must change before the gap
+can close. Completed delivery history and exact accepted heads live in the
+linked designs and handoff records rather than a duplicate progress register.
+No design checkbox or local implementation upgrades a support marker without
+the pinned executable evidence required by that row.
 
 ## Project Goal: macOS Docker Compose Parity and Performance
 

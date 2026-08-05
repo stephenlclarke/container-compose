@@ -422,73 +422,27 @@ capability manifests, test/performance instructions, migration/rollback notes,
 upstream handoffs, and release notes. An item that remains unchanged is recorded
 as reviewed with a reason; silence is not evidence that it is current.
 
-Each focused design uses stable requirement/work-package identifiers in the
-shared slice ledger and the machine-checked coverage manifest defined by the
-[remaining macOS parity closure design](remaining-macos-parity-closure-design.md).
-After every meaningful implementation checkpoint, update
-their state and attach exact commit, test, review, quality, migration, and
-performance evidence. `in progress` means implemented evidence is incomplete;
-`blocked` names owner/blocker/next action; `verified` means the final exact-head
-slice satisfies that row and its dependencies. A summary in `STATUS.md` links
-to the detailed record but never upgrades support merely because code exists or
-a design checkbox changed.
+Each focused design keeps stable requirement/work-package identifiers and its
+own exact implementation, test, review, quality, migration, and performance
+evidence. [STATUS.md](../STATUS.md) is the single current programme projection
+and lists only remaining compatibility or performance gaps. A row closes only
+when its design acceptance and pinned executable evidence are complete; local
+code or a design checkbox alone never upgrades support.
 
 If implementation evidence changes a design decision, update the focused
-design, coherent architecture, dependency/order map, progress register, tests,
+design, coherent architecture, dependency/order map, `STATUS.md`, tests,
 and user-facing documentation together after an explicit review decision. Do
 not preserve a known-stale design as historical truth inside the active spec;
 move genuinely superseded material to a clearly marked decision/history record.
 Markdown, link, generated-reference, example, and CLI-help checks are part of
 the affected slice gate.
 
-The committed source of programme state is
-[`docs/parity/PROGRAMME-PROGRESS.json`](parity/PROGRAMME-PROGRESS.json); its
-generated reader view is
-[`docs/parity/PROGRAMME-PROGRESS.md`](parity/PROGRAMME-PROGRESS.md). Run
-`make programme-progress-update` after an intentional state or evidence change
-and `make programme-progress-check` before review. The ordinary `make check`
-gate also runs the check. Every registered design declares its dependent
-documentation and its default required repository-head set; explicit per-item
-overrides replace that default where a workflow slice has a narrower reviewed
-boundary. Both declarations are independently pinned with the 112-item
-contract. A `verified` row must name a full accepted Container Compose head that
-is already an ancestor of the trusted pre-change main or pull-request base
-checkpoint, supply exactly every repository head required for that item, bind
-each to a real commit accepted by fetched `main` in an authenticated
-repository-specific checkout, require every recorded SHA to identify its commit
-object directly rather than an annotated tag that merely peels to it, identify
-immutable evidence paths present in the exact Compose tree, and record a
-disposition for every declared documentation dependency at the same head with a
-non-empty review rationale. Authority URLs are not free-form links: the checker
-accepts only kind-specific resources in an affected GitHub repository, resolves
-pull requests/comments and Actions runs through the fixed system GitHub CLI in
-a bounded clean environment, and requires them to exist, succeed where
-applicable, and bind to that exact accepted head. A commit delivery URL is bound
-to the already authenticated repository object. Missing GitHub CLI
-authentication, a timeout, or an unreadable authority fails closed.
-Pull-request CI supplies its immutable base SHA; local validation defaults to
-the local `main` ref. This prevents a commit from declaring itself accepted in
-the same pull request. The checker pins the reviewed programme root and
-112-item boundary independently from both the register and design prose, so
-moving the baseline or deleting the same row from both sources
-still fails. Its exact-tree and ancestry queries use system Git with ambient
-configuration, replacement objects, and executable checkout hooks disabled.
-Both full source checks and the documentation-only CI path run the gate from
-full-history checkouts for Compose and every supported evidence repository:
-Container, Containerization, container-builder-shim, container-k8s, and the
-Homebrew tap, and expose their read-only GitHub token only to the source-check
-step for authority resolution. Duplicate IDs, missing or unregistered design
-anchors, missing or undeclared repository heads, indirect Git objects, broken
-or wrong-head authorities, unsafe or missing paths, un-actionable blocked rows,
-non-ancestor evidence, incomplete documentation review, and a stale generated
-projection all fail closed.
-
-An implementation commit cannot contain its own immutable commit identity.
-Consequently, a row implemented by the current slice remains `in progress` in
-that slice; the next reviewed checkpoint promotes it to `verified` by pointing
-back to the already-existing accepted merge and its exact evidence. This avoids
-a self-referential hash placeholder and prevents later unrelated commits from
-silently rebinding old evidence to a new head.
+Exact accepted heads remain in the affected design or upstream handoff record,
+where they can describe the actual repository set and evidence boundary without
+self-reference. Update every affected documentation surface and `STATUS.md` in
+the implementation slice. `make check` continues to validate active source,
+documentation, stack consistency, and the handoff registry; it does not accept
+a stale generated status projection as programme truth.
 
 ## Development-Cycle Definition of Done
 
@@ -505,7 +459,7 @@ A slice is complete only when:
 - local static analysis, SonarQube, supported CodeQL, and every required exact-head external authority is green;
 - every affected executable lane has paired release-build median/P95 comparable to or better than Docker outside the declared noise band; a demonstrably non-executable slice records `not applicable` with rationale and cannot close a performance gap;
 - exact stack pins, documentation, compatibility manifests, and `STATUS.md` agree with the delivered behaviour;
-- every documentation surface has a recorded review disposition and every affected design-progress row points to exact final-head evidence;
+- every documentation surface has a recorded review disposition, `STATUS.md` agrees with the remaining gaps, and affected design or handoff records point to exact final-head evidence;
 - the stable exact-head-reviewed checkpoint is on `main`; and
 - no obsolete slice-owned pull request, remote branch, local branch, worktree, runtime state, or unregistered/machine-local completed handoff is left dangling.
 
@@ -533,7 +487,7 @@ Before large-scale implementation begins, add and prove these workflow capabilit
 12. <a id="workflow-enabler-12"></a>`WORKFLOW-ENABLER-12` — **Complete — upstream-handoff registry baseline.** The performance-matrix issue and pull-request records are classified through the documented archive lifecycle, the reader view is regenerated, and `make upstream-handoff-registry-check` and the exact-stack `make check` pass. The implementation and evidence are recorded in `docs/upstream/container-compose/ISSUE-180.md` and `PR-180.md`; this baseline no longer blocks repository-wide programme evidence.
 13. <a id="workflow-enabler-13"></a>`WORKFLOW-ENABLER-13` — **Complete — exact-head-reviewed Compose promotion.** The release helper proves the open pull request still names the locally gated full commit, requires every existing Codex thread to have a later Stephen response and be resolved, posts a literal `@codex review`, and accepts only the connector's thumbs-up on that exact request or its explicit no-major-issues comment naming the expected commit prefix. A query after the request, head drift, malformed or truncated evidence, or timeout fails closed and requires a fresh invocation; any diff therefore receives a new request. Pull-request checks run only after the clean decision. The helper immediately revalidates the exact head, all query threads, and the clean signal before a head-matched normal merge and again before the optional checked-admin merge. Auto-merge is never enabled. Deterministic stale-head, unanswered-query, timeout, clean-comment merge, pagination, and stale-review tests are recorded in `docs/upstream/container-compose/ISSUE-182.md` and `PR-182.md`.
 14. <a id="workflow-enabler-14"></a>`WORKFLOW-ENABLER-14` — **Complete — PR-only Compose source promotion.** `CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE=pr` is the sole accepted mode. The retired `direct` value fails before any GitHub or Git mutation, and the direct push branch has been removed. Maintenance, milestone, and security classifications do not bypass exact-head review or pull-request checks. The focused direct-mode and clean-merge regressions prove only the reviewed PR path can promote Compose source; implementation and evidence are recorded with Enabler 13 in `docs/upstream/container-compose/ISSUE-182.md` and `PR-182.md`.
-15. <a id="workflow-enabler-15"></a>`WORKFLOW-ENABLER-15` — **In progress — stable programme progress.** Add stable requirement/work-package IDs and one shared progress register for every focused/coherent design, plus a generated stale-link/status check that fails when a verified row lacks exact-head evidence or dependent documentation has not been reviewed.
+15. <a id="workflow-enabler-15"></a>`WORKFLOW-ENABLER-15` — **Superseded — gap-only programme status.** Stable requirement/work-package IDs remain in focused designs, while `STATUS.md` is the single current gap-only projection. The duplicate generated register was retired after it drifted far behind implemented work and produced misleading programme counts.
 
 The release helper now enforces Enablers 13 and 14 before any programme source
 promotion. Its checked-admin option handles only GitHub's solo-maintainer review
