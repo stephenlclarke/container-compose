@@ -62,6 +62,10 @@ DEFAULT_GELF_WIRE_FIXTURE = (
     REPO_ROOT
     / "Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-gelf-wire.json"
 )
+DEFAULT_GELF_CONFIG_FIXTURE = (
+    REPO_ROOT
+    / "Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-gelf-config.json"
+)
 
 
 class PrerequisiteUnavailable(RuntimeError):
@@ -2171,6 +2175,216 @@ def capture_gelf_wire_oracle(
         oracle.close()
 
 
+def normalized_gelf_log_config(
+    log_config: Any,
+    *,
+    address_placeholder: str | None = None,
+) -> dict[str, Any]:
+    """Validate and normalize one inspected Docker GELF configuration."""
+
+    if not isinstance(log_config, dict) or log_config.get("Type") != "gelf":
+        raise OracleFailure(f"unexpected inspected GELF log config: {log_config!r}")
+    config = log_config.get("Config")
+    if not isinstance(config, dict) or not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in config.items()
+    ):
+        raise OracleFailure(f"invalid inspected GELF config map: {log_config!r}")
+    normalized = dict(config)
+    if address_placeholder is not None:
+        normalized["gelf-address"] = address_placeholder
+    return {"Config": normalized, "Type": "gelf"}
+
+
+def capture_gelf_config_rejection(
+    oracle: LoggingOracle,
+    *,
+    label: str,
+    config: dict[str, str],
+) -> dict[str, Any]:
+    """Capture Docker's create-time rejection for one GELF option combination."""
+
+    identifier, create = oracle.create(
+        f"gelf-config-{label}",
+        command=["true"],
+        log_config={"Type": "gelf", "Config": config},
+        expected_status=400,
+    )
+    if identifier is not None:
+        raise OracleFailure(f"rejected GELF config unexpectedly created {identifier!r}")
+    return {
+        "create": create,
+        "phase": {"configurationRejectedAtCreate": True},
+    }
+
+
+def capture_gelf_config_udp(
+    oracle: LoggingOracle,
+    *,
+    label: str,
+    config: dict[str, str],
+) -> dict[str, Any]:
+    """Capture one accepted UDP GELF option combination through exit."""
+
+    identifier, create = oracle.create(
+        f"gelf-config-{label}",
+        command=["true"],
+        log_config={"Type": "gelf", "Config": config},
+    )
+    assert identifier is not None
+    inspect = normalized_gelf_log_config(
+        oracle.inspect(identifier)["HostConfig"]["LogConfig"],
+    )
+    start = oracle.start(identifier)
+    wait = oracle.wait(identifier)
+    return {
+        "create": create,
+        "inspectAfterExit": inspect,
+        "phase": {
+            "configurationAcceptedAtCreate": create["httpStatus"] == 201,
+            "containerExitCode": wait["exitCode"],
+            "startSucceeded": start["httpStatus"] == 204,
+        },
+    }
+
+
+def capture_gelf_config_tcp(
+    oracle: LoggingOracle,
+) -> dict[str, Any]:
+    """Capture accepted TCP reconnect options with a VM-local Docker receiver."""
+
+    receiver = start_colima_log_receiver(
+        oracle,
+        label="gelf-config-tcp",
+        mode="gelf-tcp",
+        expected_messages=len(REMOTE_LOG_MARKERS),
+    )
+    result: dict[str, Any] | None = None
+    try:
+        address = receiver_address(receiver, "tcp")
+        identifier, create = oracle.create(
+            "gelf-config-tcp",
+            command=REMOTE_LOG_COMMAND,
+            log_config={
+                "Type": "gelf",
+                "Config": {
+                    "gelf-address": address,
+                    "gelf-tcp-max-reconnect": "+1",
+                    "gelf-tcp-reconnect-delay": "0",
+                },
+            },
+        )
+        assert identifier is not None
+        inspect = normalized_gelf_log_config(
+            oracle.inspect(identifier)["HostConfig"]["LogConfig"],
+            address_placeholder="tcp://<colima-oracle-receiver>",
+        )
+        start = oracle.start(identifier)
+        wait = oracle.wait(identifier)
+        raw = finish_colima_log_receiver(receiver)
+        stream = bytes.fromhex(str(raw.get("streamHex", "")))
+        if raw.get("peerClosed") is not True or not stream.endswith(b"\0"):
+            raise OracleFailure(f"accepted GELF TCP config did not deliver cleanly: {raw!r}")
+        result = {
+            "create": create,
+            "inspectAfterExit": inspect,
+            "phase": {
+                "configurationAcceptedAtCreate": create["httpStatus"] == 201,
+                "containerExitCode": wait["exitCode"],
+                "startSucceeded": start["httpStatus"] == 204,
+            },
+            "receiver": {
+                "peerClosedAfterContainerExit": True,
+                "receivedPayload": bool(stream),
+            },
+        }
+    finally:
+        cleanup = cleanup_colima_log_receiver(receiver)
+    assert result is not None
+    result["cleanup"] = cleanup
+    return result
+
+
+def capture_gelf_config_oracle(
+    engine: DockerEngine,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Capture Docker Engine's GELF option grammar and validation phases."""
+
+    prefix = f"cc-gelf-config-oracle-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    oracle = LoggingOracle(engine, REQUIRED_IMAGE, prefix)
+    cleanup = {"containersRemoved": False}
+    try:
+        started = time.monotonic()
+        rejected = {
+            "missingAddress": {},
+            "malformedAddress": {"gelf-address": "udp://127.0.0.1"},
+            "unknownOption": {
+                "gelf-address": "udp://127.0.0.1:1",
+                "opaque": "value",
+            },
+            "udpBadCompressionLevel": {
+                "gelf-address": "udp://127.0.0.1:1",
+                "gelf-compression-level": "10",
+            },
+            "udpTCPReconnect": {
+                "gelf-address": "udp://127.0.0.1:1",
+                "gelf-tcp-max-reconnect": "0",
+            },
+            "tcpCompression": {
+                "gelf-address": "tcp://127.0.0.1:1",
+                "gelf-compression-type": "gzip",
+            },
+            "tcpBadReconnect": {
+                "gelf-address": "tcp://127.0.0.1:1",
+                "gelf-tcp-max-reconnect": "-1",
+            },
+        }
+        cases: dict[str, Any] = {
+            label: capture_gelf_config_rejection(
+                oracle,
+                label=label,
+                config=config,
+            )
+            for label, config in rejected.items()
+        }
+        cases["udpDefault"] = capture_gelf_config_udp(
+            oracle,
+            label="udp-default",
+            config={"gelf-address": "udp://127.0.0.1:1"},
+        )
+        cases["udpZlibMaximum"] = capture_gelf_config_udp(
+            oracle,
+            label="udp-zlib-maximum",
+            config={
+                "gelf-address": "udp://127.0.0.1:1",
+                "gelf-compression-level": "9",
+                "gelf-compression-type": "zlib",
+            },
+        )
+        cases["udpNoneMinimum"] = capture_gelf_config_udp(
+            oracle,
+            label="udp-none-minimum",
+            config={
+                "gelf-address": "UDP://127.0.0.1:1",
+                "gelf-compression-level": "-1",
+                "gelf-compression-type": "none",
+            },
+        )
+        cases["tcpReconnect"] = capture_gelf_config_tcp(oracle)
+        return {
+            "cases": cases,
+            "cleanup": cleanup,
+            "metadata": metadata,
+            "schemaVersion": 1,
+            "scope": "direct Docker Engine GELF option and validation-phase contract",
+            "timings": {"gelfConfig": monotonic_timing(started)},
+        }
+    finally:
+        oracle.close()
+        cleanup["containersRemoved"] = True
+
+
 def node_utf8(node: dict[str, Any]) -> str | None:
     value = node.get("utf8")
     return value if isinstance(value, str) else None
@@ -3785,12 +3999,21 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="fixture to compare or update",
     )
-    parser.add_argument(
+    capture_group = parser.add_mutually_exclusive_group()
+    capture_group.add_argument(
         "--gelf-wire-only",
         action="store_true",
         help=(
             "capture only the direct Docker Engine GELF UDP/TCP wire oracle; "
             "it does not require the separate Docker Compose reference pin"
+        ),
+    )
+    capture_group.add_argument(
+        "--gelf-config-only",
+        action="store_true",
+        help=(
+            "capture only the direct Docker Engine GELF option and validation "
+            "oracle; it does not require the separate Docker Compose reference pin"
         ),
     )
     output_group = parser.add_mutually_exclusive_group()
@@ -3814,18 +4037,23 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    expected = args.expected or (
-        DEFAULT_GELF_WIRE_FIXTURE if args.gelf_wire_only else DEFAULT_FIXTURE
-    )
+    if args.gelf_wire_only:
+        expected = args.expected or DEFAULT_GELF_WIRE_FIXTURE
+    elif args.gelf_config_only:
+        expected = args.expected or DEFAULT_GELF_CONFIG_FIXTURE
+    else:
+        expected = args.expected or DEFAULT_FIXTURE
     try:
         engine, metadata = check_prerequisites(
-            require_compose=not args.gelf_wire_only
+            require_compose=not (args.gelf_wire_only or args.gelf_config_only)
         )
-        captured = render_fixture(
-            capture_gelf_wire_oracle(engine, metadata)
-            if args.gelf_wire_only
-            else capture_oracle(engine, metadata)
-        )
+        if args.gelf_wire_only:
+            captured_oracle = capture_gelf_wire_oracle(engine, metadata)
+        elif args.gelf_config_only:
+            captured_oracle = capture_gelf_config_oracle(engine, metadata)
+        else:
+            captured_oracle = capture_oracle(engine, metadata)
+        captured = render_fixture(captured_oracle)
     except PrerequisiteUnavailable as error:
         if args.strict:
             print(f"error: {error}", file=sys.stderr)

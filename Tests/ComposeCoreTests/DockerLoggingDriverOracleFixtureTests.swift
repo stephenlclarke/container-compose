@@ -1210,6 +1210,142 @@ struct DockerLoggingDriverOracleFixtureTests {
 
     @Test
     // swiftlint:disable:next function_body_length
+    func `pins GELF option validation phases and transport boundaries`() throws {
+        let fixture = try Self.gelfConfigFixture()
+
+        #expect(try integer(fixture, "schemaVersion") == 1)
+        #expect(
+            try string(fixture, "scope")
+                == "direct Docker Engine GELF option and validation-phase contract",
+        )
+        #expect(try string(fixture, "metadata", "engineVersion") == "29.2.1")
+        #expect(try string(fixture, "metadata", "apiVersion") == "1.53")
+        #expect(try string(fixture, "metadata", "context") == "colima")
+        #expect(try string(fixture, "metadata", "image") == "alpine:3.20")
+        #expect(
+            try string(fixture, "timings", "gelfConfig", "clock") == "time.monotonic",
+        )
+        #expect(
+            try double(fixture, path: ["timings", "gelfConfig", "durationSeconds"]) > 0,
+        )
+        #expect(try boolean(fixture, "cleanup", "containersRemoved"))
+
+        let rejected = [
+            ("missingAddress", "gelf-address is a required parameter"),
+            ("malformedAddress", "gelf: please provide gelf-address as proto://host:port"),
+            ("unknownOption", "unknown log opt \"opaque\" for gelf log driver"),
+            (
+                "udpBadCompressionLevel",
+                "unknown value \"10\" for log opt \"gelf-compression-level\" for gelf log driver",
+            ),
+            ("udpTCPReconnect", "\"gelf-tcp-max-reconnect\" is only valid for TCP"),
+            ("tcpCompression", "compression is only supported on UDP"),
+            ("tcpBadReconnect", "\"gelf-tcp-max-reconnect\" must be a positive integer"),
+        ]
+        for (label, message) in rejected {
+            #expect(
+                try integer(fixture, "cases", label, "create", "httpStatus") == 400,
+            )
+            #expect(try string(fixture, "cases", label, "create", "message") == message)
+            #expect(
+                try boolean(fixture, "cases", label, "phase", "configurationRejectedAtCreate"),
+            )
+        }
+
+        for label in ["udpDefault", "udpZlibMaximum", "udpNoneMinimum", "tcpReconnect"] {
+            #expect(
+                try integer(fixture, "cases", label, "create", "httpStatus") == 201,
+            )
+            #expect(
+                try string(fixture, "cases", label, "inspectAfterExit", "Type") == "gelf",
+            )
+            #expect(
+                try boolean(
+                    fixture, "cases", label, "phase", "configurationAcceptedAtCreate",
+                ),
+            )
+            #expect(
+                try boolean(fixture, "cases", label, "phase", "startSucceeded"),
+            )
+            #expect(
+                try integer(fixture, "cases", label, "phase", "containerExitCode") == 0,
+            )
+        }
+
+        #expect(
+            try string(
+                fixture, "cases", "udpDefault", "inspectAfterExit", "Config", "gelf-address",
+            ) == "udp://127.0.0.1:1",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "udpZlibMaximum", "inspectAfterExit", "Config",
+                "gelf-compression-type",
+            ) == "zlib",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "udpZlibMaximum", "inspectAfterExit", "Config",
+                "gelf-compression-level",
+            ) == "9",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "udpNoneMinimum", "inspectAfterExit", "Config",
+                "gelf-address",
+            ) == "UDP://127.0.0.1:1",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "udpNoneMinimum", "inspectAfterExit", "Config",
+                "gelf-compression-type",
+            ) == "none",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "udpNoneMinimum", "inspectAfterExit", "Config",
+                "gelf-compression-level",
+            ) == "-1",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "tcpReconnect", "inspectAfterExit", "Config", "gelf-address",
+            ) == "tcp://<colima-oracle-receiver>",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "tcpReconnect", "inspectAfterExit", "Config",
+                "gelf-tcp-max-reconnect",
+            ) == "+1",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "tcpReconnect", "inspectAfterExit", "Config",
+                "gelf-tcp-reconnect-delay",
+            ) == "0",
+        )
+        #expect(
+            try boolean(
+                fixture, "cases", "tcpReconnect", "receiver", "peerClosedAfterContainerExit",
+            ),
+        )
+        #expect(
+            try boolean(fixture, "cases", "tcpReconnect", "receiver", "receivedPayload"),
+        )
+        #expect(
+            try boolean(
+                fixture, "cases", "tcpReconnect", "cleanup", "receiverProcessRunning",
+            ) == false,
+        )
+        let tcpResidue: [Any] = try value(
+            fixture,
+            "cases", "tcpReconnect", "cleanup", "vmPathsRemaining",
+        )
+        #expect(tcpResidue.isEmpty)
+    }
+
+    @Test
+    // swiftlint:disable:next function_body_length
     func `pins Compose foreground independence from historical readers`() throws {
         let fixture = try Self.fixture()
 
@@ -1336,6 +1472,24 @@ struct DockerLoggingDriverOracleFixtureTests {
         let data = try Data(contentsOf: url)
         guard let fixture = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw FixtureError.invalid("GELF wire root is not a JSON object")
+        }
+        return fixture
+    }
+
+    private static func gelfConfigFixture() throws -> [String: Any] {
+        guard
+            let url = Bundle.module.url(
+                forResource: "docker-engine-29.2.1-gelf-config",
+                withExtension: "json",
+            )
+        else {
+            throw FixtureError.missing(
+                "Fixtures/logging/docker-engine-29.2.1-gelf-config.json",
+            )
+        }
+        let data = try Data(contentsOf: url)
+        guard let fixture = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw FixtureError.invalid("GELF configuration root is not a JSON object")
         }
         return fixture
     }

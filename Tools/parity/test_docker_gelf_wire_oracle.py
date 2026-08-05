@@ -15,7 +15,7 @@
 ## limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-"""Focused unit tests for the Docker GELF remote-wire oracle normalizer."""
+"""Focused unit tests for Docker GELF wire and configuration normalizers."""
 
 from __future__ import annotations
 
@@ -158,6 +158,39 @@ class GELFWireOracleTests(unittest.TestCase):
                 mode="gelf-tcp",
                 container_id=self.container_id,
                 container_name=self.container_name,
+            )
+
+    def test_config_normalization_preserves_docker_option_strings(self) -> None:
+        normalized = ORACLE.normalized_gelf_log_config(
+            {
+                "Config": {
+                    "gelf-address": "tcp://127.0.0.1:12201",
+                    "gelf-tcp-max-reconnect": "+1",
+                    "gelf-tcp-reconnect-delay": "0",
+                },
+                "Type": "gelf",
+            },
+            address_placeholder="tcp://<colima-oracle-receiver>",
+        )
+
+        self.assertEqual(
+            normalized,
+            {
+                "Config": {
+                    "gelf-address": "tcp://<colima-oracle-receiver>",
+                    "gelf-tcp-max-reconnect": "+1",
+                    "gelf-tcp-reconnect-delay": "0",
+                },
+                "Type": "gelf",
+            },
+        )
+
+    def test_config_normalization_rejects_non_gelf_or_non_string_options(self) -> None:
+        with self.assertRaises(ORACLE.OracleFailure):
+            ORACLE.normalized_gelf_log_config({"Config": {}, "Type": "json-file"})
+        with self.assertRaises(ORACLE.OracleFailure):
+            ORACLE.normalized_gelf_log_config(
+                {"Config": {"gelf-address": 12201}, "Type": "gelf"},
             )
 
 

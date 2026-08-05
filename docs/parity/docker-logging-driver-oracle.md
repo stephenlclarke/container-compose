@@ -2,7 +2,7 @@
 
 This oracle records the Docker Engine behavior that the logging-driver implementation must reproduce. It is a focused Engine API reference, not a test of the `container-compose` implementation.
 
-The primary committed fixture is pinned to Docker Engine 29.2.1, API 1.53, Docker Compose 5.3.1, the active `colima` context on an arm64 Mac17 running macOS 26.5.2, and a preloaded `alpine:3.20` image. Its runtime fingerprint includes the Docker client, Engine commit, Engine Go and kernel versions, Colima version, host identity, registered logging drivers, and image repository digest so that an environment change is visible in review. The separate GELF wire fixture is a direct Engine/CLI reference on the same host; it deliberately does not invoke Docker Compose, so its 29.7.1 Docker CLI fingerprint is recorded independently rather than treating the installed Compose 5.4.0 as the Compose 5.3.1 oracle.
+The primary committed fixture is pinned to Docker Engine 29.2.1, API 1.53, Docker Compose 5.3.1, the active `colima` context on an arm64 Mac17 running macOS 26.5.2, and a preloaded `alpine:3.20` image. Its runtime fingerprint includes the Docker client, Engine commit, Engine Go and kernel versions, Colima version, host identity, registered logging drivers, and image repository digest so that an environment change is visible in review. The separate GELF wire and configuration fixtures are direct Engine/CLI references on the same host; they deliberately do not invoke Docker Compose, so their 29.7.1 Docker CLI fingerprint is recorded independently rather than treating the installed Compose 5.4.0 as the Compose 5.3.1 oracle.
 
 ## Covered Semantics
 
@@ -25,7 +25,7 @@ The capture covers:
 - non-blocking delivery under a controlled two-second Unix-stream sink stall, including guest write completion before sink release, observable dropped-new gaps, order, uniqueness, and final-record loss;
 - Docker `syslog` delivery through VM-local UDP, TCP, authenticated TLS, and Unix-stream receivers, including RFC 5424 microsecond fields, `local1` stdout/stderr priorities, expanded name/ID tags, ASCII/UTF-8/binary-with-NUL payload bytes, UDP datagram boundaries, TCP/Unix LF framing, TLS octet counting, peer shutdown, and exact receiver cleanup;
 - Docker `fluentd` delivery through VM-local TCP and Unix-stream receivers, including the four-element Fluent Forward MessagePack envelope, string and invalid-UTF-8 string encodings, container/stream/label/environment metadata, integer-second versus EventTime timestamps, request-ack chunk tokens and ACK completion, EOF on logger shutdown, and an async Unix reconnect that delivers records buffered before the receiver exists; and
-- Docker `gelf` delivery through VM-local UDP and TCP receivers, including Docker's default UDP gzip payloads with one GELF JSON object per datagram, uncompressed TCP NUL framing, peer shutdown after container exit, millisecond timestamps, stdout/stderr priorities, invalid-UTF-8 replacement, selected environment/label metadata, expanded name/ID tags, create/start phase, inspect projection, and exact receiver cleanup; and
+- Docker `gelf` delivery through VM-local UDP and TCP receivers, including Docker's default UDP gzip payloads with one GELF JSON object per datagram, uncompressed TCP NUL framing, peer shutdown after container exit, millisecond timestamps, stdout/stderr priorities, invalid-UTF-8 replacement, selected environment/label metadata, expanded name/ID tags, create/start phase, inspect projection, exact receiver cleanup, and the `gelf-address`/compression/reconnect option grammar and validation phase; and
 - Docker Compose foreground output for `json-file`, `none`, and cache-disabled `syslog`, proving that early stdout/stderr remains visible exactly once even when later historical reads are unsupported;
 - Docker Compose static history for `none`, which exits successfully with an empty stream and continues readable services, while followed/direct reads retain the unsupported-reader failure; and
 - the reusable signal/log CLI fixture for readable/`none` non-TTY foreground output, restart retention, three-replica aggregation, tails, signal forwarding, disconnected-client persistence, and exact cleanup.
@@ -67,6 +67,16 @@ python3 Tools/parity/capture-docker-logging-driver-oracle.py --gelf-wire-only --
 ```
 
 This mode requires the same pinned Engine, API, image, and `colima` context, but intentionally skips the separate Docker Compose 5.3.1 prerequisite. Its versioned reference is [`docker-engine-29.2.1-gelf-wire.json`](../../Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-gelf-wire.json); the focused Swift fixture test freezes the observed wire semantics. It records Docker reference behavior only, not a candidate runtime or external-client certification.
+
+## Direct Docker GELF Configuration Oracle
+
+Capture and compare the Engine-only GELF option and validation-phase contract with:
+
+```sh
+python3 Tools/parity/capture-docker-logging-driver-oracle.py --gelf-config-only --strict
+```
+
+Its versioned reference is [`docker-engine-29.2.1-gelf-config.json`](../../Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-gelf-config.json). It freezes required and malformed addresses, unknown options, invalid compression/reconnect values, UDP-only compression, TCP-only reconnect, string-preserving inspect projection, uppercase UDP schemes, accepted `-1`/`9` compression levels, and accepted `+1`/`0` TCP reconnect values. Rejections occur at create; accepted TCP options are exercised through a VM-local receiver to prove start, exit, delivery, and cleanup. The matching `GELFConfigurationTests` regression certifies the Container provider component only, not candidate runtime or external-client behavior.
 
 The live terminal session is deliberately a separate short-running capture so that it can also be executed unchanged against the Container public Docker socket. Capture and compare the pinned reference with:
 
@@ -139,7 +149,7 @@ Volatile container IDs, names, ports, paths, certificates, daemon PIDs, timestam
 
 Every top-level case records a raw `time.monotonic` duration in the machine-readable fixture. Strict comparison reports each fresh duration, ignores ordinary timing variance when comparing semantic JSON, and fails when a fixture times out or takes at least ten times its committed baseline. Candidate captures written with `--output` retain the raw values.
 
-The oracle does not provision external logging services or installed logging plugins. Cloud-driver delivery, a blocking slow-sink backpressure case, dual-cache rotation under sustained load, and plugin lifecycle behavior still require separate focused oracles. GELF's direct Engine UDP/TCP wire behavior and provider-component regression are captured here; candidate runtime and external-client certification remain separate work.
+The oracle does not provision external logging services or installed logging plugins. Cloud-driver delivery, a blocking slow-sink backpressure case, dual-cache rotation under sustained load, and plugin lifecycle behavior still require separate focused oracles. GELF's direct Engine UDP/TCP wire and configuration/validation behavior plus provider-component regressions are captured here; candidate runtime and external-client certification remain separate work.
 
 Docker accepts a `tls://` Fluentd address, but its Fluentd option grammar exposes no CA path or skip-verification option. The versioned `tlsLocalTrustFailure` probe freezes the boundary: against its bounded self-signed receiver, Engine 29.2.1 accepts container creation with HTTP 201 and rejects start with HTTP 500: `tls: failed to verify certificate: x509: certificate signed by unknown authority`; the receiver independently observes the resulting TLS bad-certificate alert. Capturing decrypted Fluentd TLS wire bytes would therefore require a deliberate Colima trust-store mutation or a publicly trusted endpoint. This harness does neither, so Fluentd TLS remains an explicit evidence gap; Syslog TLS is fully captured because that driver exposes `syslog-tls-ca-cert`.
 
