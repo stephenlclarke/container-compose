@@ -439,7 +439,6 @@ extension ComposeOrchestrator {
 
         let replicaCount = try serviceReplicaCount(service, scaleOverrides: context.scaleOverrides)
         var serviceChanged = false
-        var jobTargets: [ServiceContainerTarget] = []
         var preStartTargets: [ServiceContainerTarget] = []
         var outputStartTargets: [ServiceContainerTarget] = []
         var outputAttachments: [ComposeUpOutputAttachment] = []
@@ -449,9 +448,6 @@ extension ComposeOrchestrator {
             for replicaIndex in 1 ... replicaCount {
                 let name = try serviceContainerName(project: project, service: service, index: replicaIndex)
                 let existing = try await inspectContainer(name)
-                if isDeployJobService(service) {
-                    jobTargets.append(ServiceContainerTarget(service: service, index: replicaIndex, name: name))
-                }
                 let reconcileOutcome = try await reconcileServiceContainer(
                     project: project,
                     service: service,
@@ -461,7 +457,7 @@ extension ComposeOrchestrator {
                         runOptions: RunArgumentOptions {
                             $0.command = hasPreStartHooks(service) || outputAttached ? "create" : "run"
                             $0.detach = !hasPreStartHooks(service) && !outputAttached
-                                && (context.detachStartedContainers || isDeployJobService(service))
+                                && context.detachStartedContainers
                             $0.containerIndex = replicaIndex
                             $0.replicaCount = replicaCount
                         },
@@ -492,7 +488,7 @@ extension ComposeOrchestrator {
                 if outputAttached {
                     outputStartTargets.append(target)
                 }
-                if up.wait, !isDeployJobService(service) {
+                if up.wait {
                     waitTargets.append(ServiceContainerTarget(service: service, index: replicaIndex, name: name))
                 }
             }
@@ -519,8 +515,6 @@ extension ComposeOrchestrator {
                 timeout: up.timeout,
             )
         }
-        try await waitForDeployJobService(service: service, targets: jobTargets)
-
         if serviceChanged {
             return ComposeUpServiceResult(
                 serviceName: service.name,

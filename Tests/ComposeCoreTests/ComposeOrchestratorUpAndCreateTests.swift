@@ -3162,6 +3162,45 @@ extension ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1", "demo-api-1"])
     }
 
+    @Test("up wait treats deploy job modes as ordinary running services")
+    func upWaitTreatsDeployJobModesAsOrdinaryRunningServices() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            getResponses: [
+                "demo-migrate-1": [
+                    nil,
+                    ComposeContainerSummary(id: "demo-migrate-1", status: "starting"),
+                    ComposeContainerSummary(id: "demo-migrate-1", status: "running"),
+                ],
+            ]
+        )
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "migrate": composeService(name: "migrate", image: "example/migrate") {
+                    $0.deployMode = "global-job"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(sleep: { _ in }),
+            discoveryManager: discoveryManager
+        ).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.wait = true
+                $0.waitTimeout = 5
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 1)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-migrate-1", "--detach"]))
+        #expect(await discoveryManager.getRequests == ["demo-migrate-1", "demo-migrate-1", "demo-migrate-1"])
+    }
+
     @Test("up wait polls configured healthchecks until healthy")
     func upWaitPollsConfiguredHealthchecksUntilHealthy() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -8576,8 +8615,8 @@ extension ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up waits for deploy job mode replicas")
-    func upWaitsForDeployJobModeReplicas() async throws {
+    @Test("up treats deploy job mode replicas as ordinary local services")
+    func upTreatsDeployJobModeReplicasAsOrdinaryLocalServices() async throws {
         let runner = RecordingRunner(responses: [.success, .success])
         let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: [
             "demo-migrate-1": 0,
@@ -8604,15 +8643,12 @@ extension ComposeOrchestratorTests {
         #expect(!commands[0].contains("--detach"))
         #expect(commands[1].starts(with: ["container", "create", "--name", "demo-migrate-2"]))
         #expect(!commands[1].contains("--detach"))
-        #expect(await lifecycleManager.requests == [
-            .wait(id: "demo-migrate-1"),
-            .wait(id: "demo-migrate-2"),
-        ])
+        #expect(await lifecycleManager.requests.isEmpty)
     }
 
-    @Test("up fails deploy job mode on nonzero exit")
-    func upFailsDeployJobModeOnNonzeroExit() async throws {
-        let runner = RecordingRunner(responses: [.success, .success])
+    @Test("up does not gate dependent services on deploy job completion")
+    func upDoesNotGateDependentServicesOnDeployJobCompletion() async throws {
+        let runner = RecordingRunner(responses: [.success, .success, .success])
         let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: [
             "demo-migrate-1": 0,
             "demo-migrate-2": 7,
@@ -8630,25 +8666,16 @@ extension ComposeOrchestratorTests {
             ]
         )
 
-        do {
-            try await ComposeOrchestrator(
-                runner: runner,
-                lifecycleManager: lifecycleManager
-            ).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected deploy job failure")
-        } catch let error as ComposeError {
-            #expect(error == .invalidProject("service 'migrate' job container 'demo-migrate-2' exited with status 7"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            lifecycleManager: lifecycleManager
+        ).up(project: project, options: ComposeUpOptions())
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands.count == 2)
-        #expect(commands.allSatisfy { $0.containsSequence(["example/migrate"]) })
-        #expect(await lifecycleManager.requests == [
-            .wait(id: "demo-migrate-1"),
-            .wait(id: "demo-migrate-2"),
-        ])
+        #expect(commands.count == 3)
+        #expect(commands.prefix(2).allSatisfy { $0.containsSequence(["example/migrate"]) })
+        #expect(commands.last?.contains("example/api") == true)
+        #expect(await lifecycleManager.requests.isEmpty)
     }
 
     @Test("up rejects unsupported deploy update order as apple/container orchestration gap")

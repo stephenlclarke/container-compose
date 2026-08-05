@@ -2379,94 +2379,44 @@ extension ComposeOrchestratorTests {
         #expect(!runArguments.contains("on-failure:0"))
     }
 
-    @Test("up rejects deploy job restart policy")
-    func upRejectsDeployJobRestartPolicy() async throws {
-        let runner = RecordingRunner()
+    @Test("up maps deploy restart policy for replicated jobs without a job-specific wait")
+    func upMapsDeployRestartPolicyForReplicatedJobsWithoutAJobSpecificWait() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-migrate-1": 7])
         let project = composeProject(
             name: "demo",
             services: [
                 "migrate": composeService(name: "migrate", image: "example/migrate") {
                     $0.deployMode = "replicated-job"
                     $0.deployRestartPolicy = ComposeDeployRestartPolicy(
-                        condition: "any",
+                        condition: "on-failure",
                         maxAttempts: 3
                     )
                 },
             ]
         )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected deploy job restart policy error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'migrate' uses deploy.restart_policy with deploy.mode 'replicated-job'; job restart policies need a restart-aware apple/container wait primitive"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            lifecycleManager: lifecycleManager
+        ).up(project: project, options: ComposeUpOptions { $0.detach = true })
 
-        #expect(runner.commands.isEmpty)
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(runArguments.containsSequence(["--restart", "on-failure:3"]))
+        #expect(runArguments.contains("--detach"))
+        #expect(await lifecycleManager.requests.isEmpty)
     }
 
-    @Test("up rejects service restart policies for deploy jobs")
-    func upRejectsServiceRestartPoliciesForDeployJobs() async throws {
-        let runner = RecordingRunner()
-        let project = composeProject(
-            name: "demo",
-            services: [
-                "migrate": composeService(name: "migrate", image: "example/migrate") {
-                    $0.deployMode = "replicated-job"
-                    $0.restart = "always"
-                },
-            ]
-        )
-
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected deploy job restart policy error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'migrate' uses restart policy 'always' with deploy.mode 'replicated-job'; job restart policies need a restart-aware apple/container wait primitive"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-
-        #expect(runner.commands.isEmpty)
-    }
-
-    @Test("up rejects on-failure service restart policies for deploy jobs")
-    func upRejectsOnFailureServiceRestartPoliciesForDeployJobs() async throws {
-        let runner = RecordingRunner()
-        let project = composeProject(
-            name: "demo",
-            services: [
-                "migrate": composeService(name: "migrate", image: "example/migrate") {
-                    $0.deployMode = "replicated-job"
-                    $0.restart = "on-failure:3"
-                },
-            ]
-        )
-
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected deploy job restart policy error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'migrate' uses restart policy 'on-failure:3' with deploy.mode 'replicated-job'; job restart policies need a restart-aware apple/container wait primitive"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-
-        #expect(runner.commands.isEmpty)
-    }
-
-    @Test("up allows service restart none for deploy jobs")
-    func upAllowsServiceRestartNoneForDeployJobs() async throws {
+    @Test("up maps service restart policy for global jobs without a job-specific wait")
+    func upMapsServiceRestartPolicyForGlobalJobsWithoutAJobSpecificWait() async throws {
         let runner = RecordingRunner(responses: [.success])
-        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-migrate-1": 0])
+        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-migrate-1": 7])
         let project = composeProject(
             name: "demo",
             services: [
                 "migrate": composeService(name: "migrate", image: "example/migrate") {
-                    $0.deployMode = "replicated-job"
-                    $0.restart = "no"
+                    $0.deployMode = "global-job"
+                    $0.restart = "unless-stopped"
                 },
             ]
         )
@@ -2474,35 +2424,12 @@ extension ComposeOrchestratorTests {
         try await ComposeOrchestrator(
             runner: runner,
             lifecycleManager: lifecycleManager
-        ).up(project: project, options: ComposeUpOptions())
+        ).up(project: project, options: ComposeUpOptions { $0.detach = true })
 
-        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
-        #expect(runArguments.containsSequence(["--restart", "no"]))
-        #expect(await lifecycleManager.requests == [.wait(id: "demo-migrate-1")])
-    }
-
-    @Test("up allows deploy restart policy none for deploy jobs")
-    func upAllowsDeployRestartPolicyNoneForDeployJobs() async throws {
-        let runner = RecordingRunner(responses: [.success])
-        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-migrate-1": 0])
-        let project = composeProject(
-            name: "demo",
-            services: [
-                "migrate": composeService(name: "migrate", image: "example/migrate") {
-                    $0.deployMode = "replicated-job"
-                    $0.deployRestartPolicy = ComposeDeployRestartPolicy(condition: "none")
-                },
-            ]
-        )
-
-        try await ComposeOrchestrator(
-            runner: runner,
-            lifecycleManager: lifecycleManager
-        ).up(project: project, options: ComposeUpOptions())
-
-        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
-        #expect(runArguments.containsSequence(["--restart", "no"]))
-        #expect(await lifecycleManager.requests == [.wait(id: "demo-migrate-1")])
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(runArguments.containsSequence(["--restart", "unless-stopped"]))
+        #expect(runArguments.contains("--detach"))
+        #expect(await lifecycleManager.requests.isEmpty)
     }
 
     @Test("up rejects invalid restart policies before creating resources")
@@ -2606,5 +2533,4 @@ extension ComposeOrchestratorTests {
 
         #expect(runner.commands.isEmpty)
     }
-
 }

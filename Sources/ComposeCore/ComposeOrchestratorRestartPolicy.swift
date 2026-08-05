@@ -29,10 +29,7 @@ extension ComposeOrchestrator {
         if let policy = service.deployRestartPolicy {
             return try runtimeDeployRestartPolicyArguments(service: service, policy: policy)
         }
-        return try runtimeServiceRestartPolicyArguments(
-            service: service,
-            allowSuccessfulRestart: !isDeployJobService(service),
-        )
+        return try runtimeServiceRestartPolicyArguments(service: service)
     }
 
     /// Returns the typed restart policy used by direct apple/container create.
@@ -50,15 +47,6 @@ extension ComposeOrchestrator {
             .lowercased()
         let restartCondition = condition.flatMap { $0.isEmpty ? nil : $0 } ?? "any"
         let timing = try deployRestartTiming(service: service, policy: policy)
-        if isDeployJobService(service), restartCondition != "none" {
-            throw ComposeError.unsupported(
-                jobRestartPolicyUnsupportedMessage(
-                    service: service,
-                    source: "deploy.restart_policy",
-                ),
-            )
-        }
-
         switch restartCondition {
         case "none":
             if policy.maxAttempts != nil {
@@ -112,23 +100,8 @@ extension ComposeOrchestrator {
         return (policy.delayNanoseconds, policy.windowNanoseconds)
     }
 
-    /// Returns true for Compose Deploy modes that represent completion-oriented jobs.
-    func isDeployJobService(_ service: ComposeService) -> Bool {
-        guard let mode = service.deployMode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else {
-            return false
-        }
-        return mode == "replicated-job" || mode == "global-job"
-    }
-
-    func jobRestartPolicyUnsupportedMessage(service: ComposeService, source: String) -> String {
-        "service '\(service.name)' uses \(source) with deploy.mode '\(service.deployMode ?? "")'; job restart policies need a restart-aware apple/container wait primitive"
-    }
-
     /// Returns the runtime restart arguments for the service-level `restart` key.
-    func runtimeServiceRestartPolicyArguments(
-        service: ComposeService,
-        allowSuccessfulRestart: Bool = true,
-    ) throws -> RuntimeRestartPolicyArguments? {
+    func runtimeServiceRestartPolicyArguments(service: ComposeService) throws -> RuntimeRestartPolicyArguments? {
         guard let restart = service.restart?.trimmingCharacters(in: .whitespacesAndNewlines),
               !restart.isEmpty
         else {
@@ -154,10 +127,6 @@ extension ComposeOrchestrator {
             }
         default:
             throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; supported values are no, always, on-failure[:max-retries], and unless-stopped")
-        }
-
-        if !allowSuccessfulRestart, mode != "no" {
-            throw ComposeError.unsupported(jobRestartPolicyUnsupportedMessage(service: service, source: "restart policy '\(restart)'"))
         }
 
         return RuntimeRestartPolicyArguments(policy: restart)

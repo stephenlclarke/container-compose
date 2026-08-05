@@ -183,6 +183,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-bind-create-host-path-parity \
 	docker-compose-bind-propagation-parity \
 	docker-compose-image-volumes-parity \
+	docker-compose-deploy-job-modes-parity \
 	docker-compose-volume-labels-parity \
 	docker-compose-named-volume-reuse-parity \
 	docker-compose-deploy-endpoint-mode-parity \
@@ -242,7 +243,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: docker-compose-environment-parity docker-compose-named-volume-reuse-parity docker-compose-oci-annotations-parity docker-compose-exposed-ports-parity docker-compose-empty-process-overrides-parity docker-compose-provider-services-parity
 .PHONY: docker-compose-phase4-parity
 .PHONY: docker-compose-format-template-actions-parity
-.PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity
+.PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity docker-compose-deploy-job-modes-parity
 .PHONY: docker-compose-up-exit-code-from-parity docker-compose-performance-matrix performance-matrix-harness-test signal-log-reliability-harness-test
 .PHONY: docker-terminal-session-oracle docker-terminal-session-oracle-update docker-terminal-session-candidate-oracle docker-rest-logging-oracle docker-rest-logging-candidate docker-rest-logging-parity docker-rest-discovery-oracle docker-rest-discovery-candidate docker-rest-discovery-parity docker-rest-image-discovery-oracle docker-rest-image-discovery-candidate docker-rest-image-discovery-parity docker-rest-image-mutation-oracle docker-rest-image-mutation-candidate docker-rest-image-mutation-parity
 
@@ -1491,6 +1492,9 @@ docker-compose-bind-propagation-parity: build docker-compose-reference
 
 docker-compose-image-volumes-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-image-volumes.sh --strict
+
+docker-compose-deploy-job-modes-parity: build docker-compose-reference
+	$(PARITY_ENV) ./Tools/parity/check-compose-deploy-job-modes.sh --strict
 
 docker-compose-volume-labels-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-volume-labels.sh --strict
