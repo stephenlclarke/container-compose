@@ -30,6 +30,90 @@ import Foundation
 import Testing
 
 extension ComposeOrchestratorTests {
+    @Test("logs treats unreadable driver history as an empty stream")
+    func logsTreatsUnreadableDriverHistoryAsEmptyStream() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(
+            error: ComposeRuntimeLogError.readingUnsupported
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "silent": ComposeService(name: "silent", image: "example/silent"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(project: project, services: ["silent"])
+
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-silent-1", tail: nil, follow: false),
+        ])
+        #expect(emitted.messages.isEmpty)
+    }
+
+    @Test("logs continues readable services after unreadable driver history")
+    func logsContinuesReadableServicesAfterUnreadableDriverHistory() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(
+            outputs: ["visible"],
+            error: ComposeRuntimeLogError.readingUnsupported,
+            errorIDs: ["demo-silent-1"]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "silent": ComposeService(name: "silent", image: "example/silent"),
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(project: project, services: ["silent", "api"])
+
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-silent-1", tail: nil, follow: false),
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: false),
+        ])
+        #expect(emitted.messages == ["api-1 | visible"])
+    }
+
+    @Test("logs preserves unreadable driver errors for follow requests")
+    func logsPreservesUnreadableDriverErrorsForFollowRequests() async throws {
+        let logManager = RecordingContainerLogManager(
+            error: ComposeRuntimeLogError.readingUnsupported
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "silent": ComposeService(name: "silent", image: "example/silent"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                runner: RecordingRunner(),
+                options: ComposeExecutionOptions(),
+                logManager: logManager
+            ).logs(
+                project: project,
+                services: ["silent"],
+                options: ComposeLogsOptions { $0.follow = true }
+            )
+            Issue.record("Expected the unreadable-driver follow error")
+        } catch let error as ComposeRuntimeLogError {
+            #expect(error == .readingUnsupported)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
     @Test("logs accepts Compose all tail value")
     func logsAcceptsComposeAllTailValue() async throws {
         let runner = RecordingRunner()

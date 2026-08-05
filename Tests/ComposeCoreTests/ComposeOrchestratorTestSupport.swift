@@ -2238,12 +2238,19 @@ actor RecordingContainerLogManager: ContainerLogManaging {
     private let outputs: [String]
     private let delay: Duration?
     private let error: (any Error)?
+    private let errorIDs: Set<String>
     private var storage: [ContainerLogRequest] = []
 
-    init(outputs: [String] = [], delay: Duration? = nil, error: (any Error)? = nil) {
+    init(
+        outputs: [String] = [],
+        delay: Duration? = nil,
+        error: (any Error)? = nil,
+        errorIDs: Set<String> = []
+    ) {
         self.outputs = outputs
         self.delay = delay
         self.error = error
+        self.errorIDs = errorIDs
     }
 
     var requests: [ContainerLogRequest] {
@@ -2272,7 +2279,7 @@ actor RecordingContainerLogManager: ContainerLogManaging {
         if let delay {
             try await Task.sleep(for: delay)
         }
-        if let error {
+        if let error, errorIDs.isEmpty || errorIDs.contains(id) {
             throw error
         }
         for output in outputs {
@@ -2414,6 +2421,7 @@ actor BlockingContainerLogManager: ContainerLogManaging {
 actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     private let fileHandles: [FileHandle]
     private let records: [ContainerLogRecord]
+    private let error: (any Error)?
     private var storage: [String] = []
     private var optionsStorage: [ContainerLogOptions] = []
     private var replayStorage: [ContainerLogReplayOptions] = []
@@ -2425,9 +2433,14 @@ actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     private var followRecordStorage: [String] = []
     private var followRecordOptionsStorage: [ContainerLogOptions] = []
 
-    init(fileHandles: [FileHandle] = [], records: [ContainerLogRecord] = []) {
+    init(
+        fileHandles: [FileHandle] = [],
+        records: [ContainerLogRecord] = [],
+        error: (any Error)? = nil
+    ) {
         self.fileHandles = fileHandles
         self.records = records
+        self.error = error
     }
 
     var requests: [String] {
@@ -2474,6 +2487,9 @@ actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         storage.append(id)
         optionsStorage.append(options)
         replayStorage.append(replay)
+        if let error {
+            throw error
+        }
         return fileHandles
     }
 
@@ -2481,12 +2497,18 @@ actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         recordStorage.append(id)
         recordOptionsStorage.append(options)
         recordReplayStorage.append(replay)
+        if let error {
+            throw error
+        }
         return applyLogOptions(to: records, options: options)
     }
 
     func followLogs(id: String, options: ContainerLogOptions) async throws -> FileHandle {
         followStorage.append(id)
         followOptionsStorage.append(options)
+        if let error {
+            throw error
+        }
         if let fileHandle = fileHandles.first {
             return fileHandle
         }
@@ -2496,6 +2518,9 @@ actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     func followLogRecords(id: String, options: ContainerLogOptions) async throws -> FileHandle {
         followRecordStorage.append(id)
         followRecordOptionsStorage.append(options)
+        if let error {
+            throw error
+        }
         return try temporaryLogFileHandle(data: logRecordData(applyLogOptions(to: records, options: options)))
     }
 }

@@ -132,15 +132,22 @@ public extension ComposeOrchestrator {
 
     /// Emits static or single-target followed logs.
     internal func emitLogs(_ request: RuntimeLogRequest) async throws {
-        try await logManager.logs(
-            id: request.id,
-            tail: request.tail,
-            follow: request.follow,
-            since: request.since,
-            until: request.until,
-            timestamps: request.timestamps,
-            emit: request.emit,
-        )
+        do {
+            try await logManager.logs(
+                id: request.id,
+                tail: request.tail,
+                follow: request.follow,
+                since: request.since,
+                until: request.until,
+                timestamps: request.timestamps,
+                emit: request.emit,
+            )
+        } catch let error as ComposeRuntimeLogError
+            where error == .readingUnsupported && !request.follow
+        {
+            // Docker Compose treats an unreadable driver's static history as
+            // an empty stream and continues with every other selected target.
+        }
     }
 
     /// Returns the user-facing log emitter for a selected service target.

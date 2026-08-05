@@ -32,12 +32,18 @@
 #   CONTAINER_COMPOSE_LIVE  Set to 1 when an isolated matching Apple runtime is
 #                           running. The check then runs the same committed
 #                           signal and logging fixture through container-compose.
+#   CONTAINER_PACKAGE_PATH  Matched local Container Swift package. The Makefile
+#                           derives it from CONTAINER_STACK_REPO when available.
+#   CONTAINERIZATION_PACKAGE_PATH
+#                           Matched local Containerization Swift package. The
+#                           Makefile derives it from CONTAINERIZATION_STACK_REPO.
 #   DOCKER_COMPOSE          Docker Compose command to compare with. Defaults to
 #                           "docker compose" when available, otherwise docker-compose.
 #
-# This local parity check proves foreground attach signal delivery, complete
-# backward log tails across 1024-byte read boundaries, and persistent log
-# capture after an attached client disconnects against Docker Compose V2.
+# This local parity check proves non-TTY foreground output independently of
+# historical readability, restart retention, scaled aggregation, foreground
+# attach signal delivery, complete backward log tails across 1024-byte read
+# boundaries, and persistent capture after an attached client disconnects.
 
 set -euo pipefail
 
@@ -48,6 +54,7 @@ REPO_ROOT="$(cd "$(dirname "$SELF_PATH")/../.." && pwd)"
 readonly REPO_ROOT
 readonly FIXTURE_DIR="$REPO_ROOT/Tools/parity/fixtures/signal-log-reliability"
 readonly COMPOSE_FILE="$FIXTURE_DIR/compose.yaml"
+readonly WORK_DIR_MARKER_NAME=".container-compose-signal-log-root"
 
 STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
@@ -152,6 +159,7 @@ check_tools() {
 # Creates an invocation-private directory for captured output.
 prepare_work_dir() {
     WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/container-compose-signal-log.XXXXXX")"
+    printf '%s\n' "$SCRIPT_NAME" >"$WORK_DIR/$WORK_DIR_MARKER_NAME"
     mkfifo "$WORK_DIR/attach-input"
     exec {ATTACH_INPUT_FD}<>"$WORK_DIR/attach-input"
 }
@@ -316,6 +324,136 @@ wait_for_service_log() {
     error "$ACTIVE_IMPLEMENTATION service '$service' did not log '$pattern'"
     sed -n '1,160p' "$output_file" >&2
     return 1
+}
+
+# Verifies that every requested marker occurs exactly the expected number of
+# times without depending on unrelated Compose lifecycle diagnostics.
+assert_marker_counts() {
+    local implementation="$1"
+    local output_file="$2"
+    local expected_count="$3"
+    shift 3
+
+    python3 - "$implementation" "$output_file" "$expected_count" "$@" <<'PY'
+import pathlib
+import sys
+
+implementation, output_path, expected_text, *markers = sys.argv[1:]
+expected = int(expected_text)
+payload = pathlib.Path(output_path).read_text(encoding="utf-8", errors="replace")
+counts = {marker: payload.count(marker) for marker in markers}
+unexpected = {marker: count for marker, count in counts.items() if count != expected}
+if unexpected:
+    raise SystemExit(
+        f"{implementation}: marker counts {counts}, expected {expected} each in {output_path}"
+    )
+PY
+}
+
+# Proves that foreground output remains live and exact for both a readable
+# native driver and `none`, while only the readable driver retains history.
+check_non_tty_foreground_drivers() {
+    local service
+    local expected_history
+    local foreground_output
+    local history_output
+    local foreground_exit
+    local history_exit
+    local -a markers=(
+        "FOREGROUND:EARLY:OUT"
+        "FOREGROUND:EARLY:ERR"
+        "FOREGROUND:LATE:OUT"
+    )
+
+    for service in foreground-json foreground-none; do
+        if [[ "$service" == "foreground-json" ]]; then
+            expected_history=1
+        else
+            expected_history=0
+        fi
+        foreground_output="$WORK_DIR/$ACTIVE_IMPLEMENTATION-$service-foreground.log"
+        history_output="$WORK_DIR/$ACTIVE_IMPLEMENTATION-$service-history.log"
+
+        set +e
+        compose up --no-color --no-log-prefix "$service" >"$foreground_output" 2>&1
+        foreground_exit=$?
+        set -e
+        if ((foreground_exit != 0)); then
+            error "$ACTIVE_IMPLEMENTATION foreground service '$service' exited $foreground_exit"
+            sed -n '1,160p' "$foreground_output" >&2
+            return 1
+        fi
+        assert_marker_counts "$ACTIVE_IMPLEMENTATION/$service foreground" \
+            "$foreground_output" 1 "${markers[@]}"
+
+        set +e
+        compose logs --no-color --no-log-prefix "$service" >"$history_output" 2>&1
+        history_exit=$?
+        set -e
+        if ((history_exit != 0)); then
+            error "$ACTIVE_IMPLEMENTATION historical read for '$service' exited $history_exit"
+            sed -n '1,160p' "$history_output" >&2
+            return 1
+        fi
+        assert_marker_counts "$ACTIVE_IMPLEMENTATION/$service history" \
+            "$history_output" "$expected_history" "${markers[@]}"
+    done
+
+    info "$ACTIVE_IMPLEMENTATION non-TTY readable/none foreground output passed"
+}
+
+# Proves that restarting one container preserves earlier history and appends
+# the second process generation exactly once.
+check_restart_retention() {
+    local output_file="$WORK_DIR/$ACTIVE_IMPLEMENTATION-restart.log"
+
+    compose up --detach restart-log >/dev/null
+    wait_for_service_log restart-log "RESTART:1" "$output_file"
+    compose restart restart-log >/dev/null
+    wait_for_service_log restart-log "RESTART:2" "$output_file"
+    compose logs --no-color --no-log-prefix restart-log >"$output_file"
+    assert_marker_counts "$ACTIVE_IMPLEMENTATION/restart history" \
+        "$output_file" 1 "RESTART:1" "RESTART:2"
+
+    info "$ACTIVE_IMPLEMENTATION restart log retention passed"
+}
+
+# Proves foreground aggregation and retained reads cover each scaled replica
+# once, without pinning volatile container identifiers.
+check_scaled_aggregation() {
+    local foreground_output="$WORK_DIR/$ACTIVE_IMPLEMENTATION-scale-foreground.log"
+    local history_output="$WORK_DIR/$ACTIVE_IMPLEMENTATION-scale-history.log"
+    local foreground_exit
+
+    set +e
+    compose up --no-color --no-log-prefix --scale scaled-log=3 scaled-log \
+        >"$foreground_output" 2>&1
+    foreground_exit=$?
+    set -e
+    if ((foreground_exit != 0)); then
+        error "$ACTIVE_IMPLEMENTATION scaled foreground exited $foreground_exit"
+        sed -n '1,200p' "$foreground_output" >&2
+        return 1
+    fi
+    compose logs --no-color --no-log-prefix scaled-log >"$history_output"
+
+    python3 - "$ACTIVE_IMPLEMENTATION" "$foreground_output" "$history_output" <<'PY'
+import pathlib
+import re
+import sys
+
+implementation, foreground_path, history_path = sys.argv[1:]
+pattern = re.compile(r"SCALE:([0-9a-f]+)")
+for label, path in (("foreground", foreground_path), ("history", history_path)):
+    payload = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
+    identifiers = pattern.findall(payload)
+    if len(identifiers) != 3 or len(set(identifiers)) != 3:
+        raise SystemExit(
+            f"{implementation}: scaled {label} identifiers {identifiers!r}, expected 3 unique"
+        )
+PY
+
+    info "$ACTIVE_IMPLEMENTATION scaled foreground/history aggregation passed"
 }
 
 # Starts an Apple-runtime wait before a service exits so the live process wait
@@ -517,6 +655,9 @@ check_runtime() {
     ACTIVE_IMPLEMENTATION="$1"
     ACTIVE_PROJECT="$2"
 
+    check_non_tty_foreground_drivers
+    check_restart_retention
+    check_scaled_aggregation
     check_log_tails
     check_attach_signal
     check_disconnected_client_logging
@@ -549,7 +690,12 @@ cleanup() {
         if [[ -n "$ATTACH_INPUT_FD" ]]; then
             exec {ATTACH_INPUT_FD}>&-
         fi
-        rm -rf "$WORK_DIR"
+        if [[ -f "$WORK_DIR/$WORK_DIR_MARKER_NAME" ]] \
+            && [[ "$(<"$WORK_DIR/$WORK_DIR_MARKER_NAME")" == "$SCRIPT_NAME" ]]; then
+            rm -rf "$WORK_DIR"
+        else
+            warning "refusing to remove unmarked parity directory: $WORK_DIR"
+        fi
     fi
 }
 

@@ -308,6 +308,12 @@ public protocol ComposeRuntimeLogManaging: Sendable {
     // swiftlint:enable function_parameter_count
 }
 
+/// Stable log-read failures that a runtime adapter can expose to Compose.
+public enum ComposeRuntimeLogError: Error, Equatable, Sendable {
+    /// The configured logging driver intentionally exposes no readable history.
+    case readingUnsupported
+}
+
 public extension ComposeRuntimeLogManaging {
     // swiftlint:disable function_parameter_count
     /// Emits logs through a string callback for tests and non-binary consumers.

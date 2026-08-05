@@ -18,6 +18,7 @@ import ComposeCore
 import ComposeRuntimeSPI
 import ContainerAPIClient
 import ContainerResource
+import ContainerizationError
 import Foundation
 
 /// Low-level apple/container log call used by `ContainerClientLogManager`.
@@ -159,6 +160,34 @@ public struct ContainerClientLogManager: ComposeRuntimeLogManaging {
         timestamps: Bool,
         emit: @escaping @Sendable (Data) -> Void,
     ) async throws {
+        do {
+            try await emitLogs(
+                id: id,
+                tail: tail,
+                follow: follow,
+                since: since,
+                until: until,
+                timestamps: timestamps,
+                emit: emit
+            )
+        } catch {
+            throw Self.composeLogError(error)
+        }
+    }
+
+    // swiftlint:enable function_parameter_count
+
+    // swiftlint:disable function_parameter_count
+    /// Performs a log read before runtime-specific errors are normalized.
+    private func emitLogs(
+        id: String,
+        tail: Int?,
+        follow: Bool,
+        since: Date?,
+        until: Date?,
+        timestamps: Bool,
+        emit: @escaping @Sendable (Data) -> Void,
+    ) async throws {
         if timestamps || since != nil || until != nil {
             if follow {
                 try await emitStructuredFollowLogs(
@@ -203,6 +232,22 @@ public struct ContainerClientLogManager: ComposeRuntimeLogManaging {
     }
 
     // swiftlint:enable function_parameter_count
+
+    /// Maps the Container public unreadable-driver category into the runtime
+    /// SPI without weakening direct Container or Engine API error semantics.
+    private static func composeLogError(_ error: any Error) -> any Error {
+        if let readerError = error as? ContainerLogReaderError,
+           readerError == .configuredDriverDoesNotSupportReading
+        {
+            return ComposeRuntimeLogError.readingUnsupported
+        }
+        if let containerError = error as? ContainerizationError,
+           containerError.code == .unsupported
+        {
+            return ComposeRuntimeLogError.readingUnsupported
+        }
+        return error
+    }
 
     // swiftlint:disable function_parameter_count
     /// Emits followed structured records when Compose needs runtime timestamps.
