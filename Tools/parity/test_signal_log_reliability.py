@@ -86,5 +86,37 @@ class ScaledIdentifierTests(unittest.TestCase):
             )
 
 
+class MatchedPackagePathTests(unittest.TestCase):
+    def test_make_target_passes_the_local_engine_api_package(self) -> None:
+        result = subprocess.run(
+            [
+                "make",
+                "--dry-run",
+                "docker-compose-signal-log-reliability-parity",
+                "CONTAINER_ENGINE_API_STACK_REPO=/tmp/matched-engine-api",
+                "CONTAINER_ENGINE_API_PACKAGE_PATH=/tmp/matched-engine-api",
+                "PARITY_CONTAINER_ENGINE_API_REF=fixture-engine-api-ref",
+            ],
+            cwd=REPOSITORY,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            'CONTAINER_ENGINE_API_PACKAGE_PATH="/tmp/matched-engine-api"',
+            result.stdout,
+        )
+        self.assertIn(
+            'CONTAINER_ENGINE_API_REF="fixture-engine-api-ref"',
+            result.stdout,
+        )
+        self.assertIn(
+            'CONTAINER_ENGINE_API_STACK_REPO="/tmp/matched-engine-api"',
+            result.stdout,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -37,6 +37,10 @@
 #   CONTAINERIZATION_PACKAGE_PATH
 #                           Matched local Containerization Swift package. The
 #                           Makefile derives it from CONTAINERIZATION_STACK_REPO.
+#   CONTAINER_ENGINE_API_PACKAGE_PATH
+#                           Matched local Container Engine API Swift package.
+#                           The Makefile derives it from
+#                           CONTAINER_ENGINE_API_STACK_REPO.
 #   DOCKER_COMPOSE          Docker Compose command to compare with. Defaults to
 #                           "docker compose" when available, otherwise docker-compose.
 #
