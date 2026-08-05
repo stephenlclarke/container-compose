@@ -1064,6 +1064,152 @@ struct DockerLoggingDriverOracleFixtureTests {
 
     @Test
     // swiftlint:disable:next function_body_length
+    func `pins GELF UDP gzip and TCP NUL wire contracts`() throws {
+        let fixture = try Self.gelfWireFixture()
+
+        #expect(try integer(fixture, "schemaVersion") == 1)
+        #expect(
+            try string(fixture, "scope")
+                == "direct Docker Engine GELF remote-wire contract",
+        )
+        #expect(try string(fixture, "metadata", "engineVersion") == "29.2.1")
+        #expect(try string(fixture, "metadata", "apiVersion") == "1.53")
+        #expect(try string(fixture, "metadata", "context") == "colima")
+        #expect(try string(fixture, "metadata", "dockerClientVersion") == "29.7.1")
+        #expect(try string(fixture, "metadata", "image") == "alpine:3.20")
+        #expect(
+            try string(fixture, "timings", "gelfRemoteWire", "clock")
+                == "time.monotonic",
+        )
+        #expect(
+            try double(
+                fixture,
+                path: ["timings", "gelfRemoteWire", "durationSeconds"],
+            ) > 0,
+        )
+
+        let expectedMessages = [
+            "stdout-ascii",
+            "stderr-utf8-☃",
+            "stdout-binary-�\u{0000}-end",
+        ]
+        let expectedLevels = [6, 3, 6]
+        for transport in ["tcpNULTerminated", "udpDefaultGzip"] {
+            #expect(
+                try boolean(
+                    fixture,
+                    "cases", "gelfRemoteWire", transport, "phase",
+                    "configurationAcceptedAtCreate",
+                ),
+            )
+            #expect(
+                try boolean(
+                    fixture,
+                    "cases", "gelfRemoteWire", transport, "phase",
+                    "connectionEstablishedAtStart",
+                ),
+            )
+            #expect(
+                try integer(
+                    fixture,
+                    "cases", "gelfRemoteWire", transport, "phase", "containerExitCode",
+                ) == 0,
+            )
+            #expect(
+                try string(
+                    fixture,
+                    "cases", "gelfRemoteWire", transport, "inspectAfterExit", "logConfig",
+                    "Type",
+                ) == "gelf",
+            )
+            #expect(
+                try string(
+                    fixture,
+                    "cases", "gelfRemoteWire", transport, "inspectAfterExit", "logConfig",
+                    "Config", "cache-disabled",
+                ) == "true",
+            )
+            #expect(
+                try boolean(
+                    fixture,
+                    "cases", "gelfRemoteWire", transport, "cleanup",
+                    "receiverProcessRunning",
+                ) == false,
+            )
+            let residue: [Any] = try value(
+                fixture,
+                "cases", "gelfRemoteWire", transport, "cleanup", "vmPathsRemaining",
+            )
+            #expect(residue.isEmpty)
+
+            let records: [[String: Any]] = try value(
+                fixture,
+                "cases", "gelfRemoteWire", transport, "wire", "records",
+            )
+            #expect(try records.map { try string($0, "shortMessage") } == expectedMessages)
+            #expect(try records.map { try integer($0, "level") } == expectedLevels)
+            for record in records {
+                #expect(try string(record, "version") == "1.1")
+                #expect(try string(record, "host") == "colima")
+                #expect(try string(record, "timestamp") == "<unix-seconds-milliseconds>")
+                #expect(
+                    try string(record, "timestampPrecision")
+                        == "at-most-milliseconds",
+                )
+                let extras: [String: Any] = try value(record, "extras")
+                #expect(extras["_ORACLE_ENV"] as? String == "bravo")
+                #expect(extras["_oracle.label"] as? String == "alpha")
+                #expect(extras["_container_id"] as? String == "<container-id>")
+                #expect(extras["_container_name"] as? String == "<container-name>")
+                #expect(extras["_created"] as? String == "<rfc3339-nano-utc>")
+                #expect(extras["_image_id"] as? String == "<image-id>")
+                #expect(extras["_image_name"] as? String == "alpine:3.20")
+                #expect(
+                    extras["_tag"] as? String
+                        == "oracle.<container-name>.<container-id-short>",
+                )
+            }
+        }
+
+        #expect(
+            try string(
+                fixture,
+                "cases", "gelfRemoteWire", "udpDefaultGzip", "wire", "framing",
+                "compression",
+            ) == "gzip",
+        )
+        #expect(
+            try boolean(
+                fixture,
+                "cases", "gelfRemoteWire", "udpDefaultGzip", "wire", "framing",
+                "datagramBoundariesAreMessageBoundaries",
+            ),
+        )
+        #expect(
+            try string(
+                fixture,
+                "cases", "gelfRemoteWire", "tcpNULTerminated", "wire", "framing",
+                "compression",
+            ) == "none",
+        )
+        #expect(
+            try boolean(
+                fixture,
+                "cases", "gelfRemoteWire", "tcpNULTerminated", "wire", "framing",
+                "streamEndsWithNUL",
+            ),
+        )
+        #expect(
+            try boolean(
+                fixture,
+                "cases", "gelfRemoteWire", "tcpNULTerminated", "wire",
+                "peerClosedAfterContainerExit",
+            ),
+        )
+    }
+
+    @Test
+    // swiftlint:disable:next function_body_length
     func `pins Compose foreground independence from historical readers`() throws {
         let fixture = try Self.fixture()
 
@@ -1172,6 +1318,24 @@ struct DockerLoggingDriverOracleFixtureTests {
         let data = try Data(contentsOf: url)
         guard let fixture = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw FixtureError.invalid("root is not a JSON object")
+        }
+        return fixture
+    }
+
+    private static func gelfWireFixture() throws -> [String: Any] {
+        guard
+            let url = Bundle.module.url(
+                forResource: "docker-engine-29.2.1-gelf-wire",
+                withExtension: "json",
+            )
+        else {
+            throw FixtureError.missing(
+                "Fixtures/logging/docker-engine-29.2.1-gelf-wire.json",
+            )
+        }
+        let data = try Data(contentsOf: url)
+        guard let fixture = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw FixtureError.invalid("GELF wire root is not a JSON object")
         }
         return fixture
     }
