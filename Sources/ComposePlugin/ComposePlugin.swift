@@ -28,7 +28,7 @@ private let composeBuildInfo = ComposeBuildInfo.load()
 private let composePluginVersionNumber = composeBuildInfo.version
 private let composePluginVersionString = "container-compose \(composePluginVersionNumber)"
 
-private struct ComposeBuildInfo: Codable {
+struct ComposeBuildInfo: Codable {
     var version: String = "0.10.1"
     var source: String = "unspecified"
     var branch: String = "unspecified"
@@ -102,9 +102,23 @@ private struct ComposeBuildInfo: Codable {
         return try? JSONDecoder().decode(ComposeBuildInfo.self, from: data)
     }
 
-    private static func localBuildInfo() -> ComposeBuildInfo {
-        let root = git(["rev-parse", "--show-toplevel"]) ?? FileManager.default.currentDirectoryPath
+    static func localBuildInfo(
+        root explicitRoot: String? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> ComposeBuildInfo {
+        let root =
+            explicitRoot
+            ?? git(["rev-parse", "--show-toplevel"])
+            ?? FileManager.default.currentDirectoryPath
         let branch = git(["branch", "--show-current"], root: root) ?? "unspecified"
+        let localContainer = localDependencyMetadata(
+            path: environment["CONTAINER_PACKAGE_PATH"],
+            declaredSource: environment["CONTAINER_SOURCE"]
+        )
+        let localContainerization = localDependencyMetadata(
+            path: environment["CONTAINERIZATION_PACKAGE_PATH"],
+            declaredSource: environment["CONTAINERIZATION_SOURCE"]
+        )
         return ComposeBuildInfo(
             version: "0.10.1",
             source: remoteSource(root: root),
@@ -112,14 +126,52 @@ private struct ComposeBuildInfo: Codable {
             lane: lane(for: branch),
             commit: git(["rev-parse", "HEAD"], root: root) ?? "unspecified",
             buildType: defaultBuildType,
-            containerSource: normalizedSource(packageResolvedValue(root: root, identity: "container", key: "location") ?? "stephenlclarke/container"),
-            containerRef: packageResolvedState(root: root, identity: "container") ?? localContainerRef(root: root) ?? "unspecified",
-            containerizationSource: normalizedSource(packageResolvedValue(root: root, identity: "containerization", key: "location") ?? "unspecified"),
-            containerizationRef: packageResolvedState(root: root, identity: "containerization") ?? "unspecified",
-            composeGoVersion: goModuleVersion(root: root, module: "github.com/compose-spec/compose-go/v2"),
+            containerSource: localContainer?.source
+                ?? normalizedSource(
+                    packageResolvedValue(
+                        root: root,
+                        identity: "container",
+                        key: "location"
+                    ) ?? "stephenlclarke/container"
+                ),
+            containerRef: localContainer?.ref
+                ?? packageResolvedState(root: root, identity: "container")
+                ?? localContainerRef(root: root)
+                ?? "unspecified",
+            containerizationSource: localContainerization?.source
+                ?? normalizedSource(
+                    packageResolvedValue(
+                        root: root,
+                        identity: "containerization",
+                        key: "location"
+                    ) ?? "unspecified"
+                ),
+            containerizationRef: localContainerization?.ref
+                ?? packageResolvedState(root: root, identity: "containerization")
+                ?? "unspecified",
+            composeGoVersion: goModuleVersion(
+                root: root,
+                module: "github.com/compose-spec/compose-go/v2"
+            ),
             runtimeCapabilitySchemaVersion: ComposeRuntimeCapabilityManifest.required.schemaVersion,
             runtimeCapabilities: ComposeRuntimeCapabilityManifest.required.identifiers
         )
+    }
+
+    private static func localDependencyMetadata(
+        path: String?,
+        declaredSource: String? = nil
+    ) -> (source: String, ref: String)? {
+        guard let path, !path.isEmpty,
+              let ref = git(["rev-parse", "HEAD"], root: path) else {
+            return nil
+        }
+        let source =
+            declaredSource.flatMap { value in
+                value.isEmpty ? nil : normalizedSource(value)
+            }
+            ?? remoteSource(root: path)
+        return (source: source, ref: ref)
     }
 
     private static func remoteSource(root: String) -> String {
@@ -142,7 +194,6 @@ private struct ComposeBuildInfo: Codable {
         return "custom"
     }
 }
-
 private struct ComposeVersionOutput: Encodable {
     let version: String
     let source: String

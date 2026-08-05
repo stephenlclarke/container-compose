@@ -110,6 +110,10 @@ SWIFT_RUNTIME_TEST_FILTER ?= ComposeRuntimeTests
 COMPOSE_TEST_BINARY ?= $(abspath .build/debug/compose)
 CONTAINER_STACK_REPO ?= $(abspath ../container)
 CONTAINERIZATION_STACK_REPO ?= $(abspath ../containerization)
+CONTAINER_PACKAGE_PATH ?= $(if $(wildcard $(CONTAINER_STACK_REPO)/Package.swift),$(CONTAINER_STACK_REPO),)
+CONTAINERIZATION_PACKAGE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_REPO)/Package.swift),$(CONTAINERIZATION_STACK_REPO),)
+PARITY_CONTAINER_REF ?= $(if $(CONTAINER_PACKAGE_PATH),$(shell git -C "$(CONTAINER_PACKAGE_PATH)" rev-parse HEAD 2>/dev/null),$(CONTAINER_REF))
+PARITY_CONTAINERIZATION_REF ?= $(if $(CONTAINERIZATION_PACKAGE_PATH),$(shell git -C "$(CONTAINERIZATION_PACKAGE_PATH)" rev-parse HEAD 2>/dev/null),$(CONTAINERIZATION_REF))
 CONTAINER_BUILDER_SHIM_STACK_REPO ?= $(abspath ../container-builder-shim)
 CONTAINER_K8S_STACK_REPO ?= $(abspath ../container-k8s)
 HOMEBREW_TAP_REPO ?= $(abspath ../homebrew-tap)
@@ -136,6 +140,12 @@ PARITY_TIMEOUT_SECONDS ?= 300
 PARITY_ENV = \
 	CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" \
 	CONTAINER_COMPOSE_LIVE="$(CONTAINER_COMPOSE_LIVE)" \
+	CONTAINER_PACKAGE_PATH="$(CONTAINER_PACKAGE_PATH)" \
+	CONTAINERIZATION_PACKAGE_PATH="$(CONTAINERIZATION_PACKAGE_PATH)" \
+	GIT_COMMIT="$(PARITY_CONTAINER_REF)" \
+	CONTAINER_SOURCE="$(CONTAINER_SOURCE)" \
+	CONTAINERIZATION_SOURCE="$(CONTAINERIZATION_SOURCE)" \
+	CONTAINERIZATION_REF="$(PARITY_CONTAINERIZATION_REF)" \
 	CONTAINER_STACK_REPO="$(CONTAINER_STACK_REPO)" \
 	CONTAINERIZATION_STACK_REPO="$(CONTAINERIZATION_STACK_REPO)" \
 	DOCKER_COMPOSE="$(DOCKER_COMPOSE_REFERENCE)" \
@@ -1569,7 +1579,12 @@ docker-compose-rm-parity: build docker-compose-reference
 docker-compose-lifecycle-hooks-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-lifecycle-hooks.sh --strict
 
-docker-compose-signal-log-reliability-parity: build docker-compose-reference
+docker-compose-signal-log-reliability-parity: docker-compose-reference
+	@lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
+	cp Package.resolved "$$lock_backup"; \
+	restore_lock() { trap - EXIT HUP INT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
+	trap restore_lock EXIT HUP INT TERM; \
+	$(PARITY_ENV) $(SWIFT) build --product compose
 	$(PARITY_ENV) ./Tools/parity/check-compose-signal-log-reliability.sh --strict
 
 docker-compose-restart-policy-parity: build docker-compose-reference

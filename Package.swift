@@ -15,7 +15,30 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import Foundation
 import PackageDescription
+
+let containerDependency: Package.Dependency = {
+    if let path = ProcessInfo.processInfo.environment["CONTAINER_PACKAGE_PATH"],
+       !path.isEmpty {
+        return .package(name: "container", path: path)
+    }
+    return .package(
+        url: "https://github.com/stephenlclarke/container.git",
+        revision: "2a79b4553a342e33411666a88ad20ccd2ce46551",
+    )
+}()
+
+let containerizationDependency: Package.Dependency = {
+    if let path = ProcessInfo.processInfo.environment["CONTAINERIZATION_PACKAGE_PATH"],
+       !path.isEmpty {
+        return .package(name: "containerization", path: path)
+    }
+    return .package(
+        url: "https://github.com/stephenlclarke/containerization.git",
+        revision: "77f06d4c44341e04241941072fb69e2b85a6f5c1",
+    )
+}()
 
 let package = Package(
     name: "container-compose",
@@ -27,14 +50,8 @@ let package = Package(
         .library(name: "ComposeRuntimeSPI", targets: ["ComposeRuntimeSPI"]),
     ],
     dependencies: [
-        .package(
-            url: "https://github.com/stephenlclarke/container.git",
-            revision: "2a79b4553a342e33411666a88ad20ccd2ce46551",
-        ),
-        .package(
-            url: "https://github.com/stephenlclarke/containerization.git",
-            revision: "77f06d4c44341e04241941072fb69e2b85a6f5c1",
-        ),
+        containerDependency,
+        containerizationDependency,
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.4.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
