@@ -106,10 +106,15 @@ Signed Engine API `da59cff5b11ba4049f631c886ac3b09b0c3108d6` and
 Container `16a3419ae31bb5c18a934571c69348767a89233e` remove the former fixed
 4096-store/32 GiB aggregate history ceiling while retaining the 8 MiB
 per-store bound and a separate defensive on-disk directory scan bound. Focused
-MBP proofs encode, decode, and publish 4097 stores exactly. The remaining
-large-history gap is bounded-memory, file-backed streaming across source
-export, sealing, transfer decode, and destination staging; the current v1
-package still materializes complete histories in memory.
+MBP proofs encode, decode, and publish 4097 stores exactly. Signed Engine API
+`331ae39219b7c09a87f56acc9d7016c234afa06d` adds a compatible framed v2
+format with 4 MiB independently authenticated windows, bounded file
+publication, and destination file opening. Signed Container
+`62455f657e8d22233736eec7c2438ca7a14553ce` adopts v2 for its native source
+and destination while retaining v1 opening. The remaining large-history gap
+is record-level file streaming for source acquisition, compatibility package
+decode, and destination history staging; those paths still materialize
+aggregate history.
 
 Compose config and hashing never require a runtime lookup. Runtime preflight
 retains optional and unknown installed identifiers separately from the mandatory
