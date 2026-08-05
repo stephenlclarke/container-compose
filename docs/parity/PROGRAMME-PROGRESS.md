@@ -4,7 +4,7 @@
 
 Programme base: `6a0a7e608632a7e4b1fd05f50f3f687370325e88`.
 
-Register generated: 2026-08-04.
+Register generated: 2026-08-05.
 
 | State | Count |
 | --- | ---: |
