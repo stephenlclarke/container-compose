@@ -880,6 +880,49 @@ The Container CLI keeps `--log-driver` and repeated `--log-opt` as lossless inpu
 
 ### Devcontainer authority handoff
 
+#### Current devcontainer release-composition blocker
+
+**State: Blocked (5 August 2026).** Signed devcontainer
+`fe9e8a5b1a094d09f8c0266fd22be5d539845b68` adds a narrow record-client and
+handoff-client seam around the existing Apple Container export. On this MBP,
+the exact local graph of Engine API
+`4949e743675f00ec102f7acacdb4e990409e383f`, Container
+`259878a427de7021b52e40e759d3b261150cc514`, and Containerization
+`77f06d4c44341e04241941072fb69e2b85a6f5c1` compiles the adapter and proves:
+
+- `AppleContainerRuntimeLoggingHandoffTests`: 11/11 passed with 90.67% line
+  coverage of `AppleContainerRuntimeLoggingHandoff.swift`;
+- `ServiceCommandIntegrationTests`: 2/2 passed, starting the generated engine
+  executable through both the public Docker socket and the private provider
+  socket, checking provider fingerprint/capability handoff and clean shutdown;
+- an isolated marker-protected SwiftPM root, temporary mode-0700 test roots,
+  and exact SHA-256 fingerprints for `devcontainer-engine`
+  `6d887f1792ab5634e0111b74e2e99dc6a928d4a2b99d76fa0207e89fcb32ded5`
+  and the test bundle
+  `c3cc056df0168da8cd963752f66652923504a983851880fe5b8ab4d86f0ae758`.
+  The integration test removes its generated roots after the proof.
+
+This is local implementation evidence, not a release-ready adoption. A clean
+resolution against released Engine API 0.3.5
+`78cb4cb5781d6dbe9f0d34a1b925ee8dcaacdc98` first fails to compile because it
+does not define `ProviderHandoffPortableLoggingContainerV1`,
+`ProviderHandoffPortableLoggingContainerSourceV2`, or
+`ProviderHandoffPortableLogRecordV1`. The declared public Apple Container 1.1.0
+pin likewise lacks `ContainerLogRecord`, `ContainerLogReplayOptions`, and
+`ContainerClient.logRecordStream`. The local graph also emits SwiftPM's
+identity-collision warning for `apple/containerization` versus the matched
+`stephenlclarke/containerization`; a future SwiftPM will make that warning an
+error. Devcontainer therefore retains its published Engine API 0.3.3 lockfile
+and documents the local handoff source honestly instead of claiming a false
+0.3.5 upgrade.
+
+Closure requires a signed, reproducibly resolvable Engine API, Container, and
+Containerization graph under one package identity, an updated devcontainer lock
+without local overrides, then the focused handoff/service proof plus the
+Docker-facing external-provider, Testcontainers, failure, migration, security,
+and performance evidence. Until then this contract remains **Blocked**; it is
+not a substitute for the broader logging-driver or release certification.
+
 Logging state is exactly one `.logging` part and one immutable canonical payload
 object in the coherent design's complete `ProviderHandoffManifestV1`. It carries
 immutable container ID, the exact provider-neutral requested configuration,
