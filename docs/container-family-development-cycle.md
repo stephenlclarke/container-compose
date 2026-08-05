@@ -2,7 +2,7 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Process adopted; upstream registry, local CodeQL, and reviewed PR-only Compose promotion complete; stable progress control in progress; general MBP CI, local workflow wrappers, performance, shared-ledger, impact-map, immutable-evidence, concurrency, baseline-audit, and release-signature enablers pending |
+| Status | Active; one user-visible contract at a time, focused implementation feedback, immutable checkpoint proof, transactional Git hygiene, and silent Slack instruction polling are the adopted delivery workflow |
 | Applies to | `container-engine-api`, `container-engine`, `container`, `containerization`, `container-compose`, `container-builder-shim`, `devcontainer`, and matched supporting repositories |
 | Architecture | [Coherent Container-family parity architecture](coherent-container-family-parity-design.md) |
 | Primary goal | Observable Docker parity with comparable or better performance |
@@ -40,19 +40,22 @@ Cycles 0 to 3 are dependency-ordered. After the shared contracts freeze, indepen
 
 ## Critical-Path Execution Contract
 
-A goal is implemented as one coherent critical-path stream until its user-visible vertical contract is complete or a concrete external dependency prevents further useful local work. Work-package identifiers partition design and evidence; they do not require separate implementation pauses, full regression runs, documentation passes, branches, pull requests, or releases. In particular, an unfinished cross-stack contract must not be split into small administrative slices merely to produce green intermediate checkpoints.
+A goal is implemented as one coherent critical-path stream until its user-visible vertical contract is Verified or a concrete dependency prevents further useful local work. Work-package identifiers partition design and evidence; they do not require separate implementation pauses, full regression runs, documentation passes, branches, pull requests, or releases. In particular, an unfinished cross-stack contract must not be split into small administrative slices merely to produce green intermediate checkpoints.
+
+Every selected contract records its behaviour, explicit non-goals, pinned Docker oracle, exact repositories and revisions, affected pins, focused proof, completion criteria, blocker criteria, and safe handoff point before implementation begins. Every other objective is Queued. The only permitted delivery states are `Queued`, `Active`, `Implemented`, `Verified`, `Blocked`, and `Handed off`; code, commits, tests, reports, or a local implementation alone do not make a contract Verified.
 
 The following rules are mandatory:
 
-1. Keep one active implementation stream for the selected contract. A development slice is a substantial related vertical contract covering its lower-runtime behavior, authority transaction, client projection, recovery, and focused tests; a small fix, test rerun, documentation update, or hygiene action is not a separate slice.
+1. Keep one Active implementation stream for the selected contract and keep every other objective Queued. A development slice is a substantial related vertical contract covering its lower-runtime behaviour, authority transaction, client projection, recovery, and focused tests; a small fix, test rerun, documentation update, status pass, Git administration, or hygiene action is supporting work rather than a separate slice unless it directly unblocks the contract.
 2. During implementation, run only the narrow deterministic unit or component tests needed to shape the current code and prove the directly affected boundary. Batch related edits before running a component test.
-3. Accumulate several related completed slices before running repository-wide, matched-stack, security, migration, and performance gates once against their immutable checkpoint head. Run a broad gate earlier only when a dependency boundary makes later implementation unsafe, and repeat it only when a subsequent maintained-source, generated-output, dependency, or runtime-fingerprint change invalidates that evidence.
+3. Accumulate several related Implemented contracts before running repository-wide, matched-stack, security, migration, and performance gates once against their immutable checkpoint head. Run a broad gate earlier only when a dependency boundary makes later implementation unsafe, and repeat it only when a subsequent maintained-source, generated-output, dependency, or runtime-fingerprint change invalidates that evidence.
 4. Reconcile programme-wide status, capability tables, handoffs, exact heads, issue comments, and release records at the coherent checkpoint. Do not interrupt active implementation for repeated prose-only refreshes that cannot change a support claim.
 5. Treat repository hygiene as part of each Git transaction. A necessary issue, branch, pull request, or linked worktree is created with its owner and terminal condition already known, and it is commented, closed or retained with evidence, and cleaned up in the same close-out transaction. Do not defer a pile of branch, pull-request, issue, or filesystem cleanup to a later maintenance cycle.
 6. Prefer `main` for authorised Stephen-owned integration work where review policy permits it. Use a topic branch only for an active review or isolated upstream handoff; Apple-bound work uses an `upstream/` prefix and remains local until the programme-wide publication boundary.
-7. Report progress against the active contract and its remaining critical path. The generated programme-wide state count remains the authoritative completeness ledger, but it is not a substitute for explaining which concrete behavior changed during the current implementation stream.
-8. If two consecutive work periods produce only repeated validation, documentation, or hygiene activity with no implementation or blocker-evidence delta, stop that loop, identify why the current approach is not advancing the contract, and change the execution plan before doing more of the same.
+7. Report progress against the Active contract and its remaining critical path. The primary metric is newly Verified contracts; implementation activity, test counts, commits, and reports are supporting evidence rather than completion metrics.
+8. If two consecutive work periods produce no implementation or new blocker-evidence delta, or an unexplained failure survives two evidence-based correction attempts or two hours, stop that loop. Record a structured Blocked or Handed off result with exact evidence, then select an independent safe Queued contract or request direction instead of repeatedly rebuilding, restarting, testing, or reporting.
 9. Use one Slack-check workflow that reads new user messages in `#codex` every five minutes and again before each slice START or END update. Execute every unhandled authorised instruction and reply to that exact message with its concrete result; never report a Slack-originated request only as a separate channel post. It remains silent when there is no new instruction and must not repeat completed work.
+10. Before runtime validation, prove that the source SHA, dependency revisions, built binaries, guest/init image, and test root share one exact fingerprint. Runtime tests use isolated, marker-protected disposable roots and retain enough evidence to reproduce a failure.
 
 These rules do not weaken the exit criteria. They move expensive proof to the point where it can establish completion once, while preserving focused failure feedback during development.
 
@@ -133,6 +136,10 @@ Each lower-layer change is independently tested and remains narrow enough to han
 Run the smallest deterministic test that can fail for the current edit. A parser change runs its parser tests; a lifecycle transition runs that transition and journal recovery tests; a provider fix runs its protocol fixture; a documentation change runs Markdown/link checks.
 
 When several related fixes affect the same component, keep them in the same substantial development slice, make the coherent batch, and run the component gate once. Do not define every fix as its own slice, and do not run the full stack regression after each small edit merely because it exists.
+
+Maintained code aims for at least 90% line coverage overall and new or substantially changed code aims for at least 90% focused line coverage. Coverage is reported from an instrumented run and is never inferred from a green test count. An evidence-backed lower result remains visible with its reason and follow-up; low-value tests are not added merely to inflate the percentage.
+
+Where Docker-based integration is applicable, retain a repository-owned `Dockerfile`, `compose.yaml`/`compose.yml`, or focused Bash harness that invokes the built CLI through the same user-visible path as the Docker reference. Unit-only proof is insufficient for a CLI/runtime contract that can be exercised through such a fixture.
 
 ### 6. Integrate across the actual boundary
 
@@ -403,7 +410,7 @@ Each slice keeps a compact durable record that another MBP or maintainer can res
 | Contract | User-visible behaviour, non-goals, Docker oracle, expected phase/state/events. |
 | Inputs | Exact repository heads, pins, provider/sandbox fingerprints, toolchain and host. |
 | Implementation | Changed repositories/commits, capability revisions, migrations and feature gates. |
-| Design progress | Every affected design requirement/work-package ID, previous/new state (`not started`, `in progress`, `blocked`, or `verified`), exact evidence, and any still-open acceptance row. |
+| Design progress | Every affected design requirement/work-package ID, previous/new state (`Queued`, `Active`, `Implemented`, `Verified`, `Blocked`, or `Handed off`), exact evidence, and any still-open acceptance row. |
 | Documentation | Complete documentation inventory reviewed; every changed page/help/schema/example/status/release/handoff item, or an explicit evidence-backed `unchanged`/`not applicable` disposition. |
 | Validation | Focused, component, cross-client, fault, security, migration and full gates with exact result locations. |
 | Review | Review passes, findings/resolutions, `@codex` queries/responses, unrelated findings/blockers and final clean pass. |
@@ -458,6 +465,8 @@ A slice is complete only when:
 - a complete final-diff review finds no new actionable issue after every earlier issue was resolved;
 - every `@codex` PR query has an explicit response and every reviewed-diff change received a new exact-SHA review;
 - local static analysis, SonarQube, supported CodeQL, and every required exact-head external authority is green;
+- maintained code aims for at least 90% overall line coverage, new or substantially changed code has focused coverage evidence aimed at 90%, and every evidence-backed exception is explicit;
+- applicable Docker integration uses a retained Dockerfile, Compose file, or Bash harness that exercises the built CLI through the user-visible contract;
 - every affected executable lane has paired release-build median/P95 comparable to or better than Docker outside the declared noise band; a demonstrably non-executable slice records `not applicable` with rationale and cannot close a performance gap;
 - exact stack pins, documentation, compatibility manifests, and `STATUS.md` agree with the delivered behaviour;
 - every documentation surface has a recorded review disposition, `STATUS.md` agrees with the remaining gaps, and affected design or handoff records point to exact final-head evidence;
@@ -466,7 +475,7 @@ A slice is complete only when:
 
 ## Safe Incomplete Handoff
 
-Work that cannot meet the definition of done because publication is not authorised, a dependency is missing, or an external authority is unavailable is not a completed slice. Preserve it safely with exact commits on a short-lived remote topic branch/draft pull request, the original acceptance criteria, current blocker/owner, completed and missing evidence, active run identifiers, rollback point, next command, and next-review date. This is valid handoff evidence but never a parity/support completion claim.
+Work that cannot meet the definition of done because publication is not authorised, a dependency is missing, or an external authority is unavailable is Blocked or Handed off, never Verified. Preserve it safely with exact commits on a short-lived topic branch or, where already authorised, a draft pull request; record the original acceptance criteria, current blocker/owner, completed and missing evidence, active run identifiers, rollback point, next command, and next-review date. This is valid handoff evidence but never a parity/support completion claim.
 
 ## Initial Workflow Enablers
 

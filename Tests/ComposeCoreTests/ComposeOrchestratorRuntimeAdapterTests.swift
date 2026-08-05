@@ -50,6 +50,23 @@ extension ComposeOrchestratorTests {
         }
     }
 
+    @Test("log manager normalizes the public unreadable driver category")
+    func logManagerNormalizesPublicUnreadableDriverCategory() async throws {
+        let client = RecordingContainerLogAPIClient(
+            error: ContainerLogReaderError.configuredDriverDoesNotSupportReading
+        )
+        let manager = ContainerClientLogManager(client: client)
+
+        do {
+            try await manager.logs(id: "demo-api-1", tail: nil, follow: false) { (_: Data) in }
+            Issue.record("Expected the unreadable-driver runtime error")
+        } catch let error as ComposeRuntimeLogError {
+            #expect(error == .readingUnsupported)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
     @Test("log manager passes tail to direct API for static logs")
     func logManagerPassesTailToDirectAPIForStaticLogs() async throws {
         let emitted = MessageRecorder()

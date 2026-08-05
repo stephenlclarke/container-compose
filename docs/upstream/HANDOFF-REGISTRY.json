@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-08-04",
+  "generatedAt": "2026-08-05",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -6782,6 +6782,68 @@
         {
           "kind": "pull-request",
           "path": "docs/upstream/container-compose/PR-192.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-195",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Make logging parity use matched local packages",
+      "state": "closed",
+      "lastVerified": "2026-08-05",
+      "commits": [
+        "024c2d23aced5202854108e1511d1e405dd11e2e",
+        "3915a1223852bc3d4b7fa42852c019ed28745431",
+        "c7a50e28438ca0c5bd5a668d3b8e87db25c4a176"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-195.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-195.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-196",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Match Docker Compose static unreadable history",
+      "state": "closed",
+      "lastVerified": "2026-08-05",
+      "commits": [
+        "4f52a22b043260187b30f284dcbc0a563144cf6d"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-196.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-196.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-197",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Preserve complete scaled log identifiers",
+      "state": "closed",
+      "lastVerified": "2026-08-05",
+      "commits": [
+        "994de3172e1c9eaf3f7b62c36f427b1c6bdc264c"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-197.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-197.md"
         }
       ]
     },

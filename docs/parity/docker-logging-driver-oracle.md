@@ -25,7 +25,9 @@ The capture covers:
 - non-blocking delivery under a controlled two-second Unix-stream sink stall, including guest write completion before sink release, observable dropped-new gaps, order, uniqueness, and final-record loss;
 - Docker `syslog` delivery through VM-local UDP, TCP, authenticated TLS, and Unix-stream receivers, including RFC 5424 microsecond fields, `local1` stdout/stderr priorities, expanded name/ID tags, ASCII/UTF-8/binary-with-NUL payload bytes, UDP datagram boundaries, TCP/Unix LF framing, TLS octet counting, peer shutdown, and exact receiver cleanup;
 - Docker `fluentd` delivery through VM-local TCP and Unix-stream receivers, including the four-element Fluent Forward MessagePack envelope, string and invalid-UTF-8 string encodings, container/stream/label/environment metadata, integer-second versus EventTime timestamps, request-ack chunk tokens and ACK completion, EOF on logger shutdown, and an async Unix reconnect that delivers records buffered before the receiver exists; and
-- Docker Compose foreground output for `json-file`, `none`, and cache-disabled `syslog`, proving that early stdout/stderr remains visible exactly once even when later historical reads are unsupported.
+- Docker Compose foreground output for `json-file`, `none`, and cache-disabled `syslog`, proving that early stdout/stderr remains visible exactly once even when later historical reads are unsupported;
+- Docker Compose static history for `none`, which exits successfully with an empty stream and continues readable services, while followed/direct reads retain the unsupported-reader failure; and
+- the reusable signal/log CLI fixture for readable/`none` non-TTY foreground output, restart retention, three-replica aggregation, tails, signal forwarding, disconnected-client persistence, and exact cleanup.
 
 The `none` option case deliberately calls the Engine API directly. Docker's CLI performs additional client-side validation and rejects that request before it reaches the daemon; the runtime compatibility contract is the Engine behavior captured here.
 
@@ -70,6 +72,23 @@ make docker-terminal-session-candidate-oracle
 That target defaults to `/tmp/container-engine-$(id -u)/docker.sock`; override `DOCKER_TERMINAL_CANDIDATE_SOCKET` for an isolated installation. The committed [`docker-engine-29.2.1-terminal-session.json`](../../Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-terminal-session.json) fixture and [`DockerTerminalSessionOracleFixtureTests.swift`](../../Tests/ComposeCoreTests/DockerTerminalSessionOracleFixtureTests.swift) pin the exact 101 upgrade headers, raw TTY bytes, dimensions, detach sequence, reattachment, exit state, and cleanup contract.
 
 Signed local Engine API `c7973ac641fb6f6e07df1358114f36222bd9ca59` and Container `a10ad44d8675b27a665d72fbe054f12f403f8412` pass this semantic and <10× regression gate. The candidate improved from 4.359129 seconds before the peer-identity cache to 1.238173 seconds on the first post-start capture and 0.920554 seconds warm; the committed Docker reference is 0.184992 seconds. The remaining 6.69× cold and 4.98× warm ratios are retained as a comparable-performance gap rather than being hidden by the regression threshold.
+
+## Compose Signal and Log Reliability Gate
+
+The same-host Docker Compose 5.3.1/candidate CLI gate runs the committed [`signal-log-reliability`](../../Tools/parity/fixtures/signal-log-reliability/compose.yaml) project and Bash harness:
+
+```sh
+CONTAINER_COMPOSE_LIVE=1 \
+CONTAINER_COMPOSE_CONTAINER=/path/to/exact/signed/container \
+CONTAINER_STACK_REPO=/path/to/container \
+CONTAINERIZATION_STACK_REPO=/path/to/containerization \
+CONTAINER_ENGINE_API_STACK_REPO=/path/to/container-engine-api \
+make docker-compose-signal-log-reliability-parity
+```
+
+The 5 August 2026 Verified checkpoint used Compose `c7a50e28438ca0c5bd5a668d3b8e87db25c4a176`, Container `bfa8b361901e33bc427d5bb551d19b2a224ca3f2`, Containerization `38d9c695e7a6915e5ce45d12c893dc323a661af7`, Engine API `c7973ac641fb6f6e07df1358114f36222bd9ca59`, Docker Compose 5.3.1, and Docker Engine 29.2.1. Both lanes passed readable and `none` foreground output, successful empty static `none` history, restart retention, three-replica foreground/history aggregation, long and filtered tails, signal forwarding, disconnected-client logging, and exact cleanup. The embedded focused Swift gate passed 19 tests in two suites; the sourceable Bash identifier assertion passed three Python regressions, including non-hex hyphenated candidate hostnames.
+
+The candidate graph must use identity-preserving local package roots for Container, Containerization, and Engine API because these coordinated revisions are intentionally unpublished. The target records that graph before runtime validation and restores `Package.resolved` afterwards.
 
 ## Determinism And Cleanup
 
