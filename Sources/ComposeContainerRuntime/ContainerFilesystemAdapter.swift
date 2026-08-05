@@ -21,7 +21,12 @@ import Darwin
 import Foundation
 
 /// `ContainerClient`-backed copier for real service container file copies.
-public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
+///
+/// The documented main Container client supplies filesystem-path copy calls.
+/// Compose layers archive streaming over those calls when a runtime does not
+/// expose a native archive API, preserving the supported copy contract without
+/// binding this adapter to an optional Container revision.
+public struct ContainerClientCopier: ComposeRuntimeCopying {
     public typealias CopyInto = @Sendable (String, String, String, ContainerCopyTransferOptions) async throws -> Void
     public typealias CopyFrom = @Sendable (String, String, String, ContainerCopyTransferOptions) async throws -> Void
     public typealias CopyArchiveInto =
@@ -31,8 +36,8 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
 
     private let copyIntoOperation: CopyInto
     private let copyFromOperation: CopyFrom
-    private let copyArchiveIntoOperation: CopyArchiveInto
-    private let copyArchiveFromOperation: CopyArchiveFrom
+    private let copyArchiveIntoOperation: CopyArchiveInto?
+    private let copyArchiveFromOperation: CopyArchiveFrom?
 
     public init(
         copyInto: @escaping CopyInto = { id, source, destination, options in
@@ -54,24 +59,8 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
                 preserveOwnership: options.preserveOwnership,
             )
         },
-        copyArchiveInto: @escaping CopyArchiveInto = { id, archive, destination, options in
-            try await ContainerClient().copyIn(
-                id: id,
-                archive: archive,
-                destination: destination,
-                createParents: true,
-                preserveOwnership: options.preserveOwnership,
-            )
-        },
-        copyArchiveFrom: @escaping CopyArchiveFrom = { id, source, archive, copyContents, options in
-            try await ContainerClient().copyOut(
-                id: id,
-                source: source,
-                archive: archive,
-                followSymlink: options.followSymlink,
-                copyContents: copyContents,
-            )
-        },
+        copyArchiveInto: CopyArchiveInto? = nil,
+        copyArchiveFrom: CopyArchiveFrom? = nil,
     ) {
         copyIntoOperation = copyInto
         copyFromOperation = copyFrom
@@ -120,29 +109,20 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
         }
     }
 
-    /// Streams an archive into a service container through `ContainerClient`.
-    public func copyArchiveIntoContainer(
-        id: String,
-        archive: FileHandle,
-        destination: String,
-        options: ContainerCopyTransferOptions = ContainerCopyTransferOptions(),
-    ) async throws {
-        try await copyArchiveIntoOperation(id, archive, destination, options)
-    }
-
-    /// Streams a service container path as an archive through `ContainerClient`.
-    public func copyFromContainerAsArchive(
-        id: String,
-        source: String,
-        archive: FileHandle,
-        copyContents: Bool = false,
-        options: ContainerCopyTransferOptions = ContainerCopyTransferOptions(),
-    ) async throws {
-        try await copyArchiveFromOperation(id, source, archive, copyContents, options)
-    }
-
-    /// Streams service container files directly between native copy APIs.
+    /// Copies service container files through native archive APIs when a test
+    /// supplies them, otherwise through Compose's secure path-copy fallback.
     public func copyBetweenContainers(sourceID: String, source: String, destinationID: String, destination: String, options: ContainerCopyTransferOptions = ContainerCopyTransferOptions()) async throws {
+        guard let copyArchiveIntoOperation, let copyArchiveFromOperation else {
+            try await copyBetweenContainersUsingStagedArchive(
+                sourceID: sourceID,
+                source: source,
+                destinationID: destinationID,
+                destination: destination,
+                options: options,
+            )
+            return
+        }
+
         let archiveSource = ComposeArchivePath.source(source)
         let (reader, writer) = try Self.archivePipe()
         let destinationOptions = ContainerCopyTransferOptions(preserveOwnership: options.preserveOwnership)
@@ -184,6 +164,49 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
             try? reader.close()
             throw error
         }
+    }
+
+    private func copyBetweenContainersUsingStagedArchive(
+        sourceID: String,
+        source: String,
+        destinationID: String,
+        destination: String,
+        options: ContainerCopyTransferOptions,
+    ) async throws {
+        let temporaryDirectory = try ComposeTemporaryFiles.createDirectory(
+            prefix: "container-compose-runtime-copy-",
+        )
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let archiveURL = temporaryDirectory.appendingPathComponent("transfer.tar")
+        let archiveSource = ComposeArchivePath.source(source)
+        let copier: any ComposeRuntimeCopying = self
+
+        let writer = try ComposeTemporaryFiles.createFile(at: archiveURL)
+        do {
+            try await copier.copyFromContainerAsArchive(
+                id: sourceID,
+                source: archiveSource.path,
+                archive: writer,
+                copyContents: archiveSource.copyContents,
+                options: options,
+                temporaryDirectory: temporaryDirectory,
+            )
+            try writer.close()
+        } catch {
+            try? writer.close()
+            throw error
+        }
+
+        let reader = try FileHandle(forReadingFrom: archiveURL)
+        defer { try? reader.close() }
+        try await copier.copyArchiveIntoContainer(
+            id: destinationID,
+            archive: reader,
+            destination: destination,
+            options: ContainerCopyTransferOptions(preserveOwnership: options.preserveOwnership),
+            temporaryDirectory: temporaryDirectory,
+        )
     }
 
     private static func archivePipe() throws -> (reader: FileHandle, writer: FileHandle) {

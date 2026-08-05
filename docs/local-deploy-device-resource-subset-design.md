@@ -13,7 +13,7 @@
 
 ## Goal
 
-Close the Local Deploy device/resource subset row in [STATUS.md](../STATUS.md) by matching Docker Compose's local, non-Swarm projection exactly. The current row overstates the implementation gap: Docker Compose local mode does not schedule CPU, PID, or generic-resource reservations, and the Compose 5.3.1 schema does not accept reservation PIDs or device/generic resource limits. The only missing runtime mapping in this row is the complete set of `deploy.resources.reservations.devices` requests, including non-GPU requests. Compose-layer corrections must also preserve/ignore valid scheduler metadata. The candidate job-mode wait/restart correction is implemented with a Docker 5.3.1 oracle but remains `Blocked` until a compatible dependency graph can build and execute its focused proof.
+Close the Local Deploy device/resource subset row in [STATUS.md](../STATUS.md) by matching Docker Compose's local, non-Swarm projection exactly. The current row overstates the implementation gap: Docker Compose local mode does not schedule CPU, PID, or generic-resource reservations, and the Compose schema does not accept reservation PIDs or device/generic resource limits. The only missing runtime mapping in this row is the complete set of `deploy.resources.reservations.devices` requests, including non-GPU requests. Compose-layer corrections must also preserve/ignore valid scheduler metadata. The job-mode wait/restart correction is now `Verified`: the exact main graph builds, its five focused regressions pass, and the strict Docker/CLI certificate passes.
 
 Completion means that the stack:
 
@@ -101,7 +101,7 @@ These values remain in `config`/`convert` output and, except for replicas, parti
 
 `deploy.replicas` remains the local scale input and is omitted from the service hash. `deploy.restart_policy` remains mapped to the ordinary container restart policy. All other scheduler fields above are metadata only.
 
-In particular, local Docker Compose does not wait for `replicated-job` or `global-job` containers, alter their restart handling, or implement one task per node. With no explicit replica count, those modes follow the normal local scale of one. The candidate local path removes the prior job-specific wait and restart-policy rejection paths; acceptance remains `Blocked` until the matching Compose/Container API graph can build the focused regression and CLI certificate.
+In particular, local Docker Compose does not wait for `replicated-job` or `global-job` containers, alter their restart handling, or implement one task per node. With no explicit replica count, those modes follow the normal local scale of one. The local path now preserves that behavior: the prior job-specific wait and restart-policy rejection paths are removed and verified by the exact-graph focused regression and Docker/CLI certificate.
 
 ### Device request ordering
 
@@ -117,9 +117,9 @@ Static non-CDI service device mappings remain in `HostConfig.Devices`; `device_c
 
 | Layer | Current boundary | Consequence |
 | --- | --- | --- |
-| Parity ledger | [STATUS.md](../STATUS.md) now records CPU/generic reservations as valid values that are incorrectly rejected instead of preserved/ignored, non-GPU device reservations as blocked on DeviceBroker, reservation PIDs plus device/generic limits as schema-invalid, and job-specific wait/restart handling as an extra local behaviour. | The design-time correction removes the earlier Swarm/runtime conflation without claiming that the remaining implementation exists. |
+| Parity ledger | [STATUS.md](../STATUS.md) records CPU/generic reservations as valid values that are incorrectly rejected instead of preserved/ignored, non-GPU device reservations as blocked on DeviceBroker, reservation PIDs plus device/generic limits as schema-invalid, and job-specific wait/restart handling as verified removed. | The design-time correction removes the earlier Swarm/runtime conflation without claiming that the remaining implementation exists. |
 | Normalizer | [`main.go`](../Tools/compose-normalizer/main.go) retains raw Deploy data but derives only `DeployGPURequests` and an `UnsupportedDeployFields` list. | Valid generic reservations and non-GPU device reservations are rejected instead of preserved or mapped. |
-| Local jobs | `deploy.mode` is used to wait for job containers and reject restart policies. | This adds behaviour that Docker Compose 5.3.1 local mode does not implement. |
+| Local jobs | `deploy.mode` now follows ordinary local service convergence and restart projection. | The prior extra job-completion wait and restart rejection are verified removed; per-node scheduling remains out of scope. |
 | Compose model | [`NormalizedProject.swift`](../Sources/ComposeCore/NormalizedProject.swift) stores service/Deploy GPU requests as generic values and no general runtime `DeviceRequest`. | Capabilities, defaults, source order, and Engine OR alternatives cannot share one typed contract. |
 | Compose projection | [`ComposeOrchestratorRuntimeSupport.swift`](../Sources/ComposeCore/ComposeOrchestratorRuntimeSupport.swift) converts requests to `--gpus` strings and validates only the single virtio-GPU subset. | Non-GPU, CDI, multiple provider, and Engine API request semantics cannot pass losslessly. |
 | Container transport | The matched `LinuxRuntimeData` carries flat `LinuxGPURequest` plus direct guest device mappings. | It cannot carry an Engine OR-of-AND capability request or provider lease identity. |
@@ -1171,7 +1171,7 @@ The Compose migration removes:
 - generic reservation rejection;
 - GPU/non-GPU splitting as the runtime ownership boundary;
 - `validateDeploySupport` errors for schema-valid scheduler metadata; and
-- the prior local `replicated-job`/`global-job` wait and restart restrictions.
+- any remaining copy of the prior local `replicated-job`/`global-job` wait and restart restrictions; their removal is already verified.
 
 compose-go remains the sole schema validator. A temporary decoder may accept the old derived fields in cached/test JSON, but newly normalised projects no longer emit them.
 
@@ -1300,7 +1300,7 @@ Behavioural parity and performance are judged separately. The candidate median a
 
 ## STATUS Alignment
 
-[STATUS.md](../STATUS.md) now records the corrected current-state boundary: local CPU/memory/PID limits and memory/GPU reservations are mapped; valid CPU/generic reservations are still rejected instead of preserved/ignored; non-GPU device reservations do not yet reach DeviceBroker; and the candidate `replicated-job`/`global-job` correction is `Blocked` pending a compatible Compose/Container API graph and focused Docker/CLI proof. Reservation PIDs and device/generic limits are Compose 5.3.1 schema errors, not missing runtime mappings.
+[STATUS.md](../STATUS.md) now records the corrected current-state boundary: local CPU/memory/PID limits and memory/GPU reservations are mapped; valid CPU/generic reservations are still rejected instead of preserved/ignored; non-GPU device reservations do not yet reach DeviceBroker; and `replicated-job`/`global-job` use verified ordinary local restart, detached-start, and readiness behavior. Reservation PIDs and device/generic limits are Compose schema errors, not missing runtime mappings.
 
 Only after this design's implementation definition of done passes may the Local Deploy gap row be replaced with the following supported-state substance:
 
