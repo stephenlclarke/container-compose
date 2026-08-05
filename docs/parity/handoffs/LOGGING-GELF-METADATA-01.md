@@ -12,7 +12,7 @@ The current direct comparison passed in 3.225985 seconds, 1.05× the captured ba
 
 ## Component proof
 
-An isolated SwiftPM editable-dependency overlay retains the exact local `containerization` and `container-engine-api` identities while supplying their recorded paths: Container `259878a427de7021b52e40e759d3b261150cc514`, Containerization `38d9c695e7a6915e5ce45d12c893dc323a661af7`, and Engine API `4949e743675f00ec102f7acacdb4e990409e383f`. `swift test --disable-automatic-resolution --scratch-path /private/tmp/container-gelf-metadata-overlay.lDcAcV/swift-build-editable --filter GELFConfigurationTests` passed 7/7 tests. The marker-protected root `/private/tmp/container-gelf-metadata-overlay.lDcAcV` records its dependency graph, build fingerprint, and test result.
+An isolated SwiftPM editable-dependency overlay retained the exact local `containerization` and `container-engine-api` identities while supplying their recorded paths: Container `259878a427de7021b52e40e759d3b261150cc514`, Containerization `38d9c695e7a6915e5ce45d12c893dc323a661af7`, and Engine API `4949e743675f00ec102f7acacdb4e990409e383f`. `swift test --disable-automatic-resolution --scratch-path /private/tmp/container-gelf-metadata-overlay.lDcAcV/swift-build-editable --filter GELFConfigurationTests` passed 7/7 tests. The marker-protected root `/private/tmp/container-gelf-metadata-overlay.lDcAcV` retains the dependency graph, build fingerprint, and test result; its disposable worktree and scratch builds were removed after the production checkpoint.
 
 ## Applied regression
 
