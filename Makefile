@@ -128,6 +128,7 @@ CONTAINERIZATION_INIT_SOURCE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_RE
 DOCKER_COMPOSE_REFERENCE ?= $(shell if docker compose version >/dev/null 2>&1; then printf '%s' 'docker compose'; elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then printf '%s' docker-compose; else printf '%s' 'docker compose'; fi)
 DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.3.1
 DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff
+DOCKER_TERMINAL_CANDIDATE_SOCKET ?= /tmp/container-engine-$(shell id -u)/docker.sock
 CONTAINER_COMPOSE_LIVE ?= 0
 PARITY_EVIDENCE_DIR ?=
 PARITY_REPETITIONS ?= 3
@@ -226,6 +227,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: docker-compose-format-template-actions-parity
 .PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity
 .PHONY: docker-compose-up-exit-code-from-parity docker-compose-performance-matrix performance-matrix-harness-test
+.PHONY: docker-terminal-session-oracle docker-terminal-session-oracle-update docker-terminal-session-candidate-oracle
 
 all: workflow
 
@@ -1289,6 +1291,16 @@ docker-log-fixtures:
 
 docker-log-fixtures-update:
 	./scripts/capture-docker-compose-log-fixtures.sh --update
+
+docker-terminal-session-oracle:
+	$(PYTHON) ./Tools/parity/capture-docker-terminal-session-oracle.py --strict
+
+docker-terminal-session-oracle-update:
+	$(PYTHON) ./Tools/parity/capture-docker-terminal-session-oracle.py --strict --update
+
+docker-terminal-session-candidate-oracle:
+	$(PYTHON) ./Tools/parity/capture-docker-terminal-session-oracle.py --strict \
+		--socket "$(DOCKER_TERMINAL_CANDIDATE_SOCKET)"
 
 container-stack-build:
 	@if [[ -f "$(CONTAINER_STACK_REPO)/Makefile" ]]; then \

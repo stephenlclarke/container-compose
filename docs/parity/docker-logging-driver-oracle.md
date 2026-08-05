@@ -17,6 +17,7 @@ The capture covers:
 - `HostConfig.LogConfig`, `LogPath`, stopped-container reads, restart retention, and the effect of a created-container follow read;
 - non-TTY stdout/stderr selection and Docker's eight-byte multiplex framing;
 - TTY raw, merged output and stream-filter behavior;
+- live TTY attach over the Docker HTTP upgrade protocol, observable terminal resize, configured detach keys that leave the workload running, independent reattachment, later output, terminal exit, and exact cleanup;
 - raw `json-file` record keys, streams, labels, and RFC 3339 nanosecond timestamp shape;
 - native-reader behavior for `local`; and
 - the default dual-logging cache, `cache-disabled` grammar, and retention without create/start rejection of the other `cache-*` options for both reader and non-reader drivers; pinned Moby 29.2.1 retains but does not remap `cache-max-size`, `cache-max-file`, or `cache-compress`, so the local cache keeps its fixed 20 MiB/five-file/compressed defaults;
@@ -54,9 +55,27 @@ python3 Tools/parity/capture-docker-logging-driver-oracle.py --strict --update
 
 The committed evidence is [`docker-engine-29.2.1-logging.json`](../../Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-logging.json), and focused fixture assertions live in [`DockerLoggingDriverOracleFixtureTests.swift`](../../Tests/ComposeCoreTests/DockerLoggingDriverOracleFixtureTests.swift).
 
+The live terminal session is deliberately a separate short-running capture so that it can also be executed unchanged against the Container public Docker socket. Capture and compare the pinned reference with:
+
+```sh
+make docker-terminal-session-oracle
+```
+
+With the matched Container system running, compare its public gateway with the same semantic fixture:
+
+```sh
+make docker-terminal-session-candidate-oracle
+```
+
+That target defaults to `/tmp/container-engine-$(id -u)/docker.sock`; override `DOCKER_TERMINAL_CANDIDATE_SOCKET` for an isolated installation. The committed [`docker-engine-29.2.1-terminal-session.json`](../../Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-terminal-session.json) fixture and [`DockerTerminalSessionOracleFixtureTests.swift`](../../Tests/ComposeCoreTests/DockerTerminalSessionOracleFixtureTests.swift) pin the exact 101 upgrade headers, raw TTY bytes, dimensions, detach sequence, reattachment, exit state, and cleanup contract.
+
+Signed local Engine API `c7973ac641fb6f6e07df1358114f36222bd9ca59` and Container `a10ad44d8675b27a665d72fbe054f12f403f8412` pass this semantic and <10× regression gate. The candidate improved from 4.359129 seconds before the peer-identity cache to 1.238173 seconds on the first post-start capture and 0.920554 seconds warm; the committed Docker reference is 0.184992 seconds. The remaining 6.69× cold and 4.98× warm ratios are retained as a comparable-performance gap rather than being hidden by the regression threshold.
+
 ## Determinism And Cleanup
 
 Each Engine probe uses a unique `cc-log-oracle-*` container name and force-removes every tracked container in a `finally` path. The pressure probe uses exact, unique socket, PID, and result paths inside the Colima VM; it validates and removes all three without broad process matching. Remote-wire probes use bounded Python receivers inside the same Colima VM as the Docker daemon. Each receiver has unique ready, result, PID, socket, certificate, and key paths as applicable; cleanup addresses only those exact paths, validates the exact PID command line before signalling, and proves that the process and paths are gone. TLS uses a one-day, per-run CA certificate generated inside Colima and supplied through Docker's `syslog-tls-ca-cert` option. Each foreground probe uses a unique Compose project and host temporary directory, runs `down --volumes --remove-orphans`, and verifies that its container and default network no longer exist. Cleanup is verified before the script exits. No probe creates a persistent Docker network or volume.
+
+The terminal-session capture similarly generates one unique `cc-terminal-oracle-*` name, addresses only its returned container identifier, force-removes it in a `finally` path, and proves the exact identifier returns HTTP 404 before exiting. Reads, process-exit polling, and the hijacked session are bounded; the harness creates no network or volume.
 
 Volatile container IDs, names, ports, paths, certificates, daemon PIDs, timestamps, Fluentd chunk tokens, and byte counts derived from volatile field lengths are replaced with typed placeholders or canonical normalized counts. Valid JSON timestamps become `<rfc3339-nano-utc>`; Syslog timestamps become `<rfc3339-micro-utc>` while retaining their six-digit resolution; Fluentd timestamps retain their exact MessagePack integer or `fixext8` EventTime representation. Raw JSON records are sorted by stream. Fluent Forward maps are semantically unordered, so map-entry order is normalized while every scalar wire type and top-level array position remains frozen. Docker may vary socket read chunk boundaries, so receivers concatenate the byte stream and decode protocol framing rather than treating a `recv` boundary as evidence. The workload inserts bounded pauses to make stdout/stderr source order deterministic, and the fixture retains that wire order.
 
