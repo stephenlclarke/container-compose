@@ -225,7 +225,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: docker-compose-phase4-parity
 .PHONY: docker-compose-format-template-actions-parity
 .PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity
-.PHONY: docker-compose-up-exit-code-from-parity docker-compose-performance-matrix
+.PHONY: docker-compose-up-exit-code-from-parity docker-compose-performance-matrix performance-matrix-harness-test
 
 all: workflow
 
@@ -1536,6 +1536,7 @@ docker-compose-performance-matrix: build docker-compose-reference
 			PARITY_REPETITIONS="$${PARITY_REPETITIONS:-5}" \
 			PARITY_TIMEOUT_SECONDS="$${PARITY_TIMEOUT_SECONDS:-300}" \
 			PARITY_TIMING_MAX_RATIO="$${PARITY_TIMING_MAX_RATIO:-10}" \
+			PARITY_COMPARABLE_NOISE_PCT="$${PARITY_COMPARABLE_NOISE_PCT:-5}" \
 			./Tools/parity/check-compose-performance-matrix.sh --strict
 
 docker-compose-health-wait-parity: build docker-compose-reference
@@ -1670,6 +1671,9 @@ coverage-tools-test:
 	$(PYTHON) -m unittest discover Tools/ci
 	Tools/release/test_publish_github_release.sh
 
+performance-matrix-harness-test:
+	$(PYTHON) Tools/parity/test_compose_performance_matrix.py
+
 upstream-divergence-report:
 	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
 
@@ -1726,7 +1730,7 @@ worktree-audit-strict:
 
 check: lint core-runtime-neutrality stack-consistency upstream-handoff-registry-check programme-progress-check check-licenses
 
-lint: coverage-tools-test
+lint: coverage-tools-test performance-matrix-harness-test
 	@while IFS= read -r -d '' script; do \
 		bash -n "$$script"; \
 	done < <(find scripts Tools/parity Tools/release -type f \( -name '*.sh' -o -name 'pre-commit.fmt' \) -print0)
