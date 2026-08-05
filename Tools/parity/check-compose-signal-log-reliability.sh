@@ -418,6 +418,29 @@ check_restart_retention() {
     info "$ACTIVE_IMPLEMENTATION restart log retention passed"
 }
 
+# Validates complete replica identifiers in foreground and retained output.
+assert_scaled_identifiers() {
+    local implementation="$1"
+    local foreground_output="$2"
+    local history_output="$3"
+
+    python3 - "$implementation" "$foreground_output" "$history_output" <<'PY'
+import pathlib
+import re
+import sys
+
+implementation, foreground_path, history_path = sys.argv[1:]
+pattern = re.compile(r"(?m)^SCALE:([^\s]+)\s*$")
+for label, path in (("foreground", foreground_path), ("history", history_path)):
+    payload = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
+    identifiers = pattern.findall(payload)
+    if len(identifiers) != 3 or len(set(identifiers)) != 3:
+        raise SystemExit(
+            f"{implementation}: scaled {label} identifiers {identifiers!r}, expected 3 unique"
+        )
+PY
+}
+
 # Proves foreground aggregation and retained reads cover each scaled replica
 # once, without pinning volatile container identifiers.
 check_scaled_aggregation() {
@@ -437,21 +460,7 @@ check_scaled_aggregation() {
     fi
     compose logs --no-color --no-log-prefix scaled-log >"$history_output"
 
-    python3 - "$ACTIVE_IMPLEMENTATION" "$foreground_output" "$history_output" <<'PY'
-import pathlib
-import re
-import sys
-
-implementation, foreground_path, history_path = sys.argv[1:]
-pattern = re.compile(r"SCALE:([0-9a-f]+)")
-for label, path in (("foreground", foreground_path), ("history", history_path)):
-    payload = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
-    identifiers = pattern.findall(payload)
-    if len(identifiers) != 3 or len(set(identifiers)) != 3:
-        raise SystemExit(
-            f"{implementation}: scaled {label} identifiers {identifiers!r}, expected 3 unique"
-        )
-PY
+    assert_scaled_identifiers "$ACTIVE_IMPLEMENTATION" "$foreground_output" "$history_output"
 
     info "$ACTIVE_IMPLEMENTATION scaled foreground/history aggregation passed"
 }
@@ -730,4 +739,6 @@ main() {
     info 'Docker Compose V2 and container-compose signal/log reliability parity passed.'
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
