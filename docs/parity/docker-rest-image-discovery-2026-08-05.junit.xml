@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="DockerRestImageDiscoveryContract" tests="4" failures="0" errors="0" skipped="0" time="1.68" timestamp="2026-08-05T16:52:31Z">
+  <properties>
+    <property name="docker.client" value="29.7.1" />
+    <property name="docker.engine" value="29.2.1" />
+    <property name="container-compose" value="e0b68e9f847badffc806d3c5e327a3475342d855" />
+    <property name="container" value="056dd09be9d4dc552763e2d90c0d43527528d807" />
+    <property name="containerization" value="38d9c695e7a6915e5ce45d12c893dc323a661af7" />
+    <property name="container-engine-api" value="c1c4d2e906b880379025d0e750f75deadfff4854" />
+    <property name="provider.fingerprint" value="sha256:2bcddc829a4b5ed6bc4c81e1e50d3bd6bff6949e43d20d0d1254a5f342d72f71" />
+    <property name="performance.noise-band" value="max(20%,10ms/invocation)" />
+  </properties>
+  <testcase classname="DockerRestImageDiscoveryContract" name="docker-oracle" time="0.81">
+    <system-out>Docker REST image discovery contract passed</system-out>
+  </testcase>
+  <testcase classname="DockerRestImageDiscoveryContract" name="container-candidate" time="0.87">
+    <system-out>Docker REST image discovery contract passed</system-out>
+  </testcase>
+  <testcase classname="DockerRestImageDiscoveryPerformance" name="list-comparable" time="0">
+    <system-out>Median: Docker 24.5 ms, Container 32.5 ms per command; delta 8.0 ms.</system-out>
+  </testcase>
+  <testcase classname="DockerRestImageDiscoveryPerformance" name="inspect-comparable" time="0">
+    <system-out>Median: Docker 24.0 ms, Container 33.0 ms per command; delta 9.0 ms.</system-out>
+  </testcase>
+</testsuite>
