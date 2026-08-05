@@ -1590,7 +1590,7 @@ docker-compose-signal-log-reliability-parity: docker-compose-reference
 	cp Package.resolved "$$lock_backup"; \
 	restore_lock() { trap - EXIT HUP INT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
 	trap restore_lock EXIT HUP INT TERM; \
-	$(PARITY_ENV) $(SWIFT) build --product compose
+	$(PARITY_ENV) $(SWIFT) build --product compose; \
 	$(PARITY_ENV) ./Tools/parity/check-compose-signal-log-reliability.sh --strict
 
 docker-compose-restart-policy-parity: build docker-compose-reference

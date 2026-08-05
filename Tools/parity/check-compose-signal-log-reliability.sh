@@ -715,8 +715,8 @@ cleanup() {
 # Runs focused Compose adapter contracts for attach and logs.
 check_unit_contracts() {
     env -u CONTAINER_BIN -u CONTAINER_COMPOSE_CONTAINER \
-        swift test --disable-automatic-resolution \
-        --filter 'ComposeOrchestratorTests/(attachInteractiveMode|attachOutputOnlyMode|logsPasses|logsAcceptsComposeAllTailValue)'
+        swift test \
+        --filter '(ComposeBuildInfoTests/localDependencyPathsOverrideLockfile|ComposeOrchestratorTests/(attachInteractiveMode|attachOutputOnlyMode|logsPasses|logsAcceptsComposeAllTailValue|logManagerNormalizesUnreadableDriverErrorsForCompose|logsTreatsUnreadableDriverHistoryAsEmptyStream|logsContinuesReadableServicesAfterUnreadableDriverHistory|logsPreservesUnreadableDriverErrorsForFollowRequests))'
 }
 
 # Coordinates prerequisite, Docker, optional Apple runtime, and unit validation.
