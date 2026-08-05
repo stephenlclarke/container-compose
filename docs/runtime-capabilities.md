@@ -102,6 +102,15 @@ root. The isolated MBP certificate passes two native lifecycle cycles and one
 public REST lifecycle with exact readable history; the focused plugin suite
 passes 10/10 under warnings-as-errors.
 
+Signed Engine API `da59cff5b11ba4049f631c886ac3b09b0c3108d6` and
+Container `16a3419ae31bb5c18a934571c69348767a89233e` remove the former fixed
+4096-store/32 GiB aggregate history ceiling while retaining the 8 MiB
+per-store bound and a separate defensive on-disk directory scan bound. Focused
+MBP proofs encode, decode, and publish 4097 stores exactly. The remaining
+large-history gap is bounded-memory, file-backed streaming across source
+export, sealing, transfer decode, and destination staging; the current v1
+package still materializes complete histories in memory.
+
 Compose config and hashing never require a runtime lookup. Runtime preflight
 retains optional and unknown installed identifiers separately from the mandatory
 manifest, and passes the immutable selection into runtime execution options only
