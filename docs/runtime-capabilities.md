@@ -111,10 +111,16 @@ MBP proofs encode, decode, and publish 4097 stores exactly. Signed Engine API
 format with 4 MiB independently authenticated windows, bounded file
 publication, and destination file opening. Signed Container
 `62455f657e8d22233736eec7c2438ca7a14553ce` adopts v2 for its native source
-and destination while retaining v1 opening. The remaining large-history gap
-is record-level file streaming for source acquisition, compatibility package
-decode, and destination history staging; those paths still materialize
-aggregate history.
+and destination while retaining v1 opening. Engine API
+`44010b991cc5015e59ff81d2fa9917ae879d39d8` and
+`0d008475bfb711f7b295e44342b98d1535ab3f12`, devcontainer
+`b428031e4f1cc1bf2ede37a2b658962309e6e4c7`, and Container
+`8683e35e93c345fe823c94dfea396ae268cd3556` plus
+`60b5d5c1482a0f7edad03c72f4777f0d5fb6635f` complete record/file-backed
+portable and native acquisition, canonical open, destination decode, staging,
+promotion, and immutable publication. History is copied in 64 KiB chunks and
+at most one bounded segment is mapped during validation; aggregate payload
+history is no longer materialized.
 
 Compose config and hashing never require a runtime lookup. Runtime preflight
 retains optional and unknown installed identifiers separately from the mandatory
