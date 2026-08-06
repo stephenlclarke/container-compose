@@ -27,9 +27,10 @@
 #   -h, --help         Show this help.
 #
 # The same Docker CLI fixture exercises the pinned Docker oracle and the
-# Container public REST socket. It covers create/start/inspect, static/follow
-# history, stream selection, tailing, second-start retention, graceful stop,
-# the none-reader error, native-client visibility, deletion, and exact cleanup.
+# Container public REST socket. It covers `json-file` and `local` create/start/
+# inspect, static/follow history, stream selection, tailing, second-start
+# retention, graceful stop, the none-reader error, native-client visibility,
+# deletion, and exact cleanup.
 
 set -euo pipefail
 
@@ -274,18 +275,19 @@ assert_container_absent() {
 
 exercise_readable_logging() {
     local name="$1"
+    local driver="$2"
     local created_id
     local inspection
 
-    created_id="$(run_docker create --name "$name" --log-driver json-file \
+    created_id="$(run_docker create --name "$name" --log-driver "$driver" \
         "$REQUIRED_IMAGE" /bin/sh -c \
         'printf "out-1\n"; sleep 1; printf "err-1\n" >&2; sleep 1; printf "out-2\n"; sleep 1; printf "err-2\n" >&2')"
     [[ -n "$created_id" ]] || fail "docker create returned an empty identifier"
     inspection="$(run_docker container inspect --format \
         '{{.Id}}|{{.Name}}|{{.State.Status}}|{{.HostConfig.LogConfig.Type}}|{{.LogPath}}' "$name")"
-    assert_equal "$inspection" "$created_id|/$name|created|json-file|" \
-        "readable create inspection"
-    assert_native_driver "$name" "json-file"
+    assert_equal "$inspection" "$created_id|/$name|created|$driver|" \
+        "$driver create inspection"
+    assert_native_driver "$name" "$driver"
 
     run_docker start "$name" >/dev/null
     run_docker logs --follow "$name" >"$WORK_ROOT/follow.stdout" \
@@ -295,8 +297,19 @@ exercise_readable_logging() {
     wait_for_follower
     inspection="$(run_docker container inspect --format \
         '{{.State.Status}}|{{.HostConfig.LogConfig.Type}}|{{.LogPath}}' "$name")"
-    assert_contains "$inspection" "exited|json-file|/" \
-        "readable stopped inspection"
+    case "$driver" in
+        json-file)
+            assert_contains "$inspection" "exited|json-file|/" \
+                "json-file stopped inspection"
+            ;;
+        local)
+            assert_equal "$inspection" "exited|local|" \
+                "local stopped inspection"
+            ;;
+        *)
+            fail "unsupported readable logging driver: $driver"
+            ;;
+    esac
     assert_equal "$(<"$WORK_ROOT/follow.stdout")" $'out-1\nout-2' \
         "follow stdout"
     assert_equal "$(<"$WORK_ROOT/follow.stderr")" $'err-1\nerr-2' \
@@ -370,6 +383,7 @@ exercise_stop_logging() {
 main() {
     local suffix
     local readable_name
+    local local_name
     local none_name
     local stop_name
     local name
@@ -379,11 +393,13 @@ main() {
     create_work_root
     suffix="$(basename "$WORK_ROOT" | tr '.[:upper:]' '-[:lower:]')"
     readable_name="cc-rest-readable-$suffix"
+    local_name="cc-rest-local-$suffix"
     none_name="cc-rest-none-$suffix"
     stop_name="cc-rest-stop-$suffix"
-    CONTAINER_NAMES=("$readable_name" "$none_name" "$stop_name")
+    CONTAINER_NAMES=("$readable_name" "$local_name" "$none_name" "$stop_name")
 
-    exercise_readable_logging "$readable_name"
+    exercise_readable_logging "$readable_name" "json-file"
+    exercise_readable_logging "$local_name" "local"
     exercise_none_logging "$none_name"
     exercise_stop_logging "$stop_name"
 
