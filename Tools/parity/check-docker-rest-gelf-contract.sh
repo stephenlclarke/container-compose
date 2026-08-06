@@ -24,7 +24,8 @@
 #   --gelf-address-host HOST
 #                      Hostname or address visible to the selected log driver.
 #   --transport MODE   GELF transport to prove: udp (default) or tcp.
-#   --scenario MODE    Fixture to prove: standard (default) or tcp-reconnect.
+#   --scenario MODE    Fixture to prove: standard (default), tcp-reconnect,
+#                      tcp-failure, or tcp-unavailable.
 #   --native-cli PATH  Optional Container CLI used to prove one shared authority.
 #   --reference        Require the pinned Docker Engine 29.2.1 oracle.
 #   --result PATH      Write machine-readable timing and result evidence to PATH.
@@ -37,7 +38,10 @@
 # logs, native authority visibility, and marker-protected cleanup. The
 # tcp-reconnect scenario closes the first TCP peer after one frame and proves
 # Docker's configured reconnect path carries valid, ordered recovery bytes and
-# a terminal record without duplicating or corrupting output.
+# a terminal record without duplicating or corrupting output. tcp-failure
+# resets two peers with a zero reconnect budget to prove Docker's per-write
+# exhaustion/replacement semantics. tcp-unavailable preserves Docker's
+# create-success/start-failure lifecycle for an initially unreachable TCP sink.
 
 set -euo pipefail
 
@@ -51,6 +55,7 @@ readonly REQUIRED_DISPLAY_IMAGE="alpine:3.20"
 readonly ROOT_MARKER_NAME=".container-rest-gelf-root"
 readonly RECEIVER_MESSAGE_COUNT=3
 readonly RECONNECT_OUTPUT_BYTES=1048576
+readonly TCP_FAILURE_RESET_CONNECTIONS=2
 
 STRICT=0
 REFERENCE=0
@@ -68,6 +73,7 @@ RECEIVER_RESULT_PATH=""
 RECEIVER_FINISH_PATH=""
 RECEIVER_PRIMARY_COMPLETE_PATH=""
 RECEIVER_RECONNECT_COMPLETE_PATH=""
+RECEIVER_FAILURE_COMPLETE_PATH=""
 RECEIVER_PORT=""
 
 # Print regular fixture progress.
@@ -139,11 +145,11 @@ parse_args() {
                     return 2
                 }
                 case "$2" in
-                    standard | tcp-reconnect)
+                    standard | tcp-reconnect | tcp-failure | tcp-unavailable)
                         SCENARIO="$2"
                         ;;
                     *)
-                        error "--scenario must be standard or tcp-reconnect, got: $2"
+                        error "--scenario must be standard, tcp-reconnect, tcp-failure, or tcp-unavailable, got: $2"
                         return 2
                         ;;
                 esac
@@ -185,8 +191,8 @@ parse_args() {
         esac
     done
 
-    if [[ "$SCENARIO" == "tcp-reconnect" && "$TRANSPORT" != "tcp" ]]; then
-        error "--scenario tcp-reconnect requires --transport tcp"
+    if [[ "$SCENARIO" != "standard" && "$TRANSPORT" != "tcp" ]]; then
+        error "--scenario $SCENARIO requires --transport tcp"
         return 2
     fi
 }
@@ -246,12 +252,21 @@ create_work_root() {
     RECEIVER_FINISH_PATH="$WORK_ROOT/receiver.finish"
     RECEIVER_PRIMARY_COMPLETE_PATH="$WORK_ROOT/receiver.primary-complete"
     RECEIVER_RECONNECT_COMPLETE_PATH="$WORK_ROOT/receiver.reconnect-complete"
+    RECEIVER_FAILURE_COMPLETE_PATH="$WORK_ROOT/receiver.failure-complete"
 }
 
 # Start the selected bounded host-side receiver used by both Docker and Container.
 start_receiver() {
     if [[ "$SCENARIO" == "tcp-reconnect" ]]; then
         start_tcp_reconnect_receiver
+        return
+    fi
+    if [[ "$SCENARIO" == "tcp-failure" ]]; then
+        start_tcp_failure_receiver
+        return
+    fi
+    if [[ "$SCENARIO" == "tcp-unavailable" ]]; then
+        reserve_unavailable_tcp_port
         return
     fi
 
@@ -266,6 +281,22 @@ start_receiver() {
             fail "unsupported GELF transport: $TRANSPORT"
             ;;
     esac
+}
+
+# Reserve and release one local TCP port immediately before Docker starts. The
+# selected fixture proves an initial connection refusal, not a slow listener.
+reserve_unavailable_tcp_port() {
+    RECEIVER_PORT="$(python3 - <<'PY'
+import socket
+
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.bind(("127.0.0.1", 0))
+print(server.getsockname()[1])
+server.close()
+PY
+    )"
+    [[ "$RECEIVER_PORT" =~ ^[0-9]+$ ]] \
+        || fail "failed to reserve an unavailable GELF TCP port: $RECEIVER_PORT"
 }
 
 # Start a TCP receiver that forces Docker's configured GELF reconnect path.
@@ -357,6 +388,141 @@ finally:
                 "reconnectStreamBytes": len(reconnect_stream),
                 "secondPeerClosed": second_peer_closed,
                 "timedOut": not (reconnect_marker_seen and second_peer_closed and finish_path.exists()),
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+PY
+    RECEIVER_PID=$!
+
+    local attempt
+    for ((attempt = 0; attempt < 100; attempt += 1)); do
+        if [[ -s "$RECEIVER_PORT_PATH" ]]; then
+            RECEIVER_PORT="$(<"$RECEIVER_PORT_PATH")"
+            [[ "$RECEIVER_PORT" =~ ^[0-9]+$ ]] \
+                || fail "GELF receiver wrote an invalid port: $RECEIVER_PORT"
+            return
+        fi
+        if ! kill -0 "$RECEIVER_PID" 2>/dev/null; then
+            wait "$RECEIVER_PID" || true
+            RECEIVER_PID=""
+            fail "GELF receiver exited before publishing its port"
+            return
+        fi
+        sleep 0.05
+    done
+    fail "timed out waiting for GELF receiver port"
+}
+
+# Start a TCP receiver that resets two peers. A zero reconnect budget makes the
+# failed record terminal while Docker retains the final replacement socket for
+# the next record; the later stream proves that exact replacement behavior.
+start_tcp_failure_receiver() {
+    python3 - "$RECEIVER_PORT_PATH" "$RECEIVER_RESULT_PATH" \
+        "$RECEIVER_FINISH_PATH" "$RECEIVER_FAILURE_COMPLETE_PATH" \
+        "$TCP_FAILURE_RESET_CONNECTIONS" "$WORK_ROOT/receiver-failure-stream-1.bin" \
+        "$WORK_ROOT/receiver-failure-stream-2.bin" \
+        "$WORK_ROOT/receiver-failure-recovery-stream.bin" \
+        >"$WORK_ROOT/receiver.stdout" 2>"$WORK_ROOT/receiver.stderr" <<'PY' &
+import json
+import socket
+import struct
+import sys
+import time
+from pathlib import Path
+
+port_path = Path(sys.argv[1])
+result_path = Path(sys.argv[2])
+finish_path = Path(sys.argv[3])
+complete_path = Path(sys.argv[4])
+reset_connection_count = int(sys.argv[5])
+reset_stream_paths = [Path(sys.argv[6]), Path(sys.argv[7])]
+recovery_stream_path = Path(sys.argv[8])
+if reset_connection_count != len(reset_stream_paths):
+    raise SystemExit("configured reset count does not match receiver streams")
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.bind(("0.0.0.0", 0))
+server.listen(8)
+server.settimeout(0.2)
+port_path.write_text(str(server.getsockname()[1]), encoding="ascii")
+reset_streams = [bytearray() for _ in range(reset_connection_count)]
+recovery_stream = bytearray()
+accepted_connections = 0
+forced_closed_connections = 0
+recovery_connection_index = 0
+recovery_terminal_seen = False
+recovery_peer_closed = False
+connection = None
+connection_index = 0
+deadline = time.monotonic() + 35.0
+try:
+    while time.monotonic() < deadline:
+        if recovery_terminal_seen and recovery_peer_closed and finish_path.exists():
+            break
+        if connection is None:
+            try:
+                connection, _ = server.accept()
+                accepted_connections += 1
+                connection_index = accepted_connections
+                connection.settimeout(0.2)
+            except TimeoutError:
+                continue
+        try:
+            chunk = connection.recv(1024 * 1024)
+        except TimeoutError:
+            continue
+        if not chunk:
+            connection.close()
+            connection = None
+            if connection_index == reset_connection_count + 1:
+                recovery_peer_closed = True
+                if recovery_terminal_seen:
+                    complete_path.write_text("complete\n", encoding="ascii")
+            continue
+        if connection_index <= reset_connection_count:
+            stream = reset_streams[connection_index - 1]
+            stream.extend(chunk)
+            if b"\0" in stream:
+                connection.setsockopt(
+                    socket.SOL_SOCKET,
+                    socket.SO_LINGER,
+                    struct.pack("ii", 1, 0),
+                )
+                connection.close()
+                connection = None
+                forced_closed_connections += 1
+        elif connection_index == reset_connection_count + 1:
+            recovery_connection_index = connection_index
+            recovery_stream.extend(chunk)
+            if b"after-complete" in recovery_stream:
+                recovery_terminal_seen = True
+        # Later connections can be opened by Docker's unreadable-history
+        # initialization. Retain the listener until the shell fixture finishes.
+finally:
+    if connection is not None:
+        connection.close()
+    server.close()
+    for path, stream in zip(reset_stream_paths, reset_streams):
+        path.write_bytes(stream)
+    recovery_stream_path.write_bytes(recovery_stream)
+    result_path.write_text(
+        json.dumps(
+            {
+                "acceptedConnections": accepted_connections,
+                "forcedClosedConnections": forced_closed_connections,
+                "recoveryConnectionIndex": recovery_connection_index,
+                "recoveryFrameCount": recovery_stream.count(0),
+                "recoveryPeerClosed": recovery_peer_closed,
+                "recoveryTerminalSeen": recovery_terminal_seen,
+                "resetFrameCounts": [stream.count(0) for stream in reset_streams],
+                "timedOut": not (
+                    recovery_terminal_seen
+                    and recovery_peer_closed
+                    and finish_path.exists()
+                ),
             },
             separators=(",", ":"),
             sort_keys=True,
@@ -585,6 +751,28 @@ wait_for_tcp_reconnect_complete() {
     fail "timed out waiting for the GELF TCP reconnect peer to close"
 }
 
+# Wait for the exhausted-retry receiver's retained replacement peer to close.
+wait_for_tcp_failure_complete() {
+    local attempt
+    local receiver_result="receiver did not write a result"
+
+    [[ "$SCENARIO" == "tcp-failure" ]] || return 0
+    for ((attempt = 0; attempt < 160; attempt += 1)); do
+        [[ -f "$RECEIVER_FAILURE_COMPLETE_PATH" ]] && return
+        if ! kill -0 "$RECEIVER_PID" 2>/dev/null; then
+            wait "$RECEIVER_PID" || true
+            RECEIVER_PID=""
+            if [[ -f "$RECEIVER_RESULT_PATH" ]]; then
+                receiver_result="$(<"$RECEIVER_RESULT_PATH")"
+            fi
+            fail "GELF TCP failure receiver exited before the retained replacement peer closed: $receiver_result"
+            return
+        fi
+        sleep 0.25
+    done
+    fail "timed out waiting for the GELF TCP retained replacement peer to close"
+}
+
 # Let the TCP receiver finish after the unreadable-history check has had a
 # listener available for Docker's logger initialization path.
 finish_tcp_receiver() {
@@ -642,6 +830,20 @@ assert_public_inspection() {
             }
         ' <<<"$log_config" >/dev/null \
             || fail "GELF TCP reconnect inspect configuration differs from the Docker contract: $log_config"
+    elif [[ "$SCENARIO" == "tcp-failure" ]]; then
+        jq -e --arg address "$address" '
+            .Type == "gelf"
+            and .Config == {
+                "cache-disabled": "true",
+                "env": "ORACLE_ENV",
+                "gelf-address": $address,
+                "gelf-tcp-max-reconnect": "0",
+                "gelf-tcp-reconnect-delay": "0",
+                "labels": "oracle.label",
+                "tag": "gelf.{{.Name}}.{{.ID}}"
+            }
+        ' <<<"$log_config" >/dev/null \
+            || fail "GELF TCP failure inspect configuration differs from the Docker contract: $log_config"
     else
         jq -e --arg address "$address" '
             .Type == "gelf"
@@ -667,6 +869,10 @@ assert_gelf_receiver_contract() {
 
     if [[ "$SCENARIO" == "tcp-reconnect" ]]; then
         assert_tcp_reconnect_receiver_contract "$container_id"
+        return
+    fi
+    if [[ "$SCENARIO" == "tcp-failure" ]]; then
+        assert_tcp_failure_receiver_contract "$container_id"
         return
     fi
 
@@ -807,6 +1013,142 @@ for record in [first_record, *reconnect_records]:
 PY
 }
 
+# Assert Docker's zero-budget behavior: every reset drops the current record,
+# but the final replacement connection remains available to later records.
+assert_tcp_failure_receiver_contract() {
+    local container_id="$1"
+
+    python3 - "$RECEIVER_RESULT_PATH" "$WORK_ROOT/receiver-failure-stream-1.bin" \
+        "$WORK_ROOT/receiver-failure-stream-2.bin" \
+        "$WORK_ROOT/receiver-failure-recovery-stream.bin" "$container_id" \
+        "$CONTAINER_NAME" <<'PY'
+import json
+import math
+import sys
+from pathlib import Path
+
+result = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+reset_streams = [Path(sys.argv[2]).read_bytes(), Path(sys.argv[3]).read_bytes()]
+recovery_stream = Path(sys.argv[4]).read_bytes()
+container_id = sys.argv[5]
+container_name = sys.argv[6]
+expected_messages = [
+    "first",
+    "second",
+    "third",
+    "fourth",
+    "fifth",
+    "sixth",
+    "seventh",
+    "eighth",
+    "ninth",
+    "tenth",
+    "complete",
+    "after-complete",
+]
+if result.get("forcedClosedConnections") != 2 or result.get("resetFrameCounts") != [1, 1]:
+    raise SystemExit(f"GELF TCP failure receiver did not reset one framed record per peer: {result!r}")
+if result.get("acceptedConnections", 0) < 3 or result.get("recoveryConnectionIndex") != 3:
+    raise SystemExit(f"GELF TCP failure receiver did not observe the retained replacement peer: {result!r}")
+if result.get("recoveryTerminalSeen") is not True or result.get("recoveryPeerClosed") is not True:
+    raise SystemExit(f"GELF TCP failure receiver did not observe terminal recovery and peer close: {result!r}")
+if result.get("timedOut") is not False:
+    raise SystemExit(f"GELF TCP failure receiver timed out: {result!r}")
+if any(not stream.endswith(b"\0") for stream in [*reset_streams, recovery_stream]):
+    raise SystemExit("GELF TCP failure stream is not NUL terminated")
+payload_groups = [
+    stream[:-1].split(b"\0") if stream else []
+    for stream in [*reset_streams, recovery_stream]
+]
+if any(len(group) != 1 or not group[0] for group in payload_groups[:2]):
+    raise SystemExit(f"expected exactly one frame on each reset peer, got {payload_groups[:2]!r}")
+if not payload_groups[2] or any(not payload for payload in payload_groups[2]):
+    raise SystemExit(f"expected non-empty retained-replacement stream, got {payload_groups[2]!r}")
+records = [
+    json.loads(payload.decode("utf-8"))
+    for group in payload_groups
+    for payload in group
+]
+messages = [record.get("short_message") for record in records]
+if messages[0] != "first" or messages[-1] != "after-complete":
+    raise SystemExit(f"unexpected GELF TCP failure endpoints: {messages!r}")
+if "complete" not in messages:
+    raise SystemExit(f"missing terminal GELF recovery marker: {messages!r}")
+if any(message not in expected_messages for message in messages):
+    raise SystemExit(f"unexpected GELF TCP failure message: {messages!r}")
+indices = [expected_messages.index(message) for message in messages]
+if indices != sorted(indices) or len(indices) != len(set(indices)):
+    raise SystemExit(f"GELF TCP failure duplicated, reordered, or changed recovery bytes: {messages!r}")
+expected_keys = {
+    "version", "host", "short_message", "timestamp", "level",
+    "_ORACLE_ENV", "_oracle.label", "_command", "_container_id",
+    "_container_name", "_created", "_image_id", "_image_name", "_tag",
+}
+visible_name = container_name.lstrip("/")
+expected_tag = f"gelf.{visible_name}.{container_id[:12]}"
+for record in records:
+    if set(record) != expected_keys:
+        raise SystemExit(f"unexpected GELF TCP failure metadata fields: {sorted(record)!r}")
+    if record["version"] != "1.1" or not isinstance(record["host"], str) or not record["host"]:
+        raise SystemExit(f"invalid GELF TCP failure identity fields: {record!r}")
+    if not isinstance(record["timestamp"], (int, float)) or not math.isfinite(record["timestamp"]):
+        raise SystemExit(f"invalid GELF TCP failure timestamp: {record!r}")
+    if record["level"] != 6 or record["_ORACLE_ENV"] != "bravo" or record["_oracle.label"] != "alpha":
+        raise SystemExit(f"incorrect GELF TCP failure record fields: {record!r}")
+    if record["_container_id"] != container_id or record["_container_name"] != visible_name:
+        raise SystemExit(f"incorrect GELF TCP failure container identity: {record!r}")
+    if record["_tag"] != expected_tag or record["_image_name"] != "alpine:3.20":
+        raise SystemExit(f"incorrect GELF TCP failure tag or image metadata: {record!r}")
+    if not record["_created"] or not record["_command"] or not record["_image_id"].startswith("sha256:"):
+        raise SystemExit(f"incomplete GELF TCP failure Docker metadata: {record!r}")
+PY
+}
+
+# Assert Docker's create-success/start-failure lifecycle for a TCP GELF sink
+# that refuses the initial eager connection. The concrete peer IP is platform
+# dependent, so the stable Docker path and configured endpoint are asserted.
+assert_tcp_unavailable_start_failure() {
+    local start_status="$1"
+    local start_output="$2"
+    local address="$TRANSPORT://$GELF_ADDRESS_HOST:$RECEIVER_PORT"
+    local log_config
+    local state
+
+    ((start_status != 0)) || fail "GELF TCP unavailable endpoint unexpectedly started $CONTAINER_NAME"
+    [[ "$start_output" == *"failed to initialize logging driver: gelf: cannot connect to GELF endpoint:"* ]] \
+        || fail "GELF TCP unavailable start error differs from Docker: $start_output"
+    [[ "$start_output" == *"$GELF_ADDRESS_HOST:$RECEIVER_PORT"* ]] \
+        || fail "GELF TCP unavailable start error omits its configured endpoint: $start_output"
+    [[ "$start_output" == *"failed to start containers: $CONTAINER_NAME"* ]] \
+        || fail "GELF TCP unavailable start error omits Docker's container failure: $start_output"
+
+    log_config="$(run_docker container inspect --format '{{json .HostConfig.LogConfig}}' "$CONTAINER_NAME")"
+    jq -e --arg address "$address" '
+        .Type == "gelf"
+        and .Config == {
+            "cache-disabled": "true",
+            "env": "ORACLE_ENV",
+            "gelf-address": $address,
+            "gelf-tcp-max-reconnect": "0",
+            "gelf-tcp-reconnect-delay": "0",
+            "labels": "oracle.label",
+            "tag": "gelf.{{.Name}}.{{.ID}}"
+        }
+    ' <<<"$log_config" >/dev/null \
+        || fail "GELF TCP unavailable inspect configuration differs from the Docker contract: $log_config"
+    state="$(run_docker container inspect --format '{{json .State}}' "$CONTAINER_NAME")"
+    jq -e --arg endpoint "$GELF_ADDRESS_HOST:$RECEIVER_PORT" '
+        .Status == "created"
+        and .Running == false
+        and .ExitCode == 128
+        and .StartedAt == "0001-01-01T00:00:00Z"
+        and .FinishedAt == "0001-01-01T00:00:00Z"
+        and (.Error | contains("failed to create task for container: failed to initialize logging driver: gelf: cannot connect to GELF endpoint:"))
+        and (.Error | contains($endpoint))
+    ' <<<"$state" >/dev/null \
+        || fail "GELF TCP unavailable inspect state differs from the Docker contract: $state"
+}
+
 # Verify Docker preserves its unreadable remote-driver error for GELF.
 assert_unreadable_logs() {
     local output
@@ -843,6 +1185,10 @@ write_result() {
     contract="Docker REST GELF $contract_transport"
     if [[ "$SCENARIO" == "tcp-reconnect" ]]; then
         contract="$contract reconnect"
+    elif [[ "$SCENARIO" == "tcp-failure" ]]; then
+        contract="$contract retry exhaustion"
+    elif [[ "$SCENARIO" == "tcp-unavailable" ]]; then
+        contract="$contract unavailable endpoint"
     fi
     jq -n \
         --arg contract "$contract" \
@@ -879,6 +1225,8 @@ main() {
     local finished_at
     local duration_seconds
     local workload
+    local start_status
+    local start_output
     local -a log_options
 
     parse_args "$@"
@@ -890,6 +1238,11 @@ main() {
     workload='printf '\''stdout-ascii\n'\''; sleep 0.2; printf '\''stderr-utf8-\342\230\203\n'\'' >&2; sleep 0.2; printf '\''stdout-binary-\377\000-end\n'\'''
     if [[ "$SCENARIO" == "tcp-reconnect" ]]; then
         workload='sleep 1; printf '\''first\n'\''; sleep 2; dd if=/dev/zero bs=65536 count=16 2>/dev/null | tr '\''\000'\'' x; sleep 2; printf '\''reconnect-complete\n'\'''
+    elif [[ "$SCENARIO" == "tcp-failure" ]]; then
+        # shellcheck disable=SC2016 # $message expands inside the test container.
+        workload='for message in first second third fourth fifth sixth seventh eighth ninth tenth complete after-complete; do sleep 1; printf '\''%s\n'\'' "$message"; done'
+    elif [[ "$SCENARIO" == "tcp-unavailable" ]]; then
+        workload='printf '\''should-not-run\n'\'''
     fi
     log_options=(
         --log-driver gelf --log-opt cache-disabled=true
@@ -902,6 +1255,11 @@ main() {
             --log-opt gelf-tcp-max-reconnect=1
             --log-opt gelf-tcp-reconnect-delay=0
         )
+    elif [[ "$SCENARIO" == "tcp-failure" || "$SCENARIO" == "tcp-unavailable" ]]; then
+        log_options+=(
+            --log-opt gelf-tcp-max-reconnect=0
+            --log-opt gelf-tcp-reconnect-delay=0
+        )
     fi
     container_id="$(run_docker create --name "$CONTAINER_NAME" \
         --env ORACLE_ENV=bravo --label oracle.label=alpha \
@@ -910,11 +1268,29 @@ main() {
     [[ -n "$container_id" ]] || fail "docker create returned an empty GELF identifier"
     assert_native_driver
     started_at="$(monotonic_seconds)"
+    if [[ "$SCENARIO" == "tcp-unavailable" ]]; then
+        set +e
+        start_output="$(run_docker start "$CONTAINER_NAME" 2>&1)"
+        start_status=$?
+        set -e
+        assert_tcp_unavailable_start_failure "$start_status" "$start_output"
+        finished_at="$(monotonic_seconds)"
+        duration_seconds="$(python3 - "$started_at" "$finished_at" <<'PY'
+import sys
+print(f"{float(sys.argv[2]) - float(sys.argv[1]):.9f}")
+PY
+        )"
+        write_result "$duration_seconds" "$container_id"
+        info "Docker REST GELF TCP unavailable endpoint contract passed in ${duration_seconds}s"
+        return
+    fi
     run_docker start "$CONTAINER_NAME" >/dev/null
     wait_for_state exited
     if [[ "$TRANSPORT" == "tcp" ]]; then
         if [[ "$SCENARIO" == "tcp-reconnect" ]]; then
             wait_for_tcp_reconnect_complete
+        elif [[ "$SCENARIO" == "tcp-failure" ]]; then
+            wait_for_tcp_failure_complete
         else
             wait_for_tcp_primary_close
         fi

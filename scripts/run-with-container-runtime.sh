@@ -86,6 +86,18 @@ stop_runtime() {
     fi
 }
 
+# Recognize only the bounded set of startup failures that are known to be
+# transient while the per-user Container XPC service is registering.  Keep
+# other start failures visible rather than turning the runtime wrapper into a
+# general retry loop.
+is_transient_xpc_start_failure() {
+    local start_log="$1"
+
+    grep -Eq \
+        'XPC connection error: Connection (interrupted|invalid)|XPC timeout for request to com\.apple\.container\.apiserver/ping' \
+        "$start_log"
+}
+
 # Start Container and verify an API round-trip, recovering once from transient XPC startup failure.
 start_runtime() {
     local attempt
@@ -103,7 +115,7 @@ start_runtime() {
             fi
         else
             start_status=$?
-            if ! grep -Eq 'XPC connection error: Connection (interrupted|invalid)' "$start_log"; then
+            if ! is_transient_xpc_start_failure "$start_log"; then
                 rm -f "$start_log"
                 return "$start_status"
             fi
