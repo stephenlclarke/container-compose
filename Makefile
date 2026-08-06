@@ -275,7 +275,15 @@ resolve:
 	$(SWIFT) package resolve
 
 build:
-	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --product compose
+	@if [[ -n "$(CONTAINER_PACKAGE_PATH)$(CONTAINERIZATION_PACKAGE_PATH)" ]]; then \
+		lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
+		cp Package.resolved "$$lock_backup"; \
+		restore_lock() { trap - EXIT HUP INT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
+		trap restore_lock EXIT HUP INT TERM; \
+		$(PARITY_ENV) $(SWIFT) build --product compose; \
+	else \
+		$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --product compose; \
+	fi
 
 build-release:
 	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose $(SWIFT_RELEASE_FLAGS)
