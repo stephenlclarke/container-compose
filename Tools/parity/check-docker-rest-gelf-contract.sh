@@ -23,6 +23,7 @@
 #   --host HOST        Docker endpoint to exercise, such as unix:///tmp/docker.sock.
 #   --gelf-address-host HOST
 #                      Hostname or address visible to the selected log driver.
+#   --transport MODE   GELF transport to prove: udp (default) or tcp.
 #   --native-cli PATH  Optional Container CLI used to prove one shared authority.
 #   --reference        Require the pinned Docker Engine 29.2.1 oracle.
 #   --result PATH      Write machine-readable timing and result evidence to PATH.
@@ -30,9 +31,9 @@
 #   -h, --help         Show this help.
 #
 # The same unmodified Docker CLI fixture exercises Docker Engine 29.2.1 and
-# Container's public socket. It proves GELF UDP gzip framing, selected metadata
-# and tag expansion, Docker inspect state, unreadable remote logs, native
-# authority visibility, and marker-protected cleanup.
+# Container's public socket. It proves GELF UDP gzip or TCP NUL framing,
+# selected metadata and tag expansion, Docker inspect state, unreadable remote
+# logs, native authority visibility, and marker-protected cleanup.
 
 set -euo pipefail
 
@@ -50,6 +51,7 @@ STRICT=0
 REFERENCE=0
 DOCKER_HOST_OVERRIDE=""
 GELF_ADDRESS_HOST="127.0.0.1"
+TRANSPORT="udp"
 NATIVE_CLI=""
 RESULT_PATH=""
 WORK_ROOT=""
@@ -57,6 +59,8 @@ CONTAINER_NAME=""
 RECEIVER_PID=""
 RECEIVER_PORT_PATH=""
 RECEIVER_RESULT_PATH=""
+RECEIVER_FINISH_PATH=""
+RECEIVER_PRIMARY_COMPLETE_PATH=""
 RECEIVER_PORT=""
 
 # Print regular fixture progress.
@@ -104,6 +108,22 @@ parse_args() {
                     return 2
                 }
                 GELF_ADDRESS_HOST="$2"
+                shift 2
+                ;;
+            --transport)
+                [[ $# -ge 2 && -n "$2" ]] || {
+                    error "--transport requires a value"
+                    return 2
+                }
+                case "$2" in
+                    udp | tcp)
+                        TRANSPORT="$2"
+                        ;;
+                    *)
+                        error "--transport must be udp or tcp, got: $2"
+                        return 2
+                        ;;
+                esac
                 shift 2
                 ;;
             --native-cli)
@@ -195,9 +215,26 @@ create_work_root() {
         >"$WORK_ROOT/$ROOT_MARKER_NAME"
     RECEIVER_PORT_PATH="$WORK_ROOT/receiver.port"
     RECEIVER_RESULT_PATH="$WORK_ROOT/receiver-result.json"
+    RECEIVER_FINISH_PATH="$WORK_ROOT/receiver.finish"
+    RECEIVER_PRIMARY_COMPLETE_PATH="$WORK_ROOT/receiver.primary-complete"
 }
 
-# Start a bounded host-side UDP receiver used by both Docker and Container.
+# Start the selected bounded host-side receiver used by both Docker and Container.
+start_receiver() {
+    case "$TRANSPORT" in
+        udp)
+            start_udp_receiver
+            ;;
+        tcp)
+            start_tcp_receiver
+            ;;
+        *)
+            fail "unsupported GELF transport: $TRANSPORT"
+            ;;
+    esac
+}
+
+# Start a bounded host-side UDP receiver for Docker's compressed GELF records.
 start_udp_receiver() {
     python3 - "$RECEIVER_PORT_PATH" "$RECEIVER_RESULT_PATH" "$RECEIVER_MESSAGE_COUNT" \
         >"$WORK_ROOT/receiver.stdout" 2>"$WORK_ROOT/receiver.stderr" <<'PY' &
@@ -257,8 +294,99 @@ PY
     fail "timed out waiting for GELF receiver port"
 }
 
-# Wait for the bounded UDP receiver to finish without hiding its exit result.
-wait_for_udp_receiver() {
+# Start a bounded host-side TCP receiver for Docker's NUL-delimited GELF records.
+start_tcp_receiver() {
+    python3 - "$RECEIVER_PORT_PATH" "$RECEIVER_RESULT_PATH" \
+        "$RECEIVER_FINISH_PATH" "$RECEIVER_PRIMARY_COMPLETE_PATH" \
+        >"$WORK_ROOT/receiver.stdout" 2>"$WORK_ROOT/receiver.stderr" <<'PY' &
+import json
+import socket
+import sys
+import time
+from pathlib import Path
+
+port_path = Path(sys.argv[1])
+result_path = Path(sys.argv[2])
+finish_path = Path(sys.argv[3])
+primary_complete_path = Path(sys.argv[4])
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.bind(("0.0.0.0", 0))
+server.listen(1)
+server.settimeout(0.2)
+port_path.write_text(str(server.getsockname()[1]), encoding="ascii")
+stream = bytearray()
+accepted_connections = 0
+primary_peer_closed = False
+connection = None
+deadline = time.monotonic() + 20.0
+try:
+    while time.monotonic() < deadline:
+        if primary_peer_closed and finish_path.exists():
+            break
+        if connection is None:
+            try:
+                connection, _ = server.accept()
+                accepted_connections += 1
+                connection.settimeout(0.2)
+            except TimeoutError:
+                continue
+        try:
+            chunk = connection.recv(1024 * 1024)
+        except TimeoutError:
+            continue
+        if not chunk:
+            connection.close()
+            connection = None
+            if accepted_connections == 1:
+                primary_peer_closed = True
+                primary_complete_path.write_text("closed\n", encoding="ascii")
+            continue
+        if accepted_connections == 1:
+            stream.extend(chunk)
+finally:
+    if connection is not None:
+        connection.close()
+    server.close()
+result_path.write_text(
+    json.dumps(
+        {
+            "accepted": accepted_connections > 0,
+            "acceptedConnections": accepted_connections,
+            "finished": finish_path.exists(),
+            "peerClosed": primary_peer_closed,
+            "streamHex": bytes(stream).hex(),
+            "timedOut": not (primary_peer_closed and finish_path.exists()),
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ),
+    encoding="utf-8",
+)
+PY
+    RECEIVER_PID=$!
+
+    local attempt
+    for ((attempt = 0; attempt < 100; attempt += 1)); do
+        if [[ -s "$RECEIVER_PORT_PATH" ]]; then
+            RECEIVER_PORT="$(<"$RECEIVER_PORT_PATH")"
+            [[ "$RECEIVER_PORT" =~ ^[0-9]+$ ]] \
+                || fail "GELF receiver wrote an invalid port: $RECEIVER_PORT"
+            return
+        fi
+        if ! kill -0 "$RECEIVER_PID" 2>/dev/null; then
+            wait "$RECEIVER_PID" || true
+            RECEIVER_PID=""
+            fail "GELF receiver exited before publishing its port"
+            return
+        fi
+        sleep 0.05
+    done
+    fail "timed out waiting for GELF receiver port"
+}
+
+# Wait for the bounded receiver to finish without hiding its exit result.
+wait_for_receiver() {
     local status
 
     set +e
@@ -267,6 +395,32 @@ wait_for_udp_receiver() {
     set -e
     RECEIVER_PID=""
     ((status == 0)) || fail "GELF receiver exited with status $status"
+}
+
+# Wait for TCP's primary delivery connection to close while retaining the
+# listener for Docker's later unreadable-history initialization attempt.
+wait_for_tcp_primary_close() {
+    local attempt
+
+    [[ "$TRANSPORT" == "tcp" ]] || return 0
+    for ((attempt = 0; attempt < 100; attempt += 1)); do
+        [[ -f "$RECEIVER_PRIMARY_COMPLETE_PATH" ]] && return
+        if ! kill -0 "$RECEIVER_PID" 2>/dev/null; then
+            wait "$RECEIVER_PID" || true
+            RECEIVER_PID=""
+            fail "GELF TCP receiver exited before the primary peer closed"
+            return
+        fi
+        sleep 0.05
+    done
+    fail "timed out waiting for the GELF TCP primary peer to close"
+}
+
+# Let the TCP receiver finish after the unreadable-history check has had a
+# listener available for Docker's logger initialization path.
+finish_tcp_receiver() {
+    [[ "$TRANSPORT" == "tcp" ]] || return 0
+    printf '%s\n' 'finish' >"$RECEIVER_FINISH_PATH"
 }
 
 # Wait until the public Docker API reports the expected lifecycle state.
@@ -302,7 +456,7 @@ assert_public_inspection() {
     local log_config
     local state
     local log_path
-    local address="udp://$GELF_ADDRESS_HOST:$RECEIVER_PORT"
+    local address="$TRANSPORT://$GELF_ADDRESS_HOST:$RECEIVER_PORT"
 
     log_config="$(run_docker container inspect --format '{{json .HostConfig.LogConfig}}' "$CONTAINER_NAME")"
     jq -e --arg address "$address" '
@@ -322,11 +476,11 @@ assert_public_inspection() {
     [[ -z "$log_path" ]] || fail "GELF public LogPath is not empty: $log_path"
 }
 
-# Decode the UDP datagrams and assert Docker's GELF record contract.
+# Decode the GELF wire records and assert Docker's common record contract.
 assert_gelf_receiver_contract() {
     local container_id="$1"
 
-    python3 - "$RECEIVER_RESULT_PATH" "$container_id" "$CONTAINER_NAME" <<'PY'
+    python3 - "$RECEIVER_RESULT_PATH" "$container_id" "$CONTAINER_NAME" "$TRANSPORT" <<'PY'
 import gzip
 import json
 import math
@@ -336,15 +490,32 @@ from pathlib import Path
 result = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 container_id = sys.argv[2]
 container_name = sys.argv[3]
-datagrams = result.get("datagramsHex")
-if not isinstance(datagrams, list) or len(datagrams) != 3:
-    raise SystemExit(f"expected three GELF datagrams, got {result!r}")
-records = []
-for value in datagrams:
-    payload = bytes.fromhex(value)
-    if not payload.startswith(b"\x1f\x8b"):
-        raise SystemExit(f"GELF UDP payload is not gzip: {payload!r}")
-    records.append(json.loads(gzip.decompress(payload).decode("utf-8")))
+transport = sys.argv[4]
+if transport == "udp":
+    datagrams = result.get("datagramsHex")
+    if not isinstance(datagrams, list) or len(datagrams) != 3:
+        raise SystemExit(f"expected three GELF datagrams, got {result!r}")
+    payloads = []
+    for value in datagrams:
+        payload = bytes.fromhex(value)
+        if not payload.startswith(b"\x1f\x8b"):
+            raise SystemExit(f"GELF UDP payload is not gzip: {payload!r}")
+        payloads.append(gzip.decompress(payload))
+elif transport == "tcp":
+    stream_hex = result.get("streamHex")
+    if result.get("accepted") is not True or result.get("peerClosed") is not True:
+        raise SystemExit(f"GELF TCP receiver did not observe a clean peer close: {result!r}")
+    if not isinstance(stream_hex, str):
+        raise SystemExit(f"GELF TCP receiver result is malformed: {result!r}")
+    stream = bytes.fromhex(stream_hex)
+    if not stream.endswith(b"\0"):
+        raise SystemExit(f"GELF TCP stream is not NUL terminated: {stream!r}")
+    payloads = stream[:-1].split(b"\0") if stream else []
+    if len(payloads) != 3 or any(not payload for payload in payloads):
+        raise SystemExit(f"expected three non-empty GELF TCP frames, got {payloads!r}")
+else:
+    raise SystemExit(f"unsupported GELF transport: {transport!r}")
+records = [json.loads(payload.decode("utf-8")) for payload in payloads]
 expected_messages = [
     "stdout-ascii",
     "stderr-utf8-☃",
@@ -405,12 +576,14 @@ PY
 write_result() {
     local duration_seconds="$1"
     local container_id="$2"
+    local contract_transport
 
     [[ -n "$RESULT_PATH" ]] || return 0
     [[ -d "$(dirname "$RESULT_PATH")" ]] \
         || fail "result parent directory does not exist: $(dirname "$RESULT_PATH")"
+    contract_transport="$(printf '%s' "$TRANSPORT" | tr '[:lower:]' '[:upper:]')"
     jq -n \
-        --arg contract "Docker REST GELF" \
+        --arg contract "Docker REST GELF $contract_transport" \
         --arg endpoint "${DOCKER_HOST_OVERRIDE:-default-context}" \
         --arg containerID "$container_id" \
         --argjson durationSeconds "$duration_seconds" \
@@ -449,12 +622,12 @@ main() {
     create_work_root
     suffix="$(basename "$WORK_ROOT" | tr '.[:upper:]' '-[:lower:]')"
     CONTAINER_NAME="cc-rest-gelf-$suffix"
-    start_udp_receiver
+    start_receiver
     workload='printf '\''stdout-ascii\n'\''; sleep 0.2; printf '\''stderr-utf8-\342\230\203\n'\'' >&2; sleep 0.2; printf '\''stdout-binary-\377\000-end\n'\'''
     container_id="$(run_docker create --name "$CONTAINER_NAME" \
         --env ORACLE_ENV=bravo --label oracle.label=alpha \
         --log-driver gelf --log-opt cache-disabled=true \
-        --log-opt "gelf-address=udp://$GELF_ADDRESS_HOST:$RECEIVER_PORT" \
+        --log-opt "gelf-address=$TRANSPORT://$GELF_ADDRESS_HOST:$RECEIVER_PORT" \
         --log-opt env=ORACLE_ENV --log-opt labels=oracle.label \
         --log-opt 'tag=gelf.{{.Name}}.{{.ID}}' \
         "$REQUIRED_DISPLAY_IMAGE" /bin/sh -c "$workload")"
@@ -463,7 +636,12 @@ main() {
     started_at="$(monotonic_seconds)"
     run_docker start "$CONTAINER_NAME" >/dev/null
     wait_for_state exited
-    wait_for_udp_receiver
+    if [[ "$TRANSPORT" == "tcp" ]]; then
+        wait_for_tcp_primary_close
+        assert_unreadable_logs
+        finish_tcp_receiver
+    fi
+    wait_for_receiver
     finished_at="$(monotonic_seconds)"
     duration_seconds="$(python3 - "$started_at" "$finished_at" <<'PY'
 import sys
@@ -472,9 +650,11 @@ PY
     )"
     assert_public_inspection
     assert_gelf_receiver_contract "$container_id"
-    assert_unreadable_logs
+    if [[ "$TRANSPORT" == "udp" ]]; then
+        assert_unreadable_logs
+    fi
     write_result "$duration_seconds" "$container_id"
-    info "Docker REST GELF contract passed in ${duration_seconds}s"
+    info "Docker REST GELF $TRANSPORT contract passed in ${duration_seconds}s"
 }
 
 trap cleanup EXIT
