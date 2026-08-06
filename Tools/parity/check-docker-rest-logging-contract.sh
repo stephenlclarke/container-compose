@@ -29,8 +29,9 @@
 # The same Docker CLI fixture exercises the pinned Docker oracle and the
 # Container public REST socket. It covers `json-file` and `local` create/start/
 # inspect, static/follow history, stream selection, tailing, second-start
-# retention, graceful stop, the none-reader error, native-client visibility,
-# deletion, and exact cleanup.
+# retention, local rotation/compression, start-time local rotation validation,
+# graceful stop, the none-reader error, native-client visibility, deletion, and
+# exact cleanup.
 
 set -euo pipefail
 
@@ -49,23 +50,28 @@ WORK_ROOT=""
 FOLLOW_PID=""
 CONTAINER_NAMES=()
 
+# Writes normal fixture progress to standard output.
 info() {
     printf '%s\n' "$*"
 }
 
+# Writes a non-fatal diagnostic to standard error.
 warning() {
     printf 'warning: %s\n' "$*" >&2
 }
 
+# Writes a fatal diagnostic to standard error.
 error() {
     printf 'error: %s\n' "$*" >&2
 }
 
+# Prints the embedded script usage with the invoked script name.
 usage() {
     sed -n '/^# USAGE:/,/^# The same Docker/ { /^# The same Docker/d; s/^# //; s/^#//; p; }' "$SELF_PATH" \
         | sed "s/check-docker-rest-logging-contract.sh/$SCRIPT_NAME/"
 }
 
+# Parses command-line options into the fixture configuration.
 parse_args() {
     while (($# > 0)); do
         case "$1" in
@@ -106,6 +112,7 @@ parse_args() {
     done
 }
 
+# Skips an optional run or fails a strict run for a missing prerequisite.
 skip_or_fail() {
     local message="$1"
 
@@ -117,6 +124,7 @@ skip_or_fail() {
     exit 0
 }
 
+# Runs Docker against either the default or requested endpoint.
 run_docker() {
     if [[ -n "$DOCKER_HOST_OVERRIDE" ]]; then
         env -u DOCKER_API_VERSION DOCKER_HOST="$DOCKER_HOST_OVERRIDE" docker "$@"
@@ -125,11 +133,13 @@ run_docker() {
     fi
 }
 
+# Returns a formatted assertion failure.
 fail() {
     error "$*"
     return 1
 }
 
+# Verifies one value exactly equals another.
 assert_equal() {
     local actual="$1"
     local expected="$2"
@@ -139,6 +149,7 @@ assert_equal() {
         || fail "$description: got $(printf '%q' "$actual"), expected $(printf '%q' "$expected")"
 }
 
+# Verifies a value contains a stable expected fragment.
 assert_contains() {
     local actual="$1"
     local expected="$2"
@@ -148,6 +159,7 @@ assert_contains() {
         || fail "$description: $(printf '%q' "$actual") does not contain $(printf '%q' "$expected")"
 }
 
+# Waits until a container reaches an expected lifecycle state.
 wait_for_state() {
     local name="$1"
     local expected="$2"
@@ -164,6 +176,7 @@ wait_for_state() {
     fail "$name did not reach state $expected; last state was $observed"
 }
 
+# Waits for a background Docker log follower to close cleanly.
 wait_for_follower() {
     local attempt
 
@@ -185,6 +198,7 @@ wait_for_follower() {
     fail "docker logs --follow did not close after the workload stopped"
 }
 
+# Removes every tracked fixture container during cleanup.
 remove_test_containers() {
     local name
 
@@ -193,6 +207,7 @@ remove_test_containers() {
     done
 }
 
+# Removes fixture processes, containers, and marker-protected temporary data.
 cleanup() {
     local temporary_parent="${TMPDIR:-/tmp}"
 
@@ -207,9 +222,12 @@ cleanup() {
     fi
 }
 
+# Checks the Docker endpoint and the tools needed by this public contract.
 verify_prerequisites() {
     command -v docker >/dev/null 2>&1 \
         || skip_or_fail "docker CLI is unavailable"
+    command -v jq >/dev/null 2>&1 \
+        || skip_or_fail "jq is required for logging configuration verification"
     run_docker info >/dev/null 2>&1 \
         || skip_or_fail "Docker endpoint is unavailable"
 
@@ -225,16 +243,16 @@ verify_prerequisites() {
     if [[ -n "$NATIVE_CLI" ]]; then
         [[ -x "$NATIVE_CLI" ]] \
             || skip_or_fail "native Container CLI is not executable: $NATIVE_CLI"
-        command -v jq >/dev/null 2>&1 \
-            || skip_or_fail "jq is required for native authority verification"
     fi
 }
 
+# Creates the marker-protected root used by the fixture's transient files.
 create_work_root() {
     WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/container-rest-logging.XXXXXX")"
     touch "$WORK_ROOT/$ROOT_MARKER_NAME"
 }
 
+# Verifies the native Container authority sees the expected logging driver.
 assert_native_driver() {
     local name="$1"
     local driver="$2"
@@ -248,6 +266,7 @@ assert_native_driver() {
         || fail "native authority does not expose $name with logging driver $driver"
 }
 
+# Verifies the native Container authority no longer sees a deleted container.
 assert_native_absent() {
     local name="$1"
     local inventory
@@ -258,6 +277,7 @@ assert_native_absent() {
         || fail "native authority retained deleted container $name"
 }
 
+# Verifies a deleted fixture container is absent through both client surfaces.
 assert_container_absent() {
     local name="$1"
     local output
@@ -273,6 +293,7 @@ assert_container_absent() {
     assert_native_absent "$name"
 }
 
+# Exercises the baseline readable-driver lifecycle through the public socket.
 exercise_readable_logging() {
     local name="$1"
     local driver="$2"
@@ -330,6 +351,7 @@ exercise_readable_logging() {
     assert_equal "$(<"$WORK_ROOT/tail.stderr")" "err-2" "tail stderr"
 }
 
+# Verifies the none driver preserves Docker's unreadable-history contract.
 exercise_none_logging() {
     local name="$1"
     local inspection
@@ -355,6 +377,7 @@ exercise_none_logging() {
         "none read error"
 }
 
+# Verifies graceful stop flushes and closes a followed json-file stream.
 exercise_stop_logging() {
     local name="$1"
     local state
@@ -380,10 +403,170 @@ exercise_stop_logging() {
         "graceful stop stderr"
 }
 
+# Verifies local-driver state, public LogPath, and semantic log-option values.
+assert_local_log_configuration() {
+    local name="$1"
+    local expected_state="$2"
+    local expected_options="$3"
+    local description="$4"
+    local inspection
+    local actual_state
+    local actual_driver
+    local actual_options
+    local actual_log_path
+    local canonical_options
+
+    inspection="$(run_docker container inspect --format \
+        '{{.State.Status}}|{{.HostConfig.LogConfig.Type}}|{{json .HostConfig.LogConfig.Config}}|{{.LogPath}}' "$name")"
+    IFS='|' read -r actual_state actual_driver actual_options actual_log_path <<<"$inspection"
+    assert_equal "$actual_state" "$expected_state" "$description state"
+    assert_equal "$actual_driver" "local" "$description logging driver"
+    assert_equal "$actual_log_path" "" "$description public LogPath"
+    if ! canonical_options="$(jq -S -c . <<<"$actual_options")"; then
+        fail "$description returned invalid logging configuration JSON"
+        return
+    fi
+    assert_equal "$canonical_options" "$expected_options" "$description logging options"
+}
+
+# Verifies public Docker log output retained one contiguous range of payloads.
+assert_local_rotation_records() {
+    local path="$1"
+    local expected_first="$2"
+    local expected_last="$3"
+    local description="$4"
+    local line
+    local marker
+    local payload
+    local expected_marker
+    local expected_record="$expected_first"
+    local record_count=0
+    local expected_count=$((expected_last - expected_first + 1))
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        marker="${line%% *}"
+        payload="${line#* }"
+        [[ "$marker" != "$line" ]] \
+            || fail "$description record $expected_record is missing its payload separator"
+        printf -v expected_marker 'record-%03d' "$expected_record"
+        assert_equal "$marker" "$expected_marker" "$description record order"
+        assert_equal "${#payload}" "890" "$description payload length"
+        [[ "$payload" != *[!x]* ]] \
+            || fail "$description record $expected_record payload contains non-x data"
+        ((expected_record += 1))
+        ((record_count += 1))
+    done <"$path"
+
+    assert_equal "$record_count" "$expected_count" "$description record count"
+    assert_equal "$expected_record" "$((expected_last + 1))" "$description final record"
+}
+
+# Exercises local rotation, compressed retention, restart persistence, and tailing.
+exercise_local_rotation() {
+    local name="$1"
+    local created_id
+    local identity
+    local expected_options='{"compress":"true","max-file":"3","max-size":"4k"}'
+
+    # The workload must expand its variables only in the guest shell.
+    # shellcheck disable=SC2016
+    created_id="$(run_docker create --name "$name" --log-driver local \
+        --log-opt max-size=4k --log-opt max-file=3 --log-opt compress=true \
+        "$REQUIRED_IMAGE" /bin/sh -ceu '
+            mkdir -p /state
+            first="$(cat /state/next 2>/dev/null || printf 1)"
+            last=$((first + 39))
+            record=$first
+            while [ "$record" -le "$last" ]; do
+                printf "record-%03d " "$record"
+                head -c 890 /dev/zero | tr "\\000" x
+                printf "\\n"
+                record=$((record + 1))
+            done
+            printf "%s\\n" "$((last + 1))" > /state/next
+        ')"
+    [[ -n "$created_id" ]] || fail "local rotation create returned an empty identifier"
+    identity="$(run_docker container inspect --format '{{.Id}}|{{.Name}}' "$name")"
+    assert_equal "$identity" "$created_id|/$name" "local rotation create identity"
+    assert_local_log_configuration "$name" "created" "$expected_options" \
+        "local rotation create inspection"
+    assert_native_driver "$name" "local"
+
+    run_docker start "$name" >/dev/null
+    wait_for_state "$name" "exited"
+    assert_local_log_configuration "$name" "exited" "$expected_options" \
+        "local rotation first exit inspection"
+    run_docker logs "$name" >"$WORK_ROOT/local-rotation-first.stdout" \
+        2>"$WORK_ROOT/local-rotation-first.stderr"
+    assert_equal "$(<"$WORK_ROOT/local-rotation-first.stderr")" "" \
+        "local rotation first history stderr"
+    assert_local_rotation_records "$WORK_ROOT/local-rotation-first.stdout" 26 40 \
+        "local rotation first history"
+    run_docker logs --tail 3 "$name" >"$WORK_ROOT/local-rotation-first-tail.stdout" \
+        2>"$WORK_ROOT/local-rotation-first-tail.stderr"
+    assert_equal "$(<"$WORK_ROOT/local-rotation-first-tail.stderr")" "" \
+        "local rotation first tail stderr"
+    assert_local_rotation_records "$WORK_ROOT/local-rotation-first-tail.stdout" 38 40 \
+        "local rotation first tail"
+
+    run_docker start "$name" >/dev/null
+    wait_for_state "$name" "exited"
+    assert_local_log_configuration "$name" "exited" "$expected_options" \
+        "local rotation second exit inspection"
+    run_docker logs "$name" >"$WORK_ROOT/local-rotation-second.stdout" \
+        2>"$WORK_ROOT/local-rotation-second.stderr"
+    assert_equal "$(<"$WORK_ROOT/local-rotation-second.stderr")" "" \
+        "local rotation second history stderr"
+    assert_local_rotation_records "$WORK_ROOT/local-rotation-second.stdout" 66 80 \
+        "local rotation second history"
+    run_docker logs --tail 3 "$name" >"$WORK_ROOT/local-rotation-second-tail.stdout" \
+        2>"$WORK_ROOT/local-rotation-second-tail.stderr"
+    assert_equal "$(<"$WORK_ROOT/local-rotation-second-tail.stderr")" "" \
+        "local rotation second tail stderr"
+    assert_local_rotation_records "$WORK_ROOT/local-rotation-second-tail.stdout" 78 80 \
+        "local rotation second tail"
+}
+
+# Verifies local's deferred compression error and retained created container state.
+exercise_invalid_local_compression() {
+    local name="$1"
+    local output
+    local result_code
+    local inspection
+    local state
+    local start_error
+    local expected_options='{"compress":"true","max-file":"1","max-size":"4k"}'
+    local expected_reason='compression cannot be enabled when max file count is 1'
+
+    run_docker create --name "$name" --log-driver local \
+        --log-opt max-size=4k --log-opt max-file=1 --log-opt compress=true \
+        "$REQUIRED_IMAGE" true >/dev/null
+    assert_local_log_configuration "$name" "created" "$expected_options" \
+        "invalid local compression create inspection"
+    assert_native_driver "$name" "local"
+
+    set +e
+    output="$(run_docker start "$name" 2>&1)"
+    result_code=$?
+    set -e
+    ((result_code != 0)) || fail "invalid local compression unexpectedly started"
+    assert_contains "$output" \
+        "failed to initialize logging driver: $expected_reason" \
+        "invalid local compression start error"
+    inspection="$(run_docker container inspect --format '{{.State.Status}}|{{.State.Error}}' "$name")"
+    IFS='|' read -r state start_error <<<"$inspection"
+    assert_equal "$state" "created" "invalid local compression retained state"
+    assert_contains "$start_error" "$expected_reason" \
+        "invalid local compression retained error"
+}
+
+# Coordinates the complete public Docker REST logging contract.
 main() {
     local suffix
     local readable_name
     local local_name
+    local rotation_name
+    local invalid_compression_name
     local none_name
     local stop_name
     local name
@@ -394,12 +577,23 @@ main() {
     suffix="$(basename "$WORK_ROOT" | tr '.[:upper:]' '-[:lower:]')"
     readable_name="cc-rest-readable-$suffix"
     local_name="cc-rest-local-$suffix"
+    rotation_name="cc-rest-local-rotation-$suffix"
+    invalid_compression_name="cc-rest-local-invalid-$suffix"
     none_name="cc-rest-none-$suffix"
     stop_name="cc-rest-stop-$suffix"
-    CONTAINER_NAMES=("$readable_name" "$local_name" "$none_name" "$stop_name")
+    CONTAINER_NAMES=(
+        "$readable_name"
+        "$local_name"
+        "$rotation_name"
+        "$invalid_compression_name"
+        "$none_name"
+        "$stop_name"
+    )
 
     exercise_readable_logging "$readable_name" "json-file"
     exercise_readable_logging "$local_name" "local"
+    exercise_local_rotation "$rotation_name"
+    exercise_invalid_local_compression "$invalid_compression_name"
     exercise_none_logging "$none_name"
     exercise_stop_logging "$stop_name"
 
