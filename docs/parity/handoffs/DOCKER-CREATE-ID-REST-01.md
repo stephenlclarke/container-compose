@@ -68,8 +68,10 @@ timings into a comparable-or-better performance claim.
 
 Keep both marker-protected roots, the signed Container implementation and
 Apple-shaped handoff pair, this Compose ledger/handoff, and Slack START thread
-`1785998717.472209`. Close owned Container issue #74 after this Compose
-checkpoint, post the END reply in the retained START thread, and then select one
-independent queued contract only after the silent Slack instruction poll.
+`1785998717.472209`. Owned
+[Container issue #74](https://github.com/stephenlclarke/container/issues/74)
+has the exact evidence comment and is closed as completed after this Compose
+checkpoint. Post the END reply in the retained START thread, and then select
+one independent queued contract only after the silent Slack instruction poll.
 
 <!-- markdownlint-enable MD013 -->
