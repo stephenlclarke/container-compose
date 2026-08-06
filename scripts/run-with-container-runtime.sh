@@ -323,13 +323,17 @@ if [[ -n "$initial_start_init_image_archive" ]]; then
 fi
 
 printf 'Starting matched container runtime...\n'
-start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
-if has_matched_init_image_source; then
-    # Defer guest materialization until the exact image has been built or
-    # loaded. This prevents the bootstrap from accepting an unrelated default
-    # image pin before the harness installs the matched one.
-    start_arguments=(--debug system start --timeout 60 --disable-kernel-install)
+# Service startup only installs the host-side kernel; it does not materialize
+# a guest init image. A source-built init image invokes `container build`
+# before the harness's final restart, so it needs that kernel in the isolated
+# root. Keep the image configuration unset until after the exact guest image
+# is built, but let this first startup provision the matching kernel. A
+# retained exact init archive retains the prior no-download bootstrap path.
+kernel_install_option=--enable-kernel-install
+if [[ -n "$initial_start_init_image_archive" ]]; then
+    kernel_install_option=--disable-kernel-install
 fi
+start_arguments=(--debug system start --timeout 60 "$kernel_install_option")
 if [[ -n "$runtime_app_root" ]]; then
     start_arguments+=(--app-root "$runtime_app_root")
 fi

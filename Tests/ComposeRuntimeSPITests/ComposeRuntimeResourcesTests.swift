@@ -51,6 +51,7 @@ struct ComposeRuntimeResourcesTests {
                 ipv6Subnet: "fd00::/64",
                 ipv6Gateway: "fd00::53",
             ),
+            enableIPv4: false,
             enableIPv6: false,
             driverOpts: ["dns": "enabled"],
             labels: ["com.docker.compose.project": "app"],
@@ -64,9 +65,20 @@ struct ComposeRuntimeResourcesTests {
         #expect(request.ipv4ReservedAddresses == ["172.25.0.2"])
         #expect(request.ipv6Subnet == "fd00::/64")
         #expect(request.ipv6Gateway == "fd00::53")
+        #expect(request.enableIPv4 == false)
         #expect(request.enableIPv6 == false)
         #expect(request.driverOpts == ["dns": "enabled"])
         #expect(request.labels == ["com.docker.compose.project": "app"])
+    }
+
+    @Test
+    func `network attachment represents an IPv6-only endpoint without IPv4`() throws {
+        let attachment = ComposeContainerNetworkAttachment(network: "app_ipv6")
+        let encoded = try JSONEncoder().encode(attachment)
+        let decoded = try JSONDecoder().decode(ComposeContainerNetworkAttachment.self, from: encoded)
+
+        #expect(attachment.ipv4Address == nil)
+        #expect(decoded == attachment)
     }
 }
 

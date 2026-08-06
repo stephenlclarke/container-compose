@@ -613,6 +613,7 @@ extension ComposeOrchestrator {
                     ipv6Subnet: network.ipv6Subnet,
                     ipv6Gateway: network.ipv6Gateway,
                 ),
+                enableIPv4: network.enableIPv4,
                 enableIPv6: network.enableIPv6,
                 driverOpts: driverOpts,
                 labels: resourceLabels(project: project, labels: network.labels),
@@ -653,17 +654,22 @@ extension ComposeOrchestrator {
         if network.enableIPv6 == false {
             args.append("--disable-ipv6")
         }
-        if let ipv4Subnet = network.ipv4Subnet, !ipv4Subnet.isEmpty {
+        if network.enableIPv4 == false {
+            args.append("--disable-ipv4")
+        }
+        if network.enableIPv4 != false, let ipv4Subnet = network.ipv4Subnet, !ipv4Subnet.isEmpty {
             args.append(contentsOf: ["--subnet", ipv4Subnet])
         }
-        if let ipv4Gateway = network.ipv4Gateway, !ipv4Gateway.isEmpty {
+        if network.enableIPv4 != false, let ipv4Gateway = network.ipv4Gateway, !ipv4Gateway.isEmpty {
             args.append(contentsOf: ["--gateway", ipv4Gateway])
         }
-        if let ipv4AllocationRange = network.ipv4AllocationRange, !ipv4AllocationRange.isEmpty {
+        if network.enableIPv4 != false, let ipv4AllocationRange = network.ipv4AllocationRange, !ipv4AllocationRange.isEmpty {
             args.append(contentsOf: ["--ip-range", ipv4AllocationRange])
         }
-        for address in network.ipv4ReservedAddresses ?? [] {
-            args.append(contentsOf: ["--reserve-ip", address])
+        if network.enableIPv4 != false {
+            for address in network.ipv4ReservedAddresses ?? [] {
+                args.append(contentsOf: ["--reserve-ip", address])
+            }
         }
         if network.enableIPv6 != false, let ipv6Subnet = network.ipv6Subnet, !ipv6Subnet.isEmpty {
             args.append(contentsOf: ["--subnet-v6", ipv6Subnet])

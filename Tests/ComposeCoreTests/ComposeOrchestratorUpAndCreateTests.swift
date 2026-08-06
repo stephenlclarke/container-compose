@@ -652,6 +652,47 @@ extension ComposeOrchestratorTests {
         })
     }
 
+    @Test("up dry run renders IPv4 disablement without conflicting IPv4 addressing")
+    func upDryRunRendersIPv4Disablement() async throws {
+        let emitted = MessageRecorder()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: .init(
+                        enableIPv4: false,
+                        enableIPv6: true,
+                        subnets: .init(
+                            ipv4Subnet: "10.10.0.0/24",
+                            ipv4Gateway: "10.10.0.1",
+                            ipv6Subnet: "fd00:10::/64",
+                            ipv6Gateway: "fd00:10::1"
+                        )
+                    )
+                ),
+            ]
+        }
+
+        try await ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }))
+            .up(project: project, options: ComposeUpOptions())
+
+        #expect(emitted.messages.contains { message in
+            message.contains("container network create")
+                && message.contains("--disable-ipv4")
+                && message.contains("--subnet-v6 fd00:10::/64")
+                && message.contains("demo_backend")
+                && !message.contains("--subnet 10.10.0.0/24")
+                && !message.contains("--gateway 10.10.0.1")
+        })
+    }
+
     @Test("up accepts attachable project network metadata")
     func upAcceptsAttachableProjectNetworkMetadata() async throws {
         let runner = RecordingRunner(responses: [
@@ -696,7 +737,7 @@ extension ComposeOrchestratorTests {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         var networkOptions = ComposeNetwork.Options(isAttachable: true)
-        networkOptions.unsupportedFields = ["driver", "enable_ipv4"]
+        networkOptions.unsupportedFields = ["driver"]
         let project = composeProject(
             name: "demo",
             services: [
@@ -718,7 +759,7 @@ extension ComposeOrchestratorTests {
                 .up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported project network options error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, enable_ipv4; supported project network fields are name, external, internal, attachable, enable_ipv6, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet with an optional gateway"))
+            #expect(error == .unsupported("network 'backend' uses unsupported fields driver; supported project network fields are name, external, internal, attachable, enable_ipv4, enable_ipv6, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet with an optional gateway"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

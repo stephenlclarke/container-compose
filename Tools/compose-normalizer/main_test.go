@@ -2763,7 +2763,7 @@ func TestNormalizeRetainsLosslessIPAMSourceModel(t *testing.T) {
 func TestProjectNetworkValuesReportsOnlyUnmappedNetworkOptions(t *testing.T) {
 	enabled := true
 	disabled := false
-	gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv6, gotUnsupported := projectNetworkValues(types.NetworkConfig{
+	gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv4, gotEnableIPv6, gotUnsupported := projectNetworkValues(types.NetworkConfig{
 		Driver:     "overlay",
 		EnableIPv4: &disabled,
 		EnableIPv6: &enabled,
@@ -2771,12 +2771,12 @@ func TestProjectNetworkValuesReportsOnlyUnmappedNetworkOptions(t *testing.T) {
 			Options: types.Options{"com.example.ipam": "enabled"},
 		},
 	})
-	wantUnsupported := []string{"driver", "enable_ipv4"}
-	if gotIPv4 != "" || gotGateway != "" || gotAllocationRange != "" || gotReservedAddresses != nil || gotIPv6 != "" || gotIPv6Gateway != "" || gotEnableIPv6 == nil || !*gotEnableIPv6 || !reflect.DeepEqual(gotUnsupported, wantUnsupported) {
-		t.Fatalf("projectNetworkValues unsupported = %q, %q, %q, %#v, %q, %q, %#v, %#v; want %#v", gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv6, gotUnsupported, wantUnsupported)
+	wantUnsupported := []string{"driver"}
+	if gotIPv4 != "" || gotGateway != "" || gotAllocationRange != "" || gotReservedAddresses != nil || gotIPv6 != "" || gotIPv6Gateway != "" || gotEnableIPv4 == nil || *gotEnableIPv4 || gotEnableIPv6 == nil || !*gotEnableIPv6 || !reflect.DeepEqual(gotUnsupported, wantUnsupported) {
+		t.Fatalf("projectNetworkValues unsupported = %q, %q, %q, %#v, %q, %q, %#v, %#v, %#v; want %#v", gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv4, gotEnableIPv6, gotUnsupported, wantUnsupported)
 	}
 
-	gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv6, gotUnsupported = projectNetworkValues(types.NetworkConfig{
+	gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv4, gotEnableIPv6, gotUnsupported = projectNetworkValues(types.NetworkConfig{
 		Driver:     "bridge",
 		EnableIPv4: &enabled,
 		EnableIPv6: &enabled,
@@ -2785,25 +2785,25 @@ func TestProjectNetworkValuesReportsOnlyUnmappedNetworkOptions(t *testing.T) {
 			{Subnet: "fd77::/64", Gateway: "fd77::53"},
 		}},
 	})
-	if gotIPv4 != "10.77.0.0/24" || gotGateway != "" || gotAllocationRange != "" || gotReservedAddresses != nil || gotIPv6 != "fd77::/64" || gotIPv6Gateway != "fd77::53" || gotEnableIPv6 == nil || !*gotEnableIPv6 || gotUnsupported != nil {
-		t.Fatalf("projectNetworkValues supported = %q, %q, %q, %#v, %q, %q, %#v, %#v", gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv6, gotUnsupported)
+	if gotIPv4 != "10.77.0.0/24" || gotGateway != "" || gotAllocationRange != "" || gotReservedAddresses != nil || gotIPv6 != "fd77::/64" || gotIPv6Gateway != "fd77::53" || gotEnableIPv4 == nil || !*gotEnableIPv4 || gotEnableIPv6 == nil || !*gotEnableIPv6 || gotUnsupported != nil {
+		t.Fatalf("projectNetworkValues supported = %q, %q, %q, %#v, %q, %q, %#v, %#v, %#v", gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv4, gotEnableIPv6, gotUnsupported)
 	}
 
-	gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv6, gotUnsupported = projectNetworkValues(types.NetworkConfig{
+	gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv4, gotEnableIPv6, gotUnsupported = projectNetworkValues(types.NetworkConfig{
 		EnableIPv6: &disabled,
 	})
-	if gotIPv4 != "" || gotGateway != "" || gotAllocationRange != "" || gotReservedAddresses != nil || gotIPv6 != "" || gotIPv6Gateway != "" || gotEnableIPv6 == nil || *gotEnableIPv6 || gotUnsupported != nil {
-		t.Fatalf("projectNetworkValues automatic disabled IPv6 = %q, %q, %q, %#v, %q, %q, %#v, %#v", gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv6, gotUnsupported)
+	if gotIPv4 != "" || gotGateway != "" || gotAllocationRange != "" || gotReservedAddresses != nil || gotIPv6 != "" || gotIPv6Gateway != "" || gotEnableIPv4 != nil || gotEnableIPv6 == nil || *gotEnableIPv6 || gotUnsupported != nil {
+		t.Fatalf("projectNetworkValues automatic disabled IPv6 = %q, %q, %q, %#v, %q, %q, %#v, %#v, %#v", gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv4, gotEnableIPv6, gotUnsupported)
 	}
 
-	gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv6, gotUnsupported = projectNetworkValues(types.NetworkConfig{
+	gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv4, gotEnableIPv6, gotUnsupported = projectNetworkValues(types.NetworkConfig{
 		EnableIPv6: &disabled,
 		Ipam: types.IPAMConfig{Config: []*types.IPAMPool{
 			{Subnet: "fd77::/64"},
 		}},
 	})
-	if gotIPv4 != "" || gotGateway != "" || gotAllocationRange != "" || gotReservedAddresses != nil || gotIPv6 != "fd77::/64" || gotIPv6Gateway != "" || gotEnableIPv6 == nil || *gotEnableIPv6 || gotUnsupported != nil {
-		t.Fatalf("projectNetworkValues disabled IPv6 = %q, %q, %q, %#v, %q, %q, %#v, %#v", gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv6, gotUnsupported)
+	if gotIPv4 != "" || gotGateway != "" || gotAllocationRange != "" || gotReservedAddresses != nil || gotIPv6 != "fd77::/64" || gotIPv6Gateway != "" || gotEnableIPv4 != nil || gotEnableIPv6 == nil || *gotEnableIPv6 || gotUnsupported != nil {
+		t.Fatalf("projectNetworkValues disabled IPv6 = %q, %q, %q, %#v, %q, %q, %#v, %#v, %#v", gotIPv4, gotGateway, gotAllocationRange, gotReservedAddresses, gotIPv6, gotIPv6Gateway, gotEnableIPv4, gotEnableIPv6, gotUnsupported)
 	}
 }
 

@@ -150,10 +150,16 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertIn(f'image = "{DEFAULT_INIT_IMAGE}"', config)
             self.assertEqual(init_log.read_text(encoding="utf-8").strip(), DEFAULT_INIT_IMAGE)
             invocations = container_log.read_text(encoding="utf-8")
+            starts = [
+                invocation
+                for invocation in invocations.splitlines()
+                if "system start" in invocation
+            ]
             self.assertIn("system start", invocations)
             self.assertIn(f"--app-root {app_root}", invocations)
             self.assertEqual(invocations.count("system start"), 2)
             self.assertGreaterEqual(invocations.count("system stop"), 2)
+            self.assertIn("--enable-kernel-install", starts[0])
 
     def test_installs_and_configures_unpublished_builder_before_init_build(
         self,

@@ -2197,6 +2197,43 @@ extension ComposeOrchestratorTests {
         ])
     }
 
+    @Test("resource manager disables IPv4 and suppresses an ignored IPv4 subnet")
+    func resourceManagerDisablesIPv4AndSuppressesIgnoredSubnet() async throws {
+        let client = RecordingContainerResourceAPIClient()
+        let manager = ContainerClientResourceManager(client: client)
+
+        try await manager.createNetwork(ComposeNetworkCreateRequest(
+            name: "demo_ipv6_only",
+            addressing: .init(
+                ipv4Subnet: "10.10.0.0/24",
+                ipv4Gateway: "10.10.0.1",
+                ipv4AllocationRange: "10.10.0.128/25",
+                ipv4ReservedAddresses: ["10.10.0.2"],
+                ipv6Subnet: "fd00:10::/64",
+                ipv6Gateway: "fd00:10::1"
+            ),
+            enableIPv4: false,
+            enableIPv6: true
+        ))
+
+        #expect(await client.requests == [
+            .createNetwork(
+                name: "demo_ipv6_only",
+                mode: .nat,
+                plugin: "container-network-vmnet",
+                ipv4Subnet: nil,
+                ipv4Gateway: nil,
+                ipv4AllocationRange: nil,
+                ipv6Subnet: "fd00:10::/64",
+                ipv6Gateway: "fd00:10::1",
+                enableIPv4: false,
+                enableIPv6: true,
+                options: [:],
+                labels: [:]
+            ),
+        ])
+    }
+
     @Test("resource manager reuses volumes reported as existing by container")
     func resourceManagerReusesVolumesReportedAsExistingByContainer() async throws {
         let client = RecordingContainerResourceAPIClient(

@@ -825,7 +825,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 		result.Services[service.Name] = normalizeService(service, project.Secrets)
 	}
 	for name, network := range project.Networks {
-		ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, enableIPv6, unsupportedFields := projectNetworkValues(network)
+		ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, enableIPv4, enableIPv6, unsupportedFields := projectNetworkValues(network)
 		result.Networks[name] = normalizedNetwork{
 			Name:                  firstNonEmpty(network.Name, name),
 			External:              bool(network.External),
@@ -836,7 +836,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 			Internal:              network.Internal,
 			Attachable:            network.Attachable,
 			Labels:                mapLabels(network.Labels),
-			EnableIPv4:            network.EnableIPv4,
+			EnableIPv4:            enableIPv4,
 			IPv4Subnet:            ipv4Subnet,
 			IPv4Gateway:           ipv4Gateway,
 			IPv4AllocationRange:   ipv4AllocationRange,
@@ -897,18 +897,18 @@ func normalizeIPAM(ipam types.IPAMConfig) *normalizedIPAM {
 
 // projectNetworkValues returns mapped IPAM values and project network fields that
 // need runtime behavior beyond apple/container's current network API.
-func projectNetworkValues(network types.NetworkConfig) (string, string, string, []string, string, string, *bool, []string) {
+func projectNetworkValues(network types.NetworkConfig) (string, string, string, []string, string, string, *bool, *bool, []string) {
 	ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, ipamFields := networkIPAMValues(network.Ipam)
+	enableIPv4 := network.EnableIPv4
 	enableIPv6 := network.EnableIPv6
 	fields := []string{}
 	driver := strings.TrimSpace(network.Driver)
 	appendUnsupportedNetworkField(&fields, "driver", driver != "" && driver != "bridge")
-	appendUnsupportedNetworkField(&fields, "enable_ipv4", network.EnableIPv4 != nil && !*network.EnableIPv4)
 	fields = append(fields, ipamFields...)
 	if len(fields) == 0 {
-		return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, enableIPv6, nil
+		return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, enableIPv4, enableIPv6, nil
 	}
-	return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, enableIPv6, fields
+	return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, enableIPv4, enableIPv6, fields
 }
 
 // normalizeService copies a compose-go service into the stable Swift model.

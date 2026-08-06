@@ -1654,6 +1654,7 @@ enum ContainerResourceAPIRequest: Equatable {
         ipv4AllocationRange: String?,
         ipv6Subnet: String?,
         ipv6Gateway: String? = nil,
+        enableIPv4: Bool = true,
         enableIPv6: Bool,
         options: [String: String],
         labels: [String: String]
@@ -3615,6 +3616,7 @@ actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting {
             ipv4AllocationRange: configuration.ipv4AllocationRange?.description,
             ipv6Subnet: configuration.ipv6Subnet?.description,
             ipv6Gateway: configuration.ipv6Gateway?.description,
+            enableIPv4: configuration.enableIPv4,
             enableIPv6: configuration.enableIPv6,
             options: configuration.options,
             labels: configuration.labels.dictionary
