@@ -700,6 +700,48 @@ public struct ComposeNetworkOptions: Codable, Equatable {
 
 /// Network definition normalized from the Compose project.
 public struct ComposeNetwork: Codable, Equatable {
+    /// Source-preserved Compose IPAM configuration.
+    ///
+    /// Runtime creation still uses the legacy singular fields below until the
+    /// versioned network provider contract is available. This model must never
+    /// be reconstructed from those fields because doing so would lose pool
+    /// order and named auxiliary addresses.
+    public struct IPAM: Codable, Equatable {
+        /// One source-ordered Compose IPAM pool.
+        public struct Pool: Codable, Equatable {
+            public var subnet: String?
+            public var allocationRange: String?
+            public var gateway: String?
+            public var auxiliaryAddresses: [String: String]?
+
+            public init(
+                subnet: String? = nil,
+                allocationRange: String? = nil,
+                gateway: String? = nil,
+                auxiliaryAddresses: [String: String]? = nil,
+            ) {
+                self.subnet = subnet
+                self.allocationRange = allocationRange
+                self.gateway = gateway
+                self.auxiliaryAddresses = auxiliaryAddresses
+            }
+        }
+
+        public var driver: String?
+        public var options: [String: String]?
+        public var config: [Pool]?
+
+        public init(
+            driver: String? = nil,
+            options: [String: String]? = nil,
+            config: [Pool]? = nil,
+        ) {
+            self.driver = driver
+            self.options = options
+            self.config = config
+        }
+    }
+
     /// IPAM addressing supported by apple/container network creation.
     public struct Subnets: Equatable {
         public var ipv4Subnet: String?
@@ -731,9 +773,11 @@ public struct ComposeNetwork: Codable, Equatable {
         public var external: Bool?
         public var driver: String?
         public var driverOpts: [String: String]?
+        public var ipam: IPAM?
         public var ipamOptions: [String: String]?
         public var isInternal: Bool?
         public var isAttachable: Bool?
+        public var enableIPv4: Bool?
         public var enableIPv6: Bool?
         public var labels: [String: String]?
         public var subnets: Subnets
@@ -743,16 +787,20 @@ public struct ComposeNetwork: Codable, Equatable {
             external: Bool? = nil,
             driver: String? = nil,
             driverOpts: [String: String]? = nil,
+            ipam: IPAM? = nil,
             isInternal: Bool? = nil,
             isAttachable: Bool? = nil,
+            enableIPv4: Bool? = nil,
             enableIPv6: Bool? = nil,
             labels: [String: String]? = nil,
         ) {
             self.external = external
             self.driver = driver
             self.driverOpts = driverOpts
+            self.ipam = ipam
             self.isInternal = isInternal
             self.isAttachable = isAttachable
+            self.enableIPv4 = enableIPv4
             self.enableIPv6 = enableIPv6
             self.labels = labels
             subnets = Subnets()
@@ -765,8 +813,10 @@ public struct ComposeNetwork: Codable, Equatable {
         public init(
             driver: String? = nil,
             driverOpts: [String: String]? = nil,
+            ipam: IPAM? = nil,
             isInternal: Bool? = nil,
             isAttachable: Bool? = nil,
+            enableIPv4: Bool? = nil,
             enableIPv6: Bool? = nil,
             labels: [String: String]? = nil,
             subnets: Subnets,
@@ -774,8 +824,10 @@ public struct ComposeNetwork: Codable, Equatable {
             self.init(
                 driver: driver,
                 driverOpts: driverOpts,
+                ipam: ipam,
                 isInternal: isInternal,
                 isAttachable: isAttachable,
+                enableIPv4: enableIPv4,
                 enableIPv6: enableIPv6,
                 labels: labels,
             )
@@ -787,9 +839,11 @@ public struct ComposeNetwork: Codable, Equatable {
     public var external: Bool?
     public var driver: String?
     public var driverOpts: [String: String]?
+    public var ipam: IPAM?
     public var ipamOptions: [String: String]?
     public var isInternal: Bool?
     public var isAttachable: Bool?
+    public var enableIPv4: Bool?
     public var enableIPv6: Bool?
     public var labels: [String: String]?
     public var ipv4Subnet: String?
@@ -808,9 +862,11 @@ public struct ComposeNetwork: Codable, Equatable {
         external = options.external
         driver = options.driver
         driverOpts = options.driverOpts
+        ipam = options.ipam
         ipamOptions = options.ipamOptions
         isInternal = options.isInternal
         isAttachable = options.isAttachable
+        enableIPv4 = options.enableIPv4
         enableIPv6 = options.enableIPv6
         labels = options.labels
         ipv4Subnet = options.subnets.ipv4Subnet
@@ -827,9 +883,11 @@ public struct ComposeNetwork: Codable, Equatable {
         case external
         case driver
         case driverOpts
+        case ipam
         case ipamOptions
         case isInternal = "internal"
         case isAttachable = "attachable"
+        case enableIPv4
         case enableIPv6
         case labels
         case ipv4Subnet

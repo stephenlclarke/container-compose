@@ -2,9 +2,9 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Design complete; implementation not started |
+| Status | Implementation underway: `NET-WP-01` is verified as a static source-model contract; `NET-WP-02` through `NET-WP-09` remain queued. |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, the shared Engine API, devcontainer, and the common Engine Linux sandbox |
-| Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
+| Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS; `NET-WP-01` source rendering is also captured against Docker Compose 5.4.0. |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
 | Matched Container revision | `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1` |
 | Matched Containerization revision | `d7377b962af724f8d7c2b640f3ab12184d33f1af` |
@@ -55,8 +55,8 @@ The gap is cross-repository. No Compose-only projection can close it.
 
 | Layer | Current boundary | Consequence |
 | --- | --- | --- |
-| Compose normalization | `Tools/compose-normalizer/main.go` flattens IPAM to one IPv4 and one IPv6 pool, drops auxiliary names, and marks custom drivers, custom IPAM, disabled IPv4, repeated pools, and IPv6 ranges/auxiliary addresses unsupported. | Valid source information is lost before orchestration. |
-| Compose model | `Sources/ComposeCore/NormalizedProject.swift` stores singular family fields and has no `enableIPv4` or IPAM driver. | Validation, hashing, rendering, and create projection cannot be complete. |
+| Compose normalization | `NET-WP-01` adds a lossless source projection for `EnableIPv4`, IPAM driver/options, and ordered pools with named auxiliary addresses. Legacy singular fields and their existing runtime-preflight markers remain for the current vmnet adapter. | `config` and `convert` no longer lose requested IPAM data; runtime creation is still intentionally rejected before it could silently flatten unsupported values. |
+| Compose model | `NET-WP-01` adds `ComposeNetwork.IPAM`, ordered `Pool` values, and tri-state `enableIPv4` alongside the existing singular runtime projection. | Source rendering is complete for this boundary; hashing, capability negotiation, and create projection still require the later work packages. |
 | Compose runtime SPI | `Sources/ComposeRuntimeSPI/ComposeRuntimeResources.swift` exposes singular addressing and create/delete only. | There is no full request, capability query, inspect result, or safe same-name reconciliation. |
 | Container adapter | `Sources/ComposeContainerRuntime/ContainerResourceAdapter.swift` hardcodes `container-network-vmnet` and treats a same-name `.exists` error as success. | Driver selection is ignored and an unrelated network can be reused without configuration or ownership checks. |
 | Container resource model | `NetworkConfiguration`, `NetworkStatus`, and `Attachment` at the matched Container revision require singular IPv4 state. | Multiple pools and IPv6-only endpoints cannot be represented truthfully. |
@@ -217,7 +217,7 @@ Required projection rules:
 5. Preserve source values during `config`/`convert`, including pools for a disabled family.
 6. Normalize option scalar types exactly as compose-go does: network and endpoint driver option numbers become strings, while invalid booleans and invalid IPAM option scalar types remain schema errors.
 7. Preserve endpoint `priority` separately from `gw_priority`; use the Docker/compose-go ordering and tie-break rules when producing the attachment list.
-8. Remove these fields from `unsupportedFields` once the lossless model lands. Capability failure belongs to runtime preflight, not normalization.
+8. Do not use `unsupportedFields` to drop or transform the source model. Until `NET-WP-06` replaces the legacy marker with versioned capability negotiation, the existing marker remains a runtime-preflight signal so advanced values fail before an unsafe lossy create.
 
 Temporary singular accessors MAY be retained for existing callers, but they MUST trap or return an explicit lossy-projection error when more than one pool of a family exists. Advanced data MUST never be silently truncated.
 
@@ -835,7 +835,7 @@ The primary release criterion is the repository definition of comparable: no mat
 
 | Stable ID | Repository | Work package | Exit condition |
 | ---: | --- | --- | --- |
-| <a id="net-wp-01"></a>`NET-WP-01` | `container-compose` | Lossless compose-go projection and source model | Full ordered pools, named aux, drivers, options, and tri-state flags round-trip through `config`/`convert`; no runtime behavior enabled. |
+| <a id="net-wp-01"></a>`NET-WP-01` | `container-compose` | Lossless compose-go projection and source model | **Verified static-model subset:** [NET-IPAM-MODEL-01](parity/handoffs/NET-IPAM-MODEL-01.md) preserves full ordered pools, named aux, drivers, options, and tri-state flags through `config`/`convert` without enabling runtime behavior. |
 | <a id="net-wp-02"></a>`NET-WP-02` | Shared authority | Immutable identity, common typed-provider registry, workload journal, v2 resources, inspect API, capabilities, and migration | Network mutations are one domain transaction under the selected authority; legacy fixtures dual-read and advanced values round-trip. |
 | <a id="net-wp-03"></a>`NET-WP-03` | `container` | Transactional endpoint ledger, canonical namespace-delegation reference, custom-mode resolver, and sparse default IPAM | Lease conflicts, custom existing-network attachment, donor joins, stop/start, service restart, exhaustion, and crash recovery are deterministic. |
 | <a id="net-wp-04"></a>`NET-WP-04` | `containerization` | Engine Linux sandbox dynamic netns, optional-family interface, route, DNS, and sysctl primitives | IPv6-only and private/joined live workloads have correct endpoints, routes, DNS, connectivity, and isolation. |

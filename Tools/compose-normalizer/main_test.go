@@ -2695,6 +2695,71 @@ func TestNetworkIPAMValues(t *testing.T) {
 	}
 }
 
+func TestNormalizeRetainsLosslessIPAMSourceModel(t *testing.T) {
+	enabled := true
+	project := &types.Project{
+		Networks: types.Networks{
+			"advanced": {
+				EnableIPv4: &enabled,
+				EnableIPv6: &enabled,
+				Ipam: types.IPAMConfig{
+					Driver:  "default",
+					Options: types.Options{"com.example.ipam": "enabled"},
+					Config: []*types.IPAMPool{
+						{
+							Subnet:             "10.77.0.0/24",
+							IPRange:            "10.77.0.128/25",
+							Gateway:            "10.77.0.1",
+							AuxiliaryAddresses: types.Mapping{"dns": "10.77.0.2", "reserve": "10.77.0.3"},
+						},
+						{
+							Subnet:             "fd77::/64",
+							IPRange:            "fd77::100/120",
+							Gateway:            "fd77::1",
+							AuxiliaryAddresses: types.Mapping{"dns6": "fd77::2"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	network := normalize(project, ".").Networks["advanced"]
+	if network.EnableIPv4 == nil || !*network.EnableIPv4 {
+		t.Fatalf("EnableIPv4 = %#v, want explicit true", network.EnableIPv4)
+	}
+	if network.EnableIPv6 == nil || !*network.EnableIPv6 {
+		t.Fatalf("EnableIPv6 = %#v, want explicit true", network.EnableIPv6)
+	}
+	wantIPAM := &normalizedIPAM{
+		Driver:  "default",
+		Options: map[string]string{"com.example.ipam": "enabled"},
+		Config: []normalizedIPAMPool{
+			{
+				Subnet:             "10.77.0.0/24",
+				AllocationRange:    "10.77.0.128/25",
+				Gateway:            "10.77.0.1",
+				AuxiliaryAddresses: map[string]string{"dns": "10.77.0.2", "reserve": "10.77.0.3"},
+			},
+			{
+				Subnet:             "fd77::/64",
+				AllocationRange:    "fd77::100/120",
+				Gateway:            "fd77::1",
+				AuxiliaryAddresses: map[string]string{"dns6": "fd77::2"},
+			},
+		},
+	}
+	if !reflect.DeepEqual(network.IPAM, wantIPAM) {
+		t.Fatalf("IPAM = %#v, want %#v", network.IPAM, wantIPAM)
+	}
+	if got, want := network.UnsupportedFields, []string{"ipam.driver", "ipam.config.ip_range", "ipam.config.aux_addresses"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("UnsupportedFields = %#v, want %#v", got, want)
+	}
+	if got := normalizeIPAM(types.IPAMConfig{Config: []*types.IPAMPool{nil}}); got != nil {
+		t.Fatalf("normalizeIPAM empty model = %#v, want nil", got)
+	}
+}
+
 func TestProjectNetworkValuesReportsOnlyUnmappedNetworkOptions(t *testing.T) {
 	enabled := true
 	disabled := false

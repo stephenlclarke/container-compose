@@ -380,6 +380,28 @@ type normalizedMount struct {
 	UnsupportedFields  []string          `json:"unsupportedFields,omitempty"`
 }
 
+// normalizedIPAMPool preserves one ordered Compose IPAM configuration pool.
+//
+// The values remain source-shaped strings because Docker validates several of
+// them only when it creates a network. Auxiliary address names are significant
+// and therefore remain a map instead of being flattened to sorted values.
+type normalizedIPAMPool struct {
+	Subnet             string            `json:"subnet,omitempty"`
+	AllocationRange    string            `json:"allocationRange,omitempty"`
+	Gateway            string            `json:"gateway,omitempty"`
+	AuxiliaryAddresses map[string]string `json:"auxiliaryAddresses,omitempty"`
+}
+
+// normalizedIPAM preserves the complete source-facing Compose IPAM model.
+//
+// Existing singular fields on normalizedNetwork remain as legacy runtime
+// adapters. They must not be used to reconstruct this requested-state model.
+type normalizedIPAM struct {
+	Driver  string               `json:"driver,omitempty"`
+	Options map[string]string    `json:"options,omitempty"`
+	Config  []normalizedIPAMPool `json:"config,omitempty"`
+}
+
 // normalizedNetwork contains project-level network metadata.
 type normalizedNetwork struct {
 	Name                  string            `json:"name"`
@@ -387,9 +409,11 @@ type normalizedNetwork struct {
 	Driver                string            `json:"driver,omitempty"`
 	DriverOpts            map[string]string `json:"driverOpts,omitempty"`
 	IPAMOptions           map[string]string `json:"ipamOptions,omitempty"`
+	IPAM                  *normalizedIPAM   `json:"ipam,omitempty"`
 	Internal              bool              `json:"internal,omitempty"`
 	Attachable            bool              `json:"attachable,omitempty"`
 	Labels                map[string]string `json:"labels,omitempty"`
+	EnableIPv4            *bool             `json:"enableIPv4,omitempty"`
 	IPv4Subnet            string            `json:"ipv4Subnet,omitempty"`
 	IPv4Gateway           string            `json:"ipv4Gateway,omitempty"`
 	IPv4AllocationRange   string            `json:"ipv4AllocationRange,omitempty"`
@@ -808,9 +832,11 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 			Driver:                network.Driver,
 			DriverOpts:            mapOptions(network.DriverOpts),
 			IPAMOptions:           mapOptions(network.Ipam.Options),
+			IPAM:                  normalizeIPAM(network.Ipam),
 			Internal:              network.Internal,
 			Attachable:            network.Attachable,
 			Labels:                mapLabels(network.Labels),
+			EnableIPv4:            network.EnableIPv4,
 			IPv4Subnet:            ipv4Subnet,
 			IPv4Gateway:           ipv4Gateway,
 			IPv4AllocationRange:   ipv4AllocationRange,
@@ -843,6 +869,29 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 		result.Extensions = project.Extensions
 	}
 
+	return result
+}
+
+// normalizeIPAM copies every compose-go IPAM pool in source order.
+func normalizeIPAM(ipam types.IPAMConfig) *normalizedIPAM {
+	result := &normalizedIPAM{
+		Driver:  ipam.Driver,
+		Options: mapOptions(ipam.Options),
+	}
+	for _, pool := range ipam.Config {
+		if pool == nil {
+			continue
+		}
+		result.Config = append(result.Config, normalizedIPAMPool{
+			Subnet:             pool.Subnet,
+			AllocationRange:    pool.IPRange,
+			Gateway:            pool.Gateway,
+			AuxiliaryAddresses: mapMapping(pool.AuxiliaryAddresses),
+		})
+	}
+	if result.Driver == "" && len(result.Options) == 0 && len(result.Config) == 0 {
+		return nil
+	}
 	return result
 }
 

@@ -254,6 +254,21 @@ struct ComposeNormalizerTests {
                     "com.docker.network.bridge.host_binding_ipv4": "127.0.0.1",
                     "com.docker.network.driver.mtu": "1450",
                 ],
+                ipam: ComposeNetwork.IPAM(config: [
+                    .init(
+                        subnet: "10.10.0.0/24",
+                        allocationRange: "10.10.0.128/25",
+                        gateway: "10.10.0.254",
+                        auxiliaryAddresses: [
+                            "app": "10.10.0.10",
+                            "worker": "10.10.0.11",
+                        ]
+                    ),
+                    .init(
+                        subnet: "fd00:10::/64",
+                        gateway: "fd00:10::53"
+                    ),
+                ]),
                 isInternal: true,
                 isAttachable: true,
                 subnets: ComposeNetwork.Subnets(
@@ -307,6 +322,92 @@ struct ComposeNormalizerTests {
 
         #expect(project.networks["backend"]?.ipamOptions == ["com.example.ipam": "enabled"])
         #expect(project.networks["backend"]?.unsupportedFields == nil)
+    }
+
+    @Test("normalizer preserves source-ordered advanced IPAM model")
+    func normalizerPreservesSourceOrderedAdvancedIPAMModel() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: directory) }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            networks:
+              - advanced
+              - ipv6_only
+        networks:
+          advanced:
+            enable_ipv4: true
+            enable_ipv6: true
+            ipam:
+              driver: default
+              options:
+                com.example.ipam: enabled
+              config:
+                - subnet: 10.77.0.0/24
+                  ip_range: 10.77.0.128/25
+                  gateway: 10.77.0.1
+                  aux_addresses:
+                    dns: 10.77.0.2
+                    reserve: 10.77.0.3
+                - subnet: fd77::/64
+                  ip_range: fd77::100/120
+                  gateway: fd77::1
+                  aux_addresses:
+                    dns6: fd77::2
+          ipv6_only:
+            enable_ipv4: false
+            enable_ipv6: true
+            ipam:
+              config:
+                - subnet: fd78::/64
+                  ip_range: fd78::100/120
+                  gateway: fd78::1
+                  aux_addresses:
+                    dns6: fd78::2
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        #expect(project.networks["advanced"]?.enableIPv4 == true)
+        #expect(project.networks["advanced"]?.enableIPv6 == true)
+        #expect(project.networks["advanced"]?.ipam == ComposeNetwork.IPAM(
+            driver: "default",
+            options: ["com.example.ipam": "enabled"],
+            config: [
+                .init(
+                    subnet: "10.77.0.0/24",
+                    allocationRange: "10.77.0.128/25",
+                    gateway: "10.77.0.1",
+                    auxiliaryAddresses: ["dns": "10.77.0.2", "reserve": "10.77.0.3"]
+                ),
+                .init(
+                    subnet: "fd77::/64",
+                    allocationRange: "fd77::100/120",
+                    gateway: "fd77::1",
+                    auxiliaryAddresses: ["dns6": "fd77::2"]
+                ),
+            ]
+        ))
+        #expect(project.networks["ipv6_only"]?.enableIPv4 == false)
+        #expect(project.networks["ipv6_only"]?.enableIPv6 == true)
+        #expect(project.networks["ipv6_only"]?.ipam?.config == [
+            .init(
+                subnet: "fd78::/64",
+                allocationRange: "fd78::100/120",
+                gateway: "fd78::1",
+                auxiliaryAddresses: ["dns6": "fd78::2"]
+            ),
+        ])
     }
 
     @Test("normalizer maps automatic IPv6 enablement to VMnet allocation")
