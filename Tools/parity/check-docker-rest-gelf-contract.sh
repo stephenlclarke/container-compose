@@ -67,6 +67,7 @@ NATIVE_CLI=""
 RESULT_PATH=""
 WORK_ROOT=""
 CONTAINER_NAME=""
+CONTAINER_ID=""
 RECEIVER_PID=""
 RECEIVER_PORT_PATH=""
 RECEIVER_RESULT_PATH=""
@@ -808,6 +809,28 @@ assert_native_driver() {
         || fail "native authority does not expose $CONTAINER_NAME with GELF"
 }
 
+# Assert the Docker create response has a canonical identity while name and
+# full/short ID route aliases all resolve to the same object.
+assert_public_create_identity() {
+    local container_id="$1"
+    local short_id
+    local identifier
+    local resolved_id
+    local resolved_name
+
+    [[ "$container_id" =~ ^[0-9a-f]{64}$ ]] \
+        || fail "docker create returned a non-canonical container ID: $container_id"
+    short_id="${container_id:0:12}"
+    for identifier in "$CONTAINER_NAME" "$container_id" "$short_id"; do
+        resolved_id="$(run_docker container inspect --format '{{.Id}}' "$identifier")"
+        [[ "$resolved_id" == "$container_id" ]] \
+            || fail "Docker identifier $identifier resolved to $resolved_id, expected $container_id"
+    done
+    resolved_name="$(run_docker container inspect --format '{{.Name}}' "$container_id")"
+    [[ "$resolved_name" == "/$CONTAINER_NAME" ]] \
+        || fail "Docker canonical ID $container_id resolved to name $resolved_name, expected /$CONTAINER_NAME"
+}
+
 # Assert public Docker inspect preserves the expected remote logging state.
 assert_public_inspection() {
     local log_config
@@ -1208,7 +1231,9 @@ cleanup() {
         kill "$RECEIVER_PID" 2>/dev/null || true
         wait "$RECEIVER_PID" 2>/dev/null || true
     fi
-    if [[ -n "$CONTAINER_NAME" ]]; then
+    if [[ -n "$CONTAINER_ID" ]]; then
+        run_docker rm --force "$CONTAINER_ID" >/dev/null 2>&1 || true
+    elif [[ -n "$CONTAINER_NAME" ]]; then
         run_docker rm --force "$CONTAINER_NAME" >/dev/null 2>&1 || true
     fi
     if [[ -n "$WORK_ROOT" && "$WORK_ROOT" == "$temporary_parent"/container-rest-gelf.* \
@@ -1266,6 +1291,8 @@ main() {
         "${log_options[@]}" \
         "$REQUIRED_DISPLAY_IMAGE" /bin/sh -c "$workload")"
     [[ -n "$container_id" ]] || fail "docker create returned an empty GELF identifier"
+    CONTAINER_ID="$container_id"
+    assert_public_create_identity "$container_id"
     assert_native_driver
     started_at="$(monotonic_seconds)"
     if [[ "$SCENARIO" == "tcp-unavailable" ]]; then
@@ -1284,7 +1311,7 @@ PY
         info "Docker REST GELF TCP unavailable endpoint contract passed in ${duration_seconds}s"
         return
     fi
-    run_docker start "$CONTAINER_NAME" >/dev/null
+    run_docker start "$container_id" >/dev/null
     wait_for_state exited
     if [[ "$TRANSPORT" == "tcp" ]]; then
         if [[ "$SCENARIO" == "tcp-reconnect" ]]; then

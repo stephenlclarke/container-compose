@@ -20,7 +20,7 @@ The first candidate correctly failed start but exposed a generic diagnostic and 
 
 ## Remaining boundary
 
-The full TCP retry/delay and sustained-failure matrix, slow-sink/backpressure, dual-cache pressure, migration/security/provider-failure matrices, other remote drivers, Testcontainers/devcontainer lanes, release publication, and programme-wide comparable-or-better performance proof remain queued. The unavailable-endpoint candidate is 6.38–7.00x Docker even though it remains below the fixture's functional guard. [Container issue 74](https://github.com/stephenlclarke/container/issues/74) still owns the unrelated public create name-as-ID discrepancy.
+The full TCP retry/delay and sustained-failure matrix, slow-sink/backpressure, dual-cache pressure, migration/security/provider-failure matrices, other remote drivers, Testcontainers/devcontainer lanes, release publication, and programme-wide comparable-or-better performance proof remain queued. The unavailable-endpoint candidate is 6.38–7.00x Docker even though it remains below the fixture's functional guard. The historical public create name-as-ID discrepancy is resolved by [DOCKER-CREATE-ID-REST-01](DOCKER-CREATE-ID-REST-01.md), outside this failure certificate.
 
 ## Safe resumption
 

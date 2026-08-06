@@ -60,10 +60,10 @@ One bounded TCP peer-loss/reconnect path is separately verified in
 The remaining retry/failing-sink matrix, provider-wide failure/migration/security
 and pressure behavior, other remote-driver public-client lanes,
 Testcontainers/devcontainer adoption, release publication, and the complete
-release performance matrix remain queued. The candidate create route still
-returns a generated name instead of Docker's immutable 64-hex ID; [Container
-issue 74](https://github.com/stephenlclarke/container/issues/74) tracks that
-separately.
+release performance matrix remain queued. The historical create name-as-ID
+discrepancy is resolved by
+[DOCKER-CREATE-ID-REST-01](DOCKER-CREATE-ID-REST-01.md), outside this TCP
+certificate.
 
 ## Safe resumption
 

@@ -56,11 +56,11 @@ focused TCP/UDP loopback regression and both fresh public reconnect runs pass.
 The complete TCP retry/failure matrix, slow/failing sinks, backpressure,
 dual-cache pressure, migration/security/provider-failure matrices, other remote
 drivers, Testcontainers/devcontainer lanes, release publication, and complete
-release-performance proof remain queued. [Container issue
-74](https://github.com/stephenlclarke/container/issues/74) still owns the
-unrelated public create name-as-ID discrepancy. The Apple-shaped source handoff
-is local only; no Apple issue, pull request, branch publication, or push is
-authorised.
+release-performance proof remain queued. The historical public create
+name-as-ID discrepancy is resolved by
+[DOCKER-CREATE-ID-REST-01](DOCKER-CREATE-ID-REST-01.md), outside this
+reconnect certificate. The Apple-shaped source handoff is local only; no Apple
+issue, pull request, branch publication, or push is authorised.
 
 ## Safe resumption
 
