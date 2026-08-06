@@ -286,7 +286,15 @@ build:
 	fi
 
 build-release:
-	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose $(SWIFT_RELEASE_FLAGS)
+	@if [[ -n "$(CONTAINER_PACKAGE_PATH)$(CONTAINERIZATION_PACKAGE_PATH)" ]]; then \
+		lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
+		cp Package.resolved "$$lock_backup"; \
+		restore_lock() { trap - EXIT HUP INT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
+		trap restore_lock EXIT HUP INT TERM; \
+		$(PARITY_ENV) $(SWIFT) build -c release --product compose $(SWIFT_RELEASE_FLAGS); \
+	else \
+		$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose $(SWIFT_RELEASE_FLAGS); \
+	fi
 
 run:
 	$(SWIFT) run $(SWIFT_RESOLVED_FLAGS) compose version
