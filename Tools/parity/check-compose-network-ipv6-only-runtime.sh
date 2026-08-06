@@ -30,6 +30,8 @@
 #   CONTAINER_COMPOSE_LIVE         Set to 1 to run the candidate runtime lane.
 #   CONTAINER_PACKAGE_PATH         Local Container source used for the build.
 #   CONTAINERIZATION_PACKAGE_PATH  Local Containerization source used for the build.
+#   CONTAINER_ENGINE_API_PACKAGE_PATH
+#                                  Local Engine API source used by the build.
 #   PARITY_EVIDENCE_DIR            Marker-protected root retained with raw
 #                                  configs, inspections, timings, and hashes.
 #   PARITY_TIMEOUT_SECONDS         Per-operation timeout (default: 300).
@@ -50,11 +52,15 @@ readonly REPO_ROOT
 readonly FIXTURE_IMAGE="alpine:3.20"
 readonly ROOT_MARKER=".container-compose-network-ipv6-only-root"
 readonly ROOT_MARKER_VALUE="container-compose IPv6-only network certificate v1"
+readonly FINGERPRINT_WRITER="$REPO_ROOT/Tools/parity/ipv6_only_runtime_fingerprint.py"
 
 STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 CONTAINER_BINARY="${CONTAINER_COMPOSE_CONTAINER:-container}"
 CONTAINER_COMPOSE_LIVE="${CONTAINER_COMPOSE_LIVE:-0}"
+CONTAINER_PACKAGE_PATH="${CONTAINER_PACKAGE_PATH:-}"
+CONTAINERIZATION_PACKAGE_PATH="${CONTAINERIZATION_PACKAGE_PATH:-}"
+CONTAINER_ENGINE_API_PACKAGE_PATH="${CONTAINER_ENGINE_API_PACKAGE_PATH:-}"
 PARITY_TIMEOUT_SECONDS="${PARITY_TIMEOUT_SECONDS:-300}"
 EVIDENCE_ROOT="${PARITY_EVIDENCE_DIR:-}"
 DOCKER_COMPOSE_COMMAND=()
@@ -142,6 +148,42 @@ check_tools() {
         [[ ! -x "$CONTAINER_BINARY" ]] && ! command -v "$CONTAINER_BINARY" >/dev/null 2>&1; then
         skip_or_fail "matching Container binary is unavailable: $CONTAINER_BINARY"
     fi
+    if [[ "$CONTAINER_COMPOSE_LIVE" == "1" ]]; then
+        assert_live_fingerprint_inputs
+    fi
+}
+
+# Require every mutable runtime input before a live certificate can begin.
+assert_live_fingerprint_inputs() {
+    local source_path
+    for source_path in "$CONTAINER_PACKAGE_PATH" "$CONTAINERIZATION_PACKAGE_PATH" "$CONTAINER_ENGINE_API_PACKAGE_PATH"; do
+        [[ -n "$source_path" && -e "$source_path/.git" && -f "$source_path/Package.resolved" ]] || {
+            error "live IPv6 certificate requires an exact local source with Package.resolved: $source_path"
+            return 2
+        }
+    done
+    [[ -n "${CONTAINER_COMPOSE_INIT_IMAGE:-}" ]] || {
+        error 'live IPv6 certificate requires CONTAINER_COMPOSE_INIT_IMAGE'
+        return 2
+    }
+    [[ -f "$FINGERPRINT_WRITER" ]] || {
+        error "IPv6 fingerprint writer is unavailable: $FINGERPRINT_WRITER"
+        return 2
+    }
+    local install_root
+    install_root="$(cd "$(dirname "$CONTAINER_BINARY")/.." && pwd -P)"
+    local required_binary
+    for required_binary in \
+        "$CONTAINER_COMPOSE" \
+        "$CONTAINER_BINARY" \
+        "$install_root/bin/container-apiserver" \
+        "$install_root/libexec/container/plugins/container-core-images/bin/container-core-images" \
+        "$install_root/libexec/container/plugins/container-runtime-linux/bin/container-runtime-linux"; do
+        [[ -x "$required_binary" ]] || {
+            error "live IPv6 certificate requires an exact executable: $required_binary"
+            return 2
+        }
+    done
 }
 
 # Execute one bounded command without inheriting an unbounded process group.
@@ -265,93 +307,61 @@ networks:
 PY
 }
 
-# Write source, binary, guest-input, and tool fingerprints before candidate use.
-write_fingerprint() {
-    local path="$EVIDENCE_ROOT/fingerprint.json"
-    python3 - "$path" "$REPO_ROOT" "$CONTAINER_COMPOSE" "$CONTAINER_BINARY" \
-        "${CONTAINER_PACKAGE_PATH:-}" "${CONTAINERIZATION_PACKAGE_PATH:-}" \
-        "${CONTAINER_COMPOSE_INIT_IMAGE:-}" "${CONTAINER_RUNTIME_BUILDER_IMAGE:-}" \
-        "${CONTAINER_RUNTIME_BUILDER_IMAGE_TAR:-}" "${CONTAINER_RUNTIME_BUILDER_REFERENCE:-}" <<'PY'
-import hashlib
-import json
-import pathlib
-import subprocess
-import sys
-
-(
-    output,
-    compose_root,
-    compose_binary,
-    container_binary,
-    container_root,
-    containerization_root,
-    init_image,
-    builder_image,
-    builder_archive,
-    builder_reference,
-) = sys.argv[1:]
-
-def digest(path):
-    candidate = pathlib.Path(path)
-    if not candidate.is_file():
-        return None
-    return hashlib.sha256(candidate.read_bytes()).hexdigest()
-
-def git(path, *arguments):
-    if not path or not pathlib.Path(path, ".git").exists():
-        return None
-    result = subprocess.run(
-        ["git", "-C", path, *arguments],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        check=False,
+# Record and compare the complete live source/binary/init/root fingerprint.
+write_candidate_fingerprint() {
+    local phase="$1"
+    [[ "$CONTAINER_COMPOSE_LIVE" == "1" ]] || return 0
+    local install_root
+    install_root="$(cd "$(dirname "$CONTAINER_BINARY")/.." && pwd -P)"
+    local capture_prefix="$EVIDENCE_ROOT/candidate/$phase"
+    local output
+    case "$phase" in
+        preflight)
+            output="$EVIDENCE_ROOT/FINGERPRINT-PREFLIGHT.json"
+            ;;
+        complete)
+            output="$EVIDENCE_ROOT/FINGERPRINT-COMPLETE.json"
+            ;;
+        *)
+            error "unsupported IPv6 fingerprint phase: $phase"
+            return 2
+            ;;
+    esac
+    run_bounded "$CONTAINER_COMPOSE" --version >"$capture_prefix-compose-version.txt"
+    run_bounded "$CONTAINER_BINARY" --version >"$capture_prefix-container-version.txt"
+    run_bounded "$CONTAINER_BINARY" image inspect "$CONTAINER_COMPOSE_INIT_IMAGE" \
+        >"$capture_prefix-guest-init-image.txt"
+    run_bounded "$CONTAINER_BINARY" system status >"$capture_prefix-system-status.txt"
+    local -a fingerprint_command=(
+        python3 "$FINGERPRINT_WRITER"
+        --output "$output"
+        --phase "$phase"
+        --source "compose=$REPO_ROOT"
+        --source "container=$CONTAINER_PACKAGE_PATH"
+        --source "containerization=$CONTAINERIZATION_PACKAGE_PATH"
+        --source "engine-api=$CONTAINER_ENGINE_API_PACKAGE_PATH"
+        --binary "compose=$CONTAINER_COMPOSE"
+        --binary "container-cli=$CONTAINER_BINARY"
+        --binary "container-apiserver=$install_root/bin/container-apiserver"
+        --binary "container-core-images=$install_root/libexec/container/plugins/container-core-images/bin/container-core-images"
+        --binary "container-runtime-linux=$install_root/libexec/container/plugins/container-runtime-linux/bin/container-runtime-linux"
+        --compose-version "$capture_prefix-compose-version.txt"
+        --container-version "$capture_prefix-container-version.txt"
+        --guest-image-name "$CONTAINER_COMPOSE_INIT_IMAGE"
+        --guest-image-inspect "$capture_prefix-guest-init-image.txt"
+        --system-status "$capture_prefix-system-status.txt"
+        --builder-reference "${CONTAINER_RUNTIME_BUILDER_REFERENCE:-${CONTAINER_RUNTIME_BUILDER_IMAGE:-unspecified}}"
+        --test-root "$EVIDENCE_ROOT"
+        --root-marker-name "$ROOT_MARKER"
+        --root-marker-value "$ROOT_MARKER_VALUE"
     )
-    return result.stdout if result.returncode == 0 else None
-
-def source_fingerprint(path):
-    if not path or not pathlib.Path(path, ".git").exists():
-        return None
-    head = git(path, "rev-parse", "HEAD")
-    diff = git(path, "diff", "--binary", "HEAD")
-    untracked = git(path, "ls-files", "--others", "--exclude-standard")
-    untracked_digest = hashlib.sha256()
-    for relative_path in (untracked or b"").decode("utf-8").splitlines():
-        candidate = pathlib.Path(path, relative_path)
-        untracked_digest.update(relative_path.encode("utf-8") + b"\\0")
-        if candidate.is_file():
-            untracked_digest.update(candidate.read_bytes())
-    return {
-        "path": str(pathlib.Path(path).resolve()),
-        "head": head.decode("utf-8").strip() if head else None,
-        "tracked_diff_sha256": hashlib.sha256(diff or b"").hexdigest(),
-        "untracked_sha256": untracked_digest.hexdigest(),
-    }
-
-compose_source = source_fingerprint(compose_root)
-container_source = source_fingerprint(container_root)
-containerization_source = source_fingerprint(containerization_root)
-payload = {
-    "compose_source_sha": compose_source["head"] if compose_source else None,
-    "container_source_sha": container_source["head"] if container_source else None,
-    "containerization_source_sha": containerization_source["head"] if containerization_source else None,
-    "source_fingerprints": {
-        "compose": compose_source,
-        "container": container_source,
-        "containerization": containerization_source,
-    },
-    "compose_binary": compose_binary,
-    "compose_binary_sha256": digest(compose_binary),
-    "container_binary": container_binary,
-    "container_binary_sha256": digest(container_binary),
-    "guest_init_image": init_image or None,
-    "runtime_builder_image": builder_image or None,
-    "runtime_builder_reference": builder_reference or None,
-    "runtime_builder_archive": builder_archive or None,
-    "runtime_builder_archive_sha256": digest(builder_archive),
-    "test_root": str(pathlib.Path(output).parent),
-}
-pathlib.Path(output).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
+    if [[ "$phase" == "complete" ]]; then
+        fingerprint_command+=(
+            --preflight "$EVIDENCE_ROOT/FINGERPRINT-PREFLIGHT.json"
+            --candidate-status passed
+        )
+    fi
+    "${fingerprint_command[@]}"
 }
 
 # Assert the Docker Compose request model is explicitly IPv6-only.
@@ -523,10 +533,13 @@ main() {
     DOCKER_PROJECT="cc-ipv6-reference-$RANDOM-$$"
     CANDIDATE_PROJECT="cc-ipv6-candidate-$RANDOM-$$"
     trap cleanup EXIT
-    write_fingerprint
     run_reference
+    write_candidate_fingerprint preflight
     run_candidate
+    write_candidate_fingerprint complete
     info "IPv6-only network certificate passed; retained evidence: $EVIDENCE_ROOT"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
