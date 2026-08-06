@@ -1755,21 +1755,25 @@
     {
       "id": "apple-container-network-ipam-allocation-range",
       "owner": "apple/container",
-      "title": "Pull request: configure an IPv4 allocation range",
+      "title": "Pull Request: retain VMNet allocation-range leases across service restart",
       "state": "unsubmitted",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-06",
       "commits": [
         "7bf522fb808ee2517d917881421180d88d837704",
-        "ee63145e7f0f6d7023d6cec64b1019077b0461e4"
+        "ee63145e7f0f6d7023d6cec64b1019077b0461e4",
+        "d7e5f5ddd831e0fe0cf025d606f1d2622eb6a4d2",
+        "ec286fca9bca2c4d9d732f6f898564d9f23e1eb6"
       ],
       "documents": [
         {
           "kind": "issue",
-          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-network-ipam-allocation-range.md"
+          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-network-ipam-allocation-range.md",
+          "path": "docs/upstream/apple-container/ISSUE-network-ipam-allocation-range.md"
         },
         {
           "kind": "pull-request",
-          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-network-ipam-allocation-range.md"
+          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-network-ipam-allocation-range.md",
+          "path": "docs/upstream/apple-container/PR-network-ipam-allocation-range.md"
         }
       ]
     },
@@ -5298,21 +5302,26 @@
     {
       "id": "container-compose-network-ipam-allocation-range",
       "owner": "stephenlclarke/container-compose",
-      "title": "Pull request: support Compose IPv4 IPAM allocation ranges",
-      "state": "archived",
-      "lastVerified": "2026-07-29",
+      "title": "Pull Request: certify retained Compose IPv4 allocation-range leases",
+      "state": "unsubmitted",
+      "lastVerified": "2026-08-06",
       "commits": [
         "7bf522fb808ee2517d917881421180d88d837704",
-        "ee63145e7f0f6d7023d6cec64b1019077b0461e4"
+        "ee63145e7f0f6d7023d6cec64b1019077b0461e4",
+        "30d3017112a9b7694aaec2ec80a0cfa411e6004d",
+        "d7e5f5ddd831e0fe0cf025d606f1d2622eb6a4d2",
+        "ec286fca9bca2c4d9d732f6f898564d9f23e1eb6"
       ],
       "documents": [
         {
           "kind": "issue",
-          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-network-ipam-allocation-range.md"
+          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-network-ipam-allocation-range.md",
+          "path": "docs/upstream/container-compose/ISSUE-network-ipam-allocation-range.md"
         },
         {
           "kind": "pull-request",
-          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-network-ipam-allocation-range.md"
+          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-network-ipam-allocation-range.md",
+          "path": "docs/upstream/container-compose/PR-network-ipam-allocation-range.md"
         }
       ]
     },
@@ -6885,6 +6894,26 @@
         {
           "kind": "pull-request",
           "path": "docs/upstream/container-compose/PR-197.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-206",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Honor local stack overlays in release builds",
+      "state": "closed",
+      "lastVerified": "2026-08-06",
+      "commits": [
+        "30d3017112a9b7694aaec2ec80a0cfa411e6004d"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-206.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-206.md"
         }
       ]
     },
