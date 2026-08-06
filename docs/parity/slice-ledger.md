@@ -127,7 +127,7 @@ This ledger is the durable, compact record for the one active Container-family v
 - `/private/tmp/container-gelf-tcp-reconnect-candidate-v2.nmMgi1/FINGERPRINT-COMPLETE.json` cross-links the source/dependency graph, code-signed archive, preflight and archive-verification hashes, guest images, harness, runtime wrapper, Docker reference, and both candidate results.
 - The Docker reference passed in `5.524841000s`. Candidate public-socket passes took `6.508964500s` and `6.340717583s` (1.18× and 1.15×). Both complete below the 10× functional regression guard; this one lane is close to Docker but does not close the complete comparable-or-better release-performance requirement.
 - The focused native alias regression passed with Containerization `38d9c69` and Engine API `4949e743`; its marker-protected log is `/private/tmp/container-gelf-native-alias-unit-matched.D850uv/swift-test.log`.
-- [Container issue 75](https://github.com/stephenlclarke/container/issues/75) tracks the discovered native alias defect and is resolved by the clean source/evidence checkpoint; Apple publication remains explicitly deferred.
+- [Container issue 75](https://github.com/stephenlclarke/container/issues/75) tracked the discovered native alias defect and was closed after the final clean source/evidence comment; Apple publication remains explicitly deferred.
 
 ## LOGGING-LOCAL-REST-01
 
