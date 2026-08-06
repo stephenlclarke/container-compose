@@ -40,6 +40,7 @@ runtime_builder_image_tar=${CONTAINER_RUNTIME_BUILDER_IMAGE_TAR:-}
 runtime_bootstrap_image_tar=${CONTAINER_RUNTIME_BOOTSTRAP_IMAGE_TAR:-}
 runtime_config_home=
 initial_start_init_image_archive=
+initial_start_image_is_matched=false
 runtime_root_marker=.container-compose-runtime-root
 runtime_root_marker_value='container-compose isolated runtime state v1'
 
@@ -166,14 +167,18 @@ resolve_matched_init_image() {
 }
 
 # A retained OCI archive can be loaded by `container system start` before its
-# normal initial-filesystem pull. This is the only safe bootstrap order for an
-# isolated app root: image load itself requires the services that startup is
-# about to create.
+# normal initial-filesystem pull. A bootstrap archive is only used to bring up
+# the local image builder; the subsequent source build must still replace it
+# with the exact matched guest image before the candidate command runs.
 resolve_initial_start_init_image_archive() {
     if [[ -n "$matched_init_image_tar" ]]; then
         initial_start_init_image_archive=$matched_init_image_tar
+        initial_start_image_is_matched=true
     elif [[ -n "$runtime_init_image_archive" ]]; then
         initial_start_init_image_archive=$runtime_init_image_archive
+        initial_start_image_is_matched=true
+    elif [[ -n "$runtime_bootstrap_image_tar" ]]; then
+        initial_start_init_image_archive=$runtime_bootstrap_image_tar
     fi
 }
 
@@ -241,6 +246,7 @@ install_runtime_builder_image() {
 
 install_runtime_bootstrap_image() {
     [[ -n "$runtime_bootstrap_image_tar" ]] || return 0
+    [[ "$initial_start_init_image_archive" != "$runtime_bootstrap_image_tar" ]] || return 0
     if [[ ! -f "$runtime_bootstrap_image_tar" ]]; then
         printf 'container runtime bootstrap image archive does not exist: %s\n' "$runtime_bootstrap_image_tar" >&2
         exit 2
@@ -262,7 +268,7 @@ cleanup() {
 install_matched_init_image() {
     # The startup command has already loaded and unpacked this archive before
     # its registry fallback. Do not load it a second time after startup.
-    [[ -n "$initial_start_init_image_archive" ]] && return 0
+    [[ "$initial_start_image_is_matched" == true ]] && return 0
 
     if [[ -n "$matched_init_image_tar" ]]; then
         printf 'Installing prebuilt matched container runtime init image...\n'
@@ -330,7 +336,7 @@ printf 'Starting matched container runtime...\n'
 # is built, but let this first startup provision the matching kernel. A
 # retained exact init archive retains the prior no-download bootstrap path.
 kernel_install_option=--enable-kernel-install
-if [[ -n "$initial_start_init_image_archive" ]]; then
+if [[ "$initial_start_image_is_matched" == true ]]; then
     kernel_install_option=--disable-kernel-install
 fi
 start_arguments=(--debug system start --timeout 60 "$kernel_install_option")

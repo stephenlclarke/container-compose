@@ -223,7 +223,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             invocations = container_log.read_text(encoding="utf-8")
             self.assertIn(f"image load -i {builder_archive}", invocations)
 
-    def test_installs_bootstrap_image_before_init_build(self) -> None:
+    def test_uses_bootstrap_archive_before_source_matched_init_build(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
             app_root = temporary_root / "app-root"
@@ -287,7 +287,6 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 for index, invocation in enumerate(invocations)
                 if "system start" in invocation
             )
-            load_index = invocations.index(f"image load -i {bootstrap_archive}")
             init_index = invocations.index("init-block")
             restart_index = next(
                 index
@@ -295,8 +294,15 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 if index > init_index and "system start" in invocation
             )
             command_index = invocations.index("command")
-            self.assertLess(start_index, load_index)
-            self.assertLess(load_index, init_index)
+            starts = [
+                invocation
+                for invocation in invocations
+                if "system start" in invocation
+            ]
+            self.assertIn(f"--init-image-archive {bootstrap_archive}", starts[0])
+            self.assertIn("--enable-kernel-install", starts[0])
+            self.assertNotIn(f"image load -i {bootstrap_archive}", invocations)
+            self.assertLess(start_index, init_index)
             self.assertLess(init_index, restart_index)
             self.assertLess(restart_index, command_index)
 
