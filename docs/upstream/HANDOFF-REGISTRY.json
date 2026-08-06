@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-08-05",
+  "generatedAt": "2026-08-06",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -621,6 +621,26 @@
       ]
     },
     {
+      "id": "apple-container-build-stream-completion",
+      "owner": "apple/container",
+      "title": "Finish the client build stream after terminal completion",
+      "state": "unsubmitted",
+      "lastVerified": "2026-08-06",
+      "commits": [
+        "a661e67c8e7713483eb448493c7b4a35f346d9b3"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/apple-container/ISSUE-build-stream-completion.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/apple-container/PR-build-stream-completion.md"
+        }
+      ]
+    },
+    {
       "id": "apple-container-builder-shim-1800",
       "owner": "apple/container-builder-shim",
       "title": "`.dockerignore` negation re-includes can stream orphan descendants",
@@ -724,6 +744,27 @@
         {
           "kind": "pull-request",
           "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/PR-build-context-source-read-errors.md"
+        }
+      ]
+    },
+    {
+      "id": "apple-container-builder-shim-build-stream-completion",
+      "owner": "apple/container-builder-shim",
+      "title": "Complete successful bidirectional build streams",
+      "state": "unsubmitted",
+      "lastVerified": "2026-08-06",
+      "commits": [
+        "89778a9f1938331c9b7cb0094831358e2b730d71",
+        "418e3c50f1ae664da3637ad81df8fc70ce630fd9"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/apple-container-builder-shim/ISSUE-build-stream-completion.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/apple-container-builder-shim/PR-build-stream-completion.md"
         }
       ]
     },
