@@ -43,8 +43,31 @@ initial_start_init_image_archive=
 initial_start_image_is_matched=false
 runtime_root_marker=.container-compose-runtime-root
 runtime_root_marker_value='container-compose isolated runtime state v1'
+provider_socket_path_limit=103
 
 validate_runtime_inputs() {
+    if [[ -n "$runtime_app_root" ]]; then
+        local normalized_runtime_root=${runtime_app_root%/}
+        if [[ -z "$normalized_runtime_root" ]]; then
+            normalized_runtime_root=/
+        fi
+        local provider_socket_path
+        if [[ "$normalized_runtime_root" == / ]]; then
+            provider_socket_path=/engine-provider/provider.sock
+        else
+            provider_socket_path="$normalized_runtime_root/engine-provider/provider.sock"
+        fi
+        local provider_socket_path_bytes
+        provider_socket_path_bytes=$(LC_ALL=C printf '%s' "$provider_socket_path" | wc -c | tr -d '[:space:]')
+        # Darwin's sockaddr_un reserves one byte in its 104-byte sun_path for
+        # the terminating NUL. Fail before launchd starts an API server that
+        # would immediately exit with an opaque XPC timeout.
+        if ((provider_socket_path_bytes > provider_socket_path_limit)); then
+            printf 'container runtime app root exceeds the provider Unix socket path limit (%s > %s bytes): %s\n' \
+                "$provider_socket_path_bytes" "$provider_socket_path_limit" "$provider_socket_path" >&2
+            exit 2
+        fi
+    fi
     if [[ -n "$runtime_builder_image" && -z "$runtime_builder_image_tar" ]] ||
         [[ -z "$runtime_builder_image" && -n "$runtime_builder_image_tar" ]]; then
         printf 'CONTAINER_RUNTIME_BUILDER_IMAGE and CONTAINER_RUNTIME_BUILDER_IMAGE_TAR must be set together\n' >&2

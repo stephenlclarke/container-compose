@@ -47,6 +47,11 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 {"CONTAINER_RUNTIME_INIT_IMAGE_TAR": "/missing/vminit.tar"},
                 "container runtime init image archive does not exist",
             ),
+            (
+                "runtime root exceeds provider socket limit",
+                {"CONTAINER_RUNTIME_APP_ROOT": "/tmp/" + "x" * 80},
+                "container runtime app root exceeds the provider Unix socket path limit",
+            ),
         ]
         runtime_environment_names = (
             "CONTAINER_RUNTIME_APP_ROOT",
