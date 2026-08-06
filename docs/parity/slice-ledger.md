@@ -66,6 +66,26 @@ This ledger is the durable, compact record for the one active Container-family v
 - `/private/tmp/container-gelf-metadata-runtime.9yKJCm` (`.container-gelf-metadata-runtime-root`) records the current Compose source, Docker binary, Engine/containerd/runc/init revisions, guest, image digest, fixture and script hashes. `python3 Tools/parity/capture-docker-logging-driver-oracle.py --gelf-metadata-only --strict` matched the versioned fixture against same-MBP Docker Engine 29.2.1/API 1.53 in 3.225985 seconds (1.05× the captured baseline).
 - The earlier resolution routes that selected a remote Container revision or released Engine API 0.3.5 remain historical blocker evidence only. The editable overlay is the non-retrying correction: it retains the real `containerization` and `container-engine-api` package identities while using the recorded local paths.
 
+## LOGGING-LOCAL-REST-01
+
+| Field | Record |
+| --- | --- |
+| State | `Verified` — narrow Docker CLI/public-socket lifecycle proof for the built-in `local` logging driver. It does not certify all logging providers, all Docker routes, or comparable release performance. |
+| Behaviour | An unmodified Docker CLI creates `json-file`, `local`, and `none` containers over the public Container Engine Unix socket. For `local`, it observes Docker's blank public `LogPath`, follows stdout/stderr, re-reads retained history, tails output, performs a second start, sees the same driver through native Container authority, and deletes the exact object without residue. |
+| Explicit non-goals | Provider/external-client completeness, remote drivers, cache/rotation pressure, migration/security/failure matrices, Testcontainers/devcontainer adoption, release publication, and comparable-or-better release performance remain `Queued`. This is a Docker Engine CLI contract, not a Docker Compose project contract. |
+| Pinned Docker oracle | Same-MBP `colima`: Docker Engine `29.2.1`/API `1.53`, Docker CLI `29.7.1`, and `alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc`. `Tools/parity/check-docker-rest-logging-contract.sh --strict --reference` passed in 16 seconds. |
+| Affected repositories and inputs | Compose signed `d6e59843c1c59f7bcff2240aaf5517290f268538` adds the `local` certificate and signed `4cdafffcc9e46e3fcd4d965d897e1feee93ce941` bootstraps a retained init image before the first start. Container signed `c7b4898d4befad75480856305294001bd2eabf37`, `79b79cfe08478fd7fecf9372a6ab654242abebef`, and `e048dc19d54e25aa3887689d0015d5af447d4ad5`; Containerization is `38d9c695e7a6915e5ce45d12c893dc323a661af7`; Engine API is `4949e743675f00ec102f7acacdb4e990409e383f`. No dependency pin moved. |
+| Focused proof | Bash syntax validation and both retained-archive harness regressions pass. `SystemStartTests/parsesInitialFilesystemArchive` passes on the exact local graph. The fresh release package uses an explicit SwiftPM scratch root, OCI init archive, and native source-derived initial filesystem before running the same Docker CLI certificate against `unix:///tmp/container-engine-501/docker.sock`. |
+| Completion criteria | Met: the Docker reference and exact candidate socket both pass; source/dependency/binary/init-image/root fingerprints are retained; the OCI archive is unpacked before registry fallback; and cleanup proves the public socket plus both launchd services are absent. |
+| Blocker criteria | Two evidence-based source/harness corrections that still prevent the exact candidate from assembling or passing the public-socket certificate. Not reached: first candidate failure exposed the bootstrap ordering gap, and the archive path resolved it. |
+| Safe handoff | Retain `/private/tmp/container-local-rest-evidence.SLbPgY` (`.logging-local-rest-evidence-root`), its candidate log, source-derived guest/archive hashes, the signed checkpoints above, and Slack START thread `1785968996.613189`. Resume only on an independent queued contract. |
+
+### Local REST Verification Evidence
+
+- The exact source-derived initial filesystem tarball has SHA-256 `a1c0db04322ad9a589d0b941b26671cf5068ab560e9a3b728348cd391d4c2dde`; its arm64 OCI archive is `1e1e45807202cff487690cfd4cb43fef05a22aab163cd7c2ade0cf20f567b448` and names `docker.io/library/vminit:container-compose`.
+- The fresh signed release archive has SHA-256 `57067dd534f61e652deb0fb24de09c61efcc0c5d84896131eaa596113f67af85`; its candidate `container`, `container-engine`, and `container-apiserver` hashes are respectively `e166426b3633d280323a0b8f66f3abf51b9093757a320f8f1883824cd5b992e1`, `87e55993e192f52c383d5247205b2d1a6ae463bbc0852edab0a30cd758dbdeed`, and `2eca63ee6b6ce7670e72509887f0ab12a3129fad80df9cd3f472037cc2ac9da8`.
+- `candidate-local-rest-v6.log` records initial archive loading, the controlled restart, `Docker REST logging contract passed`, and exact shutdown. Afterward `/tmp/container-engine-501/docker.sock`, `com.apple.container-apiserver`, and `com.apple.container-engine` are absent.
+
 ## DEPLOY-JOBS-LOCAL-01
 
 | Field | Record |

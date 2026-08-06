@@ -86,7 +86,7 @@ Capture and compare the Engine-only GELF tag/template and metadata-selection con
 python3 Tools/parity/capture-docker-logging-driver-oracle.py --gelf-metadata-only --strict
 ```
 
-Its versioned reference is [`docker-engine-29.2.1-gelf-metadata.json`](../../Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-gelf-metadata.json). It freezes `env`, `env-regex`, `labels`, `labels-regex`, and `tag` inspect projection; selected-key union and environment-over-label precedence; deliberate override of Docker's builtin GELF `_container_id`; the `{{.Name}}/{{.ID}}` expansion; UDP delivery and cleanup; and deferred `tag`, `labels-regex`, and `env-regex` failures. The Docker reference and deterministic normalizer are verified; the exact current `GELFConfigurationTests` component lane is blocked on a clean SwiftPM graph selecting the recorded local dependencies. The blocker and preserved test patch are recorded in the [slice ledger](slice-ledger.md#logging-gelf-metadata-01); neither this fixture nor its eventual component test certifies the candidate runtime or an external client.
+Its versioned reference is [`docker-engine-29.2.1-gelf-metadata.json`](../../Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-gelf-metadata.json). It freezes `env`, `env-regex`, `labels`, `labels-regex`, and `tag` inspect projection; selected-key union and environment-over-label precedence; deliberate override of Docker's builtin GELF `_container_id`; the `{{.Name}}/{{.ID}}` expansion; UDP delivery and cleanup; and deferred `tag`, `labels-regex`, and `env-regex` failures. The Docker reference and deterministic normalizer are verified, and the exact local `GELFConfigurationTests` lane passes through an identity-preserving SwiftPM overlay. The focused proof is recorded in the [slice ledger](slice-ledger.md#logging-gelf-metadata-01); neither this fixture nor its component test certifies the candidate runtime or an external client.
 
 The live terminal session is deliberately a separate short-running capture so that it can also be executed unchanged against the Container public Docker socket. Capture and compare the pinned reference with:
 
@@ -115,10 +115,11 @@ make docker-rest-logging-parity \
   DOCKER_REST_LOGGING_CANDIDATE_SOCKET=/tmp/container-engine-$(id -u)/docker.sock
 ```
 
-It proves create, start, inspect, static and followed non-TTY output, separate
-stdout/stderr selection, global tailing, history retention after a second
-start, graceful-stop output, the direct `none` reader error, cross-client
-native visibility, and exact deletion. The fixture uses a marker-protected
+It proves `json-file` and `local` create, start, inspect, static and followed
+non-TTY output, separate stdout/stderr selection, global tailing, history
+retention after a second start, graceful-stop output, Docker's blank public
+`LogPath` for `local`, the direct `none` reader error, cross-client native
+visibility, and exact deletion. The fixture uses a marker-protected
 temporary root, preloaded `docker.io/library/alpine:3.20`, unique container
 names, bounded polling, exact follower PIDs, and residue checks in both Docker
 and native Container views.
@@ -131,6 +132,20 @@ the candidate exposed `json-file` `LogPath` while Docker still reported
 `created`; [Container issue 72](https://github.com/stephenlclarke/container/issues/72)
 tracks the fix. Docker and the rebuilt signed candidate pass the corrected
 create-empty, first-start-populated, and stopped-retained `LogPath` phases.
+
+`LOGGING-LOCAL-REST-01` additionally passed the identical Docker CLI fixture
+against a fresh exact candidate package: Compose
+`d6e59843c1c59f7bcff2240aaf5517290f268538` /
+`4cdafffcc9e46e3fcd4d965d897e1feee93ce941`, Container
+`c7b4898d4befad75480856305294001bd2eabf37` /
+`79b79cfe08478fd7fecf9372a6ab654242abebef` /
+`e048dc19d54e25aa3887689d0015d5af447d4ad5`, Containerization
+`38d9c695e7a6915e5ce45d12c893dc323a661af7`, and Engine API
+`4949e743675f00ec102f7acacdb4e990409e383f`. The candidate starts from the
+source-derived OCI init image before a registry pull, runs the `local` Docker
+CLI lifecycle through the public socket, and proves both socket and launchd
+service cleanup. The retained marker-protected evidence is recorded in the
+[slice ledger](slice-ledger.md#logging-local-rest-01).
 
 ## Compose Signal and Log Reliability Gate
 
@@ -159,7 +174,7 @@ Volatile container IDs, names, ports, paths, certificates, daemon PIDs, timestam
 
 Every top-level case records a raw `time.monotonic` duration in the machine-readable fixture. Strict comparison reports each fresh duration, ignores ordinary timing variance when comparing semantic JSON, and fails when a fixture times out or takes at least ten times its committed baseline. Candidate captures written with `--output` retain the raw values.
 
-The oracle does not provision external logging services or installed logging plugins. Cloud-driver delivery, a blocking slow-sink backpressure case, dual-cache rotation under sustained load, and plugin lifecycle behavior still require separate focused oracles. GELF's direct Engine UDP/TCP wire, configuration/validation, and selected metadata/tag behavior are captured here; wire, configuration, and metadata provider-component evidence is retained in the [slice ledger](slice-ledger.md#logging-gelf-metadata-01). Candidate runtime and external-client certification remain separate work.
+The oracle does not provision external logging services or installed logging plugins. Cloud-driver delivery, a blocking slow-sink backpressure case, dual-cache rotation under sustained load, and plugin lifecycle behavior still require separate focused oracles. GELF's direct Engine UDP/TCP wire, configuration/validation, and selected metadata/tag behavior are captured here; wire, configuration, and metadata provider-component evidence is retained in the [slice ledger](slice-ledger.md#logging-gelf-metadata-01). The `local` Docker-CLI/public-socket candidate lane is verified separately in [LOGGING-LOCAL-REST-01](slice-ledger.md#logging-local-rest-01); all other candidate-runtime and external-client certification remains separate work.
 
 Docker accepts a `tls://` Fluentd address, but its Fluentd option grammar exposes no CA path or skip-verification option. The versioned `tlsLocalTrustFailure` probe freezes the boundary: against its bounded self-signed receiver, Engine 29.2.1 accepts container creation with HTTP 201 and rejects start with HTTP 500: `tls: failed to verify certificate: x509: certificate signed by unknown authority`; the receiver independently observes the resulting TLS bad-certificate alert. Capturing decrypted Fluentd TLS wire bytes would therefore require a deliberate Colima trust-store mutation or a publicly trusted endpoint. This harness does neither, so Fluentd TLS remains an explicit evidence gap; Syslog TLS is fully captured because that driver exposes `syslog-tls-ca-cert`.
 
