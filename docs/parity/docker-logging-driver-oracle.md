@@ -147,6 +147,18 @@ CLI lifecycle through the public socket, and proves both socket and launchd
 service cleanup. The retained marker-protected evidence is recorded in the
 [slice ledger](slice-ledger.md#logging-local-rest-01).
 
+`LOGGING-LOCAL-ROTATION-01` extends that proof with Docker's compressed local
+rotation and deferred one-file compression failure. The pinned reference and
+the fresh exact candidate at Compose `c19ce0f04ba98f7bf133c753f79604885bac4747`,
+Container `f16b7de6ceb5ed3dd588bab08b11867a410ef346`, Containerization
+`38d9c695e7a6915e5ce45d12c893dc323a661af7`, and Engine API
+`4949e743675f00ec102f7acacdb4e990409e383f` pass 4 KiB/three-file compressed
+rotation, second-start retention, tailing, blank `LogPath`, and Docker's
+rejected-start reason in both the response and inspect `State.Error`. The
+candidate's source, direct dependency paths, signed archive, retained OCI
+init image, runtime root, and cleanup evidence are recorded in the
+[slice ledger](slice-ledger.md#logging-local-rotation-01).
+
 ## Compose Signal and Log Reliability Gate
 
 The same-host Docker Compose 5.3.1/candidate CLI gate runs the committed [`signal-log-reliability`](../../Tools/parity/fixtures/signal-log-reliability/compose.yaml) project and Bash harness:

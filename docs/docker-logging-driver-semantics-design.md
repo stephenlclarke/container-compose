@@ -2,7 +2,7 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Active overall; the Docker Compose 5.3.1 static `none` history/foreground reliability contract and the narrow Docker CLI `local` public-socket contract are Verified, while synchronized dependency publication, the remaining external-client/provider/failure/migration/security matrix, cold-runtime/resource performance collectors, release-artefact results, and release evidence remain Queued |
+| Status | Active overall; the Docker Compose 5.3.1 static `none` history/foreground reliability contract plus the Docker CLI `local` public-socket lifecycle, compressed rotation, and deferred invalid-start inspect contract are Verified, while synchronized dependency publication, the remaining external-client/provider/failure/migration/security matrix, cold-runtime/resource performance collectors, release-artefact results, and release evidence remain Queued |
 | Scope | `container-compose`, `devcontainer`, the matched `container` fork, the matched `containerization` fork, the shared Engine API, and versioned logging providers |
 | Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
