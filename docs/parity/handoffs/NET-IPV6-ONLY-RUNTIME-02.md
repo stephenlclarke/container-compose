@@ -2,10 +2,11 @@
 
 ## State
 
-`Blocked`. The narrow Docker IPv6-only network oracle and source-level
-projection work pass, but the exact candidate cannot reach `container compose
-up`: the lower `container build` used to materialise the guest init image
-finishes its OCI export and does not return to the caller.
+`Queued`. The narrow Docker IPv6-only network oracle and source-level
+projection work pass, but no candidate has reached `container compose up`.
+The separate lower completion-boundary contract is now `Verified`: the recorded
+OCI export is not the terminal native CLI phase, and the exact source-init build
+returns after post-export ingestion and runtime restart.
 
 ## User-visible contract
 
@@ -35,7 +36,7 @@ The fixture's source and binary record is in `fingerprint.json`: Compose source
 debug Compose binary SHA-256
 `ab1ba5a00a396bd4040168350ea36f5b446b77cc6994008c83693925f4fbccae`.
 
-## Exact blocked candidate inputs
+## Historical attempted-candidate inputs
 
 The attempted candidate used the local matched source stack:
 
@@ -69,8 +70,8 @@ regressions pass.
 
 The first corrected attempt is retained at
 `/private/tmp/container-compose-network-ipv6-only-candidate.EeSlUg`. It built
-the guest image through OCI export `#16 DONE` and then did not return from the
-`container build` client.
+the guest image through BuildKit OCI export `#16 DONE` and was later terminated
+before the native CLI's post-export image ingestion was observed to complete.
 
 One attempted correction was rejected rather than treated as a product result:
 the cached `containerization-dev:6.3.0` OCI archive at
@@ -79,19 +80,37 @@ the cached `containerization-dev:6.3.0` OCI archive at
 is a development image, not the required builder-shim image. Its runtime log
 records the missing `/usr/local/bin/container-builder-shim` target.
 
-The next attempt used the correct digest-pinned default builder, reached the
-same final OCI export (`#16 DONE 33.3s`), and still did not return. Its exact
-process sample is
+The next attempt used the correct digest-pinned default builder and reached the
+same OCI export (`#16 DONE 33.3s`). Its exact process sample is
 `/private/tmp/container-compose-network-ipv6-only-candidate.YqHoeU/container-build-completion-hang.sample.txt`.
-The main thread is waiting in `mach_msg`; active XPC callbacks resolve through
+The sample was collected 106 seconds after BuildKit reports its session
+finished, before the process group was terminated. Source inspection shows that
+after BuildKit export `BuildCommand` calls `ClientImage.load`, `image.unpack`,
+and image tagging. The active XPC callbacks through
 `ProgressUpdateClient.createEndpoint` and
 `ProgressUpdateClient.handleProgressUpdate` (including source lines 49, 89,
-144, 159, and 160). The runtime was stopped by its exact process group and
-marker-protected root cleanup; no candidate services were started.
+144, 159, and 160) are therefore consistent with expected host-side unpack
+progress, not proof of a terminal XPC hang. The runtime was stopped by its
+exact process group and marker-protected root cleanup; no candidate services
+were started.
 
-This is the second evidence-based lower-runtime result after the bootstrap
-correction. Per the delivery workflow, do not rebuild or restart the guest
-image again under this contract.
+This corrects a failed assumption. `ProgressUpdateClient` must not be modified
+from the sample alone.
+
+## Verified lower completion boundary
+
+The separately bounded, marker-protected source-init certificate is retained at
+`/private/tmp/container-build-completion-exact-evidence.s0S09P` with isolated
+runtime root `/private/tmp/container-build-completion-exact-runtime.fT0PRk`.
+Its fingerprint records Container
+`e1855ae21dcf829e0c514435398037b0f91cca8e`, Containerization
+`2f9b44dbb7ce87270ee46f85a4327d7c1e1e57ab`, and rebuilt CLI, API server,
+core-images, and runtime-plugin hashes from that same bundle. The log records
+BuildKit `#16 DONE`, `vminit:container-compose` creation, runtime restart,
+`system status` with the same API-server commit, and `runtime_exit_code=0`.
+
+This is a lower-stack completion certificate only. It does not assert that the
+IPv6-only Compose candidate has started or passed.
 
 ## Focused proof retained
 
@@ -110,28 +129,21 @@ unreached runtime contract into `Verified`.
 
 ## Safe resumption
 
-Select a separate lower vertical contract first:
-`CONTAINER-BUILD-PROGRESS-COMPLETION-01`. Its Docker-equivalent user-visible
-behavior is that a successful `container build` image export returns to its CLI
-caller and closes progress/XPC lifecycle cleanly. Its focused proof must use an
-isolated marker-protected root, the exact pinned builder image, a bounded build
-that observes both `#16 DONE` and command exit, plus targeted regression tests
-for the progress-client terminal lifecycle.
+The lower contract is independently `Verified`, so the next selected vertical
+contract may run one fresh IPv6-only candidate certificate. Rebuild the full
+matched stack from the selected Compose checkpoint and Container
+`e1855ae21dcf829e0c514435398037b0f91cca8e` / Containerization
+`2f9b44dbb7ce87270ee46f85a4327d7c1e1e57ab`; do not reuse a prior runtime root
+or the rejected development image archive. Do not claim an IPv6-only candidate
+result before the harness writes `FINGERPRINT-PREFLIGHT.json` and
+`FINGERPRINT-COMPLETE.json`.
 
-Only after that contract is independently `Verified` may this contract run one
-fresh exact-fingerprint candidate certificate. Do not reuse a prior runtime
-root, use the rejected development image archive as the builder, or claim an
-IPv6-only candidate result before the harness writes `FINGERPRINT-PREFLIGHT.json`
-and `FINGERPRINT-COMPLETE.json`.
-
-Apple applicability is not yet established: the failure is in the local
-Container source stack and has not been compared to Apple upstream source or
-reproduced on an Apple revision. Preserve this handoff for any later
-Apple-shaped issue/PR work; do not submit or publish anything from it. The
-Stephen-owned tracker is [Container issue #80](https://github.com/stephenlclarke/container/issues/80);
-comment with the terminal-progress/CLI-exit evidence and close it only when
-the lower contract is fixed and verified.
+Apple applicability is not established: no lower Container source defect was
+proved. Preserve this handoff for any later Apple-shaped issue/PR work; do not
+submit or publish anything from it. The Stephen-owned
+[Container issue #80](https://github.com/stephenlclarke/container/issues/80)
+has the exact correction evidence and is closed as invalid evidence.
 
 The Slack START thread is `1786014513.346509`; send this contract's END reply
 there. No push, hosted CI, Apple/upstream publication, or external PR is part
-of this blocked handoff.
+of this queued handoff.
