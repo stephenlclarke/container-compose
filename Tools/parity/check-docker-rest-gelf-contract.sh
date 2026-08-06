@@ -1,0 +1,481 @@
+#!/usr/bin/env bash
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+#
+# USAGE:
+#   check-docker-rest-gelf-contract.sh [options]
+#
+# OPTIONS:
+#   --host HOST        Docker endpoint to exercise, such as unix:///tmp/docker.sock.
+#   --gelf-address-host HOST
+#                      Hostname or address visible to the selected log driver.
+#   --native-cli PATH  Optional Container CLI used to prove one shared authority.
+#   --reference        Require the pinned Docker Engine 29.2.1 oracle.
+#   --result PATH      Write machine-readable timing and result evidence to PATH.
+#   --strict           Fail instead of skipping when a prerequisite is unavailable.
+#   -h, --help         Show this help.
+#
+# The same unmodified Docker CLI fixture exercises Docker Engine 29.2.1 and
+# Container's public socket. It proves GELF UDP gzip framing, selected metadata
+# and tag expansion, Docker inspect state, unreadable remote logs, native
+# authority visibility, and marker-protected cleanup.
+
+set -euo pipefail
+
+readonly SELF_PATH="${BASH_SOURCE[0]:-$0}"
+SCRIPT_NAME="$(basename "$SELF_PATH")"
+readonly SCRIPT_NAME
+readonly REQUIRED_CLI_VERSION="29.7.1"
+readonly REQUIRED_ENGINE_VERSION="29.2.1"
+readonly REQUIRED_IMAGE="docker.io/library/alpine:3.20"
+readonly REQUIRED_DISPLAY_IMAGE="alpine:3.20"
+readonly ROOT_MARKER_NAME=".container-rest-gelf-root"
+readonly RECEIVER_MESSAGE_COUNT=3
+
+STRICT=0
+REFERENCE=0
+DOCKER_HOST_OVERRIDE=""
+GELF_ADDRESS_HOST="127.0.0.1"
+NATIVE_CLI=""
+RESULT_PATH=""
+WORK_ROOT=""
+CONTAINER_NAME=""
+RECEIVER_PID=""
+RECEIVER_PORT_PATH=""
+RECEIVER_RESULT_PATH=""
+RECEIVER_PORT=""
+
+# Print regular fixture progress.
+info() {
+    printf '%s\n' "$*"
+}
+
+# Print a non-fatal diagnostic.
+warning() {
+    printf 'warning: %s\n' "$*" >&2
+}
+
+# Print a fatal diagnostic.
+error() {
+    printf 'error: %s\n' "$*" >&2
+}
+
+# Return a formatted assertion failure.
+fail() {
+    error "$*"
+    return 1
+}
+
+# Print the embedded command usage.
+usage() {
+    sed -n '/^# USAGE:/,/^# The same unmodified/ { /^# The same unmodified/d; s/^# //; s/^#//; p; }' "$SELF_PATH" \
+        | sed "s/check-docker-rest-gelf-contract.sh/$SCRIPT_NAME/"
+}
+
+# Parse command-line options into fixture configuration.
+parse_args() {
+    while (($# > 0)); do
+        case "$1" in
+            --host)
+                [[ $# -ge 2 && -n "$2" ]] || {
+                    error "--host requires a value"
+                    return 2
+                }
+                DOCKER_HOST_OVERRIDE="$2"
+                shift 2
+                ;;
+            --gelf-address-host)
+                [[ $# -ge 2 && -n "$2" ]] || {
+                    error "--gelf-address-host requires a value"
+                    return 2
+                }
+                GELF_ADDRESS_HOST="$2"
+                shift 2
+                ;;
+            --native-cli)
+                [[ $# -ge 2 && -n "$2" ]] || {
+                    error "--native-cli requires a value"
+                    return 2
+                }
+                NATIVE_CLI="$2"
+                shift 2
+                ;;
+            --reference)
+                REFERENCE=1
+                shift
+                ;;
+            --result)
+                [[ $# -ge 2 && -n "$2" ]] || {
+                    error "--result requires a value"
+                    return 2
+                }
+                RESULT_PATH="$2"
+                shift 2
+                ;;
+            --strict)
+                STRICT=1
+                shift
+                ;;
+            -h | --help)
+                usage
+                exit 0
+                ;;
+            *)
+                error "unknown argument: $1"
+                usage >&2
+                return 2
+                ;;
+        esac
+    done
+}
+
+# Skip an optional run or fail a strict run for a missing prerequisite.
+skip_or_fail() {
+    local message="$1"
+
+    if ((STRICT == 1)); then
+        fail "$message"
+        return 1
+    fi
+    warning "$message; skipping Docker REST GELF contract"
+    exit 0
+}
+
+# Invoke Docker against the selected public endpoint.
+run_docker() {
+    if [[ -n "$DOCKER_HOST_OVERRIDE" ]]; then
+        env -u DOCKER_API_VERSION DOCKER_HOST="$DOCKER_HOST_OVERRIDE" docker "$@"
+    else
+        env -u DOCKER_API_VERSION -u DOCKER_HOST docker "$@"
+    fi
+}
+
+# Verify the required public client and endpoint are available.
+verify_prerequisites() {
+    local cli_version
+    local engine_version
+
+    command -v docker >/dev/null 2>&1 || skip_or_fail "docker CLI is unavailable"
+    command -v jq >/dev/null 2>&1 || skip_or_fail "jq is required"
+    command -v python3 >/dev/null 2>&1 || skip_or_fail "python3 is required"
+    run_docker info >/dev/null 2>&1 || skip_or_fail "Docker endpoint is unavailable"
+    cli_version="$(run_docker version --format '{{.Client.Version}}')"
+    [[ "$cli_version" == "$REQUIRED_CLI_VERSION" ]] \
+        || fail "Docker CLI version is $cli_version, expected $REQUIRED_CLI_VERSION"
+    if ((REFERENCE == 1)); then
+        engine_version="$(run_docker version --format '{{.Server.Version}}')"
+        [[ "$engine_version" == "$REQUIRED_ENGINE_VERSION" ]] \
+            || fail "Docker reference Engine version is $engine_version, expected $REQUIRED_ENGINE_VERSION"
+    fi
+    run_docker image inspect "$REQUIRED_IMAGE" >/dev/null 2>&1 \
+        || skip_or_fail "required image is not preloaded: $REQUIRED_IMAGE"
+    if [[ -n "$NATIVE_CLI" && ! -x "$NATIVE_CLI" ]]; then
+        skip_or_fail "native Container CLI is not executable: $NATIVE_CLI"
+    fi
+}
+
+# Create the marker-protected root for receiver state and fixture output.
+create_work_root() {
+    WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/container-rest-gelf.XXXXXX")"
+    printf '%s\n' 'Docker REST GELF contract fixture root v1' \
+        >"$WORK_ROOT/$ROOT_MARKER_NAME"
+    RECEIVER_PORT_PATH="$WORK_ROOT/receiver.port"
+    RECEIVER_RESULT_PATH="$WORK_ROOT/receiver-result.json"
+}
+
+# Start a bounded host-side UDP receiver used by both Docker and Container.
+start_udp_receiver() {
+    python3 - "$RECEIVER_PORT_PATH" "$RECEIVER_RESULT_PATH" "$RECEIVER_MESSAGE_COUNT" \
+        >"$WORK_ROOT/receiver.stdout" 2>"$WORK_ROOT/receiver.stderr" <<'PY' &
+import json
+import socket
+import sys
+import time
+from pathlib import Path
+
+port_path = Path(sys.argv[1])
+result_path = Path(sys.argv[2])
+expected_count = int(sys.argv[3])
+server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+server.bind(("0.0.0.0", 0))
+server.settimeout(0.2)
+port_path.write_text(str(server.getsockname()[1]), encoding="ascii")
+datagrams = []
+deadline = time.monotonic() + 20.0
+while len(datagrams) < expected_count and time.monotonic() < deadline:
+    try:
+        datagram, _ = server.recvfrom(1024 * 1024)
+    except TimeoutError:
+        continue
+    datagrams.append(datagram.hex())
+server.close()
+result_path.write_text(
+    json.dumps(
+        {
+            "datagramsHex": datagrams,
+            "expectedCount": expected_count,
+            "timedOut": len(datagrams) != expected_count,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ),
+    encoding="utf-8",
+)
+PY
+    RECEIVER_PID=$!
+
+    local attempt
+    for ((attempt = 0; attempt < 100; attempt += 1)); do
+        if [[ -s "$RECEIVER_PORT_PATH" ]]; then
+            RECEIVER_PORT="$(<"$RECEIVER_PORT_PATH")"
+            [[ "$RECEIVER_PORT" =~ ^[0-9]+$ ]] \
+                || fail "GELF receiver wrote an invalid port: $RECEIVER_PORT"
+            return
+        fi
+        if ! kill -0 "$RECEIVER_PID" 2>/dev/null; then
+            wait "$RECEIVER_PID" || true
+            RECEIVER_PID=""
+            fail "GELF receiver exited before publishing its port"
+            return
+        fi
+        sleep 0.05
+    done
+    fail "timed out waiting for GELF receiver port"
+}
+
+# Wait for the bounded UDP receiver to finish without hiding its exit result.
+wait_for_udp_receiver() {
+    local status
+
+    set +e
+    wait "$RECEIVER_PID"
+    status=$?
+    set -e
+    RECEIVER_PID=""
+    ((status == 0)) || fail "GELF receiver exited with status $status"
+}
+
+# Wait until the public Docker API reports the expected lifecycle state.
+wait_for_state() {
+    local expected="$1"
+    local observed=""
+    local attempt
+
+    for ((attempt = 0; attempt < 120; attempt += 1)); do
+        observed="$(run_docker container inspect --format '{{.State.Status}}' "$CONTAINER_NAME")"
+        if [[ "$observed" == "$expected" ]]; then
+            return
+        fi
+        sleep 0.25
+    done
+    fail "$CONTAINER_NAME did not reach $expected; last state was $observed"
+}
+
+# Confirm the optional native CLI observes the same selected logging driver.
+assert_native_driver() {
+    local inventory
+
+    [[ -n "$NATIVE_CLI" ]] || return 0
+    inventory="$("$NATIVE_CLI" list --all --format json)"
+    jq -e --arg name "$CONTAINER_NAME" \
+        'any(.[]; .id == $name and .configuration.logging.resolved.driver == "gelf")' \
+        <<<"$inventory" >/dev/null \
+        || fail "native authority does not expose $CONTAINER_NAME with GELF"
+}
+
+# Assert public Docker inspect preserves the expected remote logging state.
+assert_public_inspection() {
+    local log_config
+    local state
+    local log_path
+    local address="udp://$GELF_ADDRESS_HOST:$RECEIVER_PORT"
+
+    log_config="$(run_docker container inspect --format '{{json .HostConfig.LogConfig}}' "$CONTAINER_NAME")"
+    jq -e --arg address "$address" '
+        .Type == "gelf"
+        and .Config == {
+            "cache-disabled": "true",
+            "env": "ORACLE_ENV",
+            "gelf-address": $address,
+            "labels": "oracle.label",
+            "tag": "gelf.{{.Name}}.{{.ID}}"
+        }
+    ' <<<"$log_config" >/dev/null \
+        || fail "GELF inspect configuration differs from the Docker contract: $log_config"
+    state="$(run_docker container inspect --format '{{.State.Status}}' "$CONTAINER_NAME")"
+    [[ "$state" == "exited" ]] || fail "GELF inspect state is $state, expected exited"
+    log_path="$(run_docker container inspect --format '{{.LogPath}}' "$CONTAINER_NAME")"
+    [[ -z "$log_path" ]] || fail "GELF public LogPath is not empty: $log_path"
+}
+
+# Decode the UDP datagrams and assert Docker's GELF record contract.
+assert_gelf_receiver_contract() {
+    local container_id="$1"
+
+    python3 - "$RECEIVER_RESULT_PATH" "$container_id" "$CONTAINER_NAME" <<'PY'
+import gzip
+import json
+import math
+import sys
+from pathlib import Path
+
+result = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+container_id = sys.argv[2]
+container_name = sys.argv[3]
+datagrams = result.get("datagramsHex")
+if not isinstance(datagrams, list) or len(datagrams) != 3:
+    raise SystemExit(f"expected three GELF datagrams, got {result!r}")
+records = []
+for value in datagrams:
+    payload = bytes.fromhex(value)
+    if not payload.startswith(b"\x1f\x8b"):
+        raise SystemExit(f"GELF UDP payload is not gzip: {payload!r}")
+    records.append(json.loads(gzip.decompress(payload).decode("utf-8")))
+expected_messages = [
+    "stdout-ascii",
+    "stderr-utf8-☃",
+    "stdout-binary-�\x00-end",
+]
+if [record.get("short_message") for record in records] != expected_messages:
+    raise SystemExit(f"unexpected GELF messages: {records!r}")
+if [record.get("level") for record in records] != [6, 3, 6]:
+    raise SystemExit(f"unexpected GELF levels: {records!r}")
+expected_keys = {
+    "version", "host", "short_message", "timestamp", "level",
+    "_ORACLE_ENV", "_oracle.label", "_command", "_container_id",
+    "_container_name", "_created", "_image_id", "_image_name", "_tag",
+}
+visible_name = container_name.lstrip("/")
+expected_tag = f"gelf.{visible_name}.{container_id[:12]}"
+for record in records:
+    if set(record) != expected_keys:
+        raise SystemExit(f"unexpected GELF metadata fields: {sorted(record)!r}")
+    if record["version"] != "1.1" or not isinstance(record["host"], str) or not record["host"]:
+        raise SystemExit(f"invalid GELF identity fields: {record!r}")
+    if not isinstance(record["timestamp"], (int, float)) or not math.isfinite(record["timestamp"]):
+        raise SystemExit(f"invalid GELF timestamp: {record!r}")
+    if record["_ORACLE_ENV"] != "bravo" or record["_oracle.label"] != "alpha":
+        raise SystemExit(f"missing selected GELF metadata: {record!r}")
+    if record["_container_id"] != container_id or record["_container_name"] != visible_name:
+        raise SystemExit(f"incorrect GELF container identity: {record!r}")
+    if record["_tag"] != expected_tag or record["_image_name"] != "alpine:3.20":
+        raise SystemExit(f"incorrect GELF tag or image metadata: {record!r}")
+    if not record["_created"] or not record["_command"] or not record["_image_id"].startswith("sha256:"):
+        raise SystemExit(f"incomplete GELF Docker metadata: {record!r}")
+PY
+}
+
+# Verify Docker preserves its unreadable remote-driver error for GELF.
+assert_unreadable_logs() {
+    local output
+    local status
+
+    set +e
+    output="$(run_docker logs "$CONTAINER_NAME" 2>&1)"
+    status=$?
+    set -e
+    ((status != 0)) || fail "GELF logging unexpectedly returned readable history"
+    [[ "$output" == "Error response from daemon: configured logging driver does not support reading" ]] \
+        || fail "GELF read error differs from Docker: $output"
+}
+
+# Return a monotonic timestamp in seconds for evidence-backed timing.
+monotonic_seconds() {
+    python3 - <<'PY'
+import time
+print(f"{time.monotonic():.9f}")
+PY
+}
+
+# Write optional machine-readable completion evidence outside the fixture root.
+write_result() {
+    local duration_seconds="$1"
+    local container_id="$2"
+
+    [[ -n "$RESULT_PATH" ]] || return 0
+    [[ -d "$(dirname "$RESULT_PATH")" ]] \
+        || fail "result parent directory does not exist: $(dirname "$RESULT_PATH")"
+    jq -n \
+        --arg contract "Docker REST GELF" \
+        --arg endpoint "${DOCKER_HOST_OVERRIDE:-default-context}" \
+        --arg containerID "$container_id" \
+        --argjson durationSeconds "$duration_seconds" \
+        '{contract: $contract, endpoint: $endpoint, durationSeconds: $durationSeconds, result: "passed", containerID: $containerID}' \
+        >"$RESULT_PATH"
+}
+
+# Remove only this fixture's receiver and uniquely named Docker container.
+cleanup() {
+    local temporary_parent="${TMPDIR:-/tmp}"
+
+    if [[ -n "$RECEIVER_PID" ]] && kill -0 "$RECEIVER_PID" 2>/dev/null; then
+        kill "$RECEIVER_PID" 2>/dev/null || true
+        wait "$RECEIVER_PID" 2>/dev/null || true
+    fi
+    if [[ -n "$CONTAINER_NAME" ]]; then
+        run_docker rm --force "$CONTAINER_NAME" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "$WORK_ROOT" && "$WORK_ROOT" == "$temporary_parent"/container-rest-gelf.* \
+        && -f "$WORK_ROOT/$ROOT_MARKER_NAME" ]]; then
+        rm -rf -- "$WORK_ROOT"
+    fi
+}
+
+# Exercise the complete public GELF lifecycle through an unmodified Docker CLI.
+main() {
+    local suffix
+    local container_id
+    local started_at
+    local finished_at
+    local duration_seconds
+    local workload
+
+    parse_args "$@"
+    verify_prerequisites
+    create_work_root
+    suffix="$(basename "$WORK_ROOT" | tr '.[:upper:]' '-[:lower:]')"
+    CONTAINER_NAME="cc-rest-gelf-$suffix"
+    start_udp_receiver
+    workload='printf '\''stdout-ascii\n'\''; sleep 0.2; printf '\''stderr-utf8-\342\230\203\n'\'' >&2; sleep 0.2; printf '\''stdout-binary-\377\000-end\n'\'''
+    container_id="$(run_docker create --name "$CONTAINER_NAME" \
+        --env ORACLE_ENV=bravo --label oracle.label=alpha \
+        --log-driver gelf --log-opt cache-disabled=true \
+        --log-opt "gelf-address=udp://$GELF_ADDRESS_HOST:$RECEIVER_PORT" \
+        --log-opt env=ORACLE_ENV --log-opt labels=oracle.label \
+        --log-opt 'tag=gelf.{{.Name}}.{{.ID}}' \
+        "$REQUIRED_DISPLAY_IMAGE" /bin/sh -c "$workload")"
+    [[ -n "$container_id" ]] || fail "docker create returned an empty GELF identifier"
+    assert_native_driver
+    started_at="$(monotonic_seconds)"
+    run_docker start "$CONTAINER_NAME" >/dev/null
+    wait_for_state exited
+    wait_for_udp_receiver
+    finished_at="$(monotonic_seconds)"
+    duration_seconds="$(python3 - "$started_at" "$finished_at" <<'PY'
+import sys
+print(f"{float(sys.argv[2]) - float(sys.argv[1]):.9f}")
+PY
+    )"
+    assert_public_inspection
+    assert_gelf_receiver_contract "$container_id"
+    assert_unreadable_logs
+    write_result "$duration_seconds" "$container_id"
+    info "Docker REST GELF contract passed in ${duration_seconds}s"
+}
+
+trap cleanup EXIT
+main "$@"
