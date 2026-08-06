@@ -18,7 +18,7 @@ The source-level regression is `AuthorityRemoteLogDriverPlaneTests.gelfProductio
 
 ## Remaining boundary
 
-GELF TCP reconnect/failure behavior, provider-wide failure/migration/security/pressure behavior, other remote-driver public-client lanes, Testcontainers/devcontainer adoption, release publication, and the full release performance matrix remain queued. The narrow TCP public-socket lifecycle is separately verified in [LOGGING-GELF-TCP-REST-01](LOGGING-GELF-TCP-REST-01.md). The candidate create route still returns a generated name instead of Docker's immutable 64-hex ID; [Container issue 74](https://github.com/stephenlclarke/container/issues/74) tracks that separately.
+One bounded GELF TCP peer-loss/reconnect path is separately verified in [LOGGING-GELF-TCP-RECONNECT-REST-01](LOGGING-GELF-TCP-RECONNECT-REST-01.md), and the narrow TCP public-socket lifecycle is verified in [LOGGING-GELF-TCP-REST-01](LOGGING-GELF-TCP-REST-01.md). The remaining TCP retry/failing-sink matrix, provider-wide failure/migration/security/pressure behavior, other remote-driver public-client lanes, Testcontainers/devcontainer adoption, release publication, and the full release performance matrix remain queued. The candidate create route still returns a generated name instead of Docker's immutable 64-hex ID; [Container issue 74](https://github.com/stephenlclarke/container/issues/74) tracks that separately.
 
 ## Safe resumption
 

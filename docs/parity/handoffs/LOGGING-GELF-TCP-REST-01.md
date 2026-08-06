@@ -3,8 +3,9 @@
 ## State
 
 `Verified` as a narrow Docker CLI/public-socket GELF TCP contract. It verifies
-functional semantics only; it does not claim all remote-driver, external-client,
-reconnect, or comparable-or-better release-performance parity.
+functional semantics only; it does not itself claim the separately verified
+bounded reconnect path, all remote-driver/external-client behavior, or
+comparable-or-better release-performance parity.
 
 ## User-visible contract
 
@@ -54,7 +55,9 @@ mismatch.
 
 ## Remaining boundary
 
-TCP reconnect/failing-sink behavior, provider-wide failure/migration/security
+One bounded TCP peer-loss/reconnect path is separately verified in
+[LOGGING-GELF-TCP-RECONNECT-REST-01](LOGGING-GELF-TCP-RECONNECT-REST-01.md).
+The remaining retry/failing-sink matrix, provider-wide failure/migration/security
 and pressure behavior, other remote-driver public-client lanes,
 Testcontainers/devcontainer adoption, release publication, and the complete
 release performance matrix remain queued. The candidate create route still
