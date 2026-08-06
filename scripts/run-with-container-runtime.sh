@@ -39,6 +39,7 @@ runtime_builder_image=${CONTAINER_RUNTIME_BUILDER_IMAGE:-}
 runtime_builder_image_tar=${CONTAINER_RUNTIME_BUILDER_IMAGE_TAR:-}
 runtime_bootstrap_image_tar=${CONTAINER_RUNTIME_BOOTSTRAP_IMAGE_TAR:-}
 runtime_config_home=
+initial_start_init_image_archive=
 runtime_root_marker=.container-compose-runtime-root
 runtime_root_marker_value='container-compose isolated runtime state v1'
 
@@ -152,6 +153,18 @@ resolve_matched_init_image() {
     fi
 }
 
+# A retained OCI archive can be loaded by `container system start` before its
+# normal initial-filesystem pull. This is the only safe bootstrap order for an
+# isolated app root: image load itself requires the services that startup is
+# about to create.
+resolve_initial_start_init_image_archive() {
+    if [[ -n "$matched_init_image_tar" ]]; then
+        initial_start_init_image_archive=$matched_init_image_tar
+    elif [[ -n "$runtime_init_image_archive" ]]; then
+        initial_start_init_image_archive=$runtime_init_image_archive
+    fi
+}
+
 prepare_runtime_config_home() {
     has_matched_init_image_source || return 0
     [[ -n "$runtime_app_root" ]] || return 0
@@ -235,6 +248,10 @@ cleanup() {
 
 # Install a guest init image built from the same source lane as the host runtime.
 install_matched_init_image() {
+    # The startup command has already loaded and unpacked this archive before
+    # its registry fallback. Do not load it a second time after startup.
+    [[ -n "$initial_start_init_image_archive" ]] && return 0
+
     if [[ -n "$matched_init_image_tar" ]]; then
         printf 'Installing prebuilt matched container runtime init image...\n'
         "$container_binary" image load -i "$matched_init_image_tar"
@@ -271,7 +288,10 @@ install_matched_init_image() {
     fi
 
     printf 'Installing matched container runtime init image...\n'
-    env "${init_env[@]}" make -C "$runtime_init_block_repo" init-block
+    # The initial runtime only hosts the local image build. It must not fetch
+    # the default guest before this source-pinned image is available.
+    env "${init_env[@]}" make -C "$runtime_init_block_repo" \
+        KERNEL_INSTALL=false init-block
 }
 
 validate_runtime_inputs
@@ -283,23 +303,42 @@ stop_runtime
 sleep 3
 prepare_runtime_root
 resolve_matched_init_image
+resolve_initial_start_init_image_archive
 prepare_runtime_config_home
 configure_runtime_builder_image
+if [[ -n "$initial_start_init_image_archive" ]]; then
+    configure_matched_init_image
+fi
 
 printf 'Starting matched container runtime...\n'
 start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
+if has_matched_init_image_source; then
+    # Defer guest materialization until the exact image has been built or
+    # loaded. This prevents the bootstrap from accepting an unrelated default
+    # image pin before the harness installs the matched one.
+    start_arguments=(--debug system start --timeout 60 --disable-kernel-install)
+fi
 if [[ -n "$runtime_app_root" ]]; then
     start_arguments+=(--app-root "$runtime_app_root")
+fi
+if [[ -n "$initial_start_init_image_archive" ]]; then
+    start_arguments+=(--init-image-archive "$initial_start_init_image_archive")
 fi
 start_runtime
 install_runtime_builder_image
 install_runtime_bootstrap_image
 install_matched_init_image
-configure_matched_init_image
+if [[ -z "$initial_start_init_image_archive" ]]; then
+    configure_matched_init_image
+fi
 if [[ -n "$runtime_config_home" ]]; then
     printf 'Restarting matched container runtime with the installed init image...\n'
     stop_runtime
     sleep 3
+    start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
+    if [[ -n "$runtime_app_root" ]]; then
+        start_arguments+=(--app-root "$runtime_app_root")
+    fi
     start_runtime
 fi
 

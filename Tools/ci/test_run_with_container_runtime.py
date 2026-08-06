@@ -343,19 +343,21 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             )
 
             invocations = container_log.read_text(encoding="utf-8").splitlines()
-            load_index = invocations.index(f"image load -i {init_archive}")
-            restart_index = next(
-                index
-                for index, invocation in enumerate(invocations)
-                if index > load_index and "system start" in invocation
-            )
+            starts = [
+                invocation
+                for invocation in invocations
+                if "system start" in invocation
+            ]
             command_index = invocations.index("command")
             self.assertEqual(
-                sum("system start" in invocation for invocation in invocations),
+                len(starts),
                 2,
             )
-            self.assertLess(load_index, restart_index)
-            self.assertLess(restart_index, command_index)
+            self.assertIn("--disable-kernel-install", starts[0])
+            self.assertIn(f"--init-image-archive {init_archive}", starts[0])
+            self.assertIn("--enable-kernel-install", starts[1])
+            self.assertNotIn(f"image load -i {init_archive}", invocations)
+            self.assertLess(invocations.index(starts[1]), command_index)
     def test_loads_retained_init_image_archive_without_rebuilding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -397,8 +399,16 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 f'image = "{DEFAULT_INIT_IMAGE}"',
                 config_path.read_text(encoding="utf-8"),
             )
-            invocations = container_log.read_text(encoding="utf-8")
-            self.assertIn(f"image load --input {init_archive}", invocations)
+            invocations = container_log.read_text(encoding="utf-8").splitlines()
+            starts = [
+                invocation
+                for invocation in invocations
+                if "system start" in invocation
+            ]
+            self.assertEqual(len(starts), 2)
+            self.assertIn("--disable-kernel-install", starts[0])
+            self.assertIn(f"--init-image-archive {init_archive}", starts[0])
+            self.assertNotIn(f"image load --input {init_archive}", invocations)
 
     def test_restarts_once_after_transient_xpc_start_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
