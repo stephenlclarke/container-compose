@@ -43,7 +43,7 @@ The candidate source behavior is preserved in signed Container commit
 `9d2257a81176a895a31388124bd6a7b0b74d10e6`; the local Apple-shaped issue and
 pull-request handoff pair is signed at `b580b2ee43540189e764db293c2a74a531123d26`.
 Candidate runs passed in `1.591354583s` and `1.574481541s` (2.27x and 2.25x
-Docker). The raw timings pass the fixture's 10x functional guard only; the
+Docker). The raw timings are retained for post-functional optimisation; the
 programme-wide comparable-or-better performance gap remains open.
 
 ## Correction retained as evidence

@@ -14,7 +14,7 @@ The marker-protected Docker reference root `/private/tmp/container-syslog-tcp-re
 
 The marker-protected candidate root `/private/tmp/container-syslog-tcp-candidate-v4.OZHeoC` contains `FINGERPRINT-CANDIDATE-RUN-1-PREFLIGHT.json`, `FINGERPRINT-CANDIDATE-RUN-2-PREFLIGHT.json`, and `FINGERPRINT-COMPLETE.json`. It binds signed Container `b82e34874b944d2b9ecc65d4068aee5d7b46905e`, local Containerization `38d9c695e7a6915e5ce45d12c893dc323a661af7`, Engine API `4949e743675f00ec102f7acacdb4e990409e383f`, Compose base `603bc8d5536fc176e745d034fbc42e386bafbbba`, harness SHA-256 `69bd8acd61e5986304e88dc9f15b1bf883c485ef4aad4a5336bf312af92dbf5d`, the signed archive/binaries, guest init/bootstrap archives, runtime kernel, wrapper, results, and cleanup.
 
-Candidate public-socket runs passed in `2.003332125s` and `1.660303875s` (2.07× and 1.72× Docker). These are below the focused 10× functional guard, not comparable-or-better programme performance evidence.
+Candidate public-socket runs passed in `2.003332125s` and `1.660303875s` (2.07× and 1.72× Docker). These are post-functional performance evidence, not comparable-or-better programme performance evidence.
 
 ## Source proof and correction
 

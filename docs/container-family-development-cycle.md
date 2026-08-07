@@ -48,7 +48,7 @@ The following rules are mandatory:
 
 1. Keep one Active implementation stream for the selected contract and keep every other objective Queued. A development slice is a substantial related vertical contract covering its lower-runtime behaviour, authority transaction, client projection, recovery, and focused tests; a small fix, test rerun, documentation update, status pass, Git administration, or hygiene action is supporting work rather than a separate slice unless it directly unblocks the contract.
 2. During implementation, run only the narrow deterministic unit or component tests needed to shape the current code and prove the directly affected boundary. Batch related edits before running a component test.
-3. Accumulate several related Implemented contracts before running repository-wide, matched-stack, security, migration, and performance gates once against their immutable checkpoint head. Run a broad gate earlier only when a dependency boundary makes later implementation unsafe, and repeat it only when a subsequent maintained-source, generated-output, dependency, or runtime-fingerprint change invalidates that evidence.
+3. Accumulate several related Implemented contracts before running repository-wide, matched-stack, security, and migration gates once against their immutable checkpoint head. Design each affected performance workload and retain duration evidence during functional work, but defer comparative optimisation and the full performance gate until the post-functional performance phase. Run a broad gate earlier only when a dependency boundary makes later implementation unsafe, and repeat it only when a subsequent maintained-source, generated-output, dependency, or runtime-fingerprint change invalidates that evidence.
 4. Reconcile programme-wide status, capability tables, handoffs, exact heads, issue comments, and release records at the coherent checkpoint. Do not interrupt active implementation for repeated prose-only refreshes that cannot change a support claim.
 5. Treat repository hygiene as part of each Git transaction. A necessary issue, branch, pull request, or linked worktree is created with its owner and terminal condition already known, and it is commented, closed or retained with evidence, and cleaned up in the same close-out transaction. Do not defer a pile of branch, pull-request, issue, or filesystem cleanup to a later maintenance cycle.
 6. Prefer `main` for authorised Stephen-owned integration work where review policy permits it. Use a topic branch only for an active review or isolated upstream handoff; Apple-bound work uses an `upstream/` prefix and remains local until the programme-wide publication boundary.
@@ -166,7 +166,7 @@ Use an independent fresh-context reviewer for the final pass wherever practical.
 
 ### 8. Run checkpoint gates
 
-Run the broader gates justified by the final change. The final slice gate uses a clean immutable commit/worktree, not a moving development directory. Fault injection, security, migration, and performance evidence is added when the changed contract can affect those properties.
+Run the broader gates justified by the final change. The final slice gate uses a clean immutable commit/worktree, not a moving development directory. Fault injection, security, and migration evidence is added when the changed contract can affect those properties. Record the applicable performance workload and duration now; run comparative optimisation evidence in the dedicated post-functional performance phase unless a liveness failure makes the functional proof impossible.
 
 If a checkpoint gate causes any maintained-source, generated-output, migration, or contract change, rerun the affected focused tests and repeat the complete final review against the new exact head before accepting the gate.
 
@@ -380,7 +380,7 @@ Update the generated upstream handoff registry whenever a handoff is added or ch
 
 ## Parity and Performance Discipline
 
-The primary product gate is both observable Docker parity and comparable or better performance. Neither compensates for the other.
+The primary product gate is both observable Docker parity and comparable or better performance. Neither compensates for the other, but the delivery order is functional compatibility first and comparative optimisation second.
 
 ### Behaviour
 
@@ -390,13 +390,13 @@ The primary product gate is both observable Docker parity and comparable or bett
 
 ### Performance
 
-- Capture a paired same-host baseline before changing an affected hot path.
+- Design the paired same-host workload, metrics, and noise method before changing an affected hot path; capture the release-grade baseline during the post-functional performance phase unless the active work itself needs a liveness diagnosis.
 - Use non-debug release builds, raw monotonic timings, exact heads, host/toolchain/runtime fingerprints, controlled warm/cold state, declared repetitions, median/P95, and a documented noise band.
 - Compare Docker, the previous accepted `main`, and the candidate where an existing Container-family implementation is available; retain elapsed time plus material CPU, memory, and I/O observations.
-- During development, run the smallest benchmark that covers the changed path. Run the complete affected slice matrix at slice closure and the full maintained matrix at wave/release closure.
+- During functional development, retain the ordinary focused-run duration and run a targeted benchmark only when it helps diagnose a liveness issue. Run the complete affected slice matrix after functional contracts close and the full maintained matrix at wave/release closure.
 - Run reference and candidate under equivalent load and without concurrent builds, scans, indexing, backups, or unrelated VMs.
 - Declare the direction and equivalence rule for every metric before sampling: lower is better for latency, CPU, RSS, bytes/copies and other costs; higher is better for throughput; correctness, durability, isolation and output quality cannot decline. Never average opposing metrics into a score that hides a material regression.
-- Profile and fix material regressions. The slice does not close while its candidate median or P95 is materially worse than Docker in that metric's declared direction outside the noise band.
+- Profile and fix material regressions in the post-functional performance phase. A completed functional contract remains `Verified` while its comparative performance result is outstanding; only a hang, timeout, deadlock, liveness/resource leak, or comparable failure that prevents the functional proof keeps that contract open.
 - Optimisation must preserve correctness, isolation, durability, and diagnostic evidence. A faster approximation is not parity.
 
 The current `make docker-compose-performance-matrix` is a diagnostic guard, not release evidence: it builds the debug product, permits a default 10x median ratio, and covers only warm-image 1/10/50-service startup/teardown. It must be replaced or extended to use matched release binaries, paired/counterbalanced sampling, the comparable-or-better noise-band gate, and the missing logs, `develop.watch` sync, and build-context lanes before it can close a performance slice.

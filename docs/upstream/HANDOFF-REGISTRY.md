@@ -8,9 +8,9 @@ links to an immutable Git snapshot.
 
 Last verified: 2026-08-06
 
-Entries: 376. Document snapshots: 654. Current supporting documents: 48.
+Entries: 377. Document snapshots: 656. Current supporting documents: 50.
 
-States: `active-draft` 1, `archived` 304, `closed` 15, `merged` 10, `submitted` 4, `tracked-upstream` 15, `unsubmitted` 27.
+States: `active-draft` 2, `archived` 304, `closed` 15, `merged` 10, `submitted` 4, `tracked-upstream` 15, `unsubmitted` 27.
 
 | Owner | Capability or pull request | State | Referenced commits | Documents |
 | --- | --- | --- | --- | --- |
@@ -194,6 +194,7 @@ States: `active-draft` 1, `archived` 304, `closed` 15, `merged` 10, `submitted` 
 | `apple/containerization` | Pull Request | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/ISSUE-virtio-gpu.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/PR-virtio-gpu.md) |
 | `apple/containerization` | Pull Request: Redact Vminitd Exec Process Configuration | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/ISSUE-vminitd-exec-log-secrets.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/PR-vminitd-exec-log-secrets.md) |
 | `apple/containerization` | Pull Request | `unsubmitted` | `c3f8fe66d52c` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/ISSUE-vmnet-integration-exclusivity.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/PR-vmnet-integration-exclusivity.md) |
+| `apple/swift-nio-ssl` | Select bad_certificate for Darwin internal verification failures | `active-draft` | `a9d648535c62` | [Issue details](apple-swift-nio-ssl/ISSUE-fluentd-tls-alert-control.md); [PR details](apple-swift-nio-ssl/PR-fluentd-tls-alert-control.md) |
 | `stephenlclarke/container-compose` | Sonar retry policy exceeds its workflow timeout | `archived` | `eabc04736d83`, `221fafc24ebd`, `164088e02e16` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-154.md) |
 | `stephenlclarke/container-compose` | Pull request: preserve the complete Sonar retry budget | `archived` | `2f6fa7842253` | [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-155.md) |
 | `stephenlclarke/container-compose` | Pull request 173: preserve complete inherited commit metadata | `archived` | `aa273273536b`, `31b83499abec` | [Issue details](container-compose/ISSUE-173.md); [PR details](container-compose/PR-173.md) |

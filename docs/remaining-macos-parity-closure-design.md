@@ -258,6 +258,16 @@ Performance is a per-lane parity gate, not one aggregate score. Every lane
 compares the pinned Docker reference, previous accepted Container-family main,
 and candidate on the same MBP with identical inputs and controlled state.
 
+The performance architecture, lanes, metrics, and noise rules are designed
+alongside functional work, but comparative optimisation is deliberately a
+post-functional phase. A narrow behavioural contract can become `Verified`
+once its Docker oracle, focused proof, exact candidate evidence, cleanup, and
+clean checkpoint pass even when its comparable-performance result is still
+outstanding. Only a hang, timeout, deadlock, liveness/resource leak, or other
+execution failure that prevents functional proof blocks that contract. The
+programme does not claim complete parity until this design's release-grade
+lanes also pass.
+
 For every metric, the lane declares before sampling:
 
 - unit and direction (`lowerIsBetter` or `higherIsBetter`);

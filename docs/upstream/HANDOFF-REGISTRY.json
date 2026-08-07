@@ -3225,6 +3225,26 @@
       ]
     },
     {
+      "id": "apple-swift-nio-ssl-fluentd-tls-alert-control",
+      "owner": "apple/swift-nio-ssl",
+      "title": "Select bad_certificate for Darwin internal verification failures",
+      "state": "active-draft",
+      "lastVerified": "2026-08-07",
+      "commits": [
+        "a9d648535c62e640d1df258a70c9117a8ddea43e"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/apple-swift-nio-ssl/ISSUE-fluentd-tls-alert-control.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/apple-swift-nio-ssl/PR-fluentd-tls-alert-control.md"
+        }
+      ]
+    },
+    {
       "id": "container-compose-154",
       "owner": "stephenlclarke/container-compose",
       "title": "Sonar retry policy exceeds its workflow timeout",

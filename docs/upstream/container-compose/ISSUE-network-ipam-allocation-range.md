@@ -15,7 +15,7 @@ The lower-runtime retention correction is in signed Container commits `d7e5f5ddd
 - Docker and candidate fixtures retain raw configuration, inspections, timing, fingerprints, and cleanup at `/private/tmp/container-ipam-allocation-range-release.ZgE2Ll/evidence`.
 - Candidate dynamic addresses are within `192.168.200.128/25`; the in-range auxiliary reservation `192.168.200.130` is skipped.
 - Candidate `alpha` retains `192.168.200.129/24` across restart and the network is absent after `down`.
-- The single release timing sample remains diagnostic only; `up` is 9.24x Docker, below the 10x functional guard but not comparable-or-better performance proof.
+- The single release timing sample remains diagnostic only; `up` is 9.24x Docker and is retained for post-functional optimisation rather than comparable-or-better performance proof.
 
 ## Tracking
 

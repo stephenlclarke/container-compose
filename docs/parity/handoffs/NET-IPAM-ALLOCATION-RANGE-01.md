@@ -48,7 +48,7 @@ The strict repository-owned Bash CLI fixture is `Tools/parity/check-compose-netw
 
 | Operation | Docker seconds | Candidate seconds | Interpretation |
 | --- | ---: | ---: | --- |
-| `up` | 0.363003 | 3.355610 | 9.24x; below the 10x functional guard |
+| `up` | 0.363003 | 3.355610 | 9.24x; post-functional performance evidence |
 | `restart alpha` | 10.243070 | 6.762113 | Candidate faster in this sample |
 | `down` | 10.297832 | 6.451396 | Candidate faster in this sample |
 

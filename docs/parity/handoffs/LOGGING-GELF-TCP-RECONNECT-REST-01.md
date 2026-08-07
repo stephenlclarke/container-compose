@@ -32,8 +32,8 @@ runtime-log pairs. It binds Compose
 The Docker CLI 29.7.1 / Engine 29.2.1 reference is retained at
 `/private/tmp/container-gelf-tcp-reconnect-reference-v2.yjav2A/docker-reference-result.json`.
 It passed in `5.524841000s`. The two independent candidate public-socket runs
-passed in `6.508964500s` and `6.340717583s` (1.18× and 1.15× Docker). They meet
-the fixture's 10× functional guard. One reconnect lane near the reference does
+passed in `6.508964500s` and `6.340717583s` (1.18× and 1.15× Docker). They are
+retained for the post-functional performance phase. One reconnect lane near the reference does
 not establish programme-wide comparable-or-better release performance.
 
 The source correction has a live regression:

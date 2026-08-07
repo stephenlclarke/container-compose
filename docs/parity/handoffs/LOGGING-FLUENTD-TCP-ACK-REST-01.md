@@ -28,7 +28,7 @@ The retained `tcpDockerHostAliasRoutesToNativeLoopbackAndDrainsAcknowledgement` 
 
 ## Completion criteria
 
-Met. The certificate at `/private/tmp/container-rest-fluentd.candidate-name-359.6UnO7v/FINGERPRINT-COMPLETE.json` binds the clean source/dependency graph, signed candidate binary (`94c46b4b…`), source-built guest archive (`5d420113…`), harness, wrapper, Docker oracle, two distinct marker-protected candidate roots, result/receiver/log hashes, and postflight cleanup. Candidate 1 passed in `2.768545625s` (`6.525×` Docker) and candidate 2 in `2.345302459s` (`5.527×`); each received three ordered EventTime records, sent three ACKs, reported no receiver errors, rejected remote history as Docker does, and stopped only its own namespace. Both are below the focused 10× functional guard. Neither timing is comparable or better than Docker, so the separate release-performance requirement remains open.
+Met. The certificate at `/private/tmp/container-rest-fluentd.candidate-name-359.6UnO7v/FINGERPRINT-COMPLETE.json` binds the clean source/dependency graph, signed candidate binary (`94c46b4b…`), source-built guest archive (`5d420113…`), harness, wrapper, Docker oracle, two distinct marker-protected candidate roots, result/receiver/log hashes, and postflight cleanup. Candidate 1 passed in `2.768545625s` (`6.525×` Docker) and candidate 2 in `2.345302459s` (`5.527×`); each received three ordered EventTime records, sent three ACKs, reported no receiver errors, rejected remote history as Docker does, and stopped only its own namespace. The durations are retained for the post-functional performance phase. Neither timing is comparable or better than Docker, so the separate release-performance requirement remains open.
 
 ## Blocker criteria
 
