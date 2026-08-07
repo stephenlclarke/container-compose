@@ -30,43 +30,89 @@ source "$SCRIPT_DIRECTORY/../Tools/ci/container-runtime-lock.sh"
 container_binary=$1
 shift
 runtime_app_root=${CONTAINER_RUNTIME_APP_ROOT:-}
+runtime_service_namespace=${CONTAINER_RUNTIME_SERVICE_NAMESPACE:-}
 runtime_init_block_repo=${CONTAINER_RUNTIME_INIT_BLOCK_REPO:-}
 runtime_init_image_archive=${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}
 containerization_init_source_path=${CONTAINERIZATION_INIT_SOURCE_PATH:-}
+containerization_init_source_root=
+containerization_init_source_head=
+containerization_init_source_snapshot_path=
+containerization_init_build_scratch_root=
 matched_init_image=${CONTAINER_COMPOSE_INIT_IMAGE:-}
 matched_init_image_tar=${CONTAINER_RUNTIME_INIT_IMAGE_TAR:-}
 runtime_builder_image=${CONTAINER_RUNTIME_BUILDER_IMAGE:-}
 runtime_builder_image_tar=${CONTAINER_RUNTIME_BUILDER_IMAGE_TAR:-}
 runtime_bootstrap_image_tar=${CONTAINER_RUNTIME_BOOTSTRAP_IMAGE_TAR:-}
 runtime_config_home=
+runtime_docker_socket=
+runtime_docker_host=
 initial_start_init_image_archive=
 initial_start_image_is_matched=false
 runtime_root_marker=.container-compose-runtime-root
 runtime_root_marker_value='container-compose isolated runtime state v1'
 provider_socket_path_limit=103
 
+# Derive and export the one non-default namespace used by this candidate.
+configure_runtime_namespace() {
+    local namespace_root_digest
+    local socket_directory_digest
+
+    if [[ -z "$runtime_service_namespace" ]]; then
+        namespace_root_digest=$(LC_ALL=C printf '%s' "${runtime_app_root}:$(id -u)" \
+            | shasum -a 256 | awk '{print substr($1, 1, 24)}')
+        runtime_service_namespace="io.github.stephenlclarke.container-compose.runtime.${namespace_root_digest}"
+    fi
+
+    if ! [[ "$runtime_service_namespace" =~ ^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$ ]] ||
+        (( $(LC_ALL=C printf '%s' "$runtime_service_namespace" | wc -c | tr -d '[:space:]') > 192 )); then
+        printf 'CONTAINER_RUNTIME_SERVICE_NAMESPACE must contain at most 192 bytes of dot-separated launchd-label components: %s\n' \
+            "$runtime_service_namespace" >&2
+        exit 2
+    fi
+    if [[ "$runtime_service_namespace" != io.github.stephenlclarke.container-compose.runtime.* ]]; then
+        printf 'CONTAINER_RUNTIME_SERVICE_NAMESPACE must stay in the container-compose isolated namespace: %s\n' \
+            "$runtime_service_namespace" >&2
+        exit 2
+    fi
+
+    socket_directory_digest=$(LC_ALL=C printf '%s' "$runtime_service_namespace" \
+        | shasum -a 256 | awk '{print substr($1, 1, 24)}')
+    runtime_docker_socket="/tmp/container-engine-$(id -u)-${socket_directory_digest}/docker.sock"
+    runtime_docker_host="unix://${runtime_docker_socket}"
+
+    export CONTAINER_APP_ROOT="$runtime_app_root"
+    export CONTAINER_SERVICE_NAMESPACE="$runtime_service_namespace"
+    export CONTAINER_RUNTIME_DOCKER_SOCKET="$runtime_docker_socket"
+    export CONTAINER_RUNTIME_DOCKER_HOST="$runtime_docker_host"
+}
+
 validate_runtime_inputs() {
-    if [[ -n "$runtime_app_root" ]]; then
-        local normalized_runtime_root=${runtime_app_root%/}
-        if [[ -z "$normalized_runtime_root" ]]; then
-            normalized_runtime_root=/
-        fi
-        local provider_socket_path
-        if [[ "$normalized_runtime_root" == / ]]; then
-            provider_socket_path=/engine-provider/provider.sock
-        else
-            provider_socket_path="$normalized_runtime_root/engine-provider/provider.sock"
-        fi
-        local provider_socket_path_bytes
-        provider_socket_path_bytes=$(LC_ALL=C printf '%s' "$provider_socket_path" | wc -c | tr -d '[:space:]')
-        # Darwin's sockaddr_un reserves one byte in its 104-byte sun_path for
-        # the terminating NUL. Fail before launchd starts an API server that
-        # would immediately exit with an opaque XPC timeout.
-        if ((provider_socket_path_bytes > provider_socket_path_limit)); then
-            printf 'container runtime app root exceeds the provider Unix socket path limit (%s > %s bytes): %s\n' \
-                "$provider_socket_path_bytes" "$provider_socket_path_limit" "$provider_socket_path" >&2
-            exit 2
-        fi
+    if [[ -z "$runtime_app_root" || "$runtime_app_root" != /* ]]; then
+        printf 'CONTAINER_RUNTIME_APP_ROOT must be an absolute marker-protected candidate root\n' >&2
+        exit 2
+    fi
+    runtime_app_root=${runtime_app_root%/}
+    if [[ -z "$runtime_app_root" ]]; then
+        runtime_app_root=/
+    fi
+    if [[ "$runtime_app_root" == / ]]; then
+        printf 'CONTAINER_RUNTIME_APP_ROOT must not be /\n' >&2
+        exit 2
+    fi
+    local provider_socket_path="$runtime_app_root/engine-provider/provider.sock"
+    local provider_socket_path_bytes
+    provider_socket_path_bytes=$(LC_ALL=C printf '%s' "$provider_socket_path" | wc -c | tr -d '[:space:]')
+    # Darwin's sockaddr_un reserves one byte in its 104-byte sun_path for
+    # the terminating NUL. Fail before launchd starts an API server that
+    # would immediately exit with an opaque XPC timeout.
+    if ((provider_socket_path_bytes > provider_socket_path_limit)); then
+        printf 'container runtime app root exceeds the provider Unix socket path limit (%s > %s bytes): %s\n' \
+            "$provider_socket_path_bytes" "$provider_socket_path_limit" "$provider_socket_path" >&2
+        exit 2
+    fi
+    if [[ -n "${CONTAINER_RUNTIME_STOP_HELPER:-}" ]]; then
+        printf 'CONTAINER_RUNTIME_STOP_HELPER is unsafe with isolated candidates; use the namespace-scoped system stop only\n' >&2
+        exit 2
     fi
     if [[ -n "$runtime_builder_image" && -z "$runtime_builder_image_tar" ]] ||
         [[ -z "$runtime_builder_image" && -n "$runtime_builder_image_tar" ]]; then
@@ -94,6 +140,108 @@ validate_runtime_inputs() {
         printf 'container runtime init-block repo does not contain a Makefile: %s\n' "$runtime_init_block_repo" >&2
         exit 2
     fi
+    if [[ -n "$containerization_init_source_path" && -z "$runtime_init_block_repo" ]]; then
+        printf 'CONTAINERIZATION_INIT_SOURCE_PATH requires CONTAINER_RUNTIME_INIT_BLOCK_REPO\n' >&2
+        exit 2
+    fi
+}
+
+# Resolve a clean, exact source checkout before any candidate service mutation.
+validate_containerization_init_source() {
+    [[ -n "$containerization_init_source_path" ]] || return 0
+
+    if ! command -v git >/dev/null 2>&1; then
+        printf 'git is required to stage CONTAINERIZATION_INIT_SOURCE_PATH\n' >&2
+        exit 2
+    fi
+
+    local requested_source_path
+    if ! requested_source_path=$(cd "$containerization_init_source_path" && pwd -P); then
+        printf 'containerization init source path does not exist: %s\n' \
+            "$containerization_init_source_path" >&2
+        exit 2
+    fi
+    if ! containerization_init_source_root=$(git -C "$requested_source_path" rev-parse --show-toplevel 2>/dev/null); then
+        printf 'containerization init source path is not a Git checkout: %s\n' \
+            "$requested_source_path" >&2
+        exit 2
+    fi
+    containerization_init_source_root=$(cd "$containerization_init_source_root" && pwd -P)
+    if [[ "$requested_source_path" != "$containerization_init_source_root" ]]; then
+        printf 'CONTAINERIZATION_INIT_SOURCE_PATH must name the checkout root, not a subdirectory: %s\n' \
+            "$requested_source_path" >&2
+        exit 2
+    fi
+    if [[ -n "$(git -C "$containerization_init_source_root" status --porcelain --untracked-files=all)" ]]; then
+        printf 'containerization init source checkout must be clean before staging: %s\n' \
+            "$containerization_init_source_root" >&2
+        exit 2
+    fi
+    if ! containerization_init_source_head=$(git -C "$containerization_init_source_root" rev-parse --verify 'HEAD^{commit}' 2>/dev/null); then
+        printf 'containerization init source checkout does not resolve HEAD to a commit: %s\n' \
+            "$containerization_init_source_root" >&2
+        exit 2
+    fi
+}
+
+# Clone the validated source input below the disposable candidate root so the
+# guest sees only tracked files and a self-contained Git metadata directory.
+stage_containerization_init_source() {
+    [[ -n "$containerization_init_source_root" ]] || return 0
+
+    local source_inputs_root="$runtime_app_root/source-inputs"
+    local staged_source_path="$source_inputs_root/containerization"
+    if [[ -e "$staged_source_path" ]]; then
+        printf 'refusing to overwrite an existing staged containerization source: %s\n' \
+            "$staged_source_path" >&2
+        exit 2
+    fi
+
+    mkdir -p "$source_inputs_root"
+    if ! git clone --quiet --no-local --no-checkout --no-tags \
+        "$containerization_init_source_root" "$staged_source_path"; then
+        printf 'failed to clone the exact containerization init source into: %s\n' \
+            "$staged_source_path" >&2
+        exit 2
+    fi
+    if ! git -C "$staged_source_path" checkout --detach --quiet "$containerization_init_source_head"; then
+        printf 'failed to check out the pinned containerization init source commit: %s\n' \
+            "$containerization_init_source_head" >&2
+        exit 2
+    fi
+
+    local staged_source_head
+    staged_source_head=$(git -C "$staged_source_path" rev-parse HEAD)
+    if [[ "$staged_source_head" != "$containerization_init_source_head" ]]; then
+        printf 'staged containerization init source commit mismatch (expected %s, got %s)\n' \
+            "$containerization_init_source_head" "$staged_source_head" >&2
+        exit 2
+    fi
+    if [[ -n "$(git -C "$staged_source_path" status --porcelain --untracked-files=all)" ]]; then
+        printf 'staged containerization init source checkout is unexpectedly dirty: %s\n' \
+            "$staged_source_path" >&2
+        exit 2
+    fi
+    if [[ -e "$staged_source_path/.build" || -e "$staged_source_path/vminitd/.build" ]]; then
+        printf 'staged containerization init source contains ignored Swift build artifacts: %s\n' \
+            "$staged_source_path" >&2
+        exit 2
+    fi
+
+    containerization_init_source_snapshot_path="$staged_source_path"
+    containerization_init_source_path="$staged_source_path"
+    containerization_init_build_scratch_root="$runtime_app_root/source-build-cache"
+    mkdir -p "$containerization_init_build_scratch_root"
+
+    local fingerprints_root="$runtime_app_root/fingerprints"
+    mkdir -p "$fingerprints_root"
+    printf 'source_root=%s\nsource_head=%s\nstaged_source_root=%s\nstaged_source_head=%s\nbuild_scratch_root=%s\n' \
+        "$containerization_init_source_root" \
+        "$containerization_init_source_head" \
+        "$containerization_init_source_snapshot_path" \
+        "$staged_source_head" \
+        "$containerization_init_build_scratch_root" \
+        >"$fingerprints_root/containerization-init-source.txt"
 }
 
 # Report whether a source checkout or retained archive can provide the matched init image.
@@ -105,8 +253,32 @@ has_matched_init_image_source() {
 
 stop_runtime() {
     "$container_binary" system stop >/dev/null 2>&1 || true
-    if [[ -n "${CONTAINER_RUNTIME_STOP_HELPER:-}" && -x "$CONTAINER_RUNTIME_STOP_HELPER" ]]; then
-        "$CONTAINER_RUNTIME_STOP_HELPER" >/dev/null
+}
+
+# Fail before any service mutation unless this binary exposes this candidate's
+# namespace-derived Docker socket through the read-only status command.
+verify_runtime_namespace_support() {
+    local status_output
+    local reported_socket
+
+    status_output=$("$container_binary" system status --format json 2>/dev/null) || true
+    if ! reported_socket=$(printf '%s' "$status_output" | python3 -c '
+import json
+import sys
+
+payload = json.load(sys.stdin)
+socket = payload.get("engineSocket")
+if not isinstance(socket, str) or not socket:
+    raise SystemExit(1)
+print(socket)
+'); then
+        printf 'candidate container binary does not expose a JSON engineSocket for namespace verification\n' >&2
+        exit 2
+    fi
+    if [[ "$reported_socket" != "$runtime_docker_socket" ]]; then
+        printf 'candidate container binary did not select the isolated Docker socket (expected %s, got %s)\n' \
+            "$runtime_docker_socket" "$reported_socket" >&2
+        exit 2
     fi
 }
 
@@ -118,7 +290,7 @@ is_transient_xpc_start_failure() {
     local start_log="$1"
 
     grep -Eq \
-        'XPC connection error: Connection (interrupted|invalid)|XPC timeout for request to com\.apple\.container\.apiserver/ping' \
+        'XPC connection error: Connection (interrupted|invalid)|XPC timeout for request to [[:alnum:]_.-]+/ping' \
         "$start_log"
 }
 
@@ -156,8 +328,6 @@ start_runtime() {
 }
 
 prepare_runtime_root() {
-    [[ -n "$runtime_app_root" ]] || return 0
-
     mkdir -p "$runtime_app_root"
     local marker_path="$runtime_app_root/$runtime_root_marker"
     if [[ -f "$marker_path" ]]; then
@@ -324,6 +494,9 @@ install_matched_init_image() {
     if [[ -n "$containerization_init_source_path" ]]; then
         init_env+=(CONTAINERIZATION_INIT_SOURCE_PATH="$containerization_init_source_path")
     fi
+    if [[ -n "$containerization_init_build_scratch_root" ]]; then
+        init_env+=(CONTAINERIZATION_INIT_BUILD_SCRATCH_ROOT="$containerization_init_build_scratch_root")
+    fi
     if [[ -n "$matched_init_image" ]]; then
         init_env+=(CONTAINER_INIT_IMAGE_NAME="$matched_init_image")
     fi
@@ -336,6 +509,9 @@ install_matched_init_image() {
 }
 
 validate_runtime_inputs
+validate_containerization_init_source
+configure_runtime_namespace
+verify_runtime_namespace_support
 acquire_container_runtime_lock
 trap cleanup EXIT
 
@@ -343,6 +519,7 @@ printf 'Stopping stale container services...\n'
 stop_runtime
 sleep 3
 prepare_runtime_root
+stage_containerization_init_source
 resolve_matched_init_image
 resolve_initial_start_init_image_archive
 prepare_runtime_config_home

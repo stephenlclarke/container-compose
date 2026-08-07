@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import tempfile
@@ -32,6 +33,83 @@ DEFAULT_INIT_IMAGE = "vminit:container-compose"
 
 
 class RunWithContainerRuntimeTest(unittest.TestCase):
+    @staticmethod
+    def runtime_environment() -> dict[str, str]:
+        environment = os.environ.copy()
+        for variable in (
+            "CONTAINER_APP_ROOT",
+            "CONTAINER_RUNTIME_APP_ROOT",
+            "CONTAINER_RUNTIME_DOCKER_HOST",
+            "CONTAINER_RUNTIME_DOCKER_SOCKET",
+            "CONTAINER_RUNTIME_INIT_BLOCK_REPO",
+            "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE",
+            "CONTAINER_RUNTIME_INIT_IMAGE_TAR",
+            "CONTAINER_RUNTIME_BOOTSTRAP_IMAGE_TAR",
+            "CONTAINER_RUNTIME_BUILDER_IMAGE",
+            "CONTAINER_RUNTIME_BUILDER_IMAGE_TAR",
+            "CONTAINER_RUNTIME_SERVICE_NAMESPACE",
+            "CONTAINER_RUNTIME_STOP_HELPER",
+            "CONTAINER_SERVICE_NAMESPACE",
+            "CONTAINERIZATION_INIT_SOURCE_PATH",
+            "CONTAINERIZATION_INIT_BUILD_SCRATCH_ROOT",
+            "CONTAINER_COMPOSE_INIT_IMAGE",
+            "CONTAINER_RUNTIME_LOCK_FILE",
+        ):
+            environment.pop(variable, None)
+        return environment
+
+    @staticmethod
+    def write_fake_container(
+        path: Path,
+        body: str = "",
+        status_socket: str | None = None,
+    ) -> None:
+        status_socket = status_socket or "${CONTAINER_RUNTIME_DOCKER_SOCKET:?}"
+        path.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            'if [[ "$*" == "system status --format json" ]]; then\n'
+            f'  printf \'{{"engineSocket":"%s"}}\\n\' "{status_socket}"\n'
+            "  exit 1\n"
+            "fi\n"
+            'printf "%s\\n" "$*" >>"${CONTAINER_TEST_LOG:?}"\n'
+            + body,
+            encoding="utf-8",
+        )
+        path.chmod(0o755)
+
+    @staticmethod
+    def create_containerization_source(root: Path) -> tuple[Path, str]:
+        source = root / "containerization-source"
+        (source / "vminitd").mkdir(parents=True)
+        (source / ".gitignore").write_text(
+            ".build/\nvminitd/.build/\n",
+            encoding="utf-8",
+        )
+        (source / "Package.swift").write_text(
+            "// exact staged source fixture\n",
+            encoding="utf-8",
+        )
+        (source / "vminitd" / "Makefile").write_text(
+            "# source fixture\n",
+            encoding="utf-8",
+        )
+        for command in (
+            ["git", "init", "--quiet", str(source)],
+            ["git", "-C", str(source), "config", "user.email", "test@example.com"],
+            ["git", "-C", str(source), "config", "user.name", "Container Test"],
+            ["git", "-C", str(source), "add", "."],
+            ["git", "-C", str(source), "commit", "--quiet", "-m", "fixture"],
+        ):
+            subprocess.run(command, check=True, capture_output=True, text=True)
+        source_head = subprocess.run(
+            ["git", "-C", str(source), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        return source, source_head
+
     def test_rejects_invalid_runtime_inputs_before_service_side_effects(
         self,
     ) -> None:
@@ -53,33 +131,16 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 "container runtime app root exceeds the provider Unix socket path limit",
             ),
         ]
-        runtime_environment_names = (
-            "CONTAINER_RUNTIME_APP_ROOT",
-            "CONTAINER_RUNTIME_INIT_BLOCK_REPO",
-            "CONTAINERIZATION_INIT_SOURCE_PATH",
-            "CONTAINER_COMPOSE_INIT_IMAGE",
-            "CONTAINER_RUNTIME_INIT_IMAGE_TAR",
-            "CONTAINER_RUNTIME_BUILDER_IMAGE",
-            "CONTAINER_RUNTIME_BUILDER_IMAGE_TAR",
-            "CONTAINER_RUNTIME_BOOTSTRAP_IMAGE_TAR",
-        )
-
         for name, overrides, expected_error in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary_directory:
                 temporary_root = Path(temporary_directory)
                 container_log = temporary_root / "container.log"
                 fake_container = temporary_root / "container"
-                fake_container.write_text(
-                    "#!/usr/bin/env bash\n"
-                    'printf "%s\\n" "$*" >>"${CONTAINER_TEST_LOG:?}"\n',
-                    encoding="utf-8",
-                )
-                fake_container.chmod(0o755)
-                environment = os.environ.copy()
-                for variable in runtime_environment_names:
-                    environment.pop(variable, None)
+                self.write_fake_container(fake_container)
+                environment = self.runtime_environment()
                 environment.update(
                     {
+                        "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
                         "CONTAINER_TEST_LOG": str(container_log),
                         **overrides,
                     }
@@ -97,6 +158,244 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 self.assertIn(expected_error, result.stderr)
                 self.assertFalse(container_log.exists())
 
+    def test_scopes_candidate_namespace_and_exports_public_socket(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            container_log = temporary_root / "container.log"
+            contract_environment = temporary_root / "candidate-environment"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "CONTRACT_ENVIRONMENT": str(contract_environment),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/bin/sh",
+                    "-c",
+                    'printf "%s\\n%s\\n%s\\n%s\\n" '
+                    '"$CONTAINER_SERVICE_NAMESPACE" "$CONTAINER_APP_ROOT" '
+                    '"$CONTAINER_RUNTIME_DOCKER_SOCKET" '
+                    '"$CONTAINER_RUNTIME_DOCKER_HOST" >"$CONTRACT_ENVIRONMENT"',
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+            )
+
+            namespace_digest = hashlib.sha256(
+                f"{app_root}:{os.getuid()}".encode("utf-8")
+            ).hexdigest()[:24]
+            namespace = (
+                "io.github.stephenlclarke.container-compose.runtime."
+                f"{namespace_digest}"
+            )
+            socket_digest = hashlib.sha256(namespace.encode("utf-8")).hexdigest()[:24]
+            socket = (
+                f"/tmp/container-engine-{os.getuid()}-{socket_digest}/docker.sock"
+            )
+            self.assertEqual(
+                contract_environment.read_text(encoding="utf-8").splitlines(),
+                [namespace, str(app_root), socket, f"unix://{socket}"],
+            )
+            self.assertIn("system start", container_log.read_text(encoding="utf-8"))
+
+    def test_rejects_legacy_global_stop_helper_before_service_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            helper_marker = temporary_root / "legacy-helper-ran"
+            helper = temporary_root / "legacy-stop-helper"
+            helper.write_text(
+                "#!/usr/bin/env bash\n"
+                f'touch "{helper_marker}"\n',
+                encoding="utf-8",
+            )
+            helper.chmod(0o755)
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STOP_HELPER": str(helper),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("unsafe with isolated candidates", result.stderr)
+            self.assertFalse(helper_marker.exists())
+            self.assertFalse(container_log.exists())
+
+    def test_rejects_binary_without_isolated_status_socket_before_service_side_effects(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                status_socket=f"/tmp/container-engine-{os.getuid()}/docker.sock",
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("did not select the isolated Docker socket", result.stderr)
+            self.assertFalse(container_log.exists())
+
+    def test_rejects_dirty_init_source_before_service_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source, _ = self.create_containerization_source(temporary_root)
+            (source / "Package.swift").write_text(
+                "// dirty source fixture\n",
+                encoding="utf-8",
+            )
+            init_repo = temporary_root / "container"
+            init_repo.mkdir()
+            (init_repo / "Makefile").write_text("init-block:\n\t@true\n", encoding="utf-8")
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(init_repo),
+                    "CONTAINERIZATION_INIT_SOURCE_PATH": str(source),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("checkout must be clean before staging", result.stderr)
+            self.assertFalse(container_log.exists())
+
+    def test_stages_clean_init_source_and_separate_build_scratch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source, source_head = self.create_containerization_source(temporary_root)
+            (source / ".build" / "ModuleCache").mkdir(parents=True)
+            (source / ".build" / "ModuleCache" / "stale.pcm").touch()
+            (source / "vminitd" / ".build" / "ModuleCache").mkdir(
+                parents=True
+            )
+            (source / "vminitd" / ".build" / "ModuleCache" / "stale.pcm").touch()
+
+            app_root = temporary_root / "app-root"
+            init_repo = temporary_root / "container"
+            init_repo.mkdir()
+            source_stage_log = temporary_root / "source-stage.log"
+            source_stage_head = temporary_root / "source-stage-head"
+            (init_repo / "Makefile").write_text(
+                "init-block:\n"
+                '\t@printf "%s\\n%s\\n" "$(CONTAINERIZATION_INIT_SOURCE_PATH)" "$(CONTAINERIZATION_INIT_BUILD_SCRATCH_ROOT)" >"$(SOURCE_STAGE_LOG)"\n'
+                '\t@git -C "$(CONTAINERIZATION_INIT_SOURCE_PATH)" rev-parse HEAD >"$(SOURCE_STAGE_HEAD)"\n'
+                '\t@test ! -e "$(CONTAINERIZATION_INIT_SOURCE_PATH)/.build"\n'
+                '\t@test ! -e "$(CONTAINERIZATION_INIT_SOURCE_PATH)/vminitd/.build"\n',
+                encoding="utf-8",
+            )
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(init_repo),
+                    "CONTAINERIZATION_INIT_SOURCE_PATH": str(source),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "SOURCE_STAGE_LOG": str(source_stage_log),
+                    "SOURCE_STAGE_HEAD": str(source_stage_head),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+            )
+
+            staged_source = app_root / "source-inputs" / "containerization"
+            scratch_root = app_root / "source-build-cache"
+            self.assertEqual(
+                source_stage_log.read_text(encoding="utf-8").splitlines(),
+                [str(staged_source), str(scratch_root)],
+            )
+            self.assertEqual(
+                source_stage_head.read_text(encoding="utf-8").strip(), source_head
+            )
+            self.assertTrue((staged_source / ".git").is_dir())
+            self.assertFalse((staged_source / ".build").exists())
+            self.assertFalse((staged_source / "vminitd" / ".build").exists())
+            self.assertTrue(scratch_root.is_dir())
+            fingerprint = (
+                app_root / "fingerprints" / "containerization-init-source.txt"
+            ).read_text(encoding="utf-8")
+            self.assertIn(f"source_root={source.resolve()}", fingerprint)
+            self.assertIn(f"source_head={source_head}", fingerprint)
+            self.assertIn(f"staged_source_root={staged_source}", fingerprint)
+            self.assertIn(f"build_scratch_root={scratch_root}", fingerprint)
+
     def test_configures_default_init_image_only_after_build(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -108,13 +407,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             fake_bin = temporary_root / "fake-bin"
             fake_bin.mkdir()
             fake_container = fake_bin / "container"
-            fake_container.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                'printf "%s\\n" "$*" >>"${CONTAINER_TEST_LOG:?}"\n',
-                encoding="utf-8",
-            )
-            fake_container.chmod(0o755)
+            self.write_fake_container(fake_container)
             (init_repo / "Makefile").write_text(
                 "init-block:\n"
                 '\t@test ! -e "$(CONFIG_TEST_PATH)"\n'
@@ -125,7 +418,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 encoding="utf-8",
             )
             config_path = app_root / "xdg-config" / "container" / "config.toml"
-            environment = os.environ.copy()
+            environment = self.runtime_environment()
             environment.update(
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
@@ -180,13 +473,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             fake_bin = temporary_root / "fake-bin"
             fake_bin.mkdir()
             fake_container = fake_bin / "container"
-            fake_container.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                'printf "%s\\n" "$*" >>"${CONTAINER_TEST_LOG:?}"\n',
-                encoding="utf-8",
-            )
-            fake_container.chmod(0o755)
+            self.write_fake_container(fake_container)
 
             config_path = app_root / "xdg-config" / "container" / "config.toml"
             (init_repo / "Makefile").write_text(
@@ -194,7 +481,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 '\t@grep -F \'image = "local/builder:test"\' "$(CONFIG_TEST_PATH)"\n',
                 encoding="utf-8",
             )
-            environment = os.environ.copy()
+            environment = self.runtime_environment()
             environment.update(
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
@@ -240,19 +527,13 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             fake_bin = temporary_root / "fake-bin"
             fake_bin.mkdir()
             fake_container = fake_bin / "container"
-            fake_container.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                'printf "%s\\n" "$*" >>"${CONTAINER_TEST_LOG:?}"\n',
-                encoding="utf-8",
-            )
-            fake_container.chmod(0o755)
+            self.write_fake_container(fake_container)
             (init_repo / "Makefile").write_text(
                 "init-block:\n"
                 '\t@printf "init-block\\n" >>"$(CONTAINER_TEST_LOG)"\n',
                 encoding="utf-8",
             )
-            environment = os.environ.copy()
+            environment = self.runtime_environment()
             environment.update(
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
@@ -321,14 +602,8 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             fake_bin = temporary_root / "fake-bin"
             fake_bin.mkdir()
             fake_container = fake_bin / "container"
-            fake_container.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                'printf "%s\\n" "$*" >>"${CONTAINER_TEST_LOG:?}"\n',
-                encoding="utf-8",
-            )
-            fake_container.chmod(0o755)
-            environment = os.environ.copy()
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
             environment.update(
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
@@ -383,14 +658,8 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             init_archive.write_bytes(b"retained init image")
             container_log = temporary_root / "container.log"
             fake_container = temporary_root / "container-cli"
-            fake_container.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                'printf "%s\\n" "$*" >>"${CONTAINER_TEST_LOG:?}"\n',
-                encoding="utf-8",
-            )
-            fake_container.chmod(0o755)
-            environment = os.environ.copy()
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
             environment.update(
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
@@ -434,10 +703,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             container_log = temporary_root / "container.log"
             start_count = temporary_root / "start-count"
             fake_container = temporary_root / "container-cli"
-            fake_container.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                'printf "%s\\n" "$*" >>"${CONTAINER_TEST_LOG:?}"\n'
+            start_failure_body = (
                 'if [[ "$*" == *"system start"* ]]; then\n'
                 "  count=0\n"
                 '  if [[ -f "${CONTAINER_START_COUNT:?}" ]]; then\n'
@@ -452,11 +718,10 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 "fi\n"
                 'if [[ "$*" == "list --all --format json" ]]; then\n'
                 "  printf '[]\\n'\n"
-                "fi\n",
-                encoding="utf-8",
+                "fi\n"
             )
-            fake_container.chmod(0o755)
-            environment = os.environ.copy()
+            self.write_fake_container(fake_container, body=start_failure_body)
+            environment = self.runtime_environment()
             environment.update(
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
@@ -489,10 +754,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             container_log = temporary_root / "container.log"
             start_count = temporary_root / "start-count"
             fake_container = temporary_root / "container-cli"
-            fake_container.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                'printf "%s\\n" "$*" >>"${CONTAINER_TEST_LOG:?}"\n'
+            ping_timeout_body = (
                 'if [[ "$*" == *"system start"* ]]; then\n'
                 "  count=0\n"
                 '  if [[ -f "${CONTAINER_START_COUNT:?}" ]]; then\n'
@@ -501,17 +763,16 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 "  ((count += 1))\n"
                 '  printf "%s\\n" "$count" >"${CONTAINER_START_COUNT}"\n'
                 '  if [[ "$count" == "1" ]]; then\n'
-                '    printf \'Error: failed to get a response from apiserver: timeout: "XPC timeout for request to com.apple.container.apiserver/ping"\\n\' >&2\n'
+                '    printf \'Error: failed to get a response from apiserver: timeout: "XPC timeout for request to %s.apiserver/ping"\\n\' "${CONTAINER_SERVICE_NAMESPACE:?}" >&2\n'
                 "    exit 1\n"
                 "  fi\n"
                 "fi\n"
                 'if [[ "$*" == "list --all --format json" ]]; then\n'
                 "  printf '[]\\n'\n"
-                "fi\n",
-                encoding="utf-8",
+                "fi\n"
             )
-            fake_container.chmod(0o755)
-            environment = os.environ.copy()
+            self.write_fake_container(fake_container, body=ping_timeout_body)
+            environment = self.runtime_environment()
             environment.update(
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
