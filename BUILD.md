@@ -170,9 +170,9 @@ counts from the Swift Testing log.
 
 ### Isolated macOS Runtime Ownership
 
-Container's data root can be isolated, but its API server and plugin helpers use stable launchd/XPC service names in one namespace for the current macOS user. `make docker-compose-parity`, Current VHS publication, and other long-running Compose workflows therefore acquire the advisory host lock in `Tools/ci/container-runtime-lock.sh` before they stop, start, or replace the runtime.
+The default Container installation retains its stock launchd/Mach names, but an explicit validated `CONTAINER_SERVICE_NAMESPACE` now gives a candidate runtime its own API, Machine API, images, runtime, network, Engine, and public-socket ownership. `scripts/run-with-container-runtime.sh` derives a bounded namespace from its marker-protected candidate root and UID, verifies the namespace-derived socket before it starts services, and stops only that namespace. [RUNTIME-ISOLATED-PUBLIC-SOCKET-01](docs/parity/handoffs/RUNTIME-ISOLATED-PUBLIC-SOCKET-01.md) verifies one source-pinned public `docker version` lifecycle with the user-owned `devcontainer-engine` healthy before and after candidate cleanup.
 
-The default lock is `/tmp/container-compose-runtime-${UID}.lock`; `CONTAINER_RUNTIME_LOCK_FILE` changes it and `CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS` changes the default 10,800-second wait. The helper uses `lockf` on macOS and the equivalent `flock` file-descriptor lock in Linux source-check runners. Every cooperating workflow on the host must use the same lock path. A unique per-job lock defeats serialization, and an external repository or runner that does not acquire the lock can still replace the shared service while a Compose run owns it.
+The default lock is `/tmp/container-compose-runtime-${UID}.lock`; `CONTAINER_RUNTIME_LOCK_FILE` changes it and `CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS` changes the default 10,800-second wait. The helper uses `lockf` on macOS and the equivalent `flock` file-descriptor lock in Linux source-check runners. Every cooperating workflow on the host must use the same lock path. The lock remains required for legacy/default-namespace callers and controlled release workflows; it is no longer the only safety boundary for a correctly namespaced candidate. A unique per-job lock still defeats serialization for callers that share the default namespace.
 
 The parity harness also:
 
@@ -184,7 +184,7 @@ The parity harness also:
 
 This recovery is deliberately bounded. The Compose image adapter retries an idempotent pull exactly once for a typed recursive `ContainerizationError.interrupted`. It never blindly replays container deletion; an interrupted delete is accepted only when direct discovery confirms the container is absent. Other errors and unverifiable postconditions fail normally.
 
-For an authoritative same-host result, first coordinate or quiesce every self-hosted runner and local workflow that can operate Container under the same user. A momentarily idle runner is not proof of isolation because it can accept work during the suite. Restore any paused runner immediately after the controlled window.
+For an authoritative same-host result, use a unique namespace for every candidate and retain its source/dependency/binary/guest/root fingerprint. Coordinate or quiesce only legacy/default-namespace users that the selected validation path must intentionally share; never stop an unrelated user service merely because it is visible.
 
 Set `PARITY_EVIDENCE_DIR` to retain raw timing TSV, JUnit, runtime fingerprints, the human matrix, and a captured aggregate log in one named directory. `PARITY_REPETITIONS` controls equivalent fixture samples and `PARITY_TIMEOUT_SECONDS` bounds each timed operation. Keep the exact Container and Containerization revisions, host model, macOS version, Docker Compose/Engine versions, images, and warm/cold state with the result.
 

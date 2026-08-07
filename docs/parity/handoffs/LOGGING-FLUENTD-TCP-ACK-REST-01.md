@@ -2,7 +2,7 @@
 
 ## State
 
-`Handed off` — the Docker reference, fork-only source correction, focused transport suite, and focused coverage are checkpointed. This contract is not `Verified`: its required public-socket candidate run cannot safely begin while the user-owned `devcontainer-engine` occupies the shared Container launchd/XPC namespace.
+`Queued` — the Docker reference, fork-only source correction, focused transport suite, and focused coverage are checkpointed. [RUNTIME-ISOLATED-PUBLIC-SOCKET-01](RUNTIME-ISOLATED-PUBLIC-SOCKET-01.md) now proves a namespace-aware candidate can start and stop without interrupting the user-owned `devcontainer-engine`. This Fluentd contract remains unverified until its own public-socket candidates and timing evidence pass.
 
 ## User-visible contract
 
@@ -32,12 +32,12 @@ Two fresh exact-fingerprint candidate public-socket runs must match the retained
 
 ## Blocker criteria
 
-The current safety boundary is concrete. `/Users/sclarke/github/container-compose/scripts/run-with-container-runtime.sh` unconditionally calls `container system stop` before and after its candidate run. The current user-owned process is PID `64414`, `/opt/homebrew/opt/devcontainer/bin/devcontainer-engine`. `container system start --app-root` still registers the fixed `com.apple.container.apiserver`/Mach service, while `system stop` independently deregisters the shared engine label. An app-root-only candidate therefore is not isolated and could interrupt the user service. No candidate runtime or timing claim is made.
+The former app-root-only safety boundary is resolved for the namespace-aware runner: `CONTAINER_SERVICE_NAMESPACE` derives every candidate service label and socket, and `system stop` scopes enumeration to that namespace. A real Fluentd wire/ACK/lifecycle/authority/cleanup mismatch, a fingerprint assembly failure, or two evidence-based corrections remains a concrete blocker. Do not run this contract through the default namespace or infer its result from the runtime prerequisite.
 
 ## Safe handoff
 
-Keep `/private/tmp/container-rest-fluentd.default-host-v2.vGmC8z` and the earlier assertion-correction root `/private/tmp/container-rest-fluentd.default-host.X4Tui2`, both marker-protected; the fresh scratch root `/private/tmp/container-fluentd-scratch.pX2muF`; and the coverage root `/private/tmp/container-fluentd-coverage.8f9tZu`. Preserve the signed source and Compose commits above, the closed owned [Container issue #84](https://github.com/stephenlclarke/container/issues/84), and Slack START thread `1786108018.513159`. Resume only after the user has quiesced or a lower-runtime slice has isolated the shared launchd/XPC authority; begin with a new marker-protected candidate root and exact source/dependency/binary/guest/root fingerprint.
+Keep `/private/tmp/container-rest-fluentd.default-host-v2.vGmC8z` and the earlier assertion-correction root `/private/tmp/container-rest-fluentd.default-host.X4Tui2`, both marker-protected; the fresh scratch root `/private/tmp/container-fluentd-scratch.pX2muF`; and the coverage root `/private/tmp/container-fluentd-coverage.8f9tZu`. Preserve the signed source and Compose commits above, the closed owned [Container issue #84](https://github.com/stephenlclarke/container/issues/84), [the verified namespace prerequisite](RUNTIME-ISOLATED-PUBLIC-SOCKET-01.md), and Slack START thread `1786108018.513159`. Resume with a new marker-protected namespace-aware candidate root and exact source/dependency/binary/guest/root fingerprint.
 
 ## Documentation disposition
 
-`STATUS.md`, the Docker logging design/oracle, the slice ledger, this handoff, and issue #84 distinguish the fixed fork-only alias defect from the unverified public candidate. Apple `origin/main` has no Fluentd provider at this path, so no Apple-shaped issue or pull-request handoff is applicable.
+`STATUS.md`, the Docker logging design/oracle, the slice ledger, this handoff, and issue #84 distinguish the fixed fork-only alias defect from the still-unverified public candidate. The namespace prerequisite is verified, but no Fluentd result or performance claim changed. Apple `origin/main` has no Fluentd provider at this path, so no Apple-shaped issue or pull-request handoff is applicable.

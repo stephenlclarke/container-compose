@@ -6150,6 +6150,27 @@
       ]
     },
     {
+      "id": "container-compose-runtime-isolated-public-socket",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Pull Request: isolate candidate public Docker socket service ownership",
+      "state": "unsubmitted",
+      "lastVerified": "2026-08-07",
+      "commits": [
+        "40d109db071cd98f2b37300e417e478f00213b3c",
+        "c740a8f6a79ce176d03a941f49cdfe7350625a71"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-runtime-isolated-public-socket.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-runtime-isolated-public-socket.md"
+        }
+      ]
+    },
+    {
       "id": "container-compose-security-opt-apparmor-unconfined",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: accept unconfined AppArmor at the Compose boundary",

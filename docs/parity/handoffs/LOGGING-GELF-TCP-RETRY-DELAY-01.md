@@ -2,7 +2,7 @@
 
 ## State
 
-`Handed off` — the implementation and focused evidence are checkpointed, but this contract is not `Verified`: its required public-socket candidate proof would stop an unrelated user-owned `devcontainer-engine` in the shared Container launchd/XPC namespace. It extends the previously verified single-reconnect and zero-budget failure certificates without treating those narrow results as proof of the complete GELF retry matrix.
+`Queued` — the implementation and focused evidence are checkpointed, and [RUNTIME-ISOLATED-PUBLIC-SOCKET-01](RUNTIME-ISOLATED-PUBLIC-SOCKET-01.md) now verifies a candidate-only namespace/socket lifecycle with the user-owned `devcontainer-engine` healthy. This delayed-retry contract remains unverified until its own public-socket candidates and timing evidence pass; the prior single-reconnect and zero-budget certificates do not prove the complete GELF retry matrix.
 
 ## User-visible contract
 
@@ -37,11 +37,11 @@ The sealed Linux/arm64 service lane now passes `make test-gelf-service`: `gofmt`
 
 ## Blocker criteria
 
-If Docker does not yield a deterministic delayed-retry observable, or two evidence-based corrections leave a candidate mismatch unexplained, retain the oracle, exact fingerprints, failure logs, and this record as `Blocked` or `Handed off` rather than repeating runtime attempts. The current safe-boundary blocker is concrete: `pgrep -fl 'devcontainer-engine|container.*engine'` reports user-owned PID `64414` at `/opt/homebrew/opt/devcontainer/bin/devcontainer-engine`, while `scripts/run-with-container-runtime.sh` unconditionally calls `"$container_binary" system stop` in `stop_runtime`. Launching the isolated candidate now could disrupt that unrelated service, so no candidate or performance claim is made.
+If Docker does not yield a deterministic delayed-retry observable, or two evidence-based corrections leave a candidate mismatch unexplained, retain the oracle, exact fingerprints, failure logs, and this record as `Blocked` or `Handed off` rather than repeating runtime attempts. The former safety blocker is resolved only for namespace-aware candidates: `CONTAINER_SERVICE_NAMESPACE` scopes launchd/Mach labels and `system stop` to the selected root-derived namespace. A default-namespace candidate remains invalid evidence, and no candidate or performance claim is made yet.
 
 ## Safe handoff
 
-Keep all existing GELF evidence roots unchanged, including `/private/tmp/container-gelf-coverage.VDsD76` and the fresh Docker root `/private/tmp/container-rest-gelf.default-host.wG4HQt` (`.container-rest-gelf-root`, `result.json`, receiver streams, receiver result, and cleanup markers). The transient failed asset root `/private/tmp/container-gelf-service-swift.U9SXnz` was moved to Trash after its marker was verified; no retained evidence root was deleted. Preserve signed Container `45bbfb00542d9d91598356ce7dd8c3c6ad2be374`, Compose `c9660d308925ca1f72cb8ab8b72adbcc00a0de22`, the two local upstream handoff documents, and Slack START thread `1786082321.541849`. Resume only after the user explicitly quiesces or isolates the shared `devcontainer-engine` namespace; create a fresh marker-protected candidate root and fingerprint the exact source/dependency/binary/guest/root graph before the two candidate runs. Do not infer complete GELF or logging-driver closure from this slice.
+Keep all existing GELF evidence roots unchanged, including `/private/tmp/container-gelf-coverage.VDsD76` and the fresh Docker root `/private/tmp/container-rest-gelf.default-host.wG4HQt` (`.container-rest-gelf-root`, `result.json`, receiver streams, receiver result, and cleanup markers). The transient failed asset root `/private/tmp/container-gelf-service-swift.U9SXnz` was moved to Trash after its marker was verified; no retained evidence root was deleted. Preserve signed Container `45bbfb00542d9d91598356ce7dd8c3c6ad2be374`, Compose `c9660d308925ca1f72cb8ab8b72adbcc00a0de22`, the two local upstream handoff documents, [the verified namespace prerequisite](RUNTIME-ISOLATED-PUBLIC-SOCKET-01.md), and Slack START thread `1786082321.541849`. Resume with a fresh marker-protected namespace-aware candidate root and fingerprint the exact source/dependency/binary/guest/root graph before the two candidate runs. Do not infer complete GELF or logging-driver closure from this slice.
 
 ## Documentation disposition
 
