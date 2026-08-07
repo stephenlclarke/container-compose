@@ -47,9 +47,10 @@ socket returned `29.7.1|1.1.0|linux` both before and after cleanup.
 
 This closes only the lower-runtime service-ownership defect. It does not
 certify a logging driver, Compose project, general REST surface, or
-comparable-or-better performance. The next queued public contract is
-`LOGGING-FLUENTD-TCP-ACK-REST-01`, which must use a new exact-fingerprint
-namespace-aware root.
+comparable-or-better performance. `LOGGING-FLUENTD-TCP-ACK-REST-01` has since
+used two new exact-fingerprint namespace-aware roots and is narrowly Verified
+for cache-disabled Fluentd TCP/ACK behavior; that downstream result does not
+broaden this issue's scope or establish release performance.
 
 The durable contract record is
 [RUNTIME-ISOLATED-PUBLIC-SOCKET-01](../../parity/handoffs/RUNTIME-ISOLATED-PUBLIC-SOCKET-01.md).

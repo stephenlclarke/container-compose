@@ -46,4 +46,4 @@ All runtime-isolation completion criteria are met: the exact namespace/socket wa
 
 ## Next safe action
 
-`LOGGING-FLUENTD-TCP-ACK-REST-01` is now `Queued`, not `Verified`. Its next candidate must create a new marker-protected root, use this namespace-aware runner, retain the full logging fixture fingerprint, and compare its results and timing with the pinned Docker Fluentd oracle. Do not reuse this debug source-build run as logging or performance evidence.
+`LOGGING-FLUENTD-TCP-ACK-REST-01` is now `Verified` as a narrow consumer of this prerequisite: two new marker-protected namespace-aware roots passed its Docker TCP/ACK fixture and left the user runtime healthy. Their `6.525×` and `5.527×` timings are functional-only evidence, not a comparable-or-better performance result. The next logging contract must still use a new marker-protected root and its own Docker oracle; do not reuse this debug source-build run as logging or performance evidence.
