@@ -203,3 +203,9 @@ without this prerequisite failure, resume with a new exact-fingerprint GELF
 candidate and require two successful public-socket runs before verification.
 Container issue [#93](https://github.com/stephenlclarke/container/issues/93)
 owns this prerequisite and must be commented and closed with its focused proof.
+
+## 2026-08-08 prerequisite resolution
+
+`KERNEL-ARCHIVE-FRESH-RUNTIME-01` is now `Verified` as a separate bootstrap prerequisite. The original archive exception was observed while the local APFS volume had only `117M` available. After reclaiming 25 GB by removing only five identified marker-protected superseded build/cache roots, two independent new runtime roots installed the same pinned kernel and completed the isolated Docker CLI socket smoke test. The full fingerprints, terminal records, and v14 exit status are retained in [the kernel handoff](KERNEL-ARCHIVE-FRESH-RUNTIME-01.md).
+
+No Container, Containerization, Engine API, or Compose production source changed for that resolution. Container issue [#93](https://github.com/stephenlclarke/container/issues/93) should be closed as an environment-capacity incident, not treated as an upstream code fix. This GELF contract remains `Handed off`, not `Verified`: resume only with new exact-fingerprint roots and still require the two complete delayed-retry public-socket fixture results specified above. Performance optimisation remains deferred; a hang, timeout, or bounded-liveness failure remains blocking.

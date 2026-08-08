@@ -2,6 +2,17 @@
 
 This ledger is the durable, compact record for the one active Container-family vertical contract. It is not a capability claim or a second status register: [STATUS.md](../../STATUS.md) remains the single gap-only programme projection. A contract becomes `Verified` only after its stated executable acceptance evidence and a clean checkpoint exist; incomplete work is `Implemented`, `Blocked`, or `Handed off`.
 
+## KERNEL-ARCHIVE-FRESH-RUNTIME-01
+
+| Field | Record |
+| --- | --- |
+| State | `Verified` — lower-runtime bootstrap prerequisite; it does not claim logging-driver parity. |
+| Behaviour | A fresh marker-protected runtime root installs the configured kernel, serves an isolated Docker Engine socket to the ordinary Docker CLI, and stops cleanly. |
+| Exact inputs | Container `1f6b0057bdd1bfe0594c9b26391db388f54ff341`, Containerization `38d9c695e7a6915e5ce45d12c893dc323a661af7`, Engine API `afb8a8f68ed56829b669c95cbddb488a68dc9175`, package SHA-256 `2f806a9743da434ce41ac5a36564c3f48f3806252e33d801961e10dd853140ec`, and the exact guest/bootstrap/wrapper hashes in [the handoff](handoffs/KERNEL-ARCHIVE-FRESH-RUNTIME-01.md). |
+| Focused proof | Fresh roots `/private/tmp/ctr-kernel-v13` and `/private/tmp/ctr-kernel-v14` both installed `vmlinux-6.18.15-186`, returned the isolated Docker socket version, and completed within a bounded 180-second run; v14 records `exit_status=0`. |
+| Outcome | The apparent archive failure occurred with only `117M` free. Removing only five marker-protected superseded build/cache roots recovered 25 GB, after which two fresh roots passed. No maintained source changed; timing remains informational and no hang occurred. |
+| Safe handoff | The GELF delayed-retry contract is unblocked but remains `Handed off` until its two fresh full fixture candidates succeed. Preserve the evidence root and use new roots for that contract. |
+
 ## LOGGING-GELF-WIRE-01
 
 | Field | Record |
