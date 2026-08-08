@@ -2,14 +2,12 @@
 
 ## State
 
-`Blocked` — the Docker oracle and a first exact-fingerprint candidate
-identified a macOS native-host routing mismatch. Signed local Container
-`e188f9e8` maps the HTTP `host.docker.internal` connection route to loopback
-while retaining the Docker-visible HTTP authority. The production provider and
-its focused test target compile, and a direct local HEC probe reaches loopback
-while preserving that authority. The package-wide XCTest runner and a rebuilt
-runtime candidate cannot currently be linked safely with the available local
-disk headroom, so this is not `Verified`.
+`Verified` — signed local Container `e188f9e8` maps the HTTP
+`host.docker.internal` connection route to loopback while retaining the
+Docker-visible HTTP authority. The exact focused XCTest, signed package, and a
+fresh marker-protected isolated runtime candidate all passed. The candidate's
+normalized public result agrees with the pinned Docker oracle; no performance
+measurement is a completion gate for this contract.
 
 ## User-visible contract
 
@@ -39,13 +37,18 @@ the raw request file is mode `0600` within the mode `0700` root.
 
 ## Affected repositories and pins
 
-- `container-compose` local `main` fixture is signed
-  `39f1ad761be416cd2d932f104e20d45af92a566a`.
+- The Compose fixture was checked at pre-record checkpoint
+  `e03ba18af6e104cbf236b68467b890676b38ca57`; its bytes are SHA-256
+  `ae4ad90e7fdd74e6bf99867f7b3b684a546740ac1bd63722d074e3dc31fc569c`.
 - Matched Container source is signed
   `e188f9e8` on `upstream/docker-wait-acknowledgement-01`.
 - Existing detached compatible inputs are Containerization
   `38d9c695e7a6915e5ce45d12c893dc323a661af7` and Engine API
   `afb8a8f68ed56829b669c95cbddb488a68dc9175`.
+- The signed Homebrew candidate archive is SHA-256
+  `6674e402f308e1172bcd56b4c9aebc5a4302e8f83c02e437b679e543bdb6292b`.
+  Its CLI, API server, engine, logging runtime plugin, and guest/init archive
+  are listed in the retained candidate fingerprint.
 
 No remote, dependency pin, issue, PR, or upstream change is authorized.
 
@@ -62,57 +65,48 @@ No remote, dependency pin, issue, PR, or upstream change is authorized.
    `productionHTTPTransportRoutesDockerHostAliasNatively`, which asserts that a
    local loopback receiver is reached through the Docker host alias while the
    HTTP `Host` authority remains `host.docker.internal:<port>`.
-4. Exact `swift build --target ContainerLoggingProviders` passed in 97.66
-   seconds at `/private/tmp/splunk-hec-provider-build-01.D5QBmx`; exact
-   `swift build --target ContainerLoggingProvidersTests` passed in 93.04
-   seconds at
-   `/private/tmp/splunk-hec-provider-test-target-01.KSX09Q`. The latter
-   compiles the direct regression but does not execute XCTest.
-5. A focused `swift test --filter SplunkURLSessionTransportLoopbackTests` build
-   was started with the exact detached graph but consumed free disk from about
-   3.7 GiB to about 299 MiB before usable test output. Once the slice-owned
-   build had exited, `swift package clean` recovered about 3.4 GiB. A later
-   guarded retry reached the package-wide test link, where `ld` failed with
-   `errno=28 (No space left on device)` after free space fell to 181 MiB. This
-   is no passing-XCTest evidence.
-6. The marker-protected temporary-probe root
-   `/private/tmp/splunk-hec-alias-probe-01.lXf3au` builds the unmodified
-   `e188f9e8` provider plus a retained test-only executable patch. Its
-   redacted result records one `POST /services/collector/event/1.0`, a
-   preserved `Host: host.docker.internal:<port>` header, matching Splunk
-   authorization scheme/token, matching JSON body, and status `200`. The
-   temporary detached worktree has been removed and the active source worktree
-   is clean; this proves the corrected production route directly but is not a
-   packaged candidate certificate.
+4. The exact filtered XCTest passed at
+   `/private/tmp/splunk-hec-package-e188-01.djPh1c/focused-xctest.log`:
+   `SplunkURLSessionTransportLoopbackTests.productionHTTPTransportRoutesDockerHostAliasNatively`.
+5. `make homebrew-package` produced the signed archive above from the same
+   source/dependency graph. The extracted CLI, API server, engine, runtime
+   plugin, core-image plugin, network plugin, machine API server, and semantic
+   helper all passed `codesign --verify --strict`; their SHA-256 values are in
+   `/private/tmp/splunk-hec-package-e188-01.djPh1c/candidate-fingerprint.txt`.
+6. The fresh isolated candidate used app root
+   `/tmp/checr-e188-01.lDidfM`, guest/init archive SHA-256
+   `5d4201135affb9bb0ce34ebcb184551689a214d3118b75564a8fa498667d77f6`,
+   and fixture root
+   `/private/tmp/splunk-hec-package-e188-01.djPh1c/fixture`. It passed the
+   bounded public Docker-socket fixture. Its normalized result matches Docker
+   on driver, request count/path, authorization result, gzip setting, ordered
+   events, tag shape, exit state/code, and cleanup. Retained raw request data
+   remains mode `0600` inside a marker-protected root.
 
 ## Completion criteria
 
-- Restore enough local disk headroom for the package-wide XCTest link, then
-  pass `SplunkURLSessionTransportLoopbackTests`.
-- Package that exact binary and rerun one new marker-protected candidate so it
-  agrees with Docker on endpoint, authorization, decoded payload/order, exit
-  state, inspect driver projection, and owned cleanup.
-- The candidate exits cleanly and never hangs or exceeds a bounded liveness
-  timeout.
-- Any changed code has direct focused tests; coverage should approach 90% when
-  disk headroom permits instrumentation.
-- A clean signed local checkpoint records the evidence. Comparative performance
-  is intentionally deferred.
+- The exact focused XCTest passed.
+- The exact signed package passed one new marker-protected candidate agreement
+  check for endpoint, authorization, decoded payload/order, exit state, inspect
+  driver projection, and owned cleanup.
+- The candidate exited cleanly inside its five-minute liveness boundary.
+- The changed route has a direct focused regression. Coverage remains an
+  improvement target, not a functional completion gate for this contract.
+- The final documentation checkpoint records the evidence. Comparative
+  performance is intentionally deferred.
 
 ## Blocker criteria
 
-An exact-fingerprint mismatch, hang, timeout, cleanup failure, or a measured
-reference/candidate behavioral difference is blocking. Current blocking
-evidence is package-wide test linking with `errno=28`; the available 3.5 GiB
-headroom is insufficient. The probe's completed duration is not a performance
-gate. After two evidence-based corrections without a behavior or blocker-
-evidence delta, preserve the root and hand off instead of retrying.
+There is no active blocker. A future exact-fingerprint mismatch, hang, timeout,
+cleanup failure, or public reference/candidate behavioral difference blocks a
+successor immediately. Performance optimization and comparative timing are
+deferred unless a liveness failure appears.
 
 ## Safe handoff
 
-Retain the Docker root, first candidate root, signed source/fixture
-checkpoints, and the three focused-build/probe roots above. Do not modify the
-user-owned devcontainer runtime. Before a retry, confirm enough free disk for
-the package-wide test link and package rebuild, use new evidence and runtime
-roots, and prove one exact source/dependency/binary/guest/test fingerprint.
-The current slice START thread is `1786219786.154999`.
+Retain the Docker oracle, first failing candidate, final candidate root
+`/private/tmp/splunk-hec-package-e188-01.djPh1c`, signed source/fixture
+checkpoints, and isolated runtime root `/tmp/checr-e188-01.lDidfM`. The final
+runtime has stopped; its marker protects any later owned cleanup. Do not modify
+the user-owned devcontainer runtime or publish externally. The verification
+slice START thread is `1786221201.266729`.
