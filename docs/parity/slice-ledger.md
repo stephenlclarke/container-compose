@@ -472,6 +472,18 @@ liveness-bound breach would not be.
 | Evidence | Candidate observations were `alpha` `192.168.200.129/24` and `beta` `192.168.200.128/24`; both lie within `192.168.200.128/25`, the auxiliary `.130` is skipped, `alpha` retains `.129` through restart, and the project network is absent after `down`. Docker made the same bounded semantic observations, though service-to-address allocation order is not claimed as a cross-runtime invariant. |
 | Evidence | The evidence root's preflight and completion records have SHA-256 `6c5a2b9122ed0059dc795f313f4bb0e38e5e0e37a3f6c82be53ac68f3ddc0cc1` and `7fad85c52397946949456e867ae56e67189aaac1a70bd5f53c685834f0c614c6`; all recorded source-tree tracked/untracked hashes are empty. Candidate `up` is 3.355610 seconds versus Docker 0.363003 (9.24x); candidate restart/down are faster in the single sample. This is post-functional performance evidence, not comparable-or-better performance proof. |
 
+## NET-IPAM-STATIC-ENDPOINT-01
+
+| Field | Record |
+| --- | --- |
+| State | `Blocked` — the Docker reference is retained, but the unchanged normal Compose graph cannot compile a candidate. |
+| Behaviour | A static IPv4 endpoint inside the declared subnet but outside `ip_range` must create, inspect, survive restart, and clean up with its project network. |
+| Pinned Docker oracle | Same-MBP Docker Compose `5.4.0` / Engine `29.2.1`; `192.168.240.20` on subnet `192.168.240.0/24`, range `192.168.240.128/25`, and gateway `.1` passes all bounded lifecycle observations. |
+| Affected repositories and inputs | Compose `a9fa92be524c0e7bcb968b177e2bef9aa0d9ff1d`; locked Container `2a79b4553a342e33411666a88ad20ccd2ce46551`; locked Containerization `77f06d4c44341e04241941072fb69e2b85a6f5c1`; lock SHA-256 `a61f450629fb45e6e39c66ef725bc390cb413ee61fad60ce518d04952c786ef5`. |
+| Focused proof | The signed local locked Container object hydrates SwiftPM's disposable mirror while the tracked lock remains byte-identical. The focused static-endpoint test build then deterministically reaches `ContainerDiscoveryAdapter.swift:255`. |
+| Blocker | Locked Container makes `Attachment.ipv4Address` a mandatory `CIDRv4`; Compose's verified IPv6-only-capable adapter requires an optional address. The previously proven compatible local Container `d7e5f5ddd831e0fe0cf025d606f1d2622eb6a4d2` and Containerization `cfb00bbf3523079fe2ab9fb6b8e9b3504eff77e5` are not remotely fetchable, so they cannot be silently substituted as normal-graph proof. |
+| Safe handoff | Preserve [the focused handoff](handoffs/NET-IPAM-STATIC-ENDPOINT-01.md), the marker-protected Docker/build root, and Slack START thread `1786222932.328589`; publish one coherent lower stack and rerun without reducing IPv6-only support. |
+
 ## CONTAINER-BUILD-PROGRESS-COMPLETION-01
 
 | Field | Record |
