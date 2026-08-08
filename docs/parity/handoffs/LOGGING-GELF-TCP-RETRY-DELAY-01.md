@@ -201,3 +201,5 @@ failure independently, preserving `/private/tmp/ctr-gelf-v10`, `v11`, `v12`,
 and `/private/tmp/ctr-gelf-vsock-build-03`. Once a fresh runtime can start
 without this prerequisite failure, resume with a new exact-fingerprint GELF
 candidate and require two successful public-socket runs before verification.
+Container issue [#93](https://github.com/stephenlclarke/container/issues/93)
+owns this prerequisite and must be commented and closed with its focused proof.
