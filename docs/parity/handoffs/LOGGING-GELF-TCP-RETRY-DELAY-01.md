@@ -170,3 +170,34 @@ This handoff and the slice ledger distinguish functional verification from the
 later performance programme. They record the exact failed candidate fingerprints
 and the now-implemented diagnostic and wait-liveness checkpoints; they do not
 claim complete GELF or logging-driver closure.
+
+## 2026-08-08 blocker checkpoint
+
+Container `1f6b0057bdd1bfe0594c9b26391db388f54ff341` (signed local
+`upstream/docker-wait-acknowledgement-01`) adds a redacted GELF startup error
+projection through the XPC boundary. Its focused
+`ContainerLoggingStartErrorTests` proof passed 6/6 against clean local
+Containerization `38d9c695e7a6915e5ce45d12c893dc323a661af7` and Engine API
+`afb8a8f68ed56829b669c95cbddb488a68dc9175`; the existing focused wire suite
+passed 11/11 at the preceding signed diagnostic checkpoint `00279506`.
+
+The fresh package SHA-256 was
+`2f806a9743da434ce41ac5a36564c3f48f3806252e33d801961e10dd853140ec`; the
+embedded GELF service OCI SHA-256 was
+`b0e541ebdfb974c2d2d260803a0677b754471598b9069ac91d5cebec132ed569`.
+Candidate roots `v10` and `v11` reached protected-service materialization but
+did not write a fixture result. The terminal-recorded, marker-protected `v12`
+candidate (`/private/tmp/ctr-gelf-vsock-build-03/candidate-v12.terminal.log`)
+identified the current lower-runtime blocker before Docker could create the
+GELF container: `container system start --enable-kernel-install` aborted at
+`2026-08-08T17:42:22.461Z` with `unable to open the archive, code -30` during
+kernel installation. Its receiver never began, so the result is neither a
+GELF failure nor a parity result. The bounded 180-second run exited promptly;
+this is not a performance finding or a hang.
+
+Do not retry the same fresh-root kernel-download path in this GELF slice.
+Investigate the `KernelSet.downloadAndInstallWithProgressBar` archive-open
+failure independently, preserving `/private/tmp/ctr-gelf-v10`, `v11`, `v12`,
+and `/private/tmp/ctr-gelf-vsock-build-03`. Once a fresh runtime can start
+without this prerequisite failure, resume with a new exact-fingerprint GELF
+candidate and require two successful public-socket runs before verification.
