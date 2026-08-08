@@ -31,8 +31,8 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
 
     private let copyIntoOperation: CopyInto
     private let copyFromOperation: CopyFrom
-    private let copyArchiveIntoOperation: CopyArchiveInto
-    private let copyArchiveFromOperation: CopyArchiveFrom
+    private let copyArchiveIntoOperation: CopyArchiveInto?
+    private let copyArchiveFromOperation: CopyArchiveFrom?
 
     public init(
         copyInto: @escaping CopyInto = { id, source, destination, options in
@@ -54,24 +54,8 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
                 preserveOwnership: options.preserveOwnership,
             )
         },
-        copyArchiveInto: @escaping CopyArchiveInto = { id, archive, destination, options in
-            try await ContainerClient().copyIn(
-                id: id,
-                archive: archive,
-                destination: destination,
-                createParents: true,
-                preserveOwnership: options.preserveOwnership,
-            )
-        },
-        copyArchiveFrom: @escaping CopyArchiveFrom = { id, source, archive, copyContents, options in
-            try await ContainerClient().copyOut(
-                id: id,
-                source: source,
-                archive: archive,
-                followSymlink: options.followSymlink,
-                copyContents: copyContents,
-            )
-        },
+        copyArchiveInto: CopyArchiveInto? = nil,
+        copyArchiveFrom: CopyArchiveFrom? = nil,
     ) {
         copyIntoOperation = copyInto
         copyFromOperation = copyFrom
@@ -127,7 +111,18 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
         destination: String,
         options: ContainerCopyTransferOptions = ContainerCopyTransferOptions(),
     ) async throws {
-        try await copyArchiveIntoOperation(id, archive, destination, options)
+        if let copyArchiveIntoOperation {
+            try await copyArchiveIntoOperation(id, archive, destination, options)
+            return
+        }
+
+        try await copyArchiveIntoContainer(
+            id: id,
+            archive: archive,
+            destination: destination,
+            options: options,
+            temporaryDirectory: FileManager.default.temporaryDirectory,
+        )
     }
 
     /// Streams a service container path as an archive through `ContainerClient`.
@@ -138,7 +133,19 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
         copyContents: Bool = false,
         options: ContainerCopyTransferOptions = ContainerCopyTransferOptions(),
     ) async throws {
-        try await copyArchiveFromOperation(id, source, archive, copyContents, options)
+        if let copyArchiveFromOperation {
+            try await copyArchiveFromOperation(id, source, archive, copyContents, options)
+            return
+        }
+
+        try await copyFromContainerAsArchive(
+            id: id,
+            source: source,
+            archive: archive,
+            copyContents: copyContents,
+            options: options,
+            temporaryDirectory: FileManager.default.temporaryDirectory,
+        )
     }
 
     /// Streams service container files directly between native copy APIs.
@@ -151,21 +158,21 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
                     defer { try? writer.close() }
-                    try await copyArchiveFromOperation(
-                        sourceID,
-                        archiveSource.path,
-                        writer,
-                        archiveSource.copyContents,
-                        options,
+                    try await copyFromContainerAsArchive(
+                        id: sourceID,
+                        source: archiveSource.path,
+                        archive: writer,
+                        copyContents: archiveSource.copyContents,
+                        options: options,
                     )
                 }
                 group.addTask {
                     defer { try? reader.close() }
-                    try await copyArchiveIntoOperation(
-                        destinationID,
-                        reader,
-                        destination,
-                        destinationOptions,
+                    try await copyArchiveIntoContainer(
+                        id: destinationID,
+                        archive: reader,
+                        destination: destination,
+                        options: destinationOptions,
                     )
                 }
                 do {

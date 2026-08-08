@@ -88,10 +88,7 @@ public extension ComposeRuntimeCopying {
         try ComposeTemporaryFiles.createDirectory(at: extractedRoot)
 
         let reader = try ArchiveReader(file: archiveFile)
-        let rejectedPaths = try reader.extractContents(
-            to: extractedRoot,
-            preserveOwnership: options.preserveOwnership,
-        )
+        let rejectedPaths = try reader.extractContents(to: extractedRoot)
         try ComposeTemporaryFiles.secureDirectory(at: extractedRoot)
         if !rejectedPaths.isEmpty {
             throw ComposeError.invalidProject("cp '-': archive contains unsafe paths: \(rejectedPaths.sorted().joined(separator: ", "))")
