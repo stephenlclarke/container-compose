@@ -482,7 +482,7 @@ liveness-bound breach would not be.
 | Affected repositories and inputs | Compose `a9fa92be524c0e7bcb968b177e2bef9aa0d9ff1d`; locked Container `2a79b4553a342e33411666a88ad20ccd2ce46551`; locked Containerization `77f06d4c44341e04241941072fb69e2b85a6f5c1`; lock SHA-256 `a61f450629fb45e6e39c66ef725bc390cb413ee61fad60ce518d04952c786ef5`. |
 | Focused proof | The signed local locked Container object hydrates SwiftPM's disposable mirror while the tracked lock remains byte-identical. The focused static-endpoint test build then deterministically reaches `ContainerDiscoveryAdapter.swift:255`. |
 | Blocker | Locked Container makes `Attachment.ipv4Address` a mandatory `CIDRv4`; Compose's verified IPv6-only-capable adapter requires an optional address. The previously proven compatible local Container `d7e5f5ddd831e0fe0cf025d606f1d2622eb6a4d2` and Containerization `cfb00bbf3523079fe2ab9fb6b8e9b3504eff77e5` are not remotely fetchable, so they cannot be silently substituted as normal-graph proof. |
-| Safe handoff | Preserve [the focused handoff](handoffs/NET-IPAM-STATIC-ENDPOINT-01.md), the marker-protected Docker/build root, and Slack START thread `1786222932.328589`; publish one coherent lower stack and rerun without reducing IPv6-only support. |
+| Safe handoff | Preserve [the focused handoff](handoffs/NET-IPAM-STATIC-ENDPOINT-01.md), the marker-protected Docker/build root, open [container-compose issue #208](https://github.com/stephenlclarke/container-compose/issues/208), and Slack START thread `1786222932.328589`; publish one coherent lower stack and rerun without reducing IPv6-only support. |
 
 ## CONTAINER-BUILD-PROGRESS-COMPLETION-01
 
