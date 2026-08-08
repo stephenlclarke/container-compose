@@ -2,11 +2,12 @@
 
 ## State
 
-`Implemented` — the generic Container component now fails closed before local
+`Implemented` — the generic Container component fails closed before local
 volume allocation, with a signed local source checkpoint and focused proof.
-This is not yet `Verified`: the current source graph has no Engine-volume
-adapter, so an exact-fingerprint public Docker Engine REST/CLI candidate cannot
-be assembled truthfully yet.
+Its former missing public Engine adapter is now implemented by
+[ENGINE-VOLUME-CREATE-ROUTE-01](ENGINE-VOLUME-CREATE-ROUTE-01.md). Neither
+contract is `Verified` until a dependency-compatible full-service/guest
+fingerprint and public candidate exist.
 
 ## User-visible contract
 
@@ -35,21 +36,16 @@ twelve seconds with no volume record; it did not hang.
 
 ## Affected repositories and inputs
 
-- `container-compose` `main` is at
-  `3e16c8ea74953a531d03f3b59aa02e45641e543c`; this handoff is its parity
-  evidence record and does not move a package pin.
 - `container` is the local Apple-shaped branch
   `upstream/volume-driver-fail-closed-01` at signed commit
   `fcec20e20a34b9e8b9a8cf2b23823ce8a065cdb4`.
-- The tested Container `Package.resolved` SHA-256 is
-  `61cee1f284cca13e99a042c8cb716e1d962b2e826c64ef6541f07c168f64ebc5`.
-- No Containerization or Engine API source/pin changes are part of this
-  implementation checkpoint.
-- This Container package manifest has no `container-engine-api` dependency or
-  `container-engine` product. The retained public-socket branch has 207 unique
-  commits beyond this source base and its Engine route ledger declares
-  `VolumeCreate` but defaults it to unimplemented; it contains no volume
-  backend/handler.
+- The public integration successor is signed Container
+  `8b7c0ef8a911288783883b18b2519225829c4e21` and signed Engine API
+  `987f05119c0fd6cc8e17c707ffd0c94fbd7d997e`, both on dedicated local
+  `upstream/engine-volume-create-route-01` worktrees.
+- The successor’s exact focused graph uses local Containerization
+  `ecb2ac5099a8521f02c248870fa6dd7aa7518465`; the checked-in pin remains
+  `77f06d4c44341e04241941072fb69e2b85a6f5c1`. No published pin moved.
 
 ## Focused proof
 
@@ -61,65 +57,46 @@ swift test --filter VolumeDriverResolutionTests
 swift test --enable-code-coverage --filter VolumeDriverResolutionTests
 ```
 
-The focused suite passed four tests. It proves built-in local-driver
+The original four-test component suite proves built-in local-driver
 normalization, unavailable-driver rejection, zero local volume-directory
-allocation even with an otherwise-invalid size option, and a successful
-ext4-backed local volume. The instrumented run covers every changed production
-line in `VolumesService.swift`; the wider existing file is below the global
-coverage target and remains visible rather than being inflated with low-value
-tests.
-
-The Engine prerequisite was inspected without starting a candidate: the route
-ledger declares `/volumes/create`, but the current public controller has no
-`VolumeCreate` implementation or volume backend protocol. That is a concrete
-missing integration capability, not a failed runtime result or a performance
-finding.
+allocation despite an invalid size option, and a successful ext4-backed local
+volume. The successor adds seven native authority/route/CLI tests, two adapter
+tests, three Engine volume tests, and five gateway tests. Its unmodified Docker
+CLI test uses only a disposable candidate Unix socket and proves no allocation
+or native residue; see the successor handoff for exact commands, fingerprints,
+cleanup, and the coverage disposition.
 
 ## Completion criteria
 
-- A fresh marker-protected Docker oracle retains the failure phase, absence of
-  the volume, and raw duration.
-- A coherent Engine-volume adapter advertises `VolumeCreate`, calls the same
-  `VolumesService` authority, and maps driver-resolution errors at the Docker
-  provider-resolution phase before a candidate is assembled.
-- An isolated candidate then binds its source SHA, dependency revisions, built
-  binary, guest/init image, and disposable root into one exact fingerprint.
-- The same unmodified Docker CLI and Engine REST path fails before local
-  allocation, exposes no inspectable volume, leaves no residue, and completes
-  within the explicit liveness bound.
-- The candidate error is mapped at the Docker-compatible provider-resolution
-  phase and the Container and Compose evidence checkpoints are clean and
-  signed.
+- Make the normal Container dependency graph compatible, then build one fresh
+  full `container-engine` candidate that fingerprints source, dependencies,
+  binary/archive, guest/init images, fixture, and a marker-protected root.
+- The public Docker CLI and REST path must fail before allocation, leave no
+  inspectable/native residue, and complete within its liveness bound.
+- Refresh a responsive Docker oracle before claiming any additional raw
+  error-envelope detail. Keep source/evidence checkpoints clean and signed.
 
 ## Blocker criteria and next safe action
 
-An unexpected hang, timeout, or liveness-bound breach is an immediate blocker.
-The missing Engine-volume adapter is the current prerequisite: do not build a
-candidate from this graph and call the resulting unimplemented route a volume
-test. First land the coherent adapter against a dependency-compatible public
-socket stack. If a later exact candidate does not expose the underlying
-driver-resolution error, add a narrow typed diagnostic at that mapping boundary
-before a second runtime attempt. Do not retry after two evidence-based
-corrections without new causal evidence.
-
-The next safe action is the `ENGINE-VOLUME-CREATE-ROUTE-01` implementation:
-land one Engine-volume backend/route through the selected Container authority,
-then build a fresh candidate in a marker-protected root, write its complete
-fingerprint before start, and run the unavailable-driver Docker CLI/REST
-fixture once. Do not call this contract `Verified` before that evidence exists.
+A candidate hang, timeout, liveness-bound breach, fingerprint mismatch, or
+cleanup failure is an immediate blocker. The missing Engine-volume adapter is
+closed; do not repeat source-only implementation work. Build only one fresh
+dependency-compatible candidate after its complete fingerprint is written. If
+it fails without causal evidence after two corrections, hand it off rather than
+looping.
 
 ## Safe handoff
 
-Preserve the signed Container commit, the upstream handoff pair
-`docs/upstream/ISSUE-90.md` and `docs/upstream/PR-90.md`, and the issue #90
-comment. No candidate root has been assembled yet, so a later runtime attempt
-must create a new marker-protected disposable root rather than reuse an
-untracked directory. Keep issue #90 open until the public-boundary acceptance
-evidence exists.
+Preserve signed Container `fcec20e`, signed Container `8b7c0ef`, signed Engine
+API `987f051`, the upstream handoff pair `docs/upstream/ISSUE-90.md` and
+`docs/upstream/PR-90.md`, and issue #90. A later runtime attempt must create a
+new marker-protected disposable root rather than reuse an untracked directory.
+Keep issue #90 open until the full public-boundary acceptance evidence exists.
 
 ## Documentation disposition
 
-The gap-only `STATUS.md` is intentionally unchanged. This record distinguishes
-an implemented fail-closed provider boundary from full non-local-volume or
-Docker Engine runtime support, and records performance only as later design
-and evidence work.
+`STATUS.md`, the gap-only ledger, and the volume/socket design now link the
+implemented public route to its remaining full-service gap. This record still
+distinguishes an implemented fail-closed provider boundary from full
+non-local-volume or Docker Engine runtime support, and treats performance as
+later design/evidence work unless liveness fails.
