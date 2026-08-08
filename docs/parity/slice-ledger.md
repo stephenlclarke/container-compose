@@ -484,6 +484,17 @@ liveness-bound breach would not be.
 | Blocker | Locked Container makes `Attachment.ipv4Address` a mandatory `CIDRv4`; Compose's verified IPv6-only-capable adapter requires an optional address. The previously proven compatible local Container `d7e5f5ddd831e0fe0cf025d606f1d2622eb6a4d2` and Containerization `cfb00bbf3523079fe2ab9fb6b8e9b3504eff77e5` are not remotely fetchable, so they cannot be silently substituted as normal-graph proof. |
 | Safe handoff | Preserve [the focused handoff](handoffs/NET-IPAM-STATIC-ENDPOINT-01.md), the marker-protected Docker/build root, open [container-compose issue #208](https://github.com/stephenlclarke/container-compose/issues/208), and Slack START thread `1786222932.328589`; publish one coherent lower stack and rerun without reducing IPv6-only support. |
 
+## LOGGING-SYSLOG-UNIX-REST-01
+
+| Field | Record |
+| --- | --- |
+| State | `Blocked` — Docker's create-time Unix-path behavior is retained and the source correction is committed, but the unchanged normal lower graph cannot run its focused executable proof. |
+| Behaviour | Docker refuses missing `unix://` and `unixgram://` Syslog addresses during `create`, leaving no container residue. |
+| Exact inputs | Docker CLI `29.7.1` / Engine `29.2.1`; Container base `e188f9e80583d705e57bb91353017df6af3ad1d2`, signed correction `52da6f47afe89c58df9e42f960aa52775ae865a4`; Containerization `38d9c695e7a6915e5ce45d12c893dc323a661af7`; Engine API `afb8a8f68ed56829b669c95cbddb488a68dc9175`. |
+| Focused proof | The same-MBP Docker oracle rejects both forms at create with `stat ...: no such file or directory`; `swift build --target ContainerLoggingProvidersTests` compiles the changed code and regression. |
+| Blocker | Full focused execution fails before Syslog compilation can link because the locked normal graph lacks `WorkloadNetworkEndpoint`. A public-socket candidate would therefore lack one exact source/dependency/binary/guest/root fingerprint. The root cause is functional graph composition, not performance. |
+| Safe handoff | Use [the detailed handoff](handoffs/LOGGING-SYSLOG-UNIX-REST-01.md), open [Container issue #94](https://github.com/stephenlclarke/container/issues/94), and Slack START thread `1786223959.488079`. Publish one coherent lower stack, rebuild, then rerun the unchanged focused test and REST fixture without masking the dependency mismatch. |
+
 ## CONTAINER-BUILD-PROGRESS-COMPLETION-01
 
 | Field | Record |
