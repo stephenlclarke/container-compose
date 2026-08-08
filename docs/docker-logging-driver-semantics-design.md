@@ -1175,6 +1175,13 @@ These are not injected into Docker inspect fields. Logging session health uses t
 
 The default `json-file` and explicit `local` paths remain host-native and add no provider process, cloud SDK, or extra record copy beyond framing and the single canonical writer. `none` performs no persistence. Capability manifests are cached by `providerGeneration`. Remote/provider service workloads start only when selected; they reuse the already foundational Engine Linux sandbox.
 
+The matrix is designed with the implementation, but is a post-functional
+optimization and release-quality phase. A behavior contract may be
+`Verified` once its Docker oracle and exact functional evidence pass even when
+the corresponding performance row has not run or does not yet meet its target.
+An unexpected hang, timeout, or liveness-bound breach remains a functional
+blocker and must be fixed before that contract can be verified.
+
 Paired warmed/cold benchmarks record median and P95 for:
 
 - detached and attached startup to first output;
@@ -1187,7 +1194,12 @@ Paired warmed/cold benchmarks record median and P95 for:
 - 1/10/50-service foreground aggregation; and
 - idle Container/provider CPU and RSS.
 
-The representative logging lane must be comparable to or better than Docker Compose in each metric's declared direction outside the noise band. Behavioural parity and performance are reported separately with raw samples, environment, repetitions, timeouts, and comparison method.
+When the post-functional release-optimization phase begins, the representative
+logging lane must be comparable to or better than Docker Compose in each
+metric's declared direction outside the noise band. Behavioural parity and
+performance are reported separately with raw samples, environment, repetitions,
+timeouts, and comparison method; only a liveness failure blocks the preceding
+functional certificate.
 
 The current `docker-compose-performance-matrix` implements the warm fixed-work subset for detached and attached startup to first readable log, stdout/stderr/mixed small records, exact 16 KiB and 1 MiB records, blocking slow-sink backpressure, 64 KiB/1 MiB/4 MiB non-blocking buffers with observed-drop assertions, compressed `json-file` and `local` rotation writes with exact retained reads, tail 10/1,000/all, exact since/until boundaries, follow across forced rotation, dual-cache remote delivery/read, and 1/10/50-service foreground aggregation. It alternates Docker-first and candidate-first repetitions, records schedule position and direction in the raw TSV, retains semantic output digests and sink summaries, requires every declared fixture/repetition, and reports median/P95 ratios with a configurable noise band separately from the 10× regression guard. Cold runtime resets, provider/Container CPU/RSS/I/O and fsync collectors, idle resource sampling, production remote-provider lanes, and release-artefact runs remain required before the performance contract is complete.
 
@@ -1201,7 +1213,10 @@ The current `docker-compose-performance-matrix` implements the warm fixed-work s
 | [Shared namespaces and privileged isolation](shared-namespaces-privileged-isolation-design.md) | Protected service namespaces, per-workload identity, and the explicit privileged Linux-host boundary. | Required for binary-compatible Linux plugins and journald, not for core file drivers. |
 | [Model-runner services](model-runner-services-design.md) | Runner stdout/stderr and health may reuse low-level bounded buffering, redaction, rotation, and metrics primitives only. They remain protected host diagnostics with their own sequence/retention, never service logging-driver streams or the container event journal. | Shared diagnostic primitives may land first; the two public lifecycle/logging models remain separate. |
 
-No initial Containerization change is a prerequisite. A cancellable/fair writer extension is added only if the blocking/non-blocking performance and shutdown oracles prove the pinned synchronous callback cannot meet the contract.
+No initial Containerization change is a prerequisite. After functional
+verification, a cancellable/fair writer extension is added only if the
+blocking/non-blocking performance and shutdown oracles prove the pinned
+synchronous callback cannot meet the release-performance contract.
 
 ## Implementation Work Packages
 
@@ -1217,7 +1232,7 @@ No initial Containerization change is a prerequisite. A cancellable/fair writer 
 | <a id="logging-wp-08"></a>`LOGGING-WP-08` | Shared Engine API and lifecycle | Map info/inspect/logs/attach/framing/events to the same controller and event journal. | Docker CLI, Compose V5, Testcontainers, devcontainer, and native clients see one state/read source. |
 | <a id="logging-wp-09"></a>`LOGGING-WP-09` | `container-compose` | Switch production service create/run from lossy CLI projection to typed API and enable each driver only when negotiated. | Real `up`, `run`, `logs`, `attach`, recreate, and `none` foreground tests pass. |
 | <a id="logging-wp-10"></a>`LOGGING-WP-10` | `devcontainer`, gateway, and `container` | Prepare one immutable `.logging` payload containing provider-neutral request/history and ordered protected entries, keep the protected import map in a logging-controller staging receipt with only `stagedImportReceiptDigestSHA256` in the common record, make resolution dispositions final before signing, re-resolve destination state, and separate signed commit authorisation, reconciling-time promotion, and Complete visibility. | Multiple protected entries use one bundle object, retries return one protected destination-reference receipt without references in the generic record, generic tombstones remain in `identityLifecycleEvents`, a newly discovered signed-manifest failure compensates and uses a new token/manifest, verified history stays private until Complete and remains readable without replay/events, no active session imports, and interrupted handoff is recoverable. |
-| <a id="logging-wp-11"></a>`LOGGING-WP-11` | Whole stack | Security review, migration rehearsal, same-host performance matrix, docs/status, stack pins, release and rollback. | No secret/path leak, no orphan session/file/FIFO, comparable performance, exact published heads/assets. |
+| <a id="logging-wp-11"></a>`LOGGING-WP-11` | Whole stack | Post-functional security review, migration rehearsal, same-host performance matrix, docs/status, stack pins, release and rollback. | No secret/path leak, no orphan session/file/FIFO, comparable performance, exact published heads/assets. This is a release-quality gate, not a prerequisite for an otherwise complete functional contract; liveness failures remain functional blockers. |
 
 ## Required Test and Evidence Matrix
 
