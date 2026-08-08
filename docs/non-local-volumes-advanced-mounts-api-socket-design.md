@@ -2,16 +2,16 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Design complete; implementation in progress—the neutral Engine API 0.3.5 and signed local matched stack now provide the public gateway, logs/inspect/info/hijack/WebSocket/resize, discovery, and unauthenticated image pull/tag/delete; registry credentials, push/build sessions, full route closure, socket grants, volume providers, advanced mounts, devcontainer adoption, and `use_api_socket` remain |
+| Status | Design complete; implementation in progress—the neutral Engine API 0.3.5 and signed local matched stack now provide the public gateway, logs/inspect/info/hijack/WebSocket/resize, discovery, and unauthenticated image pull/tag/delete. The signed volume-driver fail-closed checkpoint is `Implemented`; a missing Engine-volume adapter prevents public proof. Registry credentials, push/build sessions, full route closure, socket grants, full volume providers, advanced mounts, devcontainer adoption, and `use_api_socket` remain. |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, first-class `devcontainer`, the runtime-neutral `container-engine-api`, and the common Engine Linux sandbox |
 | Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
-| Matched Container checkpoints | Image mutation `259878a427de7021b52e40e759d3b261150cc514`; earlier enhanced authority and public gateway work is retained in its history |
+| Matched Container checkpoints | Image mutation `259878a427de7021b52e40e759d3b261150cc514`; fail-closed volume-driver component `fcec20e20a34b9e8b9a8cf2b23823ce8a065cdb4` is `Implemented` pending public Engine proof; earlier enhanced authority and public gateway work is retained in history |
 | Matched Containerization checkpoints | Exact image-mutation runtime `38d9c695e7a6915e5ce45d12c893dc323a661af7`; published provenance `77f06d4c44341e04241941072fb69e2b85a6f5c1` |
 | Matched Engine API checkpoint | Image-mutation routes and neutral contract `4949e743675f00ec102f7acacdb4e990409e383f` |
 | Original devcontainer evidence | `b31e80b2b9c09ecc73bb3badf9cd5cf16550a538`; implementation extraction requires a clean reviewed accepted head |
 | Design date | 31 July 2026 |
-| Last implementation review | 5 August 2026 |
+| Last implementation review | 7 August 2026 |
 
 ## Goal
 
@@ -25,7 +25,7 @@ Close the non-local volume, advanced mount, and `use_api_socket` row in [STATUS.
 - applies `use_api_socket` as Docker Compose's exact project transformation, including the Docker socket, resolved credential snapshot, config target, and `DOCKER_CONFIG` rule;
 - exposes that socket through a user-owned Docker-compatible Engine API backed by the same Container runtime state used by Container Compose and devcontainer;
 - treats API-socket access as engine-administrator-equivalent authority and gives every socket and credential artifact a bounded, auditable lifecycle; and
-- remains comparable to or better than Docker Compose on the maintained same-host storage, mount, API, and lifecycle matrices.
+- records the maintained same-host storage, mount, API, and lifecycle workloads and raw durations during functional work, then completes comparable-or-better optimisation in the post-functional performance phase; a hang, timeout, or liveness-bound breach blocks functional acceptance.
 
 The compatibility contract is observable Docker Compose and Docker Engine behavior on the pinned reference stack. It is not an assertion that Apple's storage architecture must match Docker's internal implementation.
 
@@ -70,7 +70,7 @@ This is a cross-repository gap. Passing more strings from Compose cannot close i
 | Compose mount handoff | [`appendMount`](../Sources/ComposeCore/ComposeOrchestratorMountsContainersVolumes.swift) emits comma-delimited CLI arguments. | Advanced semantics cannot be carried safely or capability-negotiated; commas and backend-specific source descriptors are not representable. |
 | Compose volume SPI | [`ComposeRuntimeResourceManaging`](../Sources/ComposeRuntimeSPI/ComposeRuntimeResources.swift) exposes create/list/delete only. | There is no exact inspect, provider resolution, attachment lease, path, health, capability, ownership, or recovery contract. |
 | Compose reconciliation | [`ComposeOrchestratorVolumesAndResources.swift`](../Sources/ComposeCore/ComposeOrchestratorVolumesAndResources.swift) skips external creation and treats create success/already-exists as enough. | A missing external volume can reach a lower layer that auto-creates it; a same-name incompatible volume can be silently reused; hash drift is not reconciled like Docker Compose. |
-| Container volume service | The matched Container `VolumesService` records arbitrary driver metadata but always creates a sparse local ext4 `volume.img`; only `size` and `journal` alter behavior. | `driver: anything` can falsely succeed as local ext4, which is worse than an explicit unsupported error. |
+| Container volume service | Signed local Container `fcec20e20a34b9e8b9a8cf2b23823ce8a065cdb4` normalizes omitted and `local` drivers to the built-in provider and rejects every other driver before name persistence, directory creation, or ext4 allocation. Its package graph has no Engine API adapter, and the retained public Engine stack declares but does not implement `VolumeCreate`. | The false local-ext4 success is removed at the component boundary, but the missing Engine-volume adapter, typed provider registry, remote driver, option forwarding, shared-volume model, and public runtime certificate remain. |
 | Container attachment model | Writable native volume images are attached as virtual block devices to one VM per container. | Docker's common concurrent read-write named-volume use is unsafe: multi-attach can fail or corrupt a filesystem with no shared lock manager. |
 | Container persistence | Volume state has no provider ID/`providerGeneration`, requested/effective split, `resourceRevision`, config hash, attachment `leaseGeneration`, health, or recovery marker. | Provider crashes, daemon restarts, interrupted mounts, and delete-in-use behavior cannot be reconciled deterministically. |
 | Containerization mounts | The matched mount path parses basic strings and top-level read-only state. Propagation names are not mapped completely to Linux flags; a share always becomes a basic bind; recursive read-only has no `mount_setattr(AT_RECURSIVE)` path. | Rendering propagation is not evidence that the guest kernel received it, and all four recursive modes cannot be implemented truthfully. |
@@ -79,7 +79,12 @@ This is a cross-repository gap. Passing more strings from Compose cannot close i
 | Devcontainer | Signed `main` at `4f71de4cdf4d8f59d27f5fa7972f4f2f4d2da7af` consumes `container-engine-api` 0.3.3 and exposes its stock adapter through a bounded private fingerprint-owned provider socket while retaining the separately selected legacy standalone mode for migration. Its router still intentionally implements a bounded Dev Containers subset and its provider owns separate state. | The stock provider boundary is real and no longer needs to own public gateway selection, but mounting it would still omit image push/auth and would not become the enhanced Container authority. Engine API 0.3.5 adoption, the Apple-stock E03 timeout, the Container Compose C04 failure, and complete real-VS-Code evidence remain; the Container Compose E03 path itself passes. |
 | Socket relay | The matched Container/Containerization stack can relay a host Unix socket into a guest, but the interface is inferred from a generic bind and carries mode without an explicit guest UID/GID contract. | The transport exists; the typed authorization/lifecycle and non-root access semantics do not. |
 
-The most urgent correctness change is fail-closed provider selection. Until a real provider resolves, a non-`local` driver MUST NOT create an ext4 volume under another name or driver label.
+The most urgent correctness change is fail-closed provider selection. Signed local
+Container checkpoint `fcec20e20a34b9e8b9a8cf2b23823ce8a065cdb4` implements
+that component boundary: until a real provider resolves, a non-`local` driver
+MUST NOT create an ext4 volume under another name or driver label. The public
+Engine REST/CLI proof remains required before this isolated behaviour is
+`Verified`.
 
 The original devcontainer evidence was revision `b31e80b2b9c09ecc73bb3badf9cd5cf16550a538`:
 
