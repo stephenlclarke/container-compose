@@ -2,15 +2,14 @@
 
 ## State
 
-`Active` — Candidate 7's bounded generic startup failure exposed a causal
-diagnostic gap. Signed local Container `54c5b332a204c01da34029c7fadabb560520c887`
-preserves a redacted Engine-Linux bootstrap phase with focused proof. The
-subsequent generic Docker wait-acknowledgement liveness prerequisite is also
-implemented and locally proven at signed Container `d843dd598fa086c8572e5df8a71eece56ad7b576`
-and Engine API `afb8a8f68ed56829b669c95cbddb488a68dc9175`. The delayed-retry
-contract remains Active: no fresh exact-fingerprint GELF retry candidate has
-yet run from the combined graph, and it is not `Verified` until two independent
-public-socket candidates match the Docker oracle.
+`Blocked` — two fresh exact-fingerprint public-socket candidates now reach
+the same bounded Docker-visible `container logging operation failed` before
+the receiver accepts a peer or the fixture writes a result. The first used a
+direct guest-VSOCK declaration; the second used the pre-opened reverse
+host-VSOCK declaration already used by journald. Both protected GELF workloads
+reached the ledger's `running` state, neither run hung, and wrapper cleanup
+stopped its isolated runtime. The contract is not `Verified` until two
+independent public-socket candidates match the Docker oracle.
 
 ## User-visible contract
 
@@ -209,3 +208,40 @@ owns this prerequisite and must be commented and closed with its focused proof.
 `KERNEL-ARCHIVE-FRESH-RUNTIME-01` is now `Verified` as a separate bootstrap prerequisite. The original archive exception was observed while the local APFS volume had only `117M` available. After reclaiming 25 GB by removing only five identified marker-protected superseded build/cache roots, two independent new runtime roots installed the same pinned kernel and completed the isolated Docker CLI socket smoke test. The full fingerprints, terminal records, and v14 exit status are retained in [the kernel handoff](KERNEL-ARCHIVE-FRESH-RUNTIME-01.md).
 
 No Container, Containerization, Engine API, or Compose production source changed for that resolution. Container issue [#93](https://github.com/stephenlclarke/container/issues/93) should be closed as an environment-capacity incident, not treated as an upstream code fix. This GELF contract remains `Handed off`, not `Verified`: resume only with new exact-fingerprint roots and still require the two complete delayed-retry public-socket fixture results specified above. Performance optimisation remains deferred; a hang, timeout, or bounded-liveness failure remains blocking.
+
+## 2026-08-08 direct/reverse transport checkpoint
+
+The current exact source graph is signed Container
+`289c0782e3d973d7303d10c5a001673c319992b6` on
+`upstream/docker-wait-acknowledgement-01`, with the preceding direct
+guest-VSOCK attempt at signed `13e6dc922b3275278fd12eb190cd435beda358a6`.
+It used local Containerization
+`38d9c695e7a6915e5ce45d12c893dc323a661af7`, Engine API
+`afb8a8f68ed56829b669c95cbddb488a68dc9175`, Compose `main`
+`35a7557ccb16971df365910b8f25ba381bdbeef2`, the pinned guest-init archive
+`5d4201135affb9bb0ce34ebcb184551689a214d3118b75564a8fa498667d77f6`, and
+the pinned bootstrap archive
+`c714ab7421c71cebdfd0236c5a1af4b1e9af3da1855946cf3350a384491815f0`.
+The reverse package's CLI/API-server/engine SHA-256 values are respectively
+`9e8f9a509cc1eb6defdcbbd590d690ddc16eedcbba3c8f3ff19ccbca75e47c11`,
+`6496ee4230800f77d81f312ac6596d408e692d7ed2d9fb88797217fb315d0c93`, and
+`202ba2ab0e7dd910257fec455892f4db38bc37486a804c7e5ef5ab1da91ed89e`.
+
+`EngineLinuxSandboxGELFTCPServiceTests` passed 17/17 against that exact local
+graph. Candidate v26 then exercised the direct endpoint at
+`/private/tmp/ctr-gelf-v24`; Candidate v27 exercised the reverse endpoint at
+`/private/tmp/ctr-gelf-v27`. Their preflight and terminal records are under
+`/private/tmp/ctr-gelf-vsock-build-05/`. V27's runtime configuration proves
+exactly `--sandbox-generation 1 --port 19532 --connect-host-vsock`, no
+published socket, and a read-only workload. Its guest log records PID 145 and
+the workload ledger records the exact service generation as `running`, yet the
+Docker fixture fails at start with the same generic diagnostic, produces no
+receiver connection or result JSON, and exits without a timeout.
+
+Do not run another transport-only candidate. The next safe action is a
+source-level diagnostic that preserves the concrete failure at the protected
+service bootstrap/dial boundary, followed by one evidence-based correction and
+one fresh candidate. This is a functional blocker, not a performance blocker;
+duration remains non-gating unless a future run hangs or breaches its liveness
+bound. Preserve both runtime roots, both fixture roots, the package roots, and
+the preflight/run logs until that causal diagnostic is recorded.
