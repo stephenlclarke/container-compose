@@ -15,7 +15,7 @@ On this MBP, Docker CLI `29.7.1`, Engine `29.2.1` (API `1.53`), Colima, and `alp
 ## Affected repositories and inputs
 
 - Container source: branch `upstream/logging-driver-parity`, base `d67b614ebd7e0c1fade908c4a5ab6e48b751e393`, signed correction `0679e82eaa15fee1c4699f1e3c74515040ed4a3f`.
-- Container `Package.resolved`: SHA-256 `bd8453749c259041a1ef03cb9141d2799154e03c`.
+- Container `Package.resolved`: SHA-256 `c60ff0b8ae4dfac5ef80733453c273141a9070028e34d75d6afafc65a3147e53`.
 - Container Compose records this evidence only; it has no source change for this slice.
 - Guest/init image, candidate binary/archive, and disposable candidate root are N/A until the public-socket candidate is assembled. No dependency pin moved.
 
