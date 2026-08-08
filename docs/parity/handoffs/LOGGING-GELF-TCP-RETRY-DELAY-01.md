@@ -4,9 +4,12 @@
 
 `Active` — Candidate 7's bounded generic startup failure exposed a causal
 diagnostic gap. Signed local Container `54c5b332a204c01da34029c7fadabb560520c887`
-now preserves a redacted Engine-Linux bootstrap phase with focused proof. One
-new exact-fingerprint candidate may run to expose the failing layer or advance
-to the delayed-retry behavior match. It is not `Verified` until two independent
+preserves a redacted Engine-Linux bootstrap phase with focused proof. The
+subsequent generic Docker wait-acknowledgement liveness prerequisite is also
+implemented and locally proven at signed Container `d843dd598fa086c8572e5df8a71eece56ad7b576`
+and Engine API `afb8a8f68ed56829b669c95cbddb488a68dc9175`. The delayed-retry
+contract remains Active: no fresh exact-fingerprint GELF retry candidate has
+yet run from the combined graph, and it is not `Verified` until two independent
 public-socket candidates match the Docker oracle.
 
 ## User-visible contract
@@ -84,6 +87,35 @@ files have 93.69% and 93.71% focused line coverage; selected aggregate line
 coverage is 96.45%. Strict Swift formatting, parse validation, and
 `git diff --check` pass. No fresh public candidate has run from this checkpoint.
 
+## Generic Docker wait acknowledgement prerequisite
+
+Before the next GELF candidate can start, the public Docker CLI uncovered an
+independent generic liveness prerequisite: it sends
+`/wait?condition=removed` and requires HTTP 200 response headers before it
+sends `/start`. The old wait path deferred headers until a terminal result,
+creating the circular start/wait condition.
+
+The paired signed Engine API commit
+`afb8a8f68ed56829b669c95cbddb488a68dc9175` and Container commit
+`d843dd598fa086c8572e5df8a71eece56ad7b576` now register the native wait
+observer before acknowledging the HTTP response. Engine API's 23-test focused
+suite and Container's
+`dockerContainerWaitUsesNativeLifecycleStateAndRemoval` focused regression
+passed. The final marker-protected candidate completed Docker CLI successfully
+with trace order wait -> HTTP 200 -> start and exit status zero; see
+`/private/tmp/container-docker-wait-ack-01.ckwusl/RESULT.md`.
+
+This evidence used the exact local Containerization revision
+`38d9c695e7a6915e5ce45d12c893dc323a661af7`; its normal remote pin remains
+unchanged. The liveness proof is a prerequisite only, not a GELF delayed-retry
+behavior match. Debug-build performance warnings were non-blocking; a hang or
+liveness-bound breach would have been a functional failure.
+
+Related Container issue:
+[#91](https://github.com/stephenlclarke/container/issues/91). It remains open
+until the Engine API and Containerization prerequisites are published/pinned
+and this exact proof passes from the normal resolved graph.
+
 ## Completion criteria
 
 - The Docker reference remains a stable delayed-retry observable.
@@ -100,15 +132,19 @@ coverage is 96.45%. Strict Swift formatting, parse validation, and
 
 ## Blocker criteria and next safe action
 
-The required typed diagnostic is now implemented and has focused proof. The
-next action is exactly one fresh marker-protected candidate after a preflight
-binds source `54c5b332`, dependencies, binary/archive, guest/init images,
-harness/wrapper, and disposable root in one fingerprint. Record a new causal
-stage or a behavior match; do not infer either before that run. Treat an
-unexpected hang or timeout as an immediate blocker; Candidate 7 was not one.
-[Container issue #89](https://github.com/stephenlclarke/container/issues/89)
-tracks this diagnostic handoff and remains open until the focused correction is
-verified.
+The typed diagnostic and the generic Docker wait liveness prerequisite now have
+focused and public local proof. Do not rerun the generic wait probe. The next
+GELF candidate must be fresh, marker-protected, namespace-aware, and bind the
+combined source graph, dependencies, binary/archive, guest/init images,
+harness/wrapper, and disposable root in one fingerprint. The normal graph
+cannot consume the wait correction until its Engine API and Containerization
+prerequisites are published and pinned; record that dependency state rather
+than treating it as a performance failure. Treat an unexpected hang or timeout
+as an immediate blocker. Container issue
+[#89](https://github.com/stephenlclarke/container/issues/89) tracks the GELF
+diagnostic handoff; [#91](https://github.com/stephenlclarke/container/issues/91)
+tracks the wait acknowledgement and remains open pending normal dependency
+closure.
 
 ## Safe handoff
 
@@ -122,9 +158,15 @@ restart, or remove retained roots merely to investigate the failure. The next
 runtime root must be new, marker-protected, and namespace-aware; it must not
 stop or reuse the user-owned devcontainer engine.
 
+Also retain the generic wait evidence root
+`/private/tmp/container-docker-wait-ack-01.ckwusl`, its preflight/result
+records and three attempt traces, the signed Container and Engine API source
+and handoff checkpoints, and Container issue #91. These are already cleaned
+runtime checkpoints; do not repeat the completed generic probe.
+
 ## Documentation disposition
 
 This handoff and the slice ledger distinguish functional verification from the
 later performance programme. They record the exact failed candidate fingerprints
-and the now-implemented diagnostic checkpoint; they do not claim complete GELF
-or logging-driver closure.
+and the now-implemented diagnostic and wait-liveness checkpoints; they do not
+claim complete GELF or logging-driver closure.
