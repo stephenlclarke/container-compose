@@ -2,7 +2,10 @@
 
 ## State
 
-`Blocked` — local signed Container commit `0679e82eaa15fee1c4699f1e3c74515040ed4a3f` implements the two Docker-required Splunk startup diagnostics, but the focused regression cannot execute from an immutable compatible dependency graph. It is not `Verified`, and no public-socket candidate has run.
+`Verified` — the signed local Container correction and a clean, exact-fingerprint
+public Docker-socket candidate reproduce both Docker-required Splunk startup
+diagnostics. The candidate completed with exit code `0`; no hang, timeout,
+fingerprint mismatch, or cleanup failure occurred.
 
 ## User-visible contract
 
@@ -10,31 +13,81 @@ The unmodified Docker CLI creates a `splunk` container even when `splunk-url` or
 
 ## Pinned Docker oracle
 
-On this MBP, Docker CLI `29.7.1`, Engine `29.2.1` (API `1.53`), Colima, and `alpine:3.20` produced both observations. Each guarded unique-name probe created successfully, inspected its logging configuration, failed start with the exact driver-specific phrase, retained `created`, and removed only its own container. These are functional boundary observations; no performance comparison is asserted.
+On this MBP, Docker CLI `29.7.1`, Engine `29.2.1` (API `1.53`), Colima, and
+`alpine:3.20` produced both observations. Each guarded unique-name probe
+created successfully, inspected its logging configuration, failed start with the
+exact driver-specific phrase, retained `created`, and removed only its own
+container. The retained oracle record is
+`/private/tmp/container-rest-splunk-reference.Uy0c4u/result.json` (SHA-256
+`6763ffe39c1daf5e23d4e137e103aab67d795b3a7a15374da0c7092cee335103`).
+These are functional boundary observations; no performance comparison is
+asserted.
 
 ## Affected repositories and inputs
 
-- Container source: branch `upstream/logging-driver-parity`, base `d67b614ebd7e0c1fade908c4a5ab6e48b751e393`, signed correction `0679e82eaa15fee1c4699f1e3c74515040ed4a3f`.
-- Container `Package.resolved`: SHA-256 `c60ff0b8ae4dfac5ef80733453c273141a9070028e34d75d6afafc65a3147e53`; its resolved Containerization pin is `77f06d4c44341e04241941072fb69e2b85a6f5c1`.
-- Compatible local diagnostic overlays were Containerization `ecb2ac5099a8521f02c248870fa6dd7aa7518465` and Engine API `8aa75ac5e42b0d0399f9ca7d48f0cfad00d3c711`. They were used only to identify the graph boundary; neither pin was changed or published.
-- Container Compose records this evidence only; it has no source change for this slice.
-- Guest/init image, candidate binary/archive, and disposable candidate root are N/A until the public-socket candidate is assembled. No dependency pin moved.
+- Container source: branch `upstream/docker-wait-acknowledgement-01`, signed
+  correction `bf2d6de19e0924fa3cd08fe20276c987d785c060`
+  (`fix(logging): restore Splunk start diagnostics`).
+- Detached compatible inputs: Containerization
+  `38d9c695e7a6915e5ce45d12c893dc323a661af7` and Engine API
+  `afb8a8f68ed56829b669c95cbddb488a68dc9175`.
+- Container Compose local `main` fixture checkpoint:
+  `ec3c89b093d3894df3cc6b33c6ed04aa2ccd38a1`
+  (`test(parity): add Splunk startup validation fixture`). No remote or
+  dependency pin moved.
+- Candidate package SHA-256: CLI
+  `9e8f9a509cc1eb6defdcbbd590d690ddc16eedcbba3c8f3ff19ccbca75e47c11`,
+  API server `e0fd8247295233357947fbce5fcfbdff8c858397bbc4091cf0fed28691b476fe`,
+  engine `202ba2ab0e7dd910257fec455892f4db38bc37486a804c7e5ef5ab1da91ed89e`.
+- Guest/init archive SHA-256:
+  `5d4201135affb9bb0ce34ebcb184551689a214d3118b75564a8fa498667d77f6`;
+  bootstrap archive SHA-256:
+  `c714ab7421c71cebdfd0236c5a1af4b1e9af3da1855946cf3350a384491815f0`.
 
 ## Source correction and focused proof
 
-`ContainerDockerLoggingBackend.map` formerly recognized the special GELF connection failure but reduced typed `SplunkProviderError` values to `container logging operation failed`. The correction maps only `missingURL` and `missingToken` to Docker-shaped messages; other Splunk failures retain the existing generic handling until their own oracle contracts are selected. `ContainerLoggingStartErrorTests` asserts both branches. `git diff --check` passed before commit.
+`ContainerDockerLoggingBackend.map` restores typed
+`SplunkProviderError.missingURL` and `.missingToken` to their Docker-shaped
+messages, while leaving other Splunk failures on their existing generic path.
+`ContainerLoggingStartErrorTests` now includes
+`mapsMissingSplunkRequiredOptionsToDockerDiagnostics`; the exact detached graph
+passed all seven tests in that suite. `git diff --check`, `bash -n`, and
+ShellCheck passed before their respective signed checkpoints.
 
-The warmed `swift test --skip-build --filter ContainerLoggingStartErrorTests` ran a stale binary and omitted the new regression, so it is not evidence. The normal resolved graph failed before the test target because it lacks `WorkloadNetworkEndpoint`. A Containerization-only overlay then reached the next incompatible Engine API surface. With both compatible overlays, the isolated build compiled `ContainerDockerLoggingBackend.swift` but failed before test execution because `Tests/IntegrationTests/Containers/TestCLIExecCommand.swift` was modified during the build; its content still matched the committed blob, proving a timestamp mutation rather than a source change.
+`Tools/parity/check-docker-rest-splunk-create-validation.sh` provides the
+public CLI proof: it creates each invalid configuration, checks `splunk` in
+inspect, asserts the exact start diagnostic and retained `created` state,
+redacts the supplied token sentinel, and removes only its owned containers.
+Its final exact-fingerprint run retained
+`/private/tmp/ctr-splunk-create-validation-final.MZvMRd/`:
+`FINGERPRINT-PREFLIGHT.json`, `FINGERPRINT-COMPLETE.json`, and
+`fixture/result.json` record the inputs and exit `0`. The result contains both
+expected diagnostics and `status: "passed"`.
 
-A second attempt used detached Container source `0679e82eaa15fee1c4699f1e3c74515040ed4a3f` and the same two overlays. It failed before test execution because `Sources/Containerization/HostDefaultRoute.swift` was modified during compilation. Its content hash and committed blob both remained `32785d7b7320733b430d8c5bf73f05d81f6d5ef8`, while its metadata changed on 8 August. This is the second evidence-based correction attempt defeated by a mutable input, so the validation loop stops here. No hang, timeout, or product liveness failure was observed; ordinary build duration is not a blocker. Whole-file SwiftFormat lint shows existing debt in the two surrounding files; no format waiver is claimed.
+Coverage instrumentation was attempted with the focused test but stopped before
+completion when the Swift build graph reduced free disk space from about 11 GiB
+to about 6 GiB. No coverage percentage is claimed. This is a non-functional
+quality-evidence gap under the current performance policy, not a parity blocker;
+the two changed diagnostic branches have direct focused tests.
 
 ## Completion criteria
 
-- Freeze one compatible Container, Containerization, and Engine API graph, prove all input SHAs and timestamps stable, then run the focused test successfully.
-- Run a fresh marker-protected public Docker-socket candidate that binds source, dependency revisions, built binary, guest/init image, harness, and root in one fingerprint, then demonstrates both create/inspect/start/state/cleanup paths.
-- Record focused changed-code coverage toward the 90% target.
-- Treat a candidate hang, timeout, fingerprint mismatch, or cleanup failure as a functional blocker. Performance optimization and comparative timing remain a later phase.
+- Met: the compatible source graph passed `ContainerLoggingStartErrorTests`.
+- Met: the fresh marker-protected public Docker-socket candidate bound source,
+  dependencies, binaries, guest/init archives, harness, and roots in one
+  fingerprint, then demonstrated both create/inspect/start/state/cleanup paths.
+- Remaining evidence gap: measure focused changed-code coverage toward the 90%
+  target only when disk headroom permits a coverage-instrumented build.
+- A future candidate hang, timeout, fingerprint mismatch, or cleanup failure is
+  functional-blocking. Performance optimization and comparative timing remain a
+  later phase.
 
 ## Safe handoff
 
-The correction is clean and signed locally. [Container issue #92](https://github.com/stephenlclarke/container/issues/92) is open and must remain open until the completion evidence exists. The immediate unblock is a frozen compatible dependency graph, preferably immutable detached worktrees or published pins, followed by a new marker-protected test root and a fresh public-socket candidate. Do not push, create a PR, publish upstream, or report an Apple issue. The active slice START thread is `1786201895.827969`.
+The correction and fixture are clean signed local checkpoints. Preserve the
+oracle and final candidate roots above until their evidence has been absorbed
+into a broader immutable checkpoint. [Container issue #92](https://github.com/stephenlclarke/container/issues/92)
+has functional completion evidence, but must not be commented on or closed
+without explicit external-state authorization. Do not push, create a PR,
+publish upstream, or report an Apple issue. The active slice START thread is
+`1786217210.449779`.
