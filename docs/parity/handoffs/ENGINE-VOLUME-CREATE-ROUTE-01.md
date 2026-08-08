@@ -2,12 +2,13 @@
 
 ## State
 
-`Implemented` — the public Docker `POST /volumes/create` route now reaches the
-same `VolumesService` authority used by Container clients. Two signed local
-source checkpoints and focused public-socket proof exist. This is not
-`Verified`: the normal resolved Container graph cannot yet assemble the
-retained Engine runtime without a matched local Containerization overlay, and
-the full service/guest fingerprint has not been produced.
+`Blocked` — the public Docker `POST /volumes/create` route reaches the same
+`VolumesService` authority used by Container clients, with two signed local
+source checkpoints and focused public-socket proof. The full-service candidate
+cannot be assembled from the normal resolved graph: Container `8b7c0ef`
+requires `WorkloadNetworkEndpoint`, while its checked-in Containerization pin
+`77f06d4` does not define that type. The full service/guest fingerprint must
+wait for an independently aligned normal graph.
 
 ## User-visible contract
 
@@ -90,6 +91,7 @@ broader immutable checkpoint.
 | Matched Containerization overlay | `ecb2ac5099a8521f02c248870fa6dd7aa7518465` at `/Users/sclarke/Documents/container/containerization-engine-sandbox` |
 | Checked-in Containerization pin | `77f06d4c44341e04241941072fb69e2b85a6f5c1`; it lacks the `WorkloadNetworkEndpoint` required by retained public-stack code, so no pin moved and no normal-graph runtime claim is made |
 | Runtime root/images | Not applicable to this in-process socket proof; any later service/guest run MUST bind source, dependency revisions, built archives, guest/init image, and a new marker-protected root in one fingerprint before start |
+| Current blocker evidence | `/private/tmp/volume-normal-graph-blocker-01.kFETSt` records the clean exact source heads, normal pin, absent pinned symbol, and matching overlay symbol without changing a lockfile or starting a runtime |
 
 Both source commits have a verified local ED25519 signature from
 `stephenlclarke@mac.com`. No push, release, package pin, issue, PR, or Apple
@@ -108,8 +110,10 @@ liveness result. Capture a fresh responsive Docker reference before asserting
 any more exact raw error-envelope detail.
 
 A candidate timeout, hang, fingerprint mismatch, or cleanup failure is a
-functional blocker. Dependency publication/pinning and release performance are
-not reasons to change this implementation’s state to `Verified` prematurely.
+functional blocker. The normal graph's missing `WorkloadNetworkEndpoint` is
+the current concrete blocker; dependency publication/pinning and release
+performance are not reasons to change this implementation’s state to
+`Verified` prematurely.
 
 ## Safe handoff
 
@@ -122,4 +126,6 @@ Preserve the two clean dedicated worktrees and signed commits:
 
 Do not delete or reset them. Start any future runtime attempt from a new
 marker-protected root; do not reuse the cleaned focused-test root or contact a
-host Docker daemon from the candidate test.
+host Docker daemon from the candidate test. Retain
+`/private/tmp/volume-normal-graph-blocker-01.kFETSt` until a dependency
+alignment contract supersedes it.

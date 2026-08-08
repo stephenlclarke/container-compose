@@ -2,12 +2,12 @@
 
 ## State
 
-`Implemented` — the generic Container component fails closed before local
-volume allocation, with a signed local source checkpoint and focused proof.
-Its former missing public Engine adapter is now implemented by
-[ENGINE-VOLUME-CREATE-ROUTE-01](ENGINE-VOLUME-CREATE-ROUTE-01.md). Neither
-contract is `Verified` until a dependency-compatible full-service/guest
-fingerprint and public candidate exist.
+`Blocked` — the generic Container component and its public Engine adapter are
+implemented and focused-proofed, but the exact normal dependency graph cannot
+assemble a full-service candidate. Container `8b7c0ef` requires
+`WorkloadNetworkEndpoint`; its checked-in Containerization pin `77f06d4` does
+not define that type. The clean `ecb2ac5` local overlay does, but substituting
+it would not establish the required normal resolved graph.
 
 ## User-visible contract
 
@@ -46,6 +46,8 @@ twelve seconds with no volume record; it did not hang.
 - The successor’s exact focused graph uses local Containerization
   `ecb2ac5099a8521f02c248870fa6dd7aa7518465`; the checked-in pin remains
   `77f06d4c44341e04241941072fb69e2b85a6f5c1`. No published pin moved.
+- Marker-protected blocker evidence is retained at
+  `/private/tmp/volume-normal-graph-blocker-01.kFETSt`.
 
 ## Focused proof
 
@@ -79,11 +81,13 @@ cleanup, and the coverage disposition.
 ## Blocker criteria and next safe action
 
 A candidate hang, timeout, liveness-bound breach, fingerprint mismatch, or
-cleanup failure is an immediate blocker. The missing Engine-volume adapter is
-closed; do not repeat source-only implementation work. Build only one fresh
-dependency-compatible candidate after its complete fingerprint is written. If
-it fails without causal evidence after two corrections, hand it off rather than
-looping.
+cleanup failure is an immediate blocker. The normal graph is already blocked:
+the locked Containerization revision has no `WorkloadNetworkEndpoint`, while
+the retained Container source requires it in the Engine authority/runtime
+paths. The missing Engine-volume adapter is closed; do not repeat source-only
+implementation work or alter a lockfile to mask this incompatibility. Resume
+only after an independently verified dependency-alignment contract produces a
+clean normal graph.
 
 ## Safe handoff
 
@@ -92,6 +96,8 @@ API `987f051`, the upstream handoff pair `docs/upstream/ISSUE-90.md` and
 `docs/upstream/PR-90.md`, and issue #90. A later runtime attempt must create a
 new marker-protected disposable root rather than reuse an untracked directory.
 Keep issue #90 open until the full public-boundary acceptance evidence exists.
+Retain `/private/tmp/volume-normal-graph-blocker-01.kFETSt` as the exact
+no-mutation proof of the current dependency blocker.
 
 ## Documentation disposition
 
