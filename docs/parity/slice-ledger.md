@@ -187,6 +187,19 @@ This ledger is the durable, compact record for the one active Container-family v
 | Blocker criteria | No active functional blocker. Any later fingerprint mismatch, hang, timeout, cleanup failure, or reference disagreement blocks a successor contract immediately. Performance optimization and comparative timing are deferred. |
 | Safe handoff | Preserve the oracle and final candidate roots, signed source checkpoint, fixture checkpoint, and [structured handoff](handoffs/LOGGING-SPLUNK-CREATE-VALIDATION-REST-01.md). [Container issue #92](https://github.com/stephenlclarke/container/issues/92) has local functional completion evidence but must not be externally commented on or closed without authorization. Do not publish. |
 
+## LOGGING-SPLUNK-HEC-REST-01
+
+| Field | Record |
+| --- | --- |
+| State | `Active` — one current user-visible contract. No public Docker-socket Splunk HEC delivery certificate exists yet. |
+| Behaviour | A valid cache-disabled Splunk logger sends Docker CLI stdout/stderr to a local HEC-compatible receiver with Docker-measured endpoint, authorization, payload/order, inspect, exit, and owned cleanup behavior. |
+| Pinned Docker oracle | Same-MBP Colima, Docker CLI `29.7.1`, Engine `29.2.1`, API `1.53`, `alpine:3.20`, and a new marker-protected receiver root. Capture before defining the fixture's decoded HTTP assertions. |
+| Affected repositories and inputs | Compose local `main` starts at `81e6ed7f`; Container source starts at signed `bf2d6de19e0924fa3cd08fe20276c987d785c060`; detached compatible Containerization `38d9c695e7a6915e5ce45d12c893dc323a661af7`; detached Engine API `afb8a8f68ed56829b669c95cbddb488a68dc9175`. No remote or pin moves are authorized. |
+| Focused proof | Capture Docker first, implement only measured corrections, then bind one candidate's source/dependencies/binaries/guest/init/harness/receiver/runtime roots into its final fingerprint. |
+| Completion criteria | Docker and candidate agree on selected endpoint, authorization, decoded payload/order, exit/inspect, and owned cleanup. A hang, timeout, mismatch, or cleanup failure blocks; comparative performance is deferred. Direct tests must cover changed code; coverage should approach 90% when disk headroom permits instrumentation. |
+| Blocker criteria | An unsafe/unavailable Docker oracle, exact fingerprint mismatch, behavioral disagreement, hang, timeout, or cleanup failure blocks. After two evidence-based corrections with no delta, retain roots and hand off. |
+| Safe handoff | Retain only slice-owned marker-protected roots and [the structured handoff](handoffs/LOGGING-SPLUNK-HEC-REST-01.md). Do not touch the user-owned devcontainer runtime or publish. |
+
 ### Docker wait acknowledgement prerequisite
 
 The generic liveness correction has a clean signed Container checkpoint
