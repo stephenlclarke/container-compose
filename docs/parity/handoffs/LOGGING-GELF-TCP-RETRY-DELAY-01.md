@@ -2,10 +2,12 @@
 
 ## State
 
-`Blocked` — the pinned Docker reference remains valid, but two exact-fingerprint
-candidate corrections reached distinct functional failures. Candidate 7 is
-bounded and exits with status 1 rather than hanging; it is not a performance
-blocker. Do not retry this candidate lane without a new causal diagnostic.
+`Active` — Candidate 7's bounded generic startup failure exposed a causal
+diagnostic gap. Signed local Container `54c5b332a204c01da34029c7fadabb560520c887`
+now preserves a redacted Engine-Linux bootstrap phase with focused proof. One
+new exact-fingerprint candidate may run to expose the failing layer or advance
+to the delayed-retry behavior match. It is not `Verified` until two independent
+public-socket candidates match the Docker oracle.
 
 ## User-visible contract
 
@@ -43,59 +45,44 @@ and no timeout.
   `check-docker-rest-gelf-contract.sh` harness at SHA-256
   `a0ed0178a62be517b42d4a21070ea73a57689513b7a623c3fcdfcdd6efc94fca`.
 - Container Candidate 6 source was signed
-  `09627527f7f2957548447739fff64021888145c8`; Candidate 7 source is signed
-  `b39f56635d0ab81a06d690b39eed9f5f106e2e26` on
-  `upstream/logging-fluentd-tls-alert-control-01`.
-- Local Containerization is signed
-  `ecb2ac5099a8521f02c248870fa6dd7aa7518465` on
-  `upstream/vsock-connection-lifetime-01`; local Engine API is
-  `f5d0d120bb139675e96a4ef9f7ac800827c295`.
+  `09627527f7f2957548447739fff64021888145c8`; Candidate 7 source was signed
+  `b39f56635d0ab81a06d690b39eed9f5f106e2e26`. The current diagnostic source is
+  signed Container `54c5b332a204c01da34029c7fadabb560520c887` on local
+  `upstream/logging-gelf-tcp-retry-diagnostic-01`.
+- The exact current focused-test graph is local Containerization
+  `38d9c695e7a6915e5ce45d12c893dc323a661af7` and Engine API
+  `f5d0d120bb139675e96a4ef9f7b0ac800827c295`. This matching local graph is
+  test-only evidence; no published dependency pin moved.
 - Both candidates use committed Container `Package.resolved` SHA-256
   `c60ff0b8ae4dfac5ef80733453c273141a9070028e34d75d6afafc65a3147e53`,
   guest-init OCI SHA-256
   `5d4201135affb9bb0ce34ebcb184551689a214d3118b75564a8fa498667d77f6`,
   bootstrap OCI SHA-256
-  `c714ab7421c71cebdfd0236c5a1af4b1e9af3da1855946cf3350a384491815f0`,
-  and runtime-wrapper SHA-256
+  `c714ab7421c71cebdfd0236c5a1af4b1e9af3da1855946cf3350a384491815f0`, and
+  runtime-wrapper SHA-256
   `7a396d8626a0e37c1b7f71e732674baebd1b3752bedc3378a7e4510e3323987f`.
 
 ## Focused proof and blocker evidence
 
-The sealed Linux/arm64 GELF lane previously passed `make test-gelf-service`,
-including format, vet, race tests, deterministic manifest verification, and its
-90.5% statement coverage gate. The Candidate 7 correction adds reverse-VSOCK
-support to Journald so both protected service workloads use the sealed
-guest-to-host transport. `make test-journald-service` passed, as did the
-focused `EngineLinuxSandboxJournaldServiceTests` (7 tests), strict Swift
-formatting, and `git diff --check`.
+The sealed Linux/arm64 GELF lane and its prior `make test-gelf-service`
+format/vet/race/manifest/90.5%-coverage proof remain preserved. Candidate 6's
+direct host-to-guest Journald VSOCK dial reset with POSIX 54. Candidate 7 used
+reverse host VSOCK for both protected services, then exited 1 within the
+180-second liveness bound before the host receiver accepted a TCP peer. It
+reported Docker's generic `container logging operation failed`; it did not hang.
 
-Candidate 6
-(`/private/tmp/container-gelf-vsock-lifetime-candidate.J23aUR`) packaged the
-exact signed source and local dependency graph, but its host-to-guest Journald
-VSOCK dial on port 19530 reset with POSIX 54. Candidate 7
-(`/private/tmp/container-gelf-reverse-vsock-candidate.fcP69s`) packages the
-same Containerization and Engine API heads with signed Container
-`b39f566…`; its package archive SHA-256 is
-`4efa3490468e1aafeeb0c02cac98c69fee9af79da36e5e39bc5ad4eba2acab3c`.
-Its archive verification records strict code-signing success and the exact
-CLI/API/runtime/guest assets.
-
-Candidate 7 selected reverse host VSOCK for both Journald (port 19530) and GELF
-(port 19532), and the guest started both managed services. It then exited
-within the 180-second bound with status 1:
-
-```text
-Error response from daemon: container logging operation failed
-failed to start containers: 79a0905b71df4412b73f71ed7598304348b44eab74a04135b0c1242bc691ad8a
-```
-
-The host receiver accepted no TCP peer. The generic Docker error is emitted
-after `RuntimeClient.bootstrap` discards the underlying cause, while neither
-the runtime nor the protected service log captured a typed wire/open failure.
-This evidence does not establish an endpoint-alias, VSOCK, or GELF protocol
-root cause. It only proves that the Candidate 6 direct-transport correction and
-Candidate 7 symmetric reverse-transport correction did not complete the
-functional contract.
+The new diagnostic checkpoint establishes that
+`remoteLogDriverPlane.prepareBootstrap` runs before `RuntimeClient` and that
+the causal loss occurred in `GELFTCPServiceWireConnectionV1.call`, which
+collapsed protected bootstrap errors into a generic transport error. Container
+`54c5b332` introduces a redacted startup/readiness/identity phase, maps it to
+the existing endpoint GELF provider/Docker diagnostic, and keeps writes and
+retry ownership generic. `GELFTCPServiceWireTests` (10),
+`EngineLinuxSandboxGELFTCPServiceTests` (17), and
+`ContainerLoggingStartErrorTests` (5) pass together. The changed production
+files have 93.69% and 93.71% focused line coverage; selected aggregate line
+coverage is 96.45%. Strict Swift formatting, parse validation, and
+`git diff --check` pass. No fresh public candidate has run from this checkpoint.
 
 ## Completion criteria
 
@@ -113,12 +100,11 @@ functional contract.
 
 ## Blocker criteria and next safe action
 
-Two evidence-based corrections have now failed, so this contract must not
-consume another runtime retry. The next work on this exact contract must first
-add a small, typed diagnostic at the bootstrap-to-Docker-error boundary and at
-the GELF service open/response boundary, with focused tests proving that the
-original cause survives the mapping. Only after that evidence identifies the
-failing layer may a new marker-protected candidate be assembled. Treat an
+The required typed diagnostic is now implemented and has focused proof. The
+next action is exactly one fresh marker-protected candidate after a preflight
+binds source `54c5b332`, dependencies, binary/archive, guest/init images,
+harness/wrapper, and disposable root in one fingerprint. Record a new causal
+stage or a behavior match; do not infer either before that run. Treat an
 unexpected hang or timeout as an immediate blocker; Candidate 7 was not one.
 [Container issue #89](https://github.com/stephenlclarke/container/issues/89)
 tracks this diagnostic handoff and remains open until the focused correction is
@@ -129,15 +115,16 @@ verified.
 Preserve the Docker reference above; Candidate 6 and Candidate 7 roots; their
 `FINGERPRINT-CANDIDATE-*-PREFLIGHT.md` and
 `ARCHIVE-VERIFICATION-CANDIDATE-*.md` records; Candidate 7 runtime root
-`/private/tmp/ctr-gelf-reverse-vsock-run.rEhN6S`; and fixture root
-`/private/tmp/container-rest-gelf.reverse-vsock.fixture.l5GRB6`. Keep both
-signed source checkpoints and the marker-protected guest/bootstrap inputs
-unchanged. Do not rebuild, restart, or remove these roots merely to investigate
-the failure. Select an independent queued contract while this one is blocked.
+`/private/tmp/ctr-gelf-reverse-vsock-run.rEhN6S`; fixture root
+`/private/tmp/container-rest-gelf.reverse-vsock.fixture.l5GRB6`; signed source
+`54c5b332`; and its two exact focused-test dependency worktrees. Do not rebuild,
+restart, or remove retained roots merely to investigate the failure. The next
+runtime root must be new, marker-protected, and namespace-aware; it must not
+stop or reuse the user-owned devcontainer engine.
 
 ## Documentation disposition
 
-This handoff and the slice ledger now distinguish functional verification from
-the later performance programme. They record the exact failed candidate
-fingerprints, the evidence gap, and the required diagnostic handoff; they do
-not claim complete GELF or logging-driver closure.
+This handoff and the slice ledger distinguish functional verification from the
+later performance programme. They record the exact failed candidate fingerprints
+and the now-implemented diagnostic checkpoint; they do not claim complete GELF
+or logging-driver closure.
