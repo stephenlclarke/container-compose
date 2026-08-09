@@ -476,13 +476,13 @@ liveness-bound breach would not be.
 
 | Field | Record |
 | --- | --- |
-| State | `Blocked` — the Docker reference is retained, but the unchanged normal Compose graph cannot compile a candidate. |
+| State | `Verified` — the retained Docker reference and one exact coherent signed candidate pass the bounded static IPv4 endpoint lifecycle. |
 | Behaviour | A static IPv4 endpoint inside the declared subnet but outside `ip_range` must create, inspect, survive restart, and clean up with its project network. |
 | Pinned Docker oracle | Same-MBP Docker Compose `5.4.0` / Engine `29.2.1`; `192.168.240.20` on subnet `192.168.240.0/24`, range `192.168.240.128/25`, and gateway `.1` passes all bounded lifecycle observations. |
-| Affected repositories and inputs | Compose `a9fa92be524c0e7bcb968b177e2bef9aa0d9ff1d`; locked Container `2a79b4553a342e33411666a88ad20ccd2ce46551`; locked Containerization `77f06d4c44341e04241941072fb69e2b85a6f5c1`; lock SHA-256 `a61f450629fb45e6e39c66ef725bc390cb413ee61fad60ce518d04952c786ef5`. |
-| Focused proof | The signed local locked Container object hydrates SwiftPM's disposable mirror while the tracked lock remains byte-identical. The focused static-endpoint test build then deterministically reaches `ContainerDiscoveryAdapter.swift:255`. |
-| Blocker | Locked Container makes `Attachment.ipv4Address` a mandatory `CIDRv4`; Compose's verified IPv6-only-capable adapter requires an optional address. The previously proven compatible local Container `d7e5f5ddd831e0fe0cf025d606f1d2622eb6a4d2` and Containerization `cfb00bbf3523079fe2ab9fb6b8e9b3504eff77e5` are not remotely fetchable, so they cannot be silently substituted as normal-graph proof. |
-| Safe handoff | Preserve [the focused handoff](handoffs/NET-IPAM-STATIC-ENDPOINT-01.md), the marker-protected Docker/build root, open [container-compose issue #208](https://github.com/stephenlclarke/container-compose/issues/208), and Slack START thread `1786222932.328589`; publish one coherent lower stack and rerun without reducing IPv6-only support. |
+| Affected repositories and inputs | Compose `cd5f0e453372bcecb1821fab564338d27fc711c1`; Container `c7924e375d98d82af37902f4a0c310ee389eab97`; Containerization `7f62f5b940630811573a34f70cdd6f3fa11d014d`; Engine API `5e6e24d017691596783515285e1ff56d29701235`; SwiftNIO SSL `a9d648535c62e640d1df258a70c9117a8ddea43e`; candidate archive SHA-256 `1d5c7c73272c6addda98639283310e92b2a703a415621bf1dd7dde94b00807c3`. |
+| Focused proof | `ComposeRuntimeSmokeTests.runtimeStaticIPv4EndpointLifecycle` passes in 45.492 seconds against the exact candidate. It verifies subnet, range, gateway, the `192.168.240.20` endpoint before/after restart, and project-network cleanup. Evidence: `/Volumes/SSD/github/evidence/container-family-stable-01/net-ipam-static-endpoint-cd5f0e45/runtime-test-with-preflight-path.log`. |
+| Completion criteria | Met. The normal graph builds; the exact runtime proof passes without reducing IPv6-only support. The completed duration is retained as functional evidence, not comparable-performance proof. |
+| Safe handoff | Preserve [the focused handoff](handoffs/NET-IPAM-STATIC-ENDPOINT-01.md) and exact evidence under `/Volumes/SSD/github/evidence/container-family-stable-01`; reconcile [issue #208](https://github.com/stephenlclarke/container-compose/issues/208) after publication. |
 
 ## LOGGING-SYSLOG-UNIX-REST-01
 
