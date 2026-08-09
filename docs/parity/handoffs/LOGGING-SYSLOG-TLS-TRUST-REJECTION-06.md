@@ -50,6 +50,27 @@ the touched provider and test files. A copy-on-write focused release test stage
 stalled in SwiftPM manifest setup before compilation, so it was stopped and
 removed. This is a functional build-proof blocker, not a performance decision.
 
+## Fresh candidate rebuild attempt
+
+The marker-protected root
+`/private/tmp/ctr-syslog-tls-archive.FaYEnp` records the next exact rebuild
+attempt. It started from signed Container `72d3b573`, clean local
+Containerization `38d9c695`, Engine API `afb8a8f`, and the local SwiftNIO SSL
+alert-control checkout `a9d6485`. The source worktree and retained TLS build
+cache were separated with APFS reflinks; the no-resolution graph correctly
+selected the two current filesystem dependencies and retained the NIOSSL edit.
+
+The inherited SwiftPM workspace first contained obsolete editable Engine API
+and Containerization records. Recreating only the disposable workspace from
+the cached repositories fixed that graph mismatch. The release build then
+reached `1388/1408` compile actions but exhausted the MBP filesystem while
+writing the relocated Swift module cache (`No space left on device`). It
+produced no archive, packaged binary, runtime, or public-socket result, so it
+is not candidate evidence. The disposable source worktree was removed after
+all candidate processes exited, restoring the available space; its archive
+build logs and pre-rebuild workspace/lock snapshots remain under the retained
+marker root.
+
 ## Missing acceptance evidence
 
 Before changing this state, create a repository-owned strict Syslog TLS fixture
@@ -62,7 +83,10 @@ authority state, and user-runtime health. Do not reuse the earlier candidate.
 ## Safe handoff
 
 Preserve the Docker and candidate roots above, the immutable build stage
-`/private/tmp/container-tls-alert-stage.5h9L5d`, and the existing GELF
-candidate service. Do not restart the user runtime, move dependency pins, or
-treat ordinary duration as a blocker. Resume only with a new marker-protected
-candidate root and an independently captured result.
+`/private/tmp/container-tls-alert-stage.5h9L5d`, the failed-rebuild record
+`/private/tmp/ctr-syslog-tls-archive.FaYEnp`, and the existing GELF candidate
+service. Reclaim sufficient disk for a full relocated module cache before
+creating another marker-protected candidate root. Do not restart the user
+runtime, move dependency pins, or treat ordinary duration as a blocker. Resume
+only with a new marker-protected candidate root and an independently captured
+result.
