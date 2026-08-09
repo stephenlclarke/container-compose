@@ -1,29 +1,29 @@
 {
   "components": {
     "container": {
-      "ref": "2a79b4553a342e33411666a88ad20ccd2ce46551",
+      "ref": "c7924e375d98d82af37902f4a0c310ee389eab97",
       "repository": "stephenlclarke/container"
     },
     "container-builder-shim": {
       "image": {
-        "digest": "sha256:b48fbf42a51bf3432bd50d64732b4d6931944f3bb30f911a9a513cf8bab9b02e",
+        "digest": "sha256:6cfb001d6fcf46283526df084351c20fd77e473eabaa9bf55e9327cc1d882f0c",
         "repository": "ghcr.io/stephenlclarke/container-builder-shim/builder",
-        "tag": "current-30434989734-61832d4ca917"
+        "tag": "current-30784216505-806feb1c9cc1"
       },
-      "ref": "61832d4ca91715180a84dec0eab091170174c43c",
+      "ref": "806feb1c9cc1fe9f183c0c7c123f6b63db4ebf64",
       "repository": "stephenlclarke/container-builder-shim"
     },
     "container-engine-api": {
-      "ref": "fd6ad4f3736fc1fb1d3b9e43ce51ea01adb7de1a",
+      "ref": "5e6e24d017691596783515285e1ff56d29701235",
       "repository": "stephenlclarke/container-engine-api",
       "version": "0.2.3"
     },
     "containerization": {
-      "ref": "77f06d4c44341e04241941072fb69e2b85a6f5c1",
+      "ref": "7f62f5b940630811573a34f70cdd6f3fa11d014d",
       "repository": "stephenlclarke/containerization"
     },
     "devcontainer": {
-      "ref": "77f3cb5dc7cce8d3f88de960b7d93d676a768137",
+      "ref": "d57c2b689857a4832f7dbc8affca57f749fe155f",
       "repository": "stephenlclarke/devcontainer"
     }
   },

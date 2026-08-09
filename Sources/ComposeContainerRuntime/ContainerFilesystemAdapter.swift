@@ -109,10 +109,54 @@ public struct ContainerClientCopier: ComposeRuntimeCopying {
         }
     }
 
-    /// Copies service container files through native archive APIs when a test
-    /// supplies them, otherwise through Compose's secure path-copy fallback.
+    /// Streams an archive into a service container through `ContainerClient`.
+    public func copyArchiveIntoContainer(
+        id: String,
+        archive: FileHandle,
+        destination: String,
+        options: ContainerCopyTransferOptions = ContainerCopyTransferOptions(),
+    ) async throws {
+        if let copyArchiveIntoOperation {
+            try await copyArchiveIntoOperation(id, archive, destination, options)
+            return
+        }
+
+        try await copyArchiveIntoContainer(
+            id: id,
+            archive: archive,
+            destination: destination,
+            options: options,
+            temporaryDirectory: FileManager.default.temporaryDirectory,
+        )
+    }
+
+    /// Streams a service container path as an archive through `ContainerClient`.
+    public func copyFromContainerAsArchive(
+        id: String,
+        source: String,
+        archive: FileHandle,
+        copyContents: Bool = false,
+        options: ContainerCopyTransferOptions = ContainerCopyTransferOptions(),
+    ) async throws {
+        if let copyArchiveFromOperation {
+            try await copyArchiveFromOperation(id, source, archive, copyContents, options)
+            return
+        }
+
+        try await copyFromContainerAsArchive(
+            id: id,
+            source: source,
+            archive: archive,
+            copyContents: copyContents,
+            options: options,
+            temporaryDirectory: FileManager.default.temporaryDirectory,
+        )
+    }
+
+    /// Copies service container files through native archive APIs when supplied,
+    /// otherwise through Compose's secure staged-archive fallback.
     public func copyBetweenContainers(sourceID: String, source: String, destinationID: String, destination: String, options: ContainerCopyTransferOptions = ContainerCopyTransferOptions()) async throws {
-        guard let copyArchiveIntoOperation, let copyArchiveFromOperation else {
+        guard copyArchiveIntoOperation != nil, copyArchiveFromOperation != nil else {
             try await copyBetweenContainersUsingStagedArchive(
                 sourceID: sourceID,
                 source: source,
@@ -131,21 +175,21 @@ public struct ContainerClientCopier: ComposeRuntimeCopying {
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
                     defer { try? writer.close() }
-                    try await copyArchiveFromOperation(
-                        sourceID,
-                        archiveSource.path,
-                        writer,
-                        archiveSource.copyContents,
-                        options,
+                    try await copyFromContainerAsArchive(
+                        id: sourceID,
+                        source: archiveSource.path,
+                        archive: writer,
+                        copyContents: archiveSource.copyContents,
+                        options: options,
                     )
                 }
                 group.addTask {
                     defer { try? reader.close() }
-                    try await copyArchiveIntoOperation(
-                        destinationID,
-                        reader,
-                        destination,
-                        destinationOptions,
+                    try await copyArchiveIntoContainer(
+                        id: destinationID,
+                        archive: reader,
+                        destination: destination,
+                        options: destinationOptions,
                     )
                 }
                 do {

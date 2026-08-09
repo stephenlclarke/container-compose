@@ -25,7 +25,7 @@ let containerDependency: Package.Dependency = {
     }
     return .package(
         url: "https://github.com/stephenlclarke/container.git",
-        revision: "2a79b4553a342e33411666a88ad20ccd2ce46551",
+        revision: "c7924e375d98d82af37902f4a0c310ee389eab97",
     )
 }()
 
@@ -36,9 +36,14 @@ let containerizationDependency: Package.Dependency = {
     }
     return .package(
         url: "https://github.com/stephenlclarke/containerization.git",
-        revision: "77f06d4c44341e04241941072fb69e2b85a6f5c1",
+        revision: "7f62f5b940630811573a34f70cdd6f3fa11d014d",
     )
 }()
+
+let nioSSLDependency: Package.Dependency = .package(
+    url: "https://github.com/stephenlclarke/swift-nio-ssl.git",
+    revision: "a9d648535c62e640d1df258a70c9117a8ddea43e",
+)
 
 let package = Package(
     name: "container-compose",
@@ -52,6 +57,7 @@ let package = Package(
     dependencies: [
         containerDependency,
         containerizationDependency,
+        nioSSLDependency,
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.4.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
