@@ -143,6 +143,7 @@ struct DockerLoggingDriverOracleFixtureTests {
     }
 
     @Test
+    // swiftlint:disable:next function_body_length
     func `pins syslog address and facility validation phases`() throws {
         let fixture = try Self.fixture()
 
@@ -1064,6 +1065,435 @@ struct DockerLoggingDriverOracleFixtureTests {
 
     @Test
     // swiftlint:disable:next function_body_length
+    func `pins GELF UDP gzip and TCP NUL wire contracts`() throws {
+        let fixture = try Self.gelfWireFixture()
+
+        #expect(try integer(fixture, "schemaVersion") == 1)
+        #expect(
+            try string(fixture, "scope")
+                == "direct Docker Engine GELF remote-wire contract",
+        )
+        #expect(try string(fixture, "metadata", "engineVersion") == "29.2.1")
+        #expect(try string(fixture, "metadata", "apiVersion") == "1.53")
+        #expect(try string(fixture, "metadata", "context") == "colima")
+        #expect(try string(fixture, "metadata", "dockerClientVersion") == "29.7.1")
+        #expect(try string(fixture, "metadata", "image") == "alpine:3.20")
+        #expect(
+            try string(fixture, "timings", "gelfRemoteWire", "clock")
+                == "time.monotonic",
+        )
+        #expect(
+            try double(
+                fixture,
+                path: ["timings", "gelfRemoteWire", "durationSeconds"],
+            ) > 0,
+        )
+
+        let expectedMessages = [
+            "stdout-ascii",
+            "stderr-utf8-☃",
+            "stdout-binary-�\u{0000}-end",
+        ]
+        let expectedLevels = [6, 3, 6]
+        for transport in ["tcpNULTerminated", "udpDefaultGzip"] {
+            #expect(
+                try boolean(
+                    fixture,
+                    "cases", "gelfRemoteWire", transport, "phase",
+                    "configurationAcceptedAtCreate",
+                ),
+            )
+            #expect(
+                try boolean(
+                    fixture,
+                    "cases", "gelfRemoteWire", transport, "phase",
+                    "connectionEstablishedAtStart",
+                ),
+            )
+            #expect(
+                try integer(
+                    fixture,
+                    "cases", "gelfRemoteWire", transport, "phase", "containerExitCode",
+                ) == 0,
+            )
+            #expect(
+                try string(
+                    fixture,
+                    "cases", "gelfRemoteWire", transport, "inspectAfterExit", "logConfig",
+                    "Type",
+                ) == "gelf",
+            )
+            #expect(
+                try string(
+                    fixture,
+                    "cases", "gelfRemoteWire", transport, "inspectAfterExit", "logConfig",
+                    "Config", "cache-disabled",
+                ) == "true",
+            )
+            #expect(
+                try boolean(
+                    fixture,
+                    "cases", "gelfRemoteWire", transport, "cleanup",
+                    "receiverProcessRunning",
+                ) == false,
+            )
+            let residue: [Any] = try value(
+                fixture,
+                "cases", "gelfRemoteWire", transport, "cleanup", "vmPathsRemaining",
+            )
+            #expect(residue.isEmpty)
+
+            let records: [[String: Any]] = try value(
+                fixture,
+                "cases", "gelfRemoteWire", transport, "wire", "records",
+            )
+            #expect(try records.map { try string($0, "shortMessage") } == expectedMessages)
+            #expect(try records.map { try integer($0, "level") } == expectedLevels)
+            for record in records {
+                #expect(try string(record, "version") == "1.1")
+                #expect(try string(record, "host") == "colima")
+                #expect(try string(record, "timestamp") == "<unix-seconds-milliseconds>")
+                #expect(
+                    try string(record, "timestampPrecision")
+                        == "at-most-milliseconds",
+                )
+                let extras: [String: Any] = try value(record, "extras")
+                #expect(extras["_ORACLE_ENV"] as? String == "bravo")
+                #expect(extras["_oracle.label"] as? String == "alpha")
+                #expect(extras["_container_id"] as? String == "<container-id>")
+                #expect(extras["_container_name"] as? String == "<container-name>")
+                #expect(extras["_created"] as? String == "<rfc3339-nano-utc>")
+                #expect(extras["_image_id"] as? String == "<image-id>")
+                #expect(extras["_image_name"] as? String == "alpine:3.20")
+                #expect(
+                    extras["_tag"] as? String
+                        == "oracle.<container-name>.<container-id-short>",
+                )
+            }
+        }
+
+        #expect(
+            try string(
+                fixture,
+                "cases", "gelfRemoteWire", "udpDefaultGzip", "wire", "framing",
+                "compression",
+            ) == "gzip",
+        )
+        #expect(
+            try boolean(
+                fixture,
+                "cases", "gelfRemoteWire", "udpDefaultGzip", "wire", "framing",
+                "datagramBoundariesAreMessageBoundaries",
+            ),
+        )
+        #expect(
+            try string(
+                fixture,
+                "cases", "gelfRemoteWire", "tcpNULTerminated", "wire", "framing",
+                "compression",
+            ) == "none",
+        )
+        #expect(
+            try boolean(
+                fixture,
+                "cases", "gelfRemoteWire", "tcpNULTerminated", "wire", "framing",
+                "streamEndsWithNUL",
+            ),
+        )
+        #expect(
+            try boolean(
+                fixture,
+                "cases", "gelfRemoteWire", "tcpNULTerminated", "wire",
+                "peerClosedAfterContainerExit",
+            ),
+        )
+    }
+
+    @Test
+    // swiftlint:disable:next function_body_length
+    func `pins GELF option validation phases and transport boundaries`() throws {
+        let fixture = try Self.gelfConfigFixture()
+
+        #expect(try integer(fixture, "schemaVersion") == 1)
+        #expect(
+            try string(fixture, "scope")
+                == "direct Docker Engine GELF option and validation-phase contract",
+        )
+        #expect(try string(fixture, "metadata", "engineVersion") == "29.2.1")
+        #expect(try string(fixture, "metadata", "apiVersion") == "1.53")
+        #expect(try string(fixture, "metadata", "context") == "colima")
+        #expect(try string(fixture, "metadata", "image") == "alpine:3.20")
+        #expect(
+            try string(fixture, "timings", "gelfConfig", "clock") == "time.monotonic",
+        )
+        #expect(
+            try double(fixture, path: ["timings", "gelfConfig", "durationSeconds"]) > 0,
+        )
+        #expect(try boolean(fixture, "cleanup", "containersRemoved"))
+
+        let rejected = [
+            ("missingAddress", "gelf-address is a required parameter"),
+            ("malformedAddress", "gelf: please provide gelf-address as proto://host:port"),
+            ("unknownOption", "unknown log opt \"opaque\" for gelf log driver"),
+            (
+                "udpBadCompressionLevel",
+                "unknown value \"10\" for log opt \"gelf-compression-level\" for gelf log driver",
+            ),
+            ("udpTCPReconnect", "\"gelf-tcp-max-reconnect\" is only valid for TCP"),
+            ("tcpCompression", "compression is only supported on UDP"),
+            ("tcpBadReconnect", "\"gelf-tcp-max-reconnect\" must be a positive integer"),
+        ]
+        for (label, message) in rejected {
+            #expect(
+                try integer(fixture, "cases", label, "create", "httpStatus") == 400,
+            )
+            #expect(try string(fixture, "cases", label, "create", "message") == message)
+            #expect(
+                try boolean(fixture, "cases", label, "phase", "configurationRejectedAtCreate"),
+            )
+        }
+
+        for label in ["udpDefault", "udpZlibMaximum", "udpNoneMinimum", "tcpReconnect"] {
+            #expect(
+                try integer(fixture, "cases", label, "create", "httpStatus") == 201,
+            )
+            #expect(
+                try string(fixture, "cases", label, "inspectAfterExit", "Type") == "gelf",
+            )
+            #expect(
+                try boolean(
+                    fixture, "cases", label, "phase", "configurationAcceptedAtCreate",
+                ),
+            )
+            #expect(
+                try boolean(fixture, "cases", label, "phase", "startSucceeded"),
+            )
+            #expect(
+                try integer(fixture, "cases", label, "phase", "containerExitCode") == 0,
+            )
+        }
+
+        #expect(
+            try string(
+                fixture, "cases", "udpDefault", "inspectAfterExit", "Config", "gelf-address",
+            ) == "udp://127.0.0.1:1",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "udpZlibMaximum", "inspectAfterExit", "Config",
+                "gelf-compression-type",
+            ) == "zlib",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "udpZlibMaximum", "inspectAfterExit", "Config",
+                "gelf-compression-level",
+            ) == "9",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "udpNoneMinimum", "inspectAfterExit", "Config",
+                "gelf-address",
+            ) == "UDP://127.0.0.1:1",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "udpNoneMinimum", "inspectAfterExit", "Config",
+                "gelf-compression-type",
+            ) == "none",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "udpNoneMinimum", "inspectAfterExit", "Config",
+                "gelf-compression-level",
+            ) == "-1",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "tcpReconnect", "inspectAfterExit", "Config", "gelf-address",
+            ) == "tcp://<colima-oracle-receiver>",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "tcpReconnect", "inspectAfterExit", "Config",
+                "gelf-tcp-max-reconnect",
+            ) == "+1",
+        )
+        #expect(
+            try string(
+                fixture, "cases", "tcpReconnect", "inspectAfterExit", "Config",
+                "gelf-tcp-reconnect-delay",
+            ) == "0",
+        )
+        #expect(
+            try boolean(
+                fixture, "cases", "tcpReconnect", "receiver", "peerClosedAfterContainerExit",
+            ),
+        )
+        #expect(
+            try boolean(fixture, "cases", "tcpReconnect", "receiver", "receivedPayload"),
+        )
+        #expect(
+            try boolean(
+                fixture, "cases", "tcpReconnect", "cleanup", "receiverProcessRunning",
+            ) == false,
+        )
+        let tcpResidue: [Any] = try value(
+            fixture,
+            "cases", "tcpReconnect", "cleanup", "vmPathsRemaining",
+        )
+        #expect(tcpResidue.isEmpty)
+    }
+
+    @Test
+    // swiftlint:disable:next function_body_length
+    func `pins GELF tag template metadata precedence and deferred validation`() throws {
+        let fixture = try Self.gelfMetadataFixture()
+
+        #expect(try integer(fixture, "schemaVersion") == 1)
+        #expect(
+            try string(fixture, "scope")
+                == "direct Docker Engine GELF metadata and tag validation contract",
+        )
+        #expect(try string(fixture, "metadata", "engineVersion") == "29.2.1")
+        #expect(try string(fixture, "metadata", "apiVersion") == "1.53")
+        #expect(try string(fixture, "metadata", "context") == "colima")
+        #expect(try string(fixture, "metadata", "image") == "alpine:3.20")
+        #expect(
+            try string(fixture, "timings", "gelfMetadata", "clock") == "time.monotonic",
+        )
+        #expect(
+            try double(fixture, path: ["timings", "gelfMetadata", "durationSeconds"]) > 0,
+        )
+        #expect(try boolean(fixture, "cleanup", "containersRemoved"))
+
+        let metadataPath = ["cases", "metadataPrecedenceAndTag"]
+        #expect(
+            try boolean(
+                fixture,
+                path: metadataPath + ["phase", "configurationAcceptedAtCreate"],
+            ),
+        )
+        #expect(
+            try boolean(
+                fixture,
+                path: metadataPath + ["phase", "connectionEstablishedAtStart"],
+            ),
+        )
+        #expect(
+            try integer(fixture, path: metadataPath + ["phase", "containerExitCode"]) == 0,
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Type"],
+            ) == "gelf",
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Config", "tag"],
+            ) == "{{.Name}}/{{.ID}}",
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Config", "env"],
+            ) == "shared,container_id",
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Config", "labels"],
+            ) == "team,shared",
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Config", "env-regex"],
+            ) == "^MATCH_",
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Config", "labels-regex"],
+            ) == "^com\\.",
+        )
+        #expect(
+            try string(
+                fixture,
+                path: metadataPath + ["inspectAfterExit", "logConfig", "Config", "gelf-address"],
+            ) == "udp://<colima-oracle-receiver>",
+        )
+        #expect(
+            try boolean(fixture, path: metadataPath + ["cleanup", "receiverProcessRunning"])
+                == false,
+        )
+        let metadataResidue: [Any] = try value(
+            fixture,
+            path: metadataPath + ["cleanup", "vmPathsRemaining"],
+        )
+        #expect(metadataResidue.isEmpty)
+
+        let records: [[String: Any]] = try value(
+            fixture,
+            path: metadataPath + ["wire", "records"],
+        )
+        #expect(
+            try records.map { try string($0, "shortMessage") }
+                == ["stdout-ascii", "stderr-utf8-☃", "stdout-binary-�\u{0000}-end"],
+        )
+        #expect(try records.map { try integer($0, "level") } == [6, 3, 6])
+        for record in records {
+            let extras: [String: Any] = try value(record, "extras")
+            #expect(extras["_MATCH_ONE"] as? String == "matched")
+            #expect(extras["_com.example.role"] as? String == "frontend")
+            #expect(extras["_container_id"] as? String == "metadata-id")
+            #expect(extras["_shared"] as? String == "environment")
+            #expect(extras["_team"] as? String == "runtime")
+            #expect(extras["_tag"] as? String == "<container-name>/<container-id-short>")
+            #expect(extras["_ignored"] == nil)
+            #expect(try string(record, "timestampPrecision") == "at-most-milliseconds")
+        }
+
+        let rejections = [
+            ("tagMissingField", "can't evaluate field Missing"),
+            ("labelsRegexLookahead", "invalid or unsupported Perl syntax"),
+            ("envRegexSyntax", "missing closing )"),
+        ]
+        for (label, message) in rejections {
+            let path = ["cases", "startTimeInvalid", label]
+            #expect(try integer(fixture, path: path + ["create", "httpStatus"]) == 201)
+            #expect(try integer(fixture, path: path + ["start", "httpStatus"]) == 500)
+            #expect(
+                try boolean(
+                    fixture,
+                    path: path + ["phase", "configurationAcceptedAtCreate"],
+                ),
+            )
+            #expect(
+                try boolean(
+                    fixture,
+                    path: path + ["phase", "configurationRejectedAtStart"],
+                ),
+            )
+            #expect(
+                try boolean(fixture, path: path + ["phase", "containerRemainsCreated"]),
+            )
+            #expect(
+                try string(
+                    fixture,
+                    path: path + ["inspectAfterFailedStart", "state", "status"],
+                ) == "created",
+            )
+            #expect(
+                try string(fixture, path: path + ["start", "message"]).contains(message),
+            )
+        }
+    }
+
+    @Test
+    // swiftlint:disable:next function_body_length
     func `pins Compose foreground independence from historical readers`() throws {
         let fixture = try Self.fixture()
 
@@ -1172,6 +1602,60 @@ struct DockerLoggingDriverOracleFixtureTests {
         let data = try Data(contentsOf: url)
         guard let fixture = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw FixtureError.invalid("root is not a JSON object")
+        }
+        return fixture
+    }
+
+    private static func gelfWireFixture() throws -> [String: Any] {
+        guard
+            let url = Bundle.module.url(
+                forResource: "docker-engine-29.2.1-gelf-wire",
+                withExtension: "json",
+            )
+        else {
+            throw FixtureError.missing(
+                "Fixtures/logging/docker-engine-29.2.1-gelf-wire.json",
+            )
+        }
+        let data = try Data(contentsOf: url)
+        guard let fixture = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw FixtureError.invalid("GELF wire root is not a JSON object")
+        }
+        return fixture
+    }
+
+    private static func gelfConfigFixture() throws -> [String: Any] {
+        guard
+            let url = Bundle.module.url(
+                forResource: "docker-engine-29.2.1-gelf-config",
+                withExtension: "json",
+            )
+        else {
+            throw FixtureError.missing(
+                "Fixtures/logging/docker-engine-29.2.1-gelf-config.json",
+            )
+        }
+        let data = try Data(contentsOf: url)
+        guard let fixture = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw FixtureError.invalid("GELF configuration root is not a JSON object")
+        }
+        return fixture
+    }
+
+    private static func gelfMetadataFixture() throws -> [String: Any] {
+        guard
+            let url = Bundle.module.url(
+                forResource: "docker-engine-29.2.1-gelf-metadata",
+                withExtension: "json",
+            )
+        else {
+            throw FixtureError.missing(
+                "Fixtures/logging/docker-engine-29.2.1-gelf-metadata.json",
+            )
+        }
+        let data = try Data(contentsOf: url)
+        guard let fixture = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw FixtureError.invalid("GELF metadata root is not a JSON object")
         }
         return fixture
     }

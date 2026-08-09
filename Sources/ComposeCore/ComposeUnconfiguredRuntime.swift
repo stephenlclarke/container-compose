@@ -24,10 +24,10 @@ import Foundation
 /// particular runtime implementation merely to construct default dependencies.
 struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExporting, ComposeRuntimeExecManaging,
     ComposeRuntimeEventsManaging, ComposeRuntimeLifecycleManaging, ComposeRuntimeStatsManaging,
-    ComposeRuntimeTopManaging, ComposeRuntimeLogManaging, ComposeRuntimeConfigReading,
+    ComposeRuntimeTopManaging, ComposeRuntimeLogManaging, ComposeRuntimeAttachManaging, ComposeRuntimeConfigReading,
     ComposeRuntimeSecretReading, ComposeRuntimeDiscoveryManaging, ComposeRuntimeImageManaging,
     ComposeRuntimeImageVolumeInitializing, ComposeArchiveManaging,
-    ComposeRuntimeResourceManaging
+    ComposeRuntimeResourceManaging, ComposeRuntimeContainerLaunching
 {
     private func unavailable(_ operation: String) -> ComposeError {
         .unsupported("\(operation) requires an installed Compose runtime provider")
@@ -133,6 +133,10 @@ struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExportin
         throw unavailable("container remove")
     }
 
+    func launchContainer(_: ComposeRuntimeContainerLaunchRequest) async throws -> Int32 {
+        throw unavailable("container create")
+    }
+
     func stats(
         ids _: [String],
         format _: String,
@@ -158,6 +162,18 @@ struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExportin
         emit _: @escaping @Sendable (Data) -> Void,
     ) async throws {
         throw unavailable("container logs")
+    }
+
+    func attachOutput(
+        id _: String,
+        stdout _: Bool,
+        stderr _: Bool,
+        mode _: ComposeOutputAttachmentMode,
+        onReady _: @escaping @Sendable () -> Void,
+        onStarted _: @escaping @Sendable () -> Void,
+        emit _: @escaping @Sendable (ComposeLogRecord) -> Void,
+    ) async throws {
+        throw unavailable("container attach")
     }
 
     func readConfig(name _: String) async throws -> Data {
@@ -272,6 +288,10 @@ public enum ComposeRuntimeProviderDefaults {
         ComposeUnconfiguredRuntime()
     }
 
+    public static func launching() -> any ComposeRuntimeContainerLaunching {
+        ComposeUnconfiguredRuntime()
+    }
+
     public static func events() -> any ComposeRuntimeEventsManaging {
         ComposeUnconfiguredRuntime()
     }
@@ -289,6 +309,10 @@ public enum ComposeRuntimeProviderDefaults {
     }
 
     public static func logs() -> any ComposeRuntimeLogManaging {
+        ComposeUnconfiguredRuntime()
+    }
+
+    public static func attach() -> any ComposeRuntimeAttachManaging {
         ComposeUnconfiguredRuntime()
     }
 

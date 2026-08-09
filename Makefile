@@ -17,7 +17,7 @@
 override SHELL := /bin/bash
 override .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := all
-.PHONY: fork-classifications-check upstream-divergence-report upstream-divergence-check upstream-divergence-release-check upstream-handoff-registry-update upstream-handoff-registry-check programme-progress-update programme-progress-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
+.PHONY: fork-classifications-check upstream-divergence-report upstream-divergence-check upstream-divergence-release-check upstream-handoff-registry-update upstream-handoff-registry-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
 
 SWIFT ?= swift
 SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
@@ -110,13 +110,19 @@ SWIFT_RUNTIME_TEST_FILTER ?= ComposeRuntimeTests
 COMPOSE_TEST_BINARY ?= $(abspath .build/debug/compose)
 CONTAINER_STACK_REPO ?= $(abspath ../container)
 CONTAINERIZATION_STACK_REPO ?= $(abspath ../containerization)
+CONTAINER_ENGINE_API_STACK_REPO ?= $(abspath ../container-engine-api)
+CONTAINER_PACKAGE_PATH ?= $(if $(wildcard $(CONTAINER_STACK_REPO)/Package.swift),$(CONTAINER_STACK_REPO),)
+CONTAINERIZATION_PACKAGE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_REPO)/Package.swift),$(CONTAINERIZATION_STACK_REPO),)
+CONTAINER_ENGINE_API_PACKAGE_PATH ?= $(if $(wildcard $(CONTAINER_ENGINE_API_STACK_REPO)/Package.swift),$(CONTAINER_ENGINE_API_STACK_REPO),)
+PARITY_CONTAINER_REF ?= $(if $(CONTAINER_PACKAGE_PATH),$(shell git -C "$(CONTAINER_PACKAGE_PATH)" rev-parse HEAD 2>/dev/null),$(CONTAINER_REF))
+PARITY_CONTAINERIZATION_REF ?= $(if $(CONTAINERIZATION_PACKAGE_PATH),$(shell git -C "$(CONTAINERIZATION_PACKAGE_PATH)" rev-parse HEAD 2>/dev/null),$(CONTAINERIZATION_REF))
+PARITY_CONTAINER_ENGINE_API_REF ?= $(if $(CONTAINER_ENGINE_API_PACKAGE_PATH),$(shell git -C "$(CONTAINER_ENGINE_API_PACKAGE_PATH)" rev-parse HEAD 2>/dev/null),unspecified)
 CONTAINER_BUILDER_SHIM_STACK_REPO ?= $(abspath ../container-builder-shim)
 CONTAINER_K8S_STACK_REPO ?= $(abspath ../container-k8s)
 HOMEBREW_TAP_REPO ?= $(abspath ../homebrew-tap)
 LOCAL_CONTAINER_BINARY ?= $(abspath $(CONTAINER_STACK_REPO)/bin/container)
 LOCAL_CONTAINER_PACKAGE_BINARY ?= $(abspath $(CONTAINER_STACK_REPO)/usr/local/bin/container)
 CONTAINER_COMPOSE_CONTAINER ?= $(or $(firstword $(wildcard $(LOCAL_CONTAINER_BINARY) $(LOCAL_CONTAINER_PACKAGE_BINARY))),container)
-CONTAINER_RUNTIME_STOP_HELPER ?= $(abspath $(CONTAINER_STACK_REPO)/scripts/ensure-container-stopped.sh)
 CONTAINER_RUNTIME_APP_ROOT ?= $(abspath .build/container-runtime)
 CONTAINER_RUNTIME_INIT_BLOCK_REPO ?= $(if $(wildcard $(CONTAINER_STACK_REPO)/Makefile),$(CONTAINER_STACK_REPO),)
 CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE ?=
@@ -128,6 +134,8 @@ CONTAINERIZATION_INIT_SOURCE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_RE
 DOCKER_COMPOSE_REFERENCE ?= $(shell if docker compose version >/dev/null 2>&1; then printf '%s' 'docker compose'; elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then printf '%s' docker-compose; else printf '%s' 'docker compose'; fi)
 DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.3.1
 DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff
+DOCKER_TERMINAL_CANDIDATE_SOCKET ?= /tmp/container-engine-$(shell id -u)/docker.sock
+DOCKER_REST_LOGGING_CANDIDATE_SOCKET ?= $(DOCKER_TERMINAL_CANDIDATE_SOCKET)
 CONTAINER_COMPOSE_LIVE ?= 0
 PARITY_EVIDENCE_DIR ?=
 PARITY_REPETITIONS ?= 3
@@ -135,8 +143,17 @@ PARITY_TIMEOUT_SECONDS ?= 300
 PARITY_ENV = \
 	CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" \
 	CONTAINER_COMPOSE_LIVE="$(CONTAINER_COMPOSE_LIVE)" \
+	CONTAINER_PACKAGE_PATH="$(CONTAINER_PACKAGE_PATH)" \
+	CONTAINERIZATION_PACKAGE_PATH="$(CONTAINERIZATION_PACKAGE_PATH)" \
+	CONTAINER_ENGINE_API_PACKAGE_PATH="$(CONTAINER_ENGINE_API_PACKAGE_PATH)" \
+	CONTAINER_ENGINE_API_REF="$(PARITY_CONTAINER_ENGINE_API_REF)" \
+	GIT_COMMIT="$(PARITY_CONTAINER_REF)" \
+	CONTAINER_SOURCE="$(CONTAINER_SOURCE)" \
+	CONTAINERIZATION_SOURCE="$(CONTAINERIZATION_SOURCE)" \
+	CONTAINERIZATION_REF="$(PARITY_CONTAINERIZATION_REF)" \
 	CONTAINER_STACK_REPO="$(CONTAINER_STACK_REPO)" \
 	CONTAINERIZATION_STACK_REPO="$(CONTAINERIZATION_STACK_REPO)" \
+	CONTAINER_ENGINE_API_STACK_REPO="$(CONTAINER_ENGINE_API_STACK_REPO)" \
 	DOCKER_COMPOSE="$(DOCKER_COMPOSE_REFERENCE)" \
 	DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)" \
 	PARITY_EVIDENCE_DIR="$(PARITY_EVIDENCE_DIR)" \
@@ -165,6 +182,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-bind-create-host-path-parity \
 	docker-compose-bind-propagation-parity \
 	docker-compose-image-volumes-parity \
+	docker-compose-deploy-job-modes-parity \
 	docker-compose-volume-labels-parity \
 	docker-compose-named-volume-reuse-parity \
 	docker-compose-deploy-endpoint-mode-parity \
@@ -224,8 +242,9 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: docker-compose-environment-parity docker-compose-named-volume-reuse-parity docker-compose-oci-annotations-parity docker-compose-exposed-ports-parity docker-compose-empty-process-overrides-parity docker-compose-provider-services-parity
 .PHONY: docker-compose-phase4-parity
 .PHONY: docker-compose-format-template-actions-parity
-.PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity
-.PHONY: docker-compose-up-exit-code-from-parity docker-compose-performance-matrix
+.PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity docker-compose-deploy-job-modes-parity
+.PHONY: docker-compose-up-exit-code-from-parity docker-compose-performance-matrix performance-matrix-harness-test signal-log-reliability-harness-test
+.PHONY: docker-terminal-session-oracle docker-terminal-session-oracle-update docker-terminal-session-candidate-oracle docker-rest-logging-oracle docker-rest-logging-candidate docker-rest-logging-parity docker-rest-discovery-oracle docker-rest-discovery-candidate docker-rest-discovery-parity docker-rest-image-discovery-oracle docker-rest-image-discovery-candidate docker-rest-image-discovery-parity docker-rest-image-mutation-oracle docker-rest-image-mutation-candidate docker-rest-image-mutation-parity
 
 all: workflow
 
@@ -255,10 +274,26 @@ resolve:
 	$(SWIFT) package resolve
 
 build:
-	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --product compose
+	@if [[ -n "$(CONTAINER_PACKAGE_PATH)$(CONTAINERIZATION_PACKAGE_PATH)" ]]; then \
+		lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
+		cp Package.resolved "$$lock_backup"; \
+		restore_lock() { trap - EXIT HUP INT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
+		trap restore_lock EXIT HUP INT TERM; \
+		$(PARITY_ENV) $(SWIFT) build --product compose; \
+	else \
+		$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --product compose; \
+	fi
 
 build-release:
-	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose $(SWIFT_RELEASE_FLAGS)
+	@if [[ -n "$(CONTAINER_PACKAGE_PATH)$(CONTAINERIZATION_PACKAGE_PATH)" ]]; then \
+		lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
+		cp Package.resolved "$$lock_backup"; \
+		restore_lock() { trap - EXIT HUP INT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
+		trap restore_lock EXIT HUP INT TERM; \
+		$(PARITY_ENV) $(SWIFT) build -c release --product compose $(SWIFT_RELEASE_FLAGS); \
+	else \
+		$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose $(SWIFT_RELEASE_FLAGS); \
+	fi
 
 run:
 	$(SWIFT) run $(SWIFT_RESOLVED_FLAGS) compose version
@@ -286,8 +321,7 @@ swift-runtime-test: container-stack-build build swift-runtime-test-build
 			if [[ -x "$$candidate" ]]; then container_binary="$$candidate"; break; fi; \
 		done; \
 	fi; \
-	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
-		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
+	CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
@@ -1290,6 +1324,56 @@ docker-log-fixtures:
 docker-log-fixtures-update:
 	./scripts/capture-docker-compose-log-fixtures.sh --update
 
+docker-terminal-session-oracle:
+	$(PYTHON) ./Tools/parity/capture-docker-terminal-session-oracle.py --strict
+
+docker-terminal-session-oracle-update:
+	$(PYTHON) ./Tools/parity/capture-docker-terminal-session-oracle.py --strict --update
+
+docker-terminal-session-candidate-oracle:
+	$(PYTHON) ./Tools/parity/capture-docker-terminal-session-oracle.py --strict \
+		--socket "$(DOCKER_TERMINAL_CANDIDATE_SOCKET)"
+
+docker-rest-logging-oracle:
+	./Tools/parity/check-docker-rest-logging-contract.sh --strict --reference
+
+docker-rest-logging-candidate:
+	./Tools/parity/check-docker-rest-logging-contract.sh --strict \
+		--host "unix://$(DOCKER_REST_LOGGING_CANDIDATE_SOCKET)" \
+		--native-cli "$(CONTAINER_COMPOSE_CONTAINER)"
+
+docker-rest-logging-parity: docker-rest-logging-oracle docker-rest-logging-candidate
+
+docker-rest-discovery-oracle:
+	./Tools/parity/check-docker-rest-discovery-contract.sh --strict --reference
+
+docker-rest-discovery-candidate:
+	./Tools/parity/check-docker-rest-discovery-contract.sh --strict \
+		--host "unix://$(DOCKER_REST_LOGGING_CANDIDATE_SOCKET)" \
+		--native-cli "$(CONTAINER_COMPOSE_CONTAINER)"
+
+docker-rest-discovery-parity: docker-rest-discovery-oracle docker-rest-discovery-candidate
+
+docker-rest-image-discovery-oracle:
+	./Tools/parity/check-docker-rest-image-discovery-contract.sh --strict --reference
+
+docker-rest-image-discovery-candidate:
+	./Tools/parity/check-docker-rest-image-discovery-contract.sh --strict \
+		--host "unix://$(DOCKER_REST_LOGGING_CANDIDATE_SOCKET)" \
+		--native-cli "$(CONTAINER_COMPOSE_CONTAINER)"
+
+docker-rest-image-discovery-parity: docker-rest-image-discovery-oracle docker-rest-image-discovery-candidate
+
+docker-rest-image-mutation-oracle:
+	./Tools/parity/check-docker-rest-image-mutation-contract.sh --strict --reference
+
+docker-rest-image-mutation-candidate:
+	./Tools/parity/check-docker-rest-image-mutation-contract.sh --strict \
+		--host "unix://$(DOCKER_REST_LOGGING_CANDIDATE_SOCKET)" \
+		--native-cli "$(CONTAINER_COMPOSE_CONTAINER)"
+
+docker-rest-image-mutation-parity: docker-rest-image-mutation-oracle docker-rest-image-mutation-candidate
+
 container-stack-build:
 	@if [[ -f "$(CONTAINER_STACK_REPO)/Makefile" ]]; then \
 		$(MAKE) -C "$(CONTAINER_STACK_REPO)" container; \
@@ -1323,8 +1407,7 @@ docker-compose-parity: container-stack-build docker-compose-reference
 			if [[ -x "$$candidate" ]]; then container_binary="$$candidate"; break; fi; \
 		done; \
 	fi; \
-	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
-		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
+	CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
@@ -1422,6 +1505,9 @@ docker-compose-bind-propagation-parity: build docker-compose-reference
 
 docker-compose-image-volumes-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-image-volumes.sh --strict
+
+docker-compose-deploy-job-modes-parity: build docker-compose-reference
+	$(PARITY_ENV) ./Tools/parity/check-compose-deploy-job-modes.sh --strict
 
 docker-compose-volume-labels-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-volume-labels.sh --strict
@@ -1526,8 +1612,7 @@ docker-compose-performance-matrix: build docker-compose-reference
 			if [[ -x "$$candidate" ]]; then container_binary="$$candidate"; break; fi; \
 		done; \
 	fi; \
-	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
-		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
+	CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
@@ -1536,6 +1621,7 @@ docker-compose-performance-matrix: build docker-compose-reference
 			PARITY_REPETITIONS="$${PARITY_REPETITIONS:-5}" \
 			PARITY_TIMEOUT_SECONDS="$${PARITY_TIMEOUT_SECONDS:-300}" \
 			PARITY_TIMING_MAX_RATIO="$${PARITY_TIMING_MAX_RATIO:-10}" \
+			PARITY_COMPARABLE_NOISE_PCT="$${PARITY_COMPARABLE_NOISE_PCT:-5}" \
 			./Tools/parity/check-compose-performance-matrix.sh --strict
 
 docker-compose-health-wait-parity: build docker-compose-reference
@@ -1556,7 +1642,12 @@ docker-compose-rm-parity: build docker-compose-reference
 docker-compose-lifecycle-hooks-parity: build docker-compose-reference
 	$(PARITY_ENV) ./Tools/parity/check-compose-lifecycle-hooks.sh --strict
 
-docker-compose-signal-log-reliability-parity: build docker-compose-reference
+docker-compose-signal-log-reliability-parity: docker-compose-reference
+	@lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
+	cp Package.resolved "$$lock_backup"; \
+	restore_lock() { trap - EXIT HUP INT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
+	trap restore_lock EXIT HUP INT TERM; \
+	$(PARITY_ENV) $(SWIFT) build --product compose; \
 	$(PARITY_ENV) ./Tools/parity/check-compose-signal-log-reliability.sh --strict
 
 docker-compose-restart-policy-parity: build docker-compose-reference
@@ -1670,6 +1761,12 @@ coverage-tools-test:
 	$(PYTHON) -m unittest discover Tools/ci
 	Tools/release/test_publish_github_release.sh
 
+performance-matrix-harness-test:
+	$(PYTHON) Tools/parity/test_compose_performance_matrix.py
+
+signal-log-reliability-harness-test:
+	$(PYTHON) Tools/parity/test_signal_log_reliability.py
+
 upstream-divergence-report:
 	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
 
@@ -1687,12 +1784,6 @@ upstream-handoff-registry-update:
 
 upstream-handoff-registry-check:
 	$(PYTHON) Tools/ci/upstream-handoff-registry.py check
-
-programme-progress-update:
-	$(PYTHON) Tools/ci/programme-progress.py render
-
-programme-progress-check:
-	$(PYTHON) Tools/ci/programme-progress.py check
 
 readme-upstream-metrics-update:
 	$(PYTHON) Tools/ci/update-readme-upstream-metrics.py --fetch
@@ -1724,9 +1815,9 @@ worktree-audit:
 worktree-audit-strict:
 	$(PYTHON) Tools/ci/worktree-audit.py --repository "$(CURDIR)" --main main --strict
 
-check: lint core-runtime-neutrality stack-consistency upstream-handoff-registry-check programme-progress-check check-licenses
+check: lint core-runtime-neutrality stack-consistency upstream-handoff-registry-check check-licenses
 
-lint: coverage-tools-test
+lint: coverage-tools-test performance-matrix-harness-test signal-log-reliability-harness-test
 	@while IFS= read -r -d '' script; do \
 		bash -n "$$script"; \
 	done < <(find scripts Tools/parity Tools/release -type f \( -name '*.sh' -o -name 'pre-commit.fmt' \) -print0)

@@ -46,9 +46,8 @@ struct ContainerServiceCreateProjectionTests {
         var runtime = ContainerServiceCreateRuntime()
         runtime.initProcess = process
         runtime.logging = ComposeLogConfiguration(
-            storage: .none,
-            maxSizeInBytes: 4096,
-            maxFileCount: 3,
+            driver: "local",
+            options: ["max-size": "4KiB", "max-file": "3"],
         )
         runtime.healthCheck = ComposeHealthCheck(
             process: process,
@@ -99,11 +98,11 @@ struct ContainerServiceCreateProjectionTests {
             runtime: runtime,
         )
 
-        let projection = plan.containerRuntimeProjection
+        let projection = try plan.containerRuntimeProjection
 
         expectProcess(projection.initProcess)
         #expect(projection.logging == ContainerLogConfiguration(
-            storage: .none,
+            storage: .local,
             maxSizeInBytes: 4096,
             maxFileCount: 3,
         ))
@@ -161,7 +160,7 @@ struct ContainerServiceCreateProjectionTests {
     }
 
     @Test
-    func `projects numeric process users and local logging`() {
+    func `projects numeric process users and local logging`() throws {
         let process = ComposeProcessConfiguration(
             executable: "/bin/true",
             arguments: [],
@@ -170,7 +169,21 @@ struct ContainerServiceCreateProjectionTests {
         ).containerProcessConfiguration
 
         #expect(process.user == .id(uid: 501, gid: 20))
-        #expect(ComposeLogConfiguration.standard.containerLogConfiguration == .default)
+        #expect(try ComposeLogConfiguration.standard.containerV1LogConfiguration == .default)
+    }
+
+    @Test
+    func `v1 projection rejects a driver without flattening its request`() throws {
+        let request = ComposeLogConfiguration(
+            driver: "example/provider",
+            options: ["custom": "value"],
+        )
+
+        #expect(throws: ContainerServiceCreateProjectionError.unsupportedLoggingDriver("example/provider")) {
+            _ = try request.containerV1LogConfiguration
+        }
+        #expect(request.driver == "example/provider")
+        #expect(request.options == ["custom": "value"])
     }
 
     private func expectProcess(_ process: ProcessConfiguration) {

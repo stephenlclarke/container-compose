@@ -103,7 +103,7 @@ The previously current supporting documents include:
 - `container-compose/ISSUE-package-compatibility-preflight-drain.md`
 - `container-compose/PR-package-compatibility-preflight-drain.md`
 
-The registry records 305 archived entries, one active development draft, 23 unsubmitted candidates, 11 submitted candidates, 16 tracked third-party pull requests, seven merged pull requests, and three closed pull requests. Submitted PRs #1965, #2031, #2035, #2036, #820, #821, and #823 are first-class registry rows without separate Markdown files. The two stock-shaped PR #33 follow-ups and the Apple pull requests that moved the fetched main branches are also first-class rows.
+The registry records 305 archived entries, one active development draft, 25 unsubmitted candidates, four submitted candidates, 15 tracked third-party pull requests, ten merged pull requests, and 14 closed pull requests. Submitted PRs #1965, #2031, #2035, #2036, #820, #821, and #823 are first-class registry rows without separate Markdown files. The two stock-shaped PR #33 follow-ups and the Apple pull requests that moved the fetched main branches are also first-class rows.
 
 An unsubmitted registry row is not automatically handoff-ready. Rebase the
 smallest independent change on current stock Apple `main`, rerun stock
@@ -163,6 +163,8 @@ programme-wide overlap/publication review are complete.
 | Repository | Current purpose |
 | --- | --- |
 | `apple/container` | [Generic IPv6 network disablement](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-network-ipv6-disablement.md) adds a typed macOS vmnet NAT66 and router-advertisement control while retaining enabled compatibility by default. |
+| `apple/container-builder-shim` | [Build-stream completion](apple-container-builder-shim/PR-build-stream-completion.md) sends the existing terminal completion packet after successful BuildKit work and leaves client-owned status-channel closure to the client. |
+| `apple/container` | [Build request-stream completion](apple-container/PR-build-stream-completion.md) treats terminal completion as a lifecycle outcome and finishes the host request half, without adding Docker- or Compose-specific policy. |
 | `apple/container-builder-shim` | [Build-context source-read errors](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/PR-build-context-source-read-errors.md) fail explicitly instead of sending empty file content. |
 | `apple/container-builder-shim` | [Build-context cache integrity](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/PR-build-context-cache-integrity.md) verifies archives, atomically publishes cache trees, and keeps synthetic Dockerfiles request-local. |
 | `apple/container` | [Fork CI validation](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-fork-ci-validation.md) runs formatting, generated-source checks, builds, and unit tests in contributor forks while retaining official guest integration. |

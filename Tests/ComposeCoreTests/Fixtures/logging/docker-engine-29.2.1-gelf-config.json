@@ -1,0 +1,203 @@
+{
+  "cases": {
+    "malformedAddress": {
+      "create": {
+        "httpStatus": 400,
+        "message": "gelf: please provide gelf-address as proto://host:port",
+        "warnings": []
+      },
+      "phase": {
+        "configurationRejectedAtCreate": true
+      }
+    },
+    "missingAddress": {
+      "create": {
+        "httpStatus": 400,
+        "message": "gelf-address is a required parameter",
+        "warnings": []
+      },
+      "phase": {
+        "configurationRejectedAtCreate": true
+      }
+    },
+    "tcpBadReconnect": {
+      "create": {
+        "httpStatus": 400,
+        "message": "\"gelf-tcp-max-reconnect\" must be a positive integer",
+        "warnings": []
+      },
+      "phase": {
+        "configurationRejectedAtCreate": true
+      }
+    },
+    "tcpCompression": {
+      "create": {
+        "httpStatus": 400,
+        "message": "compression is only supported on UDP",
+        "warnings": []
+      },
+      "phase": {
+        "configurationRejectedAtCreate": true
+      }
+    },
+    "tcpReconnect": {
+      "cleanup": {
+        "receiverProcessRunning": false,
+        "vmPathsRemaining": []
+      },
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "inspectAfterExit": {
+        "Config": {
+          "gelf-address": "tcp://<colima-oracle-receiver>",
+          "gelf-tcp-max-reconnect": "+1",
+          "gelf-tcp-reconnect-delay": "0"
+        },
+        "Type": "gelf"
+      },
+      "phase": {
+        "configurationAcceptedAtCreate": true,
+        "containerExitCode": 0,
+        "startSucceeded": true
+      },
+      "receiver": {
+        "peerClosedAfterContainerExit": true,
+        "receivedPayload": true
+      }
+    },
+    "udpBadCompressionLevel": {
+      "create": {
+        "httpStatus": 400,
+        "message": "unknown value \"10\" for log opt \"gelf-compression-level\" for gelf log driver",
+        "warnings": []
+      },
+      "phase": {
+        "configurationRejectedAtCreate": true
+      }
+    },
+    "udpDefault": {
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "inspectAfterExit": {
+        "Config": {
+          "gelf-address": "udp://127.0.0.1:1"
+        },
+        "Type": "gelf"
+      },
+      "phase": {
+        "configurationAcceptedAtCreate": true,
+        "containerExitCode": 0,
+        "startSucceeded": true
+      }
+    },
+    "udpNoneMinimum": {
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "inspectAfterExit": {
+        "Config": {
+          "gelf-address": "UDP://127.0.0.1:1",
+          "gelf-compression-level": "-1",
+          "gelf-compression-type": "none"
+        },
+        "Type": "gelf"
+      },
+      "phase": {
+        "configurationAcceptedAtCreate": true,
+        "containerExitCode": 0,
+        "startSucceeded": true
+      }
+    },
+    "udpTCPReconnect": {
+      "create": {
+        "httpStatus": 400,
+        "message": "\"gelf-tcp-max-reconnect\" is only valid for TCP",
+        "warnings": []
+      },
+      "phase": {
+        "configurationRejectedAtCreate": true
+      }
+    },
+    "udpZlibMaximum": {
+      "create": {
+        "httpStatus": 201,
+        "message": null,
+        "warnings": []
+      },
+      "inspectAfterExit": {
+        "Config": {
+          "gelf-address": "udp://127.0.0.1:1",
+          "gelf-compression-level": "9",
+          "gelf-compression-type": "zlib"
+        },
+        "Type": "gelf"
+      },
+      "phase": {
+        "configurationAcceptedAtCreate": true,
+        "containerExitCode": 0,
+        "startSucceeded": true
+      }
+    },
+    "unknownOption": {
+      "create": {
+        "httpStatus": 400,
+        "message": "unknown log opt \"opaque\" for gelf log driver",
+        "warnings": []
+      },
+      "phase": {
+        "configurationRejectedAtCreate": true
+      }
+    }
+  },
+  "cleanup": {
+    "containersRemoved": true
+  },
+  "metadata": {
+    "apiVersion": "1.53",
+    "architecture": "arm64",
+    "colimaVersion": "0.10.3",
+    "context": "colima",
+    "defaultLoggingDriver": "json-file",
+    "dockerClientVersion": "29.7.1",
+    "engineGitCommit": "6bc6209",
+    "engineGoVersion": "go1.25.6",
+    "engineKernelVersion": "6.8.0-100-generic",
+    "engineVersion": "29.2.1",
+    "hostArchitecture": "arm64",
+    "hostModel": "Mac17,9",
+    "image": "alpine:3.20",
+    "imageRepoDigests": [
+      "alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
+    ],
+    "macOSVersion": "26.5.2",
+    "minimumAPIVersion": "1.44",
+    "operatingSystem": "linux",
+    "registeredLoggingDrivers": [
+      "awslogs",
+      "fluentd",
+      "gcplogs",
+      "gelf",
+      "journald",
+      "json-file",
+      "local",
+      "splunk",
+      "syslog"
+    ]
+  },
+  "schemaVersion": 1,
+  "scope": "direct Docker Engine GELF option and validation-phase contract",
+  "timings": {
+    "gelfConfig": {
+      "clock": "time.monotonic",
+      "durationSeconds": 3.420637
+    }
+  }
+}

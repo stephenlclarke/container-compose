@@ -1,0 +1,71 @@
+{
+  "case": {
+    "cleanup": {
+      "absentAfterDelete": true,
+      "deleteStatus": 204
+    },
+    "create": {
+      "httpStatus": 201
+    },
+    "durationSeconds": 0.184992,
+    "firstAttach": {
+      "detach": {
+        "eof": true,
+        "sequenceBytes": [
+          24
+        ],
+        "workloadRunning": true
+      },
+      "handshake": {
+        "connection": "upgrade",
+        "contentType": "application/vnd.docker.raw-stream",
+        "httpStatus": 101,
+        "upgrade": "tcp"
+      },
+      "initialLines": [
+        "READY"
+      ],
+      "resize": {
+        "height": 48,
+        "httpStatus": 200,
+        "observedLines": [
+          "size",
+          "SIZE:48:132"
+        ],
+        "width": 132
+      }
+    },
+    "reattach": {
+      "exitLines": [
+        "exit",
+        "BYE"
+      ],
+      "handshake": {
+        "connection": "upgrade",
+        "contentType": "application/vnd.docker.raw-stream",
+        "httpStatus": 101,
+        "upgrade": "tcp"
+      },
+      "observedLines": [
+        "after",
+        "AFTER"
+      ],
+      "terminalEOF": true
+    },
+    "start": {
+      "httpStatus": 204
+    },
+    "terminalState": {
+      "exitCode": 0,
+      "running": false
+    }
+  },
+  "metadata": {
+    "apiVersion": "1.53",
+    "context": "colima",
+    "engineGitCommit": "6bc6209",
+    "engineVersion": "29.2.1",
+    "image": "alpine:3.20"
+  },
+  "schemaVersion": 1
+}

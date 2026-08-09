@@ -191,7 +191,7 @@ type normalizedService struct {
 	Restart                 string                              `json:"restart,omitempty"`
 	Init                    *bool                               `json:"init,omitempty"`
 	Scale                   *int                                `json:"scale,omitempty"`
-	Logging                 any                                 `json:"logging,omitempty"`
+	Logging                 *normalizedLoggingConfig            `json:"logging,omitempty"`
 	LogDriver               string                              `json:"logDriver,omitempty"`
 	LogOptions              map[string]string                   `json:"logOptions,omitempty"`
 	StorageOptions          map[string]string                   `json:"storageOptions,omitempty"`
@@ -230,6 +230,14 @@ type normalizedService struct {
 	Configs                 any                                 `json:"configs,omitempty"`
 	Secrets                 any                                 `json:"secrets,omitempty"`
 	Extensions              map[string]any                      `json:"extensions,omitempty"`
+}
+
+// normalizedLoggingConfig is the lossless, runtime-neutral logging request.
+// Driver is deliberately not omitempty so an explicit empty driver remains
+// distinguishable from an omitted logging object.
+type normalizedLoggingConfig struct {
+	Driver  string            `json:"driver"`
+	Options map[string]string `json:"options,omitempty"`
 }
 
 // normalizedBlkioConfig preserves Compose block I/O controls for the runtime
@@ -372,6 +380,28 @@ type normalizedMount struct {
 	UnsupportedFields  []string          `json:"unsupportedFields,omitempty"`
 }
 
+// normalizedIPAMPool preserves one ordered Compose IPAM configuration pool.
+//
+// The values remain source-shaped strings because Docker validates several of
+// them only when it creates a network. Auxiliary address names are significant
+// and therefore remain a map instead of being flattened to sorted values.
+type normalizedIPAMPool struct {
+	Subnet             string            `json:"subnet,omitempty"`
+	AllocationRange    string            `json:"allocationRange,omitempty"`
+	Gateway            string            `json:"gateway,omitempty"`
+	AuxiliaryAddresses map[string]string `json:"auxiliaryAddresses,omitempty"`
+}
+
+// normalizedIPAM preserves the complete source-facing Compose IPAM model.
+//
+// Existing singular fields on normalizedNetwork remain as legacy runtime
+// adapters. They must not be used to reconstruct this requested-state model.
+type normalizedIPAM struct {
+	Driver  string               `json:"driver,omitempty"`
+	Options map[string]string    `json:"options,omitempty"`
+	Config  []normalizedIPAMPool `json:"config,omitempty"`
+}
+
 // normalizedNetwork contains project-level network metadata.
 type normalizedNetwork struct {
 	Name                  string            `json:"name"`
@@ -379,9 +409,11 @@ type normalizedNetwork struct {
 	Driver                string            `json:"driver,omitempty"`
 	DriverOpts            map[string]string `json:"driverOpts,omitempty"`
 	IPAMOptions           map[string]string `json:"ipamOptions,omitempty"`
+	IPAM                  *normalizedIPAM   `json:"ipam,omitempty"`
 	Internal              bool              `json:"internal,omitempty"`
 	Attachable            bool              `json:"attachable,omitempty"`
 	Labels                map[string]string `json:"labels,omitempty"`
+	EnableIPv4            *bool             `json:"enableIPv4,omitempty"`
 	IPv4Subnet            string            `json:"ipv4Subnet,omitempty"`
 	IPv4Gateway           string            `json:"ipv4Gateway,omitempty"`
 	IPv4AllocationRange   string            `json:"ipv4AllocationRange,omitempty"`
@@ -793,16 +825,18 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 		result.Services[service.Name] = normalizeService(service, project.Secrets)
 	}
 	for name, network := range project.Networks {
-		ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, enableIPv6, unsupportedFields := projectNetworkValues(network)
+		ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, enableIPv4, enableIPv6, unsupportedFields := projectNetworkValues(network)
 		result.Networks[name] = normalizedNetwork{
 			Name:                  firstNonEmpty(network.Name, name),
 			External:              bool(network.External),
 			Driver:                network.Driver,
 			DriverOpts:            mapOptions(network.DriverOpts),
 			IPAMOptions:           mapOptions(network.Ipam.Options),
+			IPAM:                  normalizeIPAM(network.Ipam),
 			Internal:              network.Internal,
 			Attachable:            network.Attachable,
 			Labels:                mapLabels(network.Labels),
+			EnableIPv4:            enableIPv4,
 			IPv4Subnet:            ipv4Subnet,
 			IPv4Gateway:           ipv4Gateway,
 			IPv4AllocationRange:   ipv4AllocationRange,
@@ -838,20 +872,43 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 	return result
 }
 
+// normalizeIPAM copies every compose-go IPAM pool in source order.
+func normalizeIPAM(ipam types.IPAMConfig) *normalizedIPAM {
+	result := &normalizedIPAM{
+		Driver:  ipam.Driver,
+		Options: mapOptions(ipam.Options),
+	}
+	for _, pool := range ipam.Config {
+		if pool == nil {
+			continue
+		}
+		result.Config = append(result.Config, normalizedIPAMPool{
+			Subnet:             pool.Subnet,
+			AllocationRange:    pool.IPRange,
+			Gateway:            pool.Gateway,
+			AuxiliaryAddresses: mapMapping(pool.AuxiliaryAddresses),
+		})
+	}
+	if result.Driver == "" && len(result.Options) == 0 && len(result.Config) == 0 {
+		return nil
+	}
+	return result
+}
+
 // projectNetworkValues returns mapped IPAM values and project network fields that
 // need runtime behavior beyond apple/container's current network API.
-func projectNetworkValues(network types.NetworkConfig) (string, string, string, []string, string, string, *bool, []string) {
+func projectNetworkValues(network types.NetworkConfig) (string, string, string, []string, string, string, *bool, *bool, []string) {
 	ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, ipamFields := networkIPAMValues(network.Ipam)
+	enableIPv4 := network.EnableIPv4
 	enableIPv6 := network.EnableIPv6
 	fields := []string{}
 	driver := strings.TrimSpace(network.Driver)
 	appendUnsupportedNetworkField(&fields, "driver", driver != "" && driver != "bridge")
-	appendUnsupportedNetworkField(&fields, "enable_ipv4", network.EnableIPv4 != nil && !*network.EnableIPv4)
 	fields = append(fields, ipamFields...)
 	if len(fields) == 0 {
-		return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, enableIPv6, nil
+		return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, enableIPv4, enableIPv6, nil
 	}
-	return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, enableIPv6, fields
+	return ipv4Subnet, ipv4Gateway, ipv4AllocationRange, ipv4ReservedAddresses, ipv6Subnet, ipv6Gateway, enableIPv4, enableIPv6, fields
 }
 
 // normalizeService copies a compose-go service into the stable Swift model.
@@ -920,7 +977,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		Restart:                 service.Restart,
 		Init:                    service.Init,
 		Scale:                   serviceScale(service),
-		Logging:                 service.Logging,
+		Logging:                 loggingConfigValue(service.Logging),
 		LogDriver:               service.LogDriver,
 		LogOptions:              mapStringMap(service.LogOpt),
 		StorageOptions:          mapStringMap(service.StorageOpt),
@@ -1004,6 +1061,16 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		result.Extensions = service.Extensions
 	}
 	return result
+}
+
+func loggingConfigValue(logging *types.LoggingConfig) *normalizedLoggingConfig {
+	if logging == nil {
+		return nil
+	}
+	return &normalizedLoggingConfig{
+		Driver:  logging.Driver,
+		Options: mapStringMap(logging.Options),
+	}
 }
 
 // providerValue copies provider metadata into stable JSON for Swift.

@@ -30,6 +30,90 @@ import Foundation
 import Testing
 
 extension ComposeOrchestratorTests {
+    @Test("logs treats unreadable driver history as an empty stream")
+    func logsTreatsUnreadableDriverHistoryAsEmptyStream() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(
+            error: ComposeRuntimeLogError.readingUnsupported
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "silent": ComposeService(name: "silent", image: "example/silent"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(project: project, services: ["silent"])
+
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-silent-1", tail: nil, follow: false),
+        ])
+        #expect(emitted.messages.isEmpty)
+    }
+
+    @Test("logs continues readable services after unreadable driver history")
+    func logsContinuesReadableServicesAfterUnreadableDriverHistory() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(
+            outputs: ["visible"],
+            error: ComposeRuntimeLogError.readingUnsupported,
+            errorIDs: ["demo-silent-1"]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "silent": ComposeService(name: "silent", image: "example/silent"),
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(project: project, services: ["silent", "api"])
+
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-silent-1", tail: nil, follow: false),
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: false),
+        ])
+        #expect(emitted.messages == ["api-1 | visible"])
+    }
+
+    @Test("logs preserves unreadable driver errors for follow requests")
+    func logsPreservesUnreadableDriverErrorsForFollowRequests() async throws {
+        let logManager = RecordingContainerLogManager(
+            error: ComposeRuntimeLogError.readingUnsupported
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "silent": ComposeService(name: "silent", image: "example/silent"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                runner: RecordingRunner(),
+                options: ComposeExecutionOptions(),
+                logManager: logManager
+            ).logs(
+                project: project,
+                services: ["silent"],
+                options: ComposeLogsOptions { $0.follow = true }
+            )
+            Issue.record("Expected the unreadable-driver follow error")
+        } catch let error as ComposeRuntimeLogError {
+            #expect(error == .readingUnsupported)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
     @Test("logs accepts Compose all tail value")
     func logsAcceptsComposeAllTailValue() async throws {
         let runner = RecordingRunner()
@@ -1304,10 +1388,13 @@ extension ComposeOrchestratorTests {
         }
     }
 
-    @Test("attach output-only mode follows direct logs")
-    func attachOutputOnlyModeFollowsDirectLogs() async throws {
+    @Test("attach output-only mode uses the independent runtime relay")
+    func attachOutputOnlyModeUsesIndependentRuntimeRelay() async throws {
         let emitted = MessageRecorder()
         let logManager = RecordingContainerLogManager(outputs: ["attached"])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("attached".utf8)),
+        ])
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -1317,8 +1404,11 @@ extension ComposeOrchestratorTests {
 
         try await ComposeOrchestrator(
             runner: RecordingRunner(),
-            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
-            logManager: logManager
+            options: ComposeExecutionOptions { $0.emitAttachedData = { emitted.append(String(decoding: $0, as: UTF8.self)) } },
+            dependencies: orchestratorDependencies {
+                $0.attachManager = attachManager
+                $0.logManager = logManager
+            }
         ).attach(
             project: project,
             serviceName: "api",
@@ -1328,9 +1418,10 @@ extension ComposeOrchestratorTests {
             }
         )
 
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .runningProcess),
         ])
+        #expect(await logManager.requests.isEmpty)
         #expect(emitted.messages == ["attached"])
     }
 
@@ -1338,6 +1429,9 @@ extension ComposeOrchestratorTests {
     func attachOutputOnlyModeIgnoresDetachKeys() async throws {
         let emitted = MessageRecorder()
         let logManager = RecordingContainerLogManager(outputs: ["attached"])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("attached".utf8)),
+        ])
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -1347,8 +1441,11 @@ extension ComposeOrchestratorTests {
 
         try await ComposeOrchestrator(
             runner: RecordingRunner(),
-            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
-            logManager: logManager
+            options: ComposeExecutionOptions { $0.emitAttachedData = { emitted.append(String(decoding: $0, as: UTF8.self)) } },
+            dependencies: orchestratorDependencies {
+                $0.attachManager = attachManager
+                $0.logManager = logManager
+            }
         ).attach(
             project: project,
             serviceName: "api",
@@ -1359,9 +1456,10 @@ extension ComposeOrchestratorTests {
             }
         )
 
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .runningProcess),
         ])
+        #expect(await logManager.requests.isEmpty)
         #expect(emitted.messages == ["attached"])
     }
 
@@ -1434,6 +1532,9 @@ extension ComposeOrchestratorTests {
         let emitted = MessageRecorder()
         let lifecycleManager = RecordingContainerLifecycleManager()
         let logManager = RecordingContainerLogManager(outputs: ["attached"])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("attached".utf8)),
+        ])
         let signalProxy = RecordingComposeSignalProxy(forwardedSignals: ["SIGINT", "SIGTERM"])
         let project = ComposeProject(
             name: "demo",
@@ -1444,8 +1545,9 @@ extension ComposeOrchestratorTests {
 
         try await ComposeOrchestrator(
             runner: RecordingRunner(),
-            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            options: ComposeExecutionOptions { $0.emitAttachedData = { emitted.append(String(decoding: $0, as: UTF8.self)) } },
             dependencies: orchestratorDependencies {
+                $0.attachManager = attachManager
                 $0.lifecycleManager = lifecycleManager
                 $0.logManager = logManager
                 $0.signalProxy = signalProxy
@@ -1465,9 +1567,10 @@ extension ComposeOrchestratorTests {
             .kill(id: "demo-api-1", signal: "SIGINT"),
             .kill(id: "demo-api-1", signal: "SIGTERM"),
         ])
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .runningProcess),
         ])
+        #expect(await logManager.requests.isEmpty)
         #expect(emitted.messages == ["attached"])
     }
 
@@ -1475,6 +1578,9 @@ extension ComposeOrchestratorTests {
     func attachOutputOnlyModeSkipsSignalProxyWhenDisabled() async throws {
         let lifecycleManager = RecordingContainerLifecycleManager()
         let logManager = RecordingContainerLogManager(outputs: ["attached"])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("attached".utf8)),
+        ])
         let signalProxy = RecordingComposeSignalProxy(forwardedSignals: ["SIGINT"])
         let project = ComposeProject(
             name: "demo",
@@ -1486,6 +1592,7 @@ extension ComposeOrchestratorTests {
         try await ComposeOrchestrator(
             runner: RecordingRunner(),
             dependencies: orchestratorDependencies {
+                $0.attachManager = attachManager
                 $0.lifecycleManager = lifecycleManager
                 $0.logManager = logManager
                 $0.signalProxy = signalProxy
@@ -1501,15 +1608,19 @@ extension ComposeOrchestratorTests {
 
         #expect(await signalProxy.requests.isEmpty)
         #expect(await lifecycleManager.requests.isEmpty)
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .runningProcess),
         ])
+        #expect(await logManager.requests.isEmpty)
     }
 
     @Test("attach output-only mode targets selected container index")
     func attachOutputOnlyModeTargetsSelectedContainerIndex() async throws {
         let emitted = MessageRecorder()
         let logManager = RecordingContainerLogManager(outputs: ["replica"])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("replica".utf8)),
+        ])
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
             ComposeContainerSummary(
                 id: "demo-api-2",
@@ -1529,8 +1640,9 @@ extension ComposeOrchestratorTests {
 
         try await ComposeOrchestrator(
             runner: RecordingRunner(),
-            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            options: ComposeExecutionOptions { $0.emitAttachedData = { emitted.append(String(decoding: $0, as: UTF8.self)) } },
             dependencies: orchestratorDependencies {
+                $0.attachManager = attachManager
                 $0.discoveryManager = discoveryManager
                 $0.logManager = logManager
             }
@@ -1545,14 +1657,15 @@ extension ComposeOrchestratorTests {
         )
 
         #expect(await discoveryManager.listRequests == [true])
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-api-2", tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-api-2", stdout: true, stderr: true, mode: .runningProcess),
         ])
+        #expect(await logManager.requests.isEmpty)
         #expect(emitted.messages == ["replica"])
     }
 
-    @Test("attach dry run emits compose runtime log follow")
-    func attachDryRunEmitsComposeRuntimeLogFollow() async throws {
+    @Test("attach dry run emits compose runtime output attach")
+    func attachDryRunEmitsComposeRuntimeOutputAttach() async throws {
         let emitted = MessageRecorder()
         let logManager = RecordingContainerLogManager(outputs: ["ignored"])
         let project = ComposeProject(
@@ -1576,13 +1689,13 @@ extension ComposeOrchestratorTests {
         )
 
         #expect(emitted.messages == [
-            "+ compose-runtime logs --follow demo-api-1",
+            "+ compose-runtime attach --no-stdin demo-api-1",
         ])
         #expect(await logManager.requests.isEmpty)
     }
 
-    @Test("attach dry run emits indexed compose runtime log follow")
-    func attachDryRunEmitsIndexedComposeRuntimeLogFollow() async throws {
+    @Test("attach dry run emits indexed compose runtime output attach")
+    func attachDryRunEmitsIndexedComposeRuntimeOutputAttach() async throws {
         let emitted = MessageRecorder()
         let logManager = RecordingContainerLogManager(outputs: ["ignored"])
         let project = ComposeProject(
@@ -1607,7 +1720,7 @@ extension ComposeOrchestratorTests {
         )
 
         #expect(emitted.messages == [
-            "+ compose-runtime logs --follow demo-api-2",
+            "+ compose-runtime attach --no-stdin demo-api-2",
         ])
         #expect(await logManager.requests.isEmpty)
     }

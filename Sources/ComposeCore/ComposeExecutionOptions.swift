@@ -42,6 +42,7 @@ public struct ComposeExecutionOptions {
         public var emitStatus: @Sendable (String) -> Void = ComposeExecutionOptions.defaultStatusEmitter
         public var emit: @Sendable (String) -> Void = { print($0) }
         public var emitData: (@Sendable (Data) -> Void)?
+        public var emitAttachedData: (@Sendable (Data) -> Void)?
         public var copyInputArchive: @Sendable () -> FileHandle = { .standardInput }
         public var copyOutputArchive: @Sendable () -> FileHandle = { .standardOutput }
 
@@ -142,6 +143,7 @@ public struct ComposeExecutionOptions {
     public var watchPollInterval: Duration
     public var materializedConfigSecretDirectory: URL
     public var temporaryDirectory: URL
+    public var runtimeCapabilities: ComposeRuntimeCapabilities
     public var sleep: @Sendable (Duration) async throws -> Void {
         didSet {
             usesDefaultSleep = false
@@ -154,6 +156,8 @@ public struct ComposeExecutionOptions {
     public var emitStatus: @Sendable (String) -> Void
     public var emit: @Sendable (String) -> Void
     public var emitData: @Sendable (Data) -> Void
+    /// Emits exact process-attachment bytes without adding record delimiters.
+    public var emitAttachedData: @Sendable (Data) -> Void
     public var copyInputArchive: @Sendable () -> FileHandle
     public var copyOutputArchive: @Sendable () -> FileHandle
     public var progress: ComposeProgressReporter
@@ -174,12 +178,14 @@ public struct ComposeExecutionOptions {
         watchPollInterval = .seconds(1)
         materializedConfigSecretDirectory = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
         temporaryDirectory = FileManager.default.temporaryDirectory
+        runtimeCapabilities = ComposeRuntimeCapabilities()
         sleep = { try await Task.sleep(for: $0) }
         usesDefaultSleep = true
         confirm = ComposeExecutionOptions.defaultConfirmation
         emitStatus = ComposeExecutionOptions.defaultStatusEmitter
         emit = { print($0) }
         emitData = ComposeExecutionOptions.defaultLogDataEmitter
+        emitAttachedData = ComposeExecutionOptions.defaultAttachedDataEmitter
         copyInputArchive = { .standardInput }
         copyOutputArchive = { .standardOutput }
         progress = .disabled
@@ -354,6 +360,9 @@ public struct ComposeExecutionOptions {
         emitStatus = runtimeHooks.emitStatus
         emit = runtimeHooks.emit
         emitData = runtimeHooks.emitData ?? ComposeExecutionOptions.defaultLogDataEmitter
+        emitAttachedData = runtimeHooks.emitAttachedData
+            ?? runtimeHooks.emitData
+            ?? ComposeExecutionOptions.defaultAttachedDataEmitter
         copyInputArchive = runtimeHooks.copyInputArchive
         copyOutputArchive = runtimeHooks.copyOutputArchive
     }
@@ -414,6 +423,11 @@ public struct ComposeExecutionOptions {
     public static func defaultLogDataEmitter(_ data: Data) {
         FileHandle.standardOutput.write(data)
         FileHandle.standardOutput.write(Data([UInt8(ascii: "\n")]))
+    }
+
+    /// Writes process-attachment bytes exactly as received from the runtime.
+    public static func defaultAttachedDataEmitter(_ data: Data) {
+        FileHandle.standardOutput.write(data)
     }
 
     /// Allocates an ephemeral host port compatible with apple/container's

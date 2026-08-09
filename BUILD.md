@@ -120,9 +120,7 @@ Useful focused targets are:
 | `make release-gate` | Full builder, containerization, container, Compose CI, isolated runtime smoke suite, and pinned Docker Compose comparison suite; required before stable package dispatch. |
 | `make release-gate-hosted` | GitHub-hosted static stack validation: source checks, builds, unit coverage, Compose CI, and Homebrew formula syntax without Virtualization.framework or Docker-engine runtime tests. |
 | `make ci-release` | Full release gate plus the release package build. |
-| `make check` | Lint, documentation, generated programme-progress, formatting, and license checks. |
-| `make programme-progress-update` | Regenerate the readable programme status from its machine-readable register after an intentional state or evidence change. |
-| `make programme-progress-check` | Fail on missing/duplicate stable IDs, stale design anchors or generated status, heads newer than the trusted pre-change checkpoint, recorded IDs that peel from non-commit Git objects, missing or undeclared item-required repository heads, repository heads not accepted by fetched `main` in authenticated checkouts, unverified or wrong-head GitHub authorities, unsafe evidence, unactionable blockers, or unreviewed dependent documentation. The check uses the fixed system GitHub CLI and needs normal `gh` authentication; hosted jobs supply their read-only GitHub token only to the source-check step. |
+| `make check` | Run lint, documentation, runtime-neutrality, stack-consistency, upstream-handoff, and license checks. |
 | `make coverage-check` | Enforce separate ComposeCore, runtime SPI, provider, plugin, aggregate first-party Swift, and Go coverage floors. |
 | `. Tools/ci/codeql-entry.sh`, then `container_compose_codeql codeql-local` | Enter Make without inherited native-loader, Make, or Python startup source; run the checksum-pinned CodeQL CLI and Go query pack against the exact normalizer build, reject undispositioned results, and retain commit-keyed SARIF. |
 | `. Tools/ci/codeql-entry.sh`, then `container_compose_codeql codeql-sarif-upload` | Enter the upload goal through the same controlled boundary, regenerate exact SARIF, authenticate its digests in memory, and upload only after the checkout head, origin repository, remote ref, evidence, and commit all agree. |
@@ -172,9 +170,9 @@ counts from the Swift Testing log.
 
 ### Isolated macOS Runtime Ownership
 
-Container's data root can be isolated, but its API server and plugin helpers use stable launchd/XPC service names in one namespace for the current macOS user. `make docker-compose-parity`, Current VHS publication, and other long-running Compose workflows therefore acquire the advisory host lock in `Tools/ci/container-runtime-lock.sh` before they stop, start, or replace the runtime.
+The default Container installation retains its stock launchd/Mach names, but an explicit validated `CONTAINER_SERVICE_NAMESPACE` now gives a candidate runtime its own API, Machine API, images, runtime, network, Engine, and public-socket ownership. `scripts/run-with-container-runtime.sh` derives a bounded namespace from its marker-protected candidate root and UID, verifies the namespace-derived socket before it starts services, and stops only that namespace. [RUNTIME-ISOLATED-PUBLIC-SOCKET-01](docs/parity/handoffs/RUNTIME-ISOLATED-PUBLIC-SOCKET-01.md) verifies one source-pinned public `docker version` lifecycle with the user-owned `devcontainer-engine` healthy before and after candidate cleanup.
 
-The default lock is `/tmp/container-compose-runtime-${UID}.lock`; `CONTAINER_RUNTIME_LOCK_FILE` changes it and `CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS` changes the default 10,800-second wait. The helper uses `lockf` on macOS and the equivalent `flock` file-descriptor lock in Linux source-check runners. Every cooperating workflow on the host must use the same lock path. A unique per-job lock defeats serialization, and an external repository or runner that does not acquire the lock can still replace the shared service while a Compose run owns it.
+The default lock is `/tmp/container-compose-runtime-${UID}.lock`; `CONTAINER_RUNTIME_LOCK_FILE` changes it and `CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS` changes the default 10,800-second wait. The helper uses `lockf` on macOS and the equivalent `flock` file-descriptor lock in Linux source-check runners. Every cooperating workflow on the host must use the same lock path. The lock remains required for legacy/default-namespace callers and controlled release workflows; it is no longer the only safety boundary for a correctly namespaced candidate. A unique per-job lock still defeats serialization for callers that share the default namespace.
 
 The parity harness also:
 
@@ -186,7 +184,7 @@ The parity harness also:
 
 This recovery is deliberately bounded. The Compose image adapter retries an idempotent pull exactly once for a typed recursive `ContainerizationError.interrupted`. It never blindly replays container deletion; an interrupted delete is accepted only when direct discovery confirms the container is absent. Other errors and unverifiable postconditions fail normally.
 
-For an authoritative same-host result, first coordinate or quiesce every self-hosted runner and local workflow that can operate Container under the same user. A momentarily idle runner is not proof of isolation because it can accept work during the suite. Restore any paused runner immediately after the controlled window.
+For an authoritative same-host result, use a unique namespace for every candidate and retain its source/dependency/binary/guest/root fingerprint. Coordinate or quiesce only legacy/default-namespace users that the selected validation path must intentionally share; never stop an unrelated user service merely because it is visible.
 
 Set `PARITY_EVIDENCE_DIR` to retain raw timing TSV, JUnit, runtime fingerprints, the human matrix, and a captured aggregate log in one named directory. `PARITY_REPETITIONS` controls equivalent fixture samples and `PARITY_TIMEOUT_SECONDS` bounds each timed operation. Keep the exact Container and Containerization revisions, host model, macOS version, Docker Compose/Engine versions, images, and warm/cold state with the result.
 

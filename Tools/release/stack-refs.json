@@ -1,7 +1,7 @@
 {
   "components": {
     "container": {
-      "ref": "eb95abb9768d7a40af39671183272ef468f1419c",
+      "ref": "c7924e375d98d82af37902f4a0c310ee389eab97",
       "repository": "stephenlclarke/container"
     },
     "container-builder-shim": {
@@ -14,16 +14,16 @@
       "repository": "stephenlclarke/container-builder-shim"
     },
     "container-engine-api": {
-      "ref": "fd6ad4f3736fc1fb1d3b9e43ce51ea01adb7de1a",
+      "ref": "5e6e24d017691596783515285e1ff56d29701235",
       "repository": "stephenlclarke/container-engine-api",
       "version": "0.2.3"
     },
     "containerization": {
-      "ref": "bedb7240829db3d80292e12c949321fcfd92161f",
+      "ref": "7f62f5b940630811573a34f70cdd6f3fa11d014d",
       "repository": "stephenlclarke/containerization"
     },
     "devcontainer": {
-      "ref": "77f3cb5dc7cce8d3f88de960b7d93d676a768137",
+      "ref": "d57c2b689857a4832f7dbc8affca57f749fe155f",
       "repository": "stephenlclarke/devcontainer"
     }
   },

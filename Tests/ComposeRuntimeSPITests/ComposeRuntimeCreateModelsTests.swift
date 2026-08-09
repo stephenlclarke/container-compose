@@ -21,6 +21,37 @@ import Testing
 @Suite("Compose runtime create models")
 struct ComposeRuntimeCreateModelsTests {
     @Test
+    func `logging request preserves omission identity and every option`() throws {
+        let omitted = ComposeLogConfiguration.standard
+        let explicit = ComposeLogConfiguration(
+            driver: "example/provider",
+            options: [
+                "cache-disabled": "true",
+                "custom-key": "value=with=equals",
+            ],
+        )
+
+        #expect(omitted.driver == nil)
+        #expect(omitted.options.isEmpty)
+
+        let encoded = try JSONEncoder().encode(explicit)
+        let decoded = try JSONDecoder().decode(ComposeLogConfiguration.self, from: encoded)
+        #expect(decoded == explicit)
+        #expect(decoded.driver == "example/provider")
+        #expect(decoded.options["custom-key"] == "value=with=equals")
+    }
+
+    @Test
+    func `logging request decoding defaults a missing option map`() throws {
+        let request = try JSONDecoder().decode(
+            ComposeLogConfiguration.self,
+            from: Data(#"{"driver":"json-file"}"#.utf8),
+        )
+
+        #expect(request == ComposeLogConfiguration(driver: "json-file"))
+    }
+
+    @Test
     func `process decoding defaults fields added by newer runtimes`() throws {
         let data = Data(
             """
@@ -94,6 +125,7 @@ struct ComposeRuntimeCreateModelsTests {
         #expect(unlimited.maximumRetryCount == nil)
     }
 
+    @available(*, deprecated, message: "Exercises the deprecated compatibility initializer")
     @Test
     func `legacy process initializer forwards every runtime option`() {
         let process = ComposeProcessConfiguration(
@@ -125,6 +157,7 @@ struct ComposeRuntimeCreateModelsTests {
         #expect(process.noNewPrivileges)
     }
 
+    @available(*, deprecated, message: "Exercises the deprecated compatibility alias")
     @Test
     func `legacy logging default forwards to standard configuration`() {
         #expect(ComposeLogConfiguration.default == .standard)

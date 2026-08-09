@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="docker-rest-image-mutation" tests="3" failures="0" errors="0" skipped="0">
+  <testsuite name="docker-rest-image-mutation" tests="3" failures="0" errors="0" skipped="0">
+    <properties>
+      <property name="docker.cli" value="29.7.1" />
+      <property name="docker.engine" value="29.2.1" />
+      <property name="docker.api" value="1.53" />
+      <property name="image.digest" value="sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc" />
+      <property name="container-compose" value="81fca6a1e8f482a6efadb4c7ee9e9dfea386ee86" />
+      <property name="container" value="259878a427de7021b52e40e759d3b261150cc514" />
+      <property name="containerization" value="38d9c695e7a6915e5ce45d12c893dc323a661af7" />
+      <property name="container-engine-api" value="4949e743675f00ec102f7acacdb4e990409e383f" />
+    </properties>
+    <testcase classname="docker-rest-image-mutation" name="docker-reference-contract">
+      <system-out>Docker REST image mutation contract passed</system-out>
+    </testcase>
+    <testcase classname="docker-rest-image-mutation" name="container-candidate-contract">
+      <system-out>Docker REST image mutation contract passed</system-out>
+    </testcase>
+    <testcase classname="docker-rest-image-mutation" name="cached-comparable-performance">
+      <system-out>Docker median 1.403093s; Container median 1.153473s; candidate 17.79% faster.</system-out>
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-08-03",
+  "generatedAt": "2026-08-06",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -621,6 +621,26 @@
       ]
     },
     {
+      "id": "apple-container-build-stream-completion",
+      "owner": "apple/container",
+      "title": "Finish the client build stream after terminal completion",
+      "state": "unsubmitted",
+      "lastVerified": "2026-08-06",
+      "commits": [
+        "a661e67c8e7713483eb448493c7b4a35f346d9b3"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/apple-container/ISSUE-build-stream-completion.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/apple-container/PR-build-stream-completion.md"
+        }
+      ]
+    },
+    {
       "id": "apple-container-builder-shim-1800",
       "owner": "apple/container-builder-shim",
       "title": "`.dockerignore` negation re-includes can stream orphan descendants",
@@ -724,6 +744,27 @@
         {
           "kind": "pull-request",
           "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container-builder-shim/PR-build-context-source-read-errors.md"
+        }
+      ]
+    },
+    {
+      "id": "apple-container-builder-shim-build-stream-completion",
+      "owner": "apple/container-builder-shim",
+      "title": "Complete successful bidirectional build streams",
+      "state": "unsubmitted",
+      "lastVerified": "2026-08-06",
+      "commits": [
+        "89778a9f1938331c9b7cb0094831358e2b730d71",
+        "418e3c50f1ae664da3637ad81df8fc70ce630fd9"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/apple-container-builder-shim/ISSUE-build-stream-completion.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/apple-container-builder-shim/PR-build-stream-completion.md"
         }
       ]
     },
@@ -1714,21 +1755,25 @@
     {
       "id": "apple-container-network-ipam-allocation-range",
       "owner": "apple/container",
-      "title": "Pull request: configure an IPv4 allocation range",
+      "title": "Pull Request: retain VMNet allocation-range leases across service restart",
       "state": "unsubmitted",
-      "lastVerified": "2026-07-29",
+      "lastVerified": "2026-08-06",
       "commits": [
         "7bf522fb808ee2517d917881421180d88d837704",
-        "ee63145e7f0f6d7023d6cec64b1019077b0461e4"
+        "ee63145e7f0f6d7023d6cec64b1019077b0461e4",
+        "d7e5f5ddd831e0fe0cf025d606f1d2622eb6a4d2",
+        "ec286fca9bca2c4d9d732f6f898564d9f23e1eb6"
       ],
       "documents": [
         {
           "kind": "issue",
-          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-network-ipam-allocation-range.md"
+          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-network-ipam-allocation-range.md",
+          "path": "docs/upstream/apple-container/ISSUE-network-ipam-allocation-range.md"
         },
         {
           "kind": "pull-request",
-          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-network-ipam-allocation-range.md"
+          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-network-ipam-allocation-range.md",
+          "path": "docs/upstream/apple-container/PR-network-ipam-allocation-range.md"
         }
       ]
     },
@@ -3176,6 +3221,26 @@
         {
           "kind": "pull-request",
           "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/PR-vmnet-integration-exclusivity.md"
+        }
+      ]
+    },
+    {
+      "id": "apple-swift-nio-ssl-fluentd-tls-alert-control",
+      "owner": "apple/swift-nio-ssl",
+      "title": "Select bad_certificate for Darwin internal verification failures",
+      "state": "active-draft",
+      "lastVerified": "2026-08-07",
+      "commits": [
+        "a9d648535c62e640d1df258a70c9117a8ddea43e"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/apple-swift-nio-ssl/ISSUE-fluentd-tls-alert-control.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/apple-swift-nio-ssl/PR-fluentd-tls-alert-control.md"
         }
       ]
     },
@@ -5257,21 +5322,26 @@
     {
       "id": "container-compose-network-ipam-allocation-range",
       "owner": "stephenlclarke/container-compose",
-      "title": "Pull request: support Compose IPv4 IPAM allocation ranges",
-      "state": "archived",
-      "lastVerified": "2026-07-29",
+      "title": "Pull Request: certify retained Compose IPv4 allocation-range leases",
+      "state": "unsubmitted",
+      "lastVerified": "2026-08-06",
       "commits": [
         "7bf522fb808ee2517d917881421180d88d837704",
-        "ee63145e7f0f6d7023d6cec64b1019077b0461e4"
+        "ee63145e7f0f6d7023d6cec64b1019077b0461e4",
+        "30d3017112a9b7694aaec2ec80a0cfa411e6004d",
+        "d7e5f5ddd831e0fe0cf025d606f1d2622eb6a4d2",
+        "ec286fca9bca2c4d9d732f6f898564d9f23e1eb6"
       ],
       "documents": [
         {
           "kind": "issue",
-          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-network-ipam-allocation-range.md"
+          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-network-ipam-allocation-range.md",
+          "path": "docs/upstream/container-compose/ISSUE-network-ipam-allocation-range.md"
         },
         {
           "kind": "pull-request",
-          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-network-ipam-allocation-range.md"
+          "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-network-ipam-allocation-range.md",
+          "path": "docs/upstream/container-compose/PR-network-ipam-allocation-range.md"
         }
       ]
     },
@@ -6100,6 +6170,27 @@
       ]
     },
     {
+      "id": "container-compose-runtime-isolated-public-socket",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Pull Request: isolate candidate public Docker socket service ownership",
+      "state": "unsubmitted",
+      "lastVerified": "2026-08-07",
+      "commits": [
+        "40d109db071cd98f2b37300e417e478f00213b3c",
+        "c740a8f6a79ce176d03a941f49cdfe7350625a71"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-runtime-isolated-public-socket.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-runtime-isolated-public-socket.md"
+        }
+      ]
+    },
+    {
       "id": "container-compose-security-opt-apparmor-unconfined",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: accept unconfined AppArmor at the Compose boundary",
@@ -6748,9 +6839,12 @@
       "id": "container-compose-191",
       "owner": "stephenlclarke/container-compose",
       "title": "Keep public main independent of unpublished Container revisions",
-      "state": "active-draft",
-      "lastVerified": "2026-08-03",
-      "commits": [],
+      "state": "closed",
+      "lastVerified": "2026-08-04",
+      "commits": [
+        "38e0a7ee3c88b9eb6137d4398d2322c93a77b05d",
+        "1f0f944b3d918a39ad97d1f12bb7b7c5ef6146a0"
+      ],
       "documents": [
         {
           "kind": "issue",
@@ -6759,6 +6853,130 @@
         {
           "kind": "pull-request",
           "path": "docs/upstream/container-compose/PR-191.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-192",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Strict Swift build rejects deprecated compatibility tests",
+      "state": "closed",
+      "lastVerified": "2026-08-04",
+      "commits": [
+        "784aacaa26f2ad698460044a573adae30665628a"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-192.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-192.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-195",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Make logging parity use matched local packages",
+      "state": "closed",
+      "lastVerified": "2026-08-05",
+      "commits": [
+        "024c2d23aced5202854108e1511d1e405dd11e2e",
+        "3915a1223852bc3d4b7fa42852c019ed28745431",
+        "c7a50e28438ca0c5bd5a668d3b8e87db25c4a176"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-195.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-195.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-196",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Match Docker Compose static unreadable history",
+      "state": "closed",
+      "lastVerified": "2026-08-05",
+      "commits": [
+        "4f52a22b043260187b30f284dcbc0a563144cf6d"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-196.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-196.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-197",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Preserve complete scaled log identifiers",
+      "state": "closed",
+      "lastVerified": "2026-08-05",
+      "commits": [
+        "994de3172e1c9eaf3f7b62c36f427b1c6bdc264c"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-197.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-197.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-206",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Honor local stack overlays in release builds",
+      "state": "closed",
+      "lastVerified": "2026-08-06",
+      "commits": [
+        "30d3017112a9b7694aaec2ec80a0cfa411e6004d"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-206.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-206.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-logging-syslog-tls-trust-fixture",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Add the Syslog TLS trust-rejection parity fixture",
+      "state": "closed",
+      "lastVerified": "2026-08-09",
+      "commits": [
+        "c4e68fd7cd957102dd129662156c5f13a73a3a88",
+        "c7924e375d98d82af37902f4a0c310ee389eab97",
+        "ff5d74d8c0eaef7c043d5046c4bf397899397153"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-logging-syslog-tls-trust-fixture.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-logging-syslog-tls-trust-fixture.md"
         }
       ]
     },

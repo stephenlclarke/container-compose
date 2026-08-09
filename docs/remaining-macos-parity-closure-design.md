@@ -137,14 +137,12 @@ matrix changes.
 
 ### Single coverage manifest
 
-Stable workflow, coherent-wave, residual-wave, and focused work-package state
-is already controlled by the shared
-[programme progress register](parity/PROGRAMME-PROGRESS.md). That register
-proves stable design anchors, immutable accepted-head evidence, and reviewed
-documentation dependencies. `CLOSURE-R0` extends this control to the detailed
-STATUS/capability requirement coverage and generated aggregate projections
-described below; the progress register does not prematurely claim that R0
-reconciliation is complete.
+Stable requirement and work-package identifiers remain in their focused
+designs. `STATUS.md` is the single current gap-only programme projection, while
+the affected design or handoff record owns exact accepted-head evidence.
+`CLOSURE-R0` extends this control to detailed STATUS/capability requirement
+coverage and generated aggregate projections described below; no duplicate
+progress register can upgrade or contradict that projection.
 
 Add a versioned `ParityCoverageManifestV1` as the source for STATUS aggregates,
 help markers, and design-progress checks. Each entry contains:
@@ -259,6 +257,16 @@ behaviour before that branch is designed further.
 Performance is a per-lane parity gate, not one aggregate score. Every lane
 compares the pinned Docker reference, previous accepted Container-family main,
 and candidate on the same MBP with identical inputs and controlled state.
+
+The performance architecture, lanes, metrics, and noise rules are designed
+alongside functional work, but comparative optimisation is deliberately a
+post-functional phase. A narrow behavioural contract can become `Verified`
+once its Docker oracle, focused proof, exact candidate evidence, cleanup, and
+clean checkpoint pass even when its comparable-performance result is still
+outstanding. Only a hang, timeout, deadlock, liveness/resource leak, or other
+execution failure that prevents functional proof blocks that contract. The
+programme does not claim complete parity until this design's release-grade
+lanes also pass.
 
 For every metric, the lane declares before sampling:
 

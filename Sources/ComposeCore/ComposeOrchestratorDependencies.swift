@@ -17,26 +17,32 @@
 /// Container command collaborators used by the Compose orchestrator.
 public struct ComposeOrchestratorCommandDependencies: Sendable {
     public var archiveManager: ComposeArchiveManaging
+    public var attachManager: ComposeRuntimeAttachManaging
     public var copier: ComposeRuntimeCopying
     public var execManager: ComposeRuntimeExecManaging
     public var exporter: ComposeRuntimeExporting
+    public var launchManager: ComposeRuntimeContainerLaunching
     public var logManager: ComposeRuntimeLogManaging
     public var upMenuController: ComposeUpMenuControlling
     public var signalProxy: ComposeSignalProxying
 
     public init(
         archiveManager: ComposeArchiveManaging = ComposeRuntimeProviderDefaults.archives(),
+        attachManager: ComposeRuntimeAttachManaging = ComposeRuntimeProviderDefaults.attach(),
         copier: ComposeRuntimeCopying = ComposeRuntimeProviderDefaults.copying(),
         execManager: ComposeRuntimeExecManaging = ComposeRuntimeProviderDefaults.executing(),
         exporter: ComposeRuntimeExporting = ComposeRuntimeProviderDefaults.exporting(),
+        launchManager: ComposeRuntimeContainerLaunching = ComposeRuntimeProviderDefaults.launching(),
         logManager: ComposeRuntimeLogManaging = ComposeRuntimeProviderDefaults.logs(),
         upMenuController: ComposeUpMenuControlling = TerminalComposeUpMenuController(),
         signalProxy: ComposeSignalProxying = DispatchComposeSignalProxy(),
     ) {
         self.archiveManager = archiveManager
+        self.attachManager = attachManager
         self.copier = copier
         self.execManager = execManager
         self.exporter = exporter
+        self.launchManager = launchManager
         self.logManager = logManager
         self.upMenuController = upMenuController
         self.signalProxy = signalProxy
@@ -156,6 +162,11 @@ public struct ComposeOrchestratorDependencies: Sendable {
         set { commands.archiveManager = newValue }
     }
 
+    public var attachManager: ComposeRuntimeAttachManaging {
+        get { commands.attachManager }
+        set { commands.attachManager = newValue }
+    }
+
     public var configReader: ComposeRuntimeConfigReading {
         get { runtime.configReader }
         set { runtime.configReader = newValue }
@@ -189,6 +200,11 @@ public struct ComposeOrchestratorDependencies: Sendable {
     public var lifecycleManager: ComposeRuntimeLifecycleManaging {
         get { runtime.lifecycleManager }
         set { runtime.lifecycleManager = newValue }
+    }
+
+    public var launchManager: ComposeRuntimeContainerLaunching {
+        get { commands.launchManager }
+        set { commands.launchManager = newValue }
     }
 
     public var imageVolumeInitializer: ComposeRuntimeImageVolumeInitializing {

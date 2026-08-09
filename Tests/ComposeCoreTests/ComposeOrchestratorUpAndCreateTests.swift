@@ -38,6 +38,7 @@ extension ComposeOrchestratorTests {
         let resourceManager = RecordingContainerResourceManager()
         let lifecycleManager = RecordingContainerLifecycleManager()
         let discoveryManager = RecordingContainerDiscoveryManager()
+        let attachManager = RecordingContainerAttachManager()
         let logManager = RecordingContainerLogManager()
         let orchestrator = ComposeOrchestrator(
             runner: runner,
@@ -45,6 +46,7 @@ extension ComposeOrchestratorTests {
                 $0.discoveryManager = discoveryManager
                 $0.lifecycleManager = lifecycleManager
                 $0.resourceManager = resourceManager
+                $0.attachManager = attachManager
                 $0.logManager = logManager
             }
         )
@@ -100,8 +102,8 @@ extension ComposeOrchestratorTests {
         }
 
         let run = runner.commands[0].arguments
-        #expect(run.starts(with: ["container", "run", "--name", "demo-api-1"]))
-        #expect(run.contains("--detach"))
+        #expect(run.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(!run.contains("--detach"))
         #expect(run.containsSequence(["--label", "com.apple.container.compose.project=demo"]))
         #expect(run.containsSequence(["--label", "com.apple.container.compose.project.working-directory=/tmp/demo"]))
         #expect(run.containsLabel(withPrefix: "com.apple.container.compose.project.config-files-hash="))
@@ -115,9 +117,10 @@ extension ComposeOrchestratorTests {
         #expect(run.containsSequence(["--network", "demo_default"]))
         #expect(run.containsSequence(["--platform", "linux/amd64"]))
         #expect(Array(run.suffix(2)) == ["example/api:latest", "serve"])
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .beforeStart),
         ])
+        #expect(await logManager.requests.isEmpty)
     }
 
     @Test("up creates volume driver options through direct API")
@@ -649,6 +652,47 @@ extension ComposeOrchestratorTests {
         })
     }
 
+    @Test("up dry run renders IPv4 disablement without conflicting IPv4 addressing")
+    func upDryRunRendersIPv4Disablement() async throws {
+        let emitted = MessageRecorder()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    options: .init(
+                        enableIPv4: false,
+                        enableIPv6: true,
+                        subnets: .init(
+                            ipv4Subnet: "10.10.0.0/24",
+                            ipv4Gateway: "10.10.0.1",
+                            ipv6Subnet: "fd00:10::/64",
+                            ipv6Gateway: "fd00:10::1"
+                        )
+                    )
+                ),
+            ]
+        }
+
+        try await ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }))
+            .up(project: project, options: ComposeUpOptions())
+
+        #expect(emitted.messages.contains { message in
+            message.contains("container network create")
+                && message.contains("--disable-ipv4")
+                && message.contains("--subnet-v6 fd00:10::/64")
+                && message.contains("demo_backend")
+                && !message.contains("--subnet 10.10.0.0/24")
+                && !message.contains("--gateway 10.10.0.1")
+        })
+    }
+
     @Test("up accepts attachable project network metadata")
     func upAcceptsAttachableProjectNetworkMetadata() async throws {
         let runner = RecordingRunner(responses: [
@@ -693,7 +737,7 @@ extension ComposeOrchestratorTests {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         var networkOptions = ComposeNetwork.Options(isAttachable: true)
-        networkOptions.unsupportedFields = ["driver", "enable_ipv4"]
+        networkOptions.unsupportedFields = ["driver"]
         let project = composeProject(
             name: "demo",
             services: [
@@ -715,7 +759,7 @@ extension ComposeOrchestratorTests {
                 .up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported project network options error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, enable_ipv4; supported project network fields are name, external, internal, attachable, enable_ipv6, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet with an optional gateway"))
+            #expect(error == .unsupported("network 'backend' uses unsupported fields driver; supported project network fields are name, external, internal, attachable, enable_ipv4, enable_ipv6, labels, driver_opts, the default bridge driver, and one IPv4 IPAM subnet with optional gateway, allocation range, and reserved addresses plus one IPv6 IPAM subnet with an optional gateway"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -1206,10 +1250,10 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 2)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-optional-1"]))
-        #expect(commands[0].contains("--detach"))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
-        #expect(commands[1].contains("--detach"))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-optional-1"]))
+        #expect(!commands[0].contains("--detach"))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(!commands[1].contains("--detach"))
         #expect(await discoveryManager.getRequests == ["demo-optional-1", "demo-api-1"])
     }
 
@@ -1327,7 +1371,7 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 1)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(!commands.contains { $0.contains("demo-optional-1") })
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
@@ -1369,8 +1413,8 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 2)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-job-1"]))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-job-1"]))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(await lifecycleManager.requests == [
             .wait(id: "demo-job-1"),
         ])
@@ -1414,8 +1458,8 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 2)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-job-1"]))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-job-1"]))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(await lifecycleManager.requests.isEmpty)
     }
 
@@ -1456,8 +1500,8 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 2)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-job-1"]))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-job-1"]))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(await lifecycleManager.requests.isEmpty)
     }
 
@@ -1501,8 +1545,8 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 2)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-db-1"]))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-db-1"]))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-db-1", "demo-db-1", "demo-api-1"])
     }
 
@@ -1550,7 +1594,7 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 1)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-db-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-db-1"]))
         #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-db-1"])
     }
 
@@ -1596,7 +1640,7 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 1)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-job-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-job-1"]))
         #expect(await lifecycleManager.requests.isEmpty)
         #expect(await discoveryManager.getRequests == ["demo-job-1", "demo-job-1"])
     }
@@ -2028,10 +2072,10 @@ extension ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.logging = .object([
-                        "driver": .string("local"),
-                        "options": .object(["max-file": .string("3")]),
-                    ])
+                    $0.logging = ComposeLogConfiguration(
+                        driver: "local",
+                        options: ["max-file": "3"],
+                    )
                 },
             ]
         )
@@ -2040,9 +2084,8 @@ extension ComposeOrchestratorTests {
 
         #expect(plan.name == "demo-api-1")
         #expect(plan.imageReference == "example/api")
-        #expect(plan.logging.storage == .local)
-        #expect(plan.logging.maxFileCount == 3)
-        #expect(plan.logging.maxSizeInBytes == nil)
+        #expect(plan.logging.driver == "local")
+        #expect(plan.logging.options == ["max-file": "3"])
     }
 
     @Test("service create plan maps disabled logging to typed policy")
@@ -2051,16 +2094,39 @@ extension ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.logging = .object(["driver": .string("none")])
+                    $0.logging = ComposeLogConfiguration(driver: "none")
                 },
             ]
         )
 
         let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "api")
 
-        #expect(plan.logging.storage == .none)
-        #expect(plan.logging.maxFileCount == nil)
-        #expect(plan.logging.maxSizeInBytes == nil)
+        #expect(plan.logging.driver == "none")
+        #expect(plan.logging.options.isEmpty)
+    }
+
+    @Test("service create plan preserves arbitrary logging and structured precedence")
+    func serviceCreatePlanPreservesArbitraryLoggingAndStructuredPrecedence() async throws {
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.logging = ComposeLogConfiguration(
+                        driver: "example/provider",
+                        options: ["custom": "structured", "cache-disabled": "true"],
+                    )
+                    $0.logDriver = "none"
+                    $0.logOptions = ["custom": "legacy", "max-file": "2"]
+                },
+            ]
+        )
+
+        let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "api")
+
+        #expect(plan.logging == ComposeLogConfiguration(
+            driver: "example/provider",
+            options: ["custom": "structured", "cache-disabled": "true"],
+        ))
     }
 
     @Test("service create plan maps create-time runtime primitives")
@@ -3097,9 +3163,10 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 2)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
-        #expect(commands[0].contains("--detach"))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-2", "--detach"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(!commands[0].contains("--detach"))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-2"]))
+        #expect(!commands[1].contains("--detach"))
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
         #expect(await discoveryManager.listRequests == [true, true])
     }
@@ -3134,6 +3201,45 @@ extension ComposeOrchestratorTests {
         #expect(commands.count == 1)
         #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1", "demo-api-1"])
+    }
+
+    @Test("up wait treats deploy job modes as ordinary running services")
+    func upWaitTreatsDeployJobModesAsOrdinaryRunningServices() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            getResponses: [
+                "demo-migrate-1": [
+                    nil,
+                    ComposeContainerSummary(id: "demo-migrate-1", status: "starting"),
+                    ComposeContainerSummary(id: "demo-migrate-1", status: "running"),
+                ],
+            ]
+        )
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "migrate": composeService(name: "migrate", image: "example/migrate") {
+                    $0.deployMode = "global-job"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(sleep: { _ in }),
+            discoveryManager: discoveryManager
+        ).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.wait = true
+                $0.waitTimeout = 5
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 1)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-migrate-1", "--detach"]))
+        #expect(await discoveryManager.getRequests == ["demo-migrate-1", "demo-migrate-1", "demo-migrate-1"])
     }
 
     @Test("up wait polls configured healthchecks until healthy")
@@ -3250,7 +3356,7 @@ extension ComposeOrchestratorTests {
             dependencies: orchestratorDependencies { _ in }
         ).up(project: project, options: ComposeUpOptions())
 
-        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "create"]) })
         #expect(runArguments.containsSequence(["--init-image", "vminit:container-compose"]))
         #expect(runArguments.last == "example/api")
     }
@@ -3828,7 +3934,7 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 1)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(!commands.contains { $0.contains("demo-db-1") })
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
@@ -3859,7 +3965,7 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 1)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(!commands.contains { $0.contains("demo-db-1") })
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
@@ -4237,8 +4343,8 @@ extension ComposeOrchestratorTests {
         })
 
         #expect(runner.commands.count == 1)
-        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
-        #expect(runner.commands[0].arguments.contains("--detach"))
+        #expect(runner.commands[0].arguments.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(!runner.commands[0].arguments.contains("--detach"))
         #expect(runner.commands[0].arguments.containsSequence(["--label", "com.apple.container.compose.project=demo"]))
         #expect(runner.commands[0].arguments.containsSequence(["--label", "com.apple.container.compose.service=api"]))
         #expect(runner.commands[0].arguments.last == "example/api:latest")
@@ -4447,6 +4553,7 @@ extension ComposeOrchestratorTests {
             .success,
         ])
         let discoveryManager = RecordingContainerDiscoveryManager()
+        let attachManager = RecordingContainerAttachManager()
         let logManager = RecordingContainerLogManager()
         let project = ComposeProject(
             name: "demo",
@@ -4459,6 +4566,7 @@ extension ComposeOrchestratorTests {
             runner: runner,
             dependencies: orchestratorDependencies {
                 $0.discoveryManager = discoveryManager
+                $0.attachManager = attachManager
                 $0.logManager = logManager
             }
         ).up(project: project, options: ComposeUpOptions {
@@ -4478,6 +4586,7 @@ extension ComposeOrchestratorTests {
             .success,
         ])
         let discoveryManager = RecordingContainerDiscoveryManager()
+        let attachManager = RecordingContainerAttachManager()
         let logManager = RecordingContainerLogManager()
         let project = ComposeProject(
             name: "demo",
@@ -4494,6 +4603,7 @@ extension ComposeOrchestratorTests {
             runner: runner,
             dependencies: orchestratorDependencies {
                 $0.discoveryManager = discoveryManager
+                $0.attachManager = attachManager
                 $0.logManager = logManager
             }
         )
@@ -4503,12 +4613,14 @@ extension ComposeOrchestratorTests {
 
         let dbRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
         let apiRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
-        #expect(dbRun.contains("--detach"))
+        #expect(dbRun.starts(with: ["container", "create"]))
+        #expect(!dbRun.contains("--detach"))
         #expect(apiRun.contains("--detach"))
         #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-api-1"])
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-db-1", tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-db-1", stdout: true, stderr: true, mode: .beforeStart),
         ])
+        #expect(await logManager.requests.isEmpty)
     }
 
     @Test("up no-attach detaches named service and attaches next eligible dependency")
@@ -4518,6 +4630,7 @@ extension ComposeOrchestratorTests {
             .success,
         ])
         let discoveryManager = RecordingContainerDiscoveryManager()
+        let attachManager = RecordingContainerAttachManager()
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -4528,7 +4641,13 @@ extension ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.attachManager = attachManager
+            },
+        )
             .up(project: project, options: ComposeUpOptions {
                 $0.services = ["api"]
                 $0.noAttach = ["api"]
@@ -4536,18 +4655,25 @@ extension ComposeOrchestratorTests {
 
         let dbRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
         let apiRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
-        #expect(dbRun.contains("--detach"))
+        #expect(dbRun.starts(with: ["container", "create"]))
+        #expect(!dbRun.contains("--detach"))
         #expect(apiRun.contains("--detach"))
         #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-api-1"])
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-db-1", stdout: true, stderr: true, mode: .beforeStart),
+        ])
     }
 
-    @Test("up attach follows selected service logs after detached start")
-    func upAttachFollowsSelectedServiceLogsAfterDetachedStart() async throws {
+    @Test("up attach follows selected service output from before start")
+    func upAttachFollowsSelectedServiceOutputFromBeforeStart() async throws {
         let runner = RecordingRunner(responses: [
             .success,
             .success,
         ])
-        let logManager = RecordingContainerLogManager(outputs: ["ready\n"])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("ready\n".utf8)),
+        ])
+        let logManager = RecordingContainerLogManager()
         let emitted = MessageRecorder()
         let project = ComposeProject(
             name: "demo",
@@ -4565,6 +4691,7 @@ extension ComposeOrchestratorTests {
                 emitData: { emitted.append(String(decoding: $0, as: UTF8.self)) }
             )),
             dependencies: orchestratorDependencies {
+                $0.attachManager = attachManager
                 $0.logManager = logManager
             }
         )
@@ -4576,11 +4703,46 @@ extension ComposeOrchestratorTests {
         let dbRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
         let apiRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
         #expect(dbRun.contains("--detach"))
-        #expect(apiRun.contains("--detach"))
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        #expect(apiRun.starts(with: ["container", "create"]))
+        #expect(!apiRun.contains("--detach"))
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .beforeStart),
         ])
-        #expect(emitted.messages == ["api-1 | ready"])
+        #expect(await logManager.requests.isEmpty)
+        #expect(emitted.messages == ["api-1 | ready\n"])
+    }
+
+    @Test("up attach frames split, blank, and unterminated output lines exactly once")
+    func upAttachFramesSplitBlankAndUnterminatedOutputLinesExactlyOnce() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("hel".utf8)),
+            ComposeLogRecord(stream: .stdout, payload: Data("lo\n\npart".utf8)),
+            ComposeLogRecord(stream: .stdout, payload: Data("ial".utf8)),
+            ComposeLogRecord(stream: .stderr, payload: Data("err\n".utf8)),
+        ])
+        let emitted = MessageRecorder()
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")],
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(runtimeHooks: .init(
+                emitData: { emitted.append(String(decoding: $0, as: UTF8.self)) },
+            )),
+            dependencies: orchestratorDependencies {
+                $0.attachManager = attachManager
+            },
+        ).up(project: project, options: ComposeUpOptions())
+
+        #expect(emitted.messages == [
+            "api-1 | hello\n",
+            "api-1 | \n",
+            "api-1 | err\n",
+            "api-1 | partial",
+        ])
     }
 
     @Test("up attach dependencies follows selected service and dependency logs")
@@ -4589,6 +4751,7 @@ extension ComposeOrchestratorTests {
             .success,
             .success,
         ])
+        let attachManager = RecordingContainerAttachManager()
         let logManager = RecordingContainerLogManager()
         let project = ComposeProject(
             name: "demo",
@@ -4603,6 +4766,7 @@ extension ComposeOrchestratorTests {
         try await ComposeOrchestrator(
             runner: runner,
             dependencies: orchestratorDependencies {
+                $0.attachManager = attachManager
                 $0.logManager = logManager
             }
         )
@@ -4613,10 +4777,11 @@ extension ComposeOrchestratorTests {
             $0.timestamps = true
         })
 
-        #expect(await logManager.requests.sorted { $0.id < $1.id } == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true, timestamps: true),
-            ContainerLogRequest(id: "demo-db-1", tail: nil, follow: true, timestamps: true),
+        #expect(await attachManager.requests.sorted { $0.id < $1.id } == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .beforeStart),
+            ContainerAttachRequest(id: "demo-db-1", stdout: true, stderr: true, mode: .beforeStart),
         ])
+        #expect(await logManager.requests.isEmpty)
     }
 
     @Test("up menu follows attachable selected service logs through menu controller")
@@ -4625,7 +4790,10 @@ extension ComposeOrchestratorTests {
             .success,
             .success,
         ])
-        let logManager = RecordingContainerLogManager(outputs: ["ready\n"])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("ready\n".utf8)),
+        ])
+        let logManager = RecordingContainerLogManager()
         let menuController = RecordingComposeUpMenuController()
         let emitted = MessageRecorder()
         let project = ComposeProject(
@@ -4649,6 +4817,7 @@ extension ComposeOrchestratorTests {
                 emitData: { emitted.append(String(decoding: $0, as: UTF8.self)) }
             )),
             dependencies: orchestratorDependencies {
+                $0.attachManager = attachManager
                 $0.logManager = logManager
                 $0.upMenuController = menuController
             }
@@ -4661,7 +4830,8 @@ extension ComposeOrchestratorTests {
         let dbRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
         let apiRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
         #expect(dbRun.contains("--detach"))
-        #expect(apiRun.contains("--detach"))
+        #expect(apiRun.starts(with: ["container", "create"]))
+        #expect(!apiRun.contains("--detach"))
         #expect(await menuController.requests == [
             ComposeUpMenuConfigurationSnapshot(
                 projectName: "demo",
@@ -4670,10 +4840,11 @@ extension ComposeOrchestratorTests {
                 colorEnabled: false
             ),
         ])
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .beforeStart),
         ])
-        #expect(emitted.messages == ["api-1 | ready"])
+        #expect(await logManager.requests.isEmpty)
+        #expect(emitted.messages == ["api-1 | ready\n"])
     }
 
     @Test("up menu watch starts the menu with watch already enabled")
@@ -4686,7 +4857,10 @@ extension ComposeOrchestratorTests {
         let runner = RecordingRunner(responses: [
             .success,
         ])
-        let logManager = RecordingContainerLogManager(outputs: ["ready\n"])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("ready\n".utf8)),
+        ])
+        let logManager = RecordingContainerLogManager()
         let menuController = RecordingComposeUpMenuController()
         let emitted = MessageRecorder()
         var project = ComposeProject(
@@ -4709,6 +4883,7 @@ extension ComposeOrchestratorTests {
                 )
             ),
             dependencies: orchestratorDependencies {
+                $0.attachManager = attachManager
                 $0.logManager = logManager
                 $0.upMenuController = menuController
             }
@@ -4721,7 +4896,8 @@ extension ComposeOrchestratorTests {
         })
 
         let apiRun = try #require(runner.commands.first?.arguments)
-        #expect(apiRun.contains("--detach"))
+        #expect(apiRun.starts(with: ["container", "create"]))
+        #expect(!apiRun.contains("--detach"))
         #expect(await menuController.requests == [
             ComposeUpMenuConfigurationSnapshot(
                 projectName: "demo",
@@ -4730,10 +4906,11 @@ extension ComposeOrchestratorTests {
                 colorEnabled: false
             ),
         ])
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .beforeStart),
         ])
-        #expect(emitted.messages == ["api-1 | ready"])
+        #expect(await logManager.requests.isEmpty)
+        #expect(emitted.messages == ["api-1 | ready\n"])
     }
 
     @Test("up menu watch rejects missing develop triggers before runtime side effects")
@@ -4798,7 +4975,7 @@ extension ComposeOrchestratorTests {
             $0.menu = true
         })
 
-        #expect(emitted.messages.contains("+ compose-runtime logs --follow demo-api-1"))
+        #expect(emitted.messages.contains("+ compose-runtime attach --no-stdin demo-api-1"))
         #expect(await menuController.requests.isEmpty)
         #expect(await logManager.requests.isEmpty)
     }
@@ -4830,7 +5007,7 @@ extension ComposeOrchestratorTests {
         })
 
         #expect(exitCode == 0)
-        #expect(emitted.messages.contains("+ compose-runtime logs --follow demo-api-1"))
+        #expect(emitted.messages.contains("+ compose-runtime attach --no-stdin demo-api-1"))
         #expect(emitted.messages.contains("+ compose-runtime wait demo-api-1"))
         #expect(emitted.messages.contains("+ container stop demo-api-1"))
         #expect(emitted.messages.contains("+ container delete demo-api-1"))
@@ -4906,7 +5083,10 @@ extension ComposeOrchestratorTests {
                 "demo-api-1": [nil],
             ]
         )
-        let logManager = RecordingContainerLogManager(outputs: ["ready\n"])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("ready\n".utf8)),
+        ])
+        let logManager = RecordingContainerLogManager()
         let menuController = RecordingComposeUpMenuController()
         let project = ComposeProject(
             name: "demo",
@@ -4922,6 +5102,7 @@ extension ComposeOrchestratorTests {
             dependencies: orchestratorDependencies {
                 $0.discoveryManager = discoveryManager
                 $0.lifecycleManager = lifecycleManager
+                $0.attachManager = attachManager
                 $0.logManager = logManager
                 $0.upMenuController = menuController
             }
@@ -4941,9 +5122,10 @@ extension ComposeOrchestratorTests {
                 colorEnabled: false
             ),
         ])
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .beforeStart),
         ])
+        #expect(await logManager.requests.isEmpty)
         let lifecycleRequests = await lifecycleManager.requests
         #expect(lifecycleRequests.contains(.wait(id: "demo-api-1")))
         #expect(lifecycleRequests.contains(.stop(id: "demo-api-1", signal: nil, timeoutInSeconds: 3)))
@@ -5078,6 +5260,7 @@ extension ComposeOrchestratorTests {
             .success,
         ])
         let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-api-1": 7])
+        let attachManager = RecordingContainerAttachManager()
         let logManager = RecordingContainerLogManager()
         let discoveryManager = RecordingContainerDiscoveryManager(
             containers: [
@@ -5122,6 +5305,7 @@ extension ComposeOrchestratorTests {
             dependencies: orchestratorDependencies {
                 $0.discoveryManager = discoveryManager
                 $0.lifecycleManager = lifecycleManager
+                $0.attachManager = attachManager
                 $0.logManager = logManager
             }
         )
@@ -5133,8 +5317,10 @@ extension ComposeOrchestratorTests {
         let dbRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
         let apiRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
         #expect(exitCode == 7)
-        #expect(dbRun.contains("--detach"))
-        #expect(apiRun.contains("--detach"))
+        #expect(dbRun.starts(with: ["container", "create"]))
+        #expect(apiRun.starts(with: ["container", "create"]))
+        #expect(!dbRun.contains("--detach"))
+        #expect(!apiRun.contains("--detach"))
         let lifecycleRequests = await lifecycleManager.requests
         #expect(lifecycleRequests.contains(.wait(id: "demo-api-1")))
         #expect(lifecycleRequests.contains(.wait(id: "demo-db-1")))
@@ -5143,10 +5329,11 @@ extension ComposeOrchestratorTests {
         #expect(lifecycleRequests.contains(.stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil)))
         #expect(lifecycleRequests.contains(.delete(id: "demo-db-1", force: false)))
         #expect(await discoveryManager.listRequests == [true, true, true, true])
-        #expect(await logManager.requests.sorted { $0.id < $1.id } == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
-            ContainerLogRequest(id: "demo-db-1", tail: nil, follow: true),
+        #expect(await attachManager.requests.sorted { $0.id < $1.id } == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .beforeStart),
+            ContainerAttachRequest(id: "demo-db-1", stdout: true, stderr: true, mode: .beforeStart),
         ])
+        #expect(await logManager.requests.isEmpty)
     }
 
     @Test("up exit-code-from aborts when another service exits first and returns selected status")
@@ -5237,10 +5424,11 @@ extension ComposeOrchestratorTests {
                 "demo-api-1": .milliseconds(20),
             ]
         )
-        let logManager = RecordingContainerLogManager(
+        let attachManager = RecordingContainerAttachManager(
             delay: .milliseconds(10),
             error: ComposeError.unsupported("attached log stream ended during exit-control teardown")
         )
+        let logManager = RecordingContainerLogManager()
         let discoveryManager = RecordingContainerDiscoveryManager(
             containers: [
                 ComposeContainerSummary(
@@ -5282,6 +5470,7 @@ extension ComposeOrchestratorTests {
             dependencies: orchestratorDependencies {
                 $0.discoveryManager = discoveryManager
                 $0.lifecycleManager = lifecycleManager
+                $0.attachManager = attachManager
                 $0.logManager = logManager
             }
         )
@@ -5291,10 +5480,11 @@ extension ComposeOrchestratorTests {
         })
 
         #expect(exitCode == 7)
-        #expect(await logManager.requests.sorted { $0.id < $1.id } == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
-            ContainerLogRequest(id: "demo-db-1", tail: nil, follow: true),
+        #expect(await attachManager.requests.sorted { $0.id < $1.id } == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .beforeStart),
+            ContainerAttachRequest(id: "demo-db-1", stdout: true, stderr: true, mode: .beforeStart),
         ])
+        #expect(await logManager.requests.isEmpty)
     }
 
     @Test("up abort-on-container-failure returns failing status and tears down project")
@@ -5460,8 +5650,8 @@ extension ComposeOrchestratorTests {
         })
 
         #expect(exitCode == 0)
-        #expect(emitted.messages.contains("+ compose-runtime logs --follow demo-api-1"))
-        #expect(emitted.messages.contains("+ compose-runtime logs --follow demo-db-1"))
+        #expect(emitted.messages.contains("+ compose-runtime attach --no-stdin demo-api-1"))
+        #expect(emitted.messages.contains("+ compose-runtime attach --no-stdin demo-db-1"))
         #expect(emitted.messages.contains("+ compose-runtime wait demo-api-1"))
         #expect(emitted.messages.contains("+ container stop --time 7 demo-api-1"))
         #expect(emitted.messages.contains("+ container delete demo-api-1"))
@@ -5530,14 +5720,21 @@ extension ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
-    @Test("up timestamps detaches foreground service and follows timestamped logs")
-    func upTimestampsDetachesForegroundServiceAndFollowsTimestampedLogs() async throws {
+    @Test("up timestamps formats attached foreground output")
+    func upTimestampsFormatsAttachedForegroundOutput() async throws {
         let runner = RecordingRunner(responses: [
             .success,
         ])
         let emitted = MessageRecorder()
         let discoveryManager = RecordingContainerDiscoveryManager()
-        let logManager = RecordingContainerLogManager(outputs: ["2026-06-18T10:00:00Z ready"])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(
+                stream: .stdout,
+                payload: Data("ready\n".utf8),
+                timestamp: Date(timeIntervalSince1970: 0),
+            ),
+        ])
+        let logManager = RecordingContainerLogManager()
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -5550,6 +5747,7 @@ extension ComposeOrchestratorTests {
             options: ComposeExecutionOptions(emit: { emitted.append($0) }),
             dependencies: orchestratorDependencies {
                 $0.discoveryManager = discoveryManager
+                $0.attachManager = attachManager
                 $0.logManager = logManager
             }
         ).up(
@@ -5560,12 +5758,14 @@ extension ComposeOrchestratorTests {
             }
         )
 
-        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
+        #expect(runner.commands[0].arguments.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(!runner.commands[0].arguments.contains("--detach"))
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true, timestamps: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .beforeStart),
         ])
-        #expect(emitted.messages == ["2026-06-18T10:00:00Z ready"])
+        #expect(await logManager.requests.isEmpty)
+        #expect(emitted.messages == ["1970-01-01T00:00:00.000Z ready\n"])
     }
 
     @Test("up timestamps dry run renders detached run and followed timestamped logs")
@@ -5584,8 +5784,9 @@ extension ComposeOrchestratorTests {
             $0.timestamps = true
         })
 
-        #expect(emitted.messages.contains { $0.contains("+ container run --name demo-api-1 --detach") })
-        #expect(emitted.messages.contains("+ compose-runtime logs --follow --timestamps demo-api-1"))
+        #expect(emitted.messages.contains { $0.contains("+ container create --name demo-api-1") })
+        #expect(emitted.messages.contains("+ container start demo-api-1"))
+        #expect(emitted.messages.contains("+ compose-runtime attach --no-stdin demo-api-1"))
     }
 
     @Test("up build does not rebuild build-only services")
@@ -5650,7 +5851,7 @@ extension ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].starts(with: ["container", "build"]))
         #expect(commands[0].contains("--quiet"))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
@@ -5679,7 +5880,7 @@ extension ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
         #expect(commands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
@@ -5709,7 +5910,7 @@ extension ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 1)
         #expect(!commands.contains { $0.containsSequence(["container", "build"]) })
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
@@ -5738,7 +5939,7 @@ extension ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 1)
         #expect(!commands.contains { $0.containsSequence(["container", "build"]) })
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-worker-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-worker-1"]))
         #expect(commands[0].last == "demo_worker:latest")
         #expect(await discoveryManager.getRequests == ["demo-worker-1"])
     }
@@ -5769,7 +5970,7 @@ extension ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].starts(with: ["container", "build"]))
         #expect(commands[0].contains("--quiet"))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-worker-1"]))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-worker-1"]))
         #expect(await discoveryManager.getRequests == ["demo-worker-1"])
     }
 
@@ -5796,8 +5997,8 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 2)
-        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-api-1"]) })
-        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-db-1"]) })
+        #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-api-1"]) })
+        #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-db-1"]) })
         let imageRequests = await imageManager.requests
         #expect(imageRequests.count == 4)
         #expect(imageRequests.contains(.pullMissing("example/api")))
@@ -5835,8 +6036,8 @@ extension ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
         #expect(commands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
-        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-api-1"]) })
-        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-db-1"]) })
+        #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-api-1"]) })
+        #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-db-1"]) })
         let imageRequests = await imageManager.requests
         #expect(imageRequests.count == 3)
         #expect(imageRequests.contains(.pullMissing("postgres")))
@@ -5865,7 +6066,7 @@ extension ComposeOrchestratorTests {
         )
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(await imageManager.requests == [
             .pullMissing("example/api"),
             .healthCheck(reference: "example/api", platform: nil),
@@ -5894,7 +6095,7 @@ extension ComposeOrchestratorTests {
         )
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(await imageManager.requests == [
             .pull("example/api"),
             .healthCheck(reference: "example/api", platform: nil),
@@ -5930,38 +6131,43 @@ extension ComposeOrchestratorTests {
         #expect(progress.snapshot.joined() == """
         ⠓ Pulling image example/api
         ✓ Pulling image example/api
-        ⠓ Starting api
-        ✓ Starting api
+        ⠓ Creating api
+        ✓ Creating api
 
         """)
         #expect(await imageManager.requests == [
             .pull("example/api"),
             .healthCheck(reference: "example/api", platform: nil),
         ])
-        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(runner.commands[0].arguments.starts(with: ["container", "create", "--name", "demo-api-1"]))
     }
 
-    @Test("TTY up progress terminates the pending row before runtime output")
-    func ttyUpProgressTerminatesPendingRowBeforeRuntimeOutput() async throws {
+    @Test("TTY up progress clears the pending row before attached output")
+    func ttyUpProgressClearsPendingRowBeforeAttachedOutput() async throws {
         let progress = LockedStringRecorder()
-        let runner = ProgressAssertingRunner { arguments in
-            #expect(arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
-            #expect(progress.snapshot == ["⠓ Starting api\n"])
-        }
+        let runner = RecordingRunner(responses: [.success])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("ready\n".utf8)),
+        ])
         let discoveryManager = RecordingContainerDiscoveryManager()
         let imageManager = RecordingContainerImageManager(existingReferences: ["example/api"])
         let reporter = ComposeProgressReporter(
             style: .tty,
             emitData: { progress.append(String(decoding: $0, as: UTF8.self)) }
         )
+        var executionOptions = ComposeExecutionOptions(runtimeHooks: .init {
+            $0.emitAttachedData = { progress.append(String(decoding: $0, as: UTF8.self)) }
+        })
+        executionOptions.progress = reporter
         let project = ComposeProject(
             name: "demo",
             services: ["api": ComposeService(name: "api", image: "example/api")]
         )
         let orchestrator = ComposeOrchestrator(
             runner: runner,
-            options: ComposeExecutionOptions(progress: reporter),
+            options: executionOptions,
             dependencies: orchestratorDependencies {
+                $0.attachManager = attachManager
                 $0.discoveryManager = discoveryManager
                 $0.imageManager = imageManager
             }
@@ -5970,8 +6176,10 @@ extension ComposeOrchestratorTests {
         try await orchestrator.up(project: project, options: ComposeUpOptions())
 
         #expect(progress.snapshot == [
-            "⠓ Starting api\n",
-            "✓ Starting api\n",
+            "\r⠓ Creating api",
+            "\r\u{001B}[K",
+            "✓ Creating api\n",
+            "api-1 | ready\n",
         ])
     }
 
@@ -6008,7 +6216,7 @@ extension ComposeOrchestratorTests {
             .pull("example/api"),
             .healthCheck(reference: "example/api", platform: nil),
         ])
-        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(runner.commands[0].arguments.starts(with: ["container", "create", "--name", "demo-api-1"]))
     }
 
     @Test("up quiet-pull suppresses direct image pull progress")
@@ -6037,12 +6245,12 @@ extension ComposeOrchestratorTests {
             $0.quietPull = true
         })
 
-        #expect(progress.snapshot.joined() == "⠓ Starting api\n✓ Starting api\n")
+        #expect(progress.snapshot.joined() == "⠓ Creating api\n✓ Creating api\n")
         #expect(await imageManager.requests == [
             .pull("example/api"),
             .healthCheck(reference: "example/api", platform: nil),
         ])
-        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(runner.commands[0].arguments.starts(with: ["container", "create", "--name", "demo-api-1"]))
     }
 
     @Test("up applies service pull policies when no global pull policy is set")
@@ -6073,9 +6281,9 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 3)
-        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-api-1"]) })
-        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-db-1"]) })
-        #expect(commands.contains { $0.starts(with: ["container", "run", "--name", "demo-worker-1"]) })
+        #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-api-1"]) })
+        #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-db-1"]) })
+        #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-worker-1"]) })
         let imageRequests = await imageManager.requests
         #expect(imageRequests.count == 5)
         #expect(imageRequests.contains(.pull("example/api")))
@@ -6123,7 +6331,7 @@ extension ComposeOrchestratorTests {
             .healthCheck(reference: "example/api", platform: nil),
         ])
         #expect(await metadataStore.recordedDate(for: "example/api") == now)
-        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(runner.commands[0].arguments.starts(with: ["container", "create", "--name", "demo-api-1"]))
     }
 
     @Test("up skips service image pull when weekly policy is fresh")
@@ -6159,7 +6367,7 @@ extension ComposeOrchestratorTests {
             .exists("example/api"),
             .healthCheck(reference: "example/api", platform: nil),
         ])
-        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(runner.commands[0].arguments.starts(with: ["container", "create", "--name", "demo-api-1"]))
     }
 
     @Test("up pulls service image when every duration policy is stale")
@@ -6197,7 +6405,7 @@ extension ComposeOrchestratorTests {
             .healthCheck(reference: "example/api", platform: nil),
         ])
         #expect(await metadataStore.recordedDate(for: "example/api") == now)
-        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(runner.commands[0].arguments.starts(with: ["container", "create", "--name", "demo-api-1"]))
     }
 
     @Test("up quiet-pull dry run disables service pull policy progress")
@@ -6224,7 +6432,7 @@ extension ComposeOrchestratorTests {
 
         let messages = emitted.messages
         #expect(messages.contains("+ container image pull --progress none alpine"))
-        #expect(messages.contains { $0.hasPrefix("+ container run ") })
+        #expect(messages.contains { $0.hasPrefix("+ container create ") })
     }
 
     @Test("up rejects unsupported service pull policies before creating resources")
@@ -6334,11 +6542,15 @@ extension ComposeOrchestratorTests {
             ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: apiHash]),
         ])
         let lifecycleManager = RecordingContainerLifecycleManager()
+        let attachManager = RecordingContainerAttachManager()
 
         try await ComposeOrchestrator(
             runner: runner,
-            discoveryManager: discoveryManager,
-            lifecycleManager: lifecycleManager
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+                $0.attachManager = attachManager
+            }
         )
         .up(project: changedProject, options: ComposeUpOptions {
             $0.services = ["api"]
@@ -6351,7 +6563,10 @@ extension ComposeOrchestratorTests {
             .stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
             .delete(id: "demo-db-1", force: false),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
-            .start(id: "demo-api-1"),
+        ])
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-db-1", stdout: true, stderr: true, mode: .beforeStart),
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .beforeStart),
         ])
     }
 
@@ -6449,7 +6664,7 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 1)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-job-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-job-1"]))
     }
 
     @Test("up maps explicit legacy links to source-scoped DNS aliases")
@@ -6634,7 +6849,7 @@ extension ComposeOrchestratorTests {
         ).up(project: project, options: ComposeUpOptions())
 
         let command = try #require(runner.commands.first?.arguments)
-        #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(command.containsSequence(["--network", "demo_backend,dns-alias=db:legacy_db,dns-alias=legacy_cache:legacy_cache"]))
         #expect(command.filter { $0.contains("dns-alias=db:legacy_db") }.count == 1)
         #expect(!command.contains("--add-host"))
@@ -8381,7 +8596,7 @@ extension ComposeOrchestratorTests {
         ).up(project: project, options: ComposeUpOptions())
 
         #expect(runner.commands.count == 1)
-        #expect(runner.commands[0].arguments.containsSequence(["run", "--name", "demo-api-1"]))
+        #expect(runner.commands[0].arguments.containsSequence(["create", "--name", "demo-api-1"]))
     }
 
     @Test("up rejects unmapped build fields before creating resources")
@@ -8441,8 +8656,8 @@ extension ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up waits for deploy job mode replicas")
-    func upWaitsForDeployJobModeReplicas() async throws {
+    @Test("up treats deploy job mode replicas as ordinary local services")
+    func upTreatsDeployJobModeReplicasAsOrdinaryLocalServices() async throws {
         let runner = RecordingRunner(responses: [.success, .success])
         let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: [
             "demo-migrate-1": 0,
@@ -8465,19 +8680,16 @@ extension ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 2)
-        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-migrate-1"]))
-        #expect(commands[0].contains("--detach"))
-        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-migrate-2"]))
-        #expect(commands[1].contains("--detach"))
-        #expect(await lifecycleManager.requests == [
-            .wait(id: "demo-migrate-1"),
-            .wait(id: "demo-migrate-2"),
-        ])
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-migrate-1"]))
+        #expect(!commands[0].contains("--detach"))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-migrate-2"]))
+        #expect(!commands[1].contains("--detach"))
+        #expect(await lifecycleManager.requests.isEmpty)
     }
 
-    @Test("up fails deploy job mode on nonzero exit")
-    func upFailsDeployJobModeOnNonzeroExit() async throws {
-        let runner = RecordingRunner(responses: [.success, .success])
+    @Test("up does not gate dependent services on deploy job completion")
+    func upDoesNotGateDependentServicesOnDeployJobCompletion() async throws {
+        let runner = RecordingRunner(responses: [.success, .success, .success])
         let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: [
             "demo-migrate-1": 0,
             "demo-migrate-2": 7,
@@ -8495,25 +8707,16 @@ extension ComposeOrchestratorTests {
             ]
         )
 
-        do {
-            try await ComposeOrchestrator(
-                runner: runner,
-                lifecycleManager: lifecycleManager
-            ).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected deploy job failure")
-        } catch let error as ComposeError {
-            #expect(error == .invalidProject("service 'migrate' job container 'demo-migrate-2' exited with status 7"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            lifecycleManager: lifecycleManager
+        ).up(project: project, options: ComposeUpOptions())
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands.count == 2)
-        #expect(commands.allSatisfy { $0.containsSequence(["example/migrate"]) })
-        #expect(await lifecycleManager.requests == [
-            .wait(id: "demo-migrate-1"),
-            .wait(id: "demo-migrate-2"),
-        ])
+        #expect(commands.count == 3)
+        #expect(commands.prefix(2).allSatisfy { $0.containsSequence(["example/migrate"]) })
+        #expect(commands.last?.contains("example/api") == true)
+        #expect(await lifecycleManager.requests.isEmpty)
     }
 
     @Test("up rejects unsupported deploy update order as apple/container orchestration gap")
@@ -8613,7 +8816,7 @@ extension ComposeOrchestratorTests {
         ).up(project: project, options: ComposeUpOptions())
 
         let newRun = try #require(runner.commands.first?.arguments)
-        #expect(newRun.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(newRun.starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(composeConfigHash(in: newRun) != oldHash)
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
@@ -8753,7 +8956,7 @@ extension ComposeOrchestratorTests {
         let runArguments = try #require(runner.commands.first {
             $0.arguments.contains("demo-api-1")
         }).arguments
-        #expect(runArguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(runArguments.starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(runArguments.contains("--env"))
         #expect(runArguments.contains("DATABASE_URL=https://magic.cloud/database"))
         #expect(runArguments.contains("CLOUD_REGION=us-east-1"))

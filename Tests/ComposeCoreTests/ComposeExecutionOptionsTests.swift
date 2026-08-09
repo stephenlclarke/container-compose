@@ -33,6 +33,33 @@ struct ComposeExecutionOptionsTests {
     }
 
     @Test
+    func `attached output inherits a configured data hook`() {
+        let emitted = DataRecorder()
+        let options = ComposeExecutionOptions(runtimeHooks: .init(
+            emitData: { emitted.append($0) },
+        ))
+
+        options.emitAttachedData(Data([0, 10, 255]))
+
+        #expect(emitted.data == [Data([0, 10, 255])])
+    }
+
+    @Test
+    func `dedicated attached output hook overrides the line data hook`() {
+        let lineData = DataRecorder()
+        let attachedData = DataRecorder()
+        let options = ComposeExecutionOptions(runtimeHooks: .init {
+            $0.emitData = { lineData.append($0) }
+            $0.emitAttachedData = { attachedData.append($0) }
+        })
+
+        options.emitAttachedData(Data("raw".utf8))
+
+        #expect(lineData.data.isEmpty)
+        #expect(attachedData.data == [Data("raw".utf8)])
+    }
+
+    @Test
     func `parallelism defaults to unlimited when no control is configured`() throws {
         #expect(try ComposeExecutionOptions.effectiveParallelism(explicit: nil, environment: [:]) == -1)
     }

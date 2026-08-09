@@ -417,6 +417,91 @@ struct ComposeRuntimeSmokeTests {
         #expect(status["ipv6Subnet"] == nil || status["ipv6Subnet"] is NSNull)
     }
 
+    @Test("runtime static IPv4 endpoint survives restart and network cleanup")
+    func runtimeStaticIPv4EndpointLifecycle() throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          app:
+            image: alpine:3.20
+            command: ["sh", "-c", "sleep 600"]
+            networks:
+              appnet:
+                ipv4_address: 192.168.240.20
+        networks:
+          appnet:
+            driver: bridge
+            ipam:
+              config:
+                - subnet: 192.168.240.0/24
+                  ip_range: 192.168.240.128/25
+                  gateway: 192.168.240.1
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = runtimeProjectName()
+        let networkName = "\(project)_appnet"
+        let containerName = "\(project)-app-1"
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
+        _ = try runProcess(containerBinary, ["system", "status"], timeout: 15)
+        defer {
+            _ = try? runProcess(
+                composeBinary,
+                [
+                    "--ansi", "never",
+                    "--project-name", project,
+                    "--file", composeFile.path,
+                    "down", "--volumes", "--remove-orphans",
+                ],
+                timeout: 60
+            )
+        }
+
+        let composeArguments = [
+            "--ansi", "never",
+            "--project-name", project,
+            "--file", composeFile.path,
+        ]
+        _ = try runProcess(containerBinary, ["image", "pull", "alpine:3.20"], timeout: 180)
+        _ = try runProcess(composeBinary, composeArguments + ["up", "--detach", "app"], timeout: 180)
+
+        let networkInspect = try runProcess(containerBinary, ["network", "inspect", networkName], timeout: 30)
+        let networkData = Data(networkInspect.stdout.utf8)
+        let networks = try #require(JSONSerialization.jsonObject(with: networkData) as? [[String: Any]])
+        let network = try #require(networks.first)
+        let configuration = try #require(network["configuration"] as? [String: Any])
+        #expect(configuration["ipv4Subnet"] as? String == "192.168.240.0/24")
+        #expect(configuration["ipv4AllocationRange"] as? String == "192.168.240.128/25")
+        #expect(configuration["ipv4Gateway"] as? String == "192.168.240.1")
+
+        let before = try runtimeContainerIPv4Address(containerBinary: containerBinary, name: containerName)
+        #expect(before == "192.168.240.20")
+
+        _ = try runProcess(composeBinary, composeArguments + ["restart", "app"], timeout: 180)
+        let after = try runtimeContainerIPv4Address(containerBinary: containerBinary, name: containerName)
+        #expect(after == before)
+
+        _ = try runProcess(
+            composeBinary,
+            composeArguments + ["down", "--volumes", "--remove-orphans"],
+            timeout: 60
+        )
+        _ = try runProcess(
+            containerBinary,
+            ["network", "inspect", networkName],
+            timeout: 30,
+            expectedStatus: 1
+        )
+    }
+
     @Test("runtime ps and top inspect built compose service")
     func runtimePsAndTopInspectBuiltComposeService() throws {
         let fileManager = FileManager.default
@@ -1537,6 +1622,18 @@ private func containerDryRun(_ arguments: String) -> String {
 
 private func runtimeProjectName() -> String {
     "ccrt-\(UUID().uuidString.prefix(8).lowercased())"
+}
+
+private func runtimeContainerIPv4Address(containerBinary: String, name: String) throws -> String {
+    let inspect = try runProcess(containerBinary, ["inspect", name], timeout: 30)
+    let data = Data(inspect.stdout.utf8)
+    let containers = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+    let container = try #require(containers.first)
+    let status = try #require(container["status"] as? [String: Any])
+    let attachments = try #require(status["networks"] as? [[String: Any]])
+    let attachment = try #require(attachments.first)
+    let address = try #require(attachment["ipv4Address"] as? String)
+    return address.split(separator: "/", maxSplits: 1).first.map(String.init) ?? address
 }
 
 private func copyRuntimeFixture(named name: String) throws -> URL {

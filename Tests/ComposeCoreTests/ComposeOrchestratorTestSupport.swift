@@ -590,6 +590,7 @@ func orchestratorDependencies(
 ) -> ComposeOrchestratorDependencies {
     var dependencies = ComposeOrchestratorDependencies()
     dependencies.archiveManager = ContainerArchiveManager()
+    dependencies.attachManager = RecordingContainerAttachManager()
     dependencies.copier = RecordingContainerCopier()
     dependencies.discoveryManager = RecordingContainerDiscoveryManager()
     dependencies.eventsManager = RecordingContainerEventsManager()
@@ -598,6 +599,7 @@ func orchestratorDependencies(
     dependencies.imageManager = RecordingContainerImageManager()
     dependencies.imageVolumeInitializer = RecordingContainerImageVolumeInitializer()
     dependencies.lifecycleManager = RecordingContainerLifecycleManager()
+    dependencies.launchManager = RecordingContainerLaunchManager()
     dependencies.logManager = RecordingContainerLogManager()
     dependencies.pullMetadataStore = RecordingPullMetadataStore()
     dependencies.resourceManager = RecordingContainerResourceManager()
@@ -1050,16 +1052,16 @@ struct DisabledServiceLoggingFieldCase: Sendable {
 func supportedLocalServiceLoggingFieldCases() -> [SupportedServiceLoggingFieldCase] {
     [
         SupportedServiceLoggingFieldCase(
-            configure: { $0.logging = .object(["driver": .string("json-file")]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "json-file") }
         ),
         SupportedServiceLoggingFieldCase(
-            configure: { $0.logging = .object(["driver": .string("json-file"), "options": .object([:])]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "json-file") }
         ),
         SupportedServiceLoggingFieldCase(
-            configure: { $0.logging = .object(["driver": .string("local")]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "local") }
         ),
         SupportedServiceLoggingFieldCase(
-            configure: { $0.logging = .object(["driver": .string("local"), "options": .object([:])]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "local") }
         ),
         SupportedServiceLoggingFieldCase(
             configure: { $0.logDriver = "json-file" }
@@ -1074,25 +1076,25 @@ func supportedLocalServiceLoggingOptionCases() -> [SupportedServiceLoggingOption
     [
         SupportedServiceLoggingOptionCase(
             configure: {
-                $0.logging = .object([
-                    "driver": .string("json-file"),
-                    "options": .object(["max-size": .string("10m"), "max-file": .string("3")]),
-                ])
+                $0.logging = ComposeLogConfiguration(
+                    driver: "json-file",
+                    options: ["max-size": "10m", "max-file": "3"],
+                )
             },
             expectedOptions: ["max-size=10m", "max-file=3"]
         ),
         SupportedServiceLoggingOptionCase(
             configure: {
-                $0.logging = .object([
-                    "driver": .string("local"),
-                    "options": .object(["max-size": .string("512b")]),
-                ])
+                $0.logging = ComposeLogConfiguration(
+                    driver: "local",
+                    options: ["max-size": "512b"],
+                )
             },
             expectedOptions: ["max-size=512b"]
         ),
         SupportedServiceLoggingOptionCase(
             configure: {
-                $0.logging = .object(["options": .object(["max-file": .string("5")])])
+                $0.logging = ComposeLogConfiguration(options: ["max-file": "5"])
             },
             expectedOptions: ["max-file=5"]
         ),
@@ -1115,10 +1117,10 @@ func supportedLocalServiceLoggingOptionCases() -> [SupportedServiceLoggingOption
 func disabledServiceLoggingFieldCases() -> [DisabledServiceLoggingFieldCase] {
     [
         DisabledServiceLoggingFieldCase(
-            configure: { $0.logging = .object(["driver": .string("none")]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "none") }
         ),
         DisabledServiceLoggingFieldCase(
-            configure: { $0.logging = .object(["driver": .string("none"), "options": .object([:])]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "none") }
         ),
         DisabledServiceLoggingFieldCase(
             configure: { $0.logDriver = "none" }
@@ -1131,17 +1133,17 @@ func unsupportedServiceMetadataAndLoggingFieldCases() -> [UnsupportedServiceMeta
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "logging",
             reason: "service logging driver/options need an apple/container runtime gap PR",
-            configure: { $0.logging = .object(["driver": .string("syslog")]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "syslog") }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "logging",
             reason: "service logging driver/options need an apple/container runtime gap PR",
-            configure: { $0.logging = .object(["driver": .string("local"), "options": .object(["mode": .string("non-blocking")])]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "local", options: ["mode": "non-blocking"]) }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "logging",
             reason: "service logging driver/options need an apple/container runtime gap PR",
-            configure: { $0.logging = .object(["driver": .string("none"), "options": .object(["max-size": .string("10m")])]) }
+            configure: { $0.logging = ComposeLogConfiguration(driver: "none", options: ["max-size": "10m"]) }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "log_driver",
@@ -1652,6 +1654,7 @@ enum ContainerResourceAPIRequest: Equatable {
         ipv4AllocationRange: String?,
         ipv6Subnet: String?,
         ipv6Gateway: String? = nil,
+        enableIPv4: Bool = true,
         enableIPv6: Bool,
         options: [String: String],
         labels: [String: String]
@@ -2051,6 +2054,24 @@ actor RecordingContainerCopyOperations {
     }
 }
 
+actor RecordingContainerLaunchManager: ComposeRuntimeContainerLaunching {
+    private let status: Int32
+    private var storage: [ComposeRuntimeContainerLaunchRequest] = []
+
+    init(status: Int32 = 0) {
+        self.status = status
+    }
+
+    var requests: [ComposeRuntimeContainerLaunchRequest] {
+        storage
+    }
+
+    func launchContainer(_ request: ComposeRuntimeContainerLaunchRequest) async throws -> Int32 {
+        storage.append(request)
+        return status
+    }
+}
+
 actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
     private let stopError: (any Error)?
     private let deleteError: (any Error)?
@@ -2218,12 +2239,19 @@ actor RecordingContainerLogManager: ContainerLogManaging {
     private let outputs: [String]
     private let delay: Duration?
     private let error: (any Error)?
+    private let errorIDs: Set<String>
     private var storage: [ContainerLogRequest] = []
 
-    init(outputs: [String] = [], delay: Duration? = nil, error: (any Error)? = nil) {
+    init(
+        outputs: [String] = [],
+        delay: Duration? = nil,
+        error: (any Error)? = nil,
+        errorIDs: Set<String> = []
+    ) {
         self.outputs = outputs
         self.delay = delay
         self.error = error
+        self.errorIDs = errorIDs
     }
 
     var requests: [ContainerLogRequest] {
@@ -2252,11 +2280,62 @@ actor RecordingContainerLogManager: ContainerLogManaging {
         if let delay {
             try await Task.sleep(for: delay)
         }
-        if let error {
+        if let error, errorIDs.isEmpty || errorIDs.contains(id) {
             throw error
         }
         for output in outputs {
             emit(Data(output.utf8))
+        }
+    }
+}
+
+struct ContainerAttachRequest: Equatable, Sendable {
+    let id: String
+    let stdout: Bool
+    let stderr: Bool
+    let mode: ComposeOutputAttachmentMode
+}
+
+actor RecordingContainerAttachManager: ComposeRuntimeAttachManaging {
+    private let outputs: [ComposeLogRecord]
+    private let delay: Duration?
+    private let error: (any Error)?
+    private var storage: [ContainerAttachRequest] = []
+
+    init(
+        outputs: [ComposeLogRecord] = [],
+        delay: Duration? = nil,
+        error: (any Error)? = nil,
+    ) {
+        self.outputs = outputs
+        self.delay = delay
+        self.error = error
+    }
+
+    var requests: [ContainerAttachRequest] {
+        storage
+    }
+
+    func attachOutput(
+        id: String,
+        stdout: Bool,
+        stderr: Bool,
+        mode: ComposeOutputAttachmentMode,
+        onReady: @escaping @Sendable () -> Void,
+        onStarted: @escaping @Sendable () -> Void,
+        emit: @escaping @Sendable (ComposeLogRecord) -> Void,
+    ) async throws {
+        storage.append(ContainerAttachRequest(id: id, stdout: stdout, stderr: stderr, mode: mode))
+        onReady()
+        onStarted()
+        if let delay {
+            try await Task.sleep(for: delay)
+        }
+        if let error {
+            throw error
+        }
+        for output in outputs {
+            emit(output)
         }
     }
 }
@@ -2343,6 +2422,7 @@ actor BlockingContainerLogManager: ContainerLogManaging {
 actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     private let fileHandles: [FileHandle]
     private let records: [ContainerLogRecord]
+    private let error: (any Error)?
     private var storage: [String] = []
     private var optionsStorage: [ContainerLogOptions] = []
     private var replayStorage: [ContainerLogReplayOptions] = []
@@ -2354,9 +2434,14 @@ actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     private var followRecordStorage: [String] = []
     private var followRecordOptionsStorage: [ContainerLogOptions] = []
 
-    init(fileHandles: [FileHandle] = [], records: [ContainerLogRecord] = []) {
+    init(
+        fileHandles: [FileHandle] = [],
+        records: [ContainerLogRecord] = [],
+        error: (any Error)? = nil
+    ) {
         self.fileHandles = fileHandles
         self.records = records
+        self.error = error
     }
 
     var requests: [String] {
@@ -2403,6 +2488,9 @@ actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         storage.append(id)
         optionsStorage.append(options)
         replayStorage.append(replay)
+        if let error {
+            throw error
+        }
         return fileHandles
     }
 
@@ -2410,12 +2498,18 @@ actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         recordStorage.append(id)
         recordOptionsStorage.append(options)
         recordReplayStorage.append(replay)
+        if let error {
+            throw error
+        }
         return applyLogOptions(to: records, options: options)
     }
 
     func followLogs(id: String, options: ContainerLogOptions) async throws -> FileHandle {
         followStorage.append(id)
         followOptionsStorage.append(options)
+        if let error {
+            throw error
+        }
         if let fileHandle = fileHandles.first {
             return fileHandle
         }
@@ -2425,6 +2519,9 @@ actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     func followLogRecords(id: String, options: ContainerLogOptions) async throws -> FileHandle {
         followRecordStorage.append(id)
         followRecordOptionsStorage.append(options)
+        if let error {
+            throw error
+        }
         return try temporaryLogFileHandle(data: logRecordData(applyLogOptions(to: records, options: options)))
     }
 }
@@ -3519,6 +3616,7 @@ actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting {
             ipv4AllocationRange: configuration.ipv4AllocationRange?.description,
             ipv6Subnet: configuration.ipv6Subnet?.description,
             ipv6Gateway: configuration.ipv6Gateway?.description,
+            enableIPv4: configuration.enableIPv4,
             enableIPv6: configuration.enableIPv6,
             options: configuration.options,
             labels: configuration.labels.dictionary

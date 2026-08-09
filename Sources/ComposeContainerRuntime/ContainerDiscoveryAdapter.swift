@@ -252,7 +252,7 @@ private extension ComposeContainerSummary {
     static func network(from attachment: Attachment) -> ComposeContainerNetworkAttachment {
         ComposeContainerNetworkAttachment(
             network: attachment.network,
-            ipv4Address: String(describing: attachment.ipv4Address.address),
+            ipv4Address: attachment.ipv4Address.map { String(describing: $0.address) },
         )
     }
 
