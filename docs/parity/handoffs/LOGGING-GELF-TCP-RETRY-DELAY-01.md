@@ -2,14 +2,11 @@
 
 ## State
 
-`Blocked` — two fresh exact-fingerprint public-socket candidates now reach
-the same bounded Docker-visible `container logging operation failed` before
-the receiver accepts a peer or the fixture writes a result. The first used a
-direct guest-VSOCK declaration; the second used the pre-opened reverse
-host-VSOCK declaration already used by journald. Both protected GELF workloads
-reached the ledger's `running` state, neither run hung, and wrapper cleanup
-stopped its isolated runtime. The contract is not `Verified` until two
-independent public-socket candidates match the Docker oracle.
+`Verified` — the retained 2026-08-09 checkpoint has two independent strict
+public-socket candidate runs that match Docker's delayed-reset disposition,
+plus a complementary TCP-failure run. Earlier transport and bootstrap blocker
+records remain below as historical diagnostic evidence; no current run hung or
+breached its 90-second liveness bound.
 
 ## User-visible contract
 
@@ -166,9 +163,49 @@ runtime checkpoints; do not repeat the completed generic probe.
 ## Documentation disposition
 
 This handoff and the slice ledger distinguish functional verification from the
-later performance programme. They record the exact failed candidate fingerprints
-and the now-implemented diagnostic and wait-liveness checkpoints; they do not
-claim complete GELF or logging-driver closure.
+later performance programme. The dated blocker records remain exact history;
+the 2026-08-09 checkpoint below closes this narrow delayed-retry contract only.
+It does not claim complete GELF, remote-driver, or logging-driver closure.
+
+## 2026-08-09 verified resolution
+
+Docker Engine 29.2.1's current strict reference at
+`/private/tmp/container-rest-gelf.ref-diagnostic.cRVnvX` passed in
+`22.440267625s`. Its forced-reset streams establish the exact disposition
+`first` -> `fourth` -> `after-retry-delay-complete`: Docker drops the failed
+write and the first recovery-settlement write before normal delivery resumes.
+
+The local Container source branch `upstream/logging-gelf-tcp-readiness-02`
+from base `c6a8663705d75180241232cb99442fbac4f8a6ac` now retains the bounded
+replacement socket in `GELFSession`, drops those two indeterminate frames, and
+keeps the sealed Engine-Linux sandbox attached to a reserved default VMNet
+network. `GELFSessionTests` (16) and `EngineLinuxSandboxRuntimeServiceTests`
+(16) passed against local Containerization
+`38d9c695e7a6915e5ce45d12c893dc323a661af7` and Engine API
+`afb8a8f68ed56829b669c95cbddb488a68dc9175`.
+
+Two independent strict public-socket candidate roots passed:
+
+- `/private/tmp/container-rest-gelf.disposition-final.mlQOGu` in
+  `23.912849041s`.
+- `/private/tmp/container-rest-gelf.disposition-final-rerun.nGfhmz` in
+  `22.319917125s`.
+
+Both receivers record two forced one-frame resets, terminal recovery, peer
+close, and no timeout. The complementary TCP failure root
+`/private/tmp/container-rest-gelf.failure-final.uvDlOp` passed in
+`13.318770666s`. The fixture remains SHA-256
+`a0ed0178a62be517b42d4a21070ea73a57689513b7a623c3fcdfcdd6efc94fca`; the
+runtime wrapper remains SHA-256
+`7a396d8626a0e37c1b7f71e732674baebd1b3752bedc3378a7e4510e3323987f`.
+
+Candidate delay timings are 1.07x and 0.99x of Docker. They are retained for
+the later performance phase, not a release-performance certificate; an
+unexpected timeout or hang would still be a functional blocker. During this
+checkpoint macOS briefly exhausted filesystem capacity while creating a
+candidate-only Keychain archive. Removing only regenerable SwiftPM caches
+restored the normal launchd engine; source, candidate binaries, and all parity
+roots above remain retained.
 
 ## 2026-08-08 blocker checkpoint
 
@@ -205,9 +242,22 @@ owns this prerequisite and must be commented and closed with its focused proof.
 
 ## 2026-08-08 prerequisite resolution
 
-`KERNEL-ARCHIVE-FRESH-RUNTIME-01` is now `Verified` as a separate bootstrap prerequisite. The original archive exception was observed while the local APFS volume had only `117M` available. After reclaiming 25 GB by removing only five identified marker-protected superseded build/cache roots, two independent new runtime roots installed the same pinned kernel and completed the isolated Docker CLI socket smoke test. The full fingerprints, terminal records, and v14 exit status are retained in [the kernel handoff](KERNEL-ARCHIVE-FRESH-RUNTIME-01.md).
+`KERNEL-ARCHIVE-FRESH-RUNTIME-01` is now `Verified` as a separate bootstrap
+prerequisite. The original archive exception was observed while the local APFS
+volume had only `117M` available. After reclaiming 25 GB by removing only five
+identified marker-protected superseded build/cache roots, two independent new
+runtime roots installed the same pinned kernel and completed the isolated Docker
+CLI socket smoke test. The full fingerprints, terminal records, and v14 exit
+status are retained in [the kernel handoff](KERNEL-ARCHIVE-FRESH-RUNTIME-01.md).
 
-No Container, Containerization, Engine API, or Compose production source changed for that resolution. Container issue [#93](https://github.com/stephenlclarke/container/issues/93) should be closed as an environment-capacity incident, not treated as an upstream code fix. This GELF contract remains `Handed off`, not `Verified`: resume only with new exact-fingerprint roots and still require the two complete delayed-retry public-socket fixture results specified above. Performance optimisation remains deferred; a hang, timeout, or bounded-liveness failure remains blocking.
+No Container, Containerization, Engine API, or Compose production source changed
+for that resolution. Container issue
+[#93](https://github.com/stephenlclarke/container/issues/93) should be closed
+as an environment-capacity incident, not treated as an upstream code fix. This
+GELF contract remained `Handed off`, not `Verified`, until the 2026-08-09
+resolution below produced two complete delayed-retry public-socket fixture runs.
+Performance optimisation remains deferred; a hang, timeout, or bounded-liveness
+failure remains blocking.
 
 ## 2026-08-08 direct/reverse transport checkpoint
 
