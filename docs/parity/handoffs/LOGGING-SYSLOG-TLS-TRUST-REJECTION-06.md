@@ -25,6 +25,10 @@ create, rejected start with
 `tls: failed to verify certificate: x509: certificate signed by unknown authority`,
 retained `created`, and recorded `SSLV3_ALERT_BAD_CERTIFICATE`.
 
+## Repository-owned strict fixture
+
+Compose now retains `Tools/parity/check-docker-rest-syslog-tls-trust-failure.sh` (SHA-256 `dd2005ad3736a122f95b9daba1f2bd8ffbb0950a54352fef4b2c1cc34da5e160`). It drives the same unmodified Docker CLI against either Docker or a Container public socket and can optionally prove native authority before and after cleanup. The fixture's pinned Docker run at `/private/tmp/container-rest-syslog-tls.reference.ZiBk37/result.json` (SHA-256 `5b7ac016869e5a0588cafd0c2eadcc6ea79abb75951b883258132d98d14df9d6`) completed in `0.39233954111114144` seconds. It captured the exact start diagnostic, `created`, one receiver connection with `SSLV3_ALERT_BAD_CERTIFICATE`, the requested Syslog LogConfig, container removal, and removal of the generated private key.
+
 ## Current candidate finding
 
 The existing isolated candidate fingerprint uses Container base
@@ -73,20 +77,16 @@ marker root.
 
 ## Missing acceptance evidence
 
-Before changing this state, create a repository-owned strict Syslog TLS fixture
-from the retained Docker oracle, build a fresh exact candidate with the source
-correction and local SwiftNIO SSL alert-control dependency, and run two
-independent public-socket samples. Each must match Docker's start diagnostic,
-`created` state, requested LogConfig, `bad_certificate` alert, cleanup, native
-authority state, and user-runtime health. Do not reuse the earlier candidate.
+Before changing this state, build a fresh exact candidate with the source correction and local SwiftNIO SSL alert-control dependency, then run two independent public-socket samples through the repository-owned strict fixture. Each must match Docker's start diagnostic, `created` state, requested LogConfig, `bad_certificate` alert, cleanup, native authority state, and user-runtime health. Do not reuse the earlier candidate.
 
 ## Safe handoff
 
 Preserve the Docker and candidate roots above, the immutable build stage
 `/private/tmp/container-tls-alert-stage.5h9L5d`, the failed-rebuild record
-`/private/tmp/ctr-syslog-tls-archive.FaYEnp`, and the existing GELF candidate
-service. Reclaim sufficient disk for a full relocated module cache before
-creating another marker-protected candidate root. Do not restart the user
-runtime, move dependency pins, or treat ordinary duration as a blocker. Resume
-only with a new marker-protected candidate root and an independently captured
-result.
+`/private/tmp/ctr-syslog-tls-archive.FaYEnp`, the strict Docker fixture root
+`/private/tmp/container-rest-syslog-tls.reference.ZiBk37`, and the existing
+GELF candidate service. Reclaim sufficient disk for a full relocated module
+cache before creating another marker-protected candidate root. Do not restart
+the user runtime, move dependency pins, or treat ordinary duration as a
+blocker. Resume only with a new marker-protected candidate root and an
+independently captured result.
