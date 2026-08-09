@@ -19,19 +19,19 @@ import Testing
 
 @Suite("Runtime capability selection")
 struct ComposeRuntimeCapabilitiesTests {
-    @Test("logging v2 requires its exact negotiated identifier")
-    func loggingV2RequiresExactIdentifier() {
+    @Test
+    func `logging v2 requires its exact negotiated identifier`() {
         #expect(!ComposeRuntimeCapabilities().supportsLoggingDriversV1)
         #expect(!ComposeRuntimeCapabilities(
-            identifiers: ["io.github.stephenlclarke.container.logging-drivers.v2"]
+            identifiers: ["io.github.stephenlclarke.container.logging-drivers.v2"],
         ).supportsLoggingDriversV1)
         #expect(ComposeRuntimeCapabilities(
-            identifiers: [ComposeRuntimeCapabilities.loggingDriversV1Identifier]
+            identifiers: [ComposeRuntimeCapabilities.loggingDriversV1Identifier],
         ).supportsLoggingDriversV1)
     }
 
-    @Test("unknown capabilities remain available without duplicates")
-    func unknownCapabilitiesRemainAvailableWithoutDuplicates() {
+    @Test
+    func `unknown capabilities remain available without duplicates`() {
         let capabilities = ComposeRuntimeCapabilities(identifiers: ["example.future.v1", "example.future.v1"])
 
         #expect(capabilities.identifiers == ["example.future.v1"])

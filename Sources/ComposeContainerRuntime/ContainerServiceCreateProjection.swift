@@ -162,7 +162,9 @@ public extension ComposeLogConfiguration {
             return nil
         }
         let unit = unitText.first ?? "b"
-        guard let exponent = "bkmgtp".firstIndex(of: unit).map({ "bkmgtp".distance(from: "bkmgtp".startIndex, to: $0) }) else {
+        guard let exponent = "bkmgtp".firstIndex(of: unit).map({
+            "bkmgtp".distance(from: "bkmgtp".startIndex, to: $0)
+        }) else {
             return nil
         }
         let suffix = String(unitText.dropFirst())

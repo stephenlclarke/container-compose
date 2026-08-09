@@ -53,8 +53,8 @@ struct ContainerAttachAPIClient: ContainerAttachAPIClienting {
     }
 
     func attach(id: String, stdio: [FileHandle?]) async throws -> any ContainerOutputAttachSession {
-        ContainerClientOutputAttachSession(
-            process: try await ContainerClient().attach(id: id, stdio: stdio),
+        try await ContainerClientOutputAttachSession(
+            process: ContainerClient().attach(id: id, stdio: stdio),
         )
     }
 
@@ -63,8 +63,8 @@ struct ContainerAttachAPIClient: ContainerAttachAPIClienting {
         if let sshAuthSocket = ProcessInfo.processInfo.environment["SSH_AUTH_SOCK"] {
             dynamicEnvironment["SSH_AUTH_SOCK"] = sshAuthSocket
         }
-        return ContainerClientOutputAttachSession(
-            process: try await ContainerClient().bootstrap(
+        return try await ContainerClientOutputAttachSession(
+            process: ContainerClient().bootstrap(
                 id: id,
                 stdio: stdio,
                 dynamicEnv: dynamicEnvironment,
@@ -85,6 +85,7 @@ public struct ContainerClientAttachManager: ComposeRuntimeAttachManaging {
         self.client = client
     }
 
+    // swiftlint:disable function_body_length function_parameter_count
     public func attachOutput(
         id: String,
         stdout: Bool,
@@ -160,6 +161,7 @@ public struct ContainerClientAttachManager: ComposeRuntimeAttachManaging {
             try await group.waitForAll()
         }
     }
+    // swiftlint:enable function_body_length function_parameter_count
 }
 
 private func emitAttachedChunks(

@@ -143,6 +143,7 @@ struct DockerLoggingDriverOracleFixtureTests {
     }
 
     @Test
+    // swiftlint:disable:next function_body_length
     func `pins syslog address and facility validation phases`() throws {
         let fixture = try Self.fixture()
 

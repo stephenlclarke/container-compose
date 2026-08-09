@@ -6959,6 +6959,28 @@
       ]
     },
     {
+      "id": "container-compose-logging-syslog-tls-trust-fixture",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Add the Syslog TLS trust-rejection parity fixture",
+      "state": "closed",
+      "lastVerified": "2026-08-09",
+      "commits": [
+        "c4e68fd7cd957102dd129662156c5f13a73a3a88",
+        "c7924e375d98d82af37902f4a0c310ee389eab97",
+        "ff5d74d8c0eaef7c043d5046c4bf397899397153"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-logging-syslog-tls-trust-fixture.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-logging-syslog-tls-trust-fixture.md"
+        }
+      ]
+    },
+    {
       "id": "container-compose-upstream-maintenance-20260727",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: refresh upstreams and publish reviewed runtime corrections",

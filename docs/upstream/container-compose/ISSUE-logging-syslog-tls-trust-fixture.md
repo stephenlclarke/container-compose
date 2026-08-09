@@ -10,4 +10,11 @@ Add `Tools/parity/check-docker-rest-syslog-tls-trust-failure.sh`. It uses a boun
 
 ## Status
 
-The Docker reference passes. The dependent Container candidate remains blocked until the MBP has enough free capacity to rebuild the exact source/dependency graph and capture two independent public-socket samples.
+Closed on 2026-08-09. The Docker reference passes, and the rebuilt Container
+candidate at `c7924e375d98d82af37902f4a0c310ee389eab97` passed two
+independent public-socket samples. Both retained the requested Syslog
+`tcp+tls` LogConfig, rejected start with an unknown-authority diagnostic,
+observed `bad_certificate` at the receiver, preserved the public `created`
+state, and removed the failed container and generated private key. Evidence is
+retained under
+`/Volumes/SSD/github/evidence/container-family-stable-01/public-contracts/syslog-tls-sample-{1,2}/`.

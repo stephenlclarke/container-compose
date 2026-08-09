@@ -25,7 +25,7 @@ public struct ComposeRuntimeCapabilities: Equatable, Sendable {
 
     public private(set) var identifiers: Set<String>
 
-    public init<S: Sequence>(identifiers: S = []) where S.Element == String {
+    public init(identifiers: some Sequence<String> = []) {
         self.identifiers = Set(identifiers)
     }
 

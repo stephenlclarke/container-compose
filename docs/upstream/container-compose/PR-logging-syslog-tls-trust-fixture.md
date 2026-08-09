@@ -19,4 +19,14 @@ Docker accepts the requested Syslog LogConfig during create, then rejects start 
 
 ## Compatibility and remaining risk
 
-The fixture creates only a marker-protected temporary root and does not alter Docker, host trust stores, dependency pins, or the user Container runtime. It is an acceptance harness, not a claim that the current Container artifact has matched Docker; rebuilding the signed Container correction and capturing two candidate samples remain required.
+The fixture creates only a marker-protected temporary root and does not alter Docker, host trust stores, dependency pins, or the user Container runtime. It is an acceptance harness; the subsequent Container result is recorded separately below so the Docker reference alone is never mistaken for Container support.
+
+## Completion evidence
+
+The rebuilt Container candidate at
+`c7924e375d98d82af37902f4a0c310ee389eab97` subsequently passed two
+independent public-socket samples on 2026-08-09. Both samples retained the
+requested LogConfig, rejected start with the expected unknown-authority
+diagnostic and `bad_certificate` receiver alert, preserved `created` state,
+and completed exact cleanup. Evidence is retained under
+`/Volumes/SSD/github/evidence/container-family-stable-01/public-contracts/syslog-tls-sample-{1,2}/`.

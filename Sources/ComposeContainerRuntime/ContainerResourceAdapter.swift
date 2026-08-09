@@ -160,7 +160,9 @@ public struct ContainerClientResourceManager: ComposeRuntimeResourceManaging {
             ipv4Subnet: request.enableIPv4 == false ? nil : request.ipv4Subnet.map { try CIDRv4($0) },
             ipv4Gateway: request.enableIPv4 == false ? nil : request.ipv4Gateway.map { try IPv4Address($0) },
             ipv4AllocationRange: request.enableIPv4 == false ? nil : request.ipv4AllocationRange.map { try CIDRv4($0) },
-            ipv4ReservedAddresses: request.enableIPv4 == false ? [] : request.ipv4ReservedAddresses.map { try IPv4Address($0) },
+            ipv4ReservedAddresses: request.enableIPv4 == false
+                ? []
+                : request.ipv4ReservedAddresses.map { try IPv4Address($0) },
             ipv6Subnet: request.enableIPv6 == false ? nil : request.ipv6Subnet.map { try CIDRv6($0) },
             ipv6Gateway: request.enableIPv6 == false ? nil : request.ipv6Gateway.map { try IPv6Address($0) },
             enableIPv6: request.enableIPv6 ?? true,

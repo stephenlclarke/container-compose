@@ -199,7 +199,7 @@ extension ComposeOrchestrator {
     func completeUpOutputAttachments(
         targets: [ServiceContainerTarget],
         prepared: [ComposeUpOutputAttachment],
-        options up: ComposeUpOptions,
+        options upOptions: ComposeUpOptions,
     ) async throws -> [ComposeUpOutputAttachment] {
         var attachmentsByName = Dictionary(uniqueKeysWithValues: prepared.map { ($0.containerName, $0) })
         do {
@@ -207,7 +207,7 @@ extension ComposeOrchestrator {
                 attachmentsByName[target.name] = try await prepareUpOutputAttachment(
                     target: target,
                     mode: .runningProcess,
-                    options: up,
+                    options: upOptions,
                 )
             }
         } catch {
@@ -223,7 +223,7 @@ extension ComposeOrchestrator {
     func prepareUpOutputAttachment(
         target: ServiceContainerTarget,
         mode: ComposeOutputAttachmentMode,
-        options up: ComposeUpOptions,
+        options upOptions: ComposeUpOptions,
     ) async throws -> ComposeUpOutputAttachment {
         guard !options.dryRun else {
             return ComposeUpOutputAttachment(containerName: target.name, task: nil)
@@ -234,9 +234,9 @@ extension ComposeOrchestrator {
         let containerName = target.name
         let renderer = ComposeUpAttachedOutputRenderer(
             target: target,
-            timestamps: up.timestamps,
-            noLogPrefix: up.noLogPrefix,
-            colorPrefixes: up.colorPrefixes,
+            timestamps: upOptions.timestamps,
+            noLogPrefix: upOptions.noLogPrefix,
+            colorPrefixes: upOptions.colorPrefixes,
             currentDate: options.currentDate,
             emit: options.emitAttachedData,
         )

@@ -20,7 +20,8 @@ import PackageDescription
 
 let containerDependency: Package.Dependency = {
     if let path = ProcessInfo.processInfo.environment["CONTAINER_PACKAGE_PATH"],
-       !path.isEmpty {
+       !path.isEmpty
+    {
         return .package(name: "container", path: path)
     }
     return .package(
@@ -31,7 +32,8 @@ let containerDependency: Package.Dependency = {
 
 let containerizationDependency: Package.Dependency = {
     if let path = ProcessInfo.processInfo.environment["CONTAINERIZATION_PACKAGE_PATH"],
-       !path.isEmpty {
+       !path.isEmpty
+    {
         return .package(name: "containerization", path: path)
     }
     return .package(

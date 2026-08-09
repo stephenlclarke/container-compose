@@ -663,7 +663,10 @@ extension ComposeOrchestrator {
         if network.enableIPv4 != false, let ipv4Gateway = network.ipv4Gateway, !ipv4Gateway.isEmpty {
             args.append(contentsOf: ["--gateway", ipv4Gateway])
         }
-        if network.enableIPv4 != false, let ipv4AllocationRange = network.ipv4AllocationRange, !ipv4AllocationRange.isEmpty {
+        if network.enableIPv4 != false,
+           let ipv4AllocationRange = network.ipv4AllocationRange,
+           !ipv4AllocationRange.isEmpty
+        {
             args.append(contentsOf: ["--ip-range", ipv4AllocationRange])
         }
         if network.enableIPv4 != false {

@@ -72,6 +72,7 @@ struct ContainerFilesystemAdapterTests {
     }
 
     @Test
+    // swiftlint:disable:next function_body_length
     func `copy fallback stages archive through path copy operations`() async throws {
         let recorder = StagedCopyRecorder()
         let copier = ContainerClientCopier(
@@ -80,22 +81,22 @@ struct ContainerFilesystemAdapterTests {
                     id: id,
                     data: Data(contentsOf: URL(fileURLWithPath: source)),
                     destination: destination,
-                    options: options
+                    options: options,
                 )
             },
             copyFrom: { id, source, destination, options in
                 let output = URL(fileURLWithPath: destination)
                 try FileManager.default.createDirectory(
                     at: output.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
+                    withIntermediateDirectories: true,
                 )
                 try Data("staged payload\n".utf8).write(to: output)
                 await recorder.recordFrom(
                     id: id,
                     source: source,
-                    options: options
+                    options: options,
                 )
-            }
+            },
         )
 
         try await copier.copyBetweenContainers(
@@ -105,8 +106,8 @@ struct ContainerFilesystemAdapterTests {
             destination: "/var/lib/reports",
             options: ContainerCopyTransferOptions(
                 followSymlink: true,
-                preserveOwnership: false
-            )
+                preserveOwnership: false,
+            ),
         )
 
         #expect(await recorder.from == [
@@ -115,8 +116,8 @@ struct ContainerFilesystemAdapterTests {
                 source: "/tmp/report.txt",
                 options: ContainerCopyTransferOptions(
                     followSymlink: true,
-                    preserveOwnership: false
-                )
+                    preserveOwnership: false,
+                ),
             ),
         ])
         #expect(await recorder.into == [
@@ -124,7 +125,7 @@ struct ContainerFilesystemAdapterTests {
                 id: "demo-worker-1",
                 data: Data("staged payload\n".utf8),
                 destination: "/var/lib/reports",
-                options: ContainerCopyTransferOptions(preserveOwnership: false)
+                options: ContainerCopyTransferOptions(preserveOwnership: false),
             ),
         ])
     }
@@ -182,7 +183,7 @@ private actor StagedCopyRecorder {
         id: String,
         data: Data,
         destination: String,
-        options: ContainerCopyTransferOptions
+        options: ContainerCopyTransferOptions,
     ) {
         into.append(.init(id: id, data: data, destination: destination, options: options))
     }

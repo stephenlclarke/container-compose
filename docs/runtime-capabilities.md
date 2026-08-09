@@ -68,30 +68,19 @@ logging create request, authority-owned protected options, native and remote
 provider lifecycle, canonical reads, dual cache, and exact-process foreground
 attachment in the
 [Docker logging-driver design](docker-logging-driver-semantics-design.md).
-It is deliberately absent from the required release manifest because it is an
-optional capability negotiated only for services that request advanced logging.
-Published `origin/main` remains at reproducible Compose checkpoint
-`1f0f944b3d918a39ad97d1f12bb7b7c5ef6146a0` and published Container baseline
-`6c3f7d3701cf9400855849fa0e29dd75d7b9c45d`, which does not expose this
-contract. Signed local Compose `main` through
-`9479e0aaba2bca3402d30fb7b77e21478e0455bd` has the complete negotiation,
-typed projection, and reconciled public-gateway evidence active. Its manifest
-still names unpublished Container
-checkpoint `2a79b4553a342e33411666a88ad20ccd2ce46551`; validation used the later
-signed local Container implementation
-`70f976611bd5e39a9bfeb4965df7c073bbd789ad`, signed handoff
-`25eced9d673fde4104e8276456fc3e7b2709b0a2`, and matched local
-Containerization head `864455bf1a104f0215b7c912a45800b0a0538973`. The matched
-scoped package suite passes 1,861 Swift Testing tests plus 94 XCTest tests, and
-the staged-generation gate passes 35 focused registry/provider/discovery/
-authority tests. macOS Go race/vet passes at 70.2% statement coverage; the
-preceding Linux/arm64 plugin-service race gate remains green at 74.1%. The public
-`77f06d4c44341e04241941072fb69e2b85a6f5c1` Containerization pin cannot compile
-the existing branch because it lacks the required sandbox/workload/network
-APIs. This local source must not be pushed until hosted builds can fetch a
-coordinated matched Container revision.
+It is present in the coordinated release manifest because the exact matched
+Container candidate `c7924e375d98d82af37902f4a0c310ee389eab97`, Engine API
+`5e6e24d017691596783515285e1ff56d29701235`, and Containerization
+`7f62f5b940630811573a34f70cdd6f3fa11d014d` are now published on the owned
+GitHub remotes and can be resolved by hosted builds. Compose preflight still
+negotiates the identifier before using advanced logging; advertising the
+requirement does not make individual remote providers universally available.
+The exact stack also passes the six blocked runtime contracts, including C04's
+recreate, restart, shutdown, and residue-free cleanup lifecycle in 18.595
+seconds. Stable publication remains conditional on the repository CI and
+release gates passing for this same dependency graph.
 
-The latest signed local checkpoint is Container
+Earlier signed logging checkpoints include Container
 `ac77f7a38819c4f96581220bb58d89107b51826a` with Engine API
 `9008251c444af483a60ff95efa4a9d745a444ed5` and
 `fe4094d0d7a2372ad586d177aea3f9b0e299ebcb`, plus devcontainer

@@ -88,10 +88,36 @@ def containerization_dependencies() -> list[tuple[Path, str, str, str]]:
         except FileNotFoundError as error:
             raise SystemExit(f"missing required file: {path}") from error
         match = pattern.search(text)
-        if not match:
-            raise SystemExit(f"{path} is missing a containerization package dependency")
-        requirement_value = match.group(3)
-        requirement_name = match.group(4)
+        if match:
+            location = match.group(1)
+            requirement = match.group(2)
+            requirement_value = match.group(3)
+            requirement_name = match.group(4)
+        else:
+            indirect = re.search(
+                r"let\s+containerizationDependency\s*:\s*Package\.Dependency\s*=.*?"
+                r"return\s+\.package\(\s*"
+                r'url:\s*"https://github\.com/\\\(scSource\)\.git"\s*,\s*'
+                r"revision:\s*scRef\s*\)",
+                text,
+                re.DOTALL,
+            )
+            source = re.search(
+                r'let\s+scSource\s*=.*?\?\?\s*"([^"\n]*containerization)"',
+                text,
+                re.DOTALL,
+            )
+            ref = re.search(
+                r"let\s+scRef\s*=.*?\?\?\s*([A-Za-z_][A-Za-z0-9_]*)",
+                text,
+                re.DOTALL,
+            )
+            if indirect is None or source is None or ref is None:
+                raise SystemExit(f"{path} is missing a containerization package dependency")
+            location = f"https://github.com/{source.group(1)}.git"
+            requirement = "revision"
+            requirement_value = None
+            requirement_name = ref.group(1)
         if requirement_name is not None:
             constant = re.search(
                 rf'\blet\s+{re.escape(requirement_name)}\s*=\s*"([^"]*)"',
@@ -104,7 +130,7 @@ def containerization_dependencies() -> list[tuple[Path, str, str, str]]:
                 )
             requirement_value = constant.group(1)
         assert requirement_value is not None
-        dependencies.append((path, match.group(1), match.group(2), requirement_value))
+        dependencies.append((path, location, requirement, requirement_value))
     return dependencies
 
 

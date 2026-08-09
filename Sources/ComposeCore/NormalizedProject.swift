@@ -14,8 +14,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import ComposeRuntimeSPI
+import Foundation
 
 /// Canonical Compose project data emitted by the Go normalizer.
 public struct ComposeProject: Codable, Equatable {
@@ -707,6 +707,7 @@ public struct ComposeNetwork: Codable, Equatable {
     /// be reconstructed from those fields because doing so would lose pool
     /// order and named auxiliary addresses.
     public struct IPAM: Codable, Equatable {
+        // swiftlint:disable nesting
         /// One source-ordered Compose IPAM pool.
         public struct Pool: Codable, Equatable {
             public var subnet: String?
@@ -726,6 +727,8 @@ public struct ComposeNetwork: Codable, Equatable {
                 self.auxiliaryAddresses = auxiliaryAddresses
             }
         }
+
+        // swiftlint:enable nesting
 
         public var driver: String?
         public var options: [String: String]?

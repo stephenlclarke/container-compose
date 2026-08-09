@@ -20,8 +20,8 @@
 #endif
 import ComposeCore
 import ComposeRuntimeSPI
-import ContainerResource
 import ContainerizationOCI
+import ContainerResource
 import Foundation
 import Testing
 
@@ -29,8 +29,8 @@ import Testing
 struct ContainerAttachAdapterTests {
     @Test
     func `emits independent stdout and stderr records`() async throws {
-        let client = RecordingContainerAttachAPIClient(
-            container: try attachContainer(terminal: false),
+        let client = try RecordingContainerAttachAPIClient(
+            container: attachContainer(terminal: false),
             stdout: Data("out\n".utf8),
             stderr: Data("err\n".utf8),
         )
@@ -56,8 +56,8 @@ struct ContainerAttachAdapterTests {
 
     @Test
     func `terminal output is emitted only as stdout`() async throws {
-        let client = RecordingContainerAttachAPIClient(
-            container: try attachContainer(terminal: true),
+        let client = try RecordingContainerAttachAPIClient(
+            container: attachContainer(terminal: true),
             stdout: Data("merged\n".utf8),
             stderr: Data("must-not-be-requested".utf8),
         )
@@ -85,8 +85,8 @@ struct ContainerAttachAdapterTests {
 
     @Test
     func `no selected streams performs no runtime calls`() async throws {
-        let client = RecordingContainerAttachAPIClient(
-            container: try attachContainer(terminal: false),
+        let client = try RecordingContainerAttachAPIClient(
+            container: attachContainer(terminal: false),
         )
 
         try await ContainerClientAttachManager(client: client).attachOutput(
@@ -105,8 +105,8 @@ struct ContainerAttachAdapterTests {
 
     @Test
     func `created container is bootstrapped and ready before output`() async throws {
-        let client = RecordingContainerAttachAPIClient(
-            container: try attachContainer(status: .stopped, terminal: false),
+        let client = try RecordingContainerAttachAPIClient(
+            container: attachContainer(status: .stopped, terminal: false),
             stdout: Data("early\n".utf8),
         )
         let events = AttachEventRecorder()
@@ -118,7 +118,7 @@ struct ContainerAttachAdapterTests {
             mode: .beforeStart,
             onReady: { events.append("ready") },
             onStarted: { events.append("started") },
-            emit: { events.append(String(decoding: $0.payload, as: UTF8.self)) },
+            emit: { events.append(String(bytes: $0.payload, encoding: .utf8) ?? "<invalid UTF-8>") },
         )
 
         #expect(await client.attachIDs.isEmpty)
@@ -129,8 +129,8 @@ struct ContainerAttachAdapterTests {
 
     @Test
     func `before-start race attaches without restarting an already-running process`() async throws {
-        let client = RecordingContainerAttachAPIClient(
-            container: try attachContainer(status: .running, terminal: false),
+        let client = try RecordingContainerAttachAPIClient(
+            container: attachContainer(status: .running, terminal: false),
             stdout: Data("running\n".utf8),
         )
         let events = AttachEventRecorder()
@@ -142,7 +142,7 @@ struct ContainerAttachAdapterTests {
             mode: .beforeStart,
             onReady: { events.append("ready") },
             onStarted: { events.append("started") },
-            emit: { events.append(String(decoding: $0.payload, as: UTF8.self)) },
+            emit: { events.append(String(bytes: $0.payload, encoding: .utf8) ?? "<invalid UTF-8>") },
         )
 
         #expect(await client.attachIDs == ["demo-api-1"])
@@ -153,8 +153,8 @@ struct ContainerAttachAdapterTests {
 
     @Test
     func `ordinary attach rejects a stopped container without bootstrapping it`() async throws {
-        let client = RecordingContainerAttachAPIClient(
-            container: try attachContainer(status: .stopped, terminal: false),
+        let client = try RecordingContainerAttachAPIClient(
+            container: attachContainer(status: .stopped, terminal: false),
         )
 
         do {
@@ -225,12 +225,29 @@ private actor RecordingContainerAttachAPIClient: ContainerAttachAPIClienting {
         self.stderr = stderr
     }
 
-    var requestedIDs: [String] { ids }
-    var requestedStreams: [[Bool]] { streams }
-    var attachIDs: [String] { attached }
-    var bootstrapIDs: [String] { bootstrapped }
-    var disconnectCount: Int { disconnects.count }
-    var startCount: Int { starts.count }
+    var requestedIDs: [String] {
+        ids
+    }
+
+    var requestedStreams: [[Bool]] {
+        streams
+    }
+
+    var attachIDs: [String] {
+        attached
+    }
+
+    var bootstrapIDs: [String] {
+        bootstrapped
+    }
+
+    var disconnectCount: Int {
+        disconnects.count
+    }
+
+    var startCount: Int {
+        starts.count
+    }
 
     func getContainer(id: String) async throws -> ContainerSnapshot {
         ids.append(id)
@@ -246,10 +263,10 @@ private actor RecordingContainerAttachAPIClient: ContainerAttachAPIClienting {
     func bootstrap(id: String, stdio: [FileHandle?]) async throws -> any ContainerOutputAttachSession {
         bootstrapped.append(id)
         streams.append(stdio.map { $0 != nil })
-        return RecordingContainerOutputAttachSession(
+        return try RecordingContainerOutputAttachSession(
             disconnects: disconnects,
             starts: starts,
-            startOutput: try StartOutput(stdio: stdio, stdout: stdout, stderr: stderr),
+            startOutput: StartOutput(stdio: stdio, stdout: stdout, stderr: stderr),
         )
     }
 

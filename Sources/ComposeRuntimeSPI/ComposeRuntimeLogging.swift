@@ -111,6 +111,9 @@ public enum ComposeOutputAttachmentMode: Equatable, Sendable {
     case beforeStart
 }
 
+// The attachment contract keeps stream selection and its two lifecycle barriers
+// explicit so implementations cannot conflate readiness with process start.
+// swiftlint:disable function_parameter_count
 public protocol ComposeRuntimeAttachManaging: Sendable {
     func attachOutput(
         id: String,
@@ -122,6 +125,8 @@ public protocol ComposeRuntimeAttachManaging: Sendable {
         emit: @escaping @Sendable (ComposeLogRecord) -> Void,
     ) async throws
 }
+
+// swiftlint:enable function_parameter_count
 
 public extension ComposeRuntimeAttachManaging {
     /// Attaches to an already-running process with a readiness callback.

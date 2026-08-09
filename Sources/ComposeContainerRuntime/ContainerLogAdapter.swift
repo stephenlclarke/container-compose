@@ -17,8 +17,8 @@
 import ComposeCore
 import ComposeRuntimeSPI
 import ContainerAPIClient
-import ContainerResource
 import ContainerizationError
+import ContainerResource
 import Foundation
 
 /// Low-level apple/container log call used by `ContainerClientLogManager`.
@@ -168,7 +168,7 @@ public struct ContainerClientLogManager: ComposeRuntimeLogManaging {
                 since: since,
                 until: until,
                 timestamps: timestamps,
-                emit: emit
+                emit: emit,
             )
         } catch {
             throw Self.composeLogError(error)

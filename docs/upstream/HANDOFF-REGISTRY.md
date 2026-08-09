@@ -8,9 +8,9 @@ links to an immutable Git snapshot.
 
 Last verified: 2026-08-06
 
-Entries: 377. Document snapshots: 656. Current supporting documents: 50.
+Entries: 378. Document snapshots: 658. Current supporting documents: 52.
 
-States: `active-draft` 2, `archived` 304, `closed` 15, `merged` 10, `submitted` 4, `tracked-upstream` 15, `unsubmitted` 27.
+States: `active-draft` 2, `archived` 304, `closed` 16, `merged` 10, `submitted` 4, `tracked-upstream` 15, `unsubmitted` 27.
 
 | Owner | Capability or pull request | State | Referenced commits | Documents |
 | --- | --- | --- | --- | --- |
@@ -298,6 +298,7 @@ States: `active-draft` 2, `archived` 304, `closed` 15, `merged` 10, `submitted` 
 | `stephenlclarke/container-compose` | Pull Request | `archived` | `b48711cb3444`, `47c13a8ad0bf` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-label-value-equals.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-label-value-equals.md) |
 | `stephenlclarke/container-compose` | Pull Request | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-links.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-links.md) |
 | `stephenlclarke/container-compose` | Pull Request | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-links-default-network.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-links-default-network.md) |
+| `stephenlclarke/container-compose` | Add the Syslog TLS trust-rejection parity fixture | `closed` | `c4e68fd7cd95`, `c7924e375d98`, `ff5d74d8c0ea` | [Issue details](container-compose/ISSUE-logging-syslog-tls-trust-fixture.md); [PR details](container-compose/PR-logging-syslog-tls-trust-fixture.md) |
 | `stephenlclarke/container-compose` | Pull request: retain Compose hard-memory limits byte-for-byte | `archived` | `e2ac60b4d8c1`, `c94dc4f42cd6`, `da649c62b8e0` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-memory-byte-precision.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-memory-byte-precision.md) |
 | `stephenlclarke/container-compose` | Pull request: support Compose memory reservations | `archived` | `bfd6c0da3139`, `b0614cbf986d`, `c5ca0366d88c`, `089f55dbc3b8`, `d5774583697d` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-memory-reservation.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-memory-reservation.md) |
 | `stephenlclarke/container-compose` | Pull request: support Compose memory-plus-swap limits | `archived` | `06c00072bcb7`, `57cba8e39f5c` | [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-memory-swap-limit.md) |
