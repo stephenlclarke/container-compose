@@ -969,14 +969,30 @@ jobs:
           acquire_container_runtime_lock
 
           demo_root="${RUNNER_TEMP}/current-build-demo"
-          demo_app_root="${demo_root}/app"
+          # Darwin AF_UNIX paths are bounded. Keep the launchd-visible app root
+          # short and real (not a symlink): launchd resolves service plists and
+          # the runtime rejects symlinked persisted-state roots. Package and
+          # install artifacts remain beneath the runner's managed temp path.
+          demo_app_root="/tmp/cc-current-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           demo_output=".build/current-demo/${DEMO_ASSET}"
           tape="${RUNNER_TEMP}/container-compose-current-demo.tape"
+
+          remove_demo_app_root() {
+            case "${demo_app_root}" in
+              /tmp/cc-current-[0-9]*-[0-9]*) ;;
+              *)
+                printf 'refusing to remove unexpected Current demo app root: %s\n' "${demo_app_root}" >&2
+                return 1
+                ;;
+            esac
+            rm -rf -- "${demo_app_root}"
+          }
 
           cleanup() {
             if [[ -n "${container_binary:-}" ]]; then
               "${container_binary}" system stop || true
             fi
+            remove_demo_app_root
           }
           trap cleanup EXIT
 
@@ -989,9 +1005,11 @@ jobs:
             container system stop || true
           fi
           bash Tools/release/wait-for-container-system-stop.sh
+          remove_demo_app_root
           rm -rf "${demo_root}"
 
           mkdir -p "${demo_root}/libexec/container-plugins"
+          mkdir -p "${demo_app_root}"
           mkdir -p "$(dirname "${demo_output}")"
           tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"
           tar -xzf "${PLUGIN_ARCHIVE}" -C "${demo_root}/libexec/container-plugins"

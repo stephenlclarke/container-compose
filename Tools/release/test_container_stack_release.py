@@ -429,6 +429,22 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn('export CONTAINER_INSTALL_ROOT="${demo_root}"', workflow)
         self.assertIn('export CONTAINER_APP_ROOT="${demo_app_root}"', workflow)
+        self.assertIn(
+            'demo_app_root="/tmp/cc-current-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
+            workflow,
+        )
+        self.assertIn('mkdir -p "${demo_app_root}"', workflow)
+        self.assertIn('remove_demo_app_root() {', workflow)
+        self.assertIn('/tmp/cc-current-[0-9]*-[0-9]*)', workflow)
+        self.assertIn('rm -rf -- "${demo_app_root}"', workflow)
+        self.assertNotIn('ln -s "${demo_app_storage}"', workflow)
+        longest_run_id = str(2**64 - 1)
+        longest_attempt = str(2**32 - 1)
+        provider_socket = (
+            f"/tmp/cc-current-{longest_run_id}-{longest_attempt}"
+            "/engine-provider/provider.sock"
+        )
+        self.assertLess(len(os.fsencode(provider_socket)), 104)
         self.assertIn('trap cleanup EXIT', workflow)
         self.assertIn('"${container_binary}" system stop || true', workflow)
         self.assertIn('"${demo_root}/bin/container" system stop || true', workflow)
