@@ -430,6 +430,38 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('export CONTAINER_INSTALL_ROOT="${demo_root}"', workflow)
         self.assertIn('export CONTAINER_APP_ROOT="${demo_app_root}"', workflow)
         self.assertIn(
+            "DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}",
+            workflow,
+        )
+        self.assertIn(
+            "DEMO_INIT_IMAGE_ARCHIVE_SHA256: "
+            "f9c25b9e801470fe65ecdce845f82ecd16b5200fddf4163cd73a8e505c6879cd",
+            workflow,
+        )
+        self.assertIn(
+            'actual_init_image_sha256="$(shasum -a 256 '
+            '\"${DEMO_INIT_IMAGE_ARCHIVE}\" | awk \'{print $1}\')"',
+            workflow,
+        )
+        self.assertIn(
+            'demo_init_image_archive="/tmp/cc-current-init-'
+            '${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.oci.tar"',
+            workflow,
+        )
+        self.assertIn(
+            'cp "${DEMO_INIT_IMAGE_ARCHIVE}" "${demo_init_image_archive}"',
+            workflow,
+        )
+        self.assertIn(
+            'staged_init_image_sha256="$(shasum -a 256 '
+            '\"${demo_init_image_archive}\" | awk \'{print $1}\')"',
+            workflow,
+        )
+        self.assertIn(
+            'export CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE="${demo_init_image_archive}"',
+            workflow,
+        )
+        self.assertIn(
             'demo_app_root="/tmp/cc-current-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
             workflow,
         )
@@ -468,6 +500,16 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("docs/container-compose-demo.tape", workflow)
         self.assertIn("VHS itself is the fail-closed runtime gate", workflow)
         self.assertIn("bash Tools/release/record-vhs-live-demo.sh", workflow)
+        tape = (ROOT / "docs/container-compose-demo.tape").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(
+            tape.count(
+                "--init-image-archive "
+                "$CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE"
+            ),
+            2,
+        )
         self.assertNotIn("record_monitoring_stack_transcript", workflow)
         self.assertNotIn("demo_transcript", workflow)
         self.assertNotIn("current-build-demo-transcript", workflow)
