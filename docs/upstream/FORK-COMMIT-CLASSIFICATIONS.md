@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `497465635a7b31f28558e104342433052a16c395` | `c07f1e8d77abc75d157072ae50cef9a275f282fc` | 0 | 613 | 556 |
+| `container` | `ff5aa8a03b7d49fdf5ab1fc3cb76b4d13eadce3c` | `5264919268322aa86c58e01038011964c6caec82` | 0 | 615 | 556 |
 | `containerization` | `5427fd21ded4b84034126caef5b3182900b4776d` | `7e4f5152e9606a34a92c34186eb94f7cd37c134f` | 0 | 190 | 156 |
 | `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `cb2adb12415828033dccf76730db6915548dc7c4` | 0 | 39 | 33 |
-| **Total** | | | **0** | **842** | **745** |
+| **Total** | | | **0** | **844** | **745** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -124,11 +124,17 @@ disposition was inferred for a new commit, and no published history was
 rewritten.
 
 The 10 August 2026 incremental refresh advances Apple `container` through
-`497465635a7b`, Apple `containerization` through `5427fd21ded4`, and adds three
+`ff5aa8a03b7d`, Apple `containerization` through `5427fd21ded4`, and adds three
 reviewed support-maintenance commits: the bounded Container test-process exit
 wait, Container's exact Containerization dependency pin, and the bounded
 Containerization CodeQL build timeout. No generic-runtime, temporary-port, or
 rejected-policy classification changed in this refresh.
+
+The final Container refresh also incorporates Apple's volume-name validation
+at `ff5aa8a03b7d` and the signed conflict resolution at `e2378a25873a`. Both
+are upstream or merge history, so the graph-ahead count increases while the
+patch-unique non-merge classification count and disposition totals remain
+unchanged.
 
 The registry records fork ownership; it does not promote a runtime or Compose
 stack pin. The generated Container dependency commits

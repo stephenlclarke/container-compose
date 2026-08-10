@@ -3,8 +3,8 @@
   "reviewedAt": "2026-08-10",
   "repositories": {
     "container": {
-      "upstreamHead": "497465635a7b31f28558e104342433052a16c395",
-      "forkHead": "c07f1e8d77abc75d157072ae50cef9a275f282fc",
+      "upstreamHead": "ff5aa8a03b7d49fdf5ab1fc3cb76b4d13eadce3c",
+      "forkHead": "5264919268322aa86c58e01038011964c6caec82",
       "slices": [
         {
           "id": "container-support-maintenance",
