@@ -959,6 +959,8 @@ jobs:
         if: needs.resolve-publish-context.outputs.ref_type == 'branch'
         env:
           DEMO_ASSET: ${{ steps.lane.outputs.demo_asset }}
+          DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
+          DEMO_INIT_IMAGE_ARCHIVE_SHA256: f9c25b9e801470fe65ecdce845f82ecd16b5200fddf4163cd73a8e505c6879cd
           PLUGIN_ARCHIVE: ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
           RUNTIME_ARCHIVE: ${{ steps.runtime-package.outputs.local_asset }}
         shell: bash
@@ -1018,8 +1020,32 @@ jobs:
           test -x "${container_binary}"
           test -x "${demo_root}/libexec/container-plugins/compose/bin/compose"
 
+          if [[ -z "${DEMO_INIT_IMAGE_ARCHIVE}" || ! -f "${DEMO_INIT_IMAGE_ARCHIVE}" ]]; then
+            printf 'matched Current demo init-image archive is unavailable: %s\n' \
+              "${DEMO_INIT_IMAGE_ARCHIVE:-<unset>}" >&2
+            exit 1
+          fi
+          actual_init_image_sha256="$(shasum -a 256 "${DEMO_INIT_IMAGE_ARCHIVE}" | awk '{print $1}')"
+          if [[ "${actual_init_image_sha256}" != "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" ]]; then
+            printf 'matched Current demo init-image archive digest mismatch (expected %s, got %s)\n' \
+              "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" "${actual_init_image_sha256}" >&2
+            exit 1
+          fi
+
+          demo_init_image_archive="/tmp/cc-current-init-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.oci.tar"
+          rm -f "${demo_init_image_archive}"
+          cp "${DEMO_INIT_IMAGE_ARCHIVE}" "${demo_init_image_archive}"
+          trap 'rm -f "${demo_init_image_archive}"' EXIT
+          staged_init_image_sha256="$(shasum -a 256 "${demo_init_image_archive}" | awk '{print $1}')"
+          if [[ "${staged_init_image_sha256}" != "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" ]]; then
+            printf 'staged Current demo init-image archive digest mismatch (expected %s, got %s)\n' \
+              "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" "${staged_init_image_sha256}" >&2
+            exit 1
+          fi
+
           export CONTAINER_INSTALL_ROOT="${demo_root}"
           export CONTAINER_APP_ROOT="${demo_app_root}"
+          export CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE="${demo_init_image_archive}"
           export PATH="${demo_root}/bin:${PATH}"
 
           # VHS itself is the fail-closed runtime gate. It types every command
