@@ -468,7 +468,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn(
             "DEMO_INIT_IMAGE_ARCHIVE_SHA256: "
-            "f9c25b9e801470fe65ecdce845f82ecd16b5200fddf4163cd73a8e505c6879cd",
+            "51b34d4a5fbb16f85c6f2a8f50e5f8fae12976259f0fb5a1a6200ba8a2a47a36",
             workflow,
         )
         self.assertIn(
@@ -511,6 +511,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertLess(len(os.fsencode(provider_socket)), 104)
         self.assertIn('trap cleanup EXIT', workflow)
+        self.assertIn('rm -f -- "${demo_init_image_archive}"', workflow)
+        self.assertNotIn("trap 'rm -f", workflow)
         self.assertIn('"${container_binary}" system stop || true', workflow)
         self.assertIn('"${demo_root}/bin/container" system stop || true', workflow)
         self.assertIn("elif command -v container >/dev/null 2>&1; then", workflow)
