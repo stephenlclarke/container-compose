@@ -888,15 +888,9 @@ jobs:
             printf 'local_asset=%s\n' "${runtime_local_asset}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Use checked-out container dependency
-        run: Tools/ci/use-stack-container.sh ../container
-        working-directory: container-compose
-
-      - name: Use checked-out containerization dependency
-        if: steps.stack-refs.outputs.containerization_ref != ''
-        run: Tools/ci/use-stack-containerization.sh ../containerization
-        working-directory: container-compose
-
+      # The Makefile passes these sibling checkouts to Package.swift as local
+      # path dependencies. Do not also `swift package edit` them: mixing edit
+      # state with manifest paths makes SwiftPM exhaust graph resolution.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

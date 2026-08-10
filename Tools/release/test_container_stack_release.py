@@ -693,6 +693,19 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("cache: false", setup_go)
         self.assertNotIn("cache-dependency-path:", setup_go)
 
+    def test_package_build_uses_manifest_paths_without_swiftpm_edits(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        package_build = workflow[
+            workflow.index("- name: Verify containerization dependency ref") : workflow.index(
+                "- name: Build release package"
+            )
+        ]
+
+        self.assertNotIn("use-stack-container.sh", package_build)
+        self.assertNotIn("use-stack-containerization.sh", package_build)
+        self.assertIn("- name: Checkout container dependency", workflow)
+        self.assertIn("- name: Checkout containerization dependency", workflow)
+
     def test_stable_and_current_release_authority_select_main_ci(self) -> None:
         stable_gate = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
         package = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
