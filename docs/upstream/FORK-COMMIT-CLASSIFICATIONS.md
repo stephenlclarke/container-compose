@@ -1,6 +1,6 @@
 # Fork Commit Classifications
 
-Updated: 30 July 2026
+Updated: 10 August 2026
 
 This review classifies every patch-unique non-merge commit in the three
 Stephen-supported Apple forks. The machine-readable source is
@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `8657c4b8685865c8889b0171d953342fc9f427a7` | 0 | 338 | 299 |
-| `containerization` | `ff44a5b683c80fceab875dba8a20ed24d7648c07` | `971fc7e5e27467ebd6227e1ae54f3e5c23de87b4` | 0 | 135 | 112 |
-| `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `61832d4ca91715180a84dec0eab091170174c43c` | 0 | 34 | 29 |
-| **Total** | | | **0** | **507** | **440** |
+| `container` | `af405ffd5a4d8e9ec872bc15351af41130c39b94` | `de749397e6d9be93061c094705a0deedae46fc61` | 0 | 605 | 552 |
+| `containerization` | `b9c65e59b284c182c22d88b1f895a138b5fca1a9` | `7e4e1a61d58164ae48ce7e444a268e7d03373a50` | 0 | 184 | 153 |
+| `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `cb2adb12415828033dccf76730db6915548dc7c4` | 0 | 39 | 33 |
+| **Total** | | | **0** | **828** | **738** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,8 +32,8 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 310 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
-| `generic-runtime-primitive` | 105 | Retain typed VM, guest, archive, network, process, storage, resource, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
+| `support-maintenance` | 521 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `generic-runtime-primitive` | 192 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
 
@@ -113,11 +113,15 @@ rerun the strict report.
 ## Current Refresh State
 
 All three supported fork default branches contain the fetched Apple heads at
-this refresh. The nine newly patch-unique `container` commits were reviewed:
-six release, signing, and dependency-pin changes are support maintenance; the
-XPC ownership correction and two ProcessIO backpressure commits are generic
-runtime primitives. The builder-shim DNS configuration commit is also a
-generic runtime primitive. No commit was assigned automatically.
+this refresh. The 298 newly patch-unique non-merge commits were inspected by
+subject and owning layer: 253 in `container`, 41 in `containerization`, and
+four in `container-builder-shim`. New typed runtime, Engine API, logging,
+network, storage, sandbox, and copy capabilities were assigned to the generic
+runtime slice. Bug fixes, tests, CI, documentation, dependency work,
+packaging, review corrections, and removal of rejected Compose-owned policy
+were assigned to support maintenance. No temporary port or rejected-policy
+disposition was inferred for a new commit, and no published history was
+rewritten.
 
 The registry records fork ownership; it does not promote a runtime or Compose
 stack pin. Release promotion must continue through the exact stack references,
