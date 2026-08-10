@@ -149,7 +149,7 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         let image = try await ClientImage.pull(
             reference: reference,
             platform: platform,
-            scheme: .auto,
+            scheme: .https,
             containerSystemConfig: config,
             progressUpdate: nil,
         )
@@ -161,7 +161,7 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         let config = try await ConfigurationLoader.load()
         let platform = try Self.defaultPlatform()
         let image = try await ClientImage.get(reference: reference, containerSystemConfig: config)
-        try await image.push(platform: platform, scheme: .auto, containerSystemConfig: config, progressUpdate: nil)
+        try await image.push(platform: platform, scheme: .https, containerSystemConfig: config, progressUpdate: nil)
         return image.reference
     }
 
