@@ -199,7 +199,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("Release-Note: none", runtime_pin)
         self.assertIn("sync_container_package_pin", self.script)
 
-    def test_containerization_pin_supports_literal_and_named_revisions(self) -> None:
+    def test_containerization_pin_supports_literal_named_and_dynamic_revisions(self) -> None:
         revision = "a" * 40
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -233,6 +233,39 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             named_text = named_manifest.read_text(encoding="utf-8")
             self.assertIn(f'let containerizationRevision = "{revision}"', named_text)
             self.assertIn("revision: containerizationRevision", named_text)
+
+            dynamic = root / "container-dynamic"
+            dynamic.mkdir()
+            dynamic_manifest = dynamic / "Package.swift"
+            dynamic_manifest.write_text(
+                textwrap.dedent(
+                    """\
+                    import Foundation
+                    import PackageDescription
+
+                    let containerizationRevision = "old"
+                    let scSource =
+                        ProcessInfo.processInfo.environment["CONTAINERIZATION_SOURCE"]
+                        ?? "stephenlclarke/containerization"
+                    let scRef =
+                        ProcessInfo.processInfo.environment["CONTAINERIZATION_REF"]
+                        ?? containerizationRevision
+                    let containerizationDependency: Package.Dependency = .package(
+                        url: "https://github.com/\\(scSource).git",
+                        revision: scRef
+                    )
+                    """
+                ),
+                encoding="utf-8",
+            )
+            dynamic_result = self.run_release_function(
+                root,
+                f"update_containerization_package_pin container-dynamic {revision} 0",
+            )
+            self.assertEqual(dynamic_result.returncode, 0, dynamic_result.stderr)
+            dynamic_text = dynamic_manifest.read_text(encoding="utf-8")
+            self.assertIn(f'let containerizationRevision = "{revision}"', dynamic_text)
+            self.assertIn("revision: scRef", dynamic_text)
 
             literal = root / "container-compose"
             literal.mkdir()
