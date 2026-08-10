@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `af405ffd5a4d8e9ec872bc15351af41130c39b94` | `de749397e6d9be93061c094705a0deedae46fc61` | 0 | 605 | 552 |
+| `container` | `af405ffd5a4d8e9ec872bc15351af41130c39b94` | `d0777a8314b26a2c9311719081ad4da34c097560` | 0 | 606 | 553 |
 | `containerization` | `b9c65e59b284c182c22d88b1f895a138b5fca1a9` | `7e4e1a61d58164ae48ce7e444a268e7d03373a50` | 0 | 184 | 153 |
 | `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `cb2adb12415828033dccf76730db6915548dc7c4` | 0 | 39 | 33 |
-| **Total** | | | **0** | **828** | **738** |
+| **Total** | | | **0** | **829** | **739** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,7 +32,7 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 521 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `support-maintenance` | 522 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
 | `generic-runtime-primitive` | 192 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
@@ -124,6 +124,9 @@ disposition was inferred for a new commit, and no published history was
 rewritten.
 
 The registry records fork ownership; it does not promote a runtime or Compose
-stack pin. Release promotion must continue through the exact stack references,
-normal signed commits, and the full linked-stack gates without rewriting
-published history.
+stack pin. The generated Container dependency commit
+`d0777a8314b26a2c9311719081ad4da34c097560` was inspected as release
+maintenance because it only advances the exact Containerization revision.
+Release promotion must continue through the exact stack references, normal
+signed commits, and the full linked-stack gates without rewriting published
+history.
