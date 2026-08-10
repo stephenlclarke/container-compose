@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `af405ffd5a4d8e9ec872bc15351af41130c39b94` | `d0777a8314b26a2c9311719081ad4da34c097560` | 0 | 606 | 553 |
-| `containerization` | `b9c65e59b284c182c22d88b1f895a138b5fca1a9` | `7e4e1a61d58164ae48ce7e444a268e7d03373a50` | 0 | 184 | 153 |
+| `container` | `ff5aa8a03b7d49fdf5ab1fc3cb76b4d13eadce3c` | `5264919268322aa86c58e01038011964c6caec82` | 0 | 615 | 556 |
+| `containerization` | `5427fd21ded4b84034126caef5b3182900b4776d` | `7e4f5152e9606a34a92c34186eb94f7cd37c134f` | 0 | 190 | 156 |
 | `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `cb2adb12415828033dccf76730db6915548dc7c4` | 0 | 39 | 33 |
-| **Total** | | | **0** | **829** | **739** |
+| **Total** | | | **0** | **844** | **745** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,7 +32,7 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 522 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `support-maintenance` | 528 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
 | `generic-runtime-primitive` | 192 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
@@ -123,10 +123,24 @@ were assigned to support maintenance. No temporary port or rejected-policy
 disposition was inferred for a new commit, and no published history was
 rewritten.
 
+The 10 August 2026 incremental refresh advances Apple `container` through
+`ff5aa8a03b7d`, Apple `containerization` through `5427fd21ded4`, and adds three
+reviewed support-maintenance commits: the bounded Container test-process exit
+wait, Container's exact Containerization dependency pin, and the bounded
+Containerization CodeQL build timeout. No generic-runtime, temporary-port, or
+rejected-policy classification changed in this refresh.
+
+The final Container refresh also incorporates Apple's volume-name validation
+at `ff5aa8a03b7d` and the signed conflict resolution at `e2378a25873a`. Both
+are upstream or merge history, so the graph-ahead count increases while the
+patch-unique non-merge classification count and disposition totals remain
+unchanged.
+
 The registry records fork ownership; it does not promote a runtime or Compose
-stack pin. The generated Container dependency commit
-`d0777a8314b26a2c9311719081ad4da34c097560` was inspected as release
-maintenance because it only advances the exact Containerization revision.
+stack pin. The generated Container dependency commits
+`d0777a8314b26a2c9311719081ad4da34c097560` and
+`ff08b876ab1f87934aa8d2853b921e0ba8590b7b` were inspected as release
+maintenance because they only advance exact Containerization revisions.
 Release promotion must continue through the exact stack references, normal
 signed commits, and the full linked-stack gates without rewriting published
 history.
