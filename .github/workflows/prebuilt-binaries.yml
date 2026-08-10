@@ -960,7 +960,7 @@ jobs:
         env:
           DEMO_ASSET: ${{ steps.lane.outputs.demo_asset }}
           DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
-          DEMO_INIT_IMAGE_ARCHIVE_SHA256: f9c25b9e801470fe65ecdce845f82ecd16b5200fddf4163cd73a8e505c6879cd
+          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 51b34d4a5fbb16f85c6f2a8f50e5f8fae12976259f0fb5a1a6200ba8a2a47a36
           PLUGIN_ARCHIVE: ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
           RUNTIME_ARCHIVE: ${{ steps.runtime-package.outputs.local_asset }}
         shell: bash
@@ -993,6 +993,9 @@ jobs:
           cleanup() {
             if [[ -n "${container_binary:-}" ]]; then
               "${container_binary}" system stop || true
+            fi
+            if [[ -n "${demo_init_image_archive:-}" ]]; then
+              rm -f -- "${demo_init_image_archive}"
             fi
             remove_demo_app_root
           }
@@ -1035,7 +1038,6 @@ jobs:
           demo_init_image_archive="/tmp/cc-current-init-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.oci.tar"
           rm -f "${demo_init_image_archive}"
           cp "${DEMO_INIT_IMAGE_ARCHIVE}" "${demo_init_image_archive}"
-          trap 'rm -f "${demo_init_image_archive}"' EXIT
           staged_init_image_sha256="$(shasum -a 256 "${demo_init_image_archive}" | awk '{print $1}')"
           if [[ "${staged_init_image_sha256}" != "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" ]]; then
             printf 'staged Current demo init-image archive digest mismatch (expected %s, got %s)\n' \
