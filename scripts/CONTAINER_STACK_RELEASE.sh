@@ -972,11 +972,30 @@ updated, direct_count = dependency_pattern.subn(
     text,
     count=1,
 )
-constant_dependency = re.search(
+literal_constant_dependency = re.search(
     r'\.package\(\s*url:\s*"https://github.com/stephenlclarke/containerization\.git"\s*,\s*'
     r"revision:\s*containerizationRevision\s*,?\s*\)",
     text,
     re.MULTILINE,
+)
+dynamic_source = re.search(
+    r'let\s+scSource\s*=(?:(?!\nlet\s).)*"stephenlclarke/containerization"',
+    text,
+    re.MULTILINE | re.DOTALL,
+)
+dynamic_ref = re.search(
+    r"let\s+scRef\s*=(?:(?!\n(?:let|var)\s).)*containerizationRevision",
+    text,
+    re.MULTILINE | re.DOTALL,
+)
+dynamic_dependency = re.search(
+    r'\.package\(\s*url:\s*"https://github.com/\\\(scSource\)\.git"\s*,\s*'
+    r"revision:\s*scRef\s*,?\s*\)",
+    text,
+    re.MULTILINE,
+)
+constant_dependency = literal_constant_dependency or (
+    dynamic_source and dynamic_ref and dynamic_dependency
 )
 constant_pattern = re.compile(
     r'^(let\s+containerizationRevision\s*=\s*")[^"]*(")',
