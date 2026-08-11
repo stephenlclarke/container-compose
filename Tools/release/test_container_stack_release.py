@@ -1106,6 +1106,30 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertNotIn(" fetch-default-kernel", hosted_commands)
 
             log.unlink()
+            relative_paths = [
+                path.name
+                for path in (compose, builder, containerization, container, tap)
+            ]
+            relative = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "hosted", *relative_paths],
+                check=False,
+                capture_output=True,
+                cwd=root,
+                env=environment,
+                text=True,
+            )
+            self.assertEqual(relative.returncode, 0, relative.stderr)
+            relative_commands = log.read_text(encoding="utf-8")
+            resolved_container = container.resolve()
+            self.assertIn(
+                "make:-C container "
+                f"APP_ROOT={resolved_container}/.test-scratch/stack-release-app-root "
+                f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
+                "check container dsym docs coverage-unit",
+                relative_commands,
+            )
+
+            log.unlink()
             external_scratch = root / "external-runtime"
             external_environment = environment.copy()
             external_environment["CONTAINER_STACK_VALIDATION_SCRATCH_ROOT"] = str(
