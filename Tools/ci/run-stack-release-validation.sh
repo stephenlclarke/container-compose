@@ -81,6 +81,13 @@ container_make_args=(
   "APP_ROOT=${container_app_root}"
   "LOG_ROOT=${container_log_root}"
 )
+if [[ "${mode}" == "full" ]]; then
+  container_revision="$(git -C "${container_repo}" rev-parse --verify HEAD 2>/dev/null || printf 'fixture')"
+  container_validation_suffix="$(printf '%s' "${container_revision}" | tr -cd '[:alnum:]' | cut -c1-12)"
+  container_make_args+=(
+    "INTEGRATION_SERVICE_NAMESPACE=io.github.container.stack-validation.${container_validation_suffix}"
+  )
+fi
 
 printf 'running %s stack release validation\n' "${mode}"
 make -C "${builder_repo}" check-licenses vet lint coverage build

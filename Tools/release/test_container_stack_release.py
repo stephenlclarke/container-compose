@@ -1085,6 +1085,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 f"{container} "
                 f"APP_ROOT={container}/.test-scratch/stack-release-app-root "
                 f"LOG_ROOT={container}/.test-scratch/stack-release-log-root "
+                "INTEGRATION_SERVICE_NAMESPACE=io.github.container.stack-validation.fixture "
                 "check container dsym docs coverage",
                 full_commands,
             )
