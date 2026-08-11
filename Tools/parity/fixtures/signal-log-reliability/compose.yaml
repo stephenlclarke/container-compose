@@ -1,4 +1,54 @@
 services:
+  foreground-json:
+    image: alpine:3.21
+    command:
+      - sh
+      - -c
+      - >-
+        printf 'FOREGROUND:EARLY:OUT\n';
+        printf 'FOREGROUND:EARLY:ERR\n' >&2;
+        sleep 1;
+        printf 'FOREGROUND:LATE:OUT\n'
+    logging:
+      driver: json-file
+
+  foreground-none:
+    image: alpine:3.21
+    command:
+      - sh
+      - -c
+      - >-
+        printf 'FOREGROUND:EARLY:OUT\n';
+        printf 'FOREGROUND:EARLY:ERR\n' >&2;
+        sleep 1;
+        printf 'FOREGROUND:LATE:OUT\n'
+    logging:
+      driver: none
+
+  restart-log:
+    image: alpine:3.21
+    command:
+      - sh
+      - -c
+      - >-
+        count=$$(cat /tmp/container-compose-restart-count 2>/dev/null || printf '0');
+        count=$$((count + 1));
+        printf '%s\n' "$$count" > /tmp/container-compose-restart-count;
+        printf 'RESTART:%s\n' "$$count";
+        while :; do sleep 1; done
+    logging:
+      driver: json-file
+
+  scaled-log:
+    image: alpine:3.21
+    command:
+      - sh
+      - -c
+      - >-
+        printf 'SCALE:%s\n' "$$HOSTNAME"
+    logging:
+      driver: json-file
+
   signal:
     image: alpine:3.21
     stdin_open: true

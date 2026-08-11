@@ -188,6 +188,43 @@ def write_resolved(
     )
 
 
+def write_indirect_containerization_package(path: Path) -> None:
+    path.write_text(
+        textwrap.dedent(
+            f"""
+            import PackageDescription
+
+            let builderShimRepository = ProcessInfo.processInfo.environment["BUILDER_SHIM_REPOSITORY"] ?? "ghcr.io/stephenlclarke/container-builder-shim/builder"
+            let builderShimVersion = ProcessInfo.processInfo.environment["BUILDER_SHIM_VERSION"] ?? "0.13.8"
+            let builderShimDigest = ProcessInfo.processInfo.environment["BUILDER_SHIM_DIGEST"] ?? "{BUILDER_DIGEST}"
+            let containerizationRevision = "{CONTAINERIZATION_REF}"
+            let scSource =
+                ProcessInfo.processInfo.environment["CONTAINERIZATION_SOURCE"]
+                ?? "stephenlclarke/containerization"
+            let scRef =
+                ProcessInfo.processInfo.environment["CONTAINERIZATION_REF"]
+                ?? containerizationRevision
+            let containerizationDependency: Package.Dependency = {{
+                if let path = ProcessInfo.processInfo.environment["CONTAINERIZATION_PACKAGE_PATH"] {{
+                    return .package(name: "containerization", path: path)
+                }}
+                return .package(
+                    url: "https://github.com/\\(scSource).git",
+                    revision: scRef
+                )
+            }}()
+
+            let package = Package(
+                name: "fixture",
+                dependencies: [containerizationDependency]
+            )
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 class StackConsistencyTests(unittest.TestCase):
     def run_checker(self, root: Path) -> int:
         with mock.patch.object(checker, "STACK_REFS", root / "stack-refs.json"), mock.patch.object(
@@ -277,6 +314,24 @@ class StackConsistencyTests(unittest.TestCase):
                 CONTAINERIZATION_REF,
                 requirement_constant="containerizationRevision",
             )
+            write_resolved(root / "compose" / "Package.resolved", include_container=True)
+            write_resolved(root / "container" / "Package.resolved")
+
+            self.assertEqual(self.run_checker(root), 0)
+
+    def test_accepts_identity_preserving_local_override_with_remote_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "compose").mkdir()
+            (root / "container").mkdir()
+            write_stack_refs(root / "stack-refs.json")
+            write_package(
+                root / "compose" / "Package.swift",
+                "revision",
+                CONTAINERIZATION_REF,
+                include_container=True,
+            )
+            write_indirect_containerization_package(root / "container" / "Package.swift")
             write_resolved(root / "compose" / "Package.resolved", include_container=True)
             write_resolved(root / "container" / "Package.resolved")
 

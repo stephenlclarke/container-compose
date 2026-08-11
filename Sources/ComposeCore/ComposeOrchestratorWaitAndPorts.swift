@@ -104,25 +104,6 @@ extension ComposeOrchestrator {
         }
     }
 
-    /// Waits for a local Compose Deploy job service to finish successfully.
-    func waitForDeployJobService(service: ComposeService, targets: [ServiceContainerTarget]) async throws {
-        guard isDeployJobService(service), !targets.isEmpty else {
-            return
-        }
-        for target in targets {
-            let exitCode: Int32
-            if options.dryRun {
-                emitComposeRuntimeOperation(["wait", target.name])
-                exitCode = 0
-            } else {
-                exitCode = try await lifecycleManager.waitContainer(id: target.name)
-            }
-            guard exitCode == 0 else {
-                throw ComposeError.invalidProject("service '\(service.name)' job container '\(target.name)' exited with status \(exitCode)")
-            }
-        }
-    }
-
     /// Waits for every target container of a dependency service to finish
     /// successfully before starting the dependent service.
     func waitForCompletedDependency(

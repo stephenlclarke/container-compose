@@ -2,7 +2,7 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Process adopted; upstream registry, local CodeQL, and reviewed PR-only Compose promotion complete; stable progress control in progress; general MBP CI, local workflow wrappers, performance, shared-ledger, impact-map, immutable-evidence, concurrency, baseline-audit, and release-signature enablers pending |
+| Status | Active; one user-visible contract at a time, focused implementation feedback, immutable checkpoint proof, transactional Git hygiene, and silent Slack instruction polling are the adopted delivery workflow |
 | Applies to | `container-engine-api`, `container-engine`, `container`, `containerization`, `container-compose`, `container-builder-shim`, `devcontainer`, and matched supporting repositories |
 | Architecture | [Coherent Container-family parity architecture](coherent-container-family-parity-design.md) |
 | Primary goal | Observable Docker parity with comparable or better performance |
@@ -10,9 +10,9 @@
 
 ## Outcome
 
-The parity programme is delivered as a sequence of small, reviewable vertical slices across the Container family. A slice begins with a pinned Docker oracle and ends only when the same behaviour, identity, lifecycle, events, errors, cleanup, security boundaries, and performance are proved through every affected client and runtime layer.
+The parity programme is delivered as a sequence of substantial, reviewable vertical slices across the Container family. Each slice groups related functionality across the affected layers instead of treating individual fixes or administrative checkpoints as slices. A slice begins with a pinned Docker oracle and ends only when the same behaviour, identity, lifecycle, events, errors, cleanup, security boundaries, and liveness are proved through every affected client and runtime layer.
 
-Work is local-first. Focused tests provide fast feedback while a change is being shaped; broader regression, fault, security, migration, and performance gates run at coherent checkpoints rather than after every edit. Long-running validation executes from an immutable verification worktree so independent useful work can continue without invalidating the result.
+Work is local-first. Focused tests provide fast feedback while a change is being shaped; broader regression, fault, security, and migration gates run once at coherent checkpoints rather than after every edit. Each contract still records its performance workload and retains raw duration evidence, but comparative performance optimisation and the full performance gate run after functional parity is complete. Ordinary timing differences do not block functional delivery; a hang, timeout, or other bounded-liveness failure does and must be fixed before the contract can be accepted. Long-running validation executes from an immutable verification worktree so independent useful work can continue without invalidating the result.
 
 Every completed slice receives a full final review. Findings are fixed, the affected focused tests are rerun, and the complete slice is reviewed again. The review loop ends only when a full pass finds no new actionable issue, all earlier findings and `@codex` queries have explicit resolutions, and the applicable slice gates pass.
 
@@ -37,6 +37,27 @@ The dependency waves in the [coherent architecture](coherent-container-family-pa
 | 9. Integrated gates | Run complete fault, security, migration, rollback, compatibility, and performance matrices. | The matched published stack satisfies the integrated definition of done. |
 
 Cycles 0 to 3 are dependency-ordered. After the shared contracts freeze, independent parts of cycles 4 to 6 may proceed concurrently. Parallel work must not create competing definitions of identity, capabilities, leases, events, providers, or runtime topology.
+
+## Critical-Path Execution Contract
+
+A goal is implemented as one coherent critical-path stream until its user-visible vertical contract is Verified or a concrete dependency prevents further useful local work. Work-package identifiers partition design and evidence; they do not require separate implementation pauses, full regression runs, documentation passes, branches, pull requests, or releases. In particular, an unfinished cross-stack contract must not be split into small administrative slices merely to produce green intermediate checkpoints.
+
+Every selected contract records its behaviour, explicit non-goals, pinned Docker oracle, exact repositories and revisions, affected pins, focused proof, completion criteria, blocker criteria, and safe handoff point before implementation begins. Every other objective is Queued. The only permitted delivery states are `Queued`, `Active`, `Implemented`, `Verified`, `Blocked`, and `Handed off`; code, commits, tests, reports, or a local implementation alone do not make a contract Verified.
+
+The following rules are mandatory:
+
+1. Keep one Active implementation stream for the selected contract and keep every other objective Queued. A development slice is a substantial related vertical contract covering its lower-runtime behaviour, authority transaction, client projection, recovery, and focused tests; a small fix, test rerun, documentation update, status pass, Git administration, or hygiene action is supporting work rather than a separate slice unless it directly unblocks the contract.
+2. During implementation, run only the narrow deterministic unit or component tests needed to shape the current code and prove the directly affected boundary. Batch related edits before running a component test.
+3. Accumulate several related Implemented contracts before running repository-wide, matched-stack, security, and migration gates once against their immutable checkpoint head. Design each affected performance workload and retain duration evidence during functional work, but defer comparative optimisation and the full performance gate until the post-functional performance phase. Ordinary performance differences are not functional blockers; a hang, timeout, or other bounded-liveness failure is. Run a broad gate earlier only when a dependency boundary makes later implementation unsafe, and repeat it only when a subsequent maintained-source, generated-output, dependency, or runtime-fingerprint change invalidates that evidence.
+4. Reconcile programme-wide status, capability tables, handoffs, exact heads, issue comments, and release records at the coherent checkpoint. Do not interrupt active implementation for repeated prose-only refreshes that cannot change a support claim.
+5. Treat repository hygiene as part of each Git transaction. A necessary issue, branch, pull request, or linked worktree is created with its owner and terminal condition already known, and it is commented, closed or retained with evidence, and cleaned up in the same close-out transaction. Do not defer a pile of branch, pull-request, issue, or filesystem cleanup to a later maintenance cycle.
+6. Prefer `main` for authorised Stephen-owned integration work where review policy permits it. Use a topic branch only for an active review or isolated upstream handoff; Apple-bound work uses an `upstream/` prefix and remains local until the programme-wide publication boundary.
+7. Report progress against the Active contract and its remaining critical path. The primary metric is newly Verified contracts; implementation activity, test counts, commits, and reports are supporting evidence rather than completion metrics.
+8. If two consecutive work periods produce no implementation or new blocker-evidence delta, or an unexplained failure survives two evidence-based correction attempts or two hours, stop that loop. Record a structured Blocked or Handed off result with exact evidence, then select an independent safe Queued contract or request direction instead of repeatedly rebuilding, restarting, testing, or reporting.
+9. Use one Slack-check workflow that reads new user messages in `#codex` every five minutes and again before each slice START or END update. A slice START is a new top-level channel message whose timestamp is retained as the slice thread identifier; that slice's END is a reply in the exact START message thread. Execute every unhandled authorised instruction and reply with its concrete result in the originating instruction message thread by using that message's `thread_ts`; never report a Slack-originated request as a new channel message or in a different thread. The poll remains silent when there is no new instruction and must not repeat completed work.
+10. Before runtime validation, prove that the source SHA, dependency revisions, built binaries, guest/init image, and test root share one exact fingerprint. Runtime tests use isolated, marker-protected disposable roots and retain enough evidence to reproduce a failure.
+
+These rules do not weaken the exit criteria. They move expensive proof to the point where it can establish completion once, while preserving focused failure feedback during development.
 
 ## Vertical Slice Contract
 
@@ -114,7 +135,11 @@ Each lower-layer change is independently tested and remains narrow enough to han
 
 Run the smallest deterministic test that can fail for the current edit. A parser change runs its parser tests; a lifecycle transition runs that transition and journal recovery tests; a provider fix runs its protocol fixture; a documentation change runs Markdown/link checks.
 
-When several related fixes affect the same component, make the coherent batch and run the component gate once. Do not run the full stack regression after each small edit merely because it exists.
+When several related fixes affect the same component, keep them in the same substantial development slice, make the coherent batch, and run the component gate once. Do not define every fix as its own slice, and do not run the full stack regression after each small edit merely because it exists.
+
+Maintained code aims for at least 90% line coverage overall and new or substantially changed code aims for at least 90% focused line coverage. Coverage is reported from an instrumented run and is never inferred from a green test count. An evidence-backed lower result remains visible with its reason and follow-up; low-value tests are not added merely to inflate the percentage.
+
+Where Docker-based integration is applicable, retain a repository-owned `Dockerfile`, `compose.yaml`/`compose.yml`, or focused Bash harness that invokes the built CLI through the same user-visible path as the Docker reference. Unit-only proof is insufficient for a CLI/runtime contract that can be exercised through such a fixture.
 
 ### 6. Integrate across the actual boundary
 
@@ -141,7 +166,7 @@ Use an independent fresh-context reviewer for the final pass wherever practical.
 
 ### 8. Run checkpoint gates
 
-Run the broader gates justified by the final change. The final slice gate uses a clean immutable commit/worktree, not a moving development directory. Fault injection, security, migration, and performance evidence is added when the changed contract can affect those properties.
+Run the broader gates justified by the final change. The final slice gate uses a clean immutable commit/worktree, not a moving development directory. Fault injection, security, and migration evidence is added when the changed contract can affect those properties. Record the applicable performance workload and duration now; run comparative optimisation evidence in the dedicated post-functional performance phase. A hang, timeout, or other bounded-liveness failure remains a functional failure and must be fixed before acceptance.
 
 If a checkpoint gate causes any maintained-source, generated-output, migration, or contract change, rerun the affected focused tests and repeat the complete final review against the new exact head before accepting the gate.
 
@@ -158,8 +183,8 @@ Update `STATUS.md` only when the capability is genuinely available on the matche
 | 0. Edit feedback | Prove the line or local behaviour being changed. | Every meaningful edit or related edit batch. | One Swift test/filter, one Go package test, one parity script, Markdown lint for touched documents, `git diff --check`. |
 | 1. Component | Prove the changed package/controller and its immediate contracts. | Before sharing a local checkpoint or changing another layer. | `make check`, selected Swift suite, `make go-test`, provider fixtures, recovery tests. |
 | 2. Vertical slice | Prove the behaviour through affected repositories and clients. | When the slice first works and after review fixes affecting the contract. | Selected Docker parity target, runtime integration test, cross-client state/event comparison. |
-| 3. Repository | Detect unrelated regressions in each changed repository. | After a clean full-slice review and before merge; optionally earlier when risk warrants. | `make ci-fast` during development, `make ci` for the final repository checkpoint. |
-| 4. Matched stack | Prove exact pins and cross-repository compatibility. | End of a slice that changes shared contracts; wave checkpoint. | Stack consistency, runtime tests, selected/full parity, fault and migration matrix. |
+| 3. Repository | Detect unrelated regressions in each changed repository. | At the checkpoint after several related slices; earlier only when a dependency boundary makes continued implementation unsafe. | `make ci-fast` for an early dependency gate, `make ci` for the final repository checkpoint. |
+| 4. Matched stack | Prove exact pins and cross-repository compatibility. | Checkpoint after several related slices; wave checkpoint. | Stack consistency, runtime tests, selected/full parity, fault and migration matrix. |
 | 5. Release | Prove the publishable artefact and exact-head GitHub-recorded authorities. | Release candidate only. | Release gate, packaging/signing/notarisation, full parity/performance, SonarQube, CodeQL, install and rollback. |
 
 ### Test selection rules
@@ -355,7 +380,7 @@ Update the generated upstream handoff registry whenever a handoff is added or ch
 
 ## Parity and Performance Discipline
 
-The primary product gate is both observable Docker parity and comparable or better performance. Neither compensates for the other.
+The primary product gate is both observable Docker parity and comparable or better performance. Neither compensates for the other, but the delivery order is functional compatibility first and comparative optimisation second.
 
 ### Behaviour
 
@@ -365,13 +390,13 @@ The primary product gate is both observable Docker parity and comparable or bett
 
 ### Performance
 
-- Capture a paired same-host baseline before changing an affected hot path.
+- Design the paired same-host workload, metrics, and noise method before changing an affected hot path; capture the release-grade baseline during the post-functional performance phase unless the active work itself needs a liveness diagnosis.
 - Use non-debug release builds, raw monotonic timings, exact heads, host/toolchain/runtime fingerprints, controlled warm/cold state, declared repetitions, median/P95, and a documented noise band.
 - Compare Docker, the previous accepted `main`, and the candidate where an existing Container-family implementation is available; retain elapsed time plus material CPU, memory, and I/O observations.
-- During development, run the smallest benchmark that covers the changed path. Run the complete affected slice matrix at slice closure and the full maintained matrix at wave/release closure.
+- During functional development, retain the ordinary focused-run duration and run a targeted benchmark only when it helps diagnose a liveness issue. Run the complete affected slice matrix after functional contracts close and the full maintained matrix at wave/release closure.
 - Run reference and candidate under equivalent load and without concurrent builds, scans, indexing, backups, or unrelated VMs.
 - Declare the direction and equivalence rule for every metric before sampling: lower is better for latency, CPU, RSS, bytes/copies and other costs; higher is better for throughput; correctness, durability, isolation and output quality cannot decline. Never average opposing metrics into a score that hides a material regression.
-- Profile and fix material regressions. The slice does not close while its candidate median or P95 is materially worse than Docker in that metric's declared direction outside the noise band.
+- Profile and fix material regressions in the post-functional performance phase. A completed functional contract remains `Verified` while its comparative performance result is outstanding; only a hang, timeout, deadlock, liveness/resource leak, or comparable failure that prevents the functional proof keeps that contract open.
 - Optimisation must preserve correctness, isolation, durability, and diagnostic evidence. A faster approximation is not parity.
 
 The current `make docker-compose-performance-matrix` is a diagnostic guard, not release evidence: it builds the debug product, permits a default 10x median ratio, and covers only warm-image 1/10/50-service startup/teardown. It must be replaced or extended to use matched release binaries, paired/counterbalanced sampling, the comparable-or-better noise-band gate, and the missing logs, `develop.watch` sync, and build-context lanes before it can close a performance slice.
@@ -385,7 +410,7 @@ Each slice keeps a compact durable record that another MBP or maintainer can res
 | Contract | User-visible behaviour, non-goals, Docker oracle, expected phase/state/events. |
 | Inputs | Exact repository heads, pins, provider/sandbox fingerprints, toolchain and host. |
 | Implementation | Changed repositories/commits, capability revisions, migrations and feature gates. |
-| Design progress | Every affected design requirement/work-package ID, previous/new state (`not started`, `in progress`, `blocked`, or `verified`), exact evidence, and any still-open acceptance row. |
+| Design progress | Every affected design requirement/work-package ID, previous/new state (`Queued`, `Active`, `Implemented`, `Verified`, `Blocked`, or `Handed off`), exact evidence, and any still-open acceptance row. |
 | Documentation | Complete documentation inventory reviewed; every changed page/help/schema/example/status/release/handoff item, or an explicit evidence-backed `unchanged`/`not applicable` disposition. |
 | Validation | Focused, component, cross-client, fault, security, migration and full gates with exact result locations. |
 | Review | Review passes, findings/resolutions, `@codex` queries/responses, unrelated findings/blockers and final clean pass. |
@@ -405,73 +430,27 @@ capability manifests, test/performance instructions, migration/rollback notes,
 upstream handoffs, and release notes. An item that remains unchanged is recorded
 as reviewed with a reason; silence is not evidence that it is current.
 
-Each focused design uses stable requirement/work-package identifiers in the
-shared slice ledger and the machine-checked coverage manifest defined by the
-[remaining macOS parity closure design](remaining-macos-parity-closure-design.md).
-After every meaningful implementation checkpoint, update
-their state and attach exact commit, test, review, quality, migration, and
-performance evidence. `in progress` means implemented evidence is incomplete;
-`blocked` names owner/blocker/next action; `verified` means the final exact-head
-slice satisfies that row and its dependencies. A summary in `STATUS.md` links
-to the detailed record but never upgrades support merely because code exists or
-a design checkbox changed.
+Each focused design keeps stable requirement/work-package identifiers and its
+own exact implementation, test, review, quality, migration, and performance
+evidence. [STATUS.md](../STATUS.md) is the single current programme projection
+and lists only remaining compatibility or performance gaps. A row closes only
+when its design acceptance and pinned executable evidence are complete; local
+code or a design checkbox alone never upgrades support.
 
 If implementation evidence changes a design decision, update the focused
-design, coherent architecture, dependency/order map, progress register, tests,
+design, coherent architecture, dependency/order map, `STATUS.md`, tests,
 and user-facing documentation together after an explicit review decision. Do
 not preserve a known-stale design as historical truth inside the active spec;
 move genuinely superseded material to a clearly marked decision/history record.
 Markdown, link, generated-reference, example, and CLI-help checks are part of
 the affected slice gate.
 
-The committed source of programme state is
-[`docs/parity/PROGRAMME-PROGRESS.json`](parity/PROGRAMME-PROGRESS.json); its
-generated reader view is
-[`docs/parity/PROGRAMME-PROGRESS.md`](parity/PROGRAMME-PROGRESS.md). Run
-`make programme-progress-update` after an intentional state or evidence change
-and `make programme-progress-check` before review. The ordinary `make check`
-gate also runs the check. Every registered design declares its dependent
-documentation and its default required repository-head set; explicit per-item
-overrides replace that default where a workflow slice has a narrower reviewed
-boundary. Both declarations are independently pinned with the 112-item
-contract. A `verified` row must name a full accepted Container Compose head that
-is already an ancestor of the trusted pre-change main or pull-request base
-checkpoint, supply exactly every repository head required for that item, bind
-each to a real commit accepted by fetched `main` in an authenticated
-repository-specific checkout, require every recorded SHA to identify its commit
-object directly rather than an annotated tag that merely peels to it, identify
-immutable evidence paths present in the exact Compose tree, and record a
-disposition for every declared documentation dependency at the same head with a
-non-empty review rationale. Authority URLs are not free-form links: the checker
-accepts only kind-specific resources in an affected GitHub repository, resolves
-pull requests/comments and Actions runs through the fixed system GitHub CLI in
-a bounded clean environment, and requires them to exist, succeed where
-applicable, and bind to that exact accepted head. A commit delivery URL is bound
-to the already authenticated repository object. Missing GitHub CLI
-authentication, a timeout, or an unreadable authority fails closed.
-Pull-request CI supplies its immutable base SHA; local validation defaults to
-the local `main` ref. This prevents a commit from declaring itself accepted in
-the same pull request. The checker pins the reviewed programme root and
-112-item boundary independently from both the register and design prose, so
-moving the baseline or deleting the same row from both sources
-still fails. Its exact-tree and ancestry queries use system Git with ambient
-configuration, replacement objects, and executable checkout hooks disabled.
-Both full source checks and the documentation-only CI path run the gate from
-full-history checkouts for Compose and every supported evidence repository:
-Container, Containerization, container-builder-shim, container-k8s, and the
-Homebrew tap, and expose their read-only GitHub token only to the source-check
-step for authority resolution. Duplicate IDs, missing or unregistered design
-anchors, missing or undeclared repository heads, indirect Git objects, broken
-or wrong-head authorities, unsafe or missing paths, un-actionable blocked rows,
-non-ancestor evidence, incomplete documentation review, and a stale generated
-projection all fail closed.
-
-An implementation commit cannot contain its own immutable commit identity.
-Consequently, a row implemented by the current slice remains `in progress` in
-that slice; the next reviewed checkpoint promotes it to `verified` by pointing
-back to the already-existing accepted merge and its exact evidence. This avoids
-a self-referential hash placeholder and prevents later unrelated commits from
-silently rebinding old evidence to a new head.
+Exact accepted heads remain in the affected design or upstream handoff record,
+where they can describe the actual repository set and evidence boundary without
+self-reference. Update every affected documentation surface and `STATUS.md` in
+the implementation slice. `make check` continues to validate active source,
+documentation, stack consistency, and the handoff registry; it does not accept
+a stale generated status projection as programme truth.
 
 ## Development-Cycle Definition of Done
 
@@ -486,15 +465,17 @@ A slice is complete only when:
 - a complete final-diff review finds no new actionable issue after every earlier issue was resolved;
 - every `@codex` PR query has an explicit response and every reviewed-diff change received a new exact-SHA review;
 - local static analysis, SonarQube, supported CodeQL, and every required exact-head external authority is green;
+- maintained code aims for at least 90% overall line coverage, new or substantially changed code has focused coverage evidence aimed at 90%, and every evidence-backed exception is explicit;
+- applicable Docker integration uses a retained Dockerfile, Compose file, or Bash harness that exercises the built CLI through the user-visible contract;
 - every affected executable lane has paired release-build median/P95 comparable to or better than Docker outside the declared noise band; a demonstrably non-executable slice records `not applicable` with rationale and cannot close a performance gap;
 - exact stack pins, documentation, compatibility manifests, and `STATUS.md` agree with the delivered behaviour;
-- every documentation surface has a recorded review disposition and every affected design-progress row points to exact final-head evidence;
+- every documentation surface has a recorded review disposition, `STATUS.md` agrees with the remaining gaps, and affected design or handoff records point to exact final-head evidence;
 - the stable exact-head-reviewed checkpoint is on `main`; and
 - no obsolete slice-owned pull request, remote branch, local branch, worktree, runtime state, or unregistered/machine-local completed handoff is left dangling.
 
 ## Safe Incomplete Handoff
 
-Work that cannot meet the definition of done because publication is not authorised, a dependency is missing, or an external authority is unavailable is not a completed slice. Preserve it safely with exact commits on a short-lived remote topic branch/draft pull request, the original acceptance criteria, current blocker/owner, completed and missing evidence, active run identifiers, rollback point, next command, and next-review date. This is valid handoff evidence but never a parity/support completion claim.
+Work that cannot meet the definition of done because publication is not authorised, a dependency is missing, or an external authority is unavailable is Blocked or Handed off, never Verified. Preserve it safely with exact commits on a short-lived topic branch or, where already authorised, a draft pull request; record the original acceptance criteria, current blocker/owner, completed and missing evidence, active run identifiers, rollback point, next command, and next-review date. This is valid handoff evidence but never a parity/support completion claim.
 
 ## Initial Workflow Enablers
 
@@ -516,7 +497,7 @@ Before large-scale implementation begins, add and prove these workflow capabilit
 12. <a id="workflow-enabler-12"></a>`WORKFLOW-ENABLER-12` — **Complete — upstream-handoff registry baseline.** The performance-matrix issue and pull-request records are classified through the documented archive lifecycle, the reader view is regenerated, and `make upstream-handoff-registry-check` and the exact-stack `make check` pass. The implementation and evidence are recorded in `docs/upstream/container-compose/ISSUE-180.md` and `PR-180.md`; this baseline no longer blocks repository-wide programme evidence.
 13. <a id="workflow-enabler-13"></a>`WORKFLOW-ENABLER-13` — **Complete — exact-head-reviewed Compose promotion.** The release helper proves the open pull request still names the locally gated full commit, requires every existing Codex thread to have a later Stephen response and be resolved, posts a literal `@codex review`, and accepts only the connector's thumbs-up on that exact request or its explicit no-major-issues comment naming the expected commit prefix. A query after the request, head drift, malformed or truncated evidence, or timeout fails closed and requires a fresh invocation; any diff therefore receives a new request. Pull-request checks run only after the clean decision. The helper immediately revalidates the exact head, all query threads, and the clean signal before a head-matched normal merge and again before the optional checked-admin merge. Auto-merge is never enabled. Deterministic stale-head, unanswered-query, timeout, clean-comment merge, pagination, and stale-review tests are recorded in `docs/upstream/container-compose/ISSUE-182.md` and `PR-182.md`.
 14. <a id="workflow-enabler-14"></a>`WORKFLOW-ENABLER-14` — **Complete — PR-only Compose source promotion.** `CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE=pr` is the sole accepted mode. The retired `direct` value fails before any GitHub or Git mutation, and the direct push branch has been removed. Maintenance, milestone, and security classifications do not bypass exact-head review or pull-request checks. The focused direct-mode and clean-merge regressions prove only the reviewed PR path can promote Compose source; implementation and evidence are recorded with Enabler 13 in `docs/upstream/container-compose/ISSUE-182.md` and `PR-182.md`.
-15. <a id="workflow-enabler-15"></a>`WORKFLOW-ENABLER-15` — **In progress — stable programme progress.** Add stable requirement/work-package IDs and one shared progress register for every focused/coherent design, plus a generated stale-link/status check that fails when a verified row lacks exact-head evidence or dependent documentation has not been reviewed.
+15. <a id="workflow-enabler-15"></a>`WORKFLOW-ENABLER-15` — **Superseded — gap-only programme status.** Stable requirement/work-package IDs remain in focused designs, while `STATUS.md` is the single current gap-only projection. The duplicate generated register was retired after it drifted far behind implemented work and produced misleading programme counts.
 
 The release helper now enforces Enablers 13 and 14 before any programme source
 promotion. Its checked-admin option handles only GitHub's solo-maintainer review

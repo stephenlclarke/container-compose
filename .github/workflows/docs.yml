@@ -54,7 +54,10 @@ jobs:
   build:
     name: Build DocC Site
     runs-on: macos-26
-    timeout-minutes: 45
+    # A cold SwiftPM/DocC build of the pinned runtime stack can exceed 45
+    # minutes on the hosted macOS image. Keep a bounded window that also
+    # covers that first-build case instead of cancelling healthy compiles.
+    timeout-minutes: 90
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

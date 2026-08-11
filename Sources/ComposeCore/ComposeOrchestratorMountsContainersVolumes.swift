@@ -677,10 +677,34 @@ extension ComposeOrchestrator {
         emitOutput: Bool = true,
         inheritedIO: Bool = false,
         replaceProcess: Bool = false,
+        logging: ComposeLogConfiguration? = nil,
     ) async throws -> CommandResult {
         if options.dryRun {
-            options.emit("+ " + shellQuoted([options.containerBinary] + arguments))
+            options.emit("+ " + shellQuoted([options.containerBinary] + redactedLoggingArguments(arguments)))
             return CommandResult(status: 0, stdout: "", stderr: "")
+        }
+        if options.runtimeCapabilities.supportsLoggingDriversV1, let logging {
+            guard let commandName = arguments.first,
+                  let command = ComposeRuntimeContainerLaunchCommand(rawValue: commandName)
+            else {
+                throw ComposeError.invalidProject("typed container launch requires create or run")
+            }
+            let status = try await launchManager.launchContainer(
+                ComposeRuntimeContainerLaunchRequest(
+                    command: command,
+                    arguments: Array(arguments.dropFirst()),
+                    logging: logging,
+                )
+            )
+            let result = CommandResult(status: status, stdout: "", stderr: "")
+            if check, !result.succeeded {
+                throw ComposeError.commandFailed(
+                    command: shellQuoted([options.containerBinary] + arguments),
+                    status: result.status,
+                    stderr: result.stderr,
+                )
+            }
+            return result
         }
         let commandIO: CommandIO = if replaceProcess {
             .replacingProcess
@@ -710,6 +734,34 @@ extension ComposeOrchestrator {
         return result
     }
 
+    /// Preserves logging option names in diagnostics without exposing values.
+    func redactedLoggingArguments(_ arguments: [String]) -> [String] {
+        var result = arguments
+        var index = result.startIndex
+        while index < result.endIndex {
+            if result[index] == "--log-opt" {
+                let valueIndex = result.index(after: index)
+                if valueIndex < result.endIndex {
+                    result[valueIndex] = redactedLoggingOption(result[valueIndex])
+                    index = result.index(after: valueIndex)
+                    continue
+                }
+            } else if result[index].hasPrefix("--log-opt=") {
+                let option = String(result[index].dropFirst("--log-opt=".count))
+                result[index] = "--log-opt=\(redactedLoggingOption(option))"
+            }
+            index = result.index(after: index)
+        }
+        return result
+    }
+
+    private func redactedLoggingOption(_ option: String) -> String {
+        guard let separator = option.firstIndex(of: "=") else {
+            return "<redacted>"
+        }
+        return "\(option[..<separator])=<redacted>"
+    }
+
     /// Runs a runtime command while emitting progress for captured operations.
     @discardableResult
     func runContainerWithProgress(
@@ -720,6 +772,7 @@ extension ComposeOrchestrator {
         emitOutput: Bool = true,
         inheritedIO: Bool = false,
         replaceProcess: Bool = false,
+        logging: ComposeLogConfiguration? = nil,
     ) async throws -> CommandResult {
         guard !inheritedIO, !replaceProcess else {
             if !quiet {
@@ -731,6 +784,7 @@ extension ComposeOrchestrator {
                 emitOutput: emitOutput,
                 inheritedIO: inheritedIO,
                 replaceProcess: replaceProcess,
+                logging: logging,
             )
         }
         return try await progressActivity(message, quiet: quiet, emitsExternalOutput: emitOutput) {
@@ -740,6 +794,7 @@ extension ComposeOrchestrator {
                 emitOutput: emitOutput,
                 inheritedIO: inheritedIO,
                 replaceProcess: replaceProcess,
+                logging: logging,
             )
         }
     }

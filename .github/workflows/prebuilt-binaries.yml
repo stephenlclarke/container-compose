@@ -888,15 +888,9 @@ jobs:
             printf 'local_asset=%s\n' "${runtime_local_asset}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Use checked-out container dependency
-        run: Tools/ci/use-stack-container.sh ../container
-        working-directory: container-compose
-
-      - name: Use checked-out containerization dependency
-        if: steps.stack-refs.outputs.containerization_ref != ''
-        run: Tools/ci/use-stack-containerization.sh ../containerization
-        working-directory: container-compose
-
+      # The Makefile passes these sibling checkouts to Package.swift as local
+      # path dependencies. Do not also `swift package edit` them: mixing edit
+      # state with manifest paths makes SwiftPM exhaust graph resolution.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -964,7 +958,10 @@ jobs:
       - name: Generate Current build VHS recording
         if: needs.resolve-publish-context.outputs.ref_type == 'branch'
         env:
+          CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
           DEMO_ASSET: ${{ steps.lane.outputs.demo_asset }}
+          DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
+          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 2248f64f62e1c4f8d7f1696ad462f42796d32a2a3bcf2843004be2e66b01645b
           PLUGIN_ARCHIVE: ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
           RUNTIME_ARCHIVE: ${{ steps.runtime-package.outputs.local_asset }}
         shell: bash
@@ -975,14 +972,33 @@ jobs:
           acquire_container_runtime_lock
 
           demo_root="${RUNNER_TEMP}/current-build-demo"
-          demo_app_root="${demo_root}/app"
+          # Darwin AF_UNIX paths are bounded. Keep the launchd-visible app root
+          # short and real (not a symlink): launchd resolves service plists and
+          # the runtime rejects symlinked persisted-state roots. Package and
+          # install artifacts remain beneath the runner's managed temp path.
+          demo_app_root="/tmp/cc-current-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           demo_output=".build/current-demo/${DEMO_ASSET}"
           tape="${RUNNER_TEMP}/container-compose-current-demo.tape"
+
+          remove_demo_app_root() {
+            case "${demo_app_root}" in
+              /tmp/cc-current-[0-9]*-[0-9]*) ;;
+              *)
+                printf 'refusing to remove unexpected Current demo app root: %s\n' "${demo_app_root}" >&2
+                return 1
+                ;;
+            esac
+            rm -rf -- "${demo_app_root}"
+          }
 
           cleanup() {
             if [[ -n "${container_binary:-}" ]]; then
               "${container_binary}" system stop || true
             fi
+            if [[ -n "${demo_init_image_archive:-}" ]]; then
+              rm -f -- "${demo_init_image_archive}"
+            fi
+            remove_demo_app_root
           }
           trap cleanup EXIT
 
@@ -995,9 +1011,11 @@ jobs:
             container system stop || true
           fi
           bash Tools/release/wait-for-container-system-stop.sh
+          remove_demo_app_root
           rm -rf "${demo_root}"
 
           mkdir -p "${demo_root}/libexec/container-plugins"
+          mkdir -p "${demo_app_root}"
           mkdir -p "$(dirname "${demo_output}")"
           tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"
           tar -xzf "${PLUGIN_ARCHIVE}" -C "${demo_root}/libexec/container-plugins"
@@ -1006,8 +1024,46 @@ jobs:
           test -x "${container_binary}"
           test -x "${demo_root}/libexec/container-plugins/compose/bin/compose"
 
+          if [[ -z "${DEMO_INIT_IMAGE_ARCHIVE}" || ! -f "${DEMO_INIT_IMAGE_ARCHIVE}" ]]; then
+            printf 'matched Current demo init-image archive is unavailable: %s\n' \
+              "${DEMO_INIT_IMAGE_ARCHIVE:-<unset>}" >&2
+            exit 1
+          fi
+          actual_init_image_sha256="$(shasum -a 256 "${DEMO_INIT_IMAGE_ARCHIVE}" | awk '{print $1}')"
+          if [[ "${actual_init_image_sha256}" != "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" ]]; then
+            printf 'matched Current demo init-image archive digest mismatch (expected %s, got %s)\n' \
+              "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" "${actual_init_image_sha256}" >&2
+            exit 1
+          fi
+          if [[ ! "${CONTAINERIZATION_REF}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'matched Current demo containerization ref is invalid: %s\n' \
+              "${CONTAINERIZATION_REF:-<unset>}" >&2
+            exit 1
+          fi
+          expected_init_image_ref="ghcr.io/stephenlclarke/containerization/vminit:${CONTAINERIZATION_REF}"
+          actual_init_image_ref="$(
+            tar -xOf "${DEMO_INIT_IMAGE_ARCHIVE}" index.json \
+              | python3 -c 'import json, sys; print(json.load(sys.stdin)["manifests"][0]["annotations"]["org.opencontainers.image.ref.name"])'
+          )"
+          if [[ "${actual_init_image_ref}" != "${expected_init_image_ref}" ]]; then
+            printf 'matched Current demo init-image ref mismatch (expected %s, got %s)\n' \
+              "${expected_init_image_ref}" "${actual_init_image_ref:-<missing>}" >&2
+            exit 1
+          fi
+
+          demo_init_image_archive="/tmp/cc-current-init-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.oci.tar"
+          rm -f "${demo_init_image_archive}"
+          cp "${DEMO_INIT_IMAGE_ARCHIVE}" "${demo_init_image_archive}"
+          staged_init_image_sha256="$(shasum -a 256 "${demo_init_image_archive}" | awk '{print $1}')"
+          if [[ "${staged_init_image_sha256}" != "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" ]]; then
+            printf 'staged Current demo init-image archive digest mismatch (expected %s, got %s)\n' \
+              "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" "${staged_init_image_sha256}" >&2
+            exit 1
+          fi
+
           export CONTAINER_INSTALL_ROOT="${demo_root}"
           export CONTAINER_APP_ROOT="${demo_app_root}"
+          export CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE="${demo_init_image_archive}"
           export PATH="${demo_root}/bin:${PATH}"
 
           # VHS itself is the fail-closed runtime gate. It types every command
@@ -1021,12 +1077,12 @@ jobs:
           cp "${demo_output}" "${RUNNER_TEMP}/${DEMO_ASSET}"
 
       - name: Attest release package
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
 
       - name: Attest matched runtime package
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ steps.runtime-package.outputs.local_asset }}
 

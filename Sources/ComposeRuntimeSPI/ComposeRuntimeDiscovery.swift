@@ -277,9 +277,10 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
 /// Stable network-attachment data projected from runtime snapshots.
 public struct ComposeContainerNetworkAttachment: Sendable, Equatable, Codable {
     public var network: String
-    public var ipv4Address: String
+    /// The endpoint IPv4 address when the attached network enables IPv4.
+    public var ipv4Address: String?
 
-    public init(network: String, ipv4Address: String) {
+    public init(network: String, ipv4Address: String? = nil) {
         self.network = network
         self.ipv4Address = ipv4Address
     }

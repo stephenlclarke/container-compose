@@ -1,0 +1,347 @@
+{
+  "cases": {
+    "gelfRemoteWire": {
+      "tcpNULTerminated": {
+        "cleanup": {
+          "receiverProcessRunning": false,
+          "vmPathsRemaining": []
+        },
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {
+              "cache-disabled": "true",
+              "env": "ORACLE_ENV",
+              "gelf-address": "tcp://<colima-oracle-receiver>",
+              "labels": "oracle.label",
+              "tag": "oracle.{{.Name}}.{{.ID}}"
+            },
+            "Type": "gelf"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        },
+        "phase": {
+          "configurationAcceptedAtCreate": true,
+          "connectionEstablishedAtStart": true,
+          "containerExitCode": 0
+        },
+        "requestedTransport": "tcp",
+        "wire": {
+          "framing": {
+            "compression": "none",
+            "framing": "NUL-delimited uncompressed GELF JSON objects",
+            "streamEndsWithNUL": true
+          },
+          "jsonObjectFieldOrderNormalizedAway": true,
+          "peerClosedAfterContainerExit": true,
+          "records": [
+            {
+              "extras": {
+                "_ORACLE_ENV": "bravo",
+                "_command": "sh -c printf 'stdout-ascii\\n'; sleep 0.2; printf 'stderr-utf8-\\342\\230\\203\\n' >&2; sleep 0.2; printf 'stdout-binary-\\377\\000-end\\n'",
+                "_container_id": "<container-id>",
+                "_container_name": "<container-name>",
+                "_created": "<rfc3339-nano-utc>",
+                "_image_id": "<image-id>",
+                "_image_name": "alpine:3.20",
+                "_oracle.label": "alpha",
+                "_tag": "oracle.<container-name>.<container-id-short>"
+              },
+              "fieldNames": [
+                "_ORACLE_ENV",
+                "_command",
+                "_container_id",
+                "_container_name",
+                "_created",
+                "_image_id",
+                "_image_name",
+                "_oracle.label",
+                "_tag",
+                "host",
+                "level",
+                "short_message",
+                "timestamp",
+                "version"
+              ],
+              "host": "colima",
+              "level": 6,
+              "shortMessage": "stdout-ascii",
+              "timestamp": "<unix-seconds-milliseconds>",
+              "timestampPrecision": "at-most-milliseconds",
+              "version": "1.1"
+            },
+            {
+              "extras": {
+                "_ORACLE_ENV": "bravo",
+                "_command": "sh -c printf 'stdout-ascii\\n'; sleep 0.2; printf 'stderr-utf8-\\342\\230\\203\\n' >&2; sleep 0.2; printf 'stdout-binary-\\377\\000-end\\n'",
+                "_container_id": "<container-id>",
+                "_container_name": "<container-name>",
+                "_created": "<rfc3339-nano-utc>",
+                "_image_id": "<image-id>",
+                "_image_name": "alpine:3.20",
+                "_oracle.label": "alpha",
+                "_tag": "oracle.<container-name>.<container-id-short>"
+              },
+              "fieldNames": [
+                "_ORACLE_ENV",
+                "_command",
+                "_container_id",
+                "_container_name",
+                "_created",
+                "_image_id",
+                "_image_name",
+                "_oracle.label",
+                "_tag",
+                "host",
+                "level",
+                "short_message",
+                "timestamp",
+                "version"
+              ],
+              "host": "colima",
+              "level": 3,
+              "shortMessage": "stderr-utf8-\u2603",
+              "timestamp": "<unix-seconds-milliseconds>",
+              "timestampPrecision": "at-most-milliseconds",
+              "version": "1.1"
+            },
+            {
+              "extras": {
+                "_ORACLE_ENV": "bravo",
+                "_command": "sh -c printf 'stdout-ascii\\n'; sleep 0.2; printf 'stderr-utf8-\\342\\230\\203\\n' >&2; sleep 0.2; printf 'stdout-binary-\\377\\000-end\\n'",
+                "_container_id": "<container-id>",
+                "_container_name": "<container-name>",
+                "_created": "<rfc3339-nano-utc>",
+                "_image_id": "<image-id>",
+                "_image_name": "alpine:3.20",
+                "_oracle.label": "alpha",
+                "_tag": "oracle.<container-name>.<container-id-short>"
+              },
+              "fieldNames": [
+                "_ORACLE_ENV",
+                "_command",
+                "_container_id",
+                "_container_name",
+                "_created",
+                "_image_id",
+                "_image_name",
+                "_oracle.label",
+                "_tag",
+                "host",
+                "level",
+                "short_message",
+                "timestamp",
+                "version"
+              ],
+              "host": "colima",
+              "level": 6,
+              "shortMessage": "stdout-binary-\ufffd\u0000-end",
+              "timestamp": "<unix-seconds-milliseconds>",
+              "timestampPrecision": "at-most-milliseconds",
+              "version": "1.1"
+            }
+          ]
+        }
+      },
+      "udpDefaultGzip": {
+        "cleanup": {
+          "receiverProcessRunning": false,
+          "vmPathsRemaining": []
+        },
+        "create": {
+          "httpStatus": 201,
+          "message": null,
+          "warnings": []
+        },
+        "inspectAfterExit": {
+          "logConfig": {
+            "Config": {
+              "cache-disabled": "true",
+              "env": "ORACLE_ENV",
+              "gelf-address": "udp://<colima-oracle-receiver>",
+              "labels": "oracle.label",
+              "tag": "oracle.{{.Name}}.{{.ID}}"
+            },
+            "Type": "gelf"
+          },
+          "logPath": "",
+          "state": {
+            "error": "",
+            "status": "exited"
+          },
+          "tty": false
+        },
+        "phase": {
+          "configurationAcceptedAtCreate": true,
+          "connectionEstablishedAtStart": true,
+          "containerExitCode": 0
+        },
+        "requestedTransport": "udp",
+        "wire": {
+          "framing": {
+            "compression": "gzip",
+            "datagramBoundariesAreMessageBoundaries": true,
+            "framing": "one gzip-compressed GELF JSON object per UDP datagram"
+          },
+          "jsonObjectFieldOrderNormalizedAway": true,
+          "records": [
+            {
+              "extras": {
+                "_ORACLE_ENV": "bravo",
+                "_command": "sh -c printf 'stdout-ascii\\n'; sleep 0.2; printf 'stderr-utf8-\\342\\230\\203\\n' >&2; sleep 0.2; printf 'stdout-binary-\\377\\000-end\\n'",
+                "_container_id": "<container-id>",
+                "_container_name": "<container-name>",
+                "_created": "<rfc3339-nano-utc>",
+                "_image_id": "<image-id>",
+                "_image_name": "alpine:3.20",
+                "_oracle.label": "alpha",
+                "_tag": "oracle.<container-name>.<container-id-short>"
+              },
+              "fieldNames": [
+                "_ORACLE_ENV",
+                "_command",
+                "_container_id",
+                "_container_name",
+                "_created",
+                "_image_id",
+                "_image_name",
+                "_oracle.label",
+                "_tag",
+                "host",
+                "level",
+                "short_message",
+                "timestamp",
+                "version"
+              ],
+              "host": "colima",
+              "level": 6,
+              "shortMessage": "stdout-ascii",
+              "timestamp": "<unix-seconds-milliseconds>",
+              "timestampPrecision": "at-most-milliseconds",
+              "version": "1.1"
+            },
+            {
+              "extras": {
+                "_ORACLE_ENV": "bravo",
+                "_command": "sh -c printf 'stdout-ascii\\n'; sleep 0.2; printf 'stderr-utf8-\\342\\230\\203\\n' >&2; sleep 0.2; printf 'stdout-binary-\\377\\000-end\\n'",
+                "_container_id": "<container-id>",
+                "_container_name": "<container-name>",
+                "_created": "<rfc3339-nano-utc>",
+                "_image_id": "<image-id>",
+                "_image_name": "alpine:3.20",
+                "_oracle.label": "alpha",
+                "_tag": "oracle.<container-name>.<container-id-short>"
+              },
+              "fieldNames": [
+                "_ORACLE_ENV",
+                "_command",
+                "_container_id",
+                "_container_name",
+                "_created",
+                "_image_id",
+                "_image_name",
+                "_oracle.label",
+                "_tag",
+                "host",
+                "level",
+                "short_message",
+                "timestamp",
+                "version"
+              ],
+              "host": "colima",
+              "level": 3,
+              "shortMessage": "stderr-utf8-\u2603",
+              "timestamp": "<unix-seconds-milliseconds>",
+              "timestampPrecision": "at-most-milliseconds",
+              "version": "1.1"
+            },
+            {
+              "extras": {
+                "_ORACLE_ENV": "bravo",
+                "_command": "sh -c printf 'stdout-ascii\\n'; sleep 0.2; printf 'stderr-utf8-\\342\\230\\203\\n' >&2; sleep 0.2; printf 'stdout-binary-\\377\\000-end\\n'",
+                "_container_id": "<container-id>",
+                "_container_name": "<container-name>",
+                "_created": "<rfc3339-nano-utc>",
+                "_image_id": "<image-id>",
+                "_image_name": "alpine:3.20",
+                "_oracle.label": "alpha",
+                "_tag": "oracle.<container-name>.<container-id-short>"
+              },
+              "fieldNames": [
+                "_ORACLE_ENV",
+                "_command",
+                "_container_id",
+                "_container_name",
+                "_created",
+                "_image_id",
+                "_image_name",
+                "_oracle.label",
+                "_tag",
+                "host",
+                "level",
+                "short_message",
+                "timestamp",
+                "version"
+              ],
+              "host": "colima",
+              "level": 6,
+              "shortMessage": "stdout-binary-\ufffd\u0000-end",
+              "timestamp": "<unix-seconds-milliseconds>",
+              "timestampPrecision": "at-most-milliseconds",
+              "version": "1.1"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "metadata": {
+    "apiVersion": "1.53",
+    "architecture": "arm64",
+    "colimaVersion": "0.10.3",
+    "context": "colima",
+    "defaultLoggingDriver": "json-file",
+    "dockerClientVersion": "29.7.1",
+    "engineGitCommit": "6bc6209",
+    "engineGoVersion": "go1.25.6",
+    "engineKernelVersion": "6.8.0-100-generic",
+    "engineVersion": "29.2.1",
+    "hostArchitecture": "arm64",
+    "hostModel": "Mac17,9",
+    "image": "alpine:3.20",
+    "imageRepoDigests": [
+      "alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
+    ],
+    "macOSVersion": "26.5.2",
+    "minimumAPIVersion": "1.44",
+    "operatingSystem": "linux",
+    "registeredLoggingDrivers": [
+      "awslogs",
+      "fluentd",
+      "gcplogs",
+      "gelf",
+      "journald",
+      "json-file",
+      "local",
+      "splunk",
+      "syslog"
+    ]
+  },
+  "schemaVersion": 1,
+  "scope": "direct Docker Engine GELF remote-wire contract",
+  "timings": {
+    "gelfRemoteWire": {
+      "clock": "time.monotonic",
+      "durationSeconds": 5.511358
+    }
+  }
+}

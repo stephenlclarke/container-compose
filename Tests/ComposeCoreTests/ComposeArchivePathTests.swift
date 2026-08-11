@@ -50,6 +50,7 @@ struct ComposeArchivePathTests {
         )
     }
 
+    @available(*, deprecated, message: "Exercises the deprecated compatibility request API")
     @Test
     func `legacy commit request API forwards to grouped image configuration`() {
         let baseImage = ComposeImageMetadata(reference: "example/base:latest")

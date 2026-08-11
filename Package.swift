@@ -15,7 +15,37 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import Foundation
 import PackageDescription
+
+let containerDependency: Package.Dependency = {
+    if let path = ProcessInfo.processInfo.environment["CONTAINER_PACKAGE_PATH"],
+       !path.isEmpty
+    {
+        return .package(name: "container", path: path)
+    }
+    return .package(
+        url: "https://github.com/stephenlclarke/container.git",
+        revision: "5264919268322aa86c58e01038011964c6caec82",
+    )
+}()
+
+let containerizationDependency: Package.Dependency = {
+    if let path = ProcessInfo.processInfo.environment["CONTAINERIZATION_PACKAGE_PATH"],
+       !path.isEmpty
+    {
+        return .package(name: "containerization", path: path)
+    }
+    return .package(
+        url: "https://github.com/stephenlclarke/containerization.git",
+        revision: "7e4f5152e9606a34a92c34186eb94f7cd37c134f",
+    )
+}()
+
+let nioSSLDependency: Package.Dependency = .package(
+    url: "https://github.com/stephenlclarke/swift-nio-ssl.git",
+    revision: "a9d648535c62e640d1df258a70c9117a8ddea43e",
+)
 
 let package = Package(
     name: "container-compose",
@@ -27,14 +57,9 @@ let package = Package(
         .library(name: "ComposeRuntimeSPI", targets: ["ComposeRuntimeSPI"]),
     ],
     dependencies: [
-        .package(
-            url: "https://github.com/stephenlclarke/container.git",
-            revision: "6c3f7d3701cf9400855849fa0e29dd75d7b9c45d",
-        ),
-        .package(
-            url: "https://github.com/stephenlclarke/containerization.git",
-            revision: "77f06d4c44341e04241941072fb69e2b85a6f5c1",
-        ),
+        containerDependency,
+        containerizationDependency,
+        nioSSLDependency,
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.4.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
@@ -68,9 +93,11 @@ let package = Package(
         .target(
             name: "ComposeContainerRuntime",
             dependencies: [
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 "ComposeCore",
                 "ComposeRuntimeSPI",
                 .product(name: "ContainerAPIClient", package: "container"),
+                .product(name: "ContainerCommands", package: "container"),
                 .product(name: "ContainerPersistence", package: "container"),
                 .product(name: "ContainerResource", package: "container"),
                 .product(name: "Containerization", package: "containerization"),
@@ -125,6 +152,7 @@ let package = Package(
             name: "ComposeContainerRuntimeTests",
             dependencies: [
                 "ComposeContainerRuntime",
+                "ComposeRuntimeSPI",
                 .product(name: "ContainerResource", package: "container"),
                 .product(name: "ContainerizationEXT4", package: "containerization"),
                 .product(name: "ContainerizationOCI", package: "containerization"),

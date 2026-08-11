@@ -68,14 +68,48 @@ logging create request, authority-owned protected options, native and remote
 provider lifecycle, canonical reads, dual cache, and exact-process foreground
 attachment in the
 [Docker logging-driver design](docker-logging-driver-semantics-design.md).
-It is deliberately absent from the public required manifest. The active public
-build is pinned to the published Container baseline at
-`6c3f7d3701cf9400855849fa0e29dd75d7b9c45d`, which does not expose this
-contract. The complete Compose-side negotiation and projection are preserved at
-signed checkpoint `d6361aab6ef636246709f452b5483b54493a9764`, and the matching
-Container authority implementation is preserved locally at signed commit
-`2a79b4553a342e33411666a88ad20ccd2ce46551`. They must not be re-enabled in a
-public manifest until hosted builds can fetch the matched Container revision.
+It is present in the coordinated release manifest because the exact matched
+Container candidate `c7924e375d98d82af37902f4a0c310ee389eab97`, Engine API
+`5e6e24d017691596783515285e1ff56d29701235`, and Containerization
+`7f62f5b940630811573a34f70cdd6f3fa11d014d` are now published on the owned
+GitHub remotes and can be resolved by hosted builds. Compose preflight still
+negotiates the identifier before using advanced logging; advertising the
+requirement does not make individual remote providers universally available.
+The exact stack also passes the six blocked runtime contracts, including C04's
+recreate, restart, shutdown, and residue-free cleanup lifecycle in 18.595
+seconds. Stable publication remains conditional on the repository CI and
+release gates passing for this same dependency graph.
+
+Earlier signed logging checkpoints include Container
+`ac77f7a38819c4f96581220bb58d89107b51826a` with Engine API
+`9008251c444af483a60ff95efa4a9d745a444ed5` and
+`fe4094d0d7a2372ad586d177aea3f9b0e299ebcb`, plus devcontainer
+`63d2b4a122dfa0eb187ae82e48d14dc21b73c79e`. It adds typed public Docker
+create/start/stop/delete, durable stopped-state projection, protected-effect
+reconciliation, provider-root-scoped trust, and a protected read-only plugin
+root. The isolated MBP certificate passes two native lifecycle cycles and one
+public REST lifecycle with exact readable history; the focused plugin suite
+passes 10/10 under warnings-as-errors.
+
+Signed Engine API `da59cff5b11ba4049f631c886ac3b09b0c3108d6` and
+Container `16a3419ae31bb5c18a934571c69348767a89233e` remove the former fixed
+4096-store/32 GiB aggregate history ceiling while retaining the 8 MiB
+per-store bound and a separate defensive on-disk directory scan bound. Focused
+MBP proofs encode, decode, and publish 4097 stores exactly. Signed Engine API
+`331ae39219b7c09a87f56acc9d7016c234afa06d` adds a compatible framed v2
+format with 4 MiB independently authenticated windows, bounded file
+publication, and destination file opening. Signed Container
+`62455f657e8d22233736eec7c2438ca7a14553ce` adopts v2 for its native source
+and destination while retaining v1 opening. Engine API
+`44010b991cc5015e59ff81d2fa9917ae879d39d8` and
+`0d008475bfb711f7b295e44342b98d1535ab3f12`, devcontainer
+`b428031e4f1cc1bf2ede37a2b658962309e6e4c7`, and Container
+`8683e35e93c345fe823c94dfea396ae268cd3556` plus
+`60b5d5c1482a0f7edad03c72f4777f0d5fb6635f` complete record/file-backed
+portable and native acquisition, canonical open, destination decode, staging,
+promotion, and immutable publication. History is copied in 64 KiB chunks and
+at most one bounded segment is mapped during validation; aggregate payload
+history is no longer materialized.
 
 Compose config and hashing never require a runtime lookup. Runtime preflight
 retains optional and unknown installed identifiers separately from the mandatory
@@ -87,9 +121,27 @@ discovery is diagnostic and never replaces authoritative create/start
 validation. AWS Logs and Google Cloud Logs are present on the matched Container
 head. The local journald provider contract, exact-generation shared-sandbox
 service transport, bounded reconnect-safe client/server wire, restart-safe
-writer/reader state, Linux/arm64 AF_VSOCK workload, and concrete systemd
-append/query adapter are implemented. A request still fails deterministically
-because the authority does not yet supervise, install, verify, route, and
-readiness-gate the release-signed workload; the unavailable provider is
-therefore not advertised. The production plugin plane is likewise not
-advertised until its isolated service exists.
+writer/reader state, verified Linux/arm64 AF_VSOCK workload, concrete systemd
+append/query adapter, protected materialisation, exact routing, readiness
+withdrawal, generation rollover, and terminal reclamation are implemented.
+Journald remains present in side-effect-free advertised discovery, while
+concrete create/start resolution admits it only when the authority-owned
+service passes its readiness contract. This prevents Docker `/info` from
+materialising the journald sandbox. The signed local Container package installs
+and supervises Engine API 0.3.5 at `/tmp/container-engine-<uid>/docker.sock`;
+isolated `/_ping`, Docker CLI unversioned and `/v1.53/info`, and ordered cleanup
+pass. The isolated Docker-plugin service verifies a closed
+digest-pinned installation, runs the plugin beside its authenticated lifecycle
+service in a read-only bounded shared-sandbox workload, persists replay-safe
+writer and reader claims, and exposes direct `ReadLogs` only after the exact
+generation is ready. Dynamic driver discovery therefore advertises an installed
+plugin only after manifest, asset, generation, and readiness checks succeed.
+Signed local Container `70f976611bd5e39a9bfeb4965df7c073bbd789ad`
+permits distinct generations of one provider, persists immutable
+staged/active/draining state, publishes one active generation, retains exact
+draining-generation routing, rolls back failed/unhealthy activation, and
+recovers after restart without provider lifecycle effects. Later signed heads
+complete reference-aware quiescence, durable configuration/history migration,
+terminal proof before alias cutover, final N reclamation, and distributable
+plugin certification. Release trust, coordinated dependency publication, and
+paired Docker certification remain.

@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import base64
 import difflib
+import gzip
 import http.client
 import json
 import os
@@ -34,6 +35,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote, urlencode
 import uuid
@@ -56,6 +58,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FIXTURE = (
     REPO_ROOT
     / "Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-logging.json"
+)
+DEFAULT_GELF_WIRE_FIXTURE = (
+    REPO_ROOT
+    / "Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-gelf-wire.json"
+)
+DEFAULT_GELF_CONFIG_FIXTURE = (
+    REPO_ROOT
+    / "Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-gelf-config.json"
+)
+DEFAULT_GELF_METADATA_FIXTURE = (
+    REPO_ROOT
+    / "Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-gelf-metadata.json"
 )
 
 
@@ -1375,7 +1389,7 @@ try:
         connection.settimeout(20.0)
         received = bytearray()
         peer_closed = False
-        if mode.startswith("syslog-"):
+        if mode.startswith(("syslog-", "gelf-")):
             while True:
                 try:
                     chunk = connection.recv(65536)
@@ -1872,6 +1886,806 @@ def capture_syslog_wire_transport(
     assert result is not None
     result["cleanup"] = cleanup
     return result
+
+
+def decode_gelf_record(payload: bytes) -> dict[str, Any]:
+    """Decode one Docker GELF object while preserving timestamp precision checks."""
+
+    timestamp = re.search(rb'"timestamp":(-?\d+(?:\.(\d+))?)', payload)
+    if timestamp is None:
+        raise OracleFailure(f"GELF record has no numeric timestamp: {payload!r}")
+    timestamp_fraction_digits = len(timestamp.group(2) or b"")
+    if timestamp_fraction_digits > 3:
+        raise OracleFailure(
+            "Docker GELF timestamp exceeds its millisecond precision: "
+            f"{timestamp.group(1)!r}"
+        )
+    try:
+        decoded = json.loads(payload)
+    except json.JSONDecodeError as error:
+        raise OracleFailure(f"invalid GELF JSON payload: {payload!r}") from error
+    if not isinstance(decoded, dict):
+        raise OracleFailure(f"GELF payload is not an object: {decoded!r}")
+    return decoded
+
+
+def normalized_gelf_extras(
+    decoded: dict[str, Any],
+    *,
+    container_id: str,
+    visible_name: str,
+) -> dict[str, Any]:
+    """Replace only volatile GELF extra values after their exact validation."""
+
+    def normalize_dynamic(value: str) -> str:
+        return (
+            value.replace(container_id, "<container-id>")
+            .replace(container_id[:12], "<container-id-short>")
+            .replace(visible_name, "<container-name>")
+        )
+
+    extras = {
+        key: decoded[key]
+        for key in decoded
+        if key not in {"version", "host", "short_message", "timestamp", "level"}
+    }
+    normalized: dict[str, Any] = {}
+    for key in sorted(extras):
+        value = extras[key]
+        if key == "_created":
+            normalized[key] = "<rfc3339-nano-utc>"
+        elif key == "_image_id":
+            normalized[key] = "<image-id>"
+        elif isinstance(value, str):
+            normalized[key] = normalize_dynamic(value)
+        else:
+            normalized[key] = value
+    return normalized
+
+
+def normalize_gelf_record(
+    payload: bytes,
+    *,
+    container_id: str,
+    container_name: str,
+) -> dict[str, Any]:
+    """Normalize one Docker GELF JSON object without concealing wire semantics."""
+
+    decoded = decode_gelf_record(payload)
+
+    required = {
+        "version",
+        "host",
+        "short_message",
+        "timestamp",
+        "level",
+        "_ORACLE_ENV",
+        "_command",
+        "_container_id",
+        "_container_name",
+        "_created",
+        "_image_id",
+        "_image_name",
+        "_oracle.label",
+        "_tag",
+    }
+    if set(decoded) != required:
+        raise OracleFailure(
+            "unexpected Docker GELF fields: "
+            f"expected {sorted(required)!r}, observed {sorted(decoded)!r}"
+        )
+    if decoded["version"] != "1.1" or decoded["host"] != "colima":
+        raise OracleFailure(f"unexpected GELF identity fields: {decoded!r}")
+    if not isinstance(decoded["short_message"], str):
+        raise OracleFailure("GELF short_message is not a string")
+    if decoded["level"] not in (3, 6):
+        raise OracleFailure(f"unexpected GELF level: {decoded['level']!r}")
+    if decoded["_ORACLE_ENV"] != "bravo" or decoded["_oracle.label"] != "alpha":
+        raise OracleFailure(f"unexpected GELF selected metadata: {decoded!r}")
+    if decoded["_command"] != " ".join(REMOTE_LOG_COMMAND):
+        raise OracleFailure(f"unexpected GELF command field: {decoded['_command']!r}")
+
+    created = decoded["_created"]
+    if not isinstance(created, str) or RFC3339_NANO_PATTERN.fullmatch(created) is None:
+        raise OracleFailure(f"invalid GELF created timestamp: {created!r}")
+    image_id = decoded["_image_id"]
+    if not isinstance(image_id, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None:
+        raise OracleFailure(f"invalid GELF image ID: {image_id!r}")
+    if decoded["_image_name"] != REQUIRED_IMAGE:
+        raise OracleFailure(f"unexpected GELF image name: {decoded['_image_name']!r}")
+
+    visible_name = container_name.lstrip("/")
+    expected_tag = f"oracle.{visible_name}.{container_id[:12]}"
+    if decoded["_container_id"] != container_id:
+        raise OracleFailure("GELF container ID does not match its inspected container")
+    if decoded["_container_name"] != visible_name:
+        raise OracleFailure("GELF container name does not match its inspected container")
+    if decoded["_tag"] != expected_tag:
+        raise OracleFailure(f"unexpected GELF tag: {decoded['_tag']!r}")
+
+    return {
+        "extras": normalized_gelf_extras(
+            decoded,
+            container_id=container_id,
+            visible_name=visible_name,
+        ),
+        "fieldNames": sorted(decoded),
+        "host": decoded["host"],
+        "level": decoded["level"],
+        "shortMessage": decoded["short_message"],
+        "timestamp": "<unix-seconds-milliseconds>",
+        "timestampPrecision": "at-most-milliseconds",
+        "version": decoded["version"],
+    }
+
+
+def decode_gelf_wire_frames(
+    raw: dict[str, Any],
+    *,
+    mode: str,
+) -> tuple[list[bytes], dict[str, Any], bool | None]:
+    """Decode Docker GELF framing without imposing one metadata contract."""
+
+    frames: list[bytes]
+    if mode == "gelf-udp":
+        encoded = raw.get("datagramsHex")
+        if not isinstance(encoded, list) or not all(isinstance(item, str) for item in encoded):
+            raise OracleFailure(f"invalid UDP GELF receiver result: {raw!r}")
+        frames = []
+        for item in encoded:
+            datagram = bytes.fromhex(item)
+            if not datagram.startswith(b"\x1f\x8b"):
+                raise OracleFailure(f"Docker GELF UDP datagram is not gzip: {datagram!r}")
+            try:
+                frames.append(gzip.decompress(datagram))
+            except OSError as error:
+                raise OracleFailure("Docker GELF UDP datagram cannot be decompressed") from error
+        framing: dict[str, Any] = {
+            "compression": "gzip",
+            "datagramBoundariesAreMessageBoundaries": True,
+            "framing": "one gzip-compressed GELF JSON object per UDP datagram",
+        }
+        peer_closed: bool | None = None
+    elif mode == "gelf-tcp":
+        stream_hex = raw.get("streamHex")
+        if not isinstance(stream_hex, str):
+            raise OracleFailure(f"invalid TCP GELF receiver result: {raw!r}")
+        stream = bytes.fromhex(stream_hex)
+        if not stream.endswith(b"\0"):
+            raise OracleFailure("Docker GELF TCP stream is not NUL terminated")
+        frames = stream[:-1].split(b"\0") if stream else []
+        if any(not frame for frame in frames):
+            raise OracleFailure("Docker GELF TCP stream contains an empty frame")
+        framing = {
+            "compression": "none",
+            "framing": "NUL-delimited uncompressed GELF JSON objects",
+            "streamEndsWithNUL": True,
+        }
+        peer_closed = raw.get("peerClosed")
+        if peer_closed is not True:
+            raise OracleFailure("Docker GELF TCP sender did not close after container exit")
+    else:
+        raise OracleFailure(f"unsupported GELF receiver mode: {mode}")
+
+    return frames, framing, peer_closed
+
+
+def normalize_gelf_wire_records(
+    raw: dict[str, Any],
+    *,
+    mode: str,
+    record_normalizer: Callable[[bytes], dict[str, Any]],
+) -> dict[str, Any]:
+    """Normalize the common GELF framing and three-record source sequence."""
+
+    frames, framing, peer_closed = decode_gelf_wire_frames(raw, mode=mode)
+    records = [record_normalizer(frame) for frame in frames]
+    observed = [record["shortMessage"] for record in records]
+    expected = [
+        "stdout-ascii",
+        "stderr-utf8-☃",
+        "stdout-binary-�\x00-end",
+    ]
+    if observed != expected:
+        raise OracleFailure(f"GELF receiver observed unexpected content order: {observed!r}")
+    if [record["level"] for record in records] != [6, 3, 6]:
+        raise OracleFailure(f"GELF receiver observed unexpected levels: {records!r}")
+
+    result: dict[str, Any] = {
+        "framing": framing,
+        "jsonObjectFieldOrderNormalizedAway": True,
+        "records": records,
+    }
+    if peer_closed is not None:
+        result["peerClosedAfterContainerExit"] = peer_closed
+    return result
+
+
+def normalize_gelf_wire(
+    raw: dict[str, Any],
+    *,
+    mode: str,
+    container_id: str,
+    container_name: str,
+) -> dict[str, Any]:
+    """Decode Docker GELF framing while retaining its baseline wire contract."""
+
+    return normalize_gelf_wire_records(
+        raw,
+        mode=mode,
+        record_normalizer=lambda payload: normalize_gelf_record(
+            payload,
+            container_id=container_id,
+            container_name=container_name,
+        ),
+    )
+
+
+def normalize_gelf_metadata_record(
+    payload: bytes,
+    *,
+    container_id: str,
+    container_name: str,
+) -> dict[str, Any]:
+    """Freeze Docker's selected GELF metadata and tag precedence semantics."""
+
+    decoded = decode_gelf_record(payload)
+    required = {
+        "version",
+        "host",
+        "short_message",
+        "timestamp",
+        "level",
+        "_MATCH_ONE",
+        "_com.example.role",
+        "_command",
+        "_container_id",
+        "_container_name",
+        "_created",
+        "_image_id",
+        "_image_name",
+        "_shared",
+        "_tag",
+        "_team",
+    }
+    if set(decoded) != required:
+        raise OracleFailure(
+            "unexpected Docker GELF metadata fields: "
+            f"expected {sorted(required)!r}, observed {sorted(decoded)!r}"
+        )
+    if decoded["version"] != "1.1" or decoded["host"] != "colima":
+        raise OracleFailure(f"unexpected GELF metadata identity fields: {decoded!r}")
+    if not isinstance(decoded["short_message"], str):
+        raise OracleFailure("GELF metadata short_message is not a string")
+    if decoded["level"] not in (3, 6):
+        raise OracleFailure(f"unexpected GELF metadata level: {decoded['level']!r}")
+
+    expected_metadata = {
+        "_MATCH_ONE": "matched",
+        "_com.example.role": "frontend",
+        "_container_id": "metadata-id",
+        "_shared": "environment",
+        "_team": "runtime",
+    }
+    if any(decoded[key] != value for key, value in expected_metadata.items()):
+        raise OracleFailure(f"unexpected GELF metadata precedence: {decoded!r}")
+    if decoded["_command"] != " ".join(REMOTE_LOG_COMMAND):
+        raise OracleFailure(f"unexpected GELF metadata command field: {decoded!r}")
+
+    created = decoded["_created"]
+    if not isinstance(created, str) or RFC3339_NANO_PATTERN.fullmatch(created) is None:
+        raise OracleFailure(f"invalid GELF metadata created timestamp: {created!r}")
+    image_id = decoded["_image_id"]
+    if not isinstance(image_id, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None:
+        raise OracleFailure(f"invalid GELF metadata image ID: {image_id!r}")
+    if decoded["_image_name"] != REQUIRED_IMAGE:
+        raise OracleFailure(f"unexpected GELF metadata image name: {decoded!r}")
+
+    visible_name = container_name.lstrip("/")
+    expected_tag = f"{visible_name}/{container_id[:12]}"
+    if decoded["_container_name"] != visible_name:
+        raise OracleFailure("GELF metadata container name does not match its inspected container")
+    if decoded["_tag"] != expected_tag:
+        raise OracleFailure(f"unexpected GELF metadata tag: {decoded['_tag']!r}")
+
+    return {
+        "extras": normalized_gelf_extras(
+            decoded,
+            container_id=container_id,
+            visible_name=visible_name,
+        ),
+        "fieldNames": sorted(decoded),
+        "host": decoded["host"],
+        "level": decoded["level"],
+        "shortMessage": decoded["short_message"],
+        "timestamp": "<unix-seconds-milliseconds>",
+        "timestampPrecision": "at-most-milliseconds",
+        "version": decoded["version"],
+    }
+
+
+def normalize_gelf_metadata_wire(
+    raw: dict[str, Any],
+    *,
+    mode: str,
+    container_id: str,
+    container_name: str,
+) -> dict[str, Any]:
+    """Decode GELF framing for the selected metadata/tag reference contract."""
+
+    return normalize_gelf_wire_records(
+        raw,
+        mode=mode,
+        record_normalizer=lambda payload: normalize_gelf_metadata_record(
+            payload,
+            container_id=container_id,
+            container_name=container_name,
+        ),
+    )
+
+
+def capture_gelf_wire_transport(
+    oracle: LoggingOracle,
+    *,
+    label: str,
+    mode: str,
+    scheme: str,
+) -> dict[str, Any]:
+    """Capture one Docker GELF transport through a VM-local receiver."""
+
+    receiver = start_colima_log_receiver(
+        oracle,
+        label=label,
+        mode=mode,
+        expected_messages=len(REMOTE_LOG_MARKERS),
+    )
+    result: dict[str, Any] | None = None
+    try:
+        address = receiver_address(receiver, scheme)
+        identifier, create = oracle.create(
+            f"gelf-wire-{label}",
+            command=REMOTE_LOG_COMMAND,
+            environment=["ORACLE_ENV=bravo"],
+            labels={"oracle.label": "alpha"},
+            log_config={
+                "Type": "gelf",
+                "Config": {
+                    "cache-disabled": "true",
+                    "env": "ORACLE_ENV",
+                    "gelf-address": address,
+                    "labels": "oracle.label",
+                    "tag": "oracle.{{.Name}}.{{.ID}}",
+                },
+            },
+        )
+        assert identifier is not None
+        inspect_before = oracle.inspect(identifier)
+        start = oracle.start(identifier)
+        wait = oracle.wait(identifier)
+        raw = finish_colima_log_receiver(receiver)
+        inspect = normalized_inspect(oracle.inspect(identifier))
+        inspect["logConfig"]["Config"]["gelf-address"] = (
+            f"{scheme}://<colima-oracle-receiver>"
+        )
+        result = {
+            "create": create,
+            "inspectAfterExit": inspect,
+            "phase": {
+                "configurationAcceptedAtCreate": create["httpStatus"] == 201,
+                "connectionEstablishedAtStart": start["httpStatus"] == 204,
+                "containerExitCode": wait["exitCode"],
+            },
+            "requestedTransport": scheme,
+            "wire": normalize_gelf_wire(
+                raw,
+                mode=mode,
+                container_id=identifier,
+                container_name=inspect_before["Name"],
+            ),
+        }
+    finally:
+        cleanup = cleanup_colima_log_receiver(receiver)
+    assert result is not None
+    result["cleanup"] = cleanup
+    return result
+
+
+def capture_gelf_wire_oracle(
+    engine: DockerEngine,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Capture the direct Docker Engine GELF UDP/TCP reference contract."""
+
+    prefix = f"cc-gelf-oracle-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    oracle = LoggingOracle(engine, REQUIRED_IMAGE, prefix)
+    try:
+        started = time.monotonic()
+        cases = {
+            "gelfRemoteWire": {
+                "tcpNULTerminated": capture_gelf_wire_transport(
+                    oracle,
+                    label="tcp",
+                    mode="gelf-tcp",
+                    scheme="tcp",
+                ),
+                "udpDefaultGzip": capture_gelf_wire_transport(
+                    oracle,
+                    label="udp",
+                    mode="gelf-udp",
+                    scheme="udp",
+                ),
+            },
+        }
+        return {
+            "cases": cases,
+            "metadata": metadata,
+            "schemaVersion": 1,
+            "scope": "direct Docker Engine GELF remote-wire contract",
+            "timings": {"gelfRemoteWire": monotonic_timing(started)},
+        }
+    finally:
+        oracle.close()
+
+
+def normalized_gelf_log_config(
+    log_config: Any,
+    *,
+    address_placeholder: str | None = None,
+) -> dict[str, Any]:
+    """Validate and normalize one inspected Docker GELF configuration."""
+
+    if not isinstance(log_config, dict) or log_config.get("Type") != "gelf":
+        raise OracleFailure(f"unexpected inspected GELF log config: {log_config!r}")
+    config = log_config.get("Config")
+    if not isinstance(config, dict) or not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in config.items()
+    ):
+        raise OracleFailure(f"invalid inspected GELF config map: {log_config!r}")
+    normalized = dict(config)
+    if address_placeholder is not None:
+        normalized["gelf-address"] = address_placeholder
+    return {"Config": normalized, "Type": "gelf"}
+
+
+def capture_gelf_config_rejection(
+    oracle: LoggingOracle,
+    *,
+    label: str,
+    config: dict[str, str],
+) -> dict[str, Any]:
+    """Capture Docker's create-time rejection for one GELF option combination."""
+
+    identifier, create = oracle.create(
+        f"gelf-config-{label}",
+        command=["true"],
+        log_config={"Type": "gelf", "Config": config},
+        expected_status=400,
+    )
+    if identifier is not None:
+        raise OracleFailure(f"rejected GELF config unexpectedly created {identifier!r}")
+    return {
+        "create": create,
+        "phase": {"configurationRejectedAtCreate": True},
+    }
+
+
+def capture_gelf_config_udp(
+    oracle: LoggingOracle,
+    *,
+    label: str,
+    config: dict[str, str],
+) -> dict[str, Any]:
+    """Capture one accepted UDP GELF option combination through exit."""
+
+    identifier, create = oracle.create(
+        f"gelf-config-{label}",
+        command=["true"],
+        log_config={"Type": "gelf", "Config": config},
+    )
+    assert identifier is not None
+    inspect = normalized_gelf_log_config(
+        oracle.inspect(identifier)["HostConfig"]["LogConfig"],
+    )
+    start = oracle.start(identifier)
+    wait = oracle.wait(identifier)
+    return {
+        "create": create,
+        "inspectAfterExit": inspect,
+        "phase": {
+            "configurationAcceptedAtCreate": create["httpStatus"] == 201,
+            "containerExitCode": wait["exitCode"],
+            "startSucceeded": start["httpStatus"] == 204,
+        },
+    }
+
+
+def capture_gelf_config_tcp(
+    oracle: LoggingOracle,
+) -> dict[str, Any]:
+    """Capture accepted TCP reconnect options with a VM-local Docker receiver."""
+
+    receiver = start_colima_log_receiver(
+        oracle,
+        label="gelf-config-tcp",
+        mode="gelf-tcp",
+        expected_messages=len(REMOTE_LOG_MARKERS),
+    )
+    result: dict[str, Any] | None = None
+    try:
+        address = receiver_address(receiver, "tcp")
+        identifier, create = oracle.create(
+            "gelf-config-tcp",
+            command=REMOTE_LOG_COMMAND,
+            log_config={
+                "Type": "gelf",
+                "Config": {
+                    "gelf-address": address,
+                    "gelf-tcp-max-reconnect": "+1",
+                    "gelf-tcp-reconnect-delay": "0",
+                },
+            },
+        )
+        assert identifier is not None
+        inspect = normalized_gelf_log_config(
+            oracle.inspect(identifier)["HostConfig"]["LogConfig"],
+            address_placeholder="tcp://<colima-oracle-receiver>",
+        )
+        start = oracle.start(identifier)
+        wait = oracle.wait(identifier)
+        raw = finish_colima_log_receiver(receiver)
+        stream = bytes.fromhex(str(raw.get("streamHex", "")))
+        if raw.get("peerClosed") is not True or not stream.endswith(b"\0"):
+            raise OracleFailure(f"accepted GELF TCP config did not deliver cleanly: {raw!r}")
+        result = {
+            "create": create,
+            "inspectAfterExit": inspect,
+            "phase": {
+                "configurationAcceptedAtCreate": create["httpStatus"] == 201,
+                "containerExitCode": wait["exitCode"],
+                "startSucceeded": start["httpStatus"] == 204,
+            },
+            "receiver": {
+                "peerClosedAfterContainerExit": True,
+                "receivedPayload": bool(stream),
+            },
+        }
+    finally:
+        cleanup = cleanup_colima_log_receiver(receiver)
+    assert result is not None
+    result["cleanup"] = cleanup
+    return result
+
+
+def capture_gelf_config_oracle(
+    engine: DockerEngine,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Capture Docker Engine's GELF option grammar and validation phases."""
+
+    prefix = f"cc-gelf-config-oracle-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    oracle = LoggingOracle(engine, REQUIRED_IMAGE, prefix)
+    cleanup = {"containersRemoved": False}
+    try:
+        started = time.monotonic()
+        rejected = {
+            "missingAddress": {},
+            "malformedAddress": {"gelf-address": "udp://127.0.0.1"},
+            "unknownOption": {
+                "gelf-address": "udp://127.0.0.1:1",
+                "opaque": "value",
+            },
+            "udpBadCompressionLevel": {
+                "gelf-address": "udp://127.0.0.1:1",
+                "gelf-compression-level": "10",
+            },
+            "udpTCPReconnect": {
+                "gelf-address": "udp://127.0.0.1:1",
+                "gelf-tcp-max-reconnect": "0",
+            },
+            "tcpCompression": {
+                "gelf-address": "tcp://127.0.0.1:1",
+                "gelf-compression-type": "gzip",
+            },
+            "tcpBadReconnect": {
+                "gelf-address": "tcp://127.0.0.1:1",
+                "gelf-tcp-max-reconnect": "-1",
+            },
+        }
+        cases: dict[str, Any] = {
+            label: capture_gelf_config_rejection(
+                oracle,
+                label=label,
+                config=config,
+            )
+            for label, config in rejected.items()
+        }
+        cases["udpDefault"] = capture_gelf_config_udp(
+            oracle,
+            label="udp-default",
+            config={"gelf-address": "udp://127.0.0.1:1"},
+        )
+        cases["udpZlibMaximum"] = capture_gelf_config_udp(
+            oracle,
+            label="udp-zlib-maximum",
+            config={
+                "gelf-address": "udp://127.0.0.1:1",
+                "gelf-compression-level": "9",
+                "gelf-compression-type": "zlib",
+            },
+        )
+        cases["udpNoneMinimum"] = capture_gelf_config_udp(
+            oracle,
+            label="udp-none-minimum",
+            config={
+                "gelf-address": "UDP://127.0.0.1:1",
+                "gelf-compression-level": "-1",
+                "gelf-compression-type": "none",
+            },
+        )
+        cases["tcpReconnect"] = capture_gelf_config_tcp(oracle)
+        return {
+            "cases": cases,
+            "cleanup": cleanup,
+            "metadata": metadata,
+            "schemaVersion": 1,
+            "scope": "direct Docker Engine GELF option and validation-phase contract",
+            "timings": {"gelfConfig": monotonic_timing(started)},
+        }
+    finally:
+        oracle.close()
+        cleanup["containersRemoved"] = True
+
+
+def capture_gelf_metadata_transport(oracle: LoggingOracle) -> dict[str, Any]:
+    """Capture Docker's selected GELF metadata and tag rendering on UDP."""
+
+    receiver = start_colima_log_receiver(
+        oracle,
+        label="gelf-metadata-valid",
+        mode="gelf-udp",
+        expected_messages=len(REMOTE_LOG_MARKERS),
+    )
+    result: dict[str, Any] | None = None
+    try:
+        address = receiver_address(receiver, "udp")
+        identifier, create = oracle.create(
+            "gelf-metadata-valid",
+            command=REMOTE_LOG_COMMAND,
+            environment=[
+                "shared=environment",
+                "container_id=metadata-id",
+                "MATCH_ONE=matched",
+                "MALFORMED",
+            ],
+            labels={
+                "team": "runtime",
+                "shared": "label",
+                "com.example.role": "frontend",
+                "ignored": "no",
+            },
+            log_config={
+                "Type": "gelf",
+                "Config": {
+                    "cache-disabled": "true",
+                    "env": "shared,container_id",
+                    "env-regex": "^MATCH_",
+                    "gelf-address": address,
+                    "labels": "team,shared",
+                    "labels-regex": r"^com\.",
+                    "tag": "{{.Name}}/{{.ID}}",
+                },
+            },
+        )
+        assert identifier is not None
+        inspect_before = oracle.inspect(identifier)
+        start = oracle.start(identifier)
+        wait = oracle.wait(identifier)
+        raw = finish_colima_log_receiver(receiver)
+        inspect = normalized_inspect(oracle.inspect(identifier))
+        inspect["logConfig"]["Config"]["gelf-address"] = (
+            "udp://<colima-oracle-receiver>"
+        )
+        result = {
+            "create": create,
+            "inspectAfterExit": inspect,
+            "phase": {
+                "configurationAcceptedAtCreate": create["httpStatus"] == 201,
+                "connectionEstablishedAtStart": start["httpStatus"] == 204,
+                "containerExitCode": wait["exitCode"],
+            },
+            "wire": normalize_gelf_metadata_wire(
+                raw,
+                mode="gelf-udp",
+                container_id=identifier,
+                container_name=inspect_before["Name"],
+            ),
+        }
+    finally:
+        cleanup = cleanup_colima_log_receiver(receiver)
+    assert result is not None
+    result["cleanup"] = cleanup
+    return result
+
+
+def capture_gelf_metadata_start_rejection(
+    oracle: LoggingOracle,
+    *,
+    label: str,
+    options: dict[str, str],
+) -> dict[str, Any]:
+    """Capture one deferred Docker GELF metadata or tag validation failure."""
+
+    identifier, create = oracle.create(
+        f"gelf-metadata-{label}",
+        command=["true"],
+        environment=["secret=value"],
+        labels={"secret": "value"},
+        log_config={
+            "Type": "gelf",
+            "Config": {"gelf-address": "udp://127.0.0.1:1", **options},
+        },
+    )
+    assert identifier is not None
+    inspect_after_create = normalized_inspect(oracle.inspect(identifier))
+    start = oracle.start(identifier, expected_status=500)
+    inspect_after_failed_start = normalized_inspect(oracle.inspect(identifier))
+    remains_created = inspect_after_failed_start["state"]["status"] == "created"
+    if not remains_created:
+        raise OracleFailure(
+            "deferred Docker GELF metadata validation changed container state: "
+            f"{inspect_after_failed_start!r}"
+        )
+    return {
+        "create": create,
+        "inspectAfterCreate": inspect_after_create,
+        "inspectAfterFailedStart": inspect_after_failed_start,
+        "phase": {
+            "configurationAcceptedAtCreate": create["httpStatus"] == 201,
+            "configurationRejectedAtStart": start["httpStatus"] == 500,
+            "containerRemainsCreated": remains_created,
+        },
+        "start": start,
+    }
+
+
+def capture_gelf_metadata_oracle(
+    engine: DockerEngine,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Capture Docker GELF tag/template and metadata-selection semantics."""
+
+    prefix = f"cc-gelf-metadata-oracle-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    oracle = LoggingOracle(engine, REQUIRED_IMAGE, prefix)
+    cleanup = {"containersRemoved": False}
+    try:
+        started = time.monotonic()
+        start_rejections = {
+            "tagMissingField": {"tag": "{{.Missing}}"},
+            "labelsRegexLookahead": {"labels-regex": "(?=secret)"},
+            "envRegexSyntax": {"env-regex": "("},
+        }
+        return {
+            "cases": {
+                "metadataPrecedenceAndTag": capture_gelf_metadata_transport(oracle),
+                "startTimeInvalid": {
+                    label: capture_gelf_metadata_start_rejection(
+                        oracle,
+                        label=label,
+                        options=options,
+                    )
+                    for label, options in start_rejections.items()
+                },
+            },
+            "cleanup": cleanup,
+            "metadata": metadata,
+            "schemaVersion": 1,
+            "scope": "direct Docker Engine GELF metadata and tag validation contract",
+            "timings": {"gelfMetadata": monotonic_timing(started)},
+        }
+    finally:
+        oracle.close()
+        cleanup["containersRemoved"] = True
 
 
 def node_utf8(node: dict[str, Any]) -> str | None:
@@ -2581,7 +3395,10 @@ def docker_context_socket() -> str:
     return socket_path
 
 
-def check_prerequisites() -> tuple[DockerEngine, dict[str, Any]]:
+def check_prerequisites(
+    *,
+    require_compose: bool = True,
+) -> tuple[DockerEngine, dict[str, Any]]:
     for command in ("colima", "docker"):
         if shutil.which(command) is None:
             raise PrerequisiteUnavailable(f"{command} is not installed")
@@ -2598,17 +3415,19 @@ def check_prerequisites() -> tuple[DockerEngine, dict[str, Any]]:
             f"Docker context is {selected_context!r}; expected {REQUIRED_CONTEXT!r}"
         )
 
-    compose_version = subprocess.run(
-        ["docker", "compose", "version", "--short"],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    ).stdout.strip()
-    if compose_version != REQUIRED_COMPOSE_VERSION:
-        raise PrerequisiteUnavailable(
-            f"Docker Compose is {compose_version!r}; expected {REQUIRED_COMPOSE_VERSION!r}"
-        )
+    compose_version: str | None = None
+    if require_compose:
+        compose_version = subprocess.run(
+            ["docker", "compose", "version", "--short"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+        if compose_version != REQUIRED_COMPOSE_VERSION:
+            raise PrerequisiteUnavailable(
+                f"Docker Compose is {compose_version!r}; expected {REQUIRED_COMPOSE_VERSION!r}"
+            )
 
     host_architecture = subprocess.run(
         ["uname", "-m"],
@@ -2686,7 +3505,6 @@ def check_prerequisites() -> tuple[DockerEngine, dict[str, Any]]:
         "apiVersion": version["ApiVersion"],
         "architecture": version["Arch"],
         "colimaVersion": colima_version,
-        "composeVersion": compose_version,
         "context": selected_context,
         "defaultLoggingDriver": info["LoggingDriver"],
         "dockerClientVersion": docker_client_version,
@@ -2703,6 +3521,8 @@ def check_prerequisites() -> tuple[DockerEngine, dict[str, Any]]:
         "operatingSystem": version["Os"],
         "registeredLoggingDrivers": sorted(info["Plugins"]["Log"]),
     }
+    if compose_version is not None:
+        metadata["composeVersion"] = compose_version
     return engine, metadata
 
 
@@ -3480,8 +4300,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--expected",
         type=Path,
-        default=DEFAULT_FIXTURE,
         help="fixture to compare or update",
+    )
+    capture_group = parser.add_mutually_exclusive_group()
+    capture_group.add_argument(
+        "--gelf-wire-only",
+        action="store_true",
+        help=(
+            "capture only the direct Docker Engine GELF UDP/TCP wire oracle; "
+            "it does not require the separate Docker Compose reference pin"
+        ),
+    )
+    capture_group.add_argument(
+        "--gelf-config-only",
+        action="store_true",
+        help=(
+            "capture only the direct Docker Engine GELF option and validation "
+            "oracle; it does not require the separate Docker Compose reference pin"
+        ),
+    )
+    capture_group.add_argument(
+        "--gelf-metadata-only",
+        action="store_true",
+        help=(
+            "capture only the direct Docker Engine GELF tag/template and metadata "
+            "oracle; it does not require the separate Docker Compose reference pin"
+        ),
     )
     output_group = parser.add_mutually_exclusive_group()
     output_group.add_argument(
@@ -3504,9 +4348,31 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.gelf_wire_only:
+        expected = args.expected or DEFAULT_GELF_WIRE_FIXTURE
+    elif args.gelf_config_only:
+        expected = args.expected or DEFAULT_GELF_CONFIG_FIXTURE
+    elif args.gelf_metadata_only:
+        expected = args.expected or DEFAULT_GELF_METADATA_FIXTURE
+    else:
+        expected = args.expected or DEFAULT_FIXTURE
     try:
-        engine, metadata = check_prerequisites()
-        captured = render_fixture(capture_oracle(engine, metadata))
+        engine, metadata = check_prerequisites(
+            require_compose=not (
+                args.gelf_wire_only
+                or args.gelf_config_only
+                or args.gelf_metadata_only
+            )
+        )
+        if args.gelf_wire_only:
+            captured_oracle = capture_gelf_wire_oracle(engine, metadata)
+        elif args.gelf_config_only:
+            captured_oracle = capture_gelf_config_oracle(engine, metadata)
+        elif args.gelf_metadata_only:
+            captured_oracle = capture_gelf_metadata_oracle(engine, metadata)
+        else:
+            captured_oracle = capture_oracle(engine, metadata)
+        captured = render_fixture(captured_oracle)
     except PrerequisiteUnavailable as error:
         if args.strict:
             print(f"error: {error}", file=sys.stderr)
@@ -3522,11 +4388,11 @@ def main() -> int:
         print(f"wrote {args.output}")
         return 0
     if args.update:
-        args.expected.parent.mkdir(parents=True, exist_ok=True)
-        args.expected.write_text(captured, encoding="utf-8")
-        print(f"updated {args.expected}")
+        expected.parent.mkdir(parents=True, exist_ok=True)
+        expected.write_text(captured, encoding="utf-8")
+        print(f"updated {expected}")
         return 0
-    return 0 if compare_fixture(args.expected, captured) else 1
+    return 0 if compare_fixture(expected, captured) else 1
 
 
 if __name__ == "__main__":

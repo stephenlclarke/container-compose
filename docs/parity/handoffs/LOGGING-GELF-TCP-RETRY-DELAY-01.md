@@ -1,0 +1,297 @@
+# LOGGING-GELF-TCP-RETRY-DELAY-01 Handoff
+
+## State
+
+`Verified` — the retained 2026-08-09 checkpoint has two independent strict
+public-socket candidate runs that match Docker's delayed-reset disposition,
+plus a complementary TCP-failure run. Earlier transport and bootstrap blocker
+records remain below as historical diagnostic evidence; no current run hung or
+breached its 90-second liveness bound.
+
+## User-visible contract
+
+The unmodified Docker CLI creates a cache-disabled TCP `gelf` container with a
+positive `gelf-tcp-max-reconnect` budget and a non-zero
+`gelf-tcp-reconnect-delay`. A bounded receiver forces successive peer resets,
+records retry timing and delivery/disposition, then verifies terminal recovery,
+lifecycle, inspect projection, native authority visibility, and cleanup through
+Docker Engine 29.2.1 and Container's candidate public socket.
+
+## Explicit non-goals
+
+This contract does not certify slow-sink throughput, a complete remote-driver
+matrix, UDP behavior, dual-cache pressure, plugins, migration, security,
+external clients, devcontainer adoption, or release publication. Performance
+is designed for and raw timing is retained, but optimization and
+comparable-or-better measurement are a post-functional programme phase unless
+a run hangs or exceeds its liveness bound.
+
+## Pinned Docker oracle
+
+Same-MBP Docker CLI `29.7.1`, Docker Engine `29.2.1` (API `1.53`), Colima,
+and `alpine:3.20`. The retained reference is
+`/private/tmp/container-rest-gelf.default-host.wG4HQt`: the strict
+`tcp-retry-delay` fixture passed in `22.447226208` seconds with result
+SHA-256 `ecb6fc023506a605c360f4032a59a26138daa0898d3dfd2db3e1c7ac1f363abe`.
+Its receiver recorded two one-frame forced resets, delay intervals
+`10.019107917` and `9.010752833` seconds, terminal recovery, peer close,
+and no timeout.
+
+## Affected repositories and inputs
+
+- `container-compose` `main` at
+  `c8ebcb79bfa89229619678cb6f42334f0298d3c9`: the
+  `check-docker-rest-gelf-contract.sh` harness at SHA-256
+  `a0ed0178a62be517b42d4a21070ea73a57689513b7a623c3fcdfcdd6efc94fca`.
+- Container Candidate 6 source was signed
+  `09627527f7f2957548447739fff64021888145c8`; Candidate 7 source was signed
+  `b39f56635d0ab81a06d690b39eed9f5f106e2e26`. The current diagnostic source is
+  signed Container `54c5b332a204c01da34029c7fadabb560520c887` on local
+  `upstream/logging-gelf-tcp-retry-diagnostic-01`.
+- The exact current focused-test graph is local Containerization
+  `38d9c695e7a6915e5ce45d12c893dc323a661af7` and Engine API
+  `f5d0d120bb139675e96a4ef9f7b0ac800827c295`. This matching local graph is
+  test-only evidence; no published dependency pin moved.
+- Both candidates use committed Container `Package.resolved` SHA-256
+  `c60ff0b8ae4dfac5ef80733453c273141a9070028e34d75d6afafc65a3147e53`,
+  guest-init OCI SHA-256
+  `5d4201135affb9bb0ce34ebcb184551689a214d3118b75564a8fa498667d77f6`,
+  bootstrap OCI SHA-256
+  `c714ab7421c71cebdfd0236c5a1af4b1e9af3da1855946cf3350a384491815f0`, and
+  runtime-wrapper SHA-256
+  `7a396d8626a0e37c1b7f71e732674baebd1b3752bedc3378a7e4510e3323987f`.
+
+## Focused proof and blocker evidence
+
+The sealed Linux/arm64 GELF lane and its prior `make test-gelf-service`
+format/vet/race/manifest/90.5%-coverage proof remain preserved. Candidate 6's
+direct host-to-guest Journald VSOCK dial reset with POSIX 54. Candidate 7 used
+reverse host VSOCK for both protected services, then exited 1 within the
+180-second liveness bound before the host receiver accepted a TCP peer. It
+reported Docker's generic `container logging operation failed`; it did not hang.
+
+The new diagnostic checkpoint establishes that
+`remoteLogDriverPlane.prepareBootstrap` runs before `RuntimeClient` and that
+the causal loss occurred in `GELFTCPServiceWireConnectionV1.call`, which
+collapsed protected bootstrap errors into a generic transport error. Container
+`54c5b332` introduces a redacted startup/readiness/identity phase, maps it to
+the existing endpoint GELF provider/Docker diagnostic, and keeps writes and
+retry ownership generic. `GELFTCPServiceWireTests` (10),
+`EngineLinuxSandboxGELFTCPServiceTests` (17), and
+`ContainerLoggingStartErrorTests` (5) pass together. The changed production
+files have 93.69% and 93.71% focused line coverage; selected aggregate line
+coverage is 96.45%. Strict Swift formatting, parse validation, and
+`git diff --check` pass. No fresh public candidate has run from this checkpoint.
+
+## Generic Docker wait acknowledgement prerequisite
+
+Before the next GELF candidate can start, the public Docker CLI uncovered an
+independent generic liveness prerequisite: it sends
+`/wait?condition=removed` and requires HTTP 200 response headers before it
+sends `/start`. The old wait path deferred headers until a terminal result,
+creating the circular start/wait condition.
+
+The paired signed Engine API commit
+`afb8a8f68ed56829b669c95cbddb488a68dc9175` and Container commit
+`d843dd598fa086c8572e5df8a71eece56ad7b576` now register the native wait
+observer before acknowledging the HTTP response. Engine API's 23-test focused
+suite and Container's
+`dockerContainerWaitUsesNativeLifecycleStateAndRemoval` focused regression
+passed. The final marker-protected candidate completed Docker CLI successfully
+with trace order wait -> HTTP 200 -> start and exit status zero; see
+`/private/tmp/container-docker-wait-ack-01.ckwusl/RESULT.md`.
+
+This evidence used the exact local Containerization revision
+`38d9c695e7a6915e5ce45d12c893dc323a661af7`; its normal remote pin remains
+unchanged. The liveness proof is a prerequisite only, not a GELF delayed-retry
+behavior match. Debug-build performance warnings were non-blocking; a hang or
+liveness-bound breach would have been a functional failure.
+
+Related Container issue:
+[#91](https://github.com/stephenlclarke/container/issues/91). It remains open
+until the Engine API and Containerization prerequisites are published/pinned
+and this exact proof passes from the normal resolved graph.
+
+## Completion criteria
+
+- The Docker reference remains a stable delayed-retry observable.
+- Two independent exact-fingerprint public-socket candidates match its
+  configuration, record ordering/disposition, retry behavior, lifecycle,
+  inspect state, authority visibility, and cleanup.
+- Changed production code has focused evidence approaching the 90% coverage
+  target, and the repository-owned Bash fixture passes syntax, ShellCheck, the
+  Docker oracle, and the candidate runs.
+- Performance architecture and raw duration evidence are retained for the
+  later optimization phase. Comparable-or-better timing is not a prerequisite
+  for functional verification; any hang or liveness-bound breach remains a
+  functional blocker.
+
+## Blocker criteria and next safe action
+
+The typed diagnostic and the generic Docker wait liveness prerequisite now have
+focused and public local proof. Do not rerun the generic wait probe. The next
+GELF candidate must be fresh, marker-protected, namespace-aware, and bind the
+combined source graph, dependencies, binary/archive, guest/init images,
+harness/wrapper, and disposable root in one fingerprint. The normal graph
+cannot consume the wait correction until its Engine API and Containerization
+prerequisites are published and pinned; record that dependency state rather
+than treating it as a performance failure. Treat an unexpected hang or timeout
+as an immediate blocker. Container issue
+[#89](https://github.com/stephenlclarke/container/issues/89) tracks the GELF
+diagnostic handoff; [#91](https://github.com/stephenlclarke/container/issues/91)
+tracks the wait acknowledgement and remains open pending normal dependency
+closure.
+
+## Safe handoff
+
+Preserve the Docker reference above; Candidate 6 and Candidate 7 roots; their
+`FINGERPRINT-CANDIDATE-*-PREFLIGHT.md` and
+`ARCHIVE-VERIFICATION-CANDIDATE-*.md` records; Candidate 7 runtime root
+`/private/tmp/ctr-gelf-reverse-vsock-run.rEhN6S`; fixture root
+`/private/tmp/container-rest-gelf.reverse-vsock.fixture.l5GRB6`; signed source
+`54c5b332`; and its two exact focused-test dependency worktrees. Do not rebuild,
+restart, or remove retained roots merely to investigate the failure. The next
+runtime root must be new, marker-protected, and namespace-aware; it must not
+stop or reuse the user-owned devcontainer engine.
+
+Also retain the generic wait evidence root
+`/private/tmp/container-docker-wait-ack-01.ckwusl`, its preflight/result
+records and three attempt traces, the signed Container and Engine API source
+and handoff checkpoints, and Container issue #91. These are already cleaned
+runtime checkpoints; do not repeat the completed generic probe.
+
+## Documentation disposition
+
+This handoff and the slice ledger distinguish functional verification from the
+later performance programme. The dated blocker records remain exact history;
+the 2026-08-09 checkpoint below closes this narrow delayed-retry contract only.
+It does not claim complete GELF, remote-driver, or logging-driver closure.
+
+## 2026-08-09 verified resolution
+
+Docker Engine 29.2.1's current strict reference at
+`/private/tmp/container-rest-gelf.ref-diagnostic.cRVnvX` passed in
+`22.440267625s`. Its forced-reset streams establish the exact disposition
+`first` -> `fourth` -> `after-retry-delay-complete`: Docker drops the failed
+write and the first recovery-settlement write before normal delivery resumes.
+
+The local Container source branch `upstream/logging-gelf-tcp-readiness-02`
+from base `c6a8663705d75180241232cb99442fbac4f8a6ac` now retains the bounded
+replacement socket in `GELFSession`, drops those two indeterminate frames, and
+keeps the sealed Engine-Linux sandbox attached to a reserved default VMNet
+network. `GELFSessionTests` (16) and `EngineLinuxSandboxRuntimeServiceTests`
+(16) passed against local Containerization
+`38d9c695e7a6915e5ce45d12c893dc323a661af7` and Engine API
+`afb8a8f68ed56829b669c95cbddb488a68dc9175`.
+
+Two independent strict public-socket candidate roots passed:
+
+- `/private/tmp/container-rest-gelf.disposition-final.mlQOGu` in
+  `23.912849041s`.
+- `/private/tmp/container-rest-gelf.disposition-final-rerun.nGfhmz` in
+  `22.319917125s`.
+
+Both receivers record two forced one-frame resets, terminal recovery, peer
+close, and no timeout. The complementary TCP failure root
+`/private/tmp/container-rest-gelf.failure-final.uvDlOp` passed in
+`13.318770666s`. The fixture remains SHA-256
+`a0ed0178a62be517b42d4a21070ea73a57689513b7a623c3fcdfcdd6efc94fca`; the
+runtime wrapper remains SHA-256
+`7a396d8626a0e37c1b7f71e732674baebd1b3752bedc3378a7e4510e3323987f`.
+
+Candidate delay timings are 1.07x and 0.99x of Docker. They are retained for
+the later performance phase, not a release-performance certificate; an
+unexpected timeout or hang would still be a functional blocker. During this
+checkpoint macOS briefly exhausted filesystem capacity while creating a
+candidate-only Keychain archive. Removing only regenerable SwiftPM caches
+restored the normal launchd engine; source, candidate binaries, and all parity
+roots above remain retained.
+
+## 2026-08-08 blocker checkpoint
+
+Container `1f6b0057bdd1bfe0594c9b26391db388f54ff341` (signed local
+`upstream/docker-wait-acknowledgement-01`) adds a redacted GELF startup error
+projection through the XPC boundary. Its focused
+`ContainerLoggingStartErrorTests` proof passed 6/6 against clean local
+Containerization `38d9c695e7a6915e5ce45d12c893dc323a661af7` and Engine API
+`afb8a8f68ed56829b669c95cbddb488a68dc9175`; the existing focused wire suite
+passed 11/11 at the preceding signed diagnostic checkpoint `00279506`.
+
+The fresh package SHA-256 was
+`2f806a9743da434ce41ac5a36564c3f48f3806252e33d801961e10dd853140ec`; the
+embedded GELF service OCI SHA-256 was
+`b0e541ebdfb974c2d2d260803a0677b754471598b9069ac91d5cebec132ed569`.
+Candidate roots `v10` and `v11` reached protected-service materialization but
+did not write a fixture result. The terminal-recorded, marker-protected `v12`
+candidate (`/private/tmp/ctr-gelf-vsock-build-03/candidate-v12.terminal.log`)
+identified the current lower-runtime blocker before Docker could create the
+GELF container: `container system start --enable-kernel-install` aborted at
+`2026-08-08T17:42:22.461Z` with `unable to open the archive, code -30` during
+kernel installation. Its receiver never began, so the result is neither a
+GELF failure nor a parity result. The bounded 180-second run exited promptly;
+this is not a performance finding or a hang.
+
+Do not retry the same fresh-root kernel-download path in this GELF slice.
+Investigate the `KernelSet.downloadAndInstallWithProgressBar` archive-open
+failure independently, preserving `/private/tmp/ctr-gelf-v10`, `v11`, `v12`,
+and `/private/tmp/ctr-gelf-vsock-build-03`. Once a fresh runtime can start
+without this prerequisite failure, resume with a new exact-fingerprint GELF
+candidate and require two successful public-socket runs before verification.
+Container issue [#93](https://github.com/stephenlclarke/container/issues/93)
+owns this prerequisite and must be commented and closed with its focused proof.
+
+## 2026-08-08 prerequisite resolution
+
+`KERNEL-ARCHIVE-FRESH-RUNTIME-01` is now `Verified` as a separate bootstrap
+prerequisite. The original archive exception was observed while the local APFS
+volume had only `117M` available. After reclaiming 25 GB by removing only five
+identified marker-protected superseded build/cache roots, two independent new
+runtime roots installed the same pinned kernel and completed the isolated Docker
+CLI socket smoke test. The full fingerprints, terminal records, and v14 exit
+status are retained in [the kernel handoff](KERNEL-ARCHIVE-FRESH-RUNTIME-01.md).
+
+No Container, Containerization, Engine API, or Compose production source changed
+for that resolution. Container issue
+[#93](https://github.com/stephenlclarke/container/issues/93) should be closed
+as an environment-capacity incident, not treated as an upstream code fix. This
+GELF contract remained `Handed off`, not `Verified`, until the 2026-08-09
+resolution below produced two complete delayed-retry public-socket fixture runs.
+Performance optimisation remains deferred; a hang, timeout, or bounded-liveness
+failure remains blocking.
+
+## 2026-08-08 direct/reverse transport checkpoint
+
+The current exact source graph is signed Container
+`289c0782e3d973d7303d10c5a001673c319992b6` on
+`upstream/docker-wait-acknowledgement-01`, with the preceding direct
+guest-VSOCK attempt at signed `13e6dc922b3275278fd12eb190cd435beda358a6`.
+It used local Containerization
+`38d9c695e7a6915e5ce45d12c893dc323a661af7`, Engine API
+`afb8a8f68ed56829b669c95cbddb488a68dc9175`, Compose `main`
+`35a7557ccb16971df365910b8f25ba381bdbeef2`, the pinned guest-init archive
+`5d4201135affb9bb0ce34ebcb184551689a214d3118b75564a8fa498667d77f6`, and
+the pinned bootstrap archive
+`c714ab7421c71cebdfd0236c5a1af4b1e9af3da1855946cf3350a384491815f0`.
+The reverse package's CLI/API-server/engine SHA-256 values are respectively
+`9e8f9a509cc1eb6defdcbbd590d690ddc16eedcbba3c8f3ff19ccbca75e47c11`,
+`6496ee4230800f77d81f312ac6596d408e692d7ed2d9fb88797217fb315d0c93`, and
+`202ba2ab0e7dd910257fec455892f4db38bc37486a804c7e5ef5ab1da91ed89e`.
+
+`EngineLinuxSandboxGELFTCPServiceTests` passed 17/17 against that exact local
+graph. Candidate v26 then exercised the direct endpoint at
+`/private/tmp/ctr-gelf-v24`; Candidate v27 exercised the reverse endpoint at
+`/private/tmp/ctr-gelf-v27`. Their preflight and terminal records are under
+`/private/tmp/ctr-gelf-vsock-build-05/`. V27's runtime configuration proves
+exactly `--sandbox-generation 1 --port 19532 --connect-host-vsock`, no
+published socket, and a read-only workload. Its guest log records PID 145 and
+the workload ledger records the exact service generation as `running`, yet the
+Docker fixture fails at start with the same generic diagnostic, produces no
+receiver connection or result JSON, and exits without a timeout.
+
+Do not run another transport-only candidate. The next safe action is a
+source-level diagnostic that preserves the concrete failure at the protected
+service bootstrap/dial boundary, followed by one evidence-based correction and
+one fresh candidate. This is a functional blocker, not a performance blocker;
+duration remains non-gating unless a future run hangs or breaches its liveness
+bound. Preserve both runtime roots, both fixture roots, the package roots, and
+the preflight/run logs until that causal diagnostic is recorded.

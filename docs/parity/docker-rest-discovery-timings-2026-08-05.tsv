@@ -1,0 +1,3 @@
+timestamp_utc	lane	real_seconds	user_seconds	system_seconds	client_version	server_version	result	container_compose	container	containerization	container_engine_api	provider_fingerprint
+2026-08-05T15:51:05Z	docker	1.28	0.25	0.27	29.7.1	29.2.1	pass	046ab3d477b1275e8a8d30489526365c626aec54	-	-	-	-
+2026-08-05T15:51:05Z	container	3.14	0.29	0.33	29.7.1	homebrew-main-236-39f56bd8a193-172-g43654bd9	pass	046ab3d477b1275e8a8d30489526365c626aec54	43654bd9f36f7c3bb4f57609efa4a488db0b8324	38d9c695e7a6915e5ce45d12c893dc323a661af7	34299b1a391ba28cdf5911177ee4b0623ff12491	sha256:ce1f145890310418bc21426f556d967af4c1daae4f34bb8f1517248e432f1c4a

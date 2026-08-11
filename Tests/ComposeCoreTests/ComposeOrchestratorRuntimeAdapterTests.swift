@@ -30,6 +30,43 @@ import Foundation
 import Testing
 
 extension ComposeOrchestratorTests {
+    @Test("log manager normalizes unreadable driver errors for Compose")
+    func logManagerNormalizesUnreadableDriverErrorsForCompose() async throws {
+        let client = RecordingContainerLogAPIClient(
+            error: ContainerizationError(
+                .unsupported,
+                message: "configured logging driver does not support reading"
+            )
+        )
+        let manager = ContainerClientLogManager(client: client)
+
+        do {
+            try await manager.logs(id: "demo-api-1", tail: nil, follow: false) { (_: Data) in }
+            Issue.record("Expected the unreadable-driver runtime error")
+        } catch let error as ComposeRuntimeLogError {
+            #expect(error == .readingUnsupported)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("log manager normalizes the public unreadable driver category")
+    func logManagerNormalizesPublicUnreadableDriverCategory() async throws {
+        let client = RecordingContainerLogAPIClient(
+            error: ContainerLogReaderError.configuredDriverDoesNotSupportReading
+        )
+        let manager = ContainerClientLogManager(client: client)
+
+        do {
+            try await manager.logs(id: "demo-api-1", tail: nil, follow: false) { (_: Data) in }
+            Issue.record("Expected the unreadable-driver runtime error")
+        } catch let error as ComposeRuntimeLogError {
+            #expect(error == .readingUnsupported)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
     @Test("log manager passes tail to direct API for static logs")
     func logManagerPassesTailToDirectAPIForStaticLogs() async throws {
         let emitted = MessageRecorder()
@@ -2154,6 +2191,43 @@ extension ComposeOrchestratorTests {
                 ipv6Subnet: nil,
                 ipv6Gateway: nil,
                 enableIPv6: false,
+                options: [:],
+                labels: [:]
+            ),
+        ])
+    }
+
+    @Test("resource manager disables IPv4 and suppresses an ignored IPv4 subnet")
+    func resourceManagerDisablesIPv4AndSuppressesIgnoredSubnet() async throws {
+        let client = RecordingContainerResourceAPIClient()
+        let manager = ContainerClientResourceManager(client: client)
+
+        try await manager.createNetwork(ComposeNetworkCreateRequest(
+            name: "demo_ipv6_only",
+            addressing: .init(
+                ipv4Subnet: "10.10.0.0/24",
+                ipv4Gateway: "10.10.0.1",
+                ipv4AllocationRange: "10.10.0.128/25",
+                ipv4ReservedAddresses: ["10.10.0.2"],
+                ipv6Subnet: "fd00:10::/64",
+                ipv6Gateway: "fd00:10::1"
+            ),
+            enableIPv4: false,
+            enableIPv6: true
+        ))
+
+        #expect(await client.requests == [
+            .createNetwork(
+                name: "demo_ipv6_only",
+                mode: .nat,
+                plugin: "container-network-vmnet",
+                ipv4Subnet: nil,
+                ipv4Gateway: nil,
+                ipv4AllocationRange: nil,
+                ipv6Subnet: "fd00:10::/64",
+                ipv6Gateway: "fd00:10::1",
+                enableIPv4: false,
+                enableIPv6: true,
                 options: [:],
                 labels: [:]
             ),

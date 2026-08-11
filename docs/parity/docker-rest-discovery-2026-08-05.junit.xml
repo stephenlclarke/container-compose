@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="DockerRestDiscoveryContract" tests="2" failures="0" errors="0" skipped="0" time="4.42" timestamp="2026-08-05T15:51:05Z">
+  <properties>
+    <property name="docker.client" value="29.7.1" />
+    <property name="docker.engine" value="29.2.1" />
+    <property name="container-compose" value="046ab3d477b1275e8a8d30489526365c626aec54" />
+    <property name="container" value="43654bd9f36f7c3bb4f57609efa4a488db0b8324" />
+    <property name="containerization" value="38d9c695e7a6915e5ce45d12c893dc323a661af7" />
+    <property name="container-engine-api" value="34299b1a391ba28cdf5911177ee4b0623ff12491" />
+    <property name="provider.fingerprint" value="sha256:ce1f145890310418bc21426f556d967af4c1daae4f34bb8f1517248e432f1c4a" />
+  </properties>
+  <testcase classname="DockerRestDiscoveryContract" name="docker-oracle" time="1.28">
+    <system-out>Docker REST discovery contract passed</system-out>
+  </testcase>
+  <testcase classname="DockerRestDiscoveryContract" name="container-candidate" time="3.14">
+    <system-out>Docker REST discovery contract passed</system-out>
+  </testcase>
+</testsuite>

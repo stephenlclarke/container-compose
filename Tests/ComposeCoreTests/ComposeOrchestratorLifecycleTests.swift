@@ -854,6 +854,7 @@ extension ComposeOrchestratorTests {
     func upForegroundRunsPostStartHooksBeforeAggregatingLogs() async throws {
         let runner = RecordingRunner()
         let execManager = RecordingContainerExecManager()
+        let attachManager = RecordingContainerAttachManager()
         let logManager = RecordingContainerLogManager()
         let project = ComposeProject(
             name: "demo",
@@ -876,11 +877,13 @@ extension ComposeOrchestratorTests {
             runner: runner,
             dependencies: orchestratorDependencies {
                 $0.execManager = execManager
+                $0.attachManager = attachManager
                 $0.logManager = logManager
             }
         ).up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.map(\.arguments).first?.contains("--detach") == true)
+        #expect(runner.commands.map(\.arguments).first?.starts(with: ["container", "create"]) == true)
+        #expect(runner.commands.map(\.arguments).first?.contains("--detach") == false)
         #expect(await execManager.attachedRequests == [
             ContainerAttachedExecRequest(
                 id: "demo-api-1",
@@ -892,16 +895,20 @@ extension ComposeOrchestratorTests {
                 terminal: .init(interactive: false, tty: false)
             ),
         ])
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .beforeStart),
         ])
+        #expect(await logManager.requests.isEmpty)
     }
 
     @Test("up foreground stops started services through the standard lifecycle on interruption")
     func upForegroundStopsStartedServicesThroughStandardLifecycleOnInterruption() async throws {
         let execManager = RecordingContainerExecManager()
         let lifecycleManager = RecordingContainerLifecycleManager()
-        let logManager = RecordingContainerLogManager(outputs: ["ready\n"])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("ready\n".utf8)),
+        ])
+        let logManager = RecordingContainerLogManager()
         let signalProxy = RecordingComposeSignalProxy(forwardedSignals: ["SIGINT"])
         let project = ComposeProject(
             name: "demo",
@@ -917,6 +924,7 @@ extension ComposeOrchestratorTests {
             dependencies: orchestratorDependencies {
                 $0.execManager = execManager
                 $0.lifecycleManager = lifecycleManager
+                $0.attachManager = attachManager
                 $0.logManager = logManager
                 $0.signalProxy = signalProxy
             }
@@ -933,9 +941,10 @@ extension ComposeOrchestratorTests {
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
         ])
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .beforeStart),
         ])
+        #expect(await logManager.requests.isEmpty)
     }
 
     @Test("up wait runs post start hooks through detached path")
@@ -1163,7 +1172,10 @@ extension ComposeOrchestratorTests {
         let lifecycleManager = RecordingContainerLifecycleManager(
             waitExitCodes: [helperName: 0]
         )
-        let logManager = RecordingContainerLogManager(outputs: ["prepared\n"])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("prepared\n".utf8)),
+        ])
+        let logManager = RecordingContainerLogManager()
         let imageManager = RecordingContainerImageManager()
         let project = composeProject(
             name: "demo",
@@ -1194,6 +1206,7 @@ extension ComposeOrchestratorTests {
                 $0.discoveryManager = discoveryManager
                 $0.imageManager = imageManager
                 $0.lifecycleManager = lifecycleManager
+                $0.attachManager = attachManager
                 $0.logManager = logManager
             }
         ).up(
@@ -1224,11 +1237,11 @@ extension ComposeOrchestratorTests {
             .healthCheck(reference: "example/api", platform: nil),
             .healthCheck(reference: "example/init:1", platform: nil),
         ])
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: helperName, tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(id: helperName, stdout: true, stderr: true, mode: .beforeStart),
         ])
+        #expect(await logManager.requests.isEmpty)
         #expect(await lifecycleManager.requests == [
-            .start(id: helperName),
             .wait(id: helperName),
             .delete(id: helperName, force: false),
             .start(id: "demo-api-1"),
@@ -1337,7 +1350,7 @@ extension ComposeOrchestratorTests {
                 dependencies: orchestratorDependencies {
                     $0.discoveryManager = discoveryManager
                     $0.lifecycleManager = lifecycleManager
-                    $0.logManager = RecordingContainerLogManager(error: expected)
+                    $0.attachManager = RecordingContainerAttachManager(error: expected)
                 }
             ).runPreStartHook(
                 project: project,
@@ -1359,7 +1372,6 @@ extension ComposeOrchestratorTests {
         }
 
         #expect(await lifecycleManager.requests == [
-            .start(id: helperName),
             .wait(id: helperName),
             .delete(id: helperName, force: true),
         ])
@@ -1397,6 +1409,14 @@ extension ComposeOrchestratorTests {
         let helperName = arguments[arguments.index(after: nameIndex)]
         #expect(helperName.count <= 63)
         #expect(helperName.contains("-pre-start-0-"))
+        let attachIndex = try #require(emitted.messages.firstIndex(
+            of: "+ compose-runtime attach --no-stdin \(helperName)",
+        ))
+        let startIndex = try #require(emitted.messages.firstIndex(
+            of: "+ container start \(helperName)",
+        ))
+        #expect(attachIndex < startIndex)
+        #expect(!emitted.messages.contains("+ container logs --follow \(helperName)"))
     }
 
     @Test("up creates every replica before one pre start hook and service starts")
@@ -1460,7 +1480,6 @@ extension ComposeOrchestratorTests {
             .healthCheck(reference: "example/init:1", platform: nil),
         ])
         #expect(await lifecycleManager.requests == [
-            .start(id: helperName),
             .wait(id: helperName),
             .delete(id: helperName, force: false),
             .start(id: "demo-api-1"),
@@ -1605,7 +1624,7 @@ extension ComposeOrchestratorTests {
                 dependencies: orchestratorDependencies {
                     $0.discoveryManager = discoveryManager
                     $0.lifecycleManager = lifecycleManager
-                    $0.logManager = RecordingContainerLogManager()
+                    $0.attachManager = RecordingContainerAttachManager()
                 }
             ).up(
                 project: project,
@@ -1623,7 +1642,6 @@ extension ComposeOrchestratorTests {
 
         #expect(runner.commands.map(\.arguments).count == 2)
         #expect(await lifecycleManager.requests == [
-            .start(id: helperName),
             .wait(id: helperName),
             .delete(id: helperName, force: false),
         ])
@@ -1673,12 +1691,15 @@ extension ComposeOrchestratorTests {
         #expect(requests.contains(.pull("example/worker:1")))
     }
 
-    @Test("run foreground executes post start hooks before following raw output")
-    func runForegroundExecutesPostStartHooksBeforeFollowingRawOutput() async throws {
+    @Test("run foreground attaches before start and follows raw output")
+    func runForegroundAttachesBeforeStartAndFollowsRawOutput() async throws {
         let runner = RecordingRunner()
         let execManager = RecordingContainerExecManager()
         let lifecycleManager = RecordingContainerLifecycleManager()
-        let logManager = RecordingContainerLogManager(outputs: ["ready\n"])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("ready\n".utf8)),
+        ])
+        let logManager = RecordingContainerLogManager()
         let emitted = MessageRecorder()
         let project = ComposeProject(
             name: "demo",
@@ -1693,17 +1714,19 @@ extension ComposeOrchestratorTests {
             runner: runner,
             options: ComposeExecutionOptions {
                 $0.oneOffIdentifier = { "abc123" }
-                $0.emitData = { emitted.append(String(decoding: $0, as: UTF8.self)) }
+                $0.emitAttachedData = { emitted.append(String(decoding: $0, as: UTF8.self)) }
             },
             dependencies: orchestratorDependencies {
                 $0.execManager = execManager
                 $0.lifecycleManager = lifecycleManager
+                $0.attachManager = attachManager
                 $0.logManager = logManager
             }
         ).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
         let command = try #require(runner.commands.first?.arguments)
-        #expect(command.contains("--detach"))
+        #expect(command.starts(with: ["container", "create"]))
+        #expect(!command.contains("--detach"))
         #expect(!command.contains("--rm"))
         #expect(runner.commands.first?.io == .captured(input: nil))
         #expect(await execManager.attachedRequests == [
@@ -1713,9 +1736,15 @@ extension ComposeOrchestratorTests {
                 terminal: .init(interactive: false, tty: false)
             ),
         ])
-        #expect(await logManager.requests == [
-            ContainerLogRequest(id: "demo-job-run-abc123", tail: nil, follow: true),
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(
+                id: "demo-job-run-abc123",
+                stdout: true,
+                stderr: true,
+                mode: .beforeStart,
+            ),
         ])
+        #expect(await logManager.requests.isEmpty)
         #expect(await lifecycleManager.requests == [
             .wait(id: "demo-job-run-abc123"),
             .delete(id: "demo-job-run-abc123", force: false),
@@ -1726,7 +1755,10 @@ extension ComposeOrchestratorTests {
     @Test("run foreground drains logs after the container exits")
     func runForegroundDrainsLogsAfterContainerExit() async throws {
         let emitted = MessageRecorder()
-        let logManager = RecordingContainerLogManager(outputs: ["final output\n"], delay: .milliseconds(10))
+        let attachManager = RecordingContainerAttachManager(
+            outputs: [ComposeLogRecord(stream: .stdout, payload: Data("final output\n".utf8))],
+            delay: .milliseconds(10),
+        )
         let lifecycleManager = RecordingContainerLifecycleManager()
         let project = ComposeProject(
             name: "demo",
@@ -1741,11 +1773,11 @@ extension ComposeOrchestratorTests {
             runner: RecordingRunner(),
             options: ComposeExecutionOptions {
                 $0.oneOffIdentifier = { "abc123" }
-                $0.emitData = { emitted.append(String(decoding: $0, as: UTF8.self)) }
+                $0.emitAttachedData = { emitted.append(String(decoding: $0, as: UTF8.self)) }
             },
             dependencies: orchestratorDependencies {
                 $0.lifecycleManager = lifecycleManager
-                $0.logManager = logManager
+                $0.attachManager = attachManager
             }
         ).run(project: project, serviceName: "job", command: ["true"], remove: false)
 
@@ -1773,7 +1805,7 @@ extension ComposeOrchestratorTests {
                 options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
                 dependencies: orchestratorDependencies {
                     $0.lifecycleManager = lifecycleManager
-                    $0.logManager = RecordingContainerLogManager()
+                    $0.attachManager = RecordingContainerAttachManager()
                 }
             ).run(project: project, serviceName: "job", command: ["false"], remove: false)
             Issue.record("Expected lifecycle-managed run exit status")
@@ -1838,7 +1870,8 @@ extension ComposeOrchestratorTests {
         } catch is ComposeError {}
 
         let command = try #require(runner.commands.first?.arguments)
-        #expect(command.contains("--detach"))
+        #expect(command.starts(with: ["container", "create"]))
+        #expect(!command.contains("--detach"))
         #expect(!command.contains("--rm"))
         #expect(await lifecycleManager.requests == [
             .delete(id: "demo-job-run-abc123", force: true),
@@ -1877,7 +1910,8 @@ extension ComposeOrchestratorTests {
         )
 
         let command = try #require(runner.commands.first?.arguments)
-        #expect(command.contains("--detach"))
+        #expect(command.starts(with: ["container", "create"]))
+        #expect(!command.contains("--detach"))
         #expect(await signalProxy.requests == [["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"]])
         #expect(await execManager.attachedRequests == [
             ContainerAttachedExecRequest(
@@ -2137,7 +2171,7 @@ extension ComposeOrchestratorTests {
             $0.timeout = 4
         })
 
-        #expect(runner.commands.map(\.arguments).contains { $0.starts(with: ["container", "run", "--name", "demo-job-1"]) })
+        #expect(runner.commands.map(\.arguments).contains { $0.starts(with: ["container", "create", "--name", "demo-job-1"]) })
         #expect(await execManager.attachedRequests == [
             ContainerAttachedExecRequest(
                 id: "demo-job-run-abc123",

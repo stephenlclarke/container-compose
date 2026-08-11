@@ -18,6 +18,10 @@ import ComposeCore
 import Foundation
 import Testing
 
+// This legacy process-boundary fixture is intentionally retained as one stable evidence surface.
+// swiftlint:disable file_length
+// swiftformat:disable all
+
 @testable import ComposePlugin
 
 #if canImport(Darwin)
@@ -56,7 +60,8 @@ private let matchingSystemVersionJSON = """
         "io.github.stephenlclarke.container.compose.image-filesystem.v1",
         "io.github.stephenlclarke.container.compose.lifecycle.v1",
         "io.github.stephenlclarke.container.compose.network-scoped-aliases.v1",
-        "io.github.stephenlclarke.container.compose.observation.v1"
+        "io.github.stephenlclarke.container.compose.observation.v1",
+        "io.github.stephenlclarke.container.logging-drivers.v1"
       ],
       "source": "stephenlclarke/container",
       "version": "homebrew-main"
@@ -65,6 +70,7 @@ private let matchingSystemVersionJSON = """
   """
 
 @Suite("Container package compatibility")
+// swiftlint:disable:next type_body_length
 struct ContainerPackageCompatibilityTests {
   @Test("runtime commands require installed stack check")
   func runtimeCommandsRequireInstalledStackCheck() {
@@ -194,6 +200,52 @@ struct ContainerPackageCompatibilityTests {
     #expect(
       ContainerPackageCompatibility.compatibilityFailure(components: components, lane: "main")
         == nil)
+  }
+
+  @Test("compatible preflight publishes optional runtime capabilities")
+  func compatiblePreflightPublishesOptionalRuntimeCapabilities() async throws {
+    let optionalCapability = ComposeRuntimeCapabilities.loggingDriversV1Identifier
+    #expect(optionalCapability == ComposeOptionalRuntimeCapability.loggingDrivers.rawValue)
+    let data = Data(matchingSystemVersionJSON.utf8)
+    let selection = InstalledRuntimeCapabilities()
+
+    let failure = try await ContainerPackageCompatibility.compatibilityFailure(
+      arguments: ["up"],
+      lane: "main",
+      expectedContainerRef: "matched-container",
+      expectedContainerizationRef: "matched-containerization",
+      onCompatibleRuntime: { selection.replace(with: $0) },
+      run: { arguments in
+        if arguments == ["system", "version", "--format", "json"] {
+          return data
+        }
+        return Data()
+      }
+    )
+
+    #expect(failure == nil)
+    #expect(selection.snapshot().supportsLoggingDriversV1)
+    #expect(selection.snapshot().identifiers.contains(optionalCapability))
+  }
+
+  @Test("failed preflight does not publish optional runtime capabilities")
+  func failedPreflightDoesNotPublishOptionalRuntimeCapabilities() async throws {
+    let selection = InstalledRuntimeCapabilities()
+
+    let failure = try await ContainerPackageCompatibility.compatibilityFailure(
+      arguments: ["up"],
+      lane: "main",
+      onCompatibleRuntime: { selection.replace(with: $0) },
+      run: { arguments in
+        if arguments == ["system", "version", "--format", "json"] {
+          return Data(appleSystemVersionJSON.utf8)
+        }
+        return Data()
+      }
+    )
+
+    #expect(failure != nil)
+    #expect(selection.snapshot().identifiers.isEmpty)
   }
 
   @Test("mismatched package pins report install guidance")
@@ -971,3 +1023,5 @@ private enum ContainerPackagePreflightTestError: Error {
   case pidFileTimedOut
   case signalFailed
 }
+
+// swiftformat:enable all

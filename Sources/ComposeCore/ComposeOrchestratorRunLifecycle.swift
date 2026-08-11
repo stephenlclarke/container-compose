@@ -16,11 +16,6 @@
 
 import Foundation
 
-private enum ComposeRunLifecycleOperationResult {
-    case logsFinished
-    case exitCode(Int32)
-}
-
 enum ComposeRunAttachmentResult: Equatable {
     case exited(Int32)
     case detached
@@ -53,6 +48,31 @@ private actor ComposeRunLifecycleSignalStopGate {
 private struct ComposeRunLifecycleSignalContext: @unchecked Sendable {
     let service: ComposeService
     let containerName: String
+}
+
+final class ComposeOutputAttachReadiness: @unchecked Sendable {
+    private let stream: AsyncThrowingStream<Void, any Error>
+    private let continuation: AsyncThrowingStream<Void, any Error>.Continuation
+
+    init() {
+        (stream, continuation) = AsyncThrowingStream.makeStream()
+    }
+
+    func ready() {
+        continuation.yield()
+        continuation.finish()
+    }
+
+    func fail(_ error: any Error) {
+        continuation.finish(throwing: error)
+    }
+
+    func wait() async throws {
+        for try await _ in stream {
+            return
+        }
+        throw ComposeError.invalidProject("runtime output attachment ended before it became ready")
+    }
 }
 
 extension ComposeOrchestrator {
@@ -113,6 +133,15 @@ extension ComposeOrchestrator {
         containerName: String,
     ) async throws -> Int32 {
         let signalContext = ComposeRunLifecycleSignalContext(service: service, containerName: containerName)
+        let started = ComposeOutputAttachReadiness()
+        let attachment = prepareOneOffRunOutputAttachment(
+            containerName: containerName,
+            started: started,
+        )
+        defer { attachment.cancel() }
+        try await started.wait()
+        try await runPostStartHooks(service: service, containerID: containerName)
+
         let exitCode = ComposeRunLifecycleExitCode()
         let stopGate = ComposeRunLifecycleSignalStopGate()
         try await signalProxy.withSignalProxy(
@@ -125,8 +154,11 @@ extension ComposeOrchestrator {
                     context: signalContext,
                 )
             },
-            operation: { [self, exitCode] in
-                let status = try await followOneOffRunLogsAndWait(containerName: containerName)
+            operation: { [self, attachment, exitCode, signalContext] in
+                let status = try await waitForOneOffRunAndOutput(
+                    containerName: signalContext.containerName,
+                    attachment: attachment,
+                )
                 await exitCode.set(status)
             },
         )
@@ -155,42 +187,71 @@ extension ComposeOrchestrator {
         }
     }
 
-    /// Streams raw one-off output while waiting for the direct runtime exit status.
-    func followOneOffRunLogsAndWait(containerName: String) async throws -> Int32 {
-        let logManager = logManager
-        let lifecycleManager = lifecycleManager
-        let emit = options.emitData
-        return try await withThrowingTaskGroup(of: ComposeRunLifecycleOperationResult.self) { group in
-            group.addTask {
-                try await logManager.logs(
-                    id: containerName,
-                    tail: nil,
-                    follow: true,
-                    since: nil,
-                    until: nil,
-                    timestamps: false,
-                    emit: emit,
-                )
-                return .logsFinished
-            }
-            group.addTask {
-                try await .exitCode(lifecycleManager.waitContainer(id: containerName))
-            }
-
-            var exitCode: Int32?
-            var logsFinished = false
-            while let result = try await group.next() {
-                switch result {
-                case .logsFinished:
-                    logsFinished = true
-                case let .exitCode(status):
-                    exitCode = status
-                }
-                if logsFinished, let exitCode {
-                    return exitCode
-                }
-            }
-            throw ComposeError.invalidProject("foreground compose run did not produce an exit status")
+    /// Starts through the prepared output session, then runs caller-owned work.
+    func followOneOffRunOutputAndWait(
+        containerName: String,
+        afterStart: @escaping @Sendable () async throws -> Void,
+    ) async throws -> Int32 {
+        let started = ComposeOutputAttachReadiness()
+        let attachment = prepareOneOffRunOutputAttachment(
+            containerName: containerName,
+            started: started,
+        )
+        defer { attachment.cancel() }
+        do {
+            try await started.wait()
+            try await afterStart()
+            return try await waitForOneOffRunAndOutput(
+                containerName: containerName,
+                attachment: attachment,
+            )
+        } catch {
+            attachment.cancel()
+            throw error
         }
+    }
+
+    /// Starts a prepared one-off with attached output and waits for exit.
+    func followOneOffRunOutputAndWait(containerName: String) async throws -> Int32 {
+        try await followOneOffRunOutputAndWait(containerName: containerName) {}
+    }
+
+    /// Starts an output-only attachment and reports when its descriptors are
+    /// registered, without coupling attachment lifetime to log persistence.
+    private func prepareOneOffRunOutputAttachment(
+        containerName: String,
+        started: ComposeOutputAttachReadiness,
+    ) -> Task<Void, any Error> {
+        let attachManager = attachManager
+        let emit = options.emitAttachedData
+        return Task {
+            do {
+                try await attachManager.attachOutput(
+                    id: containerName,
+                    stdout: true,
+                    stderr: true,
+                    mode: .beforeStart,
+                    onReady: {},
+                    onStarted: { started.ready() },
+                    emit: { emit($0.payload) },
+                )
+            } catch {
+                started.fail(error)
+                throw error
+            }
+        }
+    }
+
+    /// Waits until both the container exits and every attached output byte is
+    /// drained, preserving fast-exit output that arrives around process exit.
+    private func waitForOneOffRunAndOutput(
+        containerName: String,
+        attachment: Task<Void, any Error>,
+    ) async throws -> Int32 {
+        async let exitCode = lifecycleManager.waitContainer(id: containerName)
+        async let output: Void = attachment.value
+        let status = try await exitCode
+        try await output
+        return status
     }
 }

@@ -199,7 +199,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("Release-Note: none", runtime_pin)
         self.assertIn("sync_container_package_pin", self.script)
 
-    def test_containerization_pin_supports_literal_and_named_revisions(self) -> None:
+    def test_containerization_pin_supports_literal_named_and_dynamic_revisions(self) -> None:
         revision = "a" * 40
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -233,6 +233,39 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             named_text = named_manifest.read_text(encoding="utf-8")
             self.assertIn(f'let containerizationRevision = "{revision}"', named_text)
             self.assertIn("revision: containerizationRevision", named_text)
+
+            dynamic = root / "container-dynamic"
+            dynamic.mkdir()
+            dynamic_manifest = dynamic / "Package.swift"
+            dynamic_manifest.write_text(
+                textwrap.dedent(
+                    """\
+                    import Foundation
+                    import PackageDescription
+
+                    let containerizationRevision = "old"
+                    let scSource =
+                        ProcessInfo.processInfo.environment["CONTAINERIZATION_SOURCE"]
+                        ?? "stephenlclarke/containerization"
+                    let scRef =
+                        ProcessInfo.processInfo.environment["CONTAINERIZATION_REF"]
+                        ?? containerizationRevision
+                    let containerizationDependency: Package.Dependency = .package(
+                        url: "https://github.com/\\(scSource).git",
+                        revision: scRef
+                    )
+                    """
+                ),
+                encoding="utf-8",
+            )
+            dynamic_result = self.run_release_function(
+                root,
+                f"update_containerization_package_pin container-dynamic {revision} 0",
+            )
+            self.assertEqual(dynamic_result.returncode, 0, dynamic_result.stderr)
+            dynamic_text = dynamic_manifest.read_text(encoding="utf-8")
+            self.assertIn(f'let containerizationRevision = "{revision}"', dynamic_text)
+            self.assertIn("revision: scRef", dynamic_text)
 
             literal = root / "container-compose"
             literal.mkdir()
@@ -429,7 +462,74 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn('export CONTAINER_INSTALL_ROOT="${demo_root}"', workflow)
         self.assertIn('export CONTAINER_APP_ROOT="${demo_app_root}"', workflow)
+        self.assertIn(
+            "DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}",
+            workflow,
+        )
+        self.assertIn(
+            "CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}",
+            workflow,
+        )
+        self.assertIn(
+            "DEMO_INIT_IMAGE_ARCHIVE_SHA256: "
+            "2248f64f62e1c4f8d7f1696ad462f42796d32a2a3bcf2843004be2e66b01645b",
+            workflow,
+        )
+        self.assertIn(
+            'actual_init_image_sha256="$(shasum -a 256 '
+            '\"${DEMO_INIT_IMAGE_ARCHIVE}\" | awk \'{print $1}\')"',
+            workflow,
+        )
+        self.assertIn(
+            'expected_init_image_ref="ghcr.io/stephenlclarke/containerization/'
+            'vminit:${CONTAINERIZATION_REF}"',
+            workflow,
+        )
+        self.assertIn(
+            'tar -xOf "${DEMO_INIT_IMAGE_ARCHIVE}" index.json',
+            workflow,
+        )
+        self.assertIn(
+            'if [[ "${actual_init_image_ref}" != "${expected_init_image_ref}" ]]; then',
+            workflow,
+        )
+        self.assertIn(
+            'demo_init_image_archive="/tmp/cc-current-init-'
+            '${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.oci.tar"',
+            workflow,
+        )
+        self.assertIn(
+            'cp "${DEMO_INIT_IMAGE_ARCHIVE}" "${demo_init_image_archive}"',
+            workflow,
+        )
+        self.assertIn(
+            'staged_init_image_sha256="$(shasum -a 256 '
+            '\"${demo_init_image_archive}\" | awk \'{print $1}\')"',
+            workflow,
+        )
+        self.assertIn(
+            'export CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE="${demo_init_image_archive}"',
+            workflow,
+        )
+        self.assertIn(
+            'demo_app_root="/tmp/cc-current-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
+            workflow,
+        )
+        self.assertIn('mkdir -p "${demo_app_root}"', workflow)
+        self.assertIn('remove_demo_app_root() {', workflow)
+        self.assertIn('/tmp/cc-current-[0-9]*-[0-9]*)', workflow)
+        self.assertIn('rm -rf -- "${demo_app_root}"', workflow)
+        self.assertNotIn('ln -s "${demo_app_storage}"', workflow)
+        longest_run_id = str(2**64 - 1)
+        longest_attempt = str(2**32 - 1)
+        provider_socket = (
+            f"/tmp/cc-current-{longest_run_id}-{longest_attempt}"
+            "/engine-provider/provider.sock"
+        )
+        self.assertLess(len(os.fsencode(provider_socket)), 104)
         self.assertIn('trap cleanup EXIT', workflow)
+        self.assertIn('rm -f -- "${demo_init_image_archive}"', workflow)
+        self.assertNotIn("trap 'rm -f", workflow)
         self.assertIn('"${container_binary}" system stop || true', workflow)
         self.assertIn('"${demo_root}/bin/container" system stop || true', workflow)
         self.assertIn("elif command -v container >/dev/null 2>&1; then", workflow)
@@ -452,6 +552,16 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("docs/container-compose-demo.tape", workflow)
         self.assertIn("VHS itself is the fail-closed runtime gate", workflow)
         self.assertIn("bash Tools/release/record-vhs-live-demo.sh", workflow)
+        tape = (ROOT / "docs/container-compose-demo.tape").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(
+            tape.count(
+                "--init-image-archive "
+                "$CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE"
+            ),
+            2,
+        )
         self.assertNotIn("record_monitoring_stack_transcript", workflow)
         self.assertNotIn("demo_transcript", workflow)
         self.assertNotIn("current-build-demo-transcript", workflow)
@@ -692,6 +802,19 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         ]
         self.assertIn("cache: false", setup_go)
         self.assertNotIn("cache-dependency-path:", setup_go)
+
+    def test_package_build_uses_manifest_paths_without_swiftpm_edits(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        package_build = workflow[
+            workflow.index("- name: Verify containerization dependency ref") : workflow.index(
+                "- name: Build release package"
+            )
+        ]
+
+        self.assertNotIn("use-stack-container.sh", package_build)
+        self.assertNotIn("use-stack-containerization.sh", package_build)
+        self.assertIn("- name: Checkout container dependency", workflow)
+        self.assertIn("- name: Checkout containerization dependency", workflow)
 
     def test_stable_and_current_release_authority_select_main_ci(self) -> None:
         stable_gate = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")

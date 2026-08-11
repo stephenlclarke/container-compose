@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 @testable import ComposeContainerRuntime
+import ComposeRuntimeSPI
 import Foundation
 import Testing
 
@@ -69,6 +70,65 @@ struct ContainerFilesystemAdapterTests {
         #expect(try permissions(at: output) == 0o600)
         #expect(try FileManager.default.contentsOfDirectory(atPath: sharedRoot.path) == ["output.tar"])
     }
+
+    @Test
+    // swiftlint:disable:next function_body_length
+    func `copy fallback stages archive through path copy operations`() async throws {
+        let recorder = StagedCopyRecorder()
+        let copier = ContainerClientCopier(
+            copyInto: { id, source, destination, options in
+                try await recorder.recordInto(
+                    id: id,
+                    data: Data(contentsOf: URL(fileURLWithPath: source)),
+                    destination: destination,
+                    options: options,
+                )
+            },
+            copyFrom: { id, source, destination, options in
+                let output = URL(fileURLWithPath: destination)
+                try FileManager.default.createDirectory(
+                    at: output.deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                )
+                try Data("staged payload\n".utf8).write(to: output)
+                await recorder.recordFrom(
+                    id: id,
+                    source: source,
+                    options: options,
+                )
+            },
+        )
+
+        try await copier.copyBetweenContainers(
+            sourceID: "demo-api-1",
+            source: "/tmp/report.txt",
+            destinationID: "demo-worker-1",
+            destination: "/var/lib/reports",
+            options: ContainerCopyTransferOptions(
+                followSymlink: true,
+                preserveOwnership: false,
+            ),
+        )
+
+        #expect(await recorder.from == [
+            .init(
+                id: "demo-api-1",
+                source: "/tmp/report.txt",
+                options: ContainerCopyTransferOptions(
+                    followSymlink: true,
+                    preserveOwnership: false,
+                ),
+            ),
+        ])
+        #expect(await recorder.into == [
+            .init(
+                id: "demo-worker-1",
+                data: Data("staged payload\n".utf8),
+                destination: "/var/lib/reports",
+                options: ContainerCopyTransferOptions(preserveOwnership: false),
+            ),
+        ])
+    }
 }
 
 private enum ExportFailure: Error {
@@ -95,6 +155,37 @@ private final class ExportPermissionRecorder: @unchecked Sendable {
             directoryStorage = directory
             fileStorage = file
         }
+    }
+}
+
+private actor StagedCopyRecorder {
+    struct From: Equatable, Sendable {
+        let id: String
+        let source: String
+        let options: ContainerCopyTransferOptions
+    }
+
+    struct Into: Equatable, Sendable {
+        let id: String
+        let data: Data
+        let destination: String
+        let options: ContainerCopyTransferOptions
+    }
+
+    private(set) var from: [From] = []
+    private(set) var into: [Into] = []
+
+    func recordFrom(id: String, source: String, options: ContainerCopyTransferOptions) {
+        from.append(.init(id: id, source: source, options: options))
+    }
+
+    func recordInto(
+        id: String,
+        data: Data,
+        destination: String,
+        options: ContainerCopyTransferOptions,
+    ) {
+        into.append(.init(id: id, data: data, destination: destination, options: options))
     }
 }
 
