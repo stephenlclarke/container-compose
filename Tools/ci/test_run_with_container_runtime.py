@@ -54,6 +54,8 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             "CONTAINERIZATION_INIT_BUILD_SCRATCH_ROOT",
             "CONTAINER_COMPOSE_INIT_IMAGE",
             "CONTAINER_RUNTIME_LOCK_FILE",
+            "CONTAINER_RUNTIME_LOCK_HELD",
+            "CONTAINER_RUNTIME_LOCK_KEEPER_PID",
         ):
             environment.pop(variable, None)
         return environment
@@ -800,6 +802,57 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
 
 class ContainerRuntimeLockTest(unittest.TestCase):
+    def test_runtime_children_do_not_inherit_the_lock_descriptor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            lock_file = temporary_root / "runtime.lock"
+            inherited_descriptor = temporary_root / "inherited-descriptor"
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(lock_file),
+                    "CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS": "1",
+                }
+            )
+            holder_script = (
+                f'source "{LOCK_SCRIPT}"; '
+                "acquire_container_runtime_lock; "
+                f"/bin/bash -c 'if [[ -e /dev/fd/9 ]]; then "
+                f'touch "{inherited_descriptor}"; fi; sleep 2\' '
+                ">/dev/null 2>&1 &"
+            )
+            contender_script = (
+                f'source "{LOCK_SCRIPT}"; '
+                "acquire_container_runtime_lock; "
+                "release_container_runtime_lock"
+            )
+
+            holder = subprocess.run(
+                ["/bin/bash", "-c", holder_script],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(holder.returncode, 0, holder.stdout + holder.stderr)
+
+            started = time.monotonic()
+            contender = subprocess.run(
+                ["/bin/bash", "-c", contender_script],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            elapsed = time.monotonic() - started
+            self.assertEqual(
+                contender.returncode,
+                0,
+                contender.stdout + contender.stderr,
+            )
+            self.assertLess(elapsed, 1.0)
+            self.assertFalse(inherited_descriptor.exists())
+
     def test_serializes_independent_runtime_users(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)

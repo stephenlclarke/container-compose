@@ -454,6 +454,7 @@ cleanup() {
     trap - EXIT
     printf 'Stopping matched container runtime...\n'
     stop_runtime || true
+    release_container_runtime_lock
     exit "$status"
 }
 
