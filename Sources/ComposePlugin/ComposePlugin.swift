@@ -29,7 +29,7 @@ private let composePluginVersionNumber = composeBuildInfo.version
 private let composePluginVersionString = "container-compose \(composePluginVersionNumber)"
 
 struct ComposeBuildInfo: Codable {
-    var version: String = "0.10.2"
+    var version: String = "0.11.0"
     var source: String = "unspecified"
     var branch: String = "unspecified"
     var lane: String = "unspecified"
@@ -120,7 +120,7 @@ struct ComposeBuildInfo: Codable {
             declaredSource: environment["CONTAINERIZATION_SOURCE"]
         )
         return ComposeBuildInfo(
-            version: "0.10.2",
+            version: "0.11.0",
             source: remoteSource(root: root),
             branch: branch,
             lane: lane(for: branch),
