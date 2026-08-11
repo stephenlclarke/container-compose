@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-08-11",
+  "reviewedAt": "2026-08-12",
   "repositories": {
     "container": {
       "upstreamHead": "875d80ba07fdcc3aac138ed7fc56643d71aaf860",
-      "forkHead": "50b1eff7f6a25bee5f8ff1ef576a32297045aeb4",
+      "forkHead": "55275d93a7f1fa2116524128043837f99551f767",
       "slices": [
         {
           "id": "container-support-maintenance",
@@ -422,7 +422,10 @@
             "6e9bdba61e7db7c2861e0c3544eb56c49c883938",
             "0e22d5eb3e5f6b1b40428e214a29de54552b3e0a",
             "8ed263286b7c1981ede1014f329cb9e1c57c69f0",
-            "b49b37ea8d832495447f9387e26ea7dcadd24183"
+            "b49b37ea8d832495447f9387e26ea7dcadd24183",
+            "5b59927f999158e794c43e7734aaac2a6d7112f5",
+            "925341c2d91d31a324ab3b518339d47fa4f08a8c",
+            "55275d93a7f1fa2116524128043837f99551f767"
           ]
         },
         {
@@ -914,7 +917,7 @@
     },
     "container-builder-shim": {
       "upstreamHead": "e18d2182fd060dbf1c68113a74e7564d563dde27",
-      "forkHead": "cb2adb12415828033dccf76730db6915548dc7c4",
+      "forkHead": "88332c96705b024bbc5cd210642118ee82f8793d",
       "slices": [
         {
           "id": "container-builder-shim-support-maintenance",
@@ -946,7 +949,8 @@
             "cb2adb12415828033dccf76730db6915548dc7c4",
             "8c6f4c3aaa767b179ff3b3548010bb2622e4324c",
             "15b224bb9d87124f0799236ffbb9583af8b82ba0",
-            "bc26468b7a6a06e677484100a4fb59a16a89aaca"
+            "bc26468b7a6a06e677484100a4fb59a16a89aaca",
+            "88332c96705b024bbc5cd210642118ee82f8793d"
           ]
         },
         {
