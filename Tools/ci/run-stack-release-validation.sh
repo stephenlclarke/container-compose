@@ -85,5 +85,12 @@ container_make_args=(
 printf 'running %s stack release validation\n' "${mode}"
 make -C "${builder_repo}" check-licenses vet lint coverage build
 make -C "${containerization_repo}" "${containerization_targets[@]}"
-make -C "${container_repo}" "${container_make_args[@]}" "${container_targets[@]}"
+# The outer stable gate may select an already-running isolated runtime for
+# Containerization's image build. Container's unit tests exercise their own
+# default namespace contract, so do not let that selector rewrite the expected
+# launchd labels and engine socket paths. The explicit APP_ROOT/LOG_ROOT make
+# arguments still isolate Container's VM-backed integration state.
+env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
+  CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}" \
+  make -C "${container_repo}" "${container_make_args[@]}" "${container_targets[@]}"
 ruby -c "${homebrew_tap_repo}/Formula/container-compose.rb"

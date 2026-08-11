@@ -993,6 +993,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             "container_targets=(check container dsym docs coverage-unit)",
             validation,
         )
+        self.assertIn(
+            "env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE",
+            validation,
+        )
+        self.assertIn(
+            'CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"',
+            validation,
+        )
         self.assertIn("CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1", makefile)
         self.assertIn("docker-compose-devices-parity", makefile)
         self.assertIn("docker-compose-named-volume-reuse-parity", makefile)
@@ -1041,7 +1049,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 tool = tools / name
                 tool.write_text(
                     "#!/usr/bin/env bash\n"
-                    "printf '%s:%s\\n' \"$(basename \"$0\")\" \"$*\" >> \"${STACK_VALIDATION_LOG:?}\"\n",
+                    "printf '%s:%s\\n' \"$(basename \"$0\")\" \"$*\" >> \"${STACK_VALIDATION_LOG:?}\"\n"
+                    "printf 'bootstrap:%s\\n' \"${CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE:-}\" >> \"${STACK_VALIDATION_LOG:?}\"\n",
                     encoding="utf-8",
                 )
                 tool.chmod(0o755)
@@ -1049,6 +1058,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             environment = os.environ.copy()
             environment["PATH"] = f"{tools}{os.pathsep}{environment['PATH']}"
             environment["STACK_VALIDATION_LOG"] = str(log)
+            environment["CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE"] = "/tmp/runtime-init.oci.tar"
             validation_paths = [
                 str(compose),
                 str(builder),
@@ -1079,6 +1089,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 full_commands,
             )
             self.assertNotIn("CONCURRENT_TEST_SUITES=", full_commands)
+            self.assertIn("bootstrap:/tmp/runtime-init.oci.tar", full_commands)
 
             log.unlink()
             hosted = subprocess.run(
