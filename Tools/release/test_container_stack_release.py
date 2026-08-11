@@ -467,13 +467,30 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn(
+            "CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}",
+            workflow,
+        )
+        self.assertIn(
             "DEMO_INIT_IMAGE_ARCHIVE_SHA256: "
-            "51b34d4a5fbb16f85c6f2a8f50e5f8fae12976259f0fb5a1a6200ba8a2a47a36",
+            "2248f64f62e1c4f8d7f1696ad462f42796d32a2a3bcf2843004be2e66b01645b",
             workflow,
         )
         self.assertIn(
             'actual_init_image_sha256="$(shasum -a 256 '
             '\"${DEMO_INIT_IMAGE_ARCHIVE}\" | awk \'{print $1}\')"',
+            workflow,
+        )
+        self.assertIn(
+            'expected_init_image_ref="ghcr.io/stephenlclarke/containerization/'
+            'vminit:${CONTAINERIZATION_REF}"',
+            workflow,
+        )
+        self.assertIn(
+            'tar -xOf "${DEMO_INIT_IMAGE_ARCHIVE}" index.json',
+            workflow,
+        )
+        self.assertIn(
+            'if [[ "${actual_init_image_ref}" != "${expected_init_image_ref}" ]]; then',
             workflow,
         )
         self.assertIn(

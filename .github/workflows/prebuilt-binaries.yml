@@ -958,9 +958,10 @@ jobs:
       - name: Generate Current build VHS recording
         if: needs.resolve-publish-context.outputs.ref_type == 'branch'
         env:
+          CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
           DEMO_ASSET: ${{ steps.lane.outputs.demo_asset }}
           DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
-          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 51b34d4a5fbb16f85c6f2a8f50e5f8fae12976259f0fb5a1a6200ba8a2a47a36
+          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 2248f64f62e1c4f8d7f1696ad462f42796d32a2a3bcf2843004be2e66b01645b
           PLUGIN_ARCHIVE: ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
           RUNTIME_ARCHIVE: ${{ steps.runtime-package.outputs.local_asset }}
         shell: bash
@@ -1032,6 +1033,21 @@ jobs:
           if [[ "${actual_init_image_sha256}" != "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" ]]; then
             printf 'matched Current demo init-image archive digest mismatch (expected %s, got %s)\n' \
               "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" "${actual_init_image_sha256}" >&2
+            exit 1
+          fi
+          if [[ ! "${CONTAINERIZATION_REF}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'matched Current demo containerization ref is invalid: %s\n' \
+              "${CONTAINERIZATION_REF:-<unset>}" >&2
+            exit 1
+          fi
+          expected_init_image_ref="ghcr.io/stephenlclarke/containerization/vminit:${CONTAINERIZATION_REF}"
+          actual_init_image_ref="$(
+            tar -xOf "${DEMO_INIT_IMAGE_ARCHIVE}" index.json \
+              | python3 -c 'import json, sys; print(json.load(sys.stdin)["manifests"][0]["annotations"]["org.opencontainers.image.ref.name"])'
+          )"
+          if [[ "${actual_init_image_ref}" != "${expected_init_image_ref}" ]]; then
+            printf 'matched Current demo init-image ref mismatch (expected %s, got %s)\n' \
+              "${expected_init_image_ref}" "${actual_init_image_ref:-<missing>}" >&2
             exit 1
           fi
 
