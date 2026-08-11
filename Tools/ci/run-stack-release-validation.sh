@@ -54,8 +54,14 @@ esac
 # run, nor leave its own state behind for the next gate.  Keep the state under
 # Container's already-ignored test scratch directory so it is isolated without
 # making the sibling checkout dirty.
-container_app_root="${container_repo}/.test-scratch/stack-release-app-root"
-container_log_root="${container_repo}/.test-scratch/stack-release-log-root"
+container_scratch_root="${CONTAINER_STACK_VALIDATION_SCRATCH_ROOT:-${container_repo}/.test-scratch}"
+if [[ "${container_scratch_root}" != /* || "${container_scratch_root}" == / ]]; then
+  printf 'CONTAINER_STACK_VALIDATION_SCRATCH_ROOT must be an absolute path other than /: %s\n' \
+    "${container_scratch_root}" >&2
+  exit 2
+fi
+container_app_root="${container_scratch_root}/stack-release-app-root"
+container_log_root="${container_scratch_root}/stack-release-log-root"
 container_make_args=(
   "APP_ROOT=${container_app_root}"
   "LOG_ROOT=${container_log_root}"
