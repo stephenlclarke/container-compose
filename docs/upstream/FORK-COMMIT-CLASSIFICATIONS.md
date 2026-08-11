@@ -1,6 +1,6 @@
 # Fork Commit Classifications
 
-Updated: 11 August 2026
+Updated: 12 August 2026
 
 This review classifies every patch-unique non-merge commit in the three
 Stephen-supported Apple forks. The machine-readable source is
@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `875d80ba07fdcc3aac138ed7fc56643d71aaf860` | `50b1eff7f6a25bee5f8ff1ef576a32297045aeb4` | 0 | 626 | 562 |
+| `container` | `875d80ba07fdcc3aac138ed7fc56643d71aaf860` | `55275d93a7f1fa2116524128043837f99551f767` | 0 | 629 | 565 |
 | `containerization` | `5427fd21ded4b84034126caef5b3182900b4776d` | `7e4f5152e9606a34a92c34186eb94f7cd37c134f` | 0 | 190 | 156 |
-| `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `cb2adb12415828033dccf76730db6915548dc7c4` | 0 | 39 | 33 |
-| **Total** | | | **0** | **855** | **751** |
+| `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `88332c96705b024bbc5cd210642118ee82f8793d` | 0 | 40 | 34 |
+| **Total** | | | **0** | **859** | **755** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,7 +32,7 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 534 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `support-maintenance` | 538 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
 | `generic-runtime-primitive` | 192 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
@@ -143,6 +143,13 @@ explicit HTTPS for programmatic bootstrap image pulls, retained init archive
 loading during clean release validation, and deterministic help-path health
 tests that cannot discover plugins from an installed release candidate. These
 commits do not add a temporary upstream port or a Compose-owned policy surface.
+
+The 12 August 2026 release refresh advances Container through `55275d93a7f1`
+and the builder shim through `88332c96705b`. It classifies four release-blocker
+repairs as support maintenance: host-architecture kernel selection, isolated
+integration service namespaces, the immutable repaired builder-image pin, and
+mounted host SSH-agent socket validation. No generic runtime primitive,
+temporary upstream port, or rejected Compose-policy disposition changed.
 
 The registry records fork ownership; it does not promote a runtime or Compose
 stack pin. The generated Container dependency commits
