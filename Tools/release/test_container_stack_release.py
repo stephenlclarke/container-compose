@@ -1105,6 +1105,69 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertNotIn(" integration", hosted_commands)
             self.assertNotIn(" fetch-default-kernel", hosted_commands)
 
+            log.unlink()
+            relative_paths = [
+                path.name
+                for path in (compose, builder, containerization, container, tap)
+            ]
+            relative = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "hosted", *relative_paths],
+                check=False,
+                capture_output=True,
+                cwd=root,
+                env=environment,
+                text=True,
+            )
+            self.assertEqual(relative.returncode, 0, relative.stderr)
+            relative_commands = log.read_text(encoding="utf-8")
+            resolved_container = container.resolve()
+            self.assertIn(
+                "make:-C container "
+                f"APP_ROOT={resolved_container}/.test-scratch/stack-release-app-root "
+                f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
+                "check container dsym docs coverage-unit",
+                relative_commands,
+            )
+
+            log.unlink()
+            external_scratch = root / "external-runtime"
+            external_environment = environment.copy()
+            external_environment["CONTAINER_STACK_VALIDATION_SCRATCH_ROOT"] = str(
+                external_scratch
+            )
+            external = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=external_environment,
+                text=True,
+            )
+            self.assertEqual(external.returncode, 0, external.stderr)
+            external_commands = log.read_text(encoding="utf-8")
+            self.assertIn(
+                "make:-C "
+                f"{container} "
+                f"APP_ROOT={external_scratch}/stack-release-app-root "
+                f"LOG_ROOT={external_scratch}/stack-release-log-root "
+                "check container dsym docs coverage-unit",
+                external_commands,
+            )
+
+            invalid_environment = environment.copy()
+            invalid_environment["CONTAINER_STACK_VALIDATION_SCRATCH_ROOT"] = ".scratch"
+            invalid = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=invalid_environment,
+                text=True,
+            )
+            self.assertEqual(invalid.returncode, 2)
+            self.assertIn(
+                "CONTAINER_STACK_VALIDATION_SCRATCH_ROOT must be an absolute path",
+                invalid.stderr,
+            )
+
     def test_hosted_release_gate_uses_an_unpublished_verified_tag_and_immutable_tap_snapshot(
         self,
     ) -> None:
