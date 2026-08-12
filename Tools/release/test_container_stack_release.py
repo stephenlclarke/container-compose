@@ -1334,6 +1334,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 second_packaged.stdout,
             )
 
+            packaged_cli.chmod(0o755)
+            writable_packaged = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=packaged_environments[1],
+                text=True,
+            )
+            self.assertEqual(writable_packaged.returncode, 2)
+            self.assertIn(
+                "packaged Container runtime candidate CLI must be read-only",
+                writable_packaged.stderr,
+            )
+
             drift_environment = environment.copy()
             drift_environment["CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR"] = str(
                 root / "drift-checkpoints"

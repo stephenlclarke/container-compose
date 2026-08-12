@@ -125,7 +125,9 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
         *references: str,
         distinct_digests: bool = False,
         config_architecture: str = "arm64",
+        config_variant: str | None = None,
         indexed_architecture: str | None = None,
+        indexed_variant: str | None = None,
     ) -> None:
         def descriptor(payload: bytes, media_type: str) -> dict[str, object]:
             return {
@@ -134,9 +136,10 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 "size": len(payload),
             }
 
-        config = json.dumps(
-            {"architecture": config_architecture, "os": "linux"}, sort_keys=True
-        ).encode("utf-8")
+        config_payload = {"architecture": config_architecture, "os": "linux"}
+        if config_variant is not None:
+            config_payload["variant"] = config_variant
+        config = json.dumps(config_payload, sort_keys=True).encode("utf-8")
         layer = b"fixture-layer"
         config_descriptor = descriptor(
             config, "application/vnd.oci.image.config.v1+json"
@@ -175,6 +178,8 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 "architecture": indexed_architecture,
                 "os": "linux",
             }
+            if indexed_variant is not None:
+                child["platform"]["variant"] = indexed_variant
             nested = json.dumps(
                 {"schemaVersion": 2, "manifests": [child]}, sort_keys=True
             ).encode("utf-8")
@@ -1194,6 +1199,44 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 DEFAULT_INIT_IMAGE,
                 config_architecture="amd64",
                 indexed_architecture="arm64",
+            )
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE": str(init_archive),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(
+                "descriptor platform does not match image config", result.stderr
+            )
+            self.assertFalse(container_log.exists())
+
+    def test_rejects_required_index_with_mismatched_config_variant(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            init_archive = temporary_root / "vminit-variant-mismatch.tar"
+            self.create_oci_archive(
+                init_archive,
+                DEFAULT_INIT_IMAGE,
+                config_variant="v9",
+                indexed_architecture="arm64",
+                indexed_variant="v8",
             )
             container_log = temporary_root / "container.log"
             fake_container = temporary_root / "container-cli"

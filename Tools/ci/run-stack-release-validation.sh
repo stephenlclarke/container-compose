@@ -185,7 +185,16 @@ if [[ "${mode}" == "full" ]]; then
         "${runtime_candidate_sha256}" >&2
       exit 2
     fi
-    if [[ -w "${runtime_cli}" ]]; then
+    runtime_cli_mode=$(
+      /usr/bin/stat -f '%Lp' "${runtime_cli}" 2>/dev/null \
+        || /usr/bin/stat -c '%a' "${runtime_cli}" 2>/dev/null
+    )
+    if ! [[ "${runtime_cli_mode}" =~ ^[0-7]{3,4}$ ]]; then
+      printf 'could not determine packaged Container runtime candidate CLI mode: %s\n' \
+        "${runtime_cli}" >&2
+      exit 2
+    fi
+    if ((8#${runtime_cli_mode} & 8#222)); then
       printf 'packaged Container runtime candidate CLI must be read-only during validation: %s\n' \
         "${runtime_cli}" >&2
       exit 2

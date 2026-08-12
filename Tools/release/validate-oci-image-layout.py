@@ -200,6 +200,11 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
                 if platform is not None and (
                     platform.get("os") != config.get("os")
                     or platform.get("architecture") != config.get("architecture")
+                    or (
+                        platform.get("variant") is not None
+                        and config.get("variant") is not None
+                        and platform.get("variant") != config.get("variant")
+                    )
                 ):
                     raise ValidationError(
                         f"{context} descriptor platform does not match image config"
