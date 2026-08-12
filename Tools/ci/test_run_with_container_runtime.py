@@ -1086,12 +1086,23 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
 
 class ContainerRuntimeLockTest(unittest.TestCase):
+    @staticmethod
+    def independent_runtime_environment() -> dict[str, str]:
+        environment = os.environ.copy()
+        for variable in (
+            "CONTAINER_RUNTIME_LOCK_HELD",
+            "CONTAINER_RUNTIME_LOCK_KEEPER_PID",
+            "CONTAINER_RUNTIME_MANAGED",
+        ):
+            environment.pop(variable, None)
+        return environment
+
     def test_runtime_children_do_not_inherit_the_lock_descriptor(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
             lock_file = temporary_root / "runtime.lock"
             inherited_descriptor = temporary_root / "inherited-descriptor"
-            environment = os.environ.copy()
+            environment = self.independent_runtime_environment()
             environment.update(
                 {
                     "CONTAINER_RUNTIME_LOCK_FILE": str(lock_file),
@@ -1144,7 +1155,7 @@ class ContainerRuntimeLockTest(unittest.TestCase):
             holder_ready = temporary_root / "holder-ready"
             holder_release = temporary_root / "holder-release"
             contender_acquired = temporary_root / "contender-acquired"
-            environment = os.environ.copy()
+            environment = self.independent_runtime_environment()
             environment.update(
                 {
                     "CONTAINER_RUNTIME_LOCK_FILE": str(lock_file),
