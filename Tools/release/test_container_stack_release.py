@@ -1154,7 +1154,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 f"{container} "
                 f"PATH={candidate_tools_resolved}{os.pathsep}{tools}"
                 f"{os.pathsep}{environment['PATH'].split(os.pathsep, 1)[1]} "
-                f"APP_ROOT={resolved_container}/.test-scratch/runtime/stack-release-app-root "
+                "APP_ROOT=/private/tmp/ccsv.fixture/stack-release-app-root "
                 f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
                 "INTEGRATION_SERVICE_NAMESPACE=io.github.container.stack-validation.fixture "
                 "check container dsym docs coverage",
@@ -1501,6 +1501,23 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 root_runtime.stderr,
             )
 
+            long_runtime_environment = environment.copy()
+            long_runtime_environment["CONTAINER_STACK_VALIDATION_RUNTIME_ROOT"] = str(
+                root / ("long-runtime-" + "x" * 80)
+            )
+            long_runtime = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=long_runtime_environment,
+                text=True,
+            )
+            self.assertEqual(long_runtime.returncode, 2)
+            self.assertIn(
+                "exceeds the provider Unix socket path limit",
+                long_runtime.stderr,
+            )
+
     def test_hosted_release_gate_uses_an_unpublished_verified_tag_and_immutable_tap_snapshot(
         self,
     ) -> None:
@@ -1695,11 +1712,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             local_gate,
         )
         self.assertIn(
-            'CONTAINER_STACK_VALIDATION_RUNTIME_ROOT="${runtime_parent}/container-integration"',
+            'CONTAINER_STACK_VALIDATION_RUNTIME_ROOT="${runtime_parent}/i"',
             local_gate,
         )
         self.assertIn("runtime_parent_base=/private/tmp", local_gate)
         self.assertNotIn('${TMPDIR:-/tmp}/cc-release.', local_gate)
+        self.assertIn('${runtime_parent_base}/c.XXXXXX', local_gate)
         self.assertIn("resolve_release_evidence_root", local_gate)
         self.assertLess(
             local_gate.index('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${init_image_archive}"'),

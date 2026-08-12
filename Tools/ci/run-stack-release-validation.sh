@@ -84,6 +84,11 @@ if [[ "${container_scratch_root}" == / ]]; then
   printf 'CONTAINER_STACK_VALIDATION_SCRATCH_ROOT must not resolve to /\n' >&2
   exit 2
 fi
+container_validation_suffix=""
+if [[ "${mode}" == "full" ]]; then
+  container_revision="$(git -C "${container_repo}" rev-parse --verify HEAD 2>/dev/null || printf 'fixture')"
+  container_validation_suffix="$(printf '%s' "${container_revision}" | tr -cd '[:alnum:]' | cut -c1-12)"
+fi
 if [[ -n "${CONTAINER_STACK_VALIDATION_RUNTIME_ROOT:-}" ]]; then
   container_runtime_root="${CONTAINER_STACK_VALIDATION_RUNTIME_ROOT}"
   if [[ "${container_runtime_root}" != /* || "${container_runtime_root}" == / ]]; then
@@ -92,7 +97,14 @@ if [[ -n "${CONTAINER_STACK_VALIDATION_RUNTIME_ROOT:-}" ]]; then
     exit 2
   fi
 else
-  container_runtime_root="${container_scratch_root}/runtime"
+  if [[ "${mode}" == "full" ]]; then
+    # Full validation launches services. Keep its safe default short and on the
+    # internal volume; hosted validation never launches them and may stay with
+    # the checkout-backed scratch root.
+    container_runtime_root="/private/tmp/ccsv.${container_validation_suffix}"
+  else
+    container_runtime_root="${container_scratch_root}/runtime"
+  fi
 fi
 mkdir -p "${container_runtime_root}"
 container_runtime_root="$(cd "${container_runtime_root}" && pwd -P)"
@@ -102,13 +114,19 @@ if [[ "${container_runtime_root}" == / ]]; then
 fi
 container_app_root="${container_runtime_root}/stack-release-app-root"
 container_log_root="${container_scratch_root}/stack-release-log-root"
+container_provider_socket="${container_app_root}/engine-provider/provider.sock"
+container_provider_socket_bytes=$(LC_ALL=C printf '%s' "${container_provider_socket}" \
+  | wc -c | tr -d '[:space:]')
+if [[ "${mode}" == "full" ]] && ((container_provider_socket_bytes > 103)); then
+  printf 'CONTAINER_STACK_VALIDATION_RUNTIME_ROOT exceeds the provider Unix socket path limit (%s > 103 bytes): %s\n' \
+    "${container_provider_socket_bytes}" "${container_provider_socket}" >&2
+  exit 2
+fi
 container_make_args=(
   "APP_ROOT=${container_app_root}"
   "LOG_ROOT=${container_log_root}"
 )
 if [[ "${mode}" == "full" ]]; then
-  container_revision="$(git -C "${container_repo}" rev-parse --verify HEAD 2>/dev/null || printf 'fixture')"
-  container_validation_suffix="$(printf '%s' "${container_revision}" | tr -cd '[:alnum:]' | cut -c1-12)"
   container_make_args+=(
     "INTEGRATION_SERVICE_NAMESPACE=io.github.container.stack-validation.${container_validation_suffix}"
   )
@@ -290,6 +308,7 @@ if [[ -n "${checkpoint_directory}" ]]; then
       printf 'tree=%s:%s\n' "${container_repo}" "${container_tree}"
       printf 'scratch_root=%s\n' "${container_scratch_root}"
       printf 'runtime_root=%s\n' "${container_runtime_root}"
+      printf 'provider_socket=%s\n' "${container_provider_socket}"
       printf 'init_archive=%s\n' "${init_archive_fingerprint}"
       printf 'runtime_cli=%s\n' "${runtime_cli_fingerprint}"
     } | shasum -a 256 | awk '{print $1}'

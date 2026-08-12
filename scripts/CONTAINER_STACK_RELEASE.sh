@@ -806,7 +806,9 @@ PY
   if [[ ! -d "${runtime_parent_base}" ]]; then
     runtime_parent_base=/tmp
   fi
-  runtime_parent="$(mktemp -d "${runtime_parent_base}/cc-release.XXXXXX")"
+  # Keep both this candidate's provider socket and Container integration's
+  # nested provider socket below Darwin's 103-byte sockaddr_un limit.
+  runtime_parent="$(mktemp -d "${runtime_parent_base}/c.XXXXXX")"
   runtime_app_root="${runtime_parent}/app"
   profile_root="${runtime_parent}/profiles"
   mkdir -p "${profile_root}"
@@ -821,7 +823,7 @@ PY
     CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES="${required_init_references}" \
     CONTAINER_RUNTIME_CANDIDATE_SHA256="${CONTAINER_RUNTIME_CANDIDATE_SHA256}" \
     CONTAINER_STACK_VALIDATION_SCRATCH_ROOT="${evidence_root}/container-scratch" \
-    CONTAINER_STACK_VALIDATION_RUNTIME_ROOT="${runtime_parent}/container-integration" \
+    CONTAINER_STACK_VALIDATION_RUNTIME_ROOT="${runtime_parent}/i" \
     CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR="${evidence_root}/stack-validation" \
     LLVM_PROFILE_FILE="${profile_root}/%p-%m.profraw" \
     "${path}/scripts/run-with-container-runtime.sh" "${container_binary}" \
