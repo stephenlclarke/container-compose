@@ -79,14 +79,16 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('ROOT="${CONTAINER_STACK_RELEASE_ROOT:-${HOME}/github}"', self.script)
         self.assertIn("CONTAINER_STACK_RELEASE_ROOT", self.script)
 
-    def test_release_helper_recovers_only_its_unpublished_candidate_before_readiness(self) -> None:
+    def test_release_helper_retains_only_its_unpublished_candidate_before_readiness(self) -> None:
         recovery = self.script[
             self.script.index("recover_unpublished_release_candidate() {") : self.script.index(
                 "# Print and optionally execute a command."
             )
         ]
         release = self.script[self.script.index("release_current_stack() {") :]
-        self.assertIn('git -C "${path}" reset --soft "${remote_head}"', recovery)
+        self.assertNotIn('git -C "${path}" reset --soft "${remote_head}"', recovery)
+        self.assertIn("retaining unpublished release candidate", recovery)
+        self.assertIn("RECOVERED_UNPUBLISHED_RELEASE_BASE", recovery)
         self.assertNotIn("reset --hard", recovery)
         self.assertIn('"chore(release): prepare ${version}"', recovery)
         self.assertIn('"chore(deps): pin containerization "[0-9a-f]*', recovery)
@@ -1049,16 +1051,37 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 tool = tools / name
                 tool.write_text(
                     "#!/usr/bin/env bash\n"
+                    "if [[ \"${1:-}\" == \"--version\" ]]; then\n"
+                    "  printf '%s version 1.0\\n' \"$(basename \"$0\")\"\n"
+                    "  exit 0\n"
+                    "fi\n"
                     "printf '%s:%s\\n' \"$(basename \"$0\")\" \"$*\" >> \"${STACK_VALIDATION_LOG:?}\"\n"
                     "printf 'bootstrap:%s\\n' \"${CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE:-}\" >> \"${STACK_VALIDATION_LOG:?}\"\n",
                     encoding="utf-8",
                 )
                 tool.chmod(0o755)
+            go_tool = tools / "go"
+            go_tool.write_text(
+                "#!/usr/bin/env bash\n"
+                "if [[ \"${1:-}\" == \"version\" ]]; then\n"
+                "  printf 'go version %s\\n' \"${FAKE_GO_VERSION:?}\"\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 64\n",
+                encoding="utf-8",
+            )
+            go_tool.chmod(0o755)
 
             environment = os.environ.copy()
             environment["PATH"] = f"{tools}{os.pathsep}{environment['PATH']}"
+            environment["BASH_ENV"] = "/dev/null"
+            environment["ENV"] = "/dev/null"
             environment["STACK_VALIDATION_LOG"] = str(log)
+            environment["FAKE_GO_VERSION"] = "go1.26.3"
             environment["CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE"] = "/tmp/runtime-init.oci.tar"
+            environment["CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR"] = str(
+                root / "checkpoints"
+            )
             validation_paths = [
                 str(compose),
                 str(builder),
@@ -1091,6 +1114,44 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
             self.assertNotIn("CONCURRENT_TEST_SUITES=", full_commands)
             self.assertIn("bootstrap:/tmp/runtime-init.oci.tar", full_commands)
+
+            repeated_full = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+            self.assertEqual(repeated_full.returncode, 0, repeated_full.stderr)
+            self.assertEqual(log.read_text(encoding="utf-8"), full_commands)
+            self.assertIn(
+                "reusing exact-input validation checkpoint: containerization",
+                repeated_full.stdout,
+            )
+
+            environment["FAKE_GO_VERSION"] = "go1.26.4"
+            changed_toolchain = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+            self.assertEqual(changed_toolchain.returncode, 0, changed_toolchain.stderr)
+            changed_commands = log.read_text(encoding="utf-8")
+            self.assertEqual(
+                changed_commands.count(f"make:-C {builder}"),
+                2,
+                full.stdout
+                + repeated_full.stdout
+                + changed_toolchain.stdout
+                + changed_toolchain.stderr
+                + changed_commands,
+            )
+            self.assertNotIn(
+                "reusing exact-input validation checkpoint",
+                changed_toolchain.stdout,
+            )
 
             log.unlink()
             hosted = subprocess.run(
@@ -1277,7 +1338,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertLess(release.index("run_local_release_gate"), release.index("push_all_main"))
         self.assertIn('HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"', self.script)
         self.assertIn('"$(repo_path "container-builder-shim")"', self.script)
-        self.assertIn('make -C "$(repo_path "containerization")" fetch-default-kernel', self.script)
+        self.assertIn('containerization_path="$(repo_path "containerization")"', self.script)
+        self.assertIn('make -C "${containerization_path}" fetch-default-kernel', self.script)
+        self.assertIn("one fresh marker-protected runtime lifecycle", self.script)
+        self.assertIn("CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES", self.script)
+        self.assertIn("CONTAINER_RUNTIME_INIT_BLOCK_REPO", self.script)
+        self.assertIn("CONTAINERIZATION_INIT_SOURCE_PATH", self.script)
+        self.assertIn("-u CONTAINER_RUNTIME_SERVICE_NAMESPACE", self.script)
 
     def test_stable_release_requires_intent_and_reviewed_sibling_mains(self) -> None:
         promotion = self.script[self.script.index("push_all_main() {") : self.script.index("# Require an executable command")]
@@ -1341,6 +1408,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("require_local_virtualization", local_gate)
         self.assertIn("sysctl -n kern.hv_support", self.script)
         self.assertIn("kern.hv_support=1", self.script)
+
+    def test_local_release_gate_keeps_llvm_profiles_out_of_source_checkouts(self) -> None:
+        local_gate = self.script[
+            self.script.index("run_local_release_gate() {") : self.script.index(
+                "# Verify that Apple remotes cannot be pushed"
+            )
+        ]
+        self.assertIn('profile_root="${runtime_parent}/profiles"', local_gate)
+        self.assertIn('mkdir -p "${profile_root}"', local_gate)
+        self.assertIn('LLVM_PROFILE_FILE="${profile_root}/%p-%m.profraw"', local_gate)
+        self.assertLess(
+            local_gate.index('profile_root="${runtime_parent}/profiles"'),
+            local_gate.index('"${path}/scripts/run-with-container-runtime.sh"'),
+        )
 
     def test_local_virtualization_preflight_requires_hardware_support(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1486,29 +1567,36 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             ).stdout.split()[0]
             self.assertNotEqual(local_tag, remote_tag)
 
-    def test_release_helper_reconstructs_an_unpublished_prepared_candidate(self) -> None:
+    def test_release_helper_retains_an_unpublished_prepared_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _remote, local = self.create_compose_checkout(root)
             remote_head = self.git(local, "rev-parse", "origin/main")
+            self.run_command(
+                "git", "-C", str(local), "tag", "--no-sign", "current", remote_head
+            )
             self.commit_file(
                 local,
                 "VERSION",
                 "0.6.71\n",
                 "chore(release): prepare 0.6.71",
             )
+            candidate_head = self.git(local, "rev-parse", "main")
 
             result = self.run_release_function(
                 root / "github",
-                "recover_unpublished_release_candidate 0.6.71",
+                "recover_unpublished_release_candidate 0.6.71; "
+                "ensure_current_release_source_identity",
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("reconstructing unpublished release candidate", result.stdout)
-            self.assertEqual(self.git(local, "rev-parse", "main"), remote_head)
-            self.assertEqual(self.git(local, "diff", "--cached", "--name-only"), "VERSION")
+            self.assertIn("retaining unpublished release candidate", result.stdout)
+            self.assertIn("current tag targets published parent", result.stdout)
+            self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
+            self.assertNotEqual(candidate_head, remote_head)
+            self.assertEqual(self.git(local, "diff", "--cached", "--name-only"), "")
 
-    def test_release_helper_reconstructs_an_atomic_stack_pin_candidate(self) -> None:
+    def test_release_helper_retains_an_atomic_stack_pin_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _remote, local = self.create_compose_checkout(root)
@@ -1519,6 +1607,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "pinned stack\n",
                 "chore(deps): pin container stack 123456789abc abcdef123456",
             )
+            candidate_head = self.git(local, "rev-parse", "main")
 
             result = self.run_release_function(
                 root / "github",
@@ -1526,8 +1615,37 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(self.git(local, "rev-parse", "main"), remote_head)
-            self.assertEqual(self.git(local, "diff", "--cached", "--name-only"), "Package.swift")
+            self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
+            self.assertNotEqual(candidate_head, remote_head)
+            self.assertEqual(self.git(local, "diff", "--cached", "--name-only"), "")
+
+    def test_retained_candidate_rejects_current_from_any_commit_but_its_parent(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _remote, local = self.create_compose_checkout(root)
+            remote_head = self.git(local, "rev-parse", "origin/main")
+            self.commit_file(local, "STALE", "stale\n", "chore: stale current")
+            self.run_command(
+                "git", "-C", str(local), "tag", "--no-sign", "current"
+            )
+            self.run_command("git", "-C", str(local), "reset", "--hard", remote_head)
+            self.commit_file(
+                local,
+                "VERSION",
+                "0.6.71\n",
+                "chore(release): prepare 0.6.71",
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71; "
+                "ensure_current_release_source_identity",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("current tag targets", result.stderr)
 
     def test_release_helper_refuses_to_reconstruct_an_unrelated_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

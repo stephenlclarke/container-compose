@@ -21,6 +21,18 @@
 # services still occupy one launchd namespace for the current macOS user. Keep
 # every long-running repository workflow from stopping or replacing another
 # workflow's service while it owns that namespace.
+release_container_runtime_lock() {
+    local keeper_pid=${CONTAINER_RUNTIME_LOCK_KEEPER_PID:-}
+    if [[ -z "$keeper_pid" ]]; then
+        return
+    fi
+
+    kill "$keeper_pid" >/dev/null 2>&1 || true
+    wait "$keeper_pid" >/dev/null 2>&1 || true
+    unset CONTAINER_RUNTIME_LOCK_KEEPER_PID
+    unset CONTAINER_RUNTIME_LOCK_HELD
+}
+
 acquire_container_runtime_lock() {
     if [[ "${CONTAINER_RUNTIME_LOCK_HELD:-0}" == "1" ]]; then
         return
@@ -64,6 +76,20 @@ acquire_container_runtime_lock() {
             "$timeout_seconds" "$lock_file" >&2
         return 1
     fi
+
+    # Keep the lock descriptor in a dedicated shell rather than this runtime
+    # owner. Commands launched by the owner can start long-lived descendants
+    # (for example Chrome during VHS capture); those descendants must not keep
+    # the host-wide lock after the owner exits.
+    local lock_owner_pid=$$
+    (
+        trap 'exit 0' HUP INT TERM
+        while kill -0 "$lock_owner_pid" >/dev/null 2>&1; do
+            sleep 0.1
+        done
+    ) </dev/null >/dev/null 2>&1 &
+    CONTAINER_RUNTIME_LOCK_KEEPER_PID=$!
+    exec 9>&-
 
     export CONTAINER_RUNTIME_LOCK_HELD=1
     printf 'Acquired macOS Container runtime lock: %s\n' "$lock_file"

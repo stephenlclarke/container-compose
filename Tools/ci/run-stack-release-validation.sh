@@ -89,15 +89,110 @@ if [[ "${mode}" == "full" ]]; then
   )
 fi
 
+checkpoint_directory=${CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR:-}
+validation_fingerprint=""
+if [[ -n "${checkpoint_directory}" ]]; then
+  validation_fingerprint=$(
+    {
+      printf 'mode=%s\n' "${mode}"
+      printf 'container_scratch_root=%s\n' "${container_scratch_root}"
+      printf 'containerization_targets=%s\n' "${containerization_targets[*]}"
+      printf 'container_targets=%s\n' "${container_targets[*]}"
+      printf 'required_init_references=%s\n' \
+        "${CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES:-}"
+      printf 'validator=%s\n' "$(shasum -a 256 "$0" | awk '{print $1}')"
+      for path in "${compose_repo}" "${builder_repo}" "${containerization_repo}" \
+        "${container_repo}" "${homebrew_tap_repo}"; do
+        tree=$(git -C "${path}" rev-parse 'HEAD^{tree}' 2>/dev/null || printf 'fixture')
+        printf 'tree=%s:%s\n' "${path}" "${tree}"
+      done
+      if [[ -n "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}" ]]; then
+        if [[ -f "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}" ]]; then
+          printf 'init_archive=%s\n' \
+            "$(shasum -a 256 "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}" | awk '{print $1}')"
+        else
+          printf 'init_archive=missing:%s\n' "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}"
+        fi
+      fi
+      printf 'environment=PATH=%s\n' "${PATH}"
+      printf 'environment=DEVELOPER_DIR=%s\n' "${DEVELOPER_DIR:-}"
+      printf 'environment=SDKROOT=%s\n' "${SDKROOT:-}"
+      printf 'environment=CC=%s\n' "${CC:-}"
+      printf 'environment=CXX=%s\n' "${CXX:-}"
+      for tool_name in git make swift clang go ruby python3 docker hawkeye shellcheck xcodebuild; do
+        tool_path=$(command -v "${tool_name}" 2>/dev/null || true)
+        printf 'tool=%s:path=%s\n' "${tool_name}" "${tool_path:-missing}"
+        if [[ -n "${tool_path}" && -f "${tool_path}" ]]; then
+          printf 'tool=%s:sha256=%s\n' "${tool_name}" \
+            "$(shasum -a 256 "${tool_path}" | awk '{print $1}')"
+        fi
+        if [[ -z "${tool_path}" ]]; then
+          tool_version=missing
+        else
+          case "${tool_name}" in
+            go)
+              tool_version=$(go version 2>&1 || true)
+              ;;
+            xcodebuild)
+              tool_version=$(xcodebuild -version 2>&1 || true)
+              ;;
+            *)
+              tool_version=$("${tool_name}" --version 2>&1 || true)
+              ;;
+          esac
+        fi
+        printf 'tool=%s:version=%s\n' "${tool_name}" "${tool_version}"
+      done
+      printf 'docker:buildx=%s\n' "$(docker buildx version 2>&1 || true)"
+      printf 'docker:compose=%s\n' "$(docker compose version 2>&1 || true)"
+      uname -a
+    } | shasum -a 256 | awk '{print $1}'
+  )
+fi
+
+run_checkpointed() {
+  local stage=$1
+  shift
+  if [[ -z "${checkpoint_directory}" ]]; then
+    "$@"
+    return
+  fi
+
+  mkdir -p "${checkpoint_directory}"
+  local stamp="${checkpoint_directory}/${mode}-${stage}.sha256"
+  local expected="${validation_fingerprint}:${stage}"
+  local actual=""
+  if [[ -f "${stamp}" ]]; then
+    IFS= read -r actual <"${stamp}" || true
+  fi
+  if [[ "${actual}" == "${expected}" ]]; then
+    printf 'reusing exact-input validation checkpoint: %s\n' "${stage}"
+    return
+  fi
+
+  "$@"
+  local temporary_stamp
+  temporary_stamp=$(mktemp "${checkpoint_directory}/.${mode}-${stage}.XXXXXX")
+  printf '%s\n' "${expected}" >"${temporary_stamp}"
+  mv -f "${temporary_stamp}" "${stamp}"
+}
+
 printf 'running %s stack release validation\n' "${mode}"
-make -C "${builder_repo}" check-licenses vet lint coverage build
-make -C "${containerization_repo}" "${containerization_targets[@]}"
+if [[ -n "${checkpoint_directory}" ]]; then
+  printf 'stack validation exact-input fingerprint: %s\n' "${validation_fingerprint}"
+fi
+run_checkpointed builder \
+  make -C "${builder_repo}" check-licenses vet lint coverage build
+run_checkpointed containerization \
+  make -C "${containerization_repo}" "${containerization_targets[@]}"
 # The outer stable gate may select an already-running isolated runtime for
 # Containerization's image build. Container's unit tests exercise their own
 # default namespace contract, so do not let that selector rewrite the expected
 # launchd labels and engine socket paths. The explicit APP_ROOT/LOG_ROOT make
 # arguments still isolate Container's VM-backed integration state.
-env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
-  CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}" \
-  make -C "${container_repo}" "${container_make_args[@]}" "${container_targets[@]}"
-ruby -c "${homebrew_tap_repo}/Formula/container-compose.rb"
+run_checkpointed container \
+  env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
+    CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}" \
+    make -C "${container_repo}" "${container_make_args[@]}" "${container_targets[@]}"
+run_checkpointed homebrew \
+  ruby -c "${homebrew_tap_repo}/Formula/container-compose.rb"

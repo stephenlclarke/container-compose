@@ -18,8 +18,11 @@
 from __future__ import annotations
 
 import hashlib
+import io
+import json
 import os
 import subprocess
+import tarfile
 import tempfile
 import time
 import unittest
@@ -54,6 +57,11 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             "CONTAINERIZATION_INIT_BUILD_SCRATCH_ROOT",
             "CONTAINER_COMPOSE_INIT_IMAGE",
             "CONTAINER_RUNTIME_LOCK_FILE",
+            "CONTAINER_RUNTIME_MANAGED",
+            "CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES",
+            "CONTAINER_RUNTIME_RUN_ID",
+            "CONTAINER_RUNTIME_LOCK_HELD",
+            "CONTAINER_RUNTIME_LOCK_KEEPER_PID",
         ):
             environment.pop(variable, None)
         return environment
@@ -77,6 +85,35 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             encoding="utf-8",
         )
         path.chmod(0o755)
+
+    @staticmethod
+    def create_oci_archive(
+        path: Path,
+        *references: str,
+        distinct_digests: bool = False,
+    ) -> None:
+        index = {
+            "schemaVersion": 2,
+            "manifests": [
+                {
+                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                    "digest": "sha256:"
+                    + (f"{index:x}" * 64)[:64]
+                    if distinct_digests
+                    else "sha256:" + "0" * 64,
+                    "size": 0,
+                    "annotations": {
+                        "org.opencontainers.image.ref.name": reference,
+                    },
+                }
+                for index, reference in enumerate(references, start=1)
+            ],
+        }
+        payload = json.dumps(index).encode("utf-8")
+        with tarfile.open(path, "w") as archive:
+            member = tarfile.TarInfo("index.json")
+            member.size = len(payload)
+            archive.addfile(member, io.BytesIO(payload))
 
     @staticmethod
     def create_containerization_source(root: Path) -> tuple[Path, str]:
@@ -158,6 +195,70 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 self.assertIn(expected_error, result.stderr)
                 self.assertFalse(container_log.exists())
 
+    def test_preserves_nonempty_unmarked_runtime_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            app_root.mkdir()
+            sentinel = app_root / "user-data"
+            sentinel.write_text("preserve\n", encoding="utf-8")
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("refusing to clear unmarked", result.stderr)
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "preserve\n")
+
+    def test_preserves_runtime_root_with_invalid_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            app_root.mkdir()
+            marker = app_root / ".container-compose-runtime-root"
+            marker.write_text("not-owned\n", encoding="utf-8")
+            sentinel = app_root / "user-data"
+            sentinel.write_text("preserve\n", encoding="utf-8")
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("refusing to clear container runtime root with an invalid marker", result.stderr)
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "preserve\n")
+
     def test_scopes_candidate_namespace_and_exports_public_socket(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -170,6 +271,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             environment.update(
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_RUN_ID": "candidate-test-run",
                     "CONTAINER_RUNTIME_LOCK_FILE": str(
                         temporary_root / "runtime.lock"
                     ),
@@ -201,7 +303,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             )
 
             namespace_digest = hashlib.sha256(
-                f"{app_root}:{os.getuid()}".encode("utf-8")
+                f"{app_root}:{os.getuid()}:candidate-test-run".encode("utf-8")
             ).hexdigest()[:24]
             namespace = (
                 "io.github.stephenlclarke.container-compose.runtime."
@@ -216,6 +318,45 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 [namespace, str(app_root), socket, f"unix://{socket}"],
             )
             self.assertIn("system start", container_log.read_text(encoding="utf-8"))
+
+    def test_repeated_runs_on_one_root_receive_different_default_namespaces(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            namespaces: list[str] = []
+            for run_number in range(2):
+                namespace_file = temporary_root / f"namespace-{run_number}"
+                environment = self.runtime_environment()
+                environment.update(
+                    {
+                        "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                        "CONTAINER_RUNTIME_LOCK_FILE": str(
+                            temporary_root / "runtime.lock"
+                        ),
+                        "CONTAINER_TEST_LOG": str(container_log),
+                        "NAMESPACE_FILE": str(namespace_file),
+                    }
+                )
+                result = subprocess.run(
+                    [
+                        str(SCRIPT),
+                        str(fake_container),
+                        "/bin/sh",
+                        "-c",
+                        'printf "%s\\n" "$CONTAINER_SERVICE_NAMESPACE" >"$NAMESPACE_FILE"',
+                    ],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                namespaces.append(namespace_file.read_text(encoding="utf-8").strip())
+
+            self.assertNotEqual(namespaces[0], namespaces[1])
 
     def test_rejects_legacy_global_stop_helper_before_service_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -655,7 +796,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             temporary_root = Path(temporary_directory)
             app_root = temporary_root / "app-root"
             init_archive = temporary_root / "vminit.tar"
-            init_archive.write_bytes(b"retained init image")
+            self.create_oci_archive(init_archive, DEFAULT_INIT_IMAGE)
             container_log = temporary_root / "container.log"
             fake_container = temporary_root / "container-cli"
             self.write_fake_container(fake_container)
@@ -695,6 +836,151 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertIn("--disable-kernel-install", starts[0])
             self.assertIn(f"--init-image-archive {init_archive}", starts[0])
             self.assertNotIn(f"image load --input {init_archive}", invocations)
+
+    def test_rejects_retained_archive_missing_any_required_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            init_archive = temporary_root / "vminit.tar"
+            immutable_reference = "ghcr.io/example/vminit:0123456789abcdef"
+            self.create_oci_archive(init_archive, DEFAULT_INIT_IMAGE)
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE": str(init_archive),
+                    "CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES": immutable_reference,
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(immutable_reference, result.stderr)
+            self.assertFalse(container_log.exists())
+
+    def test_rejects_required_archive_references_with_different_digests(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            init_archive = temporary_root / "vminit.tar"
+            immutable_reference = "ghcr.io/example/vminit:0123456789abcdef"
+            self.create_oci_archive(
+                init_archive,
+                DEFAULT_INIT_IMAGE,
+                immutable_reference,
+                distinct_digests=True,
+            )
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE": str(init_archive),
+                    "CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES": immutable_reference,
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("do not resolve to one digest", result.stderr)
+            self.assertFalse(container_log.exists())
+
+    def test_managed_runtime_does_not_restart_or_stop_its_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            container_log = temporary_root / "container.log"
+            command_log = temporary_root / "command.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "outer-owner",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "COMMAND_LOG": str(command_log),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/bin/sh",
+                    "-c",
+                    'printf "managed\\n" >"$COMMAND_LOG"',
+                ],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(command_log.read_text(encoding="utf-8"), "managed\n")
+            self.assertFalse(container_log.exists())
+
+    def test_api_round_trip_failure_blocks_the_candidate_command(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            container_log = temporary_root / "container.log"
+            command_marker = temporary_root / "command-ran"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "list --all --format json" ]]; then\n'
+                    "  exit 23\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(command_marker.exists())
 
     def test_restarts_once_after_transient_xpc_start_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -800,6 +1086,68 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
 
 class ContainerRuntimeLockTest(unittest.TestCase):
+    @staticmethod
+    def independent_runtime_environment() -> dict[str, str]:
+        environment = os.environ.copy()
+        for variable in (
+            "CONTAINER_RUNTIME_LOCK_HELD",
+            "CONTAINER_RUNTIME_LOCK_KEEPER_PID",
+            "CONTAINER_RUNTIME_MANAGED",
+        ):
+            environment.pop(variable, None)
+        return environment
+
+    def test_runtime_children_do_not_inherit_the_lock_descriptor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            lock_file = temporary_root / "runtime.lock"
+            inherited_descriptor = temporary_root / "inherited-descriptor"
+            environment = self.independent_runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(lock_file),
+                    "CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS": "1",
+                }
+            )
+            holder_script = (
+                f'source "{LOCK_SCRIPT}"; '
+                "acquire_container_runtime_lock; "
+                f"/bin/bash -c 'if [[ -e /dev/fd/9 ]]; then "
+                f'touch "{inherited_descriptor}"; fi; sleep 2\' '
+                ">/dev/null 2>&1 &"
+            )
+            contender_script = (
+                f'source "{LOCK_SCRIPT}"; '
+                "acquire_container_runtime_lock; "
+                "release_container_runtime_lock"
+            )
+
+            holder = subprocess.run(
+                ["/bin/bash", "-c", holder_script],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(holder.returncode, 0, holder.stdout + holder.stderr)
+
+            started = time.monotonic()
+            contender = subprocess.run(
+                ["/bin/bash", "-c", contender_script],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            elapsed = time.monotonic() - started
+            self.assertEqual(
+                contender.returncode,
+                0,
+                contender.stdout + contender.stderr,
+            )
+            self.assertLess(elapsed, 1.0)
+            self.assertFalse(inherited_descriptor.exists())
+
     def test_serializes_independent_runtime_users(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -807,7 +1155,7 @@ class ContainerRuntimeLockTest(unittest.TestCase):
             holder_ready = temporary_root / "holder-ready"
             holder_release = temporary_root / "holder-release"
             contender_acquired = temporary_root / "contender-acquired"
-            environment = os.environ.copy()
+            environment = self.independent_runtime_environment()
             environment.update(
                 {
                     "CONTAINER_RUNTIME_LOCK_FILE": str(lock_file),

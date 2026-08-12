@@ -170,14 +170,15 @@ counts from the Swift Testing log.
 
 ### Isolated macOS Runtime Ownership
 
-The default Container installation retains its stock launchd/Mach names, but an explicit validated `CONTAINER_SERVICE_NAMESPACE` now gives a candidate runtime its own API, Machine API, images, runtime, network, Engine, and public-socket ownership. `scripts/run-with-container-runtime.sh` derives a bounded namespace from its marker-protected candidate root and UID, verifies the namespace-derived socket before it starts services, and stops only that namespace. [RUNTIME-ISOLATED-PUBLIC-SOCKET-01](docs/parity/handoffs/RUNTIME-ISOLATED-PUBLIC-SOCKET-01.md) verifies one source-pinned public `docker version` lifecycle with the user-owned `devcontainer-engine` healthy before and after candidate cleanup.
+The default Container installation retains its stock launchd/Mach names, but an explicit validated `CONTAINER_SERVICE_NAMESPACE` now gives a candidate runtime its own API, Machine API, images, runtime, network, Engine, and public-socket ownership. `scripts/run-with-container-runtime.sh` derives a bounded namespace from its marker-protected candidate root, UID, and unique run identity, verifies the namespace-derived socket before it starts services, and stops only that namespace. Reusing one namespace after rebuilding the executable is unsupported. [RUNTIME-ISOLATED-PUBLIC-SOCKET-01](docs/parity/handoffs/RUNTIME-ISOLATED-PUBLIC-SOCKET-01.md) verifies one source-pinned public `docker version` lifecycle with the user-owned `devcontainer-engine` healthy before and after candidate cleanup.
 
 The default lock is `/tmp/container-compose-runtime-${UID}.lock`; `CONTAINER_RUNTIME_LOCK_FILE` changes it and `CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS` changes the default 10,800-second wait. The helper uses `lockf` on macOS and the equivalent `flock` file-descriptor lock in Linux source-check runners. Every cooperating workflow on the host must use the same lock path. The lock remains required for legacy/default-namespace callers and controlled release workflows; it is no longer the only safety boundary for a correctly namespaced candidate. A unique per-job lock still defeats serialization for callers that share the default namespace.
 
 The parity harness also:
 
 - clears only a marker-protected `CONTAINER_RUNTIME_APP_ROOT`, retaining its kernel cache;
-- loads `CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE` when supplied, avoiding a cold source rebuild of the exact init image, or falls back to `CONTAINER_RUNTIME_INIT_BLOCK_REPO`;
+- redirects LLVM raw profiles into that marker-protected runtime root so instrumented test binaries cannot dirty source checkouts;
+- verifies that `CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE`, when supplied, contains every reference in `CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES` plus the configured Compose alias at one digest before it touches the host runtime, then loads that archive or falls back to `CONTAINER_RUNTIME_INIT_BLOCK_REPO`;
 - starts the exact Container binary and requires a real `container list --all --format json` API round trip;
 - stops and restarts that exact runtime at most once after an XPC `Connection interrupted`/`Connection invalid` start or failed API-readiness round trip; and
 - always stops the matched runtime when the wrapped command exits.
@@ -380,8 +381,13 @@ Current source and package, every local and hosted release gate, a signed tag,
 and the paired Homebrew verification. It then blocks if a sibling fork is
 behind Apple upstream, requires `kern.hv_support=1`, bootstraps the matched
 stack tools, fetches the required `containerization` integration kernel when it
-is absent, and runs the full local `make release-gate`. The hosted gate
-then runs the `make release-gate-hosted` equivalent from its immutable
+is absent, and runs the full local `make release-gate` inside one fresh,
+marker-protected, uniquely namespaced runtime lifecycle. Nested runtime targets
+reuse that owner without stopping it, and exact-input sibling validation
+checkpoints under the release evidence directory are reused after an
+interrupted retry. An unpublished helper-generated candidate commit is likewise
+retained rather than recommitted with a new identity. The hosted gate then runs
+the `make release-gate-hosted` equivalent from its immutable
 release-control checkout against the immutable source, runtime, and tap
 checkouts before package publication. The helper waits up to three hours for
 that hosted gate, which exceeds its 120-minute workflow timeout; set
