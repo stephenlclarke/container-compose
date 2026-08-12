@@ -961,7 +961,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertIn("do not resolve to one digest", result.stderr)
             self.assertFalse(container_log.exists())
 
-    def test_managed_runtime_does_not_restart_or_stop_its_owner(self) -> None:
+    def test_managed_runtime_ready_api_does_not_restart_or_stop_its_owner(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
             app_root = temporary_root / "app-root"
@@ -997,7 +997,69 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(command_log.read_text(encoding="utf-8"), "managed\n")
-            self.assertFalse(container_log.exists())
+            self.assertEqual(
+                container_log.read_text(encoding="utf-8"),
+                "list --all --format json\n",
+            )
+
+    def test_managed_runtime_recovers_owner_api_after_cli_reinstall(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            container_log = temporary_root / "container.log"
+            command_log = temporary_root / "command.log"
+            ready_marker = temporary_root / "ready"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "list --all --format json" ]]; then\n'
+                    '  [[ -f "${READY_MARKER:?}" ]]\n'
+                    "  exit\n"
+                    "fi\n"
+                    'if [[ "$*" == *"system start"* ]]; then\n'
+                    '  : >"${READY_MARKER:?}"\n'
+                    "  exit 0\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "outer-owner",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "COMMAND_LOG": str(command_log),
+                    "READY_MARKER": str(ready_marker),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/bin/sh",
+                    "-c",
+                    'printf "recovered\\n" >"$COMMAND_LOG"',
+                ],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(command_log.read_text(encoding="utf-8"), "recovered\n")
+            container_commands = container_log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(container_commands[0], "list --all --format json")
+            self.assertIn(
+                f"--debug system start --timeout 60 --enable-kernel-install --app-root {app_root}",
+                container_commands,
+            )
+            self.assertEqual(container_commands[-1], "list --all --format json")
+            self.assertFalse(any("system stop" in command for command in container_commands))
 
     def test_api_round_trip_failure_blocks_the_candidate_command(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -388,6 +388,40 @@ start_runtime() {
     done
 }
 
+# A nested release target inherits the outer harness's lock and runtime
+# ownership. Recheck the API before trusting that ownership because a matched
+# CLI rebuild can replace the installed service binaries after the outer
+# runtime was started. Recover the same namespace/root once without taking a
+# second lock or stopping the owner.
+ensure_managed_runtime_ready() {
+    local start_log
+    local start_status
+
+    if "$container_binary" list --all --format json >/dev/null; then
+        return
+    fi
+
+    printf 'Managed Container API is not ready; re-establishing the owner runtime...\n' >&2
+    start_log=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-managed-start.XXXXXX")
+    start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
+    if [[ -n "$runtime_app_root" ]]; then
+        start_arguments+=(--app-root "$runtime_app_root")
+    fi
+    if "$container_binary" "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
+        start_status=0
+    else
+        start_status=${PIPESTATUS[0]}
+        rm -f "$start_log"
+        return "$start_status"
+    fi
+    rm -f "$start_log"
+
+    if ! "$container_binary" list --all --format json >/dev/null; then
+        printf 'Managed Container API remained unavailable after owner-runtime recovery\n' >&2
+        return 1
+    fi
+}
+
 prepare_runtime_root() {
     mkdir -p "$runtime_app_root"
     local marker_path="$runtime_app_root/$runtime_root_marker"
@@ -630,6 +664,7 @@ configure_runtime_namespace
 verify_runtime_namespace_support
 
 if [[ "${CONTAINER_RUNTIME_MANAGED:-0}" == "1" ]]; then
+    ensure_managed_runtime_ready
     "$@"
     exit
 fi
