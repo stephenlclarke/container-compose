@@ -64,7 +64,9 @@ fi
 # must never inherit stale machines, images, or networks from an earlier local
 # run, nor leave its own state behind for the next gate.  Keep the default under
 # Container's already-ignored test scratch directory, resolving relative hosted
-# checkout paths before passing the application root through make.
+# checkout paths before passing the application root through make.  Resolve
+# symlinks as well: Container's protected logging state deliberately rejects a
+# persistence root whose canonical path differs from the supplied path.
 if [[ -n "${CONTAINER_STACK_VALIDATION_SCRATCH_ROOT:-}" ]]; then
   container_scratch_root="${CONTAINER_STACK_VALIDATION_SCRATCH_ROOT}"
   if [[ "${container_scratch_root}" != /* || "${container_scratch_root}" == / ]]; then
@@ -73,7 +75,13 @@ if [[ -n "${CONTAINER_STACK_VALIDATION_SCRATCH_ROOT:-}" ]]; then
     exit 2
   fi
 else
-  container_scratch_root="$(cd "${container_repo}" && pwd -L)/.test-scratch"
+  container_scratch_root="$(cd "${container_repo}" && pwd -P)/.test-scratch"
+fi
+mkdir -p "${container_scratch_root}"
+container_scratch_root="$(cd "${container_scratch_root}" && pwd -P)"
+if [[ "${container_scratch_root}" == / ]]; then
+  printf 'CONTAINER_STACK_VALIDATION_SCRATCH_ROOT must not resolve to /\n' >&2
+  exit 2
 fi
 container_app_root="${container_scratch_root}/stack-release-app-root"
 container_log_root="${container_scratch_root}/stack-release-log-root"
@@ -94,12 +102,103 @@ builder_validation_fingerprint=""
 containerization_validation_fingerprint=""
 container_validation_fingerprint=""
 homebrew_validation_fingerprint=""
+runtime_cli=${CONTAINER_RUNTIME_CLI:-}
+runtime_cli_directory=""
+runtime_path=${PATH}
+runtime_cli_fingerprint="unset"
+runtime_cli_sha256="unset"
+runtime_candidate_sha256=${CONTAINER_RUNTIME_CANDIDATE_SHA256:-}
+validation_environment_path=${PATH}
+runtime_make_args=()
+if [[ "${mode}" == "full" ]]; then
+  if [[ "${runtime_cli}" != /* || ! -x "${runtime_cli}" ]]; then
+    printf 'full stack validation requires an absolute executable CONTAINER_RUNTIME_CLI: %s\n' \
+      "${runtime_cli:-unset}" >&2
+    exit 2
+  fi
+  runtime_cli_directory=$(cd "$(dirname "${runtime_cli}")" && pwd -P)
+  runtime_cli="${runtime_cli_directory}/$(basename "${runtime_cli}")"
+  runtime_path="${runtime_cli_directory}${PATH:+:${PATH}}"
+  runtime_cli_sha256="$(shasum -a 256 "${runtime_cli}" | awk '{print $1}')"
+  if [[ -n "${CONTAINER_RUNTIME_CLI_SHA256:-}" &&
+    "${CONTAINER_RUNTIME_CLI_SHA256}" != "${runtime_cli_sha256}" ]]; then
+    printf 'full stack validation Container CLI digest mismatch (expected %s, got %s): %s\n' \
+      "${CONTAINER_RUNTIME_CLI_SHA256}" "${runtime_cli_sha256}" "${runtime_cli}" >&2
+    exit 2
+  fi
+  if [[ -n "${runtime_candidate_sha256}" ]]; then
+    if ! [[ "${runtime_candidate_sha256}" =~ ^[0-9a-f]{64}$ ]]; then
+      printf 'CONTAINER_RUNTIME_CANDIDATE_SHA256 must be a lowercase SHA-256 digest: %s\n' \
+        "${runtime_candidate_sha256}" >&2
+      exit 2
+    fi
+    if [[ -w "${runtime_cli}" ]]; then
+      printf 'packaged Container runtime candidate CLI must be read-only during validation: %s\n' \
+        "${runtime_cli}" >&2
+      exit 2
+    fi
+  else
+    runtime_candidate_sha256="unpackaged"
+  fi
+  if [[ "${runtime_candidate_sha256}" == "unpackaged" ]]; then
+    runtime_cli_fingerprint="unpackaged:${runtime_cli}:${runtime_cli_sha256}"
+  else
+    runtime_cli_fingerprint="packaged:${runtime_candidate_sha256}:${runtime_cli_sha256}"
+    validation_path_first="${validation_environment_path%%:*}"
+    validation_path_first_resolved=""
+    if [[ -d "${validation_path_first}" ]]; then
+      validation_path_first_resolved=$(cd "${validation_path_first}" && pwd -P)
+    fi
+    if [[ "${validation_path_first_resolved}" == "${runtime_cli_directory}" ]]; then
+      if [[ "${validation_environment_path}" == *:* ]]; then
+        validation_environment_path="${validation_environment_path#*:}"
+      else
+        validation_environment_path=""
+      fi
+    fi
+  fi
+  runtime_make_args+=("PATH=${runtime_path}")
+fi
+
+# The full gate owns one namespace-scoped Container candidate. Pin PATH as a
+# make command-line variable so recursive sibling Makefiles cannot fall back
+# to a Homebrew/default-namespace CLI after their expensive unit suites.
+verify_runtime_cli_identity() {
+  [[ "${mode}" == "full" ]] || return 0
+
+  local resolved
+  if ! resolved=$(PATH="${runtime_path}" command -v container); then
+    printf 'full stack validation could not resolve container on its pinned PATH\n' >&2
+    return 2
+  fi
+  local resolved_directory
+  resolved_directory=$(cd "$(dirname "${resolved}")" && pwd -P)
+  resolved="${resolved_directory}/$(basename "${resolved}")"
+  if [[ "${resolved}" != "${runtime_cli}" ]]; then
+    printf 'full stack validation container path drifted (expected %s, got %s)\n' \
+      "${runtime_cli}" "${resolved}" >&2
+    return 2
+  fi
+
+  local current_sha256
+  current_sha256="$(shasum -a 256 "${runtime_cli}" | awk '{print $1}')"
+  if [[ "${current_sha256}" != "${runtime_cli_sha256}" ]]; then
+    printf 'full stack validation Container CLI content drifted (expected %s, got %s): %s\n' \
+      "${runtime_cli_sha256}" "${current_sha256}" "${runtime_cli}" >&2
+    return 2
+  fi
+}
+
+run_containerization_validation() {
+  make -C "${containerization_repo}" "${runtime_make_args[@]}" "${containerization_targets[@]}"
+}
+
 if [[ -n "${checkpoint_directory}" ]]; then
   common_validation_fingerprint=$(
     {
       printf 'mode=%s\n' "${mode}"
       printf 'validator=%s\n' "$(shasum -a 256 "$0" | awk '{print $1}')"
-      printf 'environment=PATH=%s\n' "${PATH}"
+      printf 'environment=PATH=%s\n' "${validation_environment_path}"
       printf 'environment=DEVELOPER_DIR=%s\n' "${DEVELOPER_DIR:-}"
       printf 'environment=SDKROOT=%s\n' "${SDKROOT:-}"
       printf 'environment=CC=%s\n' "${CC:-}"
@@ -163,6 +262,7 @@ if [[ -n "${checkpoint_directory}" ]]; then
       printf 'required_init_references=%s\n' \
         "${CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES:-}"
       printf 'init_archive=%s\n' "${init_archive_fingerprint}"
+      printf 'runtime_cli=%s\n' "${runtime_cli_fingerprint}"
     } | shasum -a 256 | awk '{print $1}'
   )
   container_validation_fingerprint=$(
@@ -173,6 +273,7 @@ if [[ -n "${checkpoint_directory}" ]]; then
       printf 'tree=%s:%s\n' "${container_repo}" "${container_tree}"
       printf 'scratch_root=%s\n' "${container_scratch_root}"
       printf 'init_archive=%s\n' "${init_archive_fingerprint}"
+      printf 'runtime_cli=%s\n' "${runtime_cli_fingerprint}"
     } | shasum -a 256 | awk '{print $1}'
   )
   homebrew_validation_fingerprint=$(
@@ -210,8 +311,10 @@ validation_fingerprint_for_stage() {
 run_checkpointed() {
   local stage=$1
   shift
+  verify_runtime_cli_identity
   if [[ -z "${checkpoint_directory}" ]]; then
     "$@"
+    verify_runtime_cli_identity
     return
   fi
 
@@ -225,10 +328,12 @@ run_checkpointed() {
   fi
   if [[ "${actual}" == "${expected}" ]]; then
     printf 'reusing exact-input validation checkpoint: %s\n' "${stage}"
+    verify_runtime_cli_identity
     return
   fi
 
   "$@"
+  verify_runtime_cli_identity
   local temporary_stamp
   temporary_stamp=$(mktemp "${checkpoint_directory}/.${mode}-${stage}.XXXXXX")
   printf '%s\n' "${expected}" >"${temporary_stamp}"
@@ -249,7 +354,7 @@ fi
 run_checkpointed builder \
   make -C "${builder_repo}" check-licenses vet lint coverage build
 run_checkpointed containerization \
-  make -C "${containerization_repo}" "${containerization_targets[@]}"
+  run_containerization_validation
 # The outer stable gate may select an already-running isolated runtime for
 # Containerization's image build. Container's unit tests exercise their own
 # default namespace contract, so do not let that selector rewrite the expected
@@ -258,6 +363,7 @@ run_checkpointed containerization \
 run_checkpointed container \
   env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
     CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}" \
-    make -C "${container_repo}" "${container_make_args[@]}" "${container_targets[@]}"
+    make -C "${container_repo}" "${runtime_make_args[@]}" \
+      "${container_make_args[@]}" "${container_targets[@]}"
 run_checkpointed homebrew \
   ruby -c "${homebrew_tap_repo}/Formula/container-compose.rb"

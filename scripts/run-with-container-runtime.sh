@@ -43,10 +43,19 @@ if [[ ! -x "$container_binary" ]]; then
 fi
 container_binary_directory=$(cd "$(dirname "$container_binary")" && pwd -P)
 container_binary="$container_binary_directory/$(basename "$container_binary")"
+container_binary_sha256=$(shasum -a 256 "$container_binary" | awk '{print $1}')
+if [[ -n "${CONTAINER_RUNTIME_CLI_SHA256:-}" &&
+    "${CONTAINER_RUNTIME_CLI_SHA256}" != "$container_binary_sha256" ]]; then
+    printf 'candidate container binary digest mismatch (expected %s, got %s): %s\n' \
+        "${CONTAINER_RUNTIME_CLI_SHA256}" "$container_binary_sha256" "$container_binary" >&2
+    exit 2
+fi
 # Every nested Makefile and helper must resolve the same candidate CLI that
 # owns the isolated runtime. Otherwise a host-installed `container` earlier in
 # PATH can silently target the default service namespace mid-validation.
 export PATH="$container_binary_directory${PATH:+:$PATH}"
+export CONTAINER_RUNTIME_CLI="$container_binary"
+export CONTAINER_RUNTIME_CLI_SHA256="$container_binary_sha256"
 runtime_app_root=${CONTAINER_RUNTIME_APP_ROOT:-}
 runtime_service_namespace=${CONTAINER_RUNTIME_SERVICE_NAMESPACE:-}
 runtime_run_id=${CONTAINER_RUNTIME_RUN_ID:-}

@@ -1010,6 +1010,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             "release-gate: container-stack-release-validation ci swift-runtime-test docker-compose-parity",
             makefile,
         )
+        self.assertEqual(
+            makefile.count("env -u CONTAINER_BIN -u CONTAINER_COMPOSE_CONTAINER"),
+            2,
+        )
         self.assertIn("DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.3.1", makefile)
         self.assertIn("DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff", makefile)
         self.assertNotIn("repackage-release", makefile)
@@ -1066,6 +1070,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
             tools = root / "tools"
             tools.mkdir()
+            candidate_tools = root / "candidate-tools"
+            candidate_tools.mkdir()
+            candidate_tools_resolved = candidate_tools.resolve()
             log = root / "commands.log"
             for name in ("make", "ruby"):
                 tool = tools / name
@@ -1076,10 +1083,23 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                     "  exit 0\n"
                     "fi\n"
                     "printf '%s:%s\\n' \"$(basename \"$0\")\" \"$*\" >> \"${STACK_VALIDATION_LOG:?}\"\n"
-                    "printf 'bootstrap:%s\\n' \"${CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE:-}\" >> \"${STACK_VALIDATION_LOG:?}\"\n",
+                    "printf 'bootstrap:%s\\n' \"${CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE:-}\" >> \"${STACK_VALIDATION_LOG:?}\"\n"
+                    "if [[ \"$(basename \"$0\")\" == make && "
+                    "-n \"${MUTATE_RUNTIME_CLI_AFTER_MATCH:-}\" && "
+                    "\"$*\" == *\"${MUTATE_RUNTIME_CLI_AFTER_MATCH}\"* ]]; then\n"
+                    "  printf '# drift\\n' >>\"${CONTAINER_RUNTIME_CLI:?}\"\n"
+                    "fi\n",
                     encoding="utf-8",
                 )
                 tool.chmod(0o755)
+            for directory, marker in ((tools, "competing"), (candidate_tools, "candidate")):
+                container_tool = directory / "container"
+                container_tool.write_text(
+                    "#!/usr/bin/env bash\n"
+                    f"printf '%s\\n' {shlex.quote(marker)}\n",
+                    encoding="utf-8",
+                )
+                container_tool.chmod(0o755)
             go_tool = tools / "go"
             go_tool.write_text(
                 "#!/usr/bin/env bash\n"
@@ -1099,6 +1119,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             environment["STACK_VALIDATION_LOG"] = str(log)
             environment["FAKE_GO_VERSION"] = "go1.26.3"
             environment["CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE"] = "/tmp/runtime-init.oci.tar"
+            environment["CONTAINER_RUNTIME_CLI"] = str(candidate_tools_resolved / "container")
             environment["CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR"] = str(
                 root / "checkpoints"
             )
@@ -1119,15 +1140,22 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
             self.assertEqual(full.returncode, 0, full.stderr)
             full_commands = log.read_text(encoding="utf-8")
+            resolved_container = container.resolve()
             self.assertIn(
-                f"make:-C {containerization} check containerization examples docs coverage fetch-default-kernel integration",
+                f"make:-C {containerization} PATH={candidate_tools_resolved}{os.pathsep}{tools}",
+                full_commands,
+            )
+            self.assertIn(
+                "check containerization examples docs coverage fetch-default-kernel integration",
                 full_commands,
             )
             self.assertIn(
                 "make:-C "
                 f"{container} "
-                f"APP_ROOT={container}/.test-scratch/stack-release-app-root "
-                f"LOG_ROOT={container}/.test-scratch/stack-release-log-root "
+                f"PATH={candidate_tools_resolved}{os.pathsep}{tools}"
+                f"{os.pathsep}{environment['PATH'].split(os.pathsep, 1)[1]} "
+                f"APP_ROOT={resolved_container}/.test-scratch/stack-release-app-root "
+                f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
                 "INTEGRATION_SERVICE_NAMESPACE=io.github.container.stack-validation.fixture "
                 "check container dsym docs coverage",
                 full_commands,
@@ -1208,6 +1236,83 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 changed_toolchain.stdout,
             )
 
+            packaged_log = root / "packaged-commands.log"
+            packaged_checkpoints = root / "packaged-checkpoints"
+            packaged_environments = []
+            for index in (1, 2):
+                packaged_tools = root / f"packaged-candidate-{index}"
+                packaged_tools.mkdir()
+                packaged_cli = packaged_tools / "container"
+                packaged_cli.write_text(
+                    "#!/usr/bin/env bash\nprintf 'packaged candidate\\n'\n",
+                    encoding="utf-8",
+                )
+                packaged_cli.chmod(0o555)
+                packaged_environment = environment.copy()
+                packaged_environment["PATH"] = (
+                    f"{packaged_tools}{os.pathsep}{environment['PATH']}"
+                )
+                packaged_environment["STACK_VALIDATION_LOG"] = str(packaged_log)
+                packaged_environment["CONTAINER_RUNTIME_CLI"] = str(packaged_cli)
+                packaged_environment["CONTAINER_RUNTIME_CANDIDATE_SHA256"] = "a" * 64
+                packaged_environment["CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR"] = str(
+                    packaged_checkpoints
+                )
+                packaged_environments.append(packaged_environment)
+
+            first_packaged = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=packaged_environments[0],
+                text=True,
+            )
+            self.assertEqual(first_packaged.returncode, 0, first_packaged.stderr)
+            first_packaged_commands = packaged_log.read_text(encoding="utf-8")
+            second_packaged = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=packaged_environments[1],
+                text=True,
+            )
+            self.assertEqual(second_packaged.returncode, 0, second_packaged.stderr)
+            self.assertEqual(
+                packaged_log.read_text(encoding="utf-8"),
+                first_packaged_commands,
+                first_packaged.stdout
+                + first_packaged.stderr
+                + second_packaged.stdout
+                + second_packaged.stderr,
+            )
+            self.assertEqual(
+                second_packaged.stdout.count(
+                    "reusing exact-input validation checkpoint:"
+                ),
+                4,
+                second_packaged.stdout,
+            )
+
+            drift_environment = environment.copy()
+            drift_environment["CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR"] = str(
+                root / "drift-checkpoints"
+            )
+            drift_environment["MUTATE_RUNTIME_CLI_AFTER_MATCH"] = str(
+                containerization
+            )
+            drift = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=drift_environment,
+                text=True,
+            )
+            self.assertEqual(drift.returncode, 2)
+            self.assertIn("Container CLI content drifted", drift.stderr)
+            self.assertFalse(
+                (root / "drift-checkpoints" / "full-containerization.sha256").exists()
+            )
+
             log.unlink()
             hosted = subprocess.run(
                 [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
@@ -1225,8 +1330,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(
                 "make:-C "
                 f"{container} "
-                f"APP_ROOT={container}/.test-scratch/stack-release-app-root "
-                f"LOG_ROOT={container}/.test-scratch/stack-release-log-root "
+                f"APP_ROOT={resolved_container}/.test-scratch/stack-release-app-root "
+                f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
                 "check container dsym docs coverage-unit",
                 hosted_commands,
             )
@@ -1248,13 +1353,35 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
             self.assertEqual(relative.returncode, 0, relative.stderr)
             relative_commands = log.read_text(encoding="utf-8")
-            resolved_container = container.resolve()
             self.assertIn(
                 "make:-C container "
                 f"APP_ROOT={resolved_container}/.test-scratch/stack-release-app-root "
                 f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
                 "check container dsym docs coverage-unit",
                 relative_commands,
+            )
+
+            log.unlink()
+            container_link = root / "container-link"
+            container_link.symlink_to(container, target_is_directory=True)
+            symlink_paths = validation_paths.copy()
+            symlink_paths[3] = str(container_link)
+            symlinked = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "hosted", *symlink_paths],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+            self.assertEqual(symlinked.returncode, 0, symlinked.stderr)
+            symlinked_commands = log.read_text(encoding="utf-8")
+            self.assertIn(
+                "make:-C "
+                f"{container_link} "
+                f"APP_ROOT={resolved_container}/.test-scratch/stack-release-app-root "
+                f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
+                "check container dsym docs coverage-unit",
+                symlinked_commands,
             )
 
             log.unlink()
@@ -1272,11 +1399,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
             self.assertEqual(external.returncode, 0, external.stderr)
             external_commands = log.read_text(encoding="utf-8")
+            resolved_external_scratch = external_scratch.resolve()
             self.assertIn(
                 "make:-C "
                 f"{container} "
-                f"APP_ROOT={external_scratch}/stack-release-app-root "
-                f"LOG_ROOT={external_scratch}/stack-release-log-root "
+                f"APP_ROOT={resolved_external_scratch}/stack-release-app-root "
+                f"LOG_ROOT={resolved_external_scratch}/stack-release-log-root "
                 "check container dsym docs coverage-unit",
                 external_commands,
             )
@@ -1294,6 +1422,25 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(
                 "CONTAINER_STACK_VALIDATION_SCRATCH_ROOT must be an absolute path",
                 invalid.stderr,
+            )
+
+            root_link = root / "root-link"
+            root_link.symlink_to(Path("/"), target_is_directory=True)
+            root_environment = environment.copy()
+            root_environment["CONTAINER_STACK_VALIDATION_SCRATCH_ROOT"] = str(
+                root_link
+            )
+            root_scratch = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=root_environment,
+                text=True,
+            )
+            self.assertEqual(root_scratch.returncode, 2)
+            self.assertIn(
+                "CONTAINER_STACK_VALIDATION_SCRATCH_ROOT must not resolve to /",
+                root_scratch.stderr,
             )
 
     def test_hosted_release_gate_uses_an_unpublished_verified_tag_and_immutable_tap_snapshot(
@@ -1473,10 +1620,139 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('profile_root="${runtime_parent}/profiles"', local_gate)
         self.assertIn('mkdir -p "${profile_root}"', local_gate)
         self.assertIn('LLVM_PROFILE_FILE="${profile_root}/%p-%m.profraw"', local_gate)
+        self.assertIn(
+            'init_image_archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"',
+            local_gate,
+        )
+        self.assertIn(
+            "local release gate requires an absolute retained OCI init-image archive",
+            local_gate,
+        )
+        self.assertIn(
+            'CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="${init_image_archive}"',
+            local_gate,
+        )
+        self.assertIn(
+            'CONTAINER_STACK_VALIDATION_SCRATCH_ROOT="${evidence_root}/container-scratch"',
+            local_gate,
+        )
         self.assertLess(
             local_gate.index('profile_root="${runtime_parent}/profiles"'),
             local_gate.index('"${path}/scripts/run-with-container-runtime.sh"'),
         )
+
+    def test_local_release_gate_freezes_the_container_runtime_candidate(self) -> None:
+        staging = self.script[
+            self.script.index("stage_container_runtime_candidate() {") : self.script.index(
+                "# Delete only the fresh marker-protected candidate extraction"
+            )
+        ]
+        local_gate = self.script[
+            self.script.index("run_local_release_gate() {") : self.script.index(
+                "# Verify that Apple remotes cannot be pushed"
+            )
+        ]
+
+        self.assertIn("git -C \"${container_path}\" rev-parse", staging)
+        self.assertIn("homebrew-package \"HOMEBREW_ARCHIVE=${archive}\"", staging)
+        self.assertIn("shasum -a 256 -c", staging)
+        self.assertIn("tar -xzf \"${archive}\"", staging)
+        self.assertIn("chmod -R a-w", staging)
+        self.assertIn("candidate_parent=/private/tmp", staging)
+        self.assertNotIn('candidate_parent="${artifact_root}/runs"', staging)
+        self.assertIn(".container-compose-runtime-candidate-artifact", staging)
+        self.assertIn(".container-compose-runtime-candidate-run", staging)
+        self.assertNotIn('make -C "${container_path}" container', local_gate)
+        self.assertIn(
+            'container_binary="${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container"',
+            local_gate,
+        )
+        self.assertIn(
+            'CONTAINER_RUNTIME_CANDIDATE_SHA256="${CONTAINER_RUNTIME_CANDIDATE_SHA256}"',
+            local_gate,
+        )
+        self.assertIn(
+            '"CONTAINER_BUILDER_SHIM_STACK_REPO=$(repo_path "container-builder-shim")"',
+            local_gate,
+        )
+        self.assertIn(
+            '"CONTAINERIZATION_STACK_REPO=${containerization_path}"',
+            local_gate,
+        )
+        self.assertIn('"CONTAINER_STACK_REPO=${container_path}"', local_gate)
+        self.assertIn(
+            '"CONTAINER_COMPOSE_CONTAINER=${container_binary}"',
+            local_gate,
+        )
+        self.assertIn("trap cleanup_container_runtime_candidate EXIT", local_gate)
+        self.assertIn(
+            "/private/tmp/container-compose-runtime-candidate.*",
+            self.script,
+        )
+
+    def test_runtime_candidate_staging_is_read_only_reusable_and_marker_cleaned(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            container = root / "container"
+            container.mkdir()
+            (container / "fixture").write_text("source\n", encoding="utf-8")
+            for command in (
+                ["git", "init", "--quiet", str(container)],
+                ["git", "-C", str(container), "config", "user.email", "test@example.com"],
+                ["git", "-C", str(container), "config", "user.name", "Container Test"],
+                ["git", "-C", str(container), "add", "."],
+                ["git", "-C", str(container), "commit", "--quiet", "-m", "fixture"],
+            ):
+                subprocess.run(command, check=True, capture_output=True, text=True)
+
+            bin_directory = root / "bin"
+            bin_directory.mkdir()
+            fake_make = bin_directory / "make"
+            fake_make.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "archive=\n"
+                "for argument in \"$@\"; do\n"
+                "  case \"$argument\" in\n"
+                "    HOMEBREW_ARCHIVE=*) archive=${argument#*=} ;;\n"
+                "  esac\n"
+                "done\n"
+                "test -n \"$archive\"\n"
+                "payload=$(mktemp -d)\n"
+                "mkdir -p \"$payload/bin\" \"$payload/libexec/container\"\n"
+                "printf '#!/usr/bin/env bash\\nexit 0\\n' >\"$payload/bin/container\"\n"
+                "chmod +x \"$payload/bin/container\"\n"
+                "tar -czf \"$archive\" -C \"$payload\" .\n"
+                "(cd \"$(dirname \"$archive\")\" && "
+                "shasum -a 256 \"$(basename \"$archive\")\" >\"$(basename \"$archive\").sha256\")\n"
+                "find \"$payload\" -depth -delete\n",
+                encoding="utf-8",
+            )
+            fake_make.chmod(0o755)
+            evidence = root / "evidence"
+            result = self.run_release_function(
+                root,
+                f"evidence={shlex.quote(str(evidence))}; "
+                "stage_container_runtime_candidate "
+                f"{shlex.quote(str(container))} {shlex.quote(str(evidence))}; "
+                "test -x \"$CONTAINER_RUNTIME_CANDIDATE_ROOT/bin/container\"; "
+                "test ! -w \"$CONTAINER_RUNTIME_CANDIDATE_ROOT/bin/container\"; "
+                "test \"${CONTAINER_RUNTIME_CANDIDATE_ROOT#\"$evidence\"/}\" = "
+                '"$CONTAINER_RUNTIME_CANDIDATE_ROOT"; '
+                "candidate_root=$CONTAINER_RUNTIME_CANDIDATE_ROOT; "
+                "test \"${#CONTAINER_RUNTIME_CANDIDATE_SHA256}\" -eq 64; "
+                "cleanup_container_runtime_candidate; test ! -e \"$candidate_root\"",
+                shell_setup=f"export PATH={shlex.quote(str(bin_directory))}:$PATH",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            artifacts = list((evidence / "runtime-candidates").glob("*"))
+            self.assertEqual(len(artifacts), 1)
+            self.assertTrue(
+                (artifacts[0] / ".container-compose-runtime-candidate-artifact").is_file()
+            )
 
     def test_local_virtualization_preflight_requires_hardware_support(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

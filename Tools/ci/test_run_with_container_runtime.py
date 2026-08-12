@@ -50,6 +50,9 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             "CONTAINER_RUNTIME_BOOTSTRAP_IMAGE_TAR",
             "CONTAINER_RUNTIME_BUILDER_IMAGE",
             "CONTAINER_RUNTIME_BUILDER_IMAGE_TAR",
+            "CONTAINER_RUNTIME_CANDIDATE_SHA256",
+            "CONTAINER_RUNTIME_CLI",
+            "CONTAINER_RUNTIME_CLI_SHA256",
             "CONTAINER_RUNTIME_SERVICE_NAMESPACE",
             "CONTAINER_RUNTIME_STOP_HELPER",
             "CONTAINER_SERVICE_NAMESPACE",
@@ -65,6 +68,35 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
         ):
             environment.pop(variable, None)
         return environment
+
+    def test_rejects_a_candidate_cli_that_does_not_match_its_pinned_digest(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            fake_container = temporary_root / "container-cli"
+            container_log = temporary_root / "container.log"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_CLI_SHA256": "0" * 64,
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("candidate container binary digest mismatch", result.stderr)
+            self.assertFalse(container_log.exists())
 
     @staticmethod
     def write_fake_container(
@@ -1042,6 +1074,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     "/bin/sh",
                     "-c",
                     'test "$(command -v container)" = "$EXPECTED_CONTAINER_CLI" '
+                    '&& test "$CONTAINER_RUNTIME_CLI" = "$EXPECTED_CONTAINER_CLI" '
                     "&& container nested-command-proof",
                 ],
                 cwd=ROOT,
@@ -1096,6 +1129,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     "/bin/sh",
                     "-c",
                     'test "$(command -v container)" = "$EXPECTED_CONTAINER_CLI" '
+                    '&& test "$CONTAINER_RUNTIME_CLI" = "$EXPECTED_CONTAINER_CLI" '
                     "&& container bare-command-proof",
                 ],
                 cwd=ROOT,
