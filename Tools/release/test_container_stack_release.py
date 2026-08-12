@@ -995,6 +995,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             "container_targets=(check container dsym docs coverage-unit)",
             validation,
         )
+        self.assertIn("container_runtime_parent_base=/private/tmp", validation)
+        self.assertIn(
+            '[[ ! -d "${container_runtime_parent_base}" || ! -w "${container_runtime_parent_base}" ]]',
+            validation,
+        )
+        self.assertIn("container_runtime_parent_base=/tmp", validation)
         self.assertIn(
             "env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE",
             validation,
@@ -1123,6 +1129,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             environment["CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR"] = str(
                 root / "checkpoints"
             )
+            runtime_directory = tempfile.TemporaryDirectory(
+                prefix="ccsv-test.", dir="/tmp"
+            )
+            self.addCleanup(runtime_directory.cleanup)
+            explicit_runtime_root = Path(runtime_directory.name)
+            environment["CONTAINER_STACK_VALIDATION_RUNTIME_ROOT"] = str(
+                explicit_runtime_root
+            )
             validation_paths = [
                 str(compose),
                 str(builder),
@@ -1154,7 +1168,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 f"{container} "
                 f"PATH={candidate_tools_resolved}{os.pathsep}{tools}"
                 f"{os.pathsep}{environment['PATH'].split(os.pathsep, 1)[1]} "
-                "APP_ROOT=/private/tmp/ccsv.fixture/stack-release-app-root "
+                f"APP_ROOT={explicit_runtime_root.resolve()}/stack-release-app-root "
                 f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
                 "INTEGRATION_SERVICE_NAMESPACE=io.github.container.stack-validation.fixture "
                 "check container dsym docs coverage",
@@ -1314,6 +1328,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
 
             log.unlink()
+            environment.pop("CONTAINER_STACK_VALIDATION_RUNTIME_ROOT")
             hosted = subprocess.run(
                 [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
                 check=False,
@@ -1716,6 +1731,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             local_gate,
         )
         self.assertIn("runtime_parent_base=/private/tmp", local_gate)
+        self.assertIn(
+            '[[ ! -d "${runtime_parent_base}" || ! -w "${runtime_parent_base}" ]]',
+            local_gate,
+        )
         self.assertNotIn('${TMPDIR:-/tmp}/cc-release.', local_gate)
         self.assertIn('${runtime_parent_base}/c.XXXXXX', local_gate)
         self.assertIn("resolve_release_evidence_root", local_gate)

@@ -803,7 +803,7 @@ PY
   trap cleanup_container_runtime_candidate EXIT
   container_binary="${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container"
   runtime_parent_base=/private/tmp
-  if [[ ! -d "${runtime_parent_base}" ]]; then
+  if [[ ! -d "${runtime_parent_base}" || ! -w "${runtime_parent_base}" ]]; then
     runtime_parent_base=/tmp
   fi
   # Keep both this candidate's provider socket and Container integration's

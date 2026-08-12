@@ -101,7 +101,11 @@ else
     # Full validation launches services. Keep its safe default short and on the
     # internal volume; hosted validation never launches them and may stay with
     # the checkout-backed scratch root.
-    container_runtime_root="/private/tmp/ccsv.${container_validation_suffix}"
+    container_runtime_parent_base=/private/tmp
+    if [[ ! -d "${container_runtime_parent_base}" || ! -w "${container_runtime_parent_base}" ]]; then
+      container_runtime_parent_base=/tmp
+    fi
+    container_runtime_root="${container_runtime_parent_base}/ccsv.${container_validation_suffix}"
   else
     container_runtime_root="${container_scratch_root}/runtime"
   fi
