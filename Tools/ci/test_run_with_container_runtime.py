@@ -147,6 +147,21 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
         ).stdout.strip()
         return source, source_head
 
+    @staticmethod
+    def find_staged_service_archive(invocations: str, name: str) -> Path:
+        prefixes = (
+            "/private/tmp/container-compose-service-inputs.",
+            "/tmp/container-compose-service-inputs.",
+        )
+        paths = [
+            Path(token)
+            for token in invocations.split()
+            if token.startswith(prefixes) and token.endswith(f"/{name}")
+        ]
+        if len(paths) != 1:
+            raise AssertionError(f"expected one staged {name}, got {paths}")
+        return paths[0]
+
     def test_rejects_invalid_runtime_inputs_before_service_side_effects(
         self,
     ) -> None:
@@ -654,7 +669,10 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertIn('[build]\nimage = "local/builder:test"', config)
             self.assertIn(f'[vminit]\nimage = "{DEFAULT_INIT_IMAGE}"', config)
             invocations = container_log.read_text(encoding="utf-8")
-            self.assertIn(f"image load -i {builder_archive}", invocations)
+            staged_builder_archive = self.find_staged_service_archive(
+                invocations, "builder-image.oci.tar"
+            )
+            self.assertIn(f"image load -i {staged_builder_archive}", invocations)
 
     def test_uses_bootstrap_archive_before_source_matched_init_build(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -726,7 +744,12 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 for invocation in invocations
                 if "system start" in invocation
             ]
-            self.assertIn(f"--init-image-archive {bootstrap_archive}", starts[0])
+            staged_bootstrap_archive = self.find_staged_service_archive(
+                "\n".join(invocations), "bootstrap-image.oci.tar"
+            )
+            self.assertIn(
+                f"--init-image-archive {staged_bootstrap_archive}", starts[0]
+            )
             self.assertIn("--enable-kernel-install", starts[0])
             self.assertNotIn(f"image load -i {bootstrap_archive}", invocations)
             self.assertLess(start_index, init_index)
@@ -787,7 +810,10 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 2,
             )
             self.assertIn("--disable-kernel-install", starts[0])
-            self.assertIn(f"--init-image-archive {init_archive}", starts[0])
+            staged_init_archive = self.find_staged_service_archive(
+                "\n".join(invocations), "matched-init-image.oci.tar"
+            )
+            self.assertIn(f"--init-image-archive {staged_init_archive}", starts[0])
             self.assertIn("--enable-kernel-install", starts[1])
             self.assertNotIn(f"image load -i {init_archive}", invocations)
             self.assertLess(invocations.index(starts[1]), command_index)
@@ -798,8 +824,25 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             init_archive = temporary_root / "vminit.tar"
             self.create_oci_archive(init_archive, DEFAULT_INIT_IMAGE)
             container_log = temporary_root / "container.log"
+            archive_digest_log = temporary_root / "archive-digest.log"
             fake_container = temporary_root / "container-cli"
-            self.write_fake_container(fake_container)
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    "archive_path=\n"
+                    "while [[ $# -gt 0 ]]; do\n"
+                    '  if [[ "$1" == "--init-image-archive" ]]; then\n'
+                    "    archive_path=$2\n"
+                    "    break\n"
+                    "  fi\n"
+                    "  shift\n"
+                    "done\n"
+                    'if [[ -n "$archive_path" ]]; then\n'
+                    '  /usr/bin/shasum -a 256 "$archive_path" '
+                    '>>"${CONTAINER_ARCHIVE_DIGEST_LOG:?}"\n'
+                    "fi\n"
+                ),
+            )
             environment = self.runtime_environment()
             environment.update(
                 {
@@ -809,6 +852,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                         temporary_root / "runtime.lock"
                     ),
                     "CONTAINER_TEST_LOG": str(container_log),
+                    "CONTAINER_ARCHIVE_DIGEST_LOG": str(archive_digest_log),
                 }
             )
 
@@ -834,8 +878,17 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             ]
             self.assertEqual(len(starts), 2)
             self.assertIn("--disable-kernel-install", starts[0])
-            self.assertIn(f"--init-image-archive {init_archive}", starts[0])
+            staged_init_archive = self.find_staged_service_archive(
+                "\n".join(invocations), "retained-init-image.oci.tar"
+            )
+            self.assertIn(f"--init-image-archive {staged_init_archive}", starts[0])
             self.assertNotIn(f"image load --input {init_archive}", invocations)
+            expected_digest = hashlib.sha256(init_archive.read_bytes()).hexdigest()
+            self.assertEqual(
+                archive_digest_log.read_text(encoding="utf-8").split()[0],
+                expected_digest,
+            )
+            self.assertFalse(staged_init_archive.parent.exists())
 
     def test_rejects_retained_archive_missing_any_required_reference(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -908,7 +961,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertIn("do not resolve to one digest", result.stderr)
             self.assertFalse(container_log.exists())
 
-    def test_managed_runtime_does_not_restart_or_stop_its_owner(self) -> None:
+    def test_managed_runtime_ready_api_does_not_restart_or_stop_its_owner(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
             app_root = temporary_root / "app-root"
@@ -944,7 +997,69 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(command_log.read_text(encoding="utf-8"), "managed\n")
-            self.assertFalse(container_log.exists())
+            self.assertEqual(
+                container_log.read_text(encoding="utf-8"),
+                "list --all --format json\n",
+            )
+
+    def test_managed_runtime_recovers_owner_api_after_cli_reinstall(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            container_log = temporary_root / "container.log"
+            command_log = temporary_root / "command.log"
+            ready_marker = temporary_root / "ready"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "list --all --format json" ]]; then\n'
+                    '  [[ -f "${READY_MARKER:?}" ]]\n'
+                    "  exit\n"
+                    "fi\n"
+                    'if [[ "$*" == *"system start"* ]]; then\n'
+                    '  : >"${READY_MARKER:?}"\n'
+                    "  exit 0\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "outer-owner",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "COMMAND_LOG": str(command_log),
+                    "READY_MARKER": str(ready_marker),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/bin/sh",
+                    "-c",
+                    'printf "recovered\\n" >"$COMMAND_LOG"',
+                ],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(command_log.read_text(encoding="utf-8"), "recovered\n")
+            container_commands = container_log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(container_commands[0], "list --all --format json")
+            self.assertIn(
+                f"--debug system start --timeout 60 --enable-kernel-install --app-root {app_root}",
+                container_commands,
+            )
+            self.assertEqual(container_commands[-1], "list --all --format json")
+            self.assertFalse(any("system stop" in command for command in container_commands))
 
     def test_api_round_trip_failure_blocks_the_candidate_command(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

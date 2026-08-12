@@ -52,6 +52,7 @@ initial_start_image_is_matched=false
 runtime_root_marker=.container-compose-runtime-root
 runtime_root_marker_value='container-compose isolated runtime state v1'
 provider_socket_path_limit=103
+runtime_service_inputs_root=
 
 # Derive and export the one non-default namespace used by this candidate.
 configure_runtime_namespace() {
@@ -387,6 +388,40 @@ start_runtime() {
     done
 }
 
+# A nested release target inherits the outer harness's lock and runtime
+# ownership. Recheck the API before trusting that ownership because a matched
+# CLI rebuild can replace the installed service binaries after the outer
+# runtime was started. Recover the same namespace/root once without taking a
+# second lock or stopping the owner.
+ensure_managed_runtime_ready() {
+    local start_log
+    local start_status
+
+    if "$container_binary" list --all --format json >/dev/null; then
+        return
+    fi
+
+    printf 'Managed Container API is not ready; re-establishing the owner runtime...\n' >&2
+    start_log=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-managed-start.XXXXXX")
+    start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
+    if [[ -n "$runtime_app_root" ]]; then
+        start_arguments+=(--app-root "$runtime_app_root")
+    fi
+    if "$container_binary" "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
+        start_status=0
+    else
+        start_status=${PIPESTATUS[0]}
+        rm -f "$start_log"
+        return "$start_status"
+    fi
+    rm -f "$start_log"
+
+    if ! "$container_binary" list --all --format json >/dev/null; then
+        printf 'Managed Container API remained unavailable after owner-runtime recovery\n' >&2
+        return 1
+    fi
+}
+
 prepare_runtime_root() {
     mkdir -p "$runtime_app_root"
     local marker_path="$runtime_app_root/$runtime_root_marker"
@@ -409,6 +444,57 @@ prepare_runtime_root() {
 
     find "$runtime_app_root" -mindepth 1 -maxdepth 1 \
         ! -name "$runtime_root_marker" ! -name kernels -exec rm -rf {} +
+}
+
+# launchd-managed Container services do not necessarily inherit the caller's
+# privacy access to removable volumes, Documents, or other user-controlled
+# locations. Copy every archive that a service may open into a private local
+# staging root before taking the host runtime lock. This turns a host-policy
+# mismatch into a bounded local copy instead of an opaque service-side open(2)
+# hang while the global lock is held.
+stage_runtime_service_inputs() {
+    local trusted_temporary_root=/private/tmp
+    if [[ ! -d "$trusted_temporary_root" ]]; then
+        trusted_temporary_root=/tmp
+    fi
+    runtime_service_inputs_root=$(mktemp -d \
+        "$trusted_temporary_root/container-compose-service-inputs.XXXXXX")
+
+    stage_runtime_service_archive runtime_builder_image_tar builder-image.oci.tar
+    stage_runtime_service_archive runtime_bootstrap_image_tar bootstrap-image.oci.tar
+    stage_runtime_service_archive matched_init_image_tar matched-init-image.oci.tar
+    stage_runtime_service_archive runtime_init_image_archive retained-init-image.oci.tar
+}
+
+stage_runtime_service_archive() {
+    local variable_name="$1"
+    local destination_name="$2"
+    local source_path="${!variable_name}"
+    [[ -n "$source_path" ]] || return 0
+
+    local destination_path="$runtime_service_inputs_root/$destination_name"
+    local temporary_path="$destination_path.partial"
+    if ! /usr/bin/install -m 0600 "$source_path" "$temporary_path"; then
+        rm -f "$temporary_path"
+        printf 'failed to stage container runtime service archive: %s\n' "$source_path" >&2
+        exit 2
+    fi
+    mv -f "$temporary_path" "$destination_path"
+    printf -v "$variable_name" '%s' "$destination_path"
+}
+
+cleanup_runtime_service_inputs() {
+    [[ -n "$runtime_service_inputs_root" ]] || return 0
+    case "$runtime_service_inputs_root" in
+        /private/tmp/container-compose-service-inputs.* | /tmp/container-compose-service-inputs.*) ;;
+        *)
+            printf 'refusing to clear unexpected runtime service-input staging root: %s\n' \
+                "$runtime_service_inputs_root" >&2
+            return 1
+            ;;
+    esac
+    find "$runtime_service_inputs_root" -depth -delete 2>/dev/null || true
+    runtime_service_inputs_root=
 }
 
 resolve_matched_init_image() {
@@ -515,6 +601,7 @@ cleanup() {
     printf 'Stopping matched container runtime...\n'
     stop_runtime || true
     release_container_runtime_lock
+    cleanup_runtime_service_inputs || true
     exit "$status"
 }
 
@@ -577,10 +664,13 @@ configure_runtime_namespace
 verify_runtime_namespace_support
 
 if [[ "${CONTAINER_RUNTIME_MANAGED:-0}" == "1" ]]; then
+    ensure_managed_runtime_ready
     "$@"
     exit
 fi
 
+trap cleanup_runtime_service_inputs EXIT
+stage_runtime_service_inputs
 acquire_container_runtime_lock
 trap cleanup EXIT
 

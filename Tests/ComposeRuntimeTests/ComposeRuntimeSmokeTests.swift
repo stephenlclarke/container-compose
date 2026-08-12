@@ -593,8 +593,8 @@ struct ComposeRuntimeSmokeTests {
         #expect(topResult.stdout.contains("sleep"))
     }
 
-    @Test("runtime dry run up timestamps follows timestamped logs")
-    func runtimeDryRunUpTimestampsFollowsTimestampedLogs() throws {
+    @Test("runtime dry run up timestamps attaches foreground output")
+    func runtimeDryRunUpTimestampsAttachesForegroundOutput() throws {
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -631,12 +631,13 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30
         )
 
-        #expect(result.stdout.contains(containerDryRun("run --name \(project)-api-1 --detach")))
-        #expect(result.stdout.contains("+ compose-runtime logs --follow --timestamps \(project)-api-1"))
+        #expect(result.stdout.contains(containerDryRun("create --name \(project)-api-1 ")))
+        #expect(result.stdout.contains(containerDryRun("start \(project)-api-1")))
+        #expect(result.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
     }
 
-    @Test("runtime dry run up attach follows selected logs")
-    func runtimeDryRunUpAttachFollowsSelectedLogs() throws {
+    @Test("runtime dry run up attach selects foreground output")
+    func runtimeDryRunUpAttachSelectsForegroundOutput() throws {
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -681,11 +682,11 @@ struct ComposeRuntimeSmokeTests {
         )
 
         #expect(selected.stdout.contains(containerDryRun("run --name \(project)-db-1 --detach")))
-        #expect(selected.stdout.contains(containerDryRun("run --name \(project)-api-1 --detach")))
-        #expect(selected.stdout.contains("+ compose-runtime logs --follow \(project)-api-1"))
-        #expect(!selected.stdout.contains("+ compose-runtime logs --follow \(project)-db-1"))
-        #expect(withDependencies.stdout.contains("+ compose-runtime logs --follow \(project)-db-1"))
-        #expect(withDependencies.stdout.contains("+ compose-runtime logs --follow \(project)-api-1"))
+        #expect(selected.stdout.contains(containerDryRun("create --name \(project)-api-1 ")))
+        #expect(selected.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
+        #expect(!selected.stdout.contains("+ compose-runtime attach --no-stdin \(project)-db-1"))
+        #expect(withDependencies.stdout.contains("+ compose-runtime attach --no-stdin \(project)-db-1"))
+        #expect(withDependencies.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
     }
 
     @Test("runtime dry run up accepts menu boolean values in no-start mode")
@@ -783,7 +784,9 @@ struct ComposeRuntimeSmokeTests {
             ],
             timeout: 30
         )
-        #expect(exitControl.stdout.contains(containerDryRun("run --name \(project)-api-1 --detach")))
+        #expect(exitControl.stdout.contains(containerDryRun("create --name \(project)-api-1 ")))
+        #expect(exitControl.stdout.contains(containerDryRun("start \(project)-api-1")))
+        #expect(exitControl.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
         #expect(exitControl.stdout.contains("+ compose-runtime wait \(project)-api-1"))
         #expect(exitControl.stdout.contains(containerDryRun("delete \(project)-api-1")))
 
@@ -797,8 +800,9 @@ struct ComposeRuntimeSmokeTests {
             ],
             timeout: 30
         )
-        #expect(watch.stdout.contains(containerDryRun("run --name \(project)-api-1 --detach")))
-        #expect(watch.stdout.contains("+ compose-runtime logs --follow \(project)-api-1"))
+        #expect(watch.stdout.contains(containerDryRun("create --name \(project)-api-1 ")))
+        #expect(watch.stdout.contains(containerDryRun("start \(project)-api-1")))
+        #expect(watch.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
         #expect(!watch.stderr.contains("unsupported compose feature"))
 
         let environmentMenu = try runProcess(
@@ -812,7 +816,9 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30,
             environment: ["COMPOSE_MENU": "true"]
         )
-        #expect(environmentMenu.stdout.contains(containerDryRun("run --name \(project)-api-1 --detach")))
+        #expect(environmentMenu.stdout.contains(containerDryRun("create --name \(project)-api-1 ")))
+        #expect(environmentMenu.stdout.contains(containerDryRun("start \(project)-api-1")))
+        #expect(environmentMenu.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
         #expect(environmentMenu.stdout.contains("+ compose-runtime wait \(project)-api-1"))
         #expect(environmentMenu.stdout.contains(containerDryRun("delete \(project)-api-1")))
     }
@@ -848,7 +854,7 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30
         )
 
-        #expect(result.stdout.contains(containerDryRun("run --name \(project)-api-1 ")))
+        #expect(result.stdout.contains(containerDryRun("create --name \(project)-api-1 ")))
         #expect(result.stdout.contains("--privileged"))
     }
 
@@ -1116,8 +1122,8 @@ struct ComposeRuntimeSmokeTests {
         #expect(result.stdout.split(whereSeparator: \.isWhitespace) == ["0", "0", "4294967295"])
     }
 
-    @Test("runtime dry run attach no-stdin follows logs with default signal proxy")
-    func runtimeDryRunAttachNoStdinFollowsLogsWithDefaultSignalProxy() throws {
+    @Test("runtime dry run attach no-stdin attaches output with default signal proxy")
+    func runtimeDryRunAttachNoStdinAttachesOutputWithDefaultSignalProxy() throws {
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -1146,7 +1152,7 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30
         )
 
-        #expect(result.stdout.contains("+ compose-runtime logs --follow \(project)-api-1"))
+        #expect(result.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
 
         let withDetachKeys = try runProcess(
             composeBinary,
@@ -1159,7 +1165,7 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30
         )
 
-        #expect(withDetachKeys.stdout.contains("+ compose-runtime logs --follow \(project)-api-1"))
+        #expect(withDetachKeys.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
     }
 
     @Test("runtime up exit-code-from returns selected service status")
@@ -1212,7 +1218,9 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30
         )
         #expect(dryRun.stdout.contains(containerDryRun("run --name \(project)-db-1 --detach")))
-        #expect(dryRun.stdout.contains(containerDryRun("run --name \(project)-api-1 --detach")))
+        #expect(dryRun.stdout.contains(containerDryRun("create --name \(project)-api-1 ")))
+        #expect(dryRun.stdout.contains(containerDryRun("start \(project)-api-1")))
+        #expect(dryRun.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
         #expect(dryRun.stdout.contains("+ compose-runtime wait \(project)-api-1"))
         #expect(dryRun.stdout.contains(containerDryRun("delete \(project)-api-1")))
 
@@ -1608,6 +1616,64 @@ struct ComposeRuntimeSmokeTests {
 
         let inspect = try runProcess(containerBinary, ["image", "inspect", imageName], timeout: 30)
         #expect(inspect.stdout.contains(imageTag))
+    }
+}
+
+@Suite("Compose dry-run runtime contract tests", .serialized)
+struct ComposeRuntimeDryRunContractTests {
+    @Test("foreground commands use direct attachment")
+    func foregroundCommandsUseDirectAttachment() throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-contract-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            depends_on:
+              db:
+                condition: service_started
+          db:
+            image: alpine:3.20
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = runtimeProjectName()
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let upResult = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "--dry-run", "up", "--attach", "api", "--attach-dependencies", "api",
+            ],
+            timeout: 30
+        )
+        let attachResult = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "--dry-run", "attach", "--no-stdin", "api",
+            ],
+            timeout: 30
+        )
+
+        for service in ["db", "api"] {
+            #expect(upResult.stdout.contains(containerDryRun("create --name \(project)-\(service)-1 ")))
+            #expect(upResult.stdout.contains(containerDryRun("start \(project)-\(service)-1")))
+            #expect(upResult.stdout.contains("+ compose-runtime attach --no-stdin \(project)-\(service)-1"))
+        }
+        #expect(!upResult.stdout.contains("+ compose-runtime logs --follow"))
+        #expect(attachResult.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
+        #expect(!attachResult.stdout.contains("+ compose-runtime logs --follow"))
     }
 }
 

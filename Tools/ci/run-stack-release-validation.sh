@@ -90,30 +90,15 @@ if [[ "${mode}" == "full" ]]; then
 fi
 
 checkpoint_directory=${CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR:-}
-validation_fingerprint=""
+builder_validation_fingerprint=""
+containerization_validation_fingerprint=""
+container_validation_fingerprint=""
+homebrew_validation_fingerprint=""
 if [[ -n "${checkpoint_directory}" ]]; then
-  validation_fingerprint=$(
+  common_validation_fingerprint=$(
     {
       printf 'mode=%s\n' "${mode}"
-      printf 'container_scratch_root=%s\n' "${container_scratch_root}"
-      printf 'containerization_targets=%s\n' "${containerization_targets[*]}"
-      printf 'container_targets=%s\n' "${container_targets[*]}"
-      printf 'required_init_references=%s\n' \
-        "${CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES:-}"
       printf 'validator=%s\n' "$(shasum -a 256 "$0" | awk '{print $1}')"
-      for path in "${compose_repo}" "${builder_repo}" "${containerization_repo}" \
-        "${container_repo}" "${homebrew_tap_repo}"; do
-        tree=$(git -C "${path}" rev-parse 'HEAD^{tree}' 2>/dev/null || printf 'fixture')
-        printf 'tree=%s:%s\n' "${path}" "${tree}"
-      done
-      if [[ -n "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}" ]]; then
-        if [[ -f "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}" ]]; then
-          printf 'init_archive=%s\n' \
-            "$(shasum -a 256 "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}" | awk '{print $1}')"
-        else
-          printf 'init_archive=missing:%s\n' "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}"
-        fi
-      fi
       printf 'environment=PATH=%s\n' "${PATH}"
       printf 'environment=DEVELOPER_DIR=%s\n' "${DEVELOPER_DIR:-}"
       printf 'environment=SDKROOT=%s\n' "${SDKROOT:-}"
@@ -148,8 +133,80 @@ if [[ -n "${checkpoint_directory}" ]]; then
       uname -a
     } | shasum -a 256 | awk '{print $1}'
   )
+  if [[ -n "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}" ]]; then
+    if [[ -f "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}" ]]; then
+      init_archive_fingerprint=$(shasum -a 256 \
+        "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}" | awk '{print $1}')
+    else
+      init_archive_fingerprint="missing:${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}"
+    fi
+  else
+    init_archive_fingerprint="unset"
+  fi
+  builder_tree=$(git -C "${builder_repo}" rev-parse 'HEAD^{tree}' 2>/dev/null || printf 'fixture')
+  containerization_tree=$(git -C "${containerization_repo}" rev-parse 'HEAD^{tree}' 2>/dev/null || printf 'fixture')
+  container_tree=$(git -C "${container_repo}" rev-parse 'HEAD^{tree}' 2>/dev/null || printf 'fixture')
+  homebrew_tree=$(git -C "${homebrew_tap_repo}" rev-parse 'HEAD^{tree}' 2>/dev/null || printf 'fixture')
+  builder_validation_fingerprint=$(
+    {
+      printf 'common=%s\n' "${common_validation_fingerprint}"
+      printf 'stage=builder\n'
+      printf 'tree=%s:%s\n' "${builder_repo}" "${builder_tree}"
+    } | shasum -a 256 | awk '{print $1}'
+  )
+  containerization_validation_fingerprint=$(
+    {
+      printf 'common=%s\n' "${common_validation_fingerprint}"
+      printf 'stage=containerization\n'
+      printf 'targets=%s\n' "${containerization_targets[*]}"
+      printf 'tree=%s:%s\n' "${containerization_repo}" "${containerization_tree}"
+      printf 'required_init_references=%s\n' \
+        "${CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES:-}"
+      printf 'init_archive=%s\n' "${init_archive_fingerprint}"
+    } | shasum -a 256 | awk '{print $1}'
+  )
+  container_validation_fingerprint=$(
+    {
+      printf 'common=%s\n' "${common_validation_fingerprint}"
+      printf 'stage=container\n'
+      printf 'targets=%s\n' "${container_targets[*]}"
+      printf 'tree=%s:%s\n' "${container_repo}" "${container_tree}"
+      printf 'scratch_root=%s\n' "${container_scratch_root}"
+      printf 'init_archive=%s\n' "${init_archive_fingerprint}"
+    } | shasum -a 256 | awk '{print $1}'
+  )
+  homebrew_validation_fingerprint=$(
+    {
+      printf 'common=%s\n' "${common_validation_fingerprint}"
+      printf 'stage=homebrew\n'
+      printf 'tree=%s:%s\n' "${homebrew_tap_repo}" "${homebrew_tree}"
+    } | shasum -a 256 | awk '{print $1}'
+  )
 fi
 
+# Returns the exact-input fingerprint for one independently validated stage.
+validation_fingerprint_for_stage() {
+  case "$1" in
+    builder)
+      printf '%s' "${builder_validation_fingerprint}"
+      ;;
+    containerization)
+      printf '%s' "${containerization_validation_fingerprint}"
+      ;;
+    container)
+      printf '%s' "${container_validation_fingerprint}"
+      ;;
+    homebrew)
+      printf '%s' "${homebrew_validation_fingerprint}"
+      ;;
+    *)
+      printf 'unknown stack validation checkpoint stage: %s\n' "$1" >&2
+      return 2
+      ;;
+  esac
+}
+
+# Runs one stage unless its own exact inputs already have a successful stamp.
 run_checkpointed() {
   local stage=$1
   shift
@@ -160,7 +217,8 @@ run_checkpointed() {
 
   mkdir -p "${checkpoint_directory}"
   local stamp="${checkpoint_directory}/${mode}-${stage}.sha256"
-  local expected="${validation_fingerprint}:${stage}"
+  local expected
+  expected="$(validation_fingerprint_for_stage "${stage}"):${stage}"
   local actual=""
   if [[ -f "${stamp}" ]]; then
     IFS= read -r actual <"${stamp}" || true
@@ -179,7 +237,14 @@ run_checkpointed() {
 
 printf 'running %s stack release validation\n' "${mode}"
 if [[ -n "${checkpoint_directory}" ]]; then
-  printf 'stack validation exact-input fingerprint: %s\n' "${validation_fingerprint}"
+  printf 'stack validation exact-input fingerprint: builder=%s\n' \
+    "${builder_validation_fingerprint}"
+  printf 'stack validation exact-input fingerprint: containerization=%s\n' \
+    "${containerization_validation_fingerprint}"
+  printf 'stack validation exact-input fingerprint: container=%s\n' \
+    "${container_validation_fingerprint}"
+  printf 'stack validation exact-input fingerprint: homebrew=%s\n' \
+    "${homebrew_validation_fingerprint}"
 fi
 run_checkpointed builder \
   make -C "${builder_repo}" check-licenses vet lint coverage build

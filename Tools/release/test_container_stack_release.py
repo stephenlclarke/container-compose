@@ -1043,6 +1043,26 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 (checkout / "Makefile").touch()
             (tap / "Formula").mkdir(parents=True)
             (tap / "Formula" / "container-compose.rb").touch()
+            subprocess.run(["git", "-C", str(compose), "init", "--quiet"], check=True)
+            subprocess.run(["git", "-C", str(compose), "add", "Makefile"], check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(compose),
+                    "-c",
+                    "user.name=Release Test",
+                    "-c",
+                    "user.email=release-test@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    "fixture",
+                ],
+                check=True,
+            )
 
             tools = root / "tools"
             tools.mkdir()
@@ -1127,6 +1147,41 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(
                 "reusing exact-input validation checkpoint: containerization",
                 repeated_full.stdout,
+            )
+
+            (compose / "Makefile").write_text("compose-only-change:\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(compose), "add", "Makefile"], check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(compose),
+                    "-c",
+                    "user.name=Release Test",
+                    "-c",
+                    "user.email=release-test@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    "compose-only change",
+                ],
+                check=True,
+            )
+            changed_compose = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+            self.assertEqual(changed_compose.returncode, 0, changed_compose.stderr)
+            self.assertEqual(log.read_text(encoding="utf-8"), full_commands)
+            self.assertEqual(
+                changed_compose.stdout.count("reusing exact-input validation checkpoint:"),
+                4,
+                changed_compose.stdout,
             )
 
             environment["FAKE_GO_VERSION"] = "go1.26.4"
