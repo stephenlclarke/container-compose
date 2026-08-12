@@ -206,6 +206,7 @@ RELEASE_INTENT="${CONTAINER_STACK_RELEASE_INTENT:-}"
 SECURITY_REASON="${CONTAINER_STACK_SECURITY_REASON:-}"
 MAINTENANCE_REASON="${CONTAINER_STACK_MAINTENANCE_REASON:-}"
 MILESTONE_SOAK_OVERRIDE_REASON="${CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON:-}"
+RECOVERED_UNPUBLISHED_RELEASE_BASE=""
 readonly STABLE_CURRENT_SOAK_SECONDS=604800
 HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"
 REPOS=(
@@ -307,12 +308,37 @@ ensure_release_intent() {
   fi
 }
 
+# Require Current to identify local main, or the published parent of the exact
+# helper-created candidate retained for this retry. The candidate itself is not
+# published until its release PR passes, so requiring Current to name it makes
+# a safe retry impossible.
+ensure_current_release_source_identity() {
+  local path main_commit current_commit
+  path="$(repo_path "${COMPOSE_REPO}")"
+  main_commit="$(git -C "${path}" rev-parse main)"
+  current_commit="$(git -C "${path}" rev-parse 'refs/tags/current^{}')"
+  if [[ "${current_commit}" == "${main_commit}" ]]; then
+    return 0
+  fi
+  if [[
+    -n "${RECOVERED_UNPUBLISHED_RELEASE_BASE}"
+    && "${current_commit}" == "${RECOVERED_UNPUBLISHED_RELEASE_BASE}"
+  ]]; then
+    printf 'current tag targets published parent %s of retained release candidate %s\n' \
+      "${current_commit}" "${main_commit}"
+    return 0
+  fi
+  printf 'current tag targets %s, not the validated container-compose main %s\n' \
+    "${current_commit}" "${main_commit}" >&2
+  exit 1
+}
+
 # Require the mutable Current build to identify the same source as local main.
 # Milestone releases additionally require a seven-day soak unless an explicit,
 # documented milestone-only override is supplied. Maintenance and security
 # releases retain the source-identity check but may bypass that waiting period.
 ensure_current_build_release_readiness() {
-  local path main_commit current_commit current_is_prerelease current_built_at
+  local path current_is_prerelease current_built_at
   path="$(repo_path "${COMPOSE_REPO}")"
 
   if [[ "${EXECUTE}" != "1" ]]; then
@@ -321,13 +347,7 @@ ensure_current_build_release_readiness() {
   fi
 
   need_command gh
-  main_commit="$(git -C "${path}" rev-parse main)"
-  current_commit="$(git -C "${path}" rev-parse 'refs/tags/current^{}')"
-  if [[ "${current_commit}" != "${main_commit}" ]]; then
-    printf 'current tag targets %s, not the validated container-compose main %s\n' \
-      "${current_commit}" "${main_commit}" >&2
-    exit 1
-  fi
+  ensure_current_release_source_identity
 
   current_is_prerelease="$(github_cli api \
     "repos/$(github_repo "${COMPOSE_REPO}")/releases/tags/current" \
@@ -365,6 +385,7 @@ PY
 # identity on every retry and makes evidence impossible to bind reliably.
 recover_unpublished_release_candidate() {
   local version="$1" path remote local_head remote_head subject subjects
+  RECOVERED_UNPUBLISHED_RELEASE_BASE=""
   path="$(repo_path "${COMPOSE_REPO}")"
   remote="$(push_remote "${COMPOSE_REPO}")"
   local_head="$(git -C "${path}" rev-parse main)"
@@ -402,6 +423,7 @@ recover_unpublished_release_candidate() {
     esac
   done <<<"${subjects}"
 
+  RECOVERED_UNPUBLISHED_RELEASE_BASE="${remote_head}"
   printf 'retaining unpublished release candidate %s after an earlier local gate failure\n' "${local_head}"
 }
 

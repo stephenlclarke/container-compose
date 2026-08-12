@@ -88,6 +88,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         release = self.script[self.script.index("release_current_stack() {") :]
         self.assertNotIn('git -C "${path}" reset --soft "${remote_head}"', recovery)
         self.assertIn("retaining unpublished release candidate", recovery)
+        self.assertIn("RECOVERED_UNPUBLISHED_RELEASE_BASE", recovery)
         self.assertNotIn("reset --hard", recovery)
         self.assertIn('"chore(release): prepare ${version}"', recovery)
         self.assertIn('"chore(deps): pin containerization "[0-9a-f]*', recovery)
@@ -1557,6 +1558,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             root = Path(directory)
             _remote, local = self.create_compose_checkout(root)
             remote_head = self.git(local, "rev-parse", "origin/main")
+            self.run_command(
+                "git", "-C", str(local), "tag", "--no-sign", "current", remote_head
+            )
             self.commit_file(
                 local,
                 "VERSION",
@@ -1567,11 +1571,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
             result = self.run_release_function(
                 root / "github",
-                "recover_unpublished_release_candidate 0.6.71",
+                "recover_unpublished_release_candidate 0.6.71; "
+                "ensure_current_release_source_identity",
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("retaining unpublished release candidate", result.stdout)
+            self.assertIn("current tag targets published parent", result.stdout)
             self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
             self.assertNotEqual(candidate_head, remote_head)
             self.assertEqual(self.git(local, "diff", "--cached", "--name-only"), "")
@@ -1598,6 +1604,34 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
             self.assertNotEqual(candidate_head, remote_head)
             self.assertEqual(self.git(local, "diff", "--cached", "--name-only"), "")
+
+    def test_retained_candidate_rejects_current_from_any_commit_but_its_parent(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _remote, local = self.create_compose_checkout(root)
+            remote_head = self.git(local, "rev-parse", "origin/main")
+            self.commit_file(local, "STALE", "stale\n", "chore: stale current")
+            self.run_command(
+                "git", "-C", str(local), "tag", "--no-sign", "current"
+            )
+            self.run_command("git", "-C", str(local), "reset", "--hard", remote_head)
+            self.commit_file(
+                local,
+                "VERSION",
+                "0.6.71\n",
+                "chore(release): prepare 0.6.71",
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71; "
+                "ensure_current_release_source_identity",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("current tag targets", result.stderr)
 
     def test_release_helper_refuses_to_reconstruct_an_unrelated_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
