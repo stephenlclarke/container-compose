@@ -1952,6 +1952,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertEqual(interrupted.returncode, 143, interrupted.stderr)
         self.assertFalse(runtime_parent.exists(), interrupted.stderr)
 
+    def test_creator_disarms_exit_cleanup_after_successful_publication(self) -> None:
+        published = self.run_release_function(
+            Path("/tmp"),
+            'published="$(create_release_runtime_parent /tmp)"; '
+            'test -d "$published"; '
+            'cleanup_release_runtime_parent "$published"; '
+            'test ! -e "$published"',
+        )
+
+        self.assertEqual(published.returncode, 0, published.stderr)
+        self.assertEqual(published.stderr, "")
+
     def test_release_evidence_root_is_absolute_canonical_and_not_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

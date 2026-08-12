@@ -788,6 +788,10 @@ create_release_runtime_parent() {
     >"${runtime_parent}/.container-compose-release-runtime-parent"
   runtime_parent_published=1
   printf '%s\n' "${runtime_parent}"
+  # Publication is complete. Ignore a late signal before disarming EXIT so it
+  # cannot outlive this function and expand locals that have left scope.
+  trap '' INT TERM
+  trap - EXIT
 }
 
 # Run the candidate-owned gate in the background so this shell can explicitly
