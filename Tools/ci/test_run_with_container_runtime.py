@@ -147,6 +147,18 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
         ).stdout.strip()
         return source, source_head
 
+    @staticmethod
+    def find_staged_service_archive(invocations: str, name: str) -> Path:
+        prefix = "/private/tmp/container-compose-service-inputs."
+        paths = [
+            Path(token)
+            for token in invocations.split()
+            if token.startswith(prefix) and token.endswith(f"/{name}")
+        ]
+        if len(paths) != 1:
+            raise AssertionError(f"expected one staged {name}, got {paths}")
+        return paths[0]
+
     def test_rejects_invalid_runtime_inputs_before_service_side_effects(
         self,
     ) -> None:
@@ -654,7 +666,10 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertIn('[build]\nimage = "local/builder:test"', config)
             self.assertIn(f'[vminit]\nimage = "{DEFAULT_INIT_IMAGE}"', config)
             invocations = container_log.read_text(encoding="utf-8")
-            self.assertIn(f"image load -i {builder_archive}", invocations)
+            staged_builder_archive = self.find_staged_service_archive(
+                invocations, "builder-image.oci.tar"
+            )
+            self.assertIn(f"image load -i {staged_builder_archive}", invocations)
 
     def test_uses_bootstrap_archive_before_source_matched_init_build(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -726,7 +741,12 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 for invocation in invocations
                 if "system start" in invocation
             ]
-            self.assertIn(f"--init-image-archive {bootstrap_archive}", starts[0])
+            staged_bootstrap_archive = self.find_staged_service_archive(
+                "\n".join(invocations), "bootstrap-image.oci.tar"
+            )
+            self.assertIn(
+                f"--init-image-archive {staged_bootstrap_archive}", starts[0]
+            )
             self.assertIn("--enable-kernel-install", starts[0])
             self.assertNotIn(f"image load -i {bootstrap_archive}", invocations)
             self.assertLess(start_index, init_index)
@@ -787,7 +807,10 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 2,
             )
             self.assertIn("--disable-kernel-install", starts[0])
-            self.assertIn(f"--init-image-archive {init_archive}", starts[0])
+            staged_init_archive = self.find_staged_service_archive(
+                "\n".join(invocations), "matched-init-image.oci.tar"
+            )
+            self.assertIn(f"--init-image-archive {staged_init_archive}", starts[0])
             self.assertIn("--enable-kernel-install", starts[1])
             self.assertNotIn(f"image load -i {init_archive}", invocations)
             self.assertLess(invocations.index(starts[1]), command_index)
@@ -798,8 +821,25 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             init_archive = temporary_root / "vminit.tar"
             self.create_oci_archive(init_archive, DEFAULT_INIT_IMAGE)
             container_log = temporary_root / "container.log"
+            archive_digest_log = temporary_root / "archive-digest.log"
             fake_container = temporary_root / "container-cli"
-            self.write_fake_container(fake_container)
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    "archive_path=\n"
+                    "while [[ $# -gt 0 ]]; do\n"
+                    '  if [[ "$1" == "--init-image-archive" ]]; then\n'
+                    "    archive_path=$2\n"
+                    "    break\n"
+                    "  fi\n"
+                    "  shift\n"
+                    "done\n"
+                    'if [[ -n "$archive_path" ]]; then\n'
+                    '  /usr/bin/shasum -a 256 "$archive_path" '
+                    '>>"${CONTAINER_ARCHIVE_DIGEST_LOG:?}"\n'
+                    "fi\n"
+                ),
+            )
             environment = self.runtime_environment()
             environment.update(
                 {
@@ -809,6 +849,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                         temporary_root / "runtime.lock"
                     ),
                     "CONTAINER_TEST_LOG": str(container_log),
+                    "CONTAINER_ARCHIVE_DIGEST_LOG": str(archive_digest_log),
                 }
             )
 
@@ -834,8 +875,17 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             ]
             self.assertEqual(len(starts), 2)
             self.assertIn("--disable-kernel-install", starts[0])
-            self.assertIn(f"--init-image-archive {init_archive}", starts[0])
+            staged_init_archive = self.find_staged_service_archive(
+                "\n".join(invocations), "retained-init-image.oci.tar"
+            )
+            self.assertIn(f"--init-image-archive {staged_init_archive}", starts[0])
             self.assertNotIn(f"image load --input {init_archive}", invocations)
+            expected_digest = hashlib.sha256(init_archive.read_bytes()).hexdigest()
+            self.assertEqual(
+                archive_digest_log.read_text(encoding="utf-8").split()[0],
+                expected_digest,
+            )
+            self.assertFalse(staged_init_archive.parent.exists())
 
     def test_rejects_retained_archive_missing_any_required_reference(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
