@@ -124,6 +124,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
         path: Path,
         *references: str,
         distinct_digests: bool = False,
+        config_architecture: str = "arm64",
         indexed_architecture: str | None = None,
     ) -> None:
         def descriptor(payload: bytes, media_type: str) -> dict[str, object]:
@@ -134,7 +135,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             }
 
         config = json.dumps(
-            {"architecture": "arm64", "os": "linux"}, sort_keys=True
+            {"architecture": config_architecture, "os": "linux"}, sort_keys=True
         ).encode("utf-8")
         layer = b"fixture-layer"
         config_descriptor = descriptor(
@@ -1155,6 +1156,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.create_oci_archive(
                 init_archive,
                 DEFAULT_INIT_IMAGE,
+                config_architecture="amd64",
                 indexed_architecture="amd64",
             )
             container_log = temporary_root / "container.log"
@@ -1181,6 +1183,43 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn("missing required reference(s)", result.stderr)
             self.assertIn(DEFAULT_INIT_IMAGE, result.stderr)
+            self.assertFalse(container_log.exists())
+
+    def test_rejects_required_index_with_mismatched_config_platform(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            init_archive = temporary_root / "vminit-platform-mismatch.tar"
+            self.create_oci_archive(
+                init_archive,
+                DEFAULT_INIT_IMAGE,
+                config_architecture="amd64",
+                indexed_architecture="arm64",
+            )
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE": str(init_archive),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(
+                "descriptor platform does not match image config", result.stderr
+            )
             self.assertFalse(container_log.exists())
 
     def test_rejects_required_archive_references_with_different_digests(self) -> None:

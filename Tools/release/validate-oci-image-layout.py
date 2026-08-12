@@ -197,6 +197,13 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
                 config = load_json(config_payload, f"{context}.config")
                 if platform is not None and not isinstance(platform, dict):
                     raise ValidationError(f"{context} platform must be an object")
+                if platform is not None and (
+                    platform.get("os") != config.get("os")
+                    or platform.get("architecture") != config.get("architecture")
+                ):
+                    raise ValidationError(
+                        f"{context} descriptor platform does not match image config"
+                    )
                 platform_source = platform if platform is not None else config
                 compatible = (
                     platform_source.get("os") == "linux"
