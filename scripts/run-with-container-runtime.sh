@@ -27,8 +27,26 @@ readonly SCRIPT_DIRECTORY
 # shellcheck disable=SC1091
 source "$SCRIPT_DIRECTORY/../Tools/ci/container-runtime-lock.sh"
 
-container_binary=$1
+requested_container_binary=$1
+container_binary=$requested_container_binary
 shift
+if [[ "$container_binary" != */* ]]; then
+    if ! container_binary=$(command -v "$container_binary"); then
+        printf 'candidate container command was not found on PATH: %s\n' \
+            "$requested_container_binary" >&2
+        exit 2
+    fi
+fi
+if [[ ! -x "$container_binary" ]]; then
+    printf 'candidate container binary is not executable: %s\n' "$container_binary" >&2
+    exit 2
+fi
+container_binary_directory=$(cd "$(dirname "$container_binary")" && pwd -P)
+container_binary="$container_binary_directory/$(basename "$container_binary")"
+# Every nested Makefile and helper must resolve the same candidate CLI that
+# owns the isolated runtime. Otherwise a host-installed `container` earlier in
+# PATH can silently target the default service namespace mid-validation.
+export PATH="$container_binary_directory${PATH:+:$PATH}"
 runtime_app_root=${CONTAINER_RUNTIME_APP_ROOT:-}
 runtime_service_namespace=${CONTAINER_RUNTIME_SERVICE_NAMESPACE:-}
 runtime_run_id=${CONTAINER_RUNTIME_RUN_ID:-}

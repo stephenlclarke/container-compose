@@ -582,7 +582,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
                     "CONTAINER_TEST_LOG": str(container_log),
                     "CONFIG_TEST_PATH": str(config_path),
-                    "EXPECTED_CONTAINER_CLI": str(fake_container),
+                    "EXPECTED_CONTAINER_CLI": str(fake_container.resolve()),
                     "INIT_TEST_LOG": str(init_log),
                 }
             )
@@ -1000,6 +1000,124 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertEqual(
                 container_log.read_text(encoding="utf-8"),
                 "list --all --format json\n",
+            )
+
+    def test_candidate_cli_leads_path_for_nested_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            candidate_bin = temporary_root / "candidate-bin"
+            competing_bin = temporary_root / "competing-bin"
+            candidate_bin.mkdir()
+            competing_bin.mkdir()
+            candidate_container = candidate_bin / "container"
+            competing_container = competing_bin / "container"
+            candidate_log = temporary_root / "candidate.log"
+            competing_log = temporary_root / "competing.log"
+            self.write_fake_container(candidate_container)
+            competing_container.write_text(
+                "#!/usr/bin/env bash\n"
+                'printf "%s\\n" "$*" >>"${COMPETING_CONTAINER_LOG:?}"\n'
+                "exit 97\n",
+                encoding="utf-8",
+            )
+            competing_container.chmod(0o755)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "outer-owner",
+                    "CONTAINER_TEST_LOG": str(candidate_log),
+                    "COMPETING_CONTAINER_LOG": str(competing_log),
+                    "EXPECTED_CONTAINER_CLI": str(candidate_container.resolve()),
+                    "PATH": f"{competing_bin}:{environment['PATH']}",
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(candidate_container),
+                    "/bin/sh",
+                    "-c",
+                    'test "$(command -v container)" = "$EXPECTED_CONTAINER_CLI" '
+                    "&& container nested-command-proof",
+                ],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(
+                "nested-command-proof",
+                candidate_log.read_text(encoding="utf-8").splitlines(),
+            )
+            self.assertFalse(competing_log.exists())
+
+    def test_resolves_bare_candidate_command_before_pinning_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            candidate_bin = temporary_root / "candidate-bin"
+            candidate_bin.mkdir()
+            candidate_container = candidate_bin / "container"
+            candidate_log = temporary_root / "candidate.log"
+            self.write_fake_container(candidate_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "outer-owner",
+                    "CONTAINER_TEST_LOG": str(candidate_log),
+                    "BASH_ENV": "/dev/null",
+                    "ENV": "/dev/null",
+                    "EXPECTED_CONTAINER_CLI": str(candidate_container.resolve()),
+                    "PATH": f"{candidate_bin}:{environment['PATH']}",
+                }
+            )
+            resolved_candidate = subprocess.run(
+                ["/bin/bash", "-c", "command -v container"],
+                env=environment,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            self.assertEqual(resolved_candidate, str(candidate_container))
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    "container",
+                    "/bin/sh",
+                    "-c",
+                    'test "$(command -v container)" = "$EXPECTED_CONTAINER_CLI" '
+                    "&& container bare-command-proof",
+                ],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            candidate_invocations = (
+                candidate_log.read_text(encoding="utf-8")
+                if candidate_log.exists()
+                else "<candidate was not invoked>\n"
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                result.stdout + result.stderr + candidate_invocations,
+            )
+            self.assertIn(
+                "bare-command-proof",
+                candidate_invocations.splitlines(),
             )
 
     def test_managed_runtime_recovers_owner_api_after_cli_reinstall(self) -> None:
