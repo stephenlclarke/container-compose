@@ -717,6 +717,72 @@ cleanup_container_runtime_candidate() {
   find "${CONTAINER_RUNTIME_CANDIDATE_ROOT}" -depth -delete
 }
 
+# Delete only the fresh short runtime parent created and marked by this gate.
+# This outer marker exists before the wrapper starts, so an interrupt during
+# input staging, lock acquisition, or the initial stop can still clean up.
+cleanup_release_runtime_parent() {
+  local runtime_parent="$1"
+  [[ -n "${runtime_parent}" ]] || return 0
+
+  case "${runtime_parent}" in
+    /private/tmp/c.* | /tmp/c.*)
+      ;;
+    *)
+      printf 'refusing to remove a release runtime root outside local temporary storage: %s\n' \
+        "${runtime_parent}" >&2
+      return 1
+      ;;
+  esac
+
+  local marker="${runtime_parent}/.container-compose-release-runtime-parent"
+  local marker_value=""
+  if [[ -f "${marker}" ]]; then
+    IFS= read -r marker_value <"${marker}" || true
+  fi
+  if [[ "${marker_value}" != "container-compose release runtime parent v1" ]]; then
+    printf 'refusing to remove a release runtime root without its valid outer marker: %s\n' \
+      "${runtime_parent}" >&2
+    return 1
+  fi
+
+  find "${runtime_parent}" -depth -delete
+}
+
+# Publish a runtime parent path to the caller only after its ownership marker
+# is durable. The command substitution runs this function in a subshell; its
+# EXIT trap can therefore remove the exact mktemp result even if interruption
+# occurs in the otherwise unavoidable directory-before-marker interval.
+create_release_runtime_parent() {
+  local runtime_parent_base="$1"
+  local runtime_parent=""
+
+  # shellcheck disable=SC2329
+  cleanup_incomplete_release_runtime_parent() {
+    local trapped_status=$?
+    trap - EXIT
+    if [[ -n "${runtime_parent}" && -d "${runtime_parent}" ]]; then
+      case "${runtime_parent}" in
+        /private/tmp/c.* | /tmp/c.*)
+          find "${runtime_parent}" -depth -delete
+          ;;
+        *)
+          printf 'refusing to remove an incomplete release runtime root outside local temporary storage: %s\n' \
+            "${runtime_parent}" >&2
+          return 1
+          ;;
+      esac
+    fi
+    return "${trapped_status}"
+  }
+
+  trap cleanup_incomplete_release_runtime_parent EXIT
+  runtime_parent="$(mktemp -d "${runtime_parent_base}/c.XXXXXX")"
+  printf 'container-compose release runtime parent v1\n' \
+    >"${runtime_parent}/.container-compose-release-runtime-parent"
+  trap - EXIT
+  printf '%s\n' "${runtime_parent}"
+}
+
 # Run the candidate-owned gate in the background so this shell can explicitly
 # wait for its namespace cleanup when the process group receives INT or TERM.
 # The candidate extraction must remain present until the wrapper's signal trap
@@ -801,7 +867,7 @@ resolve_release_evidence_root() {
 run_local_release_gate() {
   (
   local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive
-  local containerization_reference required_init_references status marker_value
+  local containerization_reference required_init_references status
   path="$(repo_path "${COMPOSE_REPO}")"
   container_path="$(repo_path "${CONTAINER_REPO}")"
   containerization_path="$(repo_path "containerization")"
@@ -860,7 +926,19 @@ PY
   evidence_root="$(resolve_release_evidence_root "${path}" \
     "${PARITY_EVIDENCE_DIR:-.build/release-evidence}")"
   stage_container_runtime_candidate "${container_path}" "${evidence_root}"
-  trap cleanup_container_runtime_candidate EXIT
+  runtime_parent=""
+  # shellcheck disable=SC2329
+  cleanup_local_release_gate_roots() {
+    local trapped_status=$?
+    local cleanup_failed=0
+    cleanup_release_runtime_parent "${runtime_parent}" || cleanup_failed=1
+    cleanup_container_runtime_candidate || cleanup_failed=1
+    if ((cleanup_failed != 0)); then
+      return 1
+    fi
+    return "${trapped_status}"
+  }
+  trap cleanup_local_release_gate_roots EXIT
   container_binary="${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container"
   runtime_parent_base=/private/tmp
   if [[ ! -d "${runtime_parent_base}" || ! -w "${runtime_parent_base}" ]]; then
@@ -868,7 +946,7 @@ PY
   fi
   # Keep both this candidate's provider socket and Container integration's
   # nested provider socket below Darwin's 103-byte sockaddr_un limit.
-  runtime_parent="$(mktemp -d "${runtime_parent_base}/c.XXXXXX")"
+  runtime_parent="$(create_release_runtime_parent "${runtime_parent_base}")"
   runtime_app_root="${runtime_parent}/app"
   profile_root="${runtime_parent}/profiles"
   mkdir -p "${profile_root}"
@@ -894,17 +972,10 @@ PY
     "CONTAINER_COMPOSE_CONTAINER=${container_binary}" \
     "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}" || status=$?
 
-  marker_value=""
-  if [[ -f "${runtime_app_root}/.container-compose-runtime-root" ]]; then
-    IFS= read -r marker_value <"${runtime_app_root}/.container-compose-runtime-root" || true
-  fi
-  if [[ "${marker_value}" == "container-compose isolated runtime state v1" ]]; then
-    find "${runtime_parent}" -depth -delete
-  else
-    printf 'refusing to remove release runtime root without its valid marker: %s\n' \
-      "${runtime_parent}" >&2
+  if ! cleanup_release_runtime_parent "${runtime_parent}"; then
     status=1
   fi
+  runtime_parent=""
   if ! cleanup_container_runtime_candidate; then
     status=1
   fi

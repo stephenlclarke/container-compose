@@ -1756,7 +1756,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             local_gate,
         )
         self.assertNotIn('${TMPDIR:-/tmp}/cc-release.', local_gate)
-        self.assertIn('${runtime_parent_base}/c.XXXXXX', local_gate)
+        self.assertIn(
+            'runtime_parent="$(create_release_runtime_parent "${runtime_parent_base}")"',
+            local_gate,
+        )
+        self.assertIn(
+            '.container-compose-release-runtime-parent',
+            self.script,
+        )
+        self.assertLess(
+            local_gate.index('create_release_runtime_parent "${runtime_parent_base}"'),
+            local_gate.index('run_local_release_gate_command env'),
+        )
         self.assertIn(
             '[[ ! -d "${candidate_parent}" || ! -w "${candidate_parent}" ]]',
             self.script,
@@ -1860,6 +1871,36 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                     self.assertTrue(removed.exists(), stdout + stderr)
                     self.assertFalse(candidate_root.exists(), stdout + stderr)
 
+    def test_outer_marker_cleans_a_pre_runtime_interrupt_root(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="cc-parent-test.") as directory:
+            fixture_root = Path(directory)
+            runtime_parent = Path(
+                tempfile.mkdtemp(prefix="c.pre-marker-test.", dir="/tmp")
+            )
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(runtime_parent), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if runtime_parent.exists()
+                else None
+            )
+            (runtime_parent / ".container-compose-release-runtime-parent").write_text(
+                "container-compose release runtime parent v1\n", encoding="utf-8"
+            )
+            (runtime_parent / "profiles").mkdir()
+
+            cleaned = self.run_release_function(
+                fixture_root,
+                "cleanup_release_runtime_parent "
+                f"{shlex.quote(str(runtime_parent))}; "
+                f"test ! -e {shlex.quote(str(runtime_parent))}",
+            )
+
+            self.assertEqual(cleaned.returncode, 0, cleaned.stderr)
+
     def test_release_evidence_root_is_absolute_canonical_and_not_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1929,7 +1970,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             '"CONTAINER_COMPOSE_CONTAINER=${container_binary}"',
             local_gate,
         )
-        self.assertIn("trap cleanup_container_runtime_candidate EXIT", local_gate)
+        self.assertIn("trap cleanup_local_release_gate_roots EXIT", local_gate)
+        self.assertIn("cleanup_container_runtime_candidate || cleanup_failed=1", local_gate)
         self.assertIn(
             "/private/tmp/container-compose-runtime-candidate.*",
             self.script,
