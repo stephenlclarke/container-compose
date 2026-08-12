@@ -1050,15 +1050,33 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 tool = tools / name
                 tool.write_text(
                     "#!/usr/bin/env bash\n"
+                    "if [[ \"${1:-}\" == \"--version\" ]]; then\n"
+                    "  printf '%s version 1.0\\n' \"$(basename \"$0\")\"\n"
+                    "  exit 0\n"
+                    "fi\n"
                     "printf '%s:%s\\n' \"$(basename \"$0\")\" \"$*\" >> \"${STACK_VALIDATION_LOG:?}\"\n"
                     "printf 'bootstrap:%s\\n' \"${CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE:-}\" >> \"${STACK_VALIDATION_LOG:?}\"\n",
                     encoding="utf-8",
                 )
                 tool.chmod(0o755)
+            go_tool = tools / "go"
+            go_tool.write_text(
+                "#!/usr/bin/env bash\n"
+                "if [[ \"${1:-}\" == \"version\" ]]; then\n"
+                "  printf 'go version %s\\n' \"${FAKE_GO_VERSION:?}\"\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 64\n",
+                encoding="utf-8",
+            )
+            go_tool.chmod(0o755)
 
             environment = os.environ.copy()
             environment["PATH"] = f"{tools}{os.pathsep}{environment['PATH']}"
+            environment["BASH_ENV"] = "/dev/null"
+            environment["ENV"] = "/dev/null"
             environment["STACK_VALIDATION_LOG"] = str(log)
+            environment["FAKE_GO_VERSION"] = "go1.26.3"
             environment["CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE"] = "/tmp/runtime-init.oci.tar"
             environment["CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR"] = str(
                 root / "checkpoints"
@@ -1108,6 +1126,30 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(
                 "reusing exact-input validation checkpoint: containerization",
                 repeated_full.stdout,
+            )
+
+            environment["FAKE_GO_VERSION"] = "go1.26.4"
+            changed_toolchain = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+            self.assertEqual(changed_toolchain.returncode, 0, changed_toolchain.stderr)
+            changed_commands = log.read_text(encoding="utf-8")
+            self.assertEqual(
+                changed_commands.count(f"make:-C {builder}"),
+                2,
+                full.stdout
+                + repeated_full.stdout
+                + changed_toolchain.stdout
+                + changed_toolchain.stderr
+                + changed_commands,
+            )
+            self.assertNotIn(
+                "reusing exact-input validation checkpoint",
+                changed_toolchain.stdout,
             )
 
             log.unlink()
@@ -1295,9 +1337,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertLess(release.index("run_local_release_gate"), release.index("push_all_main"))
         self.assertIn('HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"', self.script)
         self.assertIn('"$(repo_path "container-builder-shim")"', self.script)
-        self.assertIn('make -C "$(repo_path "containerization")" fetch-default-kernel', self.script)
+        self.assertIn('containerization_path="$(repo_path "containerization")"', self.script)
+        self.assertIn('make -C "${containerization_path}" fetch-default-kernel', self.script)
         self.assertIn("one fresh marker-protected runtime lifecycle", self.script)
         self.assertIn("CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES", self.script)
+        self.assertIn("CONTAINER_RUNTIME_INIT_BLOCK_REPO", self.script)
+        self.assertIn("CONTAINERIZATION_INIT_SOURCE_PATH", self.script)
         self.assertIn("-u CONTAINER_RUNTIME_SERVICE_NAMESPACE", self.script)
 
     def test_stable_release_requires_intent_and_reviewed_sibling_mains(self) -> None:

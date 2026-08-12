@@ -571,10 +571,11 @@ require_local_virtualization() {
 
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
-  local path repository container_path container_binary runtime_parent runtime_app_root
+  local path repository container_path containerization_path container_binary runtime_parent runtime_app_root
   local containerization_reference required_init_references status marker_value
   path="$(repo_path "${COMPOSE_REPO}")"
   container_path="$(repo_path "${CONTAINER_REPO}")"
+  containerization_path="$(repo_path "containerization")"
   if [[ ! -f "${HOMEBREW_TAP_REPO}/Formula/container-compose.rb" ]]; then
     printf 'Homebrew tap checkout is required at %s\n' "${HOMEBREW_TAP_REPO}" >&2
     exit 1
@@ -599,7 +600,7 @@ run_local_release_gate() {
       fi
     )
   done
-  run make -C "$(repo_path "containerization")" fetch-default-kernel
+  run make -C "${containerization_path}" fetch-default-kernel
   run make -C "${container_path}" container
   if [[ "${EXECUTE}" != "1" ]]; then
     printf 'would run the complete local gate inside one fresh marker-protected runtime lifecycle\n'
@@ -629,6 +630,8 @@ PY
     -u CONTAINER_RUNTIME_SERVICE_NAMESPACE -u CONTAINER_RUNTIME_RUN_ID \
     HAWKEYE_AUTO_INSTALL=1 \
     CONTAINER_RUNTIME_APP_ROOT="${runtime_app_root}" \
+    CONTAINER_RUNTIME_INIT_BLOCK_REPO="${container_path}" \
+    CONTAINERIZATION_INIT_SOURCE_PATH="${containerization_path}" \
     CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES="${required_init_references}" \
     CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR="${PARITY_EVIDENCE_DIR:-${path}/.build/release-evidence}/stack-validation" \
     "${path}/scripts/run-with-container-runtime.sh" "${container_binary}" \
