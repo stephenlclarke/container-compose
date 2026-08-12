@@ -2114,6 +2114,76 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 (artifacts[0] / ".container-compose-runtime-candidate-artifact").is_file()
             )
 
+    def test_runtime_candidate_staging_cleans_interrupted_build_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            container = root / "container"
+            container.mkdir()
+            (container / "fixture").write_text("source\n", encoding="utf-8")
+            for command in (
+                ["git", "init", "--quiet", str(container)],
+                ["git", "-C", str(container), "config", "user.email", "test@example.com"],
+                ["git", "-C", str(container), "config", "user.name", "Container Test"],
+                ["git", "-C", str(container), "add", "."],
+                ["git", "-C", str(container), "commit", "--quiet", "-m", "fixture"],
+            ):
+                subprocess.run(command, check=True, capture_output=True, text=True)
+
+            bin_directory = root / "bin"
+            bin_directory.mkdir()
+            ready = root / "ready"
+            fake_make = bin_directory / "make"
+            fake_make.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -u\n"
+                "trap 'exit 143' TERM\n"
+                'touch "${BUILD_READY:?}"\n'
+                "while :; do sleep 1; done\n",
+                encoding="utf-8",
+            )
+            fake_make.chmod(0o755)
+            evidence = root / "evidence"
+            shell = "\n".join(
+                [
+                    "set -euo pipefail",
+                    "export CONTAINER_STACK_RELEASE_LIBRARY=1",
+                    f"source {shlex.quote(str(SCRIPT))}",
+                    f"ROOT={shlex.quote(str(root))}",
+                    "EXECUTE=1",
+                    f"export PATH={shlex.quote(str(bin_directory))}:$PATH",
+                    f"export BUILD_READY={shlex.quote(str(ready))}",
+                    "stage_container_runtime_candidate "
+                    f"{shlex.quote(str(container))} {shlex.quote(str(evidence))}",
+                ]
+            )
+            process = subprocess.Popen(
+                ["bash", "-c", shell],
+                cwd=ROOT,
+                env=self.non_interactive_environment(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+            deadline = time.monotonic() + 10
+            while not ready.exists() and process.poll() is None:
+                if time.monotonic() >= deadline:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=10)
+                    self.fail("runtime candidate package build did not start")
+                time.sleep(0.05)
+
+            os.killpg(process.pid, signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=10)
+
+            self.assertEqual(process.returncode, 143, stdout + stderr)
+            artifact_parent = evidence / "runtime-candidates"
+            self.assertEqual(list(artifact_parent.glob(".build-*")), [])
+            self.assertEqual(
+                [path for path in artifact_parent.iterdir() if not path.name.startswith(".")],
+                [],
+            )
+
     def test_local_virtualization_preflight_requires_hardware_support(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

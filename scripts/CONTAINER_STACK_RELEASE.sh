@@ -640,22 +640,46 @@ stage_container_runtime_candidate() {
     fi
   else
     build_root="$(mktemp -d "${artifact_parent}/.build-${container_head}.XXXXXX")"
+    # shellcheck disable=SC2329
+    cleanup_unpublished_runtime_candidate_build() {
+      local trapped_status="${1:-$?}"
+      trap - EXIT
+      trap '' INT TERM
+      if [[ -n "${build_root:-}" && -d "${build_root}" ]]; then
+        case "${build_root}" in
+          "${artifact_parent}/.build-${container_head}."*)
+            find "${build_root}" -depth -delete
+            ;;
+          *)
+            printf 'refusing to remove a runtime candidate build outside its evidence root: %s\n' \
+              "${build_root}" >&2
+            return 1
+            ;;
+        esac
+      fi
+      return "${trapped_status}"
+    }
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'cleanup_unpublished_runtime_candidate_build $?' EXIT
     archive="${build_root}/container-homebrew-debug-arm64.tar.gz"
     if ! make -C "${container_path}" homebrew-package "HOMEBREW_ARCHIVE=${archive}"; then
       printf 'failed to build the packaged Container runtime candidate in: %s\n' \
         "${build_root}" >&2
-      find "${build_root}" -depth -delete
+      cleanup_unpublished_runtime_candidate_build 1 || true
       return 1
     fi
     if ! (cd "${build_root}" && shasum -a 256 -c "$(basename "${archive}.sha256")"); then
       printf 'new Container runtime candidate artifact checksum is invalid: %s\n' \
         "${archive}" >&2
-      find "${build_root}" -depth -delete
+      cleanup_unpublished_runtime_candidate_build 1 || true
       return 1
     fi
     printf 'container-compose runtime candidate artifact v1 %s\n' \
       "${container_head}" >"${build_root}/.container-compose-runtime-candidate-artifact"
     mv "${build_root}" "${artifact_root}"
+    build_root=""
+    trap - EXIT INT TERM
     archive="${artifact_root}/container-homebrew-debug-arm64.tar.gz"
   fi
 
