@@ -43,10 +43,19 @@ if [[ ! -x "$container_binary" ]]; then
 fi
 container_binary_directory=$(cd "$(dirname "$container_binary")" && pwd -P)
 container_binary="$container_binary_directory/$(basename "$container_binary")"
+container_binary_sha256=$(shasum -a 256 "$container_binary" | awk '{print $1}')
+if [[ -n "${CONTAINER_RUNTIME_CLI_SHA256:-}" &&
+    "${CONTAINER_RUNTIME_CLI_SHA256}" != "$container_binary_sha256" ]]; then
+    printf 'candidate container binary digest mismatch (expected %s, got %s): %s\n' \
+        "${CONTAINER_RUNTIME_CLI_SHA256}" "$container_binary_sha256" "$container_binary" >&2
+    exit 2
+fi
 # Every nested Makefile and helper must resolve the same candidate CLI that
 # owns the isolated runtime. Otherwise a host-installed `container` earlier in
 # PATH can silently target the default service namespace mid-validation.
 export PATH="$container_binary_directory${PATH:+:$PATH}"
+export CONTAINER_RUNTIME_CLI="$container_binary"
+export CONTAINER_RUNTIME_CLI_SHA256="$container_binary_sha256"
 runtime_app_root=${CONTAINER_RUNTIME_APP_ROOT:-}
 runtime_service_namespace=${CONTAINER_RUNTIME_SERVICE_NAMESPACE:-}
 runtime_run_id=${CONTAINER_RUNTIME_RUN_ID:-}
@@ -122,47 +131,10 @@ validate_runtime_init_image_archive() {
     if [[ -n "${CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES:-}" ]]; then
         required_references+=" ${CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES}"
     fi
-
-    python3 - "$runtime_init_image_archive" "$required_references" <<'PY'
-import json
-from pathlib import Path
-import sys
-import tarfile
-
-archive = Path(sys.argv[1])
-required = set(sys.argv[2].split())
-try:
-    with tarfile.open(archive, "r:*") as bundle:
-        member = next(
-            (item for item in bundle.getmembers() if item.name.lstrip("./") == "index.json"),
-            None,
-        )
-        if member is None:
-            raise ValueError("index.json is missing")
-        stream = bundle.extractfile(member)
-        if stream is None:
-            raise ValueError("index.json is unreadable")
-        index = json.load(stream)
-except (OSError, tarfile.TarError, ValueError, json.JSONDecodeError) as error:
-    raise SystemExit(f"container runtime init-image archive is not a readable OCI archive: {archive} ({error})")
-
-available = {
-    manifest.get("annotations", {}).get("org.opencontainers.image.ref.name"): manifest.get("digest")
-    for manifest in index.get("manifests", [])
-}
-missing = sorted(reference for reference in required if reference not in available)
-if missing:
-    raise SystemExit(
-        "container runtime init-image archive is missing required reference(s): "
-        + ", ".join(missing)
-    )
-digests = {available[reference] for reference in required}
-if len(digests) != 1 or None in digests:
-    raise SystemExit(
-        "container runtime init-image archive required references do not resolve to one digest: "
-        + ", ".join(f"{reference}={available[reference]}" for reference in sorted(required))
-    )
-PY
+    local references=()
+    read -r -a references <<<"$required_references"
+    "$SCRIPT_DIRECTORY/../Tools/release/validate-oci-image-layout.py" \
+        "$runtime_init_image_archive" "${references[@]}"
 }
 
 validate_runtime_inputs() {
@@ -616,6 +588,7 @@ install_runtime_bootstrap_image() {
 cleanup() {
     local status=$?
     trap - EXIT
+    trap '' INT TERM
     printf 'Stopping matched container runtime...\n'
     stop_runtime || true
     release_container_runtime_lock
@@ -690,6 +663,8 @@ fi
 trap cleanup_runtime_service_inputs EXIT
 stage_runtime_service_inputs
 acquire_container_runtime_lock
+trap 'exit 130' INT
+trap 'exit 143' TERM
 trap cleanup EXIT
 
 printf 'Stopping stale container services...\n'

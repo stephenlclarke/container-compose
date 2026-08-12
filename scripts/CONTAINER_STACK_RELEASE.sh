@@ -21,6 +21,7 @@ readonly SELF_PATH="${BASH_SOURCE[0]:-$0}"
 SELF_DIRECTORY="$(cd "$(dirname "${SELF_PATH}")" && pwd -P)"
 readonly SELF_DIRECTORY
 readonly COMPOSE_PROMOTION_REVIEW_TOOL="${SELF_DIRECTORY}/../Tools/release/compose_promotion_review.py"
+readonly OCI_IMAGE_LAYOUT_VALIDATOR="${SELF_DIRECTORY}/../Tools/release/validate-oci-image-layout.py"
 SCRIPT_NAME="$(basename "${SELF_PATH}")"
 readonly SCRIPT_NAME
 readonly SCRIPT_USAGE="scripts/${SCRIPT_NAME}"
@@ -137,6 +138,11 @@ Environment:
   CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS
   CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS
       Override the default one-hour package workflow wait and 30-second poll.
+
+  CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE
+      Absolute path to the retained OCI init-image archive used by the local
+      release gate. Execute mode requires this hermetic bootstrap input so
+      runtime startup cannot fall back to a mutable registry or host login.
 
   CONTAINER_STACK_RELEASE_ROOT
       Override the parent directory containing the four source checkouts and
@@ -591,10 +597,316 @@ require_local_virtualization() {
   fi
 }
 
+# Build one packaged Container runtime for the exact source head, then unpack
+# it into a fresh read-only root for this gate. Keep the reusable archive and
+# its evidence on the configured artifact volume, but stage launchd-managed
+# executables on the local system volume. macOS launchd can register an
+# executable from a removable volume with ownership disabled while leaving its
+# process stuck in xpcproxy, which otherwise surfaces only as an opaque XPC
+# timeout. Later sibling validation may rebuild the source checkout, but it
+# cannot replace the candidate already running or change the identity bound
+# into reusable checkpoint evidence.
+stage_container_runtime_candidate() {
+  local container_path="$1" evidence_root="$2"
+  local container_head artifact_parent artifact_root build_root archive archive_digest
+  local marker marker_value candidate_parent
+
+  container_head="$(git -C "${container_path}" rev-parse --verify 'HEAD^{commit}')"
+  artifact_parent="${evidence_root}/runtime-candidates"
+  artifact_root="${artifact_parent}/${container_head}"
+  archive="${artifact_root}/container-homebrew-debug-arm64.tar.gz"
+  marker="${artifact_root}/.container-compose-runtime-candidate-artifact"
+
+  mkdir -p "${artifact_parent}"
+  if [[ -e "${artifact_root}" ]]; then
+    marker_value=""
+    if [[ -f "${marker}" ]]; then
+      IFS= read -r marker_value <"${marker}" || true
+    fi
+    if [[ "${marker_value}" != "container-compose runtime candidate artifact v1 ${container_head}" ]]; then
+      printf 'refusing to reuse an unmarked Container runtime candidate artifact: %s\n' \
+        "${artifact_root}" >&2
+      return 1
+    fi
+    if [[ ! -f "${archive}" || ! -f "${archive}.sha256" ]]; then
+      printf 'Container runtime candidate artifact is incomplete: %s\n' \
+        "${artifact_root}" >&2
+      return 1
+    fi
+    if ! (cd "${artifact_root}" && shasum -a 256 -c "$(basename "${archive}.sha256")"); then
+      printf 'Container runtime candidate artifact checksum is invalid: %s\n' \
+        "${archive}" >&2
+      return 1
+    fi
+  else
+    build_root="$(mktemp -d "${artifact_parent}/.build-${container_head}.XXXXXX")"
+    # shellcheck disable=SC2329
+    cleanup_unpublished_runtime_candidate_build() {
+      local trapped_status="${1:-$?}"
+      trap - EXIT
+      trap '' INT TERM
+      if [[ -n "${build_root:-}" && -d "${build_root}" ]]; then
+        case "${build_root}" in
+          "${artifact_parent}/.build-${container_head}."*)
+            find "${build_root}" -depth -delete
+            ;;
+          *)
+            printf 'refusing to remove a runtime candidate build outside its evidence root: %s\n' \
+              "${build_root}" >&2
+            return 1
+            ;;
+        esac
+      fi
+      return "${trapped_status}"
+    }
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'cleanup_unpublished_runtime_candidate_build $?' EXIT
+    archive="${build_root}/container-homebrew-debug-arm64.tar.gz"
+    if ! make -C "${container_path}" homebrew-package "HOMEBREW_ARCHIVE=${archive}"; then
+      printf 'failed to build the packaged Container runtime candidate in: %s\n' \
+        "${build_root}" >&2
+      cleanup_unpublished_runtime_candidate_build 1 || true
+      return 1
+    fi
+    if ! (cd "${build_root}" && shasum -a 256 -c "$(basename "${archive}.sha256")"); then
+      printf 'new Container runtime candidate artifact checksum is invalid: %s\n' \
+        "${archive}" >&2
+      cleanup_unpublished_runtime_candidate_build 1 || true
+      return 1
+    fi
+    printf 'container-compose runtime candidate artifact v1 %s\n' \
+      "${container_head}" >"${build_root}/.container-compose-runtime-candidate-artifact"
+    mv "${build_root}" "${artifact_root}"
+    build_root=""
+    trap - EXIT INT TERM
+    archive="${artifact_root}/container-homebrew-debug-arm64.tar.gz"
+  fi
+
+  archive_digest="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+  candidate_parent=/private/tmp
+  if [[ ! -d "${candidate_parent}" || ! -w "${candidate_parent}" ]]; then
+    candidate_parent=/tmp
+  fi
+  CONTAINER_RUNTIME_CANDIDATE_ROOT="$(mktemp -d \
+    "${candidate_parent}/container-compose-runtime-candidate.${container_head}.XXXXXX")"
+  if ! tar -xzf "${archive}" -C "${CONTAINER_RUNTIME_CANDIDATE_ROOT}"; then
+    printf 'failed to extract the Container runtime candidate archive: %s\n' \
+      "${archive}" >&2
+    find "${CONTAINER_RUNTIME_CANDIDATE_ROOT}" -depth -delete
+    CONTAINER_RUNTIME_CANDIDATE_ROOT=""
+    return 1
+  fi
+  if [[ ! -x "${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container" ]]; then
+    printf 'packaged Container runtime candidate has no executable CLI: %s\n' \
+      "${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container" >&2
+    find "${CONTAINER_RUNTIME_CANDIDATE_ROOT}" -depth -delete
+    CONTAINER_RUNTIME_CANDIDATE_ROOT=""
+    return 1
+  fi
+  printf 'container-compose runtime candidate run v1 %s %s\n' \
+    "${container_head}" "${archive_digest}" \
+    >"${CONTAINER_RUNTIME_CANDIDATE_ROOT}/.container-compose-runtime-candidate-run"
+  chmod -R a-w "${CONTAINER_RUNTIME_CANDIDATE_ROOT}"
+
+  CONTAINER_RUNTIME_CANDIDATE_SHA256="${archive_digest}"
+}
+
+# Delete only the fresh marker-protected candidate extraction owned by this gate.
+cleanup_container_runtime_candidate() {
+  [[ -n "${CONTAINER_RUNTIME_CANDIDATE_ROOT:-}" ]] || return 0
+
+  case "${CONTAINER_RUNTIME_CANDIDATE_ROOT}" in
+    /private/tmp/container-compose-runtime-candidate.* | /tmp/container-compose-runtime-candidate.*)
+      ;;
+    *)
+      printf 'refusing to remove a runtime candidate outside local temporary storage: %s\n' \
+        "${CONTAINER_RUNTIME_CANDIDATE_ROOT}" >&2
+      return 1
+      ;;
+  esac
+
+  local marker="${CONTAINER_RUNTIME_CANDIDATE_ROOT}/.container-compose-runtime-candidate-run"
+  local marker_value=""
+  if [[ -f "${marker}" ]]; then
+    IFS= read -r marker_value <"${marker}" || true
+  fi
+  if [[ "${marker_value}" != container-compose\ runtime\ candidate\ run\ v1\ * ]]; then
+    printf 'refusing to remove an unmarked Container runtime candidate root: %s\n' \
+      "${CONTAINER_RUNTIME_CANDIDATE_ROOT}" >&2
+    return 1
+  fi
+
+  chmod -R u+w "${CONTAINER_RUNTIME_CANDIDATE_ROOT}"
+  find "${CONTAINER_RUNTIME_CANDIDATE_ROOT}" -depth -delete
+}
+
+# Delete only the fresh short runtime parent created and marked by this gate.
+# This outer marker exists before the wrapper starts, so an interrupt during
+# input staging, lock acquisition, or the initial stop can still clean up.
+cleanup_release_runtime_parent() {
+  local runtime_parent="$1"
+  [[ -n "${runtime_parent}" ]] || return 0
+
+  case "${runtime_parent}" in
+    /private/tmp/c.* | /tmp/c.*)
+      ;;
+    *)
+      printf 'refusing to remove a release runtime root outside local temporary storage: %s\n' \
+        "${runtime_parent}" >&2
+      return 1
+      ;;
+  esac
+
+  local marker="${runtime_parent}/.container-compose-release-runtime-parent"
+  local marker_value=""
+  if [[ -f "${marker}" ]]; then
+    IFS= read -r marker_value <"${marker}" || true
+  fi
+  if [[ "${marker_value}" != "container-compose release runtime parent v1" ]]; then
+    printf 'refusing to remove a release runtime root without its valid outer marker: %s\n' \
+      "${runtime_parent}" >&2
+    return 1
+  fi
+
+  find "${runtime_parent}" -depth -delete
+}
+
+# Publish a runtime parent path to the caller only after its ownership marker
+# is durable. The command substitution runs this function in a subshell; its
+# EXIT trap can therefore remove the exact mktemp result even if interruption
+# occurs in the otherwise unavoidable directory-before-marker interval.
+create_release_runtime_parent() {
+  local runtime_parent_base="$1"
+  local runtime_parent=""
+  local runtime_parent_published=0
+
+  # shellcheck disable=SC2329
+  cleanup_incomplete_release_runtime_parent() {
+    local trapped_status=$?
+    trap - EXIT
+    trap '' INT TERM
+    if ((trapped_status == 0 && runtime_parent_published != 0)); then
+      return 0
+    fi
+    if [[ -n "${runtime_parent}" && -d "${runtime_parent}" ]]; then
+      case "${runtime_parent}" in
+        /private/tmp/c.* | /tmp/c.*)
+          find "${runtime_parent}" -depth -delete
+          ;;
+        *)
+          printf 'refusing to remove an incomplete release runtime root outside local temporary storage: %s\n' \
+            "${runtime_parent}" >&2
+          return 1
+          ;;
+      esac
+    fi
+    return "${trapped_status}"
+  }
+
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap cleanup_incomplete_release_runtime_parent EXIT
+  runtime_parent="$(mktemp -d "${runtime_parent_base}/c.XXXXXX")"
+  printf 'container-compose release runtime parent v1\n' \
+    >"${runtime_parent}/.container-compose-release-runtime-parent"
+  runtime_parent_published=1
+  printf '%s\n' "${runtime_parent}"
+  # Publication is complete. Ignore a late signal before disarming EXIT so it
+  # cannot outlive this function and expand locals that have left scope.
+  trap '' INT TERM
+  trap - EXIT
+}
+
+# Run the candidate-owned gate in the background so this shell can explicitly
+# wait for its namespace cleanup when the process group receives INT or TERM.
+# The candidate extraction must remain present until the wrapper's signal trap
+# has completed its namespace-scoped `system stop`.
+run_local_release_gate_command() {
+  local child_pid=""
+  local child_status=0
+  local signal_name=""
+  local signal_status=0
+
+  # shellcheck disable=SC2329
+  wait_for_candidate_cleanup_on_signal() {
+    signal_name="$1"
+    signal_status="$2"
+    # A second signal must not interrupt the one wait that protects the
+    # candidate executable used by the child's cleanup trap.
+    trap '' INT TERM
+    if [[ -n "${child_pid}" ]]; then
+      # A direct signal to this helper does not reach the background cleanup
+      # owner. Forward it before waiting; a process-group signal is harmlessly
+      # redelivered because the wrapper ignores repeats while cleaning up.
+      kill -s "${signal_name}" "${child_pid}" 2>/dev/null || true
+      if wait "${child_pid}"; then
+        child_status=0
+      else
+        child_status=$?
+      fi
+      child_pid=""
+    fi
+  }
+
+  trap 'wait_for_candidate_cleanup_on_signal INT 130' INT
+  trap 'wait_for_candidate_cleanup_on_signal TERM 143' TERM
+
+  # Bash gives asynchronous commands ignored SIGINT/SIGQUIT dispositions and
+  # otherwise keeps an intermediate subshell whose death would make this wait
+  # finish before the exec'd wrapper cleans up. Reset the dispositions inside
+  # that child and exec the wrapper so child_pid remains the runtime owner.
+  (
+    trap - INT TERM
+    exec "$@"
+  ) &
+  child_pid=$!
+  # Cover a signal delivered after the launch decision but before Bash stored
+  # $!: re-deliver it to the child now that its PID is known.
+  if [[ -n "${signal_name}" ]]; then
+    kill -s "${signal_name}" "${child_pid}" 2>/dev/null || true
+  fi
+  if [[ -n "${child_pid}" ]]; then
+    if wait "${child_pid}"; then
+      child_status=0
+    else
+      child_status=$?
+    fi
+    child_pid=""
+  fi
+
+  trap - INT TERM
+  if ((signal_status != 0)); then
+    return "${signal_status}"
+  fi
+  return "${child_status}"
+}
+
+# Resolve retained evidence before it is also used as an absolute build/log
+# scratch root. Relative values are Compose-checkout-relative, matching the
+# documented .build/... form, and symlinks cannot smuggle the root directory
+# through later destructive cleanup guards.
+resolve_release_evidence_root() {
+  local compose_path="$1"
+  local configured_root="$2"
+  local evidence_root="${configured_root}"
+  if [[ "${evidence_root}" != /* ]]; then
+    evidence_root="${compose_path}/${evidence_root}"
+  fi
+  mkdir -p "${evidence_root}"
+  evidence_root="$(cd "${evidence_root}" && pwd -P)"
+  if [[ "${evidence_root}" == / ]]; then
+    printf 'release evidence root must not resolve to /\n' >&2
+    return 2
+  fi
+  printf '%s\n' "${evidence_root}"
+}
+
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
-  local path repository container_path containerization_path container_binary runtime_parent runtime_app_root profile_root
-  local containerization_reference required_init_references status marker_value
+  (
+  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive
+  local containerization_reference required_init_references status
   path="$(repo_path "${COMPOSE_REPO}")"
   container_path="$(repo_path "${CONTAINER_REPO}")"
   containerization_path="$(repo_path "containerization")"
@@ -623,18 +935,19 @@ run_local_release_gate() {
     )
   done
   run make -C "${containerization_path}" fetch-default-kernel
-  run make -C "${container_path}" container
   if [[ "${EXECUTE}" != "1" ]]; then
-    printf 'would run the complete local gate inside one fresh marker-protected runtime lifecycle\n'
+    printf 'would package an immutable Container runtime candidate and run the complete local gate inside one fresh marker-protected runtime lifecycle\n'
     return 0
   fi
 
-  container_binary="${container_path}/bin/container"
-  if [[ ! -x "${container_binary}" ]]; then
-    printf 'local release gate did not produce an executable Container CLI: %s\n' \
-      "${container_binary}" >&2
-    exit 1
+  init_image_archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
+  if [[ "${init_image_archive}" != /* || ! -f "${init_image_archive}" ]]; then
+    printf 'local release gate requires an absolute retained OCI init-image archive via CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE: %s\n' \
+      "${init_image_archive:-unset}" >&2
+    return 2
   fi
+  init_image_archive="$(cd "$(dirname "${init_image_archive}")" && pwd -P)/$(basename "${init_image_archive}")"
+
   containerization_reference="$(python3 - "${path}/Tools/release/stack-refs.json" <<'PY'
 import json
 from pathlib import Path
@@ -645,34 +958,70 @@ print(manifest["components"]["containerization"]["ref"])
 PY
 )"
   required_init_references="vminit:container-compose ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
-  runtime_parent="$(mktemp -d "${TMPDIR:-/tmp}/cc-release.XXXXXX")"
+  "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${init_image_archive}" \
+    vminit:container-compose \
+    "ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
+
+  evidence_root="$(resolve_release_evidence_root "${path}" \
+    "${PARITY_EVIDENCE_DIR:-.build/release-evidence}")"
+  stage_container_runtime_candidate "${container_path}" "${evidence_root}"
+  runtime_parent=""
+  # shellcheck disable=SC2329
+  cleanup_local_release_gate_roots() {
+    local trapped_status=$?
+    local cleanup_failed=0
+    cleanup_release_runtime_parent "${runtime_parent}" || cleanup_failed=1
+    cleanup_container_runtime_candidate || cleanup_failed=1
+    if ((cleanup_failed != 0)); then
+      return 1
+    fi
+    return "${trapped_status}"
+  }
+  trap cleanup_local_release_gate_roots EXIT
+  container_binary="${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container"
+  runtime_parent_base=/private/tmp
+  if [[ ! -d "${runtime_parent_base}" || ! -w "${runtime_parent_base}" ]]; then
+    runtime_parent_base=/tmp
+  fi
+  # Keep both this candidate's provider socket and Container integration's
+  # nested provider socket below Darwin's 103-byte sockaddr_un limit.
+  runtime_parent="$(create_release_runtime_parent "${runtime_parent_base}")"
   runtime_app_root="${runtime_parent}/app"
   profile_root="${runtime_parent}/profiles"
   mkdir -p "${profile_root}"
   status=0
-  env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
+  run_local_release_gate_command env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
     -u CONTAINER_RUNTIME_SERVICE_NAMESPACE -u CONTAINER_RUNTIME_RUN_ID \
     HAWKEYE_AUTO_INSTALL=1 \
     CONTAINER_RUNTIME_APP_ROOT="${runtime_app_root}" \
     CONTAINER_RUNTIME_INIT_BLOCK_REPO="${container_path}" \
+    CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="${init_image_archive}" \
     CONTAINERIZATION_INIT_SOURCE_PATH="${containerization_path}" \
     CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES="${required_init_references}" \
-    CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR="${PARITY_EVIDENCE_DIR:-${path}/.build/release-evidence}/stack-validation" \
+    CONTAINER_RUNTIME_CANDIDATE_SHA256="${CONTAINER_RUNTIME_CANDIDATE_SHA256}" \
+    CONTAINER_STACK_VALIDATION_SCRATCH_ROOT="${evidence_root}/container-scratch" \
+    CONTAINER_STACK_VALIDATION_RUNTIME_ROOT="${runtime_parent}/i" \
+    CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR="${evidence_root}/stack-validation" \
     LLVM_PROFILE_FILE="${profile_root}/%p-%m.profraw" \
     "${path}/scripts/run-with-container-runtime.sh" "${container_binary}" \
-    make -C "${path}" release-gate "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}" || status=$?
+    make -C "${path}" release-gate \
+    "CONTAINER_BUILDER_SHIM_STACK_REPO=$(repo_path "container-builder-shim")" \
+    "CONTAINERIZATION_STACK_REPO=${containerization_path}" \
+    "CONTAINER_STACK_REPO=${container_path}" \
+    "CONTAINER_COMPOSE_CONTAINER=${container_binary}" \
+    "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}" || status=$?
 
-  marker_value=""
-  if [[ -f "${runtime_app_root}/.container-compose-runtime-root" ]]; then
-    IFS= read -r marker_value <"${runtime_app_root}/.container-compose-runtime-root" || true
+  if ! cleanup_release_runtime_parent "${runtime_parent}"; then
+    status=1
   fi
-  if [[ "${marker_value}" == "container-compose isolated runtime state v1" ]]; then
-    find "${runtime_parent}" -depth -delete
-  else
-    printf 'refusing to remove release runtime root without its valid marker: %s\n' \
-      "${runtime_parent}" >&2
+  runtime_parent=""
+  if ! cleanup_container_runtime_candidate; then
+    status=1
   fi
+  CONTAINER_RUNTIME_CANDIDATE_ROOT=""
+  trap - EXIT
   return "${status}"
+  )
 }
 
 # Verify that Apple remotes cannot be pushed and stephenlclarke remotes are the target.

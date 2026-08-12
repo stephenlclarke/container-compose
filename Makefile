@@ -305,7 +305,9 @@ swift-test-build:
 
 swift-test: swift-test-build
 	@mkdir -p .build
-	@PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_TEST_ATTEMPTS)" Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
+	@env -u CONTAINER_BIN -u CONTAINER_COMPOSE_CONTAINER \
+		PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_TEST_ATTEMPTS)" \
+		Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 	@if ! grep -Eq 'Test run with [1-9][0-9]* tests? .* passed|Executed [1-9][0-9]* tests?|swiftpm-testing-helper signal 13 toolchain failure' "$(SWIFT_TEST_RESULT_LOG)"; then \
 		printf 'swift test completed without running tests; check the active toolchain Testing.framework and rpath settings.\n' >&2; \
 		exit 1; \
@@ -343,7 +345,9 @@ swift-coverage: swift-test-build
 	fi
 	@rm -f .build/*/debug/codecov/*.profraw .build/*/debug/codecov/*.profdata .build/codecov/fallback.profdata coverage*.lcov coverage*.xml
 	@find .build -maxdepth 3 -path .build/index-build -prune -o -path '*/debug' -type d -exec mkdir -p '{}/codecov' \;
-	@PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_COVERAGE_TEST_ATTEMPTS)" SWIFT_TEST_ACCEPT_SIGNAL_13=0 Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
+	@env -u CONTAINER_BIN -u CONTAINER_COMPOSE_CONTAINER \
+		PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_COVERAGE_TEST_ATTEMPTS)" SWIFT_TEST_ACCEPT_SIGNAL_13=0 \
+		Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 	test_binary="$$(find .build -path '*.xctest/Contents/MacOS/container-composePackageTests' -type f | head -n 1)"; \
 	profile=".build/codecov/fallback.profdata"; \
 	if [[ -z "$$test_binary" ]]; then \
@@ -1384,7 +1388,8 @@ container-stack-build:
 
 .PHONY: container-stack-release-validation container-stack-hosted-release-validation
 container-stack-release-validation:
-	./Tools/ci/run-stack-release-validation.sh full "$(CURDIR)" \
+	CONTAINER_RUNTIME_CLI="$(CONTAINER_COMPOSE_CONTAINER)" \
+		./Tools/ci/run-stack-release-validation.sh full "$(CURDIR)" \
 		"$(CONTAINER_BUILDER_SHIM_STACK_REPO)" "$(CONTAINERIZATION_STACK_REPO)" \
 		"$(CONTAINER_STACK_REPO)" "$(HOMEBREW_TAP_REPO)"
 
