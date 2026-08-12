@@ -1737,6 +1737,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertNotIn('${TMPDIR:-/tmp}/cc-release.', local_gate)
         self.assertIn('${runtime_parent_base}/c.XXXXXX', local_gate)
+        self.assertIn(
+            '[[ ! -d "${candidate_parent}" || ! -w "${candidate_parent}" ]]',
+            self.script,
+        )
         self.assertIn("resolve_release_evidence_root", local_gate)
         self.assertLess(
             local_gate.index('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${init_image_archive}"'),

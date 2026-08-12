@@ -21,6 +21,7 @@ import hashlib
 import io
 import json
 import os
+import signal
 import subprocess
 import tarfile
 import tempfile
@@ -433,6 +434,57 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 namespaces.append(namespace_file.read_text(encoding="utf-8").strip())
 
             self.assertNotEqual(namespaces[0], namespaces[1])
+
+    def test_group_termination_stops_the_isolated_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            container_log = temporary_root / "container.log"
+            ready = temporary_root / "ready"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_RUN_ID": "termination-test-run",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "READY_FILE": str(ready),
+                }
+            )
+
+            process = subprocess.Popen(
+                [
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/bin/sh",
+                    "-c",
+                    'touch "$READY_FILE"; while :; do sleep 1; done',
+                ],
+                cwd=ROOT,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+            deadline = time.monotonic() + 10
+            while not ready.exists() and process.poll() is None:
+                if time.monotonic() >= deadline:
+                    process.kill()
+                    self.fail("candidate command did not become ready")
+                time.sleep(0.05)
+
+            os.killpg(process.pid, signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=10)
+
+            self.assertEqual(process.returncode, 143, stdout + stderr)
+            invocations = container_log.read_text(encoding="utf-8").splitlines()
+            self.assertGreaterEqual(invocations.count("system stop"), 2)
+            self.assertIn("Stopping matched container runtime...", stdout)
 
     def test_rejects_legacy_global_stop_helper_before_service_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

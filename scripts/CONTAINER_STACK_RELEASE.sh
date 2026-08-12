@@ -661,7 +661,7 @@ stage_container_runtime_candidate() {
 
   archive_digest="$(shasum -a 256 "${archive}" | awk '{print $1}')"
   candidate_parent=/private/tmp
-  if [[ ! -d "${candidate_parent}" ]]; then
+  if [[ ! -d "${candidate_parent}" || ! -w "${candidate_parent}" ]]; then
     candidate_parent=/tmp
   fi
   CONTAINER_RUNTIME_CANDIDATE_ROOT="$(mktemp -d \

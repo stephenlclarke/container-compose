@@ -587,7 +587,7 @@ install_runtime_bootstrap_image() {
 
 cleanup() {
     local status=$?
-    trap - EXIT
+    trap - EXIT INT TERM
     printf 'Stopping matched container runtime...\n'
     stop_runtime || true
     release_container_runtime_lock
@@ -662,6 +662,8 @@ fi
 trap cleanup_runtime_service_inputs EXIT
 stage_runtime_service_inputs
 acquire_container_runtime_lock
+trap 'exit 130' INT
+trap 'exit 143' TERM
 trap cleanup EXIT
 
 printf 'Stopping stale container services...\n'
