@@ -131,47 +131,10 @@ validate_runtime_init_image_archive() {
     if [[ -n "${CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES:-}" ]]; then
         required_references+=" ${CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES}"
     fi
-
-    python3 - "$runtime_init_image_archive" "$required_references" <<'PY'
-import json
-from pathlib import Path
-import sys
-import tarfile
-
-archive = Path(sys.argv[1])
-required = set(sys.argv[2].split())
-try:
-    with tarfile.open(archive, "r:*") as bundle:
-        member = next(
-            (item for item in bundle.getmembers() if item.name.lstrip("./") == "index.json"),
-            None,
-        )
-        if member is None:
-            raise ValueError("index.json is missing")
-        stream = bundle.extractfile(member)
-        if stream is None:
-            raise ValueError("index.json is unreadable")
-        index = json.load(stream)
-except (OSError, tarfile.TarError, ValueError, json.JSONDecodeError) as error:
-    raise SystemExit(f"container runtime init-image archive is not a readable OCI archive: {archive} ({error})")
-
-available = {
-    manifest.get("annotations", {}).get("org.opencontainers.image.ref.name"): manifest.get("digest")
-    for manifest in index.get("manifests", [])
-}
-missing = sorted(reference for reference in required if reference not in available)
-if missing:
-    raise SystemExit(
-        "container runtime init-image archive is missing required reference(s): "
-        + ", ".join(missing)
-    )
-digests = {available[reference] for reference in required}
-if len(digests) != 1 or None in digests:
-    raise SystemExit(
-        "container runtime init-image archive required references do not resolve to one digest: "
-        + ", ".join(f"{reference}={available[reference]}" for reference in sorted(required))
-    )
-PY
+    local references=()
+    read -r -a references <<<"$required_references"
+    "$SCRIPT_DIRECTORY/../Tools/release/validate-oci-image-layout.py" \
+        "$runtime_init_image_archive" "${references[@]}"
 }
 
 validate_runtime_inputs() {

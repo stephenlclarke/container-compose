@@ -62,11 +62,12 @@ fi
 # Container integration is VM-backed and the CLI otherwise defaults to the
 # developer's persistent Application Support directory.  A stable-release gate
 # must never inherit stale machines, images, or networks from an earlier local
-# run, nor leave its own state behind for the next gate.  Keep the default under
-# Container's already-ignored test scratch directory, resolving relative hosted
-# checkout paths before passing the application root through make.  Resolve
-# symlinks as well: Container's protected logging state deliberately rejects a
-# persistence root whose canonical path differs from the supplied path.
+# run, nor leave its own state behind for the next gate. Build and log scratch
+# may live on an external volume, but launchd rejects service plists and
+# executables from those volumes. Keep runtime state independently configurable
+# so the stable-release helper can bind it to its marker-protected internal
+# lifecycle. Resolve symlinks: Container's protected state deliberately rejects
+# persistence roots whose canonical path differs from the supplied path.
 if [[ -n "${CONTAINER_STACK_VALIDATION_SCRATCH_ROOT:-}" ]]; then
   container_scratch_root="${CONTAINER_STACK_VALIDATION_SCRATCH_ROOT}"
   if [[ "${container_scratch_root}" != /* || "${container_scratch_root}" == / ]]; then
@@ -83,7 +84,23 @@ if [[ "${container_scratch_root}" == / ]]; then
   printf 'CONTAINER_STACK_VALIDATION_SCRATCH_ROOT must not resolve to /\n' >&2
   exit 2
 fi
-container_app_root="${container_scratch_root}/stack-release-app-root"
+if [[ -n "${CONTAINER_STACK_VALIDATION_RUNTIME_ROOT:-}" ]]; then
+  container_runtime_root="${CONTAINER_STACK_VALIDATION_RUNTIME_ROOT}"
+  if [[ "${container_runtime_root}" != /* || "${container_runtime_root}" == / ]]; then
+    printf 'CONTAINER_STACK_VALIDATION_RUNTIME_ROOT must be an absolute path other than /: %s\n' \
+      "${container_runtime_root}" >&2
+    exit 2
+  fi
+else
+  container_runtime_root="${container_scratch_root}/runtime"
+fi
+mkdir -p "${container_runtime_root}"
+container_runtime_root="$(cd "${container_runtime_root}" && pwd -P)"
+if [[ "${container_runtime_root}" == / ]]; then
+  printf 'CONTAINER_STACK_VALIDATION_RUNTIME_ROOT must not resolve to /\n' >&2
+  exit 2
+fi
+container_app_root="${container_runtime_root}/stack-release-app-root"
 container_log_root="${container_scratch_root}/stack-release-log-root"
 container_make_args=(
   "APP_ROOT=${container_app_root}"
@@ -272,6 +289,7 @@ if [[ -n "${checkpoint_directory}" ]]; then
       printf 'targets=%s\n' "${container_targets[*]}"
       printf 'tree=%s:%s\n' "${container_repo}" "${container_tree}"
       printf 'scratch_root=%s\n' "${container_scratch_root}"
+      printf 'runtime_root=%s\n' "${container_runtime_root}"
       printf 'init_archive=%s\n' "${init_archive_fingerprint}"
       printf 'runtime_cli=%s\n' "${runtime_cli_fingerprint}"
     } | shasum -a 256 | awk '{print $1}'

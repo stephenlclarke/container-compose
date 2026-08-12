@@ -1154,7 +1154,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 f"{container} "
                 f"PATH={candidate_tools_resolved}{os.pathsep}{tools}"
                 f"{os.pathsep}{environment['PATH'].split(os.pathsep, 1)[1]} "
-                f"APP_ROOT={resolved_container}/.test-scratch/stack-release-app-root "
+                f"APP_ROOT={resolved_container}/.test-scratch/runtime/stack-release-app-root "
                 f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
                 "INTEGRATION_SERVICE_NAMESPACE=io.github.container.stack-validation.fixture "
                 "check container dsym docs coverage",
@@ -1330,7 +1330,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(
                 "make:-C "
                 f"{container} "
-                f"APP_ROOT={resolved_container}/.test-scratch/stack-release-app-root "
+                f"APP_ROOT={resolved_container}/.test-scratch/runtime/stack-release-app-root "
                 f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
                 "check container dsym docs coverage-unit",
                 hosted_commands,
@@ -1355,7 +1355,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             relative_commands = log.read_text(encoding="utf-8")
             self.assertIn(
                 "make:-C container "
-                f"APP_ROOT={resolved_container}/.test-scratch/stack-release-app-root "
+                f"APP_ROOT={resolved_container}/.test-scratch/runtime/stack-release-app-root "
                 f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
                 "check container dsym docs coverage-unit",
                 relative_commands,
@@ -1378,7 +1378,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(
                 "make:-C "
                 f"{container_link} "
-                f"APP_ROOT={resolved_container}/.test-scratch/stack-release-app-root "
+                f"APP_ROOT={resolved_container}/.test-scratch/runtime/stack-release-app-root "
                 f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
                 "check container dsym docs coverage-unit",
                 symlinked_commands,
@@ -1403,10 +1403,34 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(
                 "make:-C "
                 f"{container} "
-                f"APP_ROOT={resolved_external_scratch}/stack-release-app-root "
+                f"APP_ROOT={resolved_external_scratch}/runtime/stack-release-app-root "
                 f"LOG_ROOT={resolved_external_scratch}/stack-release-log-root "
                 "check container dsym docs coverage-unit",
                 external_commands,
+            )
+
+            log.unlink()
+            internal_runtime = root / "internal-launchd-runtime"
+            split_environment = external_environment.copy()
+            split_environment["CONTAINER_STACK_VALIDATION_RUNTIME_ROOT"] = str(
+                internal_runtime
+            )
+            split = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=split_environment,
+                text=True,
+            )
+            self.assertEqual(split.returncode, 0, split.stderr)
+            split_commands = log.read_text(encoding="utf-8")
+            self.assertIn(
+                "make:-C "
+                f"{container} "
+                f"APP_ROOT={internal_runtime.resolve()}/stack-release-app-root "
+                f"LOG_ROOT={resolved_external_scratch}/stack-release-log-root "
+                "check container dsym docs coverage-unit",
+                split_commands,
             )
 
             invalid_environment = environment.copy()
@@ -1441,6 +1465,40 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(
                 "CONTAINER_STACK_VALIDATION_SCRATCH_ROOT must not resolve to /",
                 root_scratch.stderr,
+            )
+
+            relative_runtime_environment = environment.copy()
+            relative_runtime_environment[
+                "CONTAINER_STACK_VALIDATION_RUNTIME_ROOT"
+            ] = ".runtime"
+            relative_runtime = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=relative_runtime_environment,
+                text=True,
+            )
+            self.assertEqual(relative_runtime.returncode, 2)
+            self.assertIn(
+                "CONTAINER_STACK_VALIDATION_RUNTIME_ROOT must be an absolute path",
+                relative_runtime.stderr,
+            )
+
+            root_runtime_environment = environment.copy()
+            root_runtime_environment["CONTAINER_STACK_VALIDATION_RUNTIME_ROOT"] = str(
+                root_link
+            )
+            root_runtime = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=root_runtime_environment,
+                text=True,
+            )
+            self.assertEqual(root_runtime.returncode, 2)
+            self.assertIn(
+                "CONTAINER_STACK_VALIDATION_RUNTIME_ROOT must not resolve to /",
+                root_runtime.stderr,
             )
 
     def test_hosted_release_gate_uses_an_unpublished_verified_tag_and_immutable_tap_snapshot(
@@ -1636,10 +1694,47 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             'CONTAINER_STACK_VALIDATION_SCRATCH_ROOT="${evidence_root}/container-scratch"',
             local_gate,
         )
+        self.assertIn(
+            'CONTAINER_STACK_VALIDATION_RUNTIME_ROOT="${runtime_parent}/container-integration"',
+            local_gate,
+        )
+        self.assertIn("runtime_parent_base=/private/tmp", local_gate)
+        self.assertNotIn('${TMPDIR:-/tmp}/cc-release.', local_gate)
+        self.assertIn("resolve_release_evidence_root", local_gate)
+        self.assertLess(
+            local_gate.index('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${init_image_archive}"'),
+            local_gate.index('stage_container_runtime_candidate "${container_path}"'),
+        )
         self.assertLess(
             local_gate.index('profile_root="${runtime_parent}/profiles"'),
             local_gate.index('"${path}/scripts/run-with-container-runtime.sh"'),
         )
+
+    def test_release_evidence_root_is_absolute_canonical_and_not_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compose = root / "compose"
+            compose.mkdir()
+            relative = self.run_release_function(
+                root,
+                "resolve_release_evidence_root "
+                f"{shlex.quote(str(compose))} .build/release-evidence",
+            )
+            self.assertEqual(relative.returncode, 0, relative.stderr)
+            self.assertEqual(
+                relative.stdout.strip(),
+                str((compose / ".build" / "release-evidence").resolve()),
+            )
+
+            root_link = root / "root-link"
+            root_link.symlink_to(Path("/"), target_is_directory=True)
+            rejected = self.run_release_function(
+                root,
+                "resolve_release_evidence_root "
+                f"{shlex.quote(str(compose))} {shlex.quote(str(root_link))}",
+            )
+            self.assertEqual(rejected.returncode, 2)
+            self.assertIn("must not resolve to /", rejected.stderr)
 
     def test_local_release_gate_freezes_the_container_runtime_candidate(self) -> None:
         staging = self.script[

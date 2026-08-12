@@ -124,28 +124,57 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
         *references: str,
         distinct_digests: bool = False,
     ) -> None:
+        def descriptor(payload: bytes, media_type: str) -> dict[str, object]:
+            return {
+                "mediaType": media_type,
+                "digest": "sha256:" + hashlib.sha256(payload).hexdigest(),
+                "size": len(payload),
+            }
+
+        config = b"{}"
+        layer = b"fixture-layer"
+        config_descriptor = descriptor(
+            config, "application/vnd.oci.image.config.v1+json"
+        )
+        layer_descriptor = descriptor(
+            layer, "application/vnd.oci.image.layer.v1.tar"
+        )
+        manifests: list[tuple[bytes, dict[str, object]]] = []
+        for position, reference in enumerate(references):
+            manifest = json.dumps(
+                {
+                    "schemaVersion": 2,
+                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                    "config": config_descriptor,
+                    "layers": [layer_descriptor],
+                    "fixture": position if distinct_digests else 0,
+                },
+                sort_keys=True,
+            ).encode("utf-8")
+            manifest_descriptor = descriptor(
+                manifest, "application/vnd.oci.image.manifest.v1+json"
+            )
+            manifest_descriptor["annotations"] = {
+                "org.opencontainers.image.ref.name": reference,
+            }
+            manifests.append((manifest, manifest_descriptor))
         index = {
             "schemaVersion": 2,
-            "manifests": [
-                {
-                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
-                    "digest": "sha256:"
-                    + (f"{index:x}" * 64)[:64]
-                    if distinct_digests
-                    else "sha256:" + "0" * 64,
-                    "size": 0,
-                    "annotations": {
-                        "org.opencontainers.image.ref.name": reference,
-                    },
-                }
-                for index, reference in enumerate(references, start=1)
-            ],
+            "manifests": [item[1] for item in manifests],
         }
-        payload = json.dumps(index).encode("utf-8")
+        payloads = [config, layer, *(item[0] for item in manifests)]
+        layout = json.dumps({"imageLayoutVersion": "1.0.0"}).encode("utf-8")
+        index_payload = json.dumps(index).encode("utf-8")
         with tarfile.open(path, "w") as archive:
-            member = tarfile.TarInfo("index.json")
-            member.size = len(payload)
-            archive.addfile(member, io.BytesIO(payload))
+            for name, payload in (("oci-layout", layout), ("index.json", index_payload)):
+                member = tarfile.TarInfo(name)
+                member.size = len(payload)
+                archive.addfile(member, io.BytesIO(payload))
+            for payload in payloads:
+                digest = hashlib.sha256(payload).hexdigest()
+                member = tarfile.TarInfo(f"blobs/sha256/{digest}")
+                member.size = len(payload)
+                archive.addfile(member, io.BytesIO(payload))
 
     @staticmethod
     def create_containerization_source(root: Path) -> tuple[Path, str]:
@@ -992,6 +1021,80 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn("do not resolve to one digest", result.stderr)
             self.assertFalse(container_log.exists())
+
+    def test_rejects_retained_archive_with_invalid_descriptor_closure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            complete_archive = temporary_root / "complete.tar"
+            self.create_oci_archive(complete_archive, DEFAULT_INIT_IMAGE)
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+
+            with tarfile.open(complete_archive, "r") as source:
+                complete_payloads = {}
+                for member in source.getmembers():
+                    if not member.isfile():
+                        continue
+                    stream = source.extractfile(member)
+                    self.assertIsNotNone(stream)
+                    complete_payloads[member.name] = stream.read()
+
+            def missing_layer(payloads: dict[str, bytes]) -> None:
+                index = json.loads(payloads["index.json"])
+                manifest_digest = index["manifests"][0]["digest"].split(":", 1)[1]
+                manifest = json.loads(payloads[f"blobs/sha256/{manifest_digest}"])
+                layer_digest = manifest["layers"][0]["digest"].split(":", 1)[1]
+                del payloads[f"blobs/sha256/{layer_digest}"]
+
+            def wrong_size(payloads: dict[str, bytes]) -> None:
+                index = json.loads(payloads["index.json"])
+                index["manifests"][0]["size"] += 1
+                payloads["index.json"] = json.dumps(index).encode("utf-8")
+
+            def wrong_digest(payloads: dict[str, bytes]) -> None:
+                index = json.loads(payloads["index.json"])
+                manifest_digest = index["manifests"][0]["digest"].split(":", 1)[1]
+                member_name = f"blobs/sha256/{manifest_digest}"
+                payload = payloads[member_name]
+                payloads[member_name] = bytes([payload[0] ^ 1]) + payload[1:]
+
+            for name, mutation, expected_error in (
+                ("missing-layer", missing_layer, "missing required member: blobs/sha256/"),
+                ("wrong-size", wrong_size, "size mismatch"),
+                ("wrong-digest", wrong_digest, "digest mismatch"),
+            ):
+                with self.subTest(name=name):
+                    init_archive = temporary_root / f"{name}.tar"
+                    payloads = complete_payloads.copy()
+                    mutation(payloads)
+                    with tarfile.open(init_archive, "w") as destination:
+                        for member_name, payload in payloads.items():
+                            member = tarfile.TarInfo(member_name)
+                            member.size = len(payload)
+                            destination.addfile(member, io.BytesIO(payload))
+
+                    container_log = temporary_root / f"{name}.log"
+                    environment = self.runtime_environment()
+                    environment.update(
+                        {
+                            "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app"),
+                            "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE": str(init_archive),
+                            "CONTAINER_TEST_LOG": str(container_log),
+                        }
+                    )
+
+                    result = subprocess.run(
+                        [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                        cwd=ROOT,
+                        env=environment,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn(expected_error, result.stderr)
+                    self.assertFalse(container_log.exists())
 
     def test_managed_runtime_ready_api_does_not_restart_or_stop_its_owner(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

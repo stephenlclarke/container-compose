@@ -21,6 +21,7 @@ readonly SELF_PATH="${BASH_SOURCE[0]:-$0}"
 SELF_DIRECTORY="$(cd "$(dirname "${SELF_PATH}")" && pwd -P)"
 readonly SELF_DIRECTORY
 readonly COMPOSE_PROMOTION_REVIEW_TOOL="${SELF_DIRECTORY}/../Tools/release/compose_promotion_review.py"
+readonly OCI_IMAGE_LAYOUT_VALIDATOR="${SELF_DIRECTORY}/../Tools/release/validate-oci-image-layout.py"
 SCRIPT_NAME="$(basename "${SELF_PATH}")"
 readonly SCRIPT_NAME
 readonly SCRIPT_USAGE="scripts/${SCRIPT_NAME}"
@@ -716,10 +717,30 @@ cleanup_container_runtime_candidate() {
   find "${CONTAINER_RUNTIME_CANDIDATE_ROOT}" -depth -delete
 }
 
+# Resolve retained evidence before it is also used as an absolute build/log
+# scratch root. Relative values are Compose-checkout-relative, matching the
+# documented .build/... form, and symlinks cannot smuggle the root directory
+# through later destructive cleanup guards.
+resolve_release_evidence_root() {
+  local compose_path="$1"
+  local configured_root="$2"
+  local evidence_root="${configured_root}"
+  if [[ "${evidence_root}" != /* ]]; then
+    evidence_root="${compose_path}/${evidence_root}"
+  fi
+  mkdir -p "${evidence_root}"
+  evidence_root="$(cd "${evidence_root}" && pwd -P)"
+  if [[ "${evidence_root}" == / ]]; then
+    printf 'release evidence root must not resolve to /\n' >&2
+    return 2
+  fi
+  printf '%s\n' "${evidence_root}"
+}
+
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
   (
-  local path repository container_path containerization_path container_binary runtime_parent runtime_app_root profile_root evidence_root init_image_archive
+  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive
   local containerization_reference required_init_references status marker_value
   path="$(repo_path "${COMPOSE_REPO}")"
   container_path="$(repo_path "${CONTAINER_REPO}")"
@@ -762,10 +783,6 @@ run_local_release_gate() {
   fi
   init_image_archive="$(cd "$(dirname "${init_image_archive}")" && pwd -P)/$(basename "${init_image_archive}")"
 
-  evidence_root="${PARITY_EVIDENCE_DIR:-${path}/.build/release-evidence}"
-  stage_container_runtime_candidate "${container_path}" "${evidence_root}"
-  trap cleanup_container_runtime_candidate EXIT
-  container_binary="${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container"
   containerization_reference="$(python3 - "${path}/Tools/release/stack-refs.json" <<'PY'
 import json
 from pathlib import Path
@@ -776,7 +793,20 @@ print(manifest["components"]["containerization"]["ref"])
 PY
 )"
   required_init_references="vminit:container-compose ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
-  runtime_parent="$(mktemp -d "${TMPDIR:-/tmp}/cc-release.XXXXXX")"
+  "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${init_image_archive}" \
+    vminit:container-compose \
+    "ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
+
+  evidence_root="$(resolve_release_evidence_root "${path}" \
+    "${PARITY_EVIDENCE_DIR:-.build/release-evidence}")"
+  stage_container_runtime_candidate "${container_path}" "${evidence_root}"
+  trap cleanup_container_runtime_candidate EXIT
+  container_binary="${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container"
+  runtime_parent_base=/private/tmp
+  if [[ ! -d "${runtime_parent_base}" ]]; then
+    runtime_parent_base=/tmp
+  fi
+  runtime_parent="$(mktemp -d "${runtime_parent_base}/cc-release.XXXXXX")"
   runtime_app_root="${runtime_parent}/app"
   profile_root="${runtime_parent}/profiles"
   mkdir -p "${profile_root}"
@@ -791,6 +821,7 @@ PY
     CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES="${required_init_references}" \
     CONTAINER_RUNTIME_CANDIDATE_SHA256="${CONTAINER_RUNTIME_CANDIDATE_SHA256}" \
     CONTAINER_STACK_VALIDATION_SCRATCH_ROOT="${evidence_root}/container-scratch" \
+    CONTAINER_STACK_VALIDATION_RUNTIME_ROOT="${runtime_parent}/container-integration" \
     CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR="${evidence_root}/stack-validation" \
     LLVM_PROFILE_FILE="${profile_root}/%p-%m.profraw" \
     "${path}/scripts/run-with-container-runtime.sh" "${container_binary}" \
