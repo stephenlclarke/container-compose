@@ -149,11 +149,14 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
     @staticmethod
     def find_staged_service_archive(invocations: str, name: str) -> Path:
-        prefix = "/private/tmp/container-compose-service-inputs."
+        prefixes = (
+            "/private/tmp/container-compose-service-inputs.",
+            "/tmp/container-compose-service-inputs.",
+        )
         paths = [
             Path(token)
             for token in invocations.split()
-            if token.startswith(prefix) and token.endswith(f"/{name}")
+            if token.startswith(prefixes) and token.endswith(f"/{name}")
         ]
         if len(paths) != 1:
             raise AssertionError(f"expected one staged {name}, got {paths}")

@@ -419,7 +419,12 @@ prepare_runtime_root() {
 # mismatch into a bounded local copy instead of an opaque service-side open(2)
 # hang while the global lock is held.
 stage_runtime_service_inputs() {
-    runtime_service_inputs_root=$(mktemp -d /private/tmp/container-compose-service-inputs.XXXXXX)
+    local trusted_temporary_root=/private/tmp
+    if [[ ! -d "$trusted_temporary_root" ]]; then
+        trusted_temporary_root=/tmp
+    fi
+    runtime_service_inputs_root=$(mktemp -d \
+        "$trusted_temporary_root/container-compose-service-inputs.XXXXXX")
 
     stage_runtime_service_archive runtime_builder_image_tar builder-image.oci.tar
     stage_runtime_service_archive runtime_bootstrap_image_tar bootstrap-image.oci.tar
@@ -447,7 +452,7 @@ stage_runtime_service_archive() {
 cleanup_runtime_service_inputs() {
     [[ -n "$runtime_service_inputs_root" ]] || return 0
     case "$runtime_service_inputs_root" in
-        /private/tmp/container-compose-service-inputs.*) ;;
+        /private/tmp/container-compose-service-inputs.* | /tmp/container-compose-service-inputs.*) ;;
         *)
             printf 'refusing to clear unexpected runtime service-input staging root: %s\n' \
                 "$runtime_service_inputs_root" >&2
