@@ -1790,13 +1790,16 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                     )
                     candidate_cli.chmod(0o755)
                     ready = root / "ready"
+                    cleanup_started = root / "cleanup-started"
                     stop_complete = root / "stop-complete"
                     removed = root / "removed"
                     fake_gate = root / "fake-gate"
                     fake_gate.write_text(
                         "#!/usr/bin/env bash\n"
                         "set -u\n"
-                        "cleanup() { test -x \"$CANDIDATE_ROOT/bin/container\"; "
+                        "cleanup() { trap '' INT TERM; "
+                        "test -x \"$CANDIDATE_ROOT/bin/container\"; "
+                        "touch \"$CLEANUP_STARTED\"; sleep 0.5; "
                         "touch \"$STOP_COMPLETE\"; }\n"
                         "trap 'cleanup; exit 130' INT\n"
                         "trap 'cleanup; exit 143' TERM\n"
@@ -1812,6 +1815,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                             f"source {shlex.quote(str(SCRIPT))}",
                             f"export CANDIDATE_ROOT={shlex.quote(str(candidate_root))}",
                             f"export READY={shlex.quote(str(ready))}",
+                            "export CLEANUP_STARTED="
+                            f"{shlex.quote(str(cleanup_started))}",
                             f"export STOP_COMPLETE={shlex.quote(str(stop_complete))}",
                             "status=0",
                             "run_local_release_gate_command "
@@ -1838,6 +1843,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                             self.fail("outer release gate did not become ready")
                         time.sleep(0.05)
 
+                    os.killpg(process.pid, delivered_signal)
+                    deadline = time.monotonic() + 10
+                    while not cleanup_started.exists() and process.poll() is None:
+                        if time.monotonic() >= deadline:
+                            process.kill()
+                            self.fail("candidate signal cleanup did not start")
+                        time.sleep(0.01)
                     os.killpg(process.pid, delivered_signal)
                     stdout, stderr = process.communicate(timeout=10)
 

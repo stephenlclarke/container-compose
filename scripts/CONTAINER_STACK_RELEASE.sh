@@ -733,7 +733,7 @@ run_local_release_gate_command() {
     signal_status="$2"
     # A second signal must not interrupt the one wait that protects the
     # candidate executable used by the child's cleanup trap.
-    trap - INT TERM
+    trap '' INT TERM
     if [[ -n "${child_pid}" ]]; then
       if wait "${child_pid}"; then
         child_status=0

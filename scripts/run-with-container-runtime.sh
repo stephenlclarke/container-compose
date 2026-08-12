@@ -587,7 +587,8 @@ install_runtime_bootstrap_image() {
 
 cleanup() {
     local status=$?
-    trap - EXIT INT TERM
+    trap - EXIT
+    trap '' INT TERM
     printf 'Stopping matched container runtime...\n'
     stop_runtime || true
     release_container_runtime_lock

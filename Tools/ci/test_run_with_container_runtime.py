@@ -435,14 +435,25 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
             self.assertNotEqual(namespaces[0], namespaces[1])
 
-    def test_group_termination_stops_the_isolated_runtime(self) -> None:
+    def test_repeated_group_termination_stops_the_isolated_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
             app_root = temporary_root / "app-root"
             container_log = temporary_root / "container.log"
             ready = temporary_root / "ready"
+            stop_started = temporary_root / "stop-started"
+            stop_complete = temporary_root / "stop-complete"
             fake_container = temporary_root / "container-cli"
-            self.write_fake_container(fake_container)
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "system stop" && -e "${READY_FILE:-}" ]]; then\n'
+                    '  touch "${STOP_STARTED:?}"\n'
+                    "  sleep 0.5\n"
+                    '  touch "${STOP_COMPLETE:?}"\n'
+                    "fi\n"
+                ),
+            )
             environment = self.runtime_environment()
             environment.update(
                 {
@@ -453,6 +464,8 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     ),
                     "CONTAINER_TEST_LOG": str(container_log),
                     "READY_FILE": str(ready),
+                    "STOP_STARTED": str(stop_started),
+                    "STOP_COMPLETE": str(stop_complete),
                 }
             )
 
@@ -479,12 +492,20 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 time.sleep(0.05)
 
             os.killpg(process.pid, signal.SIGTERM)
+            deadline = time.monotonic() + 10
+            while not stop_started.exists() and process.poll() is None:
+                if time.monotonic() >= deadline:
+                    process.kill()
+                    self.fail("runtime stop did not begin")
+                time.sleep(0.01)
+            os.killpg(process.pid, signal.SIGTERM)
             stdout, stderr = process.communicate(timeout=10)
 
             self.assertEqual(process.returncode, 143, stdout + stderr)
             invocations = container_log.read_text(encoding="utf-8").splitlines()
             self.assertGreaterEqual(invocations.count("system stop"), 2)
             self.assertIn("Stopping matched container runtime...", stdout)
+            self.assertTrue(stop_complete.exists(), stdout + stderr)
 
     def test_rejects_legacy_global_stop_helper_before_service_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
