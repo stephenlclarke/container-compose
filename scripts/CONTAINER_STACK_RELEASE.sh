@@ -808,6 +808,10 @@ run_local_release_gate_command() {
     # candidate executable used by the child's cleanup trap.
     trap '' INT TERM
     if [[ -n "${child_pid}" ]]; then
+      # A direct signal to this helper does not reach the background cleanup
+      # owner. Forward it before waiting; a process-group signal is harmlessly
+      # redelivered because the wrapper ignores repeats while cleaning up.
+      kill -s "${signal_name}" "${child_pid}" 2>/dev/null || true
       if wait "${child_pid}"; then
         child_status=0
       else

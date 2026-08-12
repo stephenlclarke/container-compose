@@ -1790,8 +1790,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 (signal.SIGINT, 130),
                 (signal.SIGTERM, 143),
             ):
-                with self.subTest(signal=delivered_signal.name):
-                    root = Path(directory) / delivered_signal.name
+                for signal_scope in ("process", "group"):
+                    root = Path(directory) / delivered_signal.name / signal_scope
                     candidate_root = root / "candidate"
                     candidate_bin = candidate_root / "bin"
                     candidate_bin.mkdir(parents=True)
@@ -1850,19 +1850,31 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                     deadline = time.monotonic() + 10
                     while not ready.exists() and process.poll() is None:
                         if time.monotonic() >= deadline:
-                            process.kill()
+                            os.killpg(process.pid, signal.SIGKILL)
+                            process.wait(timeout=10)
                             self.fail("outer release gate did not become ready")
                         time.sleep(0.05)
 
-                    os.killpg(process.pid, delivered_signal)
+                    send_signal = os.kill if signal_scope == "process" else os.killpg
+                    send_signal(process.pid, delivered_signal)
                     deadline = time.monotonic() + 10
                     while not cleanup_started.exists() and process.poll() is None:
                         if time.monotonic() >= deadline:
-                            process.kill()
+                            os.killpg(process.pid, signal.SIGKILL)
+                            process.wait(timeout=10)
                             self.fail("candidate signal cleanup did not start")
                         time.sleep(0.01)
-                    os.killpg(process.pid, delivered_signal)
-                    stdout, stderr = process.communicate(timeout=10)
+                    send_signal(process.pid, delivered_signal)
+                    try:
+                        stdout, stderr = process.communicate(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        stdout, stderr = process.communicate(timeout=10)
+                        self.fail(
+                            "outer release gate did not finish after cleanup\n"
+                            + stdout
+                            + stderr
+                        )
 
                     self.assertEqual(
                         process.returncode, expected_status, stdout + stderr
