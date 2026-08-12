@@ -1901,6 +1901,45 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
             self.assertEqual(cleaned.returncode, 0, cleaned.stderr)
 
+    def test_creator_cleanup_stays_armed_through_path_publication(self) -> None:
+        runtime_parent = Path("/tmp") / (
+            f"c.publication-test.{os.getpid()}.{time.time_ns()}"
+        )
+        self.addCleanup(
+            lambda: subprocess.run(
+                ["find", str(runtime_parent), "-depth", "-delete"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if runtime_parent.exists()
+            else None
+        )
+        shell_setup = textwrap.dedent(
+            f"""\
+            runtime_parent_fixture={shlex.quote(str(runtime_parent))}
+            mktemp() {{
+              mkdir "${{runtime_parent_fixture}}"
+              builtin printf '%s\\n' "${{runtime_parent_fixture}}"
+            }}
+            printf() {{
+              if [[ "$#" -eq 2 && "$1" == '%s\\n' && "$2" == "${{runtime_parent_fixture}}" ]]; then
+                kill -TERM "${{BASHPID}}"
+              fi
+              builtin printf "$@"
+            }}
+            """
+        )
+
+        interrupted = self.run_release_function(
+            Path("/tmp"),
+            'published="$(create_release_runtime_parent /tmp)"',
+            shell_setup=shell_setup,
+        )
+
+        self.assertEqual(interrupted.returncode, 143, interrupted.stderr)
+        self.assertFalse(runtime_parent.exists(), interrupted.stderr)
+
     def test_release_evidence_root_is_absolute_canonical_and_not_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

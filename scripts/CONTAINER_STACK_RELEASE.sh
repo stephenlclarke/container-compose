@@ -755,11 +755,16 @@ cleanup_release_runtime_parent() {
 create_release_runtime_parent() {
   local runtime_parent_base="$1"
   local runtime_parent=""
+  local runtime_parent_published=0
 
   # shellcheck disable=SC2329
   cleanup_incomplete_release_runtime_parent() {
     local trapped_status=$?
     trap - EXIT
+    trap '' INT TERM
+    if ((trapped_status == 0 && runtime_parent_published != 0)); then
+      return 0
+    fi
     if [[ -n "${runtime_parent}" && -d "${runtime_parent}" ]]; then
       case "${runtime_parent}" in
         /private/tmp/c.* | /tmp/c.*)
@@ -775,11 +780,13 @@ create_release_runtime_parent() {
     return "${trapped_status}"
   }
 
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   trap cleanup_incomplete_release_runtime_parent EXIT
   runtime_parent="$(mktemp -d "${runtime_parent_base}/c.XXXXXX")"
   printf 'container-compose release runtime parent v1\n' \
     >"${runtime_parent}/.container-compose-release-runtime-parent"
-  trap - EXIT
+  runtime_parent_published=1
   printf '%s\n' "${runtime_parent}"
 }
 
