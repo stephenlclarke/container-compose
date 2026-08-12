@@ -593,7 +593,7 @@ require_local_virtualization() {
 
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
-  local path repository container_path containerization_path container_binary runtime_parent runtime_app_root
+  local path repository container_path containerization_path container_binary runtime_parent runtime_app_root profile_root
   local containerization_reference required_init_references status marker_value
   path="$(repo_path "${COMPOSE_REPO}")"
   container_path="$(repo_path "${CONTAINER_REPO}")"
@@ -647,6 +647,8 @@ PY
   required_init_references="vminit:container-compose ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
   runtime_parent="$(mktemp -d "${TMPDIR:-/tmp}/cc-release.XXXXXX")"
   runtime_app_root="${runtime_parent}/app"
+  profile_root="${runtime_parent}/profiles"
+  mkdir -p "${profile_root}"
   status=0
   env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
     -u CONTAINER_RUNTIME_SERVICE_NAMESPACE -u CONTAINER_RUNTIME_RUN_ID \
@@ -656,6 +658,7 @@ PY
     CONTAINERIZATION_INIT_SOURCE_PATH="${containerization_path}" \
     CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES="${required_init_references}" \
     CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR="${PARITY_EVIDENCE_DIR:-${path}/.build/release-evidence}/stack-validation" \
+    LLVM_PROFILE_FILE="${profile_root}/%p-%m.profraw" \
     "${path}/scripts/run-with-container-runtime.sh" "${container_binary}" \
     make -C "${path}" release-gate "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}" || status=$?
 

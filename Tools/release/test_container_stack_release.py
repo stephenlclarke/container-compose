@@ -1409,6 +1409,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("sysctl -n kern.hv_support", self.script)
         self.assertIn("kern.hv_support=1", self.script)
 
+    def test_local_release_gate_keeps_llvm_profiles_out_of_source_checkouts(self) -> None:
+        local_gate = self.script[
+            self.script.index("run_local_release_gate() {") : self.script.index(
+                "# Verify that Apple remotes cannot be pushed"
+            )
+        ]
+        self.assertIn('profile_root="${runtime_parent}/profiles"', local_gate)
+        self.assertIn('mkdir -p "${profile_root}"', local_gate)
+        self.assertIn('LLVM_PROFILE_FILE="${profile_root}/%p-%m.profraw"', local_gate)
+        self.assertLess(
+            local_gate.index('profile_root="${runtime_parent}/profiles"'),
+            local_gate.index('"${path}/scripts/run-with-container-runtime.sh"'),
+        )
+
     def test_local_virtualization_preflight_requires_hardware_support(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

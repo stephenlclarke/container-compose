@@ -177,6 +177,7 @@ The default lock is `/tmp/container-compose-runtime-${UID}.lock`; `CONTAINER_RUN
 The parity harness also:
 
 - clears only a marker-protected `CONTAINER_RUNTIME_APP_ROOT`, retaining its kernel cache;
+- redirects LLVM raw profiles into that marker-protected runtime root so instrumented test binaries cannot dirty source checkouts;
 - verifies that `CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE`, when supplied, contains every reference in `CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES` plus the configured Compose alias at one digest before it touches the host runtime, then loads that archive or falls back to `CONTAINER_RUNTIME_INIT_BLOCK_REPO`;
 - starts the exact Container binary and requires a real `container list --all --format json` API round trip;
 - stops and restarts that exact runtime at most once after an XPC `Connection interrupted`/`Connection invalid` start or failed API-readiness round trip; and
