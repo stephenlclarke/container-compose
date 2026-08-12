@@ -185,11 +185,13 @@ if [[ "${mode}" == "full" ]]; then
         "${runtime_candidate_sha256}" >&2
       exit 2
     fi
-    runtime_cli_mode=$(
-      /usr/bin/stat -f '%Lp' "${runtime_cli}" 2>/dev/null \
-        || /usr/bin/stat -c '%a' "${runtime_cli}" 2>/dev/null
-    )
-    if ! [[ "${runtime_cli_mode}" =~ ^[0-7]{3,4}$ ]]; then
+    if ! runtime_cli_mode=$(python3 - "${runtime_cli}" <<'PY'
+import os
+import sys
+
+print(f"{os.stat(sys.argv[1]).st_mode & 0o777:o}")
+PY
+    ); then
       printf 'could not determine packaged Container runtime candidate CLI mode: %s\n' \
         "${runtime_cli}" >&2
       exit 2
