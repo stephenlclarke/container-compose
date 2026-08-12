@@ -325,8 +325,6 @@ if [[ -n "${checkpoint_directory}" ]]; then
       printf 'targets=%s\n' "${container_targets[*]}"
       printf 'tree=%s:%s\n' "${container_repo}" "${container_tree}"
       printf 'scratch_root=%s\n' "${container_scratch_root}"
-      printf 'runtime_root=%s\n' "${container_runtime_root}"
-      printf 'provider_socket=%s\n' "${container_provider_socket}"
       printf 'init_archive=%s\n' "${init_archive_fingerprint}"
       printf 'runtime_cli=%s\n' "${runtime_cli_fingerprint}"
     } | shasum -a 256 | awk '{print $1}'

@@ -1197,6 +1197,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertNotIn("CONCURRENT_TEST_SUITES=", full_commands)
             self.assertIn("bootstrap:/tmp/runtime-init.oci.tar", full_commands)
 
+            repeated_runtime_directory = tempfile.TemporaryDirectory(
+                prefix="ccsv-retry-test.", dir="/tmp"
+            )
+            self.addCleanup(repeated_runtime_directory.cleanup)
+            environment["CONTAINER_STACK_VALIDATION_RUNTIME_ROOT"] = str(
+                Path(repeated_runtime_directory.name)
+            )
             repeated_full = subprocess.run(
                 [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
                 check=False,
@@ -1449,6 +1456,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             split_environment = external_environment.copy()
             split_environment["CONTAINER_STACK_VALIDATION_RUNTIME_ROOT"] = str(
                 internal_runtime
+            )
+            split_environment["CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR"] = str(
+                root / "split-checkpoints"
             )
             split = subprocess.run(
                 [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
