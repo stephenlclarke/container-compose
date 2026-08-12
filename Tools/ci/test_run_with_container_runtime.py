@@ -124,6 +124,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
         path: Path,
         *references: str,
         distinct_digests: bool = False,
+        indexed_architecture: str | None = None,
     ) -> None:
         def descriptor(payload: bytes, media_type: str) -> dict[str, object]:
             return {
@@ -132,7 +133,9 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 "size": len(payload),
             }
 
-        config = b"{}"
+        config = json.dumps(
+            {"architecture": "arm64", "os": "linux"}, sort_keys=True
+        ).encode("utf-8")
         layer = b"fixture-layer"
         config_descriptor = descriptor(
             config, "application/vnd.oci.image.config.v1+json"
@@ -159,11 +162,30 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 "org.opencontainers.image.ref.name": reference,
             }
             manifests.append((manifest, manifest_descriptor))
-        index = {
-            "schemaVersion": 2,
-            "manifests": [item[1] for item in manifests],
-        }
         payloads = [config, layer, *(item[0] for item in manifests)]
+        if indexed_architecture is None:
+            index_manifests = [item[1] for item in manifests]
+        else:
+            if len(manifests) != 1:
+                raise ValueError("indexed fixture supports exactly one reference")
+            child = manifests[0][1].copy()
+            child.pop("annotations")
+            child["platform"] = {
+                "architecture": indexed_architecture,
+                "os": "linux",
+            }
+            nested = json.dumps(
+                {"schemaVersion": 2, "manifests": [child]}, sort_keys=True
+            ).encode("utf-8")
+            nested_descriptor = descriptor(
+                nested, "application/vnd.oci.image.index.v1+json"
+            )
+            nested_descriptor["annotations"] = {
+                "org.opencontainers.image.ref.name": references[0],
+            }
+            index_manifests = [nested_descriptor]
+            payloads.append(nested)
+        index = {"schemaVersion": 2, "manifests": index_manifests}
         layout = json.dumps({"imageLayoutVersion": "1.0.0"}).encode("utf-8")
         index_payload = json.dumps(index).encode("utf-8")
         with tarfile.open(path, "w") as archive:
@@ -1100,6 +1122,41 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             temporary_root = Path(temporary_directory)
             init_archive = temporary_root / "vminit-artifact.tar"
             self.create_oci_artifact_archive(init_archive, DEFAULT_INIT_IMAGE)
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE": str(init_archive),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("missing required reference(s)", result.stderr)
+            self.assertIn(DEFAULT_INIT_IMAGE, result.stderr)
+            self.assertFalse(container_log.exists())
+
+    def test_rejects_required_index_without_linux_arm64_image(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            init_archive = temporary_root / "vminit-amd64.tar"
+            self.create_oci_archive(
+                init_archive,
+                DEFAULT_INIT_IMAGE,
+                indexed_architecture="amd64",
+            )
             container_log = temporary_root / "container.log"
             fake_container = temporary_root / "container-cli"
             self.write_fake_container(fake_container)

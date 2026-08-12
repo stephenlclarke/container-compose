@@ -102,9 +102,11 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
         if not isinstance(root_manifests, list):
             raise ValidationError("index.json manifests must be an array")
 
-        validated: dict[tuple[str, str], bool] = {}
+        validated: dict[tuple[str, str, str], bool] = {}
 
-        def descriptor_payload(descriptor: Any, context: str) -> tuple[bytes, str, str]:
+        def descriptor_payload(
+            descriptor: Any, context: str, *, retain: bool = False
+        ) -> tuple[bytes, str, str]:
             if not isinstance(descriptor, dict):
                 raise ValidationError(f"{context} descriptor must be an object")
             digest = descriptor.get("digest")
@@ -132,7 +134,7 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
             stream = archive.extractfile(member)
             if stream is None:
                 raise ValidationError(f"archive member is unreadable: {member_name}")
-            retain_payload = media_type in (
+            retain_payload = retain or media_type in (
                 INDEX_MEDIA_TYPES | MANIFEST_MEDIA_TYPES | {ARTIFACT_MEDIA_TYPE}
             )
             chunks: list[bytes] = []
@@ -152,7 +154,9 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
 
         def validate_descriptor(descriptor: Any, context: str) -> bool:
             payload, media_type, digest = descriptor_payload(descriptor, context)
-            cache_key = (digest, media_type)
+            platform = descriptor.get("platform") if isinstance(descriptor, dict) else None
+            platform_key = json.dumps(platform, sort_keys=True)
+            cache_key = (digest, media_type, platform_key)
             if cache_key in validated:
                 return validated[cache_key]
 
@@ -187,7 +191,17 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
                 manifest = load_json(payload, f"{context} {digest}")
                 if manifest.get("schemaVersion") != 2:
                     raise ValidationError(f"{context} {digest} schemaVersion must be 2")
-                descriptor_payload(manifest.get("config"), f"{context}.config")
+                config_payload, _, _ = descriptor_payload(
+                    manifest.get("config"), f"{context}.config", retain=True
+                )
+                config = load_json(config_payload, f"{context}.config")
+                if platform is not None and not isinstance(platform, dict):
+                    raise ValidationError(f"{context} platform must be an object")
+                platform_source = platform if platform is not None else config
+                compatible = (
+                    platform_source.get("os") == "linux"
+                    and platform_source.get("architecture") == "arm64"
+                )
                 layers = manifest.get("layers")
                 if not isinstance(layers, list):
                     raise ValidationError(f"{context} {digest} layers must be an array")
@@ -204,8 +218,8 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
                         validate_descriptor(subject, f"{context}.subject")
                     else:
                         descriptor_payload(subject, f"{context}.subject")
-                validated[cache_key] = True
-                return True
+                validated[cache_key] = compatible
+                return compatible
 
             if media_type == ARTIFACT_MEDIA_TYPE:
                 manifest = load_json(payload, f"{context} {digest}")
