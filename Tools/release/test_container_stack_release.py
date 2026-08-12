@@ -20,10 +20,12 @@
 import json
 import os
 import re
+import signal
 import shlex
 import subprocess
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -975,6 +977,24 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("check-licenses vet lint coverage build", validation)
         self.assertIn("run-stack-release-validation.sh full", makefile)
         self.assertIn("run-stack-release-validation.sh hosted", makefile)
+        direct_full_gate = subprocess.run(
+            [
+                "make",
+                "-n",
+                "container-stack-release-validation",
+                "CONTAINER_COMPOSE_CONTAINER=container",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=self.non_interactive_environment(),
+        )
+        self.assertEqual(direct_full_gate.returncode, 0, direct_full_gate.stderr)
+        self.assertIn(
+            'CONTAINER_RUNTIME_CLI="container"',
+            direct_full_gate.stdout,
+        )
         self.assertIn(
             "containerization_targets=(check containerization examples docs coverage fetch-default-kernel integration)",
             validation,
@@ -1750,6 +1770,72 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             local_gate.index('profile_root="${runtime_parent}/profiles"'),
             local_gate.index('"${path}/scripts/run-with-container-runtime.sh"'),
         )
+
+    def test_local_release_gate_waits_for_signal_cleanup_before_candidate_deletion(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate_root = root / "candidate"
+            candidate_bin = candidate_root / "bin"
+            candidate_bin.mkdir(parents=True)
+            candidate_cli = candidate_bin / "container"
+            candidate_cli.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            candidate_cli.chmod(0o755)
+            ready = root / "ready"
+            stop_complete = root / "stop-complete"
+            removed = root / "removed"
+            fake_gate = root / "fake-gate"
+            fake_gate.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -u\n"
+                "trap 'test -x \"$CANDIDATE_ROOT/bin/container\"; "
+                "touch \"$STOP_COMPLETE\"; exit 143' TERM\n"
+                "touch \"$READY\"\n"
+                "while :; do sleep 1; done\n",
+                encoding="utf-8",
+            )
+            fake_gate.chmod(0o755)
+            shell = "\n".join(
+                [
+                    "set -u",
+                    "export CONTAINER_STACK_RELEASE_LIBRARY=1",
+                    f"source {shlex.quote(str(SCRIPT))}",
+                    f"export CANDIDATE_ROOT={shlex.quote(str(candidate_root))}",
+                    f"export READY={shlex.quote(str(ready))}",
+                    f"export STOP_COMPLETE={shlex.quote(str(stop_complete))}",
+                    "status=0",
+                    f"run_local_release_gate_command {shlex.quote(str(fake_gate))} "
+                    "|| status=$?",
+                    'test -f "$STOP_COMPLETE"',
+                    'find "$CANDIDATE_ROOT" -depth -delete',
+                    f"touch {shlex.quote(str(removed))}",
+                    'exit "$status"',
+                ]
+            )
+            process = subprocess.Popen(
+                ["bash", "-c", shell],
+                cwd=ROOT,
+                env=self.non_interactive_environment(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+            deadline = time.monotonic() + 10
+            while not ready.exists() and process.poll() is None:
+                if time.monotonic() >= deadline:
+                    process.kill()
+                    self.fail("outer release gate did not become ready")
+                time.sleep(0.05)
+
+            os.killpg(process.pid, signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=10)
+
+            self.assertEqual(process.returncode, 143, stdout + stderr)
+            self.assertTrue(stop_complete.exists(), stdout + stderr)
+            self.assertTrue(removed.exists(), stdout + stderr)
+            self.assertFalse(candidate_root.exists(), stdout + stderr)
 
     def test_release_evidence_root_is_absolute_canonical_and_not_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

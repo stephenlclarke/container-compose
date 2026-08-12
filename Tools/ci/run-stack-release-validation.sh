@@ -150,9 +150,23 @@ runtime_candidate_sha256=${CONTAINER_RUNTIME_CANDIDATE_SHA256:-}
 validation_environment_path=${PATH}
 runtime_make_args=()
 if [[ "${mode}" == "full" ]]; then
-  if [[ "${runtime_cli}" != /* || ! -x "${runtime_cli}" ]]; then
-    printf 'full stack validation requires an absolute executable CONTAINER_RUNTIME_CLI: %s\n' \
+  if [[ -z "${runtime_cli}" ]]; then
+    printf 'full stack validation requires an executable CONTAINER_RUNTIME_CLI: %s\n' \
       "${runtime_cli:-unset}" >&2
+    exit 2
+  fi
+  if [[ "${runtime_cli}" != */* ]]; then
+    if ! runtime_cli=$(command -v "${runtime_cli}"); then
+      printf 'full stack validation Container CLI was not found on PATH: %s\n' \
+        "${CONTAINER_RUNTIME_CLI}" >&2
+      exit 2
+    fi
+  elif [[ "${runtime_cli}" != /* ]]; then
+    runtime_cli="$(cd "$(dirname "${runtime_cli}")" && pwd -P)/$(basename "${runtime_cli}")"
+  fi
+  if [[ ! -x "${runtime_cli}" ]]; then
+    printf 'full stack validation requires an executable CONTAINER_RUNTIME_CLI: %s\n' \
+      "${runtime_cli}" >&2
     exit 2
   fi
   runtime_cli_directory=$(cd "$(dirname "${runtime_cli}")" && pwd -P)

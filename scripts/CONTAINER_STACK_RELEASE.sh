@@ -717,6 +717,59 @@ cleanup_container_runtime_candidate() {
   find "${CONTAINER_RUNTIME_CANDIDATE_ROOT}" -depth -delete
 }
 
+# Run the candidate-owned gate in the background so this shell can explicitly
+# wait for its namespace cleanup when the process group receives INT or TERM.
+# The candidate extraction must remain present until the wrapper's signal trap
+# has completed its namespace-scoped `system stop`.
+run_local_release_gate_command() {
+  local child_pid=""
+  local child_status=0
+  local signal_name=""
+  local signal_status=0
+
+  # shellcheck disable=SC2329
+  wait_for_candidate_cleanup_on_signal() {
+    signal_name="$1"
+    signal_status="$2"
+    # A second signal must not interrupt the one wait that protects the
+    # candidate executable used by the child's cleanup trap.
+    trap - INT TERM
+    if [[ -n "${child_pid}" ]]; then
+      if wait "${child_pid}"; then
+        child_status=0
+      else
+        child_status=$?
+      fi
+      child_pid=""
+    fi
+  }
+
+  trap 'wait_for_candidate_cleanup_on_signal INT 130' INT
+  trap 'wait_for_candidate_cleanup_on_signal TERM 143' TERM
+
+  "$@" &
+  child_pid=$!
+  # Cover a signal delivered after the launch decision but before Bash stored
+  # $!: re-deliver it to the child now that its PID is known.
+  if [[ -n "${signal_name}" ]]; then
+    kill -s "${signal_name}" "${child_pid}" 2>/dev/null || true
+  fi
+  if [[ -n "${child_pid}" ]]; then
+    if wait "${child_pid}"; then
+      child_status=0
+    else
+      child_status=$?
+    fi
+    child_pid=""
+  fi
+
+  trap - INT TERM
+  if ((signal_status != 0)); then
+    return "${signal_status}"
+  fi
+  return "${child_status}"
+}
+
 # Resolve retained evidence before it is also used as an absolute build/log
 # scratch root. Relative values are Compose-checkout-relative, matching the
 # documented .build/... form, and symlinks cannot smuggle the root directory
@@ -813,7 +866,7 @@ PY
   profile_root="${runtime_parent}/profiles"
   mkdir -p "${profile_root}"
   status=0
-  env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
+  run_local_release_gate_command env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
     -u CONTAINER_RUNTIME_SERVICE_NAMESPACE -u CONTAINER_RUNTIME_RUN_ID \
     HAWKEYE_AUTO_INSTALL=1 \
     CONTAINER_RUNTIME_APP_ROOT="${runtime_app_root}" \

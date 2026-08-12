@@ -1388,7 +1388,8 @@ container-stack-build:
 
 .PHONY: container-stack-release-validation container-stack-hosted-release-validation
 container-stack-release-validation:
-	./Tools/ci/run-stack-release-validation.sh full "$(CURDIR)" \
+	CONTAINER_RUNTIME_CLI="$(CONTAINER_COMPOSE_CONTAINER)" \
+		./Tools/ci/run-stack-release-validation.sh full "$(CURDIR)" \
 		"$(CONTAINER_BUILDER_SHIM_STACK_REPO)" "$(CONTAINERIZATION_STACK_REPO)" \
 		"$(CONTAINER_STACK_REPO)" "$(HOMEBREW_TAP_REPO)"
 
