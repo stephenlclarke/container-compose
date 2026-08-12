@@ -747,7 +747,14 @@ run_local_release_gate_command() {
   trap 'wait_for_candidate_cleanup_on_signal INT 130' INT
   trap 'wait_for_candidate_cleanup_on_signal TERM 143' TERM
 
-  "$@" &
+  # Bash gives asynchronous commands ignored SIGINT/SIGQUIT dispositions and
+  # otherwise keeps an intermediate subshell whose death would make this wait
+  # finish before the exec'd wrapper cleans up. Reset the dispositions inside
+  # that child and exec the wrapper so child_pid remains the runtime owner.
+  (
+    trap - INT TERM
+    exec "$@"
+  ) &
   child_pid=$!
   # Cover a signal delivered after the launch decision but before Bash stored
   # $!: re-deliver it to the child now that its PID is known.

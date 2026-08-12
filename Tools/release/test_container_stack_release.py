@@ -1775,67 +1775,78 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            candidate_root = root / "candidate"
-            candidate_bin = candidate_root / "bin"
-            candidate_bin.mkdir(parents=True)
-            candidate_cli = candidate_bin / "container"
-            candidate_cli.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
-            candidate_cli.chmod(0o755)
-            ready = root / "ready"
-            stop_complete = root / "stop-complete"
-            removed = root / "removed"
-            fake_gate = root / "fake-gate"
-            fake_gate.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -u\n"
-                "trap 'test -x \"$CANDIDATE_ROOT/bin/container\"; "
-                "touch \"$STOP_COMPLETE\"; exit 143' TERM\n"
-                "touch \"$READY\"\n"
-                "while :; do sleep 1; done\n",
-                encoding="utf-8",
-            )
-            fake_gate.chmod(0o755)
-            shell = "\n".join(
-                [
-                    "set -u",
-                    "export CONTAINER_STACK_RELEASE_LIBRARY=1",
-                    f"source {shlex.quote(str(SCRIPT))}",
-                    f"export CANDIDATE_ROOT={shlex.quote(str(candidate_root))}",
-                    f"export READY={shlex.quote(str(ready))}",
-                    f"export STOP_COMPLETE={shlex.quote(str(stop_complete))}",
-                    "status=0",
-                    f"run_local_release_gate_command {shlex.quote(str(fake_gate))} "
-                    "|| status=$?",
-                    'test -f "$STOP_COMPLETE"',
-                    'find "$CANDIDATE_ROOT" -depth -delete',
-                    f"touch {shlex.quote(str(removed))}",
-                    'exit "$status"',
-                ]
-            )
-            process = subprocess.Popen(
-                ["bash", "-c", shell],
-                cwd=ROOT,
-                env=self.non_interactive_environment(),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                start_new_session=True,
-            )
-            deadline = time.monotonic() + 10
-            while not ready.exists() and process.poll() is None:
-                if time.monotonic() >= deadline:
-                    process.kill()
-                    self.fail("outer release gate did not become ready")
-                time.sleep(0.05)
+            for delivered_signal, expected_status in (
+                (signal.SIGINT, 130),
+                (signal.SIGTERM, 143),
+            ):
+                with self.subTest(signal=delivered_signal.name):
+                    root = Path(directory) / delivered_signal.name
+                    candidate_root = root / "candidate"
+                    candidate_bin = candidate_root / "bin"
+                    candidate_bin.mkdir(parents=True)
+                    candidate_cli = candidate_bin / "container"
+                    candidate_cli.write_text(
+                        "#!/usr/bin/env bash\nexit 0\n", encoding="utf-8"
+                    )
+                    candidate_cli.chmod(0o755)
+                    ready = root / "ready"
+                    stop_complete = root / "stop-complete"
+                    removed = root / "removed"
+                    fake_gate = root / "fake-gate"
+                    fake_gate.write_text(
+                        "#!/usr/bin/env bash\n"
+                        "set -u\n"
+                        "cleanup() { test -x \"$CANDIDATE_ROOT/bin/container\"; "
+                        "touch \"$STOP_COMPLETE\"; }\n"
+                        "trap 'cleanup; exit 130' INT\n"
+                        "trap 'cleanup; exit 143' TERM\n"
+                        "touch \"$READY\"\n"
+                        "while :; do sleep 1; done\n",
+                        encoding="utf-8",
+                    )
+                    fake_gate.chmod(0o755)
+                    shell = "\n".join(
+                        [
+                            "set -u",
+                            "export CONTAINER_STACK_RELEASE_LIBRARY=1",
+                            f"source {shlex.quote(str(SCRIPT))}",
+                            f"export CANDIDATE_ROOT={shlex.quote(str(candidate_root))}",
+                            f"export READY={shlex.quote(str(ready))}",
+                            f"export STOP_COMPLETE={shlex.quote(str(stop_complete))}",
+                            "status=0",
+                            "run_local_release_gate_command "
+                            f"{shlex.quote(str(fake_gate))} || status=$?",
+                            'test -f "$STOP_COMPLETE"',
+                            'find "$CANDIDATE_ROOT" -depth -delete',
+                            f"touch {shlex.quote(str(removed))}",
+                            'exit "$status"',
+                        ]
+                    )
+                    process = subprocess.Popen(
+                        ["bash", "-c", shell],
+                        cwd=ROOT,
+                        env=self.non_interactive_environment(),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        start_new_session=True,
+                    )
+                    deadline = time.monotonic() + 10
+                    while not ready.exists() and process.poll() is None:
+                        if time.monotonic() >= deadline:
+                            process.kill()
+                            self.fail("outer release gate did not become ready")
+                        time.sleep(0.05)
 
-            os.killpg(process.pid, signal.SIGTERM)
-            stdout, stderr = process.communicate(timeout=10)
+                    os.killpg(process.pid, delivered_signal)
+                    stdout, stderr = process.communicate(timeout=10)
 
-            self.assertEqual(process.returncode, 143, stdout + stderr)
-            self.assertTrue(stop_complete.exists(), stdout + stderr)
-            self.assertTrue(removed.exists(), stdout + stderr)
-            self.assertFalse(candidate_root.exists(), stdout + stderr)
+                    self.assertEqual(
+                        process.returncode, expected_status, stdout + stderr
+                    )
+                    self.assertTrue(stop_complete.exists(), stdout + stderr)
+                    self.assertTrue(removed.exists(), stdout + stderr)
+                    self.assertFalse(candidate_root.exists(), stdout + stderr)
 
     def test_release_evidence_root_is_absolute_canonical_and_not_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
