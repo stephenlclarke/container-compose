@@ -360,7 +360,9 @@ PY
   fi
 }
 
-# Reconstruct a helper-created candidate after a local release gate fails before promotion.
+# Retain a helper-created candidate after a local release gate fails before
+# promotion. Recommitting an identical tree changes the reviewed candidate
+# identity on every retry and makes evidence impossible to bind reliably.
 recover_unpublished_release_candidate() {
   local version="$1" path remote local_head remote_head subject subjects
   path="$(repo_path "${COMPOSE_REPO}")"
@@ -400,8 +402,7 @@ recover_unpublished_release_candidate() {
     esac
   done <<<"${subjects}"
 
-  printf 'reconstructing unpublished release candidate from %s/main after an earlier local gate failure\n' "${remote}"
-  run git -C "${path}" reset --soft "${remote_head}"
+  printf 'retaining unpublished release candidate %s after an earlier local gate failure\n' "${local_head}"
 }
 
 # Print and optionally execute a command.
@@ -570,8 +571,10 @@ require_local_virtualization() {
 
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
-  local path repository
+  local path repository container_path container_binary runtime_parent runtime_app_root
+  local containerization_reference required_init_references status marker_value
   path="$(repo_path "${COMPOSE_REPO}")"
+  container_path="$(repo_path "${CONTAINER_REPO}")"
   if [[ ! -f "${HOMEBREW_TAP_REPO}/Formula/container-compose.rb" ]]; then
     printf 'Homebrew tap checkout is required at %s\n' "${HOMEBREW_TAP_REPO}" >&2
     exit 1
@@ -597,8 +600,51 @@ run_local_release_gate() {
     )
   done
   run make -C "$(repo_path "containerization")" fetch-default-kernel
-  run env HAWKEYE_AUTO_INSTALL=1 \
-    make -C "${path}" release-gate "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}"
+  run make -C "${container_path}" container
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would run the complete local gate inside one fresh marker-protected runtime lifecycle\n'
+    return 0
+  fi
+
+  container_binary="${container_path}/bin/container"
+  if [[ ! -x "${container_binary}" ]]; then
+    printf 'local release gate did not produce an executable Container CLI: %s\n' \
+      "${container_binary}" >&2
+    exit 1
+  fi
+  containerization_reference="$(python3 - "${path}/Tools/release/stack-refs.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(manifest["components"]["containerization"]["ref"])
+PY
+)"
+  required_init_references="vminit:container-compose ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
+  runtime_parent="$(mktemp -d "${TMPDIR:-/tmp}/cc-release.XXXXXX")"
+  runtime_app_root="${runtime_parent}/app"
+  status=0
+  env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
+    -u CONTAINER_RUNTIME_SERVICE_NAMESPACE -u CONTAINER_RUNTIME_RUN_ID \
+    HAWKEYE_AUTO_INSTALL=1 \
+    CONTAINER_RUNTIME_APP_ROOT="${runtime_app_root}" \
+    CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES="${required_init_references}" \
+    CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR="${PARITY_EVIDENCE_DIR:-${path}/.build/release-evidence}/stack-validation" \
+    "${path}/scripts/run-with-container-runtime.sh" "${container_binary}" \
+    make -C "${path}" release-gate "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}" || status=$?
+
+  marker_value=""
+  if [[ -f "${runtime_app_root}/.container-compose-runtime-root" ]]; then
+    IFS= read -r marker_value <"${runtime_app_root}/.container-compose-runtime-root" || true
+  fi
+  if [[ "${marker_value}" == "container-compose isolated runtime state v1" ]]; then
+    find "${runtime_parent}" -depth -delete
+  else
+    printf 'refusing to remove release runtime root without its valid marker: %s\n' \
+      "${runtime_parent}" >&2
+  fi
+  return "${status}"
 }
 
 # Verify that Apple remotes cannot be pushed and stephenlclarke remotes are the target.

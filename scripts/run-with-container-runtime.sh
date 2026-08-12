@@ -31,6 +31,7 @@ container_binary=$1
 shift
 runtime_app_root=${CONTAINER_RUNTIME_APP_ROOT:-}
 runtime_service_namespace=${CONTAINER_RUNTIME_SERVICE_NAMESPACE:-}
+runtime_run_id=${CONTAINER_RUNTIME_RUN_ID:-}
 runtime_init_block_repo=${CONTAINER_RUNTIME_INIT_BLOCK_REPO:-}
 runtime_init_image_archive=${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}
 containerization_init_source_path=${CONTAINERIZATION_INIT_SOURCE_PATH:-}
@@ -57,8 +58,13 @@ configure_runtime_namespace() {
     local namespace_root_digest
     local socket_directory_digest
 
+    if [[ -z "$runtime_run_id" ]]; then
+        runtime_run_id="$(id -u)-$$-${RANDOM}-${SECONDS}"
+    fi
+    export CONTAINER_RUNTIME_RUN_ID="$runtime_run_id"
+
     if [[ -z "$runtime_service_namespace" ]]; then
-        namespace_root_digest=$(LC_ALL=C printf '%s' "${runtime_app_root}:$(id -u)" \
+        namespace_root_digest=$(LC_ALL=C printf '%s' "${runtime_app_root}:$(id -u):${runtime_run_id}" \
             | shasum -a 256 | awk '{print substr($1, 1, 24)}')
         runtime_service_namespace="io.github.stephenlclarke.container-compose.runtime.${namespace_root_digest}"
     fi
@@ -84,6 +90,60 @@ configure_runtime_namespace() {
     export CONTAINER_SERVICE_NAMESPACE="$runtime_service_namespace"
     export CONTAINER_RUNTIME_DOCKER_SOCKET="$runtime_docker_socket"
     export CONTAINER_RUNTIME_DOCKER_HOST="$runtime_docker_host"
+}
+
+# Fail before acquiring the host runtime lock or touching launchd when a
+# retained OCI archive cannot satisfy every image reference needed by this
+# validation run. The outer stable-release gate supplies both Compose's local
+# alias and Container's immutable Containerization reference.
+validate_runtime_init_image_archive() {
+    [[ -n "$runtime_init_image_archive" ]] || return 0
+
+    local required_references="$matched_init_image"
+    if [[ -n "${CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES:-}" ]]; then
+        required_references+=" ${CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES}"
+    fi
+
+    python3 - "$runtime_init_image_archive" "$required_references" <<'PY'
+import json
+from pathlib import Path
+import sys
+import tarfile
+
+archive = Path(sys.argv[1])
+required = set(sys.argv[2].split())
+try:
+    with tarfile.open(archive, "r:*") as bundle:
+        member = next(
+            (item for item in bundle.getmembers() if item.name.lstrip("./") == "index.json"),
+            None,
+        )
+        if member is None:
+            raise ValueError("index.json is missing")
+        stream = bundle.extractfile(member)
+        if stream is None:
+            raise ValueError("index.json is unreadable")
+        index = json.load(stream)
+except (OSError, tarfile.TarError, ValueError, json.JSONDecodeError) as error:
+    raise SystemExit(f"container runtime init-image archive is not a readable OCI archive: {archive} ({error})")
+
+available = {
+    manifest.get("annotations", {}).get("org.opencontainers.image.ref.name"): manifest.get("digest")
+    for manifest in index.get("manifests", [])
+}
+missing = sorted(reference for reference in required if reference not in available)
+if missing:
+    raise SystemExit(
+        "container runtime init-image archive is missing required reference(s): "
+        + ", ".join(missing)
+    )
+digests = {available[reference] for reference in required}
+if len(digests) != 1 or None in digests:
+    raise SystemExit(
+        "container runtime init-image archive required references do not resolve to one digest: "
+        + ", ".join(f"{reference}={available[reference]}" for reference in sorted(required))
+    )
+PY
 }
 
 validate_runtime_inputs() {
@@ -511,8 +571,16 @@ install_matched_init_image() {
 
 validate_runtime_inputs
 validate_containerization_init_source
+resolve_matched_init_image
+validate_runtime_init_image_archive
 configure_runtime_namespace
 verify_runtime_namespace_support
+
+if [[ "${CONTAINER_RUNTIME_MANAGED:-0}" == "1" ]]; then
+    "$@"
+    exit
+fi
+
 acquire_container_runtime_lock
 trap cleanup EXIT
 
@@ -521,7 +589,6 @@ stop_runtime
 sleep 3
 prepare_runtime_root
 stage_containerization_init_source
-resolve_matched_init_image
 resolve_initial_start_init_image_archive
 prepare_runtime_config_home
 configure_runtime_builder_image
@@ -565,4 +632,5 @@ if [[ -n "$runtime_config_home" ]]; then
     start_runtime
 fi
 
+export CONTAINER_RUNTIME_MANAGED=1
 "$@"
