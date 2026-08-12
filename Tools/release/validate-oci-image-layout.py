@@ -102,7 +102,7 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
         if not isinstance(root_manifests, list):
             raise ValidationError("index.json manifests must be an array")
 
-        validated: set[str] = set()
+        validated: dict[tuple[str, str], bool] = {}
 
         def descriptor_payload(descriptor: Any, context: str) -> tuple[bytes, str, str]:
             if not isinstance(descriptor, dict):
@@ -150,11 +150,11 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
                 raise ValidationError(f"{context} digest mismatch for {digest}")
             return b"".join(chunks), media_type, digest
 
-        def validate_descriptor(descriptor: Any, context: str) -> None:
+        def validate_descriptor(descriptor: Any, context: str) -> bool:
             payload, media_type, digest = descriptor_payload(descriptor, context)
-            if digest in validated:
-                return
-            validated.add(digest)
+            cache_key = (digest, media_type)
+            if cache_key in validated:
+                return validated[cache_key]
 
             if media_type in INDEX_MEDIA_TYPES:
                 nested = load_json(payload, f"{context} {digest}")
@@ -163,8 +163,12 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
                 manifests = nested.get("manifests")
                 if not isinstance(manifests, list):
                     raise ValidationError(f"{context} {digest} manifests must be an array")
+                contains_image = False
                 for position, child in enumerate(manifests):
-                    validate_descriptor(child, f"{context}.manifests[{position}]")
+                    contains_image = (
+                        validate_descriptor(child, f"{context}.manifests[{position}]")
+                        or contains_image
+                    )
                 subject = nested.get("subject")
                 if subject is not None:
                     subject_media_type = (
@@ -176,7 +180,8 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
                         validate_descriptor(subject, f"{context}.subject")
                     else:
                         descriptor_payload(subject, f"{context}.subject")
-                return
+                validated[cache_key] = contains_image
+                return contains_image
 
             if media_type in MANIFEST_MEDIA_TYPES:
                 manifest = load_json(payload, f"{context} {digest}")
@@ -199,7 +204,8 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
                         validate_descriptor(subject, f"{context}.subject")
                     else:
                         descriptor_payload(subject, f"{context}.subject")
-                return
+                validated[cache_key] = True
+                return True
 
             if media_type == ARTIFACT_MEDIA_TYPE:
                 manifest = load_json(payload, f"{context} {digest}")
@@ -219,7 +225,8 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
                         validate_descriptor(subject, f"{context}.subject")
                     else:
                         descriptor_payload(subject, f"{context}.subject")
-                return
+                validated[cache_key] = False
+                return False
 
             raise ValidationError(
                 f"{context} uses unsupported manifest mediaType: {media_type}"
@@ -227,7 +234,9 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
 
         available: dict[str, str] = {}
         for position, manifest in enumerate(root_manifests):
-            validate_descriptor(manifest, f"index.json.manifests[{position}]")
+            contains_image = validate_descriptor(
+                manifest, f"index.json.manifests[{position}]"
+            )
             if not isinstance(manifest, dict):
                 continue
             annotations = manifest.get("annotations", {})
@@ -237,7 +246,7 @@ def validate_archive(archive_path: Path, required_references: set[str]) -> None:
                 )
             reference = annotations.get("org.opencontainers.image.ref.name")
             digest = manifest.get("digest")
-            if isinstance(reference, str):
+            if isinstance(reference, str) and contains_image:
                 if reference in available and available[reference] != digest:
                     raise ValidationError(
                         f"required reference is ambiguous: {reference}"

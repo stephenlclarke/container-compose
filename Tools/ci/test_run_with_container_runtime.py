@@ -178,6 +178,44 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 archive.addfile(member, io.BytesIO(payload))
 
     @staticmethod
+    def create_oci_artifact_archive(path: Path, reference: str) -> None:
+        artifact = json.dumps(
+            {
+                "schemaVersion": 2,
+                "mediaType": "application/vnd.oci.artifact.manifest.v1+json",
+                "artifactType": "application/vnd.example.fixture",
+                "blobs": [],
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+        digest = hashlib.sha256(artifact).hexdigest()
+        index = json.dumps(
+            {
+                "schemaVersion": 2,
+                "manifests": [
+                    {
+                        "mediaType": "application/vnd.oci.artifact.manifest.v1+json",
+                        "digest": f"sha256:{digest}",
+                        "size": len(artifact),
+                        "annotations": {
+                            "org.opencontainers.image.ref.name": reference,
+                        },
+                    }
+                ],
+            }
+        ).encode("utf-8")
+        layout = json.dumps({"imageLayoutVersion": "1.0.0"}).encode("utf-8")
+        with tarfile.open(path, "w") as archive:
+            for name, payload in (
+                ("oci-layout", layout),
+                ("index.json", index),
+                (f"blobs/sha256/{digest}", artifact),
+            ):
+                member = tarfile.TarInfo(name)
+                member.size = len(payload)
+                archive.addfile(member, io.BytesIO(payload))
+
+    @staticmethod
     def create_containerization_source(root: Path) -> tuple[Path, str]:
         source = root / "containerization-source"
         (source / "vminitd").mkdir(parents=True)
@@ -1055,6 +1093,37 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 1)
             self.assertIn(immutable_reference, result.stderr)
+            self.assertFalse(container_log.exists())
+
+    def test_rejects_artifact_annotated_as_required_image(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            init_archive = temporary_root / "vminit-artifact.tar"
+            self.create_oci_artifact_archive(init_archive, DEFAULT_INIT_IMAGE)
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE": str(init_archive),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("missing required reference(s)", result.stderr)
+            self.assertIn(DEFAULT_INIT_IMAGE, result.stderr)
             self.assertFalse(container_log.exists())
 
     def test_rejects_required_archive_references_with_different_digests(self) -> None:
