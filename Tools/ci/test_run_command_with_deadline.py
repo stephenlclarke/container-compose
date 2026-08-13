@@ -220,6 +220,72 @@ raise SystemExit(module.run([
             self.assertEqual(process.returncode, 143, stdout + stderr)
             self.assertLess(time.monotonic() - started, 1)
 
+    def test_sighup_is_forwarded_and_reaps_the_detached_child_group(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ready = Path(directory) / "ready"
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--seconds",
+                    "30",
+                    "--grace-seconds",
+                    "0.2",
+                    "--",
+                    "/bin/sh",
+                    "-c",
+                    f"trap 'exit 0' HUP; touch {ready}; while :; do sleep 1; done",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            ready_deadline = time.monotonic() + 2
+            while not ready.exists():
+                if time.monotonic() >= ready_deadline:
+                    process.kill()
+                    self.fail("deadline child did not become ready")
+                time.sleep(0.01)
+
+            process.send_signal(signal.SIGHUP)
+            stdout, stderr = process.communicate(timeout=2)
+
+            self.assertEqual(process.returncode, 129, stdout + stderr)
+
+    def test_bounded_cleanup_can_ignore_repeated_parent_termination(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ready = root / "ready"
+            complete = root / "complete"
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--seconds",
+                    "2",
+                    "--ignore-parent-signals",
+                    "--",
+                    "/bin/sh",
+                    "-c",
+                    f"touch {ready}; sleep 0.3; touch {complete}",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            ready_deadline = time.monotonic() + 2
+            while not ready.exists():
+                if time.monotonic() >= ready_deadline:
+                    process.kill()
+                    self.fail("cleanup child did not become ready")
+                time.sleep(0.01)
+
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=2)
+
+            self.assertEqual(process.returncode, 0, stdout + stderr)
+            self.assertTrue(complete.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

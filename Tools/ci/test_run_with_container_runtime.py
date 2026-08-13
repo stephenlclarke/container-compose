@@ -22,6 +22,7 @@ import io
 import json
 import os
 import signal
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -753,6 +754,65 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertIn(f"staged_source_root={staged_source}", fingerprint)
             self.assertIn(f"build_scratch_root={scratch_root}", fingerprint)
 
+    def test_source_staging_hang_consumes_the_shared_startup_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source, _ = self.create_containerization_source(temporary_root)
+            init_repo = temporary_root / "container"
+            init_repo.mkdir()
+            (init_repo / "Makefile").write_text(
+                "init-block:\n\t@true\n", encoding="utf-8"
+            )
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            fake_git = fake_bin / "git"
+            clone_started = temporary_root / "clone-started"
+            real_git = shutil.which("git")
+            self.assertIsNotNone(real_git)
+            fake_git.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if [[ "${1:-}" == "clone" ]]; then\n'
+                f"  touch {clone_started}\n"
+                "  sleep 30\n"
+                "fi\n"
+                f'exec "{real_git}" "$@"\n',
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            fake_container = fake_bin / "container-cli"
+            container_log = temporary_root / "container.log"
+            command_marker = temporary_root / "command-ran"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(init_repo),
+                    "CONTAINERIZATION_INIT_SOURCE_PATH": str(source),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=8,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 7)
+            self.assertTrue(clone_started.exists())
+            self.assertFalse(command_marker.exists())
+
     def test_configures_default_init_image_only_after_build(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -836,7 +896,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
                     "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(init_repo),
                     "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
-                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
                     "CONTAINER_TEST_LOG": str(container_log),
                 }
             )
@@ -855,6 +915,49 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertFalse(command_marker.exists())
             invocations = container_log.read_text(encoding="utf-8")
             self.assertEqual(invocations.count("system start"), 1)
+
+    def test_stale_runtime_stop_hang_consumes_the_shared_startup_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            command_marker = temporary_root / "command-ran"
+            stop_started = temporary_root / "stop-started"
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "system stop" && ! -e "${STOP_STARTED:?}" ]]; then\n'
+                    '  touch "${STOP_STARTED}"\n'
+                    "  sleep 30\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "STOP_STARTED": str(stop_started),
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 4)
+            self.assertTrue(stop_started.exists())
+            self.assertFalse(command_marker.exists())
 
     def test_builder_image_install_shares_the_startup_deadline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -879,7 +982,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     "CONTAINER_RUNTIME_BUILDER_IMAGE": "local/builder:test",
                     "CONTAINER_RUNTIME_BUILDER_IMAGE_TAR": str(builder_archive),
                     "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
-                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
                     "CONTAINER_TEST_LOG": str(container_log),
                 }
             )
@@ -892,11 +995,11 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=7,
+                timeout=9,
             )
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
-            self.assertLess(time.monotonic() - started, 6, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 8, result.stdout + result.stderr)
             self.assertFalse(command_marker.exists())
             self.assertIn("image load -i", container_log.read_text(encoding="utf-8"))
 
@@ -1832,7 +1935,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
                     "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
-                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
                     "CONTAINER_TEST_LOG": str(container_log),
                 }
             )
@@ -1845,13 +1948,13 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=7,
+                timeout=9,
             )
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
             self.assertLess(
                 time.monotonic() - started,
-                6,
+                8,
                 result.stdout + result.stderr,
             )
             self.assertFalse(command_marker.exists())

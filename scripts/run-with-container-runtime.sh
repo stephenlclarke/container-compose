@@ -127,6 +127,8 @@ configure_runtime_namespace() {
 # validation run. The outer stable-release gate supplies both Compose's local
 # alias and Container's immutable Containerization reference.
 validate_runtime_init_image_archive() {
+    local deadline="$1"
+
     [[ -n "$runtime_init_image_archive" ]] || return 0
 
     local required_references="$matched_init_image"
@@ -135,7 +137,8 @@ validate_runtime_init_image_archive() {
     fi
     local references=()
     read -r -a references <<<"$required_references"
-    "$SCRIPT_DIRECTORY/../Tools/release/validate-oci-image-layout.py" \
+    run_runtime_start_command "$deadline" \
+        "$SCRIPT_DIRECTORY/../Tools/release/validate-oci-image-layout.py" \
         "$runtime_init_image_archive" "${references[@]}"
 }
 
@@ -206,6 +209,8 @@ validate_runtime_inputs() {
 
 # Resolve a clean, exact source checkout before any candidate service mutation.
 validate_containerization_init_source() {
+    local deadline="$1"
+
     [[ -n "$containerization_init_source_path" ]] || return 0
 
     if ! command -v git >/dev/null 2>&1; then
@@ -219,7 +224,12 @@ validate_containerization_init_source() {
             "$containerization_init_source_path" >&2
         exit 2
     fi
-    if ! containerization_init_source_root=$(git -C "$requested_source_path" rev-parse --show-toplevel 2>/dev/null); then
+    local source_root_status=0
+    containerization_init_source_root=$(run_runtime_start_command "$deadline" \
+        git -C "$requested_source_path" rev-parse --show-toplevel 2>/dev/null) || \
+        source_root_status=$?
+    if [[ "$source_root_status" != "0" ]]; then
+        [[ "$source_root_status" != "124" ]] || return "$source_root_status"
         printf 'containerization init source path is not a Git checkout: %s\n' \
             "$requested_source_path" >&2
         exit 2
@@ -230,12 +240,20 @@ validate_containerization_init_source() {
             "$requested_source_path" >&2
         exit 2
     fi
-    if [[ -n "$(git -C "$containerization_init_source_root" status --porcelain --untracked-files=all)" ]]; then
+    local source_status
+    source_status=$(run_runtime_start_command "$deadline" \
+        git -C "$containerization_init_source_root" status --porcelain --untracked-files=all) || return "$?"
+    if [[ -n "$source_status" ]]; then
         printf 'containerization init source checkout must be clean before staging: %s\n' \
             "$containerization_init_source_root" >&2
         exit 2
     fi
-    if ! containerization_init_source_head=$(git -C "$containerization_init_source_root" rev-parse --verify 'HEAD^{commit}' 2>/dev/null); then
+    local source_head_status=0
+    containerization_init_source_head=$(run_runtime_start_command "$deadline" \
+        git -C "$containerization_init_source_root" rev-parse --verify 'HEAD^{commit}' 2>/dev/null) || \
+        source_head_status=$?
+    if [[ "$source_head_status" != "0" ]]; then
+        [[ "$source_head_status" != "124" ]] || return "$source_head_status"
         printf 'containerization init source checkout does not resolve HEAD to a commit: %s\n' \
             "$containerization_init_source_root" >&2
         exit 2
@@ -245,6 +263,8 @@ validate_containerization_init_source() {
 # Clone the validated source input below the disposable candidate root so the
 # guest sees only tracked files and a self-contained Git metadata directory.
 stage_containerization_init_source() {
+    local deadline="$1"
+
     [[ -n "$containerization_init_source_root" ]] || return 0
 
     local source_inputs_root="$runtime_app_root/source-inputs"
@@ -255,27 +275,40 @@ stage_containerization_init_source() {
         exit 2
     fi
 
-    mkdir -p "$source_inputs_root"
-    if ! git clone --quiet --no-local --no-checkout --no-tags \
-        "$containerization_init_source_root" "$staged_source_path"; then
+    run_runtime_start_command "$deadline" mkdir -p "$source_inputs_root"
+    local clone_status=0
+    run_runtime_start_command "$deadline" \
+        git clone --quiet --no-local --no-checkout --no-tags \
+        "$containerization_init_source_root" "$staged_source_path" || clone_status=$?
+    if [[ "$clone_status" != "0" ]]; then
+        [[ "$clone_status" != "124" ]] || return "$clone_status"
         printf 'failed to clone the exact containerization init source into: %s\n' \
             "$staged_source_path" >&2
         exit 2
     fi
-    if ! git -C "$staged_source_path" checkout --detach --quiet "$containerization_init_source_head"; then
+    local checkout_status=0
+    run_runtime_start_command "$deadline" \
+        git -C "$staged_source_path" checkout --detach --quiet "$containerization_init_source_head" || \
+        checkout_status=$?
+    if [[ "$checkout_status" != "0" ]]; then
+        [[ "$checkout_status" != "124" ]] || return "$checkout_status"
         printf 'failed to check out the pinned containerization init source commit: %s\n' \
             "$containerization_init_source_head" >&2
         exit 2
     fi
 
     local staged_source_head
-    staged_source_head=$(git -C "$staged_source_path" rev-parse HEAD)
+    staged_source_head=$(run_runtime_start_command "$deadline" \
+        git -C "$staged_source_path" rev-parse HEAD) || return "$?"
     if [[ "$staged_source_head" != "$containerization_init_source_head" ]]; then
         printf 'staged containerization init source commit mismatch (expected %s, got %s)\n' \
             "$containerization_init_source_head" "$staged_source_head" >&2
         exit 2
     fi
-    if [[ -n "$(git -C "$staged_source_path" status --porcelain --untracked-files=all)" ]]; then
+    local staged_source_status
+    staged_source_status=$(run_runtime_start_command "$deadline" \
+        git -C "$staged_source_path" status --porcelain --untracked-files=all) || return "$?"
+    if [[ -n "$staged_source_status" ]]; then
         printf 'staged containerization init source checkout is unexpectedly dirty: %s\n' \
             "$staged_source_path" >&2
         exit 2
@@ -289,10 +322,11 @@ stage_containerization_init_source() {
     containerization_init_source_snapshot_path="$staged_source_path"
     containerization_init_source_path="$staged_source_path"
     containerization_init_build_scratch_root="$runtime_app_root/source-build-cache"
-    mkdir -p "$containerization_init_build_scratch_root"
+    run_runtime_start_command "$deadline" \
+        mkdir -p "$containerization_init_build_scratch_root"
 
     local fingerprints_root="$runtime_app_root/fingerprints"
-    mkdir -p "$fingerprints_root"
+    run_runtime_start_command "$deadline" mkdir -p "$fingerprints_root"
     printf 'source_root=%s\nsource_head=%s\nstaged_source_root=%s\nstaged_source_head=%s\nbuild_scratch_root=%s\n' \
         "$containerization_init_source_root" \
         "$containerization_init_source_head" \
@@ -310,16 +344,35 @@ has_matched_init_image_source() {
 }
 
 stop_runtime() {
-    "$container_binary" system stop >/dev/null 2>&1 || true
+    local deadline="${1:-}"
+    if [[ -n "$deadline" ]]; then
+        local stop_status=0
+        run_runtime_start_command "$deadline" \
+            "$container_binary" system stop >/dev/null 2>&1 || stop_status=$?
+        if [[ "$stop_status" == "124" ]]; then
+            return "$stop_status"
+        fi
+        return 0
+    fi
+
+    "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
+        --seconds 10 --grace-seconds 0 --ignore-parent-signals -- \
+        "$container_binary" system stop >/dev/null 2>&1 || true
 }
 
 # Fail before any service mutation unless this binary exposes this candidate's
 # namespace-derived Docker socket through the read-only status command.
 verify_runtime_namespace_support() {
+    local deadline="$1"
     local status_output
     local reported_socket
 
-    status_output=$("$container_binary" system status --format json 2>/dev/null) || true
+    local status=0
+    status_output=$(run_runtime_start_command "$deadline" \
+        "$container_binary" system status --format json 2>/dev/null) || status=$?
+    if [[ "$status" == "124" ]]; then
+        return "$status"
+    fi
     if ! reported_socket=$(printf '%s' "$status_output" | python3 -c '
 import json
 import sys
@@ -388,6 +441,30 @@ run_runtime_start_command() {
     remaining_seconds=$(runtime_start_remaining_seconds "$deadline") || return 124
     "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
         --seconds "$remaining_seconds" --grace-seconds 0 -- "$@"
+}
+
+# Clamp the host runtime lock wait to the budget left for startup.
+runtime_start_lock_timeout_seconds() {
+    local deadline="$1"
+    local configured_timeout=${CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS:-10800}
+
+    python3 - "$deadline" "$configured_timeout" <<'PY'
+import math
+import sys
+import time
+
+if not sys.argv[2].isdigit() or int(sys.argv[2]) <= 0:
+    print(
+        "CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS must be a positive integer: "
+        + sys.argv[2],
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+remaining = float(sys.argv[1]) - time.monotonic()
+if remaining <= 0:
+    raise SystemExit(124)
+print(max(1, min(int(sys.argv[2]), math.ceil(remaining))))
+PY
 }
 
 # Print a retry delay that never extends beyond the runtime-start deadline.
@@ -479,11 +556,13 @@ start_runtime() {
 # second lock or stopping the owner.
 ensure_managed_runtime_ready() {
     local remaining_seconds
-    local sequence_deadline
+    local sequence_deadline="${1:-}"
     local start_log
     local start_status
 
-    sequence_deadline=$(runtime_start_deadline)
+    if [[ -z "$sequence_deadline" ]]; then
+        sequence_deadline=$(runtime_start_deadline)
+    fi
     remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline") || return 124
     if "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
         --seconds "$remaining_seconds" --grace-seconds 0 -- \
@@ -523,7 +602,9 @@ ensure_managed_runtime_ready() {
 }
 
 prepare_runtime_root() {
-    mkdir -p "$runtime_app_root"
+    local deadline="$1"
+
+    run_runtime_start_command "$deadline" mkdir -p "$runtime_app_root"
     local marker_path="$runtime_app_root/$runtime_root_marker"
     if [[ -f "$marker_path" ]]; then
         local marker_value
@@ -542,7 +623,8 @@ prepare_runtime_root() {
         printf '%s\n' "$runtime_root_marker_value" >"$marker_path"
     fi
 
-    find "$runtime_app_root" -mindepth 1 -maxdepth 1 \
+    run_runtime_start_command "$deadline" \
+        find "$runtime_app_root" -mindepth 1 -maxdepth 1 \
         ! -name "$runtime_root_marker" ! -name kernels -exec rm -rf {} +
 }
 
@@ -553,17 +635,18 @@ prepare_runtime_root() {
 # mismatch into a bounded local copy instead of an opaque service-side open(2)
 # hang while the global lock is held.
 stage_runtime_service_inputs() {
+    local deadline="$1"
     local trusted_temporary_root=/private/tmp
     if [[ ! -d "$trusted_temporary_root" ]]; then
         trusted_temporary_root=/tmp
     fi
-    runtime_service_inputs_root=$(mktemp -d \
+    runtime_service_inputs_root=$(run_runtime_start_command "$deadline" mktemp -d \
         "$trusted_temporary_root/container-compose-service-inputs.XXXXXX")
 
-    stage_runtime_service_archive runtime_builder_image_tar builder-image.oci.tar
-    stage_runtime_service_archive runtime_bootstrap_image_tar bootstrap-image.oci.tar
-    stage_runtime_service_archive matched_init_image_tar matched-init-image.oci.tar
-    stage_runtime_service_archive runtime_init_image_archive retained-init-image.oci.tar
+    stage_runtime_service_archive "$deadline" runtime_builder_image_tar builder-image.oci.tar
+    stage_runtime_service_archive "$deadline" runtime_bootstrap_image_tar bootstrap-image.oci.tar
+    stage_runtime_service_archive "$deadline" matched_init_image_tar matched-init-image.oci.tar
+    stage_runtime_service_archive "$deadline" runtime_init_image_archive retained-init-image.oci.tar
 
     # Nested release validation must inherit the service-readable copies, not
     # the caller's original paths on a removable or privacy-controlled volume.
@@ -574,19 +657,25 @@ stage_runtime_service_inputs() {
 }
 
 stage_runtime_service_archive() {
-    local variable_name="$1"
-    local destination_name="$2"
+    local deadline="$1"
+    local variable_name="$2"
+    local destination_name="$3"
     local source_path="${!variable_name}"
     [[ -n "$source_path" ]] || return 0
 
     local destination_path="$runtime_service_inputs_root/$destination_name"
     local temporary_path="$destination_path.partial"
-    if ! /usr/bin/install -m 0600 "$source_path" "$temporary_path"; then
+    local install_status=0
+    run_runtime_start_command "$deadline" \
+        /usr/bin/install -m 0600 "$source_path" "$temporary_path" || install_status=$?
+    if [[ "$install_status" != "0" ]]; then
         rm -f "$temporary_path"
+        [[ "$install_status" != "124" ]] || return "$install_status"
         printf 'failed to stage container runtime service archive: %s\n' "$source_path" >&2
         exit 2
     fi
-    mv -f "$temporary_path" "$destination_path"
+    run_runtime_start_command "$deadline" \
+        mv -f "$temporary_path" "$destination_path"
     printf -v "$variable_name" '%s' "$destination_path"
 }
 
@@ -629,19 +718,23 @@ resolve_initial_start_init_image_archive() {
 }
 
 prepare_runtime_config_home() {
+    local deadline="$1"
+
     has_matched_init_image_source || return 0
     [[ -n "$runtime_app_root" ]] || return 0
 
     runtime_config_home="$runtime_app_root/xdg-config"
-    mkdir -p "$runtime_config_home"
+    run_runtime_start_command "$deadline" mkdir -p "$runtime_config_home"
     export XDG_CONFIG_HOME="$runtime_config_home"
 }
 
 configure_matched_init_image() {
+    local deadline="$1"
+
     [[ -n "$runtime_config_home" ]] || return 0
 
     local container_config_dir="$runtime_config_home/container"
-    mkdir -p "$container_config_dir"
+    run_runtime_start_command "$deadline" mkdir -p "$container_config_dir"
     {
         if [[ -n "$runtime_builder_image" ]]; then
             printf '[build]\nimage = "%s"\n\n' "$runtime_builder_image"
@@ -652,23 +745,27 @@ configure_matched_init_image() {
     local runtime_config_dir="$runtime_app_root/config"
     local runtime_config_path="$runtime_config_dir/config.toml"
     local runtime_config_temp
-    mkdir -p "$runtime_config_dir"
+    run_runtime_start_command "$deadline" mkdir -p "$runtime_config_dir"
     runtime_config_temp=$(mktemp "$runtime_config_dir/.config.toml.XXXXXX")
-    cp "$container_config_dir/config.toml" "$runtime_config_temp"
-    chmod 0444 "$runtime_config_temp"
-    mv -f "$runtime_config_temp" "$runtime_config_path"
+    run_runtime_start_command "$deadline" \
+        cp "$container_config_dir/config.toml" "$runtime_config_temp"
+    run_runtime_start_command "$deadline" chmod 0444 "$runtime_config_temp"
+    run_runtime_start_command "$deadline" \
+        mv -f "$runtime_config_temp" "$runtime_config_path"
 
     export CONTAINER_COMPOSE_INIT_IMAGE="$matched_init_image"
 }
 
 configure_runtime_builder_image() {
+    local deadline="$1"
+
     [[ -n "$runtime_config_home" ]] || return 0
     if [[ -z "$runtime_builder_image" ]]; then
         return 0
     fi
 
     local container_config_dir="$runtime_config_home/container"
-    mkdir -p "$container_config_dir"
+    run_runtime_start_command "$deadline" mkdir -p "$container_config_dir"
     printf '[build]\nimage = "%s"\n' "$runtime_builder_image" \
         >"$container_config_dir/config.toml"
 }
@@ -775,35 +872,39 @@ install_matched_init_image() {
 }
 
 validate_runtime_inputs
-validate_containerization_init_source
+runtime_start_sequence_deadline=$(runtime_start_deadline)
+validate_containerization_init_source "$runtime_start_sequence_deadline"
 resolve_matched_init_image
-validate_runtime_init_image_archive
+validate_runtime_init_image_archive "$runtime_start_sequence_deadline"
 configure_runtime_namespace
-verify_runtime_namespace_support
+verify_runtime_namespace_support "$runtime_start_sequence_deadline"
 
 if [[ "${CONTAINER_RUNTIME_MANAGED:-0}" == "1" ]]; then
-    ensure_managed_runtime_ready
+    ensure_managed_runtime_ready "$runtime_start_sequence_deadline"
     "$@"
     exit
 fi
 
 trap cleanup_runtime_service_inputs EXIT
-stage_runtime_service_inputs
-acquire_container_runtime_lock
+stage_runtime_service_inputs "$runtime_start_sequence_deadline"
+runtime_lock_timeout=$(runtime_start_lock_timeout_seconds \
+    "$runtime_start_sequence_deadline")
+CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS="$runtime_lock_timeout" \
+    acquire_container_runtime_lock
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap cleanup EXIT
 
 printf 'Stopping stale container services...\n'
-stop_runtime
-sleep 3
-prepare_runtime_root
-stage_containerization_init_source
+stop_runtime "$runtime_start_sequence_deadline"
+run_runtime_start_command "$runtime_start_sequence_deadline" sleep 3
+prepare_runtime_root "$runtime_start_sequence_deadline"
+stage_containerization_init_source "$runtime_start_sequence_deadline"
 resolve_initial_start_init_image_archive
-prepare_runtime_config_home
-configure_runtime_builder_image
+prepare_runtime_config_home "$runtime_start_sequence_deadline"
+configure_runtime_builder_image "$runtime_start_sequence_deadline"
 if [[ -n "$initial_start_init_image_archive" ]]; then
-    configure_matched_init_image
+    configure_matched_init_image "$runtime_start_sequence_deadline"
 fi
 
 printf 'Starting matched container runtime...\n'
@@ -824,13 +925,12 @@ fi
 if [[ -n "$initial_start_init_image_archive" ]]; then
     start_arguments+=(--init-image-archive "$initial_start_init_image_archive")
 fi
-runtime_start_sequence_deadline=$(runtime_start_deadline)
 start_runtime "$runtime_start_sequence_deadline"
 install_runtime_builder_image "$runtime_start_sequence_deadline"
 install_runtime_bootstrap_image "$runtime_start_sequence_deadline"
 install_matched_init_image "$runtime_start_sequence_deadline"
 if [[ -z "$initial_start_init_image_archive" ]]; then
-    configure_matched_init_image
+    configure_matched_init_image "$runtime_start_sequence_deadline"
 fi
 if [[ -n "$runtime_config_home" ]]; then
     printf 'Restarting matched container runtime with the installed init image...\n'

@@ -34,6 +34,11 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--seconds", type=float, required=True)
     parser.add_argument("--grace-seconds", type=float, default=10.0)
+    parser.add_argument(
+        "--ignore-parent-signals",
+        action="store_true",
+        help="let bounded cleanup finish despite repeated parent termination",
+    )
     parser.add_argument("command", nargs=argparse.REMAINDER)
     parsed = parser.parse_args(arguments)
     if parsed.command[:1] == ["--"]:
@@ -52,6 +57,13 @@ def signal_process_group(process_group_id: int, number: int) -> None:
         os.killpg(process_group_id, number)
     except ProcessLookupError:
         pass
+    except PermissionError:
+        # The group can transiently contain only reparented or already-exited
+        # descendants on Darwin. Still signal the direct child when possible.
+        try:
+            os.kill(process_group_id, number)
+        except (ProcessLookupError, PermissionError):
+            pass
 
 
 def process_group_exists(process_group_id: int) -> bool:
@@ -111,7 +123,7 @@ def run(arguments: Sequence[str]) -> int:
     options = parse_arguments(arguments)
     forwarded_signal: int | None = None
     previous_handlers: dict[int, signal.Handlers] = {}
-    forwarded_signals = {signal.SIGINT, signal.SIGTERM}
+    forwarded_signals = {signal.SIGHUP, signal.SIGINT, signal.SIGTERM}
     previous_signal_mask = signal.pthread_sigmask(
         signal.SIG_BLOCK, forwarded_signals
     )
@@ -140,8 +152,9 @@ def run(arguments: Sequence[str]) -> int:
             forwarded_signal = number
         signal_process_group(process.pid, number)
 
-    for number in (signal.SIGINT, signal.SIGTERM):
-        previous_handlers[number] = signal.signal(number, forward_signal)
+    for number in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+        handler = signal.SIG_IGN if options.ignore_parent_signals else forward_signal
+        previous_handlers[number] = signal.signal(number, handler)
 
     try:
         signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
