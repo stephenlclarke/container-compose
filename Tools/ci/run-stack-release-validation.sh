@@ -275,6 +275,8 @@ if [[ -n "${checkpoint_directory}" ]]; then
       printf 'environment=CXX=%s\n' "${CXX:-}"
       printf 'environment=RELEASE_GATE_STACK_TIMEOUT_SECONDS=%s\n' \
         "${RELEASE_GATE_STACK_TIMEOUT_SECONDS:-}"
+      printf 'environment=RELEASE_GATE_INHERITED_ENVIRONMENT_FINGERPRINT=%s\n' \
+        "${RELEASE_GATE_INHERITED_ENVIRONMENT_FINGERPRINT:-}"
       printf 'environment=RELEASE_GATE_TOOL_FINGERPRINT=%s\n' \
         "${RELEASE_GATE_TOOL_FINGERPRINT:-}"
       for tool_name in git make swift clang go ruby python3 docker hawkeye shellcheck xcodebuild; do

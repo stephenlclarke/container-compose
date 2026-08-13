@@ -1042,9 +1042,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn("RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT", makefile)
         self.assertIn("init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT)", makefile)
-        self.assertIn("RELEASE_GATE_INHERITED_ENVIRONMENT_FINGERPRINT", makefile)
+        self.assertIn("fingerprint-release-environment.py", makefile)
         self.assertIn(
-            "environment=$(RELEASE_GATE_INHERITED_ENVIRONMENT_FINGERPRINT)",
+            ":environment=$$environment_fingerprint",
             makefile,
         )
         self.assertIn("parity-inputs=$(RELEASE_GATE_PARITY_INPUT_FINGERPRINT)", makefile)
@@ -1077,11 +1077,6 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                         "make",
                         "--no-print-directory",
                         "-s",
-                        "--eval",
-                        (
-                            "print-release-gate-fingerprint: ; "
-                            "@printf '%s\\n' '$(RELEASE_GATE_FINGERPRINT)'"
-                        ),
                         "print-release-gate-fingerprint",
                         f"CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE={archive}",
                         f"PARITY_REPETITIONS={repetitions}",
@@ -1164,7 +1159,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         result_inputs = defaulted_inputs - output_only_inputs
         parity_fingerprint = makefile[
             makefile.index("RELEASE_GATE_PARITY_INPUT_FINGERPRINT") : makefile.index(
-                "override RELEASE_GATE_FINGERPRINT ="
+                "override RELEASE_GATE_STATIC_FINGERPRINT ="
             )
         ]
 

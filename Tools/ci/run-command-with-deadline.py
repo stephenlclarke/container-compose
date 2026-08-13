@@ -82,6 +82,33 @@ def process_group_exists(process_group_id: int) -> bool:
     return True
 
 
+def process_group_has_live_members(process_group_id: int) -> bool:
+    """Treat zombie-only groups as complete while retaining a safe fallback."""
+    try:
+        completed = subprocess.run(
+            ["ps", "-axo", "pgid=,state="],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return process_group_exists(process_group_id)
+    if completed.returncode != 0:
+        return process_group_exists(process_group_id)
+
+    for line in completed.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 2 or not fields[0].isdigit():
+            continue
+        if int(fields[0]) != process_group_id:
+            continue
+        if not fields[1].upper().startswith("Z"):
+            return True
+    return False
+
+
 def normalized_exit_status(return_code: int) -> int:
     if return_code < 0:
         return 128 - return_code
@@ -104,7 +131,7 @@ def start_detached_cleanup_watchdog(
             except OSError:
                 pass
         cleanup_deadline = time.monotonic() + grace_seconds
-        while process_group_exists(process_group_id):
+        while process_group_has_live_members(process_group_id):
             remaining = cleanup_deadline - time.monotonic()
             if remaining <= 0:
                 signal_process_group(process_group_id, signal.SIGKILL)
@@ -197,7 +224,7 @@ def run(arguments: Sequence[str]) -> int:
                 grace_deadline = time.monotonic() + options.grace_seconds
                 while True:
                     process.poll()
-                    if not process_group_exists(process.pid):
+                    if not process_group_has_live_members(process.pid):
                         break
                     grace_remaining = grace_deadline - time.monotonic()
                     if grace_remaining <= 0:

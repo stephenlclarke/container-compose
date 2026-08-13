@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import signal
 import sys
@@ -23,8 +24,19 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import ModuleType
+from unittest import mock
 
 SCRIPT = Path(__file__).with_name("run-command-with-deadline.py")
+
+
+def load_script() -> ModuleType:
+    specification = importlib.util.spec_from_file_location("deadline_runner", SCRIPT)
+    if specification is None or specification.loader is None:
+        raise RuntimeError(f"could not load {SCRIPT}")
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
 
 
 def process_state(pid: int) -> str:
@@ -37,6 +49,28 @@ def process_state(pid: int) -> str:
 
 
 class RunCommandWithDeadlineTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.module = load_script()
+
+    def test_zombie_only_process_group_has_no_live_members(self) -> None:
+        process_group = 4242
+        zombie_processes = subprocess.CompletedProcess(
+            args=["ps"], returncode=0, stdout="4242 Z\n4242 Z+\n", stderr=""
+        )
+        live_processes = subprocess.CompletedProcess(
+            args=["ps"], returncode=0, stdout="4242 Z\n4242 S+\n", stderr=""
+        )
+
+        with mock.patch.object(
+            self.module.subprocess, "run", return_value=zombie_processes
+        ):
+            self.assertFalse(self.module.process_group_has_live_members(process_group))
+        with mock.patch.object(
+            self.module.subprocess, "run", return_value=live_processes
+        ):
+            self.assertTrue(self.module.process_group_has_live_members(process_group))
+
     def test_returns_the_child_status_and_output(self) -> None:
         result = subprocess.run(
             [

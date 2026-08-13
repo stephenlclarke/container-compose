@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -87,6 +88,101 @@ class FingerprintReleaseEnvironmentTest(unittest.TestCase):
             changed = self.module.fingerprint_environment(environment, root)
 
             self.assertNotEqual(initial, changed)
+
+    def test_unknown_selected_file_location_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "first" / "future-input"
+            second = root / "second" / "future-input"
+            first.parent.mkdir()
+            second.parent.mkdir()
+            first.write_bytes(b"same contents")
+            second.write_bytes(b"same contents")
+
+            initial = self.module.fingerprint_environment(
+                {"FUTURE_RELEASE_FILE": str(first), "PATH": "/usr/bin"}, root
+            )
+            relocated = self.module.fingerprint_environment(
+                {"FUTURE_RELEASE_FILE": str(second), "PATH": "/usr/bin"}, root
+            )
+
+            self.assertNotEqual(initial, relocated)
+
+    def test_make_command_line_selected_file_content_is_part_of_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            normalizer = root / "compose normalizer"
+            normalizer.write_bytes(b"first normalizer")
+            escaped_normalizer = str(normalizer).replace(" ", "\\ ")
+            environment = {
+                "MAKEFLAGS": (
+                    "s -- CONTAINER_COMPOSE_NORMALIZER=" + escaped_normalizer
+                ),
+                "MAKEOVERRIDES": "${-*-command-variables-*-}",
+                "PATH": "/usr/bin",
+            }
+            initial = self.module.fingerprint_environment(environment, root)
+            normalizer.write_bytes(b"second normalizer")
+            changed = self.module.fingerprint_environment(environment, root)
+
+            self.assertNotEqual(initial, changed)
+
+    def test_fresh_runtime_paths_normalize_to_content_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def runtime_environment(name: str) -> dict[str, str]:
+                runtime = root / name
+                binary = runtime / "candidate" / "bin" / "container"
+                binary.parent.mkdir(parents=True)
+                binary.write_bytes(b"immutable container candidate")
+                config = runtime / "app" / "xdg-config" / "container" / "config.toml"
+                config.parent.mkdir(parents=True)
+                config.write_text('[build]\nimage = "fixture"\n', encoding="utf-8")
+                candidate_path = str(binary.parent)
+                return {
+                    "CONTAINER_RUNTIME_CLI": str(binary),
+                    "CONTAINER_RUNTIME_CLI_SHA256": self.module.sha256_file(binary),
+                    "MAKEFLAGS": (
+                        "s -- CONTAINER_COMPOSE_CONTAINER=" + str(binary)
+                    ),
+                    "PATH": os.pathsep.join(
+                        (candidate_path, candidate_path, "/usr/bin")
+                    ),
+                    "XDG_CONFIG_HOME": str(config.parents[1]),
+                }
+
+            first_environment = runtime_environment("first-run")
+            second_environment = runtime_environment("second-run")
+
+            first = self.module.fingerprint_environment(first_environment, root)
+            second = self.module.fingerprint_environment(second_environment, root)
+
+            self.assertEqual(first, second)
+
+    def test_runtime_candidate_or_config_content_invalidates_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "candidate" / "bin" / "container"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"first candidate")
+            config = root / "xdg" / "container" / "config.toml"
+            config.parent.mkdir(parents=True)
+            config.write_text("first config\n", encoding="utf-8")
+            environment = {
+                "CONTAINER_RUNTIME_CLI": str(binary),
+                "MAKEFLAGS": "s -- CONTAINER_COMPOSE_CONTAINER=" + str(binary),
+                "PATH": f"{binary.parent}{os.pathsep}/usr/bin",
+                "XDG_CONFIG_HOME": str(config.parents[1]),
+            }
+            baseline = self.module.fingerprint_environment(environment, root)
+            binary.write_bytes(b"second candidate")
+            changed_binary = self.module.fingerprint_environment(environment, root)
+            config.write_text("second config\n", encoding="utf-8")
+            changed_config = self.module.fingerprint_environment(environment, root)
+
+            self.assertNotEqual(baseline, changed_binary)
+            self.assertNotEqual(changed_binary, changed_config)
 
     def test_manifest_never_contains_plaintext_values_or_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

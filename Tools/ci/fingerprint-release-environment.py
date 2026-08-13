@@ -22,12 +22,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
+import stat
 from collections.abc import Mapping
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # These values select isolated execution locations or evidence destinations;
 # they cannot change the code, policy, tools, fixtures, or runtime candidate
@@ -71,6 +73,33 @@ NON_RESULT_SESSION_VARIABLES = frozenset(
     }
 )
 
+# GNU Make serializes command-line variable assignments into MAKEFLAGS for
+# recursive invocations, including on the system GNU Make 3.81 shipped by
+# macOS. MAKEOVERRIDES may contain only Make's internal expansion placeholder,
+# so both variables are represented by parse_make_inputs() instead of being
+# hashed as opaque environment values.
+MAKE_INTERNAL_VARIABLES = frozenset({"MAKEFLAGS", "MAKEOVERRIDES"})
+MAKE_ASSIGNMENT = re.compile(
+    r"^(?P<name>[A-Za-z_][A-Za-z0-9_.-]*)"
+    r"(?P<operator>:::=|::=|:=|\+=|\?=|=)(?P<value>.*)$"
+)
+
+# These roots are freshly allocated for each release attempt, but their
+# contents can affect the result. Bind the proof to the directory tree rather
+# than its random absolute location.
+CONTENT_ROOT_VARIABLES = frozenset({"XDG_CONFIG_HOME"})
+
+# The release helper extracts the same immutable Container candidate below a
+# fresh mktemp root on every retry. These selectors establish which PATH entry
+# can be normalized to the selected executable's content identity.
+RELOCATABLE_EXECUTABLE_VARIABLES = frozenset(
+    {
+        "CONTAINER_BIN",
+        "CONTAINER_COMPOSE_CONTAINER",
+        "CONTAINER_RUNTIME_CLI",
+    }
+)
+
 
 def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
@@ -84,6 +113,31 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def sha256_directory(path: Path) -> str:
+    digest = hashlib.sha256()
+    for candidate in sorted(
+        path.rglob("*"), key=lambda item: item.relative_to(path).as_posix()
+    ):
+        relative = candidate.relative_to(path).as_posix()
+        metadata = candidate.lstat()
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(f"{stat.S_IMODE(metadata.st_mode):04o}".encode("ascii"))
+        digest.update(b"\0")
+        if candidate.is_symlink():
+            digest.update(b"symlink\0")
+            digest.update(os.readlink(candidate).encode("utf-8"))
+        elif candidate.is_file():
+            digest.update(b"file\0")
+            digest.update(sha256_file(candidate).encode("ascii"))
+        elif candidate.is_dir():
+            digest.update(b"directory\0")
+        else:
+            digest.update(b"other\0")
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def is_non_result_variable(name: str) -> bool:
     return (
         name in NON_RESULT_VARIABLES
@@ -94,7 +148,7 @@ def is_non_result_variable(name: str) -> bool:
 
 def selected_file(
     value: str, environment: Mapping[str, str], working_directory: Path
-) -> Path | None:
+) -> tuple[Path, tuple[str, ...]] | None:
     selectors = [value.strip()]
     try:
         arguments = shlex.split(value)
@@ -114,7 +168,10 @@ def selected_file(
             direct = working_directory / direct
         try:
             if direct.is_file():
-                return direct.resolve()
+                arguments_after_selector: tuple[str, ...] = ()
+                if selector != selectors[0] and arguments:
+                    arguments_after_selector = tuple(arguments[1:])
+                return direct.resolve(), arguments_after_selector
         except OSError:
             pass
 
@@ -126,24 +183,179 @@ def selected_file(
     if resolved is None:
         return None
     path = Path(resolved)
-    return path.resolve() if path.is_file() else None
+    if not path.is_file():
+        return None
+    return path.resolve(), tuple(arguments[1:])
+
+
+def parse_make_inputs(
+    environment: Mapping[str, str],
+) -> tuple[tuple[str, ...], tuple[tuple[str, str, str], ...]]:
+    makeflags = environment.get("MAKEFLAGS", "")
+    tokens = shlex.split(makeflags)
+    flags: list[str] = []
+    overrides: list[tuple[str, str, str]] = []
+    for token in tokens:
+        if token == "--":
+            continue
+        assignment = MAKE_ASSIGNMENT.match(token)
+        if assignment is None:
+            flags.append(token)
+            continue
+        overrides.append(
+            (
+                assignment.group("name"),
+                assignment.group("operator"),
+                assignment.group("value"),
+            )
+        )
+    return tuple(flags), tuple(overrides)
+
+
+def selected_file_entry(
+    selection: tuple[Path, tuple[str, ...]],
+) -> dict[str, str]:
+    artifact, arguments = selection
+    mode = stat.S_IMODE(artifact.stat().st_mode)
+    return {
+        "arguments_sha256": sha256_bytes(
+            json.dumps(arguments, separators=(",", ":")).encode("utf-8")
+        ),
+        "selected_file_mode": f"{mode:04o}",
+        "selected_file_name_sha256": sha256_bytes(artifact.name.encode("utf-8")),
+        "selected_file_sha256": sha256_file(artifact),
+    }
+
+
+def relocatable_path_directories(
+    environment: Mapping[str, str], working_directory: Path
+) -> dict[Path, str]:
+    directories: dict[Path, list[dict[str, str]]] = {}
+    for name in RELOCATABLE_EXECUTABLE_VARIABLES:
+        value = environment.get(name)
+        if value is None:
+            continue
+        selection = selected_file(value, environment, working_directory)
+        if selection is None:
+            continue
+        artifact, _arguments = selection
+        directories.setdefault(artifact.parent, []).append(
+            selected_file_entry(selection)
+        )
+    return {
+        directory: sha256_bytes(
+            json.dumps(entries, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        )
+        for directory, entries in directories.items()
+    }
+
+
+def normalized_path_identity(
+    value: str, relocatable_directories: Mapping[Path, str]
+) -> str:
+    normalized_entries: list[str] = []
+    for entry in value.split(os.pathsep):
+        resolved: Path | None = None
+        try:
+            path = Path(entry).expanduser()
+            if path.is_dir():
+                resolved = path.resolve()
+        except (OSError, RuntimeError):
+            pass
+        content_identity = (
+            relocatable_directories.get(resolved) if resolved is not None else None
+        )
+        normalized_entries.append(
+            f"selected-directory:{content_identity}"
+            if content_identity is not None
+            else entry
+        )
+    return sha256_bytes(os.pathsep.join(normalized_entries).encode("utf-8"))
+
+
+def value_entry(
+    name: str,
+    value: str,
+    environment: Mapping[str, str],
+    working_directory: Path,
+    relocatable_directories: Mapping[Path, str],
+) -> dict[str, str]:
+    if name == "PATH":
+        return {
+            "normalized_path_sha256": normalized_path_identity(
+                value, relocatable_directories
+            )
+        }
+    if name in CONTENT_ROOT_VARIABLES:
+        try:
+            content_root = Path(value).expanduser()
+            if not content_root.is_absolute():
+                content_root = working_directory / content_root
+            if content_root.is_dir():
+                return {
+                    "selected_directory_sha256": sha256_directory(content_root)
+                }
+        except (OSError, RuntimeError):
+            pass
+        return {"selected_directory_state": "missing"}
+
+    selection = selected_file(value, environment, working_directory)
+    if selection is not None:
+        entry = selected_file_entry(selection)
+        if name not in RELOCATABLE_EXECUTABLE_VARIABLES:
+            entry["value_sha256"] = sha256_bytes(value.encode("utf-8"))
+        return entry
+    return {"value_sha256": sha256_bytes(value.encode("utf-8"))}
 
 
 def environment_manifest(
     environment: Mapping[str, str], working_directory: Path
 ) -> dict[str, object]:
+    make_flags, make_overrides = parse_make_inputs(environment)
+    effective_environment = dict(environment)
+    for name, operator, value in make_overrides:
+        if operator in {"=", ":=", "::=", ":::="}:
+            effective_environment[name] = value
+    relocatable_directories = relocatable_path_directories(
+        effective_environment, working_directory
+    )
+
     entries: dict[str, dict[str, str]] = {}
     for name in sorted(environment):
-        if is_non_result_variable(name):
+        if is_non_result_variable(name) or name in MAKE_INTERNAL_VARIABLES:
             continue
         value = environment[name]
-        entry = {"value_sha256": sha256_bytes(value.encode("utf-8"))}
-        artifact = selected_file(value, environment, working_directory)
-        if artifact is not None:
-            entry["selected_file_sha256"] = sha256_file(artifact)
-        entries[name] = entry
+        entries[name] = value_entry(
+            name,
+            value,
+            effective_environment,
+            working_directory,
+            relocatable_directories,
+        )
+
+    override_entries = []
+    for name, operator, value in make_overrides:
+        override_entries.append(
+            {
+                "identity": value_entry(
+                    name,
+                    value,
+                    effective_environment,
+                    working_directory,
+                    relocatable_directories,
+                ),
+                "name": name,
+                "operator": operator,
+            }
+        )
     return {
         "entries": entries,
+        "make_flags_sha256": sha256_bytes(
+            json.dumps(make_flags, separators=(",", ":")).encode("utf-8")
+        ),
+        "make_overrides": override_entries,
         "schema": SCHEMA_VERSION,
     }
 
