@@ -1336,11 +1336,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             environment["CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE"] = "/tmp/runtime-init.oci.tar"
             environment["CONTAINER_RUNTIME_CLI"] = str(candidate_tools_resolved / "container")
             # This fixture substitutes its own candidate CLI. A full release
-            # gate exports both digests for the real candidate before running
-            # the policy tests, so inheriting either value would make the
-            # fixture validate the fake binary against unrelated live state.
+            # gate exports candidate identity and scratch locations for the
+            # real validation run before running the policy tests. Inheriting
+            # any of them would make the fixture validate its fake binary or
+            # expected default paths against unrelated live state.
             environment.pop("CONTAINER_RUNTIME_CLI_SHA256", None)
             environment.pop("CONTAINER_RUNTIME_CANDIDATE_SHA256", None)
+            environment.pop("CONTAINER_STACK_VALIDATION_SCRATCH_ROOT", None)
             environment["CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR"] = str(
                 root / "checkpoints"
             )
