@@ -267,12 +267,13 @@ raise SystemExit(module.run([
                     self.fail("deadline child did not become ready")
                 time.sleep(0.01)
 
-            started = time.monotonic()
             process.send_signal(signal.SIGTERM)
+            # The timeout already proves the prompt child exits before the
+            # configured three-second grace period without asserting a
+            # scheduler-sensitive sub-second duration.
             stdout, stderr = process.communicate(timeout=2)
 
             self.assertEqual(process.returncode, 143, stdout + stderr)
-            self.assertLess(time.monotonic() - started, 1)
 
     def test_control_signals_are_forwarded_and_reap_the_detached_child_group(
         self,
