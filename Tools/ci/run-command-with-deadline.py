@@ -32,7 +32,13 @@ TIMEOUT_EXIT_STATUS = 124
 
 def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seconds", type=float, required=True)
+    deadline = parser.add_mutually_exclusive_group(required=True)
+    deadline.add_argument("--seconds", type=float)
+    deadline.add_argument(
+        "--no-deadline",
+        action="store_true",
+        help="supervise the command process group without a wall-clock deadline",
+    )
     parser.add_argument("--grace-seconds", type=float, default=10.0)
     parser.add_argument(
         "--ignore-parent-signals",
@@ -43,7 +49,7 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     parsed = parser.parse_args(arguments)
     if parsed.command[:1] == ["--"]:
         parsed.command = parsed.command[1:]
-    if parsed.seconds <= 0:
+    if parsed.seconds is not None and parsed.seconds <= 0:
         parser.error("--seconds must be greater than zero")
     if parsed.grace_seconds < 0:
         parser.error("--grace-seconds must be non-negative")
@@ -158,7 +164,11 @@ def run(arguments: Sequence[str]) -> int:
 
     try:
         signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
-        deadline = time.monotonic() + options.seconds
+        deadline = (
+            None
+            if options.no_deadline
+            else time.monotonic() + options.seconds
+        )
         while True:
             if forwarded_signal is not None:
                 watchdog_pid = start_detached_cleanup_watchdog(
@@ -171,6 +181,10 @@ def run(arguments: Sequence[str]) -> int:
             return_code = process.poll()
             if return_code is not None:
                 return normalized_exit_status(return_code)
+
+            if deadline is None:
+                time.sleep(0.05)
+                continue
 
             remaining = deadline - time.monotonic()
             if remaining <= 0:

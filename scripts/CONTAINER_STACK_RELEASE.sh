@@ -899,10 +899,10 @@ create_release_runtime_parent() {
   trap - EXIT
 }
 
-# Run the candidate-owned gate in the background so this shell can explicitly
-# wait for its namespace cleanup when the process group receives HUP, INT, or TERM.
-# The candidate extraction must remain present until the wrapper's signal trap
-# has completed its namespace-scoped `system stop`.
+# Run the candidate-owned gate in a separately supervised process group so a
+# signal sent only to this helper still reaches the wrapper and every release-
+# gate descendant. The candidate extraction must remain present until both the
+# wrapper's namespace cleanup and process-group cleanup have completed.
 run_local_release_gate_command() {
   local child_pid=""
   local child_status=0
@@ -917,9 +917,9 @@ run_local_release_gate_command() {
     # candidate executable used by the child's cleanup trap.
     trap '' HUP INT TERM
     if [[ -n "${child_pid}" ]]; then
-      # A direct signal to this helper does not reach the background cleanup
-      # owner. Forward it before waiting; a process-group signal is harmlessly
-      # redelivered because the wrapper ignores repeats while cleaning up.
+      # A direct signal to this helper does not reach the background group
+      # supervisor. Forward it before waiting; the supervisor relays it to the
+      # complete detached gate group and waits for every descendant.
       kill -s "${signal_name}" "${child_pid}" 2>/dev/null || true
       if wait "${child_pid}"; then
         child_status=0
@@ -936,11 +936,13 @@ run_local_release_gate_command() {
 
   # Bash gives asynchronous commands ignored SIGINT/SIGQUIT dispositions and
   # otherwise keeps an intermediate subshell whose death would make this wait
-  # finish before the exec'd wrapper cleans up. Reset the dispositions inside
-  # that child and exec the wrapper so child_pid remains the runtime owner.
+  # finish before cleanup. Reset dispositions and exec the process-group
+  # supervisor so child_pid remains the complete gate-tree owner.
   (
     trap - HUP INT TERM
-    exec "$@"
+    exec "${RELEASE_COMMAND_DEADLINE_RUNNER}" \
+      --no-deadline --grace-seconds "${CANDIDATE_STOP_TIMEOUT_SECONDS}" -- \
+      "$@"
   ) &
   child_pid=$!
   # Cover a signal delivered after the launch decision but before Bash stored

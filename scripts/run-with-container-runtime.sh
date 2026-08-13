@@ -958,7 +958,7 @@ install_runtime_bootstrap_image() {
 cleanup() {
     local status=$?
     trap - EXIT
-    trap '' INT TERM
+    trap '' HUP INT TERM
     printf 'Stopping matched container runtime...\n'
     stop_runtime || true
     release_container_runtime_lock
@@ -1041,6 +1041,7 @@ runtime_lock_timeout=$(runtime_start_lock_timeout_seconds \
     "$runtime_start_sequence_deadline")
 CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS="$runtime_lock_timeout" \
     acquire_container_runtime_lock
+trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap cleanup EXIT

@@ -57,6 +57,26 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
         self.assertEqual(result.returncode, 7, result.stderr)
         self.assertEqual(result.stdout, "complete\n")
 
+    def test_no_deadline_returns_the_child_status_and_output(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--no-deadline",
+                "--",
+                "/bin/sh",
+                "-c",
+                'printf "complete\\n"; exit 7',
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertEqual(result.stdout, "complete\n")
+
     def test_timeout_terminates_the_entire_child_process_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -227,8 +247,7 @@ raise SystemExit(module.run([
                 [
                     sys.executable,
                     str(SCRIPT),
-                    "--seconds",
-                    "30",
+                    "--no-deadline",
                     "--grace-seconds",
                     "0.2",
                     "--",

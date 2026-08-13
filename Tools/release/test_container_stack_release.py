@@ -1956,7 +1956,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                         "trap 'cleanup; exit 130' INT\n"
                         "trap 'cleanup; exit 143' TERM\n"
                         "touch \"$READY\"\n"
-                        "while :; do sleep 1; done\n",
+                        # A signal sent only to this wrapper leaves its
+                        # synchronous gate descendant alive and defers the
+                        # wrapper trap. The helper must supervise and signal
+                        # their complete process group.
+                        "/bin/sh -c 'while :; do sleep 1; done'\n",
                         encoding="utf-8",
                     )
                     fake_gate.chmod(0o755)
@@ -2023,6 +2027,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                     self.assertTrue(stop_complete.exists(), stdout + stderr)
                     self.assertTrue(removed.exists(), stdout + stderr)
                     self.assertFalse(candidate_root.exists(), stdout + stderr)
+
+        local_gate = self.script[
+            self.script.index("run_local_release_gate_command() {") : self.script.index(
+                "# Resolve retained evidence"
+            )
+        ]
+        self.assertIn('"${RELEASE_COMMAND_DEADLINE_RUNNER}"', local_gate)
+        self.assertIn("--no-deadline", local_gate)
 
     def test_outer_marker_cleans_a_pre_runtime_interrupt_root(self) -> None:
         with tempfile.TemporaryDirectory(dir="/tmp", prefix="cc-parent-test.") as directory:
