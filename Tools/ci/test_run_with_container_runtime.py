@@ -64,6 +64,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             "CONTAINER_RUNTIME_MANAGED",
             "CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES",
             "CONTAINER_RUNTIME_RUN_ID",
+            "CONTAINER_RUNTIME_START_DEADLINE_SECONDS",
             "CONTAINER_RUNTIME_LOCK_HELD",
             "CONTAINER_RUNTIME_LOCK_KEEPER_PID",
         ):
@@ -1645,6 +1646,53 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(command_marker.exists())
+
+    def test_api_round_trip_hang_stays_inside_the_startup_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            container_log = temporary_root / "container.log"
+            command_marker = temporary_root / "command-ran"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "list --all --format json" ]]; then\n'
+                    "  sleep 30\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(
+                time.monotonic() - started,
+                10,
+                result.stdout + result.stderr,
+            )
+            self.assertFalse(command_marker.exists())
+            invocations = container_log.read_text(encoding="utf-8")
+            self.assertEqual(invocations.count("system start"), 2)
+            self.assertEqual(invocations.count("list --all --format json"), 2)
 
     def test_restarts_once_after_transient_xpc_start_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

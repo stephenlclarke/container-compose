@@ -354,28 +354,37 @@ is_transient_xpc_start_failure() {
 # Start Container and verify an API round-trip, recovering once from transient XPC startup failure.
 start_runtime() {
     local attempt
+    local start_completed
     local start_log
     local start_status
 
     for attempt in 1 2; do
+        start_completed=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-started.XXXXXX")
         start_log=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-start.XXXXXX")
+        # The inner shell receives all values positionally; expansion here would be unsafe.
+        # shellcheck disable=SC2016
         if "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
-            --seconds "$runtime_start_deadline_seconds" -- \
-            "$container_binary" "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
-            if "$container_binary" list --all --format json >/dev/null; then
-                rm -f "$start_log"
-                return
-            else
-                start_status=$?
-            fi
+            --seconds "$runtime_start_deadline_seconds" --grace-seconds 0 -- \
+            /bin/bash -c '
+                container_binary=$1
+                start_completed=$2
+                shift 2
+                "$container_binary" "$@" || exit "$?"
+                touch "$start_completed"
+                "$container_binary" list --all --format json >/dev/null
+            ' runtime-start "$container_binary" "$start_completed" \
+            "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
+            rm -f "$start_completed" "$start_log"
+            return
         else
             start_status=$?
-            if ! is_transient_xpc_start_failure "$start_log"; then
-                rm -f "$start_log"
+            if [[ ! -f "$start_completed" ]] &&
+                ! is_transient_xpc_start_failure "$start_log"; then
+                rm -f "$start_completed" "$start_log"
                 return "$start_status"
             fi
         fi
-        rm -f "$start_log"
+        rm -f "$start_completed" "$start_log"
 
         if [[ "$attempt" == "2" ]]; then
             return "$start_status"

@@ -151,8 +151,8 @@ def run(arguments: Sequence[str]) -> int:
                 watchdog_pid = start_detached_cleanup_watchdog(
                     process.pid, options.grace_seconds
                 )
-                wait_for_watchdog(watchdog_pid)
                 process.wait()
+                wait_for_watchdog(watchdog_pid)
                 return 128 + forwarded_signal
 
             return_code = process.poll()

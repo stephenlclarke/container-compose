@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import subprocess
+import signal
 import sys
 import tempfile
 import time
@@ -184,6 +185,40 @@ raise SystemExit(module.run([
                 check=False,
             )
             self.assertEqual(group_state.returncode, 1, group_state.stdout)
+
+    def test_forwarded_signal_reaps_a_prompt_child_before_the_grace_period(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ready = Path(directory) / "ready"
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--seconds",
+                    "30",
+                    "--grace-seconds",
+                    "3",
+                    "--",
+                    "/bin/sh",
+                    "-c",
+                    f"trap 'exit 0' TERM; touch {ready}; while :; do sleep 1; done",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            ready_deadline = time.monotonic() + 2
+            while not ready.exists():
+                if time.monotonic() >= ready_deadline:
+                    process.kill()
+                    self.fail("deadline child did not become ready")
+                time.sleep(0.01)
+
+            started = time.monotonic()
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=2)
+
+            self.assertEqual(process.returncode, 143, stdout + stderr)
+            self.assertLess(time.monotonic() - started, 1)
 
 
 if __name__ == "__main__":
