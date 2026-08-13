@@ -90,9 +90,70 @@ class RunReleaseCheckpointTest(unittest.TestCase):
         release_parity_timeout: int = 14400,
         parity_stage_timeout: int = 900,
         runtime_start_deadline: int = 300,
-        python: str = "/usr/bin/true",
+        python: str = sys.executable,
         compose_test_binary: str = "/usr/bin/true",
+        normalizer: str | None = None,
+        environment: dict[str, str] | None = None,
     ) -> str:
+        with tempfile.TemporaryDirectory() as directory:
+            supplemental_makefile = Path(directory) / "fingerprint.mk"
+            supplemental_makefile.write_text(
+                "print-release-gate-fingerprint:\n"
+                "\t@printf '%s\\n' \"$(RELEASE_GATE_FINGERPRINT)\"\n",
+                encoding="utf-8",
+            )
+            command = [
+                "make",
+                "--no-print-directory",
+                "-s",
+                "-f",
+                str(ROOT / "Makefile"),
+                "-f",
+                str(supplemental_makefile),
+                "print-release-gate-fingerprint",
+                f"RELEASE_GATE_STACK_TIMEOUT_SECONDS={release_stack_timeout}",
+                f"RELEASE_GATE_PARITY_TIMEOUT_SECONDS={release_parity_timeout}",
+                f"PARITY_STAGE_TIMEOUT_SECONDS={parity_stage_timeout}",
+                f"CONTAINER_RUNTIME_START_DEADLINE_SECONDS={runtime_start_deadline}",
+                "RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT=fixture-init",
+                "RELEASE_GATE_TOOL_FINGERPRINT=fixture-tools",
+                "DOCKER_COMPOSE_REFERENCE=/usr/bin/true",
+                f"PYTHON={python}",
+                f"COMPOSE_TEST_BINARY={compose_test_binary}",
+                "SWIFT=/usr/bin/true",
+                "GO=/usr/bin/true",
+            ]
+            if normalizer is not None:
+                command.append(f"CONTAINER_COMPOSE_NORMALIZER={normalizer}")
+            completed = subprocess.run(
+                command,
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            return completed.stdout.strip()
+
+    def test_release_gate_fingerprints_selected_normalizer_content(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            normalizer = Path(directory) / "compose normalizer"
+            normalizer.write_bytes(b"first normalizer")
+
+            initial = self.release_gate_fingerprint(
+                python=sys.executable,
+                normalizer=str(normalizer),
+            )
+            normalizer.write_bytes(b"second normalizer")
+            changed = self.release_gate_fingerprint(
+                python=sys.executable,
+                normalizer=str(normalizer),
+            )
+
+            self.assertNotEqual(initial, changed)
+
+    def test_release_fingerprint_cannot_be_replaced_by_a_caller(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             supplemental_makefile = Path(directory) / "fingerprint.mk"
             supplemental_makefile.write_text(
@@ -110,25 +171,37 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                     "-f",
                     str(supplemental_makefile),
                     "print-release-gate-fingerprint",
-                    f"RELEASE_GATE_STACK_TIMEOUT_SECONDS={release_stack_timeout}",
-                    f"RELEASE_GATE_PARITY_TIMEOUT_SECONDS={release_parity_timeout}",
-                    f"PARITY_STAGE_TIMEOUT_SECONDS={parity_stage_timeout}",
-                    f"CONTAINER_RUNTIME_START_DEADLINE_SECONDS={runtime_start_deadline}",
-                    "RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT=fixture-init",
-                    "RELEASE_GATE_TOOL_FINGERPRINT=fixture-tools",
-                    "DOCKER_COMPOSE_REFERENCE=/usr/bin/true",
-                    f"PYTHON={python}",
-                    f"COMPOSE_TEST_BINARY={compose_test_binary}",
-                    "SWIFT=/usr/bin/true",
-                    "GO=/usr/bin/true",
+                    "RELEASE_GATE_FINGERPRINT=forged",
                 ],
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
                 check=False,
             )
+
             self.assertEqual(completed.returncode, 0, completed.stderr)
-            return completed.stdout.strip()
+            self.assertNotEqual(completed.stdout.strip(), "forged")
+
+    def test_release_gate_rejects_an_empty_derived_environment_identity(self) -> None:
+        completed = subprocess.run(
+            [
+                "make",
+                "--no-print-directory",
+                "release-gate-environment-fingerprint-check",
+                "PYTHON=/usr/bin/true",
+                "RELEASE_GATE_INHERITED_ENVIRONMENT_FINGERPRINT=" + ("a" * 64),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn(
+            "could not fingerprint the inherited release-gate environment",
+            completed.stderr,
+        )
 
     def release_gate_tool_fingerprint(
         self,
