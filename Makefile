@@ -144,11 +144,12 @@ RELEASE_GATE_STAGE_TIMEOUT_SECONDS ?= 7200
 RELEASE_GATE_STACK_TIMEOUT_SECONDS ?= 14400
 RELEASE_GATE_PARITY_TIMEOUT_SECONDS ?= 14400
 PARITY_STAGE_TIMEOUT_SECONDS ?= 900
+CONTAINER_RUNTIME_START_DEADLINE_SECONDS ?= 300
 RELEASE_GATE_CHECKPOINT_DIR = $(if $(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR),$(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR)/compose-release-gate,)
 PARITY_GATE_CHECKPOINT_DIR = $(if $(RELEASE_GATE_CHECKPOINT_DIR),$(RELEASE_GATE_CHECKPOINT_DIR)/parity,)
 RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT = $(shell if [[ -z "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" ]]; then printf unset; elif [[ -f "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" ]]; then shasum -a 256 "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" | awk '{print $$1}'; else printf missing; fi)
 RELEASE_GATE_TOOL_FINGERPRINT = $(shell { for tool in git make swift clang go ruby python3 docker hawkeye shellcheck markdownlint xcodebuild; do path="$$(command -v "$$tool" 2>/dev/null || true)"; printf '%s=%s\n' "$$tool" "$${path:-missing}"; if [[ -f "$$path" ]]; then shasum -a 256 "$$path"; fi; done; } | shasum -a 256 | awk '{print $$1}')
-RELEASE_GATE_FINGERPRINT ?= compose=$(shell /usr/bin/git rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):builder=$(shell /usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):containerization=$(shell /usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):container=$(shell /usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):homebrew=$(shell if [[ -f "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" ]]; then shasum -a 256 "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" | awk '{print $$1}'; else printf missing; fi):candidate=$(CONTAINER_RUNTIME_CANDIDATE_SHA256):init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT):tools=$(RELEASE_GATE_TOOL_FINGERPRINT):engine=$(PARITY_CONTAINER_ENGINE_API_REF):container-source=$(CONTAINER_SOURCE):container-ref=$(PARITY_CONTAINER_REF):containerization-source=$(CONTAINERIZATION_SOURCE):containerization-ref=$(PARITY_CONTAINERIZATION_REF):swift=$(shell $(SWIFT) --version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):swift-resolved-flags=$(SWIFT_RESOLVED_FLAGS):swift-test-flags=$(SWIFT_TEST_FLAGS):swift-test-run-flags=$(SWIFT_TEST_RUN_FLAGS):swift-test-attempts=$(SWIFT_TEST_ATTEMPTS):swift-coverage-attempts=$(SWIFT_COVERAGE_TEST_ATTEMPTS):swift-runtime-filter=$(SWIFT_RUNTIME_TEST_FILTER):go=$(shell $(GO) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):go-release-env=$(GO_RELEASE_ENV):go-release-build-flags=$(GO_RELEASE_BUILD_FLAGS):go-release-ldflags=$(GO_RELEASE_LDFLAGS):docker=$(shell $(DOCKER_COMPOSE_REFERENCE) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):reference=$(DOCKER_COMPOSE_REFERENCE_VERSION):fixtures=$(DOCKER_COMPOSE_E2E_REF):parity-repetitions=$(PARITY_REPETITIONS):parity-timeout=$(PARITY_TIMEOUT_SECONDS):parity-live=1:build-check-live=1:swift-core-min=$(SWIFT_CORE_COVERAGE_MIN):swift-runtime-spi-min=$(SWIFT_RUNTIME_SPI_COVERAGE_MIN):swift-provider-min=$(SWIFT_PROVIDER_COVERAGE_MIN):swift-plugin-min=$(SWIFT_PLUGIN_COVERAGE_MIN):swift-aggregate-min=$(SWIFT_AGGREGATE_COVERAGE_MIN):go-min=$(GO_COVERAGE_MIN)
+RELEASE_GATE_FINGERPRINT ?= compose=$(shell /usr/bin/git rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):builder=$(shell /usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):containerization=$(shell /usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):container=$(shell /usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):homebrew=$(shell if [[ -f "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" ]]; then shasum -a 256 "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" | awk '{print $$1}'; else printf missing; fi):candidate=$(CONTAINER_RUNTIME_CANDIDATE_SHA256):init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT):tools=$(RELEASE_GATE_TOOL_FINGERPRINT):engine=$(PARITY_CONTAINER_ENGINE_API_REF):container-source=$(CONTAINER_SOURCE):container-ref=$(PARITY_CONTAINER_REF):containerization-source=$(CONTAINERIZATION_SOURCE):containerization-ref=$(PARITY_CONTAINERIZATION_REF):swift=$(shell $(SWIFT) --version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):swift-resolved-flags=$(SWIFT_RESOLVED_FLAGS):swift-test-flags=$(SWIFT_TEST_FLAGS):swift-test-run-flags=$(SWIFT_TEST_RUN_FLAGS):swift-test-attempts=$(SWIFT_TEST_ATTEMPTS):swift-coverage-attempts=$(SWIFT_COVERAGE_TEST_ATTEMPTS):swift-runtime-filter=$(SWIFT_RUNTIME_TEST_FILTER):go=$(shell $(GO) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):go-release-env=$(GO_RELEASE_ENV):go-release-build-flags=$(GO_RELEASE_BUILD_FLAGS):go-release-ldflags=$(GO_RELEASE_LDFLAGS):docker=$(shell $(DOCKER_COMPOSE_REFERENCE) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):reference=$(DOCKER_COMPOSE_REFERENCE_VERSION):fixtures=$(DOCKER_COMPOSE_E2E_REF):parity-repetitions=$(PARITY_REPETITIONS):parity-timeout=$(PARITY_TIMEOUT_SECONDS):parity-stage-timeout=$(PARITY_STAGE_TIMEOUT_SECONDS):runtime-start-deadline=$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS):parity-live=1:build-check-live=1:swift-core-min=$(SWIFT_CORE_COVERAGE_MIN):swift-runtime-spi-min=$(SWIFT_RUNTIME_SPI_COVERAGE_MIN):swift-provider-min=$(SWIFT_PROVIDER_COVERAGE_MIN):swift-plugin-min=$(SWIFT_PLUGIN_COVERAGE_MIN):swift-aggregate-min=$(SWIFT_AGGREGATE_COVERAGE_MIN):go-min=$(GO_COVERAGE_MIN)
 PARITY_ENV = \
 	CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" \
 	CONTAINER_COMPOSE_LIVE="$(CONTAINER_COMPOSE_LIVE)" \
@@ -341,6 +342,7 @@ swift-runtime-test: container-stack-build build swift-runtime-test-build
 	CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
+		CONTAINER_RUNTIME_START_DEADLINE_SECONDS="$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		env CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
@@ -1430,6 +1432,7 @@ docker-compose-parity: build container-stack-build docker-compose-reference
 	CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
+		CONTAINER_RUNTIME_START_DEADLINE_SECONDS="$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		$(MAKE) --no-print-directory -j1 \
@@ -1647,6 +1650,7 @@ docker-compose-performance-matrix: build docker-compose-reference
 	CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
+		CONTAINER_RUNTIME_START_DEADLINE_SECONDS="$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 			env CONTAINER_COMPOSE_CONTAINER="$$container_binary" \

@@ -24,9 +24,48 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("run-release-checkpoint.py")
+ROOT = SCRIPT.parents[2]
 
 
 class RunReleaseCheckpointTest(unittest.TestCase):
+    def release_gate_fingerprint(
+        self,
+        parity_stage_timeout: int,
+        runtime_start_deadline: int,
+    ) -> str:
+        with tempfile.TemporaryDirectory() as directory:
+            supplemental_makefile = Path(directory) / "fingerprint.mk"
+            supplemental_makefile.write_text(
+                "print-release-gate-fingerprint:\n"
+                "\t@printf '%s\\n' \"$(RELEASE_GATE_FINGERPRINT)\"\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-s",
+                    "-f",
+                    str(ROOT / "Makefile"),
+                    "-f",
+                    str(supplemental_makefile),
+                    "print-release-gate-fingerprint",
+                    f"PARITY_STAGE_TIMEOUT_SECONDS={parity_stage_timeout}",
+                    f"CONTAINER_RUNTIME_START_DEADLINE_SECONDS={runtime_start_deadline}",
+                    "RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT=fixture-init",
+                    "RELEASE_GATE_TOOL_FINGERPRINT=fixture-tools",
+                    "DOCKER_COMPOSE_REFERENCE=/usr/bin/true",
+                    "SWIFT=/usr/bin/true",
+                    "GO=/usr/bin/true",
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            return completed.stdout.strip()
+
     def run_stage(
         self,
         checkpoint_directory: Path,
@@ -97,6 +136,16 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                 (checkpoints / "compose-ci.success.json").read_text(encoding="utf-8")
             )
             self.assertEqual(checkpoint["seconds"], 4)
+
+    def test_outer_fingerprint_tracks_nested_deadline_controls(self) -> None:
+        baseline = self.release_gate_fingerprint(900, 300)
+        tighter_parity = self.release_gate_fingerprint(899, 300)
+        tighter_start = self.release_gate_fingerprint(900, 299)
+
+        self.assertIn("parity-stage-timeout=900", baseline)
+        self.assertIn("runtime-start-deadline=300", baseline)
+        self.assertNotEqual(tighter_parity, baseline)
+        self.assertNotEqual(tighter_start, baseline)
 
     def test_failure_is_recorded_but_not_reused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

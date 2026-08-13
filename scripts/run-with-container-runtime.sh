@@ -351,20 +351,67 @@ is_transient_xpc_start_failure() {
         "$start_log"
 }
 
+# Return an absolute monotonic deadline for the complete runtime-start sequence.
+runtime_start_deadline() {
+    python3 - "$runtime_start_deadline_seconds" <<'PY'
+import sys
+import time
+
+print(f"{time.monotonic() + float(sys.argv[1]):.9f}")
+PY
+}
+
+# Print the positive wall-clock budget remaining before a runtime-start deadline.
+runtime_start_remaining_seconds() {
+    local deadline="$1"
+
+    python3 - "$deadline" <<'PY'
+import sys
+import time
+
+remaining = float(sys.argv[1]) - time.monotonic()
+if remaining <= 0:
+    raise SystemExit(1)
+print(f"{remaining:.6f}")
+PY
+}
+
+# Print a retry delay that never extends beyond the runtime-start deadline.
+runtime_start_retry_delay() {
+    local deadline="$1"
+
+    python3 - "$deadline" <<'PY'
+import sys
+import time
+
+remaining = float(sys.argv[1]) - time.monotonic()
+if remaining <= 0:
+    raise SystemExit(1)
+print(f"{min(3.0, remaining):.6f}")
+PY
+}
+
 # Start Container and verify an API round-trip, recovering once from transient XPC startup failure.
 start_runtime() {
     local attempt
+    local remaining_seconds
+    local retry_delay
+    local sequence_deadline
     local start_completed
     local start_log
     local start_status
 
+    sequence_deadline=$(runtime_start_deadline)
     for attempt in 1 2; do
+        if ! remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline"); then
+            return 124
+        fi
         start_completed=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-started.XXXXXX")
         start_log=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-start.XXXXXX")
         # The inner shell receives all values positionally; expansion here would be unsafe.
         # shellcheck disable=SC2016
         if "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
-            --seconds "$runtime_start_deadline_seconds" --grace-seconds 0 -- \
+            --seconds "$remaining_seconds" --grace-seconds 0 -- \
             /bin/bash -c '
                 container_binary=$1
                 start_completed=$2
@@ -390,8 +437,16 @@ start_runtime() {
             return "$start_status"
         fi
         printf 'Container API was not ready; restarting the matched runtime once...\n' >&2
-        stop_runtime
-        sleep 3
+        if ! remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline"); then
+            return 124
+        fi
+        "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
+            --seconds "$remaining_seconds" --grace-seconds 0 -- \
+            "$container_binary" system stop >/dev/null 2>&1 || true
+        if ! retry_delay=$(runtime_start_retry_delay "$sequence_deadline"); then
+            return 124
+        fi
+        sleep "$retry_delay"
     done
 }
 

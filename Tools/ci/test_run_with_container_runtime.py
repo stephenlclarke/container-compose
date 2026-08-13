@@ -1647,7 +1647,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(command_marker.exists())
 
-    def test_api_round_trip_hang_stays_inside_the_startup_deadline(self) -> None:
+    def test_api_round_trip_hang_consumes_the_shared_startup_deadline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
             app_root = temporary_root / "app-root"
@@ -1680,19 +1680,19 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=10,
+                timeout=7,
             )
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
             self.assertLess(
                 time.monotonic() - started,
-                10,
+                6,
                 result.stdout + result.stderr,
             )
             self.assertFalse(command_marker.exists())
             invocations = container_log.read_text(encoding="utf-8")
-            self.assertEqual(invocations.count("system start"), 2)
-            self.assertEqual(invocations.count("list --all --format json"), 2)
+            self.assertEqual(invocations.count("system start"), 1)
+            self.assertEqual(invocations.count("list --all --format json"), 1)
 
     def test_restarts_once_after_transient_xpc_start_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
