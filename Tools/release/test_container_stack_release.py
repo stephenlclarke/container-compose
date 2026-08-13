@@ -1042,8 +1042,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn("RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT", makefile)
         self.assertIn("init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT)", makefile)
-        self.assertIn("parity-repetitions=$(PARITY_REPETITIONS)", makefile)
-        self.assertIn("parity-timeout=$(PARITY_TIMEOUT_SECONDS)", makefile)
+        self.assertIn("parity-inputs=$(RELEASE_GATE_PARITY_INPUT_FINGERPRINT)", makefile)
         self.assertIn("run-release-checkpoint.py", makefile)
         self.assertEqual(
             makefile.count("env -u CONTAINER_BIN -u CONTAINER_COMPOSE_CONTAINER"),
@@ -1065,7 +1064,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 test_flags: str = "",
                 test_attempts: int = 2,
                 go_build_flags: str = "-trimpath",
+                parity_overrides: dict[str, str] | None = None,
             ) -> str:
+                parity_overrides = parity_overrides or {}
                 completed = subprocess.run(
                     [
                         "make",
@@ -1084,6 +1085,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                         f"SWIFT_TEST_FLAGS={test_flags}",
                         f"SWIFT_TEST_ATTEMPTS={test_attempts}",
                         f"GO_RELEASE_BUILD_FLAGS={go_build_flags}",
+                        *(
+                            f"{name}={value}"
+                            for name, value in parity_overrides.items()
+                        ),
                     ],
                     cwd=ROOT,
                     check=False,
@@ -1121,6 +1126,48 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertNotEqual(changed_flags, changed_attempts)
             self.assertNotEqual(changed_attempts, changed_go_flags)
             self.assertNotIn(str(archive), changed_archive)
+
+            parity_baseline = fingerprint(3)
+            for name, value in {
+                "DOCKER_COMPOSE_PARITY_TARGETS": "docker-compose-links-parity",
+                "PARITY_TIMING_MAX_RATIO": "9",
+                "PARITY_TIMING_MIN_DELTA_SECONDS": "4",
+                "PARITY_COMPARABLE_NOISE_PCT": "4",
+                "PARITY_SINK_STALL_SECONDS": "3",
+                "PARITY_PRESSURE_RECORDS": "32768",
+                "PARITY_DOCKER_HOST_ADDRESS": "docker.example.invalid",
+                "PARITY_CONTAINER_HOST_ADDRESS": "127.0.0.2",
+            }.items():
+                with self.subTest(parity_input=name):
+                    self.assertNotEqual(
+                        parity_baseline,
+                        fingerprint(3, parity_overrides={name: value}),
+                    )
+
+    def test_release_gate_fingerprints_all_defaulted_parity_result_inputs(
+        self,
+    ) -> None:
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        parity_source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (ROOT / "Tools" / "parity").glob("*.sh")
+        )
+        defaulted_inputs = set(
+            re.findall(r'\b(PARITY_[A-Z0-9_]+)="\$\{\1:-', parity_source)
+        )
+        output_only_inputs = {"PARITY_EVIDENCE_DIR", "PARITY_TIMING_OUTPUT"}
+        result_inputs = defaulted_inputs - output_only_inputs
+        parity_fingerprint = makefile[
+            makefile.index("RELEASE_GATE_PARITY_INPUT_FINGERPRINT") : makefile.index(
+                "RELEASE_GATE_FINGERPRINT ?="
+            )
+        ]
+
+        self.assertTrue(result_inputs)
+        for name in result_inputs:
+            with self.subTest(parity_input=name):
+                self.assertIn(f"$({name})", parity_fingerprint)
+        self.assertIn("$(DOCKER_COMPOSE_PARITY_TARGETS)", parity_fingerprint)
 
     def test_phase5_builder_suites_are_unconditionally_restored(self) -> None:
         validation = STACK_RELEASE_VALIDATION.read_text(encoding="utf-8")
