@@ -377,6 +377,19 @@ print(f"{remaining:.6f}")
 PY
 }
 
+# Run one startup-side operation with only the budget left for the complete
+# startup flow. This keeps image loads and source builds inside the same bound
+# as service start and readiness.
+run_runtime_start_command() {
+    local deadline="$1"
+    shift
+    local remaining_seconds
+
+    remaining_seconds=$(runtime_start_remaining_seconds "$deadline") || return 124
+    "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
+        --seconds "$remaining_seconds" --grace-seconds 0 -- "$@"
+}
+
 # Print a retry delay that never extends beyond the runtime-start deadline.
 runtime_start_retry_delay() {
     local deadline="$1"
@@ -661,6 +674,8 @@ configure_runtime_builder_image() {
 }
 
 install_runtime_builder_image() {
+    local deadline="$1"
+
     if [[ -z "$runtime_builder_image" && -z "$runtime_builder_image_tar" ]]; then
         return
     fi
@@ -674,10 +689,13 @@ install_runtime_builder_image() {
     fi
 
     printf 'Installing matched container runtime builder image...\n'
-    "$container_binary" image load -i "$runtime_builder_image_tar"
+    run_runtime_start_command "$deadline" \
+        "$container_binary" image load -i "$runtime_builder_image_tar"
 }
 
 install_runtime_bootstrap_image() {
+    local deadline="$1"
+
     [[ -n "$runtime_bootstrap_image_tar" ]] || return 0
     [[ "$initial_start_init_image_archive" != "$runtime_bootstrap_image_tar" ]] || return 0
     if [[ ! -f "$runtime_bootstrap_image_tar" ]]; then
@@ -686,7 +704,8 @@ install_runtime_bootstrap_image() {
     fi
 
     printf 'Installing container runtime bootstrap image...\n'
-    "$container_binary" image load -i "$runtime_bootstrap_image_tar"
+    run_runtime_start_command "$deadline" \
+        "$container_binary" image load -i "$runtime_bootstrap_image_tar"
 }
 
 cleanup() {
@@ -702,19 +721,23 @@ cleanup() {
 
 # Install a guest init image built from the same source lane as the host runtime.
 install_matched_init_image() {
+    local deadline="$1"
+
     # The startup command has already loaded and unpacked this archive before
     # its registry fallback. Do not load it a second time after startup.
     [[ "$initial_start_image_is_matched" == true ]] && return 0
 
     if [[ -n "$matched_init_image_tar" ]]; then
         printf 'Installing prebuilt matched container runtime init image...\n'
-        "$container_binary" image load -i "$matched_init_image_tar"
+        run_runtime_start_command "$deadline" \
+            "$container_binary" image load -i "$matched_init_image_tar"
         return 0
     fi
 
     if [[ -n "$runtime_init_image_archive" ]]; then
         printf 'Loading matched container runtime init image archive...\n'
-        "$container_binary" image load --input "$runtime_init_image_archive"
+        run_runtime_start_command "$deadline" \
+            "$container_binary" image load --input "$runtime_init_image_archive"
         return 0
     fi
 
@@ -747,8 +770,8 @@ install_matched_init_image() {
     printf 'Installing matched container runtime init image...\n'
     # The initial runtime only hosts the local image build. It must not fetch
     # the default guest before this source-pinned image is available.
-    env "${init_env[@]}" make -C "$runtime_init_block_repo" \
-        KERNEL_INSTALL=false init-block
+    run_runtime_start_command "$deadline" env "${init_env[@]}" \
+        make -C "$runtime_init_block_repo" KERNEL_INSTALL=false init-block
 }
 
 validate_runtime_inputs
@@ -803,9 +826,9 @@ if [[ -n "$initial_start_init_image_archive" ]]; then
 fi
 runtime_start_sequence_deadline=$(runtime_start_deadline)
 start_runtime "$runtime_start_sequence_deadline"
-install_runtime_builder_image
-install_runtime_bootstrap_image
-install_matched_init_image
+install_runtime_builder_image "$runtime_start_sequence_deadline"
+install_runtime_bootstrap_image "$runtime_start_sequence_deadline"
+install_matched_init_image "$runtime_start_sequence_deadline"
 if [[ -z "$initial_start_init_image_archive" ]]; then
     configure_matched_init_image
 fi
@@ -818,6 +841,7 @@ if [[ -n "$runtime_config_home" ]]; then
     fi
     start_runtime "$runtime_start_sequence_deadline"
 fi
+runtime_start_remaining_seconds "$runtime_start_sequence_deadline" >/dev/null || exit 124
 
 export CONTAINER_RUNTIME_MANAGED=1
 "$@"

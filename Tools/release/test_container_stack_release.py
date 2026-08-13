@@ -2194,6 +2194,87 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertEqual(retained.returncode, 0, retained.stderr)
         self.assertIn("failed to stop release runtime namespace", retained.stderr)
 
+    def test_parent_cleanup_bounds_a_hung_exact_stop_and_retains_roots(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="cc-stop-timeout-test.") as directory:
+            fixture_root = Path(directory)
+            stop_started = fixture_root / "stop-started"
+            runtime_parent = Path(
+                tempfile.mkdtemp(prefix="c.stop-timeout-test.", dir="/tmp")
+            )
+            candidate_root = Path(
+                tempfile.mkdtemp(
+                    prefix="container-compose-runtime-candidate.stop-timeout-test.",
+                    dir="/tmp",
+                )
+            )
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(runtime_parent), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if runtime_parent.exists()
+                else None
+            )
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(candidate_root), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if candidate_root.exists()
+                else None
+            )
+            (runtime_parent / ".container-compose-release-runtime-parent").write_text(
+                "container-compose release runtime parent v1\n", encoding="utf-8"
+            )
+            runtime_app_root = runtime_parent / "app"
+            runtime_app_root.mkdir()
+            (candidate_root / ".container-compose-runtime-candidate-run").write_text(
+                "container-compose runtime candidate run v1 fixture digest\n",
+                encoding="utf-8",
+            )
+            candidate_bin = candidate_root / "bin"
+            candidate_bin.mkdir()
+            candidate_cli = candidate_bin / "container"
+            candidate_cli.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'touch "$STOP_STARTED"\n'
+                "sleep 30\n",
+                encoding="utf-8",
+            )
+            candidate_cli.chmod(0o755)
+            namespace = (
+                "io.github.stephenlclarke.container-compose.runtime.stoptimeouttest"
+            )
+
+            started = time.monotonic()
+            retained = self.run_release_function(
+                fixture_root,
+                "if cleanup_local_release_gate_resources "
+                f"{shlex.quote(str(candidate_cli))} "
+                f"{shlex.quote(str(runtime_parent))} "
+                f"{shlex.quote(str(runtime_app_root))} "
+                f"{shlex.quote(namespace)}; then exit 99; fi; "
+                f"test -d {shlex.quote(str(runtime_parent))}; "
+                f"test -d {shlex.quote(str(candidate_root))}",
+                shell_setup=(
+                    f"CONTAINER_RUNTIME_CANDIDATE_ROOT={shlex.quote(str(candidate_root))}\n"
+                    "CANDIDATE_STOP_TIMEOUT_SECONDS=1\n"
+                    f"export STOP_STARTED={shlex.quote(str(stop_started))}"
+                ),
+            )
+
+            self.assertEqual(retained.returncode, 0, retained.stderr)
+            self.assertLess(time.monotonic() - started, 5, retained.stderr)
+            self.assertTrue(stop_started.exists(), retained.stderr)
+            self.assertIn(
+                "timed out stopping release runtime namespace", retained.stderr
+            )
+
     def test_creator_cleanup_stays_armed_through_path_publication(self) -> None:
         runtime_parent = Path("/tmp") / (
             f"c.publication-test.{os.getpid()}.{time.time_ns()}"

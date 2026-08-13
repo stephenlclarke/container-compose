@@ -22,6 +22,7 @@ SELF_DIRECTORY="$(cd "$(dirname "${SELF_PATH}")" && pwd -P)"
 readonly SELF_DIRECTORY
 readonly COMPOSE_PROMOTION_REVIEW_TOOL="${SELF_DIRECTORY}/../Tools/release/compose_promotion_review.py"
 readonly OCI_IMAGE_LAYOUT_VALIDATOR="${SELF_DIRECTORY}/../Tools/release/validate-oci-image-layout.py"
+readonly RELEASE_COMMAND_DEADLINE_RUNNER="${SELF_DIRECTORY}/../Tools/ci/run-command-with-deadline.py"
 SCRIPT_NAME="$(basename "${SELF_PATH}")"
 readonly SCRIPT_NAME
 readonly SCRIPT_USAGE="scripts/${SCRIPT_NAME}"
@@ -139,6 +140,10 @@ Environment:
   CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS
       Override the default one-hour package workflow wait and 30-second poll.
 
+  CONTAINER_STACK_RELEASE_CANDIDATE_STOP_TIMEOUT_SECONDS
+      Override the default 30-second bound for stopping the exact candidate
+      runtime namespace during local release-gate cleanup.
+
   CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE
       Absolute path to the retained OCI init-image archive used by the local
       release gate. Execute mode requires this hermetic bootstrap input so
@@ -206,6 +211,7 @@ COMPOSE_PACKAGE_POLL_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS:-30
 STABLE_RELEASE_GATE_WAIT_SECONDS="${CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS:-10800}"
 PROMOTION_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS:-3600}"
 PROMOTION_POLL_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS:-30}"
+CANDIDATE_STOP_TIMEOUT_SECONDS="${CONTAINER_STACK_RELEASE_CANDIDATE_STOP_TIMEOUT_SECONDS:-30}"
 COMPOSE_MAIN_PROMOTION_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE:-pr}"
 COMPOSE_MAIN_MERGE_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE:-checked-admin}"
 RELEASE_INTENT="${CONTAINER_STACK_RELEASE_INTENT:-}"
@@ -774,13 +780,30 @@ stop_release_runtime_candidate() {
     return 1
   fi
 
-  if ! env CONTAINER_APP_ROOT="${runtime_app_root}" \
-    CONTAINER_SERVICE_NAMESPACE="${runtime_service_namespace}" \
-    "${container_binary}" system stop; then
-    printf 'failed to stop release runtime namespace before cleanup: %s\n' \
-      "${runtime_service_namespace}" >&2
+  if [[ ! "${CANDIDATE_STOP_TIMEOUT_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'release runtime candidate stop timeout must be a positive integer: %s\n' \
+      "${CANDIDATE_STOP_TIMEOUT_SECONDS}" >&2
     return 1
   fi
+
+  local stop_status
+  if env CONTAINER_APP_ROOT="${runtime_app_root}" \
+    CONTAINER_SERVICE_NAMESPACE="${runtime_service_namespace}" \
+    "${RELEASE_COMMAND_DEADLINE_RUNNER}" \
+      --seconds "${CANDIDATE_STOP_TIMEOUT_SECONDS}" --grace-seconds 0 -- \
+      "${container_binary}" system stop; then
+    return 0
+  else
+    stop_status="$?"
+  fi
+  if [[ "${stop_status}" -eq 124 ]]; then
+    printf 'timed out stopping release runtime namespace before cleanup: %s\n' \
+      "${runtime_service_namespace}" >&2
+  else
+    printf 'failed to stop release runtime namespace before cleanup: %s\n' \
+      "${runtime_service_namespace}" >&2
+  fi
+  return 1
 }
 
 # Stop the exact runtime and then remove its marker-protected runtime and

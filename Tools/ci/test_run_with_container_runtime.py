@@ -856,6 +856,50 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             invocations = container_log.read_text(encoding="utf-8")
             self.assertEqual(invocations.count("system start"), 1)
 
+    def test_builder_image_install_shares_the_startup_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            command_marker = temporary_root / "command-ran"
+            container_log = temporary_root / "container.log"
+            builder_archive = temporary_root / "builder.tar"
+            builder_archive.touch()
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "image load -i "* ]]; then\n'
+                    "  sleep 30\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_BUILDER_IMAGE": "local/builder:test",
+                    "CONTAINER_RUNTIME_BUILDER_IMAGE_TAR": str(builder_archive),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=7,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 6, result.stdout + result.stderr)
+            self.assertFalse(command_marker.exists())
+            self.assertIn("image load -i", container_log.read_text(encoding="utf-8"))
+
     def test_installs_and_configures_unpublished_builder_before_init_build(
         self,
     ) -> None:

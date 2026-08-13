@@ -30,6 +30,7 @@ ROOT = SCRIPT.parents[2]
 class RunReleaseCheckpointTest(unittest.TestCase):
     def release_gate_fingerprint(
         self,
+        release_parity_timeout: int,
         parity_stage_timeout: int,
         runtime_start_deadline: int,
     ) -> str:
@@ -50,6 +51,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                     "-f",
                     str(supplemental_makefile),
                     "print-release-gate-fingerprint",
+                    f"RELEASE_GATE_PARITY_TIMEOUT_SECONDS={release_parity_timeout}",
                     f"PARITY_STAGE_TIMEOUT_SECONDS={parity_stage_timeout}",
                     f"CONTAINER_RUNTIME_START_DEADLINE_SECONDS={runtime_start_deadline}",
                     "RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT=fixture-init",
@@ -138,12 +140,15 @@ class RunReleaseCheckpointTest(unittest.TestCase):
             self.assertEqual(checkpoint["seconds"], 4)
 
     def test_outer_fingerprint_tracks_nested_deadline_controls(self) -> None:
-        baseline = self.release_gate_fingerprint(900, 300)
-        tighter_parity = self.release_gate_fingerprint(899, 300)
-        tighter_start = self.release_gate_fingerprint(900, 299)
+        baseline = self.release_gate_fingerprint(14400, 900, 300)
+        tighter_outer_parity = self.release_gate_fingerprint(14399, 900, 300)
+        tighter_parity = self.release_gate_fingerprint(14400, 899, 300)
+        tighter_start = self.release_gate_fingerprint(14400, 900, 299)
 
+        self.assertIn("release-parity-timeout=14400", baseline)
         self.assertIn("parity-stage-timeout=900", baseline)
         self.assertIn("runtime-start-deadline=300", baseline)
+        self.assertNotEqual(tighter_outer_parity, baseline)
         self.assertNotEqual(tighter_parity, baseline)
         self.assertNotEqual(tighter_start, baseline)
 
