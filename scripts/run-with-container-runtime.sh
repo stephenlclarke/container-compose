@@ -81,6 +81,7 @@ runtime_root_marker_value='container-compose isolated runtime state v1'
 provider_socket_path_limit=103
 runtime_service_inputs_root=
 runtime_start_deadline_seconds=${CONTAINER_RUNTIME_START_DEADLINE_SECONDS:-300}
+runtime_start_sequence_deadline=
 
 # Derive and export the one non-default namespace used by this candidate.
 configure_runtime_namespace() {
@@ -391,18 +392,33 @@ print(f"{min(3.0, remaining):.6f}")
 PY
 }
 
+# Stop the runtime and wait to retry without exceeding a startup deadline.
+prepare_runtime_restart() {
+    local deadline="$1"
+    local remaining_seconds
+    local retry_delay
+
+    remaining_seconds=$(runtime_start_remaining_seconds "$deadline") || return 124
+    "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
+        --seconds "$remaining_seconds" --grace-seconds 0 -- \
+        "$container_binary" system stop >/dev/null 2>&1 || true
+    retry_delay=$(runtime_start_retry_delay "$deadline") || return 124
+    sleep "$retry_delay"
+}
+
 # Start Container and verify an API round-trip, recovering once from transient XPC startup failure.
 start_runtime() {
     local attempt
     local remaining_seconds
-    local retry_delay
-    local sequence_deadline
+    local sequence_deadline="${1:-}"
     local start_completed
     local start_log
     local start_state_root
     local start_status
 
-    sequence_deadline=$(runtime_start_deadline)
+    if [[ -z "$sequence_deadline" ]]; then
+        sequence_deadline=$(runtime_start_deadline)
+    fi
     for attempt in 1 2; do
         if ! remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline"); then
             return 124
@@ -439,16 +455,7 @@ start_runtime() {
             return "$start_status"
         fi
         printf 'Container API was not ready; restarting the matched runtime once...\n' >&2
-        if ! remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline"); then
-            return 124
-        fi
-        "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
-            --seconds "$remaining_seconds" --grace-seconds 0 -- \
-            "$container_binary" system stop >/dev/null 2>&1 || true
-        if ! retry_delay=$(runtime_start_retry_delay "$sequence_deadline"); then
-            return 124
-        fi
-        sleep "$retry_delay"
+        prepare_runtime_restart "$sequence_deadline" || return "$?"
     done
 }
 
@@ -794,7 +801,8 @@ fi
 if [[ -n "$initial_start_init_image_archive" ]]; then
     start_arguments+=(--init-image-archive "$initial_start_init_image_archive")
 fi
-start_runtime
+runtime_start_sequence_deadline=$(runtime_start_deadline)
+start_runtime "$runtime_start_sequence_deadline"
 install_runtime_builder_image
 install_runtime_bootstrap_image
 install_matched_init_image
@@ -803,13 +811,12 @@ if [[ -z "$initial_start_init_image_archive" ]]; then
 fi
 if [[ -n "$runtime_config_home" ]]; then
     printf 'Restarting matched container runtime with the installed init image...\n'
-    stop_runtime
-    sleep 3
+    prepare_runtime_restart "$runtime_start_sequence_deadline"
     start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
     if [[ -n "$runtime_app_root" ]]; then
         start_arguments+=(--app-root "$runtime_app_root")
     fi
-    start_runtime
+    start_runtime "$runtime_start_sequence_deadline"
 fi
 
 export CONTAINER_RUNTIME_MANAGED=1

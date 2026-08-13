@@ -816,6 +816,46 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertGreaterEqual(invocations.count("system stop"), 2)
             self.assertIn("--enable-kernel-install", starts[0])
 
+    def test_source_built_init_restart_shares_the_startup_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            command_marker = temporary_root / "command-ran"
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            init_repo = temporary_root / "container"
+            init_repo.mkdir()
+            (init_repo / "Makefile").write_text(
+                "init-block:\n\t@true\n",
+                encoding="utf-8",
+            )
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(init_repo),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=7,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertFalse(command_marker.exists())
+            invocations = container_log.read_text(encoding="utf-8")
+            self.assertEqual(invocations.count("system start"), 1)
+
     def test_installs_and_configures_unpublished_builder_before_init_build(
         self,
     ) -> None:
