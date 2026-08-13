@@ -260,7 +260,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 
 .PHONY: all workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
-.PHONY: print-release-gate-fingerprint
+.PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: core-runtime-neutrality
 .PHONY: codeql-local codeql-sarif-upload codeql-sarif-upload-dry-run
@@ -286,19 +286,22 @@ release-gate-environment-fingerprint-check:
 		exit 2; \
 	fi
 
+print-release-gate-static-fingerprint:
+	@printf '%s\n' "$(RELEASE_GATE_STATIC_FINGERPRINT)"
+
 print-release-gate-fingerprint: release-gate-environment-fingerprint-check
 	@environment_fingerprint="$$( $(PYTHON) ./Tools/ci/fingerprint-release-environment.py)"; \
 	printf '%s:environment=%s\n' "$(RELEASE_GATE_STATIC_FINGERPRINT)" "$$environment_fingerprint"
 
-release-gate: release-gate-environment-fingerprint-check
-	environment_fingerprint="$$( $(PYTHON) ./Tools/ci/fingerprint-release-environment.py)" && $(PYTHON) ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage sibling-stack --fingerprint "$(RELEASE_GATE_STATIC_FINGERPRINT):environment=$$environment_fingerprint" --seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory container-stack-release-validation
-	environment_fingerprint="$$( $(PYTHON) ./Tools/ci/fingerprint-release-environment.py)" && $(PYTHON) ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-ci --fingerprint "$(RELEASE_GATE_STATIC_FINGERPRINT):environment=$$environment_fingerprint" --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory ci
-	environment_fingerprint="$$( $(PYTHON) ./Tools/ci/fingerprint-release-environment.py)" && $(PYTHON) ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage swift-runtime --fingerprint "$(RELEASE_GATE_STATIC_FINGERPRINT):environment=$$environment_fingerprint" --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory swift-runtime-test
-	environment_fingerprint="$$( $(PYTHON) ./Tools/ci/fingerprint-release-environment.py)" && $(PYTHON) ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-parity --fingerprint "$(RELEASE_GATE_STATIC_FINGERPRINT):environment=$$environment_fingerprint" --seconds "$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory docker-compose-parity
+release-gate:
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage sibling-stack --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory container-stack-release-validation
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-ci --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory ci
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage swift-runtime --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory swift-runtime-test
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-parity --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory docker-compose-parity
 
-release-gate-hosted: release-gate-environment-fingerprint-check
-	environment_fingerprint="$$( $(PYTHON) ./Tools/ci/fingerprint-release-environment.py)" && $(PYTHON) ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage sibling-stack-hosted --fingerprint "$(RELEASE_GATE_STATIC_FINGERPRINT):environment=$$environment_fingerprint" --seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory container-stack-hosted-release-validation
-	environment_fingerprint="$$( $(PYTHON) ./Tools/ci/fingerprint-release-environment.py)" && $(PYTHON) ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-ci-hosted --fingerprint "$(RELEASE_GATE_STATIC_FINGERPRINT):environment=$$environment_fingerprint" --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory ci
+release-gate-hosted:
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage sibling-stack-hosted --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory container-stack-hosted-release-validation
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-ci-hosted --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory ci
 
 ci-release: release-gate package-release
 
@@ -1480,12 +1483,11 @@ docker-compose-parity: build container-stack-build docker-compose-reference
 
 docker-compose-parity-stages:
 	@set -e; \
-	environment_fingerprint="$$( $(PYTHON) ./Tools/ci/fingerprint-release-environment.py)"; \
 	for target in $(DOCKER_COMPOSE_PARITY_TARGETS); do \
-		python3 ./Tools/ci/run-release-checkpoint.py \
+		RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py \
 			--checkpoint-dir "$(PARITY_GATE_CHECKPOINT_DIR)" \
 			--stage "$$target" \
-			--fingerprint "$(RELEASE_GATE_STATIC_FINGERPRINT):environment=$$environment_fingerprint" \
+			--fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py \
 			--seconds "$(PARITY_STAGE_TIMEOUT_SECONDS)" -- \
 			$(MAKE) --no-print-directory -o build -o docker-compose-reference \
 				-o container-stack-build "$$target"; \

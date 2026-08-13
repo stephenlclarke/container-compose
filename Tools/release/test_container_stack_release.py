@@ -1044,8 +1044,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT)", makefile)
         self.assertIn("fingerprint-release-environment.py", makefile)
         self.assertIn(
-            ":environment=$$environment_fingerprint",
+            "--fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py",
             makefile,
+        )
+        self.assertNotIn(
+            "release-gate: release-gate-environment-fingerprint-check", makefile
         )
         self.assertIn("parity-inputs=$(RELEASE_GATE_PARITY_INPUT_FINGERPRINT)", makefile)
         self.assertIn("run-release-checkpoint.py", makefile)

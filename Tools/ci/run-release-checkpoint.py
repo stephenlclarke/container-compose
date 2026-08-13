@@ -28,10 +28,10 @@ import sys
 import tempfile
 import time
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEADLINE_RUNNER = Path(__file__).with_name("run-command-with-deadline.py")
 
 
@@ -39,8 +39,13 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint-dir", default="")
     parser.add_argument("--stage", required=True)
-    parser.add_argument("--fingerprint", required=True)
+    fingerprint = parser.add_mutually_exclusive_group(required=True)
+    fingerprint.add_argument("--fingerprint")
+    fingerprint.add_argument("--fingerprint-command")
     parser.add_argument("--seconds", type=int, required=True)
+    parser.add_argument(
+        "--supervised-worker", action="store_true", help=argparse.SUPPRESS
+    )
     parser.add_argument("command", nargs=argparse.REMAINDER)
     options = parser.parse_args(arguments)
     if options.command[:1] == ["--"]:
@@ -52,13 +57,15 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
         parser.error("--stage must use lowercase letters, digits, dash, dot, or underscore")
     if options.seconds <= 0:
         parser.error("--seconds must be greater than zero")
+    if options.fingerprint == "":
+        parser.error("--fingerprint must not be empty")
     if not options.command:
         parser.error("a command is required after --")
     return options
 
 
 def utc_timestamp() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def stage_digest(
@@ -103,10 +110,63 @@ def write_json_atomically(path: Path, value: dict[str, object]) -> None:
         temporary_path.unlink(missing_ok=True)
 
 
-def run(arguments: Sequence[str]) -> int:
-    options = parse_arguments(arguments)
+def run_fingerprint_command(command: str) -> tuple[int, str | None]:
+    try:
+        completed = subprocess.run(
+            [command],
+            check=False,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+    except FileNotFoundError:
+        print(f"fingerprint command was not found: {command}", file=sys.stderr)
+        return 127, None
+    except PermissionError:
+        print(f"fingerprint command is not executable: {command}", file=sys.stderr)
+        return 126, None
+    if completed.returncode != 0:
+        return normalized_exit_status(completed.returncode), None
+    lines = [line for line in completed.stdout.splitlines() if line]
+    if len(lines) != 1:
+        print(
+            "fingerprint command must emit exactly one non-empty line",
+            file=sys.stderr,
+        )
+        return 2, None
+    return 0, lines[0]
+
+
+def run_stage_command(command: Sequence[str]) -> int:
+    try:
+        return normalized_exit_status(
+            subprocess.run(command, check=False).returncode
+        )
+    except FileNotFoundError:
+        print(f"command was not found: {command[0]}", file=sys.stderr)
+        return 127
+    except PermissionError:
+        print(f"command is not executable: {command[0]}", file=sys.stderr)
+        return 126
+
+
+def normalized_exit_status(return_code: int) -> int:
+    return 128 - return_code if return_code < 0 else return_code
+
+
+def run_supervised(options: argparse.Namespace) -> int:
+    started_at = utc_timestamp()
+    started = time.monotonic()
+    fingerprint = options.fingerprint
+    if options.fingerprint_command is not None:
+        fingerprint_status, fingerprint = run_fingerprint_command(
+            options.fingerprint_command
+        )
+        if fingerprint_status != 0:
+            return fingerprint_status
+    assert fingerprint is not None
+
     digest = stage_digest(
-        options.stage, options.fingerprint, options.seconds, options.command
+        options.stage, fingerprint, options.seconds, options.command
     )
     checkpoint_directory = (
         Path(options.checkpoint_dir).expanduser().resolve()
@@ -132,19 +192,7 @@ def run(arguments: Sequence[str]) -> int:
             print(f"reusing exact-input release checkpoint: {options.stage}")
             return 0
 
-    started_at = utc_timestamp()
-    started = time.monotonic()
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(DEADLINE_RUNNER),
-            "--seconds",
-            str(options.seconds),
-            "--",
-            *options.command,
-        ],
-        check=False,
-    )
+    status = run_stage_command(options.command)
     result: dict[str, object] = {
         "command_sha256": hashlib.sha256(
             json.dumps(options.command, separators=(",", ":")).encode("utf-8")
@@ -153,18 +201,47 @@ def run(arguments: Sequence[str]) -> int:
         "duration_seconds": round(time.monotonic() - started, 6),
         "executable": options.command[0],
         "finished_at": utc_timestamp(),
-        "fingerprint": options.fingerprint,
+        "fingerprint": fingerprint,
         "schema": SCHEMA_VERSION,
         "seconds": options.seconds,
         "stage": options.stage,
         "started_at": started_at,
-        "status": completed.returncode,
+        "status": status,
     }
     if result_path is not None:
         write_json_atomically(result_path, result)
-    if completed.returncode == 0 and success_path is not None:
+    if status == 0 and success_path is not None:
         write_json_atomically(success_path, result)
-    return completed.returncode
+    return status
+
+
+def run(arguments: Sequence[str]) -> int:
+    options = parse_arguments(arguments)
+    if options.supervised_worker:
+        return run_supervised(options)
+
+    worker_arguments = [
+        sys.executable,
+        os.path.abspath(__file__),
+        "--supervised-worker",
+        *arguments,
+    ]
+    deadline_arguments = [
+        sys.executable,
+        os.path.abspath(DEADLINE_RUNNER),
+        "--seconds",
+        str(options.seconds),
+        "--",
+        *worker_arguments,
+    ]
+    try:
+        os.execv(sys.executable, deadline_arguments)
+    except FileNotFoundError:
+        print(f"control Python was not found: {sys.executable}", file=sys.stderr)
+        return 127
+    except PermissionError:
+        print(f"control Python is not executable: {sys.executable}", file=sys.stderr)
+        return 126
 
 
 if __name__ == "__main__":

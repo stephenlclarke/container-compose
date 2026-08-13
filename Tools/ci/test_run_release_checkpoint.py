@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -360,6 +361,89 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                 (checkpoints / "compose-ci.success.json").read_text(encoding="utf-8")
             )
             self.assertEqual(checkpoint["seconds"], 4)
+
+    def test_fingerprint_command_and_stage_share_one_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fingerprint_started = root / "fingerprint-started"
+            stage_started = root / "stage-started"
+            fingerprint = root / "fingerprint"
+            fingerprint.write_text(
+                "#!/bin/sh\n"
+                f"touch '{fingerprint_started}'\n"
+                "sleep 30\n"
+                "printf 'fingerprint\\n'\n",
+                encoding="utf-8",
+            )
+            fingerprint.chmod(0o755)
+
+            started = time.monotonic()
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--stage",
+                    "compose-ci",
+                    "--fingerprint-command",
+                    str(fingerprint),
+                    "--seconds",
+                    "1",
+                    "--",
+                    "/usr/bin/touch",
+                    str(stage_started),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 124, completed.stderr)
+            self.assertLess(time.monotonic() - started, 5)
+            self.assertTrue(fingerprint_started.exists())
+            self.assertFalse(stage_started.exists())
+
+    def test_release_gate_starts_deadline_before_make_fingerprinting(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fingerprint_started = root / "fingerprint-started"
+            stalled_tool = root / "stalled-tool"
+            stalled_tool.write_text(
+                "#!/bin/sh\n"
+                f"touch '{fingerprint_started}'\n"
+                "sleep 30\n",
+                encoding="utf-8",
+            )
+            stalled_tool.chmod(0o755)
+
+            started = time.monotonic()
+            completed = subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-f",
+                    str(ROOT / "Makefile"),
+                    "release-gate",
+                    "RELEASE_GATE_STACK_TIMEOUT_SECONDS=5",
+                    "RELEASE_GATE_STAGE_TIMEOUT_SECONDS=5",
+                    "RELEASE_GATE_PARITY_TIMEOUT_SECONDS=5",
+                    "RELEASE_GATE_CHECKPOINT_DIR=",
+                    "RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT=fixture-init",
+                    "RELEASE_GATE_TOOL_FINGERPRINT=fixture-tools",
+                    "DOCKER_COMPOSE_REFERENCE=/usr/bin/true",
+                    "PYTHON=/usr/bin/python3",
+                    f"SWIFT={stalled_tool}",
+                    "GO=/usr/bin/true",
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertLess(time.monotonic() - started, 9)
+            self.assertTrue(fingerprint_started.exists())
+            self.assertIn("exceeded 5-second deadline", completed.stderr)
 
     def test_outer_fingerprint_tracks_nested_deadline_controls(self) -> None:
         baseline = self.release_gate_fingerprint()
