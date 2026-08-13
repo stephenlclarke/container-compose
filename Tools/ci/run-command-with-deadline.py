@@ -70,6 +70,43 @@ def normalized_exit_status(return_code: int) -> int:
     return return_code
 
 
+def start_detached_cleanup_watchdog(
+    process_group_id: int, grace_seconds: float
+) -> int:
+    """Keep cleanup alive if a parent deadline kills this runner."""
+    watchdog_pid = os.fork()
+    if watchdog_pid != 0:
+        return watchdog_pid
+
+    try:
+        os.setsid()
+        for descriptor in (sys.stdin.fileno(), sys.stdout.fileno(), sys.stderr.fileno()):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        cleanup_deadline = time.monotonic() + grace_seconds
+        while process_group_exists(process_group_id):
+            remaining = cleanup_deadline - time.monotonic()
+            if remaining <= 0:
+                signal_process_group(process_group_id, signal.SIGKILL)
+                break
+            time.sleep(min(0.05, remaining))
+    finally:
+        os._exit(0)
+
+
+def wait_for_watchdog(watchdog_pid: int) -> None:
+    while True:
+        try:
+            os.waitpid(watchdog_pid, 0)
+            return
+        except InterruptedError:
+            continue
+        except ChildProcessError:
+            return
+
+
 def run(arguments: Sequence[str]) -> int:
     options = parse_arguments(arguments)
     try:
@@ -82,35 +119,53 @@ def run(arguments: Sequence[str]) -> int:
         return 126
 
     previous_handlers: dict[int, signal.Handlers] = {}
+    forwarded_signal: int | None = None
 
     def forward_signal(number: int, _frame: object) -> None:
+        nonlocal forwarded_signal
+        if forwarded_signal is None:
+            forwarded_signal = number
         signal_process_group(process.pid, number)
 
     for number in (signal.SIGINT, signal.SIGTERM):
         previous_handlers[number] = signal.signal(number, forward_signal)
 
     try:
-        try:
-            return normalized_exit_status(process.wait(timeout=options.seconds))
-        except subprocess.TimeoutExpired:
-            print(
-                f"command exceeded {options.seconds:g}-second deadline: "
-                + options.command[0],
-                file=sys.stderr,
-            )
-            signal_process_group(process.pid, signal.SIGTERM)
-            grace_deadline = time.monotonic() + options.grace_seconds
-            while True:
-                process.poll()
-                if not process_group_exists(process.pid):
-                    break
-                remaining = grace_deadline - time.monotonic()
-                if remaining <= 0:
-                    signal_process_group(process.pid, signal.SIGKILL)
-                    break
-                time.sleep(min(0.05, remaining))
-            process.wait()
-            return TIMEOUT_EXIT_STATUS
+        deadline = time.monotonic() + options.seconds
+        while True:
+            if forwarded_signal is not None:
+                watchdog_pid = start_detached_cleanup_watchdog(
+                    process.pid, options.grace_seconds
+                )
+                wait_for_watchdog(watchdog_pid)
+                process.wait()
+                return 128 + forwarded_signal
+
+            return_code = process.poll()
+            if return_code is not None:
+                return normalized_exit_status(return_code)
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                print(
+                    f"command exceeded {options.seconds:g}-second deadline: "
+                    + options.command[0],
+                    file=sys.stderr,
+                )
+                signal_process_group(process.pid, signal.SIGTERM)
+                grace_deadline = time.monotonic() + options.grace_seconds
+                while True:
+                    process.poll()
+                    if not process_group_exists(process.pid):
+                        break
+                    grace_remaining = grace_deadline - time.monotonic()
+                    if grace_remaining <= 0:
+                        signal_process_group(process.pid, signal.SIGKILL)
+                        break
+                    time.sleep(min(0.05, grace_remaining))
+                process.wait()
+                return TIMEOUT_EXIT_STATUS
+            time.sleep(min(0.05, remaining))
     finally:
         for number, handler in previous_handlers.items():
             signal.signal(number, handler)

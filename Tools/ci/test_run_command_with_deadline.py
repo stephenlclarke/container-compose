@@ -26,6 +26,15 @@ from pathlib import Path
 SCRIPT = Path(__file__).with_name("run-command-with-deadline.py")
 
 
+def process_state(pid: int) -> str:
+    return subprocess.run(
+        ["ps", "-p", str(pid), "-o", "state="],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+
+
 class RunCommandWithDeadlineTest(unittest.TestCase):
     def test_returns_the_child_status_and_output(self) -> None:
         result = subprocess.run(
@@ -81,13 +90,49 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
             self.assertIn("command exceeded 0.2-second deadline", result.stderr)
             self.assertNotIn("sleep 30", result.stderr)
             pid = int(child_pid.read_text(encoding="utf-8").strip())
-            process_state = subprocess.run(
-                ["ps", "-p", str(pid), "-o", "state="],
+            self.assertIn(process_state(pid), ("", "Z"))
+
+    def test_outer_timeout_cleans_a_nested_runner_child_group(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            child_pid = root / "child-pid"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--seconds",
+                    "0.2",
+                    "--grace-seconds",
+                    "0.2",
+                    "--",
+                    sys.executable,
+                    str(SCRIPT),
+                    "--seconds",
+                    "30",
+                    "--grace-seconds",
+                    "0.8",
+                    "--",
+                    "/bin/sh",
+                    "-c",
+                    "trap 'exit 0' TERM; "
+                    f"(trap '' TERM; exec sleep 30) & "
+                    f'printf "%s\\n" "$!" >{child_pid}; '
+                    "while :; do sleep 1; done",
+                ],
                 capture_output=True,
                 text=True,
                 check=False,
-            ).stdout.strip()
-            self.assertIn(process_state, ("", "Z"))
+                timeout=5,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stderr)
+            self.assertTrue(child_pid.exists())
+            pid = int(child_pid.read_text(encoding="utf-8").strip())
+            cleanup_deadline = time.monotonic() + 2
+            while process_state(pid) not in ("", "Z"):
+                if time.monotonic() >= cleanup_deadline:
+                    self.fail(f"nested deadline child {pid} survived cleanup")
+                time.sleep(0.05)
 
 
 if __name__ == "__main__":
