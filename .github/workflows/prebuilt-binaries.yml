@@ -1092,7 +1092,7 @@ jobs:
           # in the published terminal session, including system startup, and
           # waits for that command's live output before proceeding.
           export CONTAINER_COMPOSE_DEMO_ROOT="${demo_source_root}"
-          sed "1s#^Output .*#Output ${demo_output}#" docs/container-compose-demo.tape > "${tape}"
+          sed "1s#^Output .*#Output \"${demo_output}\"#" docs/container-compose-demo.tape > "${tape}"
           vhs validate "${tape}"
           RUNNER_TEMP="${demo_session_root}" bash Tools/release/record-vhs-live-demo.sh \
             "${tape}" "${demo_output}" "${container_binary}"

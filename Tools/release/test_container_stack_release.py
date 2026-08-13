@@ -582,6 +582,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             'export CONTAINER_COMPOSE_DEMO_ROOT="${demo_source_root}"',
             workflow,
         )
+        self.assertIn(
+            'sed "1s#^Output .*#Output \\\"${demo_output}\\\"#"',
+            workflow,
+        )
         self.assertIn("docs/container-compose-demo.tape", workflow)
         self.assertIn("VHS itself is the fail-closed runtime gate", workflow)
         self.assertIn(
