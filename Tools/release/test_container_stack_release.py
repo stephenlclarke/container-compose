@@ -501,8 +501,22 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn(
-            'demo_init_image_archive="/tmp/cc-current-init-'
-            '${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.oci.tar"',
+            'demo_session_root="/tmp/cc-current-'
+            '${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
+            workflow,
+        )
+        self.assertIn('demo_root="${demo_session_root}/install"', workflow)
+        self.assertIn('demo_app_root="${demo_session_root}/app"', workflow)
+        self.assertIn('demo_source_root="${demo_session_root}/source"', workflow)
+        self.assertIn(
+            'demo_output="${demo_session_root}/${DEMO_ASSET}"', workflow
+        )
+        self.assertIn(
+            'tape="${demo_session_root}/container-compose-current-demo.tape"',
+            workflow,
+        )
+        self.assertIn(
+            'demo_init_image_archive="${demo_session_root}/init-image.oci.tar"',
             workflow,
         )
         self.assertIn(
@@ -518,47 +532,63 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             'export CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE="${demo_init_image_archive}"',
             workflow,
         )
+        self.assertIn('mkdir -p "${demo_app_root}"', workflow)
+        self.assertIn('mkdir -p "${demo_source_root}/examples"', workflow)
         self.assertIn(
-            'demo_app_root="/tmp/cc-current-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
+            'cp -R examples/monitoring-stack "${demo_source_root}/examples/"',
             workflow,
         )
-        self.assertIn('mkdir -p "${demo_app_root}"', workflow)
-        self.assertIn('remove_demo_app_root() {', workflow)
-        self.assertIn('/tmp/cc-current-[0-9]*-[0-9]*)', workflow)
-        self.assertIn('rm -rf -- "${demo_app_root}"', workflow)
+        self.assertIn('remove_demo_session_root() {', workflow)
+        self.assertIn(
+            '[[ ! "${demo_session_root}" =~ '
+            '^/tmp/cc-current-[0-9]+-[0-9]+$ ]]',
+            workflow,
+        )
+        self.assertIn('rm -rf -- "${demo_session_root}"', workflow)
         self.assertNotIn('ln -s "${demo_app_storage}"', workflow)
         longest_run_id = str(2**64 - 1)
         longest_attempt = str(2**32 - 1)
         provider_socket = (
             f"/tmp/cc-current-{longest_run_id}-{longest_attempt}"
-            "/engine-provider/provider.sock"
+            "/app/engine-provider/provider.sock"
         )
         self.assertLess(len(os.fsencode(provider_socket)), 104)
         self.assertIn('trap cleanup EXIT', workflow)
-        self.assertIn('rm -f -- "${demo_init_image_archive}"', workflow)
         self.assertNotIn("trap 'rm -f", workflow)
         self.assertIn('"${container_binary}" system stop || true', workflow)
-        self.assertIn('"${demo_root}/bin/container" system stop || true', workflow)
-        self.assertIn("elif command -v container >/dev/null 2>&1; then", workflow)
+        self.assertNotIn(
+            '"${demo_root}/bin/container" system stop || true', workflow
+        )
+        self.assertIn("if command -v container >/dev/null 2>&1; then", workflow)
         self.assertIn(
             "bash Tools/release/wait-for-container-system-stop.sh",
             workflow,
         )
         self.assertLess(
-            workflow.index('"${demo_root}/bin/container" system stop || true'),
+            workflow.index("if command -v container >/dev/null 2>&1; then"),
             workflow.index("bash Tools/release/wait-for-container-system-stop.sh"),
         )
-        self.assertLess(
-            workflow.index("bash Tools/release/wait-for-container-system-stop.sh"),
-            workflow.index('rm -rf "${demo_root}"'),
+        self.assertIn(
+            "bash Tools/release/wait-for-container-system-stop.sh\n"
+            "          remove_demo_session_root\n"
+            '          rm -rf -- "${legacy_demo_root}"',
+            workflow,
         )
         self.assertLess(
-            workflow.index('rm -rf "${demo_root}"'),
+            workflow.index('rm -rf -- "${legacy_demo_root}"'),
             workflow.index('tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"'),
+        )
+        self.assertIn(
+            'export CONTAINER_COMPOSE_DEMO_ROOT="${demo_source_root}"',
+            workflow,
         )
         self.assertIn("docs/container-compose-demo.tape", workflow)
         self.assertIn("VHS itself is the fail-closed runtime gate", workflow)
-        self.assertIn("bash Tools/release/record-vhs-live-demo.sh", workflow)
+        self.assertIn(
+            'RUNNER_TEMP="${demo_session_root}" '
+            "bash Tools/release/record-vhs-live-demo.sh",
+            workflow,
+        )
         tape = (ROOT / "docs/container-compose-demo.tape").read_text(
             encoding="utf-8"
         )

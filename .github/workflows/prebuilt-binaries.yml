@@ -971,52 +971,52 @@ jobs:
           source Tools/ci/container-runtime-lock.sh
           acquire_container_runtime_lock
 
-          demo_root="${RUNNER_TEMP}/current-build-demo"
+          legacy_demo_root="${RUNNER_TEMP}/current-build-demo"
+          demo_session_root="/tmp/cc-current-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          demo_root="${demo_session_root}/install"
           # Darwin AF_UNIX paths are bounded. Keep the launchd-visible app root
           # short and real (not a symlink): launchd resolves service plists and
-          # the runtime rejects symlinked persisted-state roots. Package and
-          # install artifacts remain beneath the runner's managed temp path.
-          demo_app_root="/tmp/cc-current-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          demo_output=".build/current-demo/${DEMO_ASSET}"
-          tape="${RUNNER_TEMP}/container-compose-current-demo.tape"
+          # the runtime rejects symlinked persisted-state roots. Keep every
+          # launchd-visible executable and live-demo file on the internal APFS
+          # volume; self-hosted runner work and caches may live on an external
+          # volume that dyld cannot safely use for a launched service.
+          demo_app_root="${demo_session_root}/app"
+          demo_source_root="${demo_session_root}/source"
+          demo_output="${demo_session_root}/${DEMO_ASSET}"
+          tape="${demo_session_root}/container-compose-current-demo.tape"
+          demo_init_image_archive="${demo_session_root}/init-image.oci.tar"
 
-          remove_demo_app_root() {
-            case "${demo_app_root}" in
-              /tmp/cc-current-[0-9]*-[0-9]*) ;;
-              *)
-                printf 'refusing to remove unexpected Current demo app root: %s\n' "${demo_app_root}" >&2
-                return 1
-                ;;
-            esac
-            rm -rf -- "${demo_app_root}"
+          remove_demo_session_root() {
+            if [[ ! "${demo_session_root}" =~ ^/tmp/cc-current-[0-9]+-[0-9]+$ ]]; then
+              printf 'refusing to remove unexpected Current demo session root: %s\n' \
+                "${demo_session_root}" >&2
+              return 1
+            fi
+            rm -rf -- "${demo_session_root}"
           }
 
           cleanup() {
             if [[ -n "${container_binary:-}" ]]; then
               "${container_binary}" system stop || true
             fi
-            if [[ -n "${demo_init_image_archive:-}" ]]; then
-              rm -f -- "${demo_init_image_archive}"
-            fi
-            remove_demo_app_root
+            remove_demo_session_root
           }
           trap cleanup EXIT
 
-          # A self-hosted runner can retain the prior demo package and app
-          # root. Stop whichever CLI owns that root before replacing it so a
-          # stale launchd service cannot reject the newly typed app root.
-          if [[ -x "${demo_root}/bin/container" ]]; then
-            "${demo_root}/bin/container" system stop || true
-          elif command -v container >/dev/null 2>&1; then
+          # A self-hosted runner can retain a prior service. Use the installed
+          # CLI to stop it: an executable retained under an external runner
+          # temp directory may itself block in dyld before it can issue stop.
+          if command -v container >/dev/null 2>&1; then
             container system stop || true
           fi
           bash Tools/release/wait-for-container-system-stop.sh
-          remove_demo_app_root
-          rm -rf "${demo_root}"
+          remove_demo_session_root
+          rm -rf -- "${legacy_demo_root}"
 
           mkdir -p "${demo_root}/libexec/container-plugins"
           mkdir -p "${demo_app_root}"
-          mkdir -p "$(dirname "${demo_output}")"
+          mkdir -p "${demo_source_root}/examples"
+          cp -R examples/monitoring-stack "${demo_source_root}/examples/"
           tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"
           tar -xzf "${PLUGIN_ARCHIVE}" -C "${demo_root}/libexec/container-plugins"
 
@@ -1075,8 +1075,6 @@ jobs:
             exit 1
           fi
 
-          demo_init_image_archive="/tmp/cc-current-init-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.oci.tar"
-          rm -f "${demo_init_image_archive}"
           cp "${DEMO_INIT_IMAGE_ARCHIVE}" "${demo_init_image_archive}"
           staged_init_image_sha256="$(shasum -a 256 "${demo_init_image_archive}" | awk '{print $1}')"
           if [[ "${staged_init_image_sha256}" != "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" ]]; then
@@ -1093,10 +1091,10 @@ jobs:
           # VHS itself is the fail-closed runtime gate. It types every command
           # in the published terminal session, including system startup, and
           # waits for that command's live output before proceeding.
-          export CONTAINER_COMPOSE_DEMO_ROOT="${PWD}"
+          export CONTAINER_COMPOSE_DEMO_ROOT="${demo_source_root}"
           sed "1s#^Output .*#Output ${demo_output}#" docs/container-compose-demo.tape > "${tape}"
           vhs validate "${tape}"
-          bash Tools/release/record-vhs-live-demo.sh \
+          RUNNER_TEMP="${demo_session_root}" bash Tools/release/record-vhs-live-demo.sh \
             "${tape}" "${demo_output}" "${container_binary}"
           cp "${demo_output}" "${RUNNER_TEMP}/${DEMO_ASSET}"
 
