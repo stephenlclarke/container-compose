@@ -30,32 +30,8 @@ source "$SCRIPT_DIRECTORY/../Tools/ci/container-runtime-lock.sh"
 requested_container_binary=$1
 container_binary=$requested_container_binary
 shift
-if [[ "$container_binary" != */* ]]; then
-    if ! container_binary=$(command -v "$container_binary"); then
-        printf 'candidate container command was not found on PATH: %s\n' \
-            "$requested_container_binary" >&2
-        exit 2
-    fi
-fi
-if [[ ! -x "$container_binary" ]]; then
-    printf 'candidate container binary is not executable: %s\n' "$container_binary" >&2
-    exit 2
-fi
-container_binary_directory=$(cd "$(dirname "$container_binary")" && pwd -P)
-container_binary="$container_binary_directory/$(basename "$container_binary")"
-container_binary_sha256=$(shasum -a 256 "$container_binary" | awk '{print $1}')
-if [[ -n "${CONTAINER_RUNTIME_CLI_SHA256:-}" &&
-    "${CONTAINER_RUNTIME_CLI_SHA256}" != "$container_binary_sha256" ]]; then
-    printf 'candidate container binary digest mismatch (expected %s, got %s): %s\n' \
-        "${CONTAINER_RUNTIME_CLI_SHA256}" "$container_binary_sha256" "$container_binary" >&2
-    exit 2
-fi
-# Every nested Makefile and helper must resolve the same candidate CLI that
-# owns the isolated runtime. Otherwise a host-installed `container` earlier in
-# PATH can silently target the default service namespace mid-validation.
-export PATH="$container_binary_directory${PATH:+:$PATH}"
-export CONTAINER_RUNTIME_CLI="$container_binary"
-export CONTAINER_RUNTIME_CLI_SHA256="$container_binary_sha256"
+container_binary_directory=
+container_binary_sha256=
 runtime_app_root=${CONTAINER_RUNTIME_APP_ROOT:-}
 runtime_service_namespace=${CONTAINER_RUNTIME_SERVICE_NAMESPACE:-}
 runtime_run_id=${CONTAINER_RUNTIME_RUN_ID:-}
@@ -143,6 +119,8 @@ validate_runtime_init_image_archive() {
 }
 
 validate_runtime_inputs() {
+    local deadline="$1"
+
     if [[ -z "$runtime_app_root" || "$runtime_app_root" != /* ]]; then
         printf 'CONTAINER_RUNTIME_APP_ROOT must be an absolute marker-protected candidate root\n' >&2
         exit 2
@@ -175,31 +153,25 @@ validate_runtime_inputs() {
         printf 'CONTAINER_RUNTIME_BUILDER_IMAGE and CONTAINER_RUNTIME_BUILDER_IMAGE_TAR must be set together\n' >&2
         exit 2
     fi
-    if [[ -n "$runtime_builder_image_tar" && ! -f "$runtime_builder_image_tar" ]]; then
-        printf 'container runtime builder image archive does not exist: %s\n' "$runtime_builder_image_tar" >&2
-        exit 2
+    if [[ -n "$runtime_builder_image_tar" ]]; then
+        require_runtime_start_regular_file "$deadline" "$runtime_builder_image_tar" \
+            'container runtime builder image archive does not exist'
     fi
-    if [[ -n "$runtime_bootstrap_image_tar" && ! -f "$runtime_bootstrap_image_tar" ]]; then
-        printf 'container runtime bootstrap image archive does not exist: %s\n' "$runtime_bootstrap_image_tar" >&2
-        exit 2
+    if [[ -n "$runtime_bootstrap_image_tar" ]]; then
+        require_runtime_start_regular_file "$deadline" "$runtime_bootstrap_image_tar" \
+            'container runtime bootstrap image archive does not exist'
     fi
-    if [[ -n "$matched_init_image_tar" && ! -f "$matched_init_image_tar" ]]; then
-        printf 'container runtime init image archive does not exist: %s\n' "$matched_init_image_tar" >&2
-        exit 2
+    if [[ -n "$matched_init_image_tar" ]]; then
+        require_runtime_start_regular_file "$deadline" "$matched_init_image_tar" \
+            'container runtime init image archive does not exist'
     fi
-    if [[ -n "$runtime_init_image_archive" && ! -f "$runtime_init_image_archive" ]]; then
-        printf 'container runtime init-image archive does not exist: %s\n' \
-            "$runtime_init_image_archive" >&2
-        exit 2
+    if [[ -n "$runtime_init_image_archive" ]]; then
+        require_runtime_start_regular_file "$deadline" "$runtime_init_image_archive" \
+            'container runtime init-image archive does not exist'
     fi
-    if [[ -n "$runtime_init_block_repo" && ! -f "$runtime_init_block_repo/Makefile" ]]; then
-        printf 'container runtime init-block repo does not contain a Makefile: %s\n' "$runtime_init_block_repo" >&2
-        exit 2
-    fi
-    if ! [[ "$runtime_start_deadline_seconds" =~ ^[1-9][0-9]*$ ]]; then
-        printf 'CONTAINER_RUNTIME_START_DEADLINE_SECONDS must be a positive integer: %s\n' \
-            "$runtime_start_deadline_seconds" >&2
-        exit 2
+    if [[ -n "$runtime_init_block_repo" ]]; then
+        require_runtime_start_regular_file "$deadline" "$runtime_init_block_repo/Makefile" \
+            'container runtime init-block repo does not contain a Makefile'
     fi
     if [[ -n "$containerization_init_source_path" && -z "$runtime_init_block_repo" ]]; then
         printf 'CONTAINERIZATION_INIT_SOURCE_PATH requires CONTAINER_RUNTIME_INIT_BLOCK_REPO\n' >&2
@@ -219,7 +191,15 @@ validate_containerization_init_source() {
     fi
 
     local requested_source_path
-    if ! requested_source_path=$(cd "$containerization_init_source_path" && pwd -P); then
+    local requested_source_status=0
+    # Resolve the caller-controlled path in the bounded child rather than
+    # allowing an unresponsive external mount to block this owner shell.
+    # shellcheck disable=SC2016 # Expand $1 in the bounded child shell.
+    requested_source_path=$(run_runtime_start_command "$deadline" \
+        /bin/bash -c 'cd "$1" && pwd -P' source-root \
+        "$containerization_init_source_path") || requested_source_status=$?
+    if [[ "$requested_source_status" != "0" ]]; then
+        [[ "$requested_source_status" != "124" ]] || return "$requested_source_status"
         printf 'containerization init source path does not exist: %s\n' \
             "$containerization_init_source_path" >&2
         exit 2
@@ -234,7 +214,18 @@ validate_containerization_init_source() {
             "$requested_source_path" >&2
         exit 2
     fi
-    containerization_init_source_root=$(cd "$containerization_init_source_root" && pwd -P)
+    local reported_source_root="$containerization_init_source_root"
+    local canonical_root_status=0
+    # shellcheck disable=SC2016 # Expand $1 in the bounded child shell.
+    containerization_init_source_root=$(run_runtime_start_command "$deadline" \
+        /bin/bash -c 'cd "$1" && pwd -P' source-root \
+        "$reported_source_root") || canonical_root_status=$?
+    [[ "$canonical_root_status" != "124" ]] || return "$canonical_root_status"
+    if [[ "$canonical_root_status" != "0" ]]; then
+        printf 'containerization init source root is no longer accessible: %s\n' \
+            "$reported_source_root" >&2
+        exit 2
+    fi
     if [[ "$requested_source_path" != "$containerization_init_source_root" ]]; then
         printf 'CONTAINERIZATION_INIT_SOURCE_PATH must name the checkout root, not a subdirectory: %s\n' \
             "$requested_source_path" >&2
@@ -405,6 +396,15 @@ is_transient_xpc_start_failure() {
         "$start_log"
 }
 
+# Reject an invalid deadline before its value is used to launch any filesystem work.
+validate_runtime_start_deadline_seconds() {
+    if ! [[ "$runtime_start_deadline_seconds" =~ ^[1-9][0-9]*$ ]]; then
+        printf 'CONTAINER_RUNTIME_START_DEADLINE_SECONDS must be a positive integer: %s\n' \
+            "$runtime_start_deadline_seconds" >&2
+        exit 2
+    fi
+}
+
 # Return an absolute monotonic deadline for the complete runtime-start sequence.
 runtime_start_deadline() {
     python3 - "$runtime_start_deadline_seconds" <<'PY'
@@ -441,6 +441,109 @@ run_runtime_start_command() {
     remaining_seconds=$(runtime_start_remaining_seconds "$deadline") || return 124
     "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
         --seconds "$remaining_seconds" --grace-seconds 0 -- "$@"
+}
+
+# Check a caller-controlled filesystem input without letting its mount outlive
+# the complete startup deadline.
+runtime_start_regular_file_status() {
+    local deadline="$1"
+    local path="$2"
+
+    run_runtime_start_command "$deadline" /bin/test -f "$path"
+}
+
+# Require one caller-controlled regular file without allowing an unresponsive
+# mount to outlive the complete startup deadline.
+require_runtime_start_regular_file() {
+    local deadline="$1"
+    local path="$2"
+    local error_message="$3"
+    local status=0
+
+    runtime_start_regular_file_status "$deadline" "$path" || status=$?
+    [[ "$status" != "124" ]] || return "$status"
+    if [[ "$status" != "0" ]]; then
+        printf '%s: %s\n' "$error_message" "$path" >&2
+        exit 2
+    fi
+}
+
+# Resolve and fingerprint the caller-selected runtime CLI within the same
+# deadline as every other startup input. A candidate on an unresponsive mount
+# must not block the release gate before its liveness owner starts.
+resolve_container_binary() {
+    local deadline="$1"
+    local binary_directory_input
+    local binary_name
+    local digest_output
+    local status=0
+
+    if [[ "$container_binary" != */* ]]; then
+        # shellcheck disable=SC2016 # Expand $1 in the bounded child shell.
+        container_binary=$(run_runtime_start_command "$deadline" \
+            /bin/bash -c 'command -v "$1"' container-command \
+            "$container_binary") || status=$?
+        if [[ "$status" != "0" ]]; then
+            [[ "$status" != "124" ]] || return "$status"
+            printf 'candidate container command was not found on PATH: %s\n' \
+                "$requested_container_binary" >&2
+            exit 2
+        fi
+    fi
+
+    status=0
+    run_runtime_start_command "$deadline" /bin/test -x "$container_binary" || \
+        status=$?
+    if [[ "$status" != "0" ]]; then
+        [[ "$status" != "124" ]] || return "$status"
+        printf 'candidate container binary is not executable: %s\n' "$container_binary" >&2
+        exit 2
+    fi
+
+    binary_name=${container_binary##*/}
+    binary_directory_input=${container_binary%/*}
+    [[ -n "$binary_directory_input" ]] || binary_directory_input=/
+    status=0
+    # shellcheck disable=SC2016 # Expand $1 in the bounded child shell.
+    container_binary_directory=$(run_runtime_start_command "$deadline" \
+        /bin/bash -c 'cd "$1" && pwd -P' container-binary-directory \
+        "$binary_directory_input") || status=$?
+    if [[ "$status" != "0" ]]; then
+        [[ "$status" != "124" ]] || return "$status"
+        printf 'candidate container binary directory is not accessible: %s\n' \
+            "$binary_directory_input" >&2
+        exit 2
+    fi
+    container_binary="$container_binary_directory/$binary_name"
+
+    status=0
+    digest_output=$(run_runtime_start_command "$deadline" \
+        /usr/bin/shasum -a 256 "$container_binary") || status=$?
+    if [[ "$status" != "0" ]]; then
+        [[ "$status" != "124" ]] || return "$status"
+        printf 'could not fingerprint candidate container binary: %s\n' \
+            "$container_binary" >&2
+        exit 2
+    fi
+    read -r container_binary_sha256 _ <<<"$digest_output"
+    if ! [[ "$container_binary_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+        printf 'candidate container binary produced an invalid SHA-256 digest: %s\n' \
+            "$container_binary" >&2
+        exit 2
+    fi
+    if [[ -n "${CONTAINER_RUNTIME_CLI_SHA256:-}" &&
+        "${CONTAINER_RUNTIME_CLI_SHA256}" != "$container_binary_sha256" ]]; then
+        printf 'candidate container binary digest mismatch (expected %s, got %s): %s\n' \
+            "${CONTAINER_RUNTIME_CLI_SHA256}" "$container_binary_sha256" "$container_binary" >&2
+        exit 2
+    fi
+
+    # Every nested Makefile and helper must resolve the same candidate CLI that
+    # owns the isolated runtime. Otherwise a host-installed `container` earlier
+    # in PATH can silently target the default service namespace mid-validation.
+    export PATH="$container_binary_directory${PATH:+:$PATH}"
+    export CONTAINER_RUNTIME_CLI="$container_binary"
+    export CONTAINER_RUNTIME_CLI_SHA256="$container_binary_sha256"
 }
 
 # Clamp the host runtime lock wait to the budget left for startup.
@@ -871,8 +974,10 @@ install_matched_init_image() {
         make -C "$runtime_init_block_repo" KERNEL_INSTALL=false init-block
 }
 
-validate_runtime_inputs
+validate_runtime_start_deadline_seconds
 runtime_start_sequence_deadline=$(runtime_start_deadline)
+resolve_container_binary "$runtime_start_sequence_deadline"
+validate_runtime_inputs "$runtime_start_sequence_deadline"
 validate_containerization_init_source "$runtime_start_sequence_deadline"
 resolve_matched_init_image
 validate_runtime_init_image_archive "$runtime_start_sequence_deadline"
