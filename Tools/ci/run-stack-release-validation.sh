@@ -47,6 +47,7 @@ case "${mode}" in
     exit 2
     ;;
 esac
+builder_targets=(check-licenses vet lint coverage build)
 
 for path in "${compose_repo}" "${builder_repo}" "${containerization_repo}" "${container_repo}"; do
   if [[ ! -f "${path}/Makefile" ]]; then
@@ -262,10 +263,6 @@ verify_runtime_cli_identity() {
   fi
 }
 
-run_containerization_validation() {
-  make -C "${containerization_repo}" "${runtime_make_args[@]}" "${containerization_targets[@]}"
-}
-
 if [[ -n "${checkpoint_directory}" ]]; then
   common_validation_fingerprint=$(
     {
@@ -323,7 +320,7 @@ if [[ -n "${checkpoint_directory}" ]]; then
     {
       printf 'common=%s\n' "${common_validation_fingerprint}"
       printf 'stage=builder\n'
-      printf 'tree=%s:%s\n' "${builder_repo}" "${builder_tree}"
+      printf 'tree=%s\n' "${builder_tree}"
     } | shasum -a 256 | awk '{print $1}'
   )
   containerization_validation_fingerprint=$(
@@ -331,7 +328,7 @@ if [[ -n "${checkpoint_directory}" ]]; then
       printf 'common=%s\n' "${common_validation_fingerprint}"
       printf 'stage=containerization\n'
       printf 'targets=%s\n' "${containerization_targets[*]}"
-      printf 'tree=%s:%s\n' "${containerization_repo}" "${containerization_tree}"
+      printf 'tree=%s\n' "${containerization_tree}"
       printf 'required_init_references=%s\n' \
         "${CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES:-}"
       printf 'init_archive=%s\n' "${init_archive_fingerprint}"
@@ -343,8 +340,7 @@ if [[ -n "${checkpoint_directory}" ]]; then
       printf 'common=%s\n' "${common_validation_fingerprint}"
       printf 'stage=container\n'
       printf 'targets=%s\n' "${container_targets[*]}"
-      printf 'tree=%s:%s\n' "${container_repo}" "${container_tree}"
-      printf 'scratch_root=%s\n' "${container_scratch_root}"
+      printf 'tree=%s\n' "${container_tree}"
       printf 'init_archive=%s\n' "${init_archive_fingerprint}"
       printf 'runtime_cli=%s\n' "${runtime_cli_fingerprint}"
     } | shasum -a 256 | awk '{print $1}'
@@ -353,31 +349,37 @@ if [[ -n "${checkpoint_directory}" ]]; then
     {
       printf 'common=%s\n' "${common_validation_fingerprint}"
       printf 'stage=homebrew\n'
-      printf 'tree=%s:%s\n' "${homebrew_tap_repo}" "${homebrew_tree}"
+      printf 'tree=%s\n' "${homebrew_tree}"
     } | shasum -a 256 | awk '{print $1}'
   )
 fi
 
 # Returns the exact-input fingerprint for one independently validated stage.
 validation_fingerprint_for_stage() {
-  case "$1" in
-    builder)
-      printf '%s' "${builder_validation_fingerprint}"
+  local stage="$1"
+  local base_fingerprint
+  case "${stage}" in
+    builder-*)
+      base_fingerprint="${builder_validation_fingerprint}"
       ;;
-    containerization)
-      printf '%s' "${containerization_validation_fingerprint}"
+    containerization-*)
+      base_fingerprint="${containerization_validation_fingerprint}"
       ;;
-    container)
-      printf '%s' "${container_validation_fingerprint}"
+    container-*)
+      base_fingerprint="${container_validation_fingerprint}"
       ;;
-    homebrew)
-      printf '%s' "${homebrew_validation_fingerprint}"
+    homebrew-*)
+      base_fingerprint="${homebrew_validation_fingerprint}"
       ;;
     *)
-      printf 'unknown stack validation checkpoint stage: %s\n' "$1" >&2
+      printf 'unknown stack validation checkpoint stage: %s\n' "${stage}" >&2
       return 2
       ;;
   esac
+  {
+    printf 'base=%s\n' "${base_fingerprint}"
+    printf 'stage=%s\n' "${stage}"
+  } | shasum -a 256 | awk '{print $1}'
 }
 
 # Runs one stage unless its own exact inputs already have a successful stamp.
@@ -413,6 +415,18 @@ run_checkpointed() {
   mv -f "${temporary_stamp}" "${stamp}"
 }
 
+# Run each top-level Make target as an independently resumable DAG stage.
+run_checkpointed_make_targets() {
+  local stage_prefix="$1"
+  local repository="$2"
+  shift 2
+  local target
+  for target in "$@"; do
+    run_checkpointed "${stage_prefix}-${target//_/-}" \
+      make -C "${repository}" "${runtime_make_args[@]}" "${target}"
+  done
+}
+
 printf 'running %s stack release validation\n' "${mode}"
 if [[ -n "${checkpoint_directory}" ]]; then
   printf 'stack validation exact-input fingerprint: builder=%s\n' \
@@ -424,19 +438,20 @@ if [[ -n "${checkpoint_directory}" ]]; then
   printf 'stack validation exact-input fingerprint: homebrew=%s\n' \
     "${homebrew_validation_fingerprint}"
 fi
-run_checkpointed builder \
-  make -C "${builder_repo}" check-licenses vet lint coverage build
-run_checkpointed containerization \
-  run_containerization_validation
+run_checkpointed_make_targets builder "${builder_repo}" "${builder_targets[@]}"
+run_checkpointed_make_targets containerization "${containerization_repo}" \
+  "${containerization_targets[@]}"
 # The outer stable gate may select an already-running isolated runtime for
 # Containerization's image build. Container's unit tests exercise their own
 # default namespace contract, so do not let that selector rewrite the expected
 # launchd labels and engine socket paths. The explicit APP_ROOT/LOG_ROOT make
 # arguments still isolate Container's VM-backed integration state.
-run_checkpointed container \
-  env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
-    CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}" \
-    make -C "${container_repo}" "${runtime_make_args[@]}" \
-      "${container_make_args[@]}" "${container_targets[@]}"
-run_checkpointed homebrew \
+for target in "${container_targets[@]}"; do
+  run_checkpointed "container-${target//_/-}" \
+    env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
+      CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}" \
+      make -C "${container_repo}" "${runtime_make_args[@]}" \
+        "${container_make_args[@]}" "${target}"
+done
+run_checkpointed homebrew-formula \
   ruby -c "${homebrew_tap_repo}/Formula/container-compose.rb"

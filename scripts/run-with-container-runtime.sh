@@ -80,6 +80,7 @@ runtime_root_marker=.container-compose-runtime-root
 runtime_root_marker_value='container-compose isolated runtime state v1'
 provider_socket_path_limit=103
 runtime_service_inputs_root=
+runtime_start_deadline_seconds=${CONTAINER_RUNTIME_START_DEADLINE_SECONDS:-300}
 
 # Derive and export the one non-default namespace used by this candidate.
 configure_runtime_namespace() {
@@ -189,6 +190,11 @@ validate_runtime_inputs() {
     fi
     if [[ -n "$runtime_init_block_repo" && ! -f "$runtime_init_block_repo/Makefile" ]]; then
         printf 'container runtime init-block repo does not contain a Makefile: %s\n' "$runtime_init_block_repo" >&2
+        exit 2
+    fi
+    if ! [[ "$runtime_start_deadline_seconds" =~ ^[1-9][0-9]*$ ]]; then
+        printf 'CONTAINER_RUNTIME_START_DEADLINE_SECONDS must be a positive integer: %s\n' \
+            "$runtime_start_deadline_seconds" >&2
         exit 2
     fi
     if [[ -n "$containerization_init_source_path" && -z "$runtime_init_block_repo" ]]; then
@@ -353,7 +359,9 @@ start_runtime() {
 
     for attempt in 1 2; do
         start_log=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-start.XXXXXX")
-        if "$container_binary" "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
+        if "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
+            --seconds "$runtime_start_deadline_seconds" -- \
+            "$container_binary" "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
             if "$container_binary" list --all --format json >/dev/null; then
                 rm -f "$start_log"
                 return
@@ -397,7 +405,9 @@ ensure_managed_runtime_ready() {
     if [[ -n "$runtime_app_root" ]]; then
         start_arguments+=(--app-root "$runtime_app_root")
     fi
-    if "$container_binary" "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
+    if "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
+        --seconds "$runtime_start_deadline_seconds" -- \
+        "$container_binary" "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
         start_status=0
     else
         start_status=${PIPESTATUS[0]}
@@ -454,6 +464,13 @@ stage_runtime_service_inputs() {
     stage_runtime_service_archive runtime_bootstrap_image_tar bootstrap-image.oci.tar
     stage_runtime_service_archive matched_init_image_tar matched-init-image.oci.tar
     stage_runtime_service_archive runtime_init_image_archive retained-init-image.oci.tar
+
+    # Nested release validation must inherit the service-readable copies, not
+    # the caller's original paths on a removable or privacy-controlled volume.
+    export CONTAINER_RUNTIME_BUILDER_IMAGE_TAR="$runtime_builder_image_tar"
+    export CONTAINER_RUNTIME_BOOTSTRAP_IMAGE_TAR="$runtime_bootstrap_image_tar"
+    export CONTAINER_RUNTIME_INIT_IMAGE_TAR="$matched_init_image_tar"
+    export CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$runtime_init_image_archive"
 }
 
 stage_runtime_service_archive() {

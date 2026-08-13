@@ -741,6 +741,62 @@ cleanup_container_runtime_candidate() {
   find "${CONTAINER_RUNTIME_CANDIDATE_ROOT}" -depth -delete
 }
 
+# Stop the exact candidate-owned namespace before either its runtime root or
+# executable is removed. A failed stop deliberately retains both roots so the
+# service cannot outlive the binary needed to clean it up.
+stop_release_runtime_candidate() {
+  local container_binary="$1"
+  local runtime_app_root="$2"
+  local runtime_service_namespace="$3"
+
+  if [[ -z "${container_binary}" || -z "${runtime_app_root}" ||
+    -z "${runtime_service_namespace}" ]]; then
+    return 0
+  fi
+  if [[ -z "${CONTAINER_RUNTIME_CANDIDATE_ROOT:-}" ||
+    "${container_binary}" != "${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container" ||
+    ! -x "${container_binary}" ]]; then
+    printf 'refusing to stop a release runtime without its exact candidate CLI: %s\n' \
+      "${container_binary}" >&2
+    return 1
+  fi
+  case "${runtime_app_root}" in
+    /private/tmp/c.*/app | /tmp/c.*/app) ;;
+    *)
+      printf 'refusing to stop a release runtime outside its marked parent: %s\n' \
+        "${runtime_app_root}" >&2
+      return 1
+      ;;
+  esac
+  if [[ ! "${runtime_service_namespace}" =~ ^io\.github\.stephenlclarke\.container-compose\.runtime\.[A-Za-z0-9_-]+$ ]]; then
+    printf 'refusing to stop an unexpected release runtime namespace: %s\n' \
+      "${runtime_service_namespace}" >&2
+    return 1
+  fi
+
+  if ! env CONTAINER_APP_ROOT="${runtime_app_root}" \
+    CONTAINER_SERVICE_NAMESPACE="${runtime_service_namespace}" \
+    "${container_binary}" system stop; then
+    printf 'failed to stop release runtime namespace before cleanup: %s\n' \
+      "${runtime_service_namespace}" >&2
+    return 1
+  fi
+}
+
+# Stop the exact runtime and then remove its marker-protected runtime and
+# candidate roots in dependency order.
+cleanup_local_release_gate_resources() {
+  local container_binary="$1"
+  local runtime_parent="$2"
+  local runtime_app_root="$3"
+  local runtime_service_namespace="$4"
+
+  stop_release_runtime_candidate "${container_binary}" "${runtime_app_root}" \
+    "${runtime_service_namespace}" || return 1
+  cleanup_release_runtime_parent "${runtime_parent}" || return 1
+  cleanup_container_runtime_candidate
+}
+
 # Delete only the fresh short runtime parent created and marked by this gate.
 # This outer marker exists before the wrapper starts, so an interrupt during
 # input staging, lock acquisition, or the initial stop can still clean up.
@@ -906,7 +962,7 @@ resolve_release_evidence_root() {
 run_local_release_gate() {
   (
   local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive
-  local containerization_reference required_init_references status
+  local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest
   path="$(repo_path "${COMPOSE_REPO}")"
   container_path="$(repo_path "${CONTAINER_REPO}")"
   containerization_path="$(repo_path "containerization")"
@@ -969,10 +1025,9 @@ PY
   # shellcheck disable=SC2329
   cleanup_local_release_gate_roots() {
     local trapped_status=$?
-    local cleanup_failed=0
-    cleanup_release_runtime_parent "${runtime_parent}" || cleanup_failed=1
-    cleanup_container_runtime_candidate || cleanup_failed=1
-    if ((cleanup_failed != 0)); then
+    if ! cleanup_local_release_gate_resources "${container_binary:-}" \
+      "${runtime_parent:-}" "${runtime_app_root:-}" \
+      "${runtime_service_namespace:-}"; then
       return 1
     fi
     return "${trapped_status}"
@@ -987,6 +1042,14 @@ PY
   # nested provider socket below Darwin's 103-byte sockaddr_un limit.
   runtime_parent="$(create_release_runtime_parent "${runtime_parent_base}")"
   runtime_app_root="${runtime_parent}/app"
+  runtime_run_id="release-$(id -u)-$$-${RANDOM}-${SECONDS}"
+  runtime_namespace_digest="$(LC_ALL=C printf '%s' \
+    "${runtime_app_root}:$(id -u):${runtime_run_id}" \
+    | shasum -a 256 | awk '{print substr($1, 1, 24)}')"
+  runtime_service_namespace="io.github.stephenlclarke.container-compose.runtime.${runtime_namespace_digest}"
+  printf 'run_id=%s\nnamespace=%s\napp_root=%s\n' \
+    "${runtime_run_id}" "${runtime_service_namespace}" "${runtime_app_root}" \
+    >"${runtime_parent}/.container-compose-release-runtime-identity"
   profile_root="${runtime_parent}/profiles"
   mkdir -p "${profile_root}"
   status=0
@@ -994,6 +1057,8 @@ PY
     -u CONTAINER_RUNTIME_SERVICE_NAMESPACE -u CONTAINER_RUNTIME_RUN_ID \
     HAWKEYE_AUTO_INSTALL=1 \
     CONTAINER_RUNTIME_APP_ROOT="${runtime_app_root}" \
+    CONTAINER_RUNTIME_RUN_ID="${runtime_run_id}" \
+    CONTAINER_RUNTIME_SERVICE_NAMESPACE="${runtime_service_namespace}" \
     CONTAINER_RUNTIME_INIT_BLOCK_REPO="${container_path}" \
     CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="${init_image_archive}" \
     CONTAINERIZATION_INIT_SOURCE_PATH="${containerization_path}" \
@@ -1011,13 +1076,13 @@ PY
     "CONTAINER_COMPOSE_CONTAINER=${container_binary}" \
     "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}" || status=$?
 
-  if ! cleanup_release_runtime_parent "${runtime_parent}"; then
+  if ! cleanup_local_release_gate_resources "${container_binary}" \
+    "${runtime_parent}" "${runtime_app_root}" "${runtime_service_namespace}"; then
     status=1
   fi
   runtime_parent=""
-  if ! cleanup_container_runtime_candidate; then
-    status=1
-  fi
+  runtime_app_root=""
+  runtime_service_namespace=""
   CONTAINER_RUNTIME_CANDIDATE_ROOT=""
   trap - EXIT
   return "${status}"

@@ -1025,6 +1025,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.create_oci_archive(init_archive, DEFAULT_INIT_IMAGE)
             container_log = temporary_root / "container.log"
             archive_digest_log = temporary_root / "archive-digest.log"
+            child_archive_path_log = temporary_root / "child-archive-path.log"
             fake_container = temporary_root / "container-cli"
             self.write_fake_container(
                 fake_container,
@@ -1053,11 +1054,19 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     ),
                     "CONTAINER_TEST_LOG": str(container_log),
                     "CONTAINER_ARCHIVE_DIGEST_LOG": str(archive_digest_log),
+                    "CHILD_ARCHIVE_PATH_LOG": str(child_archive_path_log),
                 }
             )
 
             subprocess.run(
-                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                [
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/bin/sh",
+                    "-c",
+                    'printf "%s\\n" "$CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE" '
+                    '>"$CHILD_ARCHIVE_PATH_LOG"',
+                ],
                 cwd=ROOT,
                 env=environment,
                 check=True,
@@ -1087,6 +1096,10 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertEqual(
                 archive_digest_log.read_text(encoding="utf-8").split()[0],
                 expected_digest,
+            )
+            self.assertEqual(
+                child_archive_path_log.read_text(encoding="utf-8").strip(),
+                str(staged_init_archive),
             )
             self.assertFalse(staged_init_archive.parent.exists())
 
