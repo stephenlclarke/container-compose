@@ -586,6 +586,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             'sed "1s#^Output .*#Output \\\"${demo_output}\\\"#"',
             workflow,
         )
+        self.assertIn(
+            'awk -v runtime_path="${demo_root}/bin:${PATH}"',
+            workflow,
+        )
+        self.assertIn(
+            '/^Set MarginFill / { printf "Env PATH \\\"%s\\\"\\n", runtime_path }',
+            workflow,
+        )
         self.assertIn("docs/container-compose-demo.tape", workflow)
         self.assertIn("VHS itself is the fail-closed runtime gate", workflow)
         self.assertIn(
@@ -630,7 +638,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             tape.index('Type "container compose version"'),
         )
         self.assertEqual(tape.count("container system start"), 2)
-        self.assertEqual(tape.count('Wait+Screen@180s /status +running/'), 1)
+        self.assertIn("container-compose-system-ready", tape)
+        self.assertEqual(
+            tape.count(
+                "Wait+Screen@180s /container-compose-system-ready/"
+            ),
+            1,
+        )
         self.assertNotIn('Wait+Screen@900s /status +running/', tape)
         self.assertIn('Type "container compose version"', tape)
         live_up = (

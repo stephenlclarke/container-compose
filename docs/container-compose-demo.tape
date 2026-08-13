@@ -17,9 +17,9 @@ Type "cd $CONTAINER_COMPOSE_DEMO_ROOT || exit 1"
 Enter
 Sleep 2s
 
-Type "(container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --init-image-archive $CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE --enable-kernel-install --timeout 60 || { sleep 5; container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --init-image-archive $CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE --enable-kernel-install --timeout 60; }) && container system status"
+Type "(container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --init-image-archive $CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE --enable-kernel-install --timeout 60 || { sleep 5; container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --init-image-archive $CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE --enable-kernel-install --timeout 60; }) && container system status && printf '\ncontainer-compose-system-ready\n'"
 Enter
-Wait+Screen@180s /status +running/
+Wait+Screen@180s /container-compose-system-ready/
 Sleep 2s
 Ctrl+L
 Sleep 1s
