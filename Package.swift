@@ -26,7 +26,7 @@ let containerDependency: Package.Dependency = {
     }
     return .package(
         url: "https://github.com/stephenlclarke/container.git",
-        revision: "91d6ee9fa00d9cbe7f907ed72ce17e45696de410",
+        revision: "d959c9998efc0ece41787bb866e6b25072813474",
     )
 }()
 
@@ -38,7 +38,7 @@ let containerizationDependency: Package.Dependency = {
     }
     return .package(
         url: "https://github.com/stephenlclarke/containerization.git",
-        revision: "7e4f5152e9606a34a92c34186eb94f7cd37c134f",
+        revision: "5423cb7e26b6f1fd78d7f005137efc7b5a776e0b",
     )
 }()
 
