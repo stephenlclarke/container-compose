@@ -62,12 +62,13 @@ fi
 # Container integration is VM-backed and the CLI otherwise defaults to the
 # developer's persistent Application Support directory.  A stable-release gate
 # must never inherit stale machines, images, or networks from an earlier local
-# run, nor leave its own state behind for the next gate. Build and log scratch
-# may live on an external volume, but launchd rejects service plists and
-# executables from those volumes. Keep runtime state independently configurable
-# so the stable-release helper can bind it to its marker-protected internal
-# lifecycle. Resolve symlinks: Container's protected state deliberately rejects
-# persistence roots whose canonical path differs from the supplied path.
+# run, nor leave its own state behind for the next gate. Build scratch may live
+# on an external volume, but launchd-managed helpers can block while opening
+# their log files there and reject service plists or executables there. Keep all
+# launchd-facing state under the independently configurable runtime root so the
+# stable-release helper can bind it to its marker-protected internal lifecycle.
+# Resolve symlinks: Container's protected state deliberately rejects persistence
+# roots whose canonical path differs from the supplied path.
 if [[ -n "${CONTAINER_STACK_VALIDATION_SCRATCH_ROOT:-}" ]]; then
   container_scratch_root="${CONTAINER_STACK_VALIDATION_SCRATCH_ROOT}"
   if [[ "${container_scratch_root}" != /* || "${container_scratch_root}" == / ]]; then
@@ -117,7 +118,7 @@ if [[ "${container_runtime_root}" == / ]]; then
   exit 2
 fi
 container_app_root="${container_runtime_root}/stack-release-app-root"
-container_log_root="${container_scratch_root}/stack-release-log-root"
+container_log_root="${container_runtime_root}/stack-release-log-root"
 container_provider_socket="${container_app_root}/engine-provider/provider.sock"
 container_provider_socket_bytes=$(LC_ALL=C printf '%s' "${container_provider_socket}" \
   | wc -c | tr -d '[:space:]')
@@ -208,18 +209,26 @@ PY
     runtime_cli_fingerprint="unpackaged:${runtime_cli}:${runtime_cli_sha256}"
   else
     runtime_cli_fingerprint="packaged:${runtime_candidate_sha256}:${runtime_cli_sha256}"
-    validation_path_first="${validation_environment_path%%:*}"
-    validation_path_first_resolved=""
-    if [[ -d "${validation_path_first}" ]]; then
-      validation_path_first_resolved=$(cd "${validation_path_first}" && pwd -P)
-    fi
-    if [[ "${validation_path_first_resolved}" == "${runtime_cli_directory}" ]]; then
-      if [[ "${validation_environment_path}" == *:* ]]; then
-        validation_environment_path="${validation_environment_path#*:}"
-      else
-        validation_environment_path=""
+    # The runtime wrapper may prepend the same fresh extraction more than once.
+    # Its content identity is already captured by runtime_cli_fingerprint, so
+    # remove every matching PATH entry before hashing the environment. Otherwise
+    # a retry gets a different checkpoint solely because mktemp chose a new path.
+    normalized_validation_path=""
+    IFS=: read -r -a validation_path_entries <<<"${validation_environment_path}"
+    for validation_path_entry in "${validation_path_entries[@]}"; do
+      validation_path_entry_resolved=""
+      if [[ -d "${validation_path_entry}" ]]; then
+        validation_path_entry_resolved=$(cd "${validation_path_entry}" && pwd -P)
       fi
-    fi
+      if [[ "${validation_path_entry_resolved}" == "${runtime_cli_directory}" ]]; then
+        continue
+      fi
+      if [[ -n "${normalized_validation_path}" ]]; then
+        normalized_validation_path+=:
+      fi
+      normalized_validation_path+="${validation_path_entry}"
+    done
+    validation_environment_path="${normalized_validation_path}"
   fi
   runtime_make_args+=("PATH=${runtime_path}")
 fi

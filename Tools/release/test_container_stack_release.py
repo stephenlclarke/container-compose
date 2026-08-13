@@ -1189,7 +1189,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 f"PATH={candidate_tools_resolved}{os.pathsep}{tools}"
                 f"{os.pathsep}{environment['PATH'].split(os.pathsep, 1)[1]} "
                 f"APP_ROOT={explicit_runtime_root.resolve()}/stack-release-app-root "
-                f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
+                f"LOG_ROOT={explicit_runtime_root.resolve()}/stack-release-log-root "
                 "INTEGRATION_SERVICE_NAMESPACE=io.github.container.stack-validation.fixture "
                 "check container dsym docs coverage",
                 full_commands,
@@ -1291,7 +1291,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 packaged_cli.chmod(0o555)
                 packaged_environment = environment.copy()
                 packaged_environment["PATH"] = (
-                    f"{packaged_tools}{os.pathsep}{environment['PATH']}"
+                    f"{packaged_tools}{os.pathsep}{packaged_tools}"
+                    f"{os.pathsep}{environment['PATH']}"
                 )
                 packaged_environment["STACK_VALIDATION_LOG"] = str(packaged_log)
                 packaged_environment["CONTAINER_RUNTIME_CLI"] = str(packaged_cli)
@@ -1387,7 +1388,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "make:-C "
                 f"{container} "
                 f"APP_ROOT={resolved_container}/.test-scratch/runtime/stack-release-app-root "
-                f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
+                f"LOG_ROOT={resolved_container}/.test-scratch/runtime/stack-release-log-root "
                 "check container dsym docs coverage-unit",
                 hosted_commands,
             )
@@ -1412,7 +1413,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(
                 "make:-C container "
                 f"APP_ROOT={resolved_container}/.test-scratch/runtime/stack-release-app-root "
-                f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
+                f"LOG_ROOT={resolved_container}/.test-scratch/runtime/stack-release-log-root "
                 "check container dsym docs coverage-unit",
                 relative_commands,
             )
@@ -1435,7 +1436,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "make:-C "
                 f"{container_link} "
                 f"APP_ROOT={resolved_container}/.test-scratch/runtime/stack-release-app-root "
-                f"LOG_ROOT={resolved_container}/.test-scratch/stack-release-log-root "
+                f"LOG_ROOT={resolved_container}/.test-scratch/runtime/stack-release-log-root "
                 "check container dsym docs coverage-unit",
                 symlinked_commands,
             )
@@ -1460,7 +1461,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "make:-C "
                 f"{container} "
                 f"APP_ROOT={resolved_external_scratch}/runtime/stack-release-app-root "
-                f"LOG_ROOT={resolved_external_scratch}/stack-release-log-root "
+                f"LOG_ROOT={resolved_external_scratch}/runtime/stack-release-log-root "
                 "check container dsym docs coverage-unit",
                 external_commands,
             )
@@ -1487,7 +1488,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "make:-C "
                 f"{container} "
                 f"APP_ROOT={internal_runtime.resolve()}/stack-release-app-root "
-                f"LOG_ROOT={resolved_external_scratch}/stack-release-log-root "
+                f"LOG_ROOT={internal_runtime.resolve()}/stack-release-log-root "
                 "check container dsym docs coverage-unit",
                 split_commands,
             )
