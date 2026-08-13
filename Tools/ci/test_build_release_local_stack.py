@@ -61,7 +61,7 @@ class BuildReleaseLocalStackTests(unittest.TestCase):
                 f'CONTAINER_ENGINE_API_PACKAGE_PATH="{engine_api}"', result.stdout
             )
             self.assertIn('cp Package.resolved "$lock_backup"', result.stdout)
-            self.assertIn("trap restore_lock EXIT HUP INT TERM", result.stdout)
+            self.assertIn("trap restore_lock EXIT HUP INT QUIT TERM", result.stdout)
             branch_separator = "else " + chr(92) + "\n"
             local_branch, separator, fallback_branch = result.stdout.partition(
                 branch_separator

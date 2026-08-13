@@ -22,6 +22,7 @@ import io
 import json
 import os
 import signal
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -64,6 +65,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             "CONTAINER_RUNTIME_MANAGED",
             "CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES",
             "CONTAINER_RUNTIME_RUN_ID",
+            "CONTAINER_RUNTIME_START_DEADLINE_SECONDS",
             "CONTAINER_RUNTIME_LOCK_HELD",
             "CONTAINER_RUNTIME_LOCK_KEEPER_PID",
         ):
@@ -99,6 +101,42 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertIn("candidate container binary digest mismatch", result.stderr)
             self.assertFalse(container_log.exists())
 
+    def test_candidate_fingerprint_hang_consumes_complete_startup_deadline(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            blocking_candidate = temporary_root / "container-cli"
+            os.mkfifo(blocking_candidate)
+            blocking_candidate.chmod(0o755)
+            command_marker = temporary_root / "command-ran"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(blocking_candidate),
+                    "/usr/bin/touch",
+                    str(command_marker),
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 4)
+            self.assertFalse(command_marker.exists())
+
     @staticmethod
     def write_fake_container(
         path: Path,
@@ -115,6 +153,24 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             "fi\n"
             'printf "%s\\n" "$*" >>"${CONTAINER_TEST_LOG:?}"\n'
             + body,
+            encoding="utf-8",
+        )
+        path.chmod(0o755)
+
+    @staticmethod
+    def write_blocking_mktemp(path: Path) -> None:
+        real_mktemp = shutil.which("mktemp")
+        if real_mktemp is None:
+            raise RuntimeError("mktemp is required for runtime wrapper tests")
+        path.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            'if [[ "$*" == *"${BLOCKED_MKTEMP_PATTERN:?}"* ]]; then\n'
+            '  printf "%s\\n" "$*" >"${MKTEMP_ARGUMENTS:?}"\n'
+            '  touch "${MKTEMP_STARTED:?}"\n'
+            "  /bin/sleep 30\n"
+            "fi\n"
+            f'exec "{real_mktemp}" "$@"\n',
             encoding="utf-8",
         )
         path.chmod(0o755)
@@ -402,6 +458,60 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertIn("refusing to clear container runtime root with an invalid marker", result.stderr)
             self.assertEqual(sentinel.read_text(encoding="utf-8"), "preserve\n")
 
+    def test_runtime_root_marker_hang_consumes_complete_startup_deadline(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            app_root.mkdir()
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            real_find = shutil.which("find")
+            self.assertIsNotNone(real_find)
+            marker_inspection_started = temporary_root / "marker-inspection-started"
+            fake_find = fake_bin / "find"
+            fake_find.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if [[ "$*" == *"-print -quit"* ]]; then\n'
+                '  touch "${MARKER_INSPECTION_STARTED:?}"\n'
+                "  sleep 30\n"
+                "fi\n"
+                f'exec "{real_find}" "$@"\n',
+                encoding="utf-8",
+            )
+            fake_find.chmod(0o755)
+            fake_container = fake_bin / "container-cli"
+            self.write_fake_container(fake_container)
+            command_marker = temporary_root / "command-ran"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                    "MARKER_INSPECTION_STARTED": str(marker_inspection_started),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=9,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 8)
+            self.assertTrue(marker_inspection_started.exists())
+            self.assertFalse(command_marker.exists())
+
     def test_scopes_candidate_namespace_and_exports_public_socket(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -501,77 +611,106 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
             self.assertNotEqual(namespaces[0], namespaces[1])
 
-    def test_repeated_group_termination_stops_the_isolated_runtime(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
+    def test_repeated_group_signal_stops_the_isolated_runtime(self) -> None:
+        with tempfile.TemporaryDirectory(
+            dir="/tmp", prefix="cc-signal."
+        ) as temporary_directory:
             temporary_root = Path(temporary_directory)
-            app_root = temporary_root / "app-root"
-            container_log = temporary_root / "container.log"
-            ready = temporary_root / "ready"
-            stop_started = temporary_root / "stop-started"
-            stop_complete = temporary_root / "stop-complete"
-            fake_container = temporary_root / "container-cli"
-            self.write_fake_container(
-                fake_container,
-                body=(
-                    'if [[ "$*" == "system stop" && -e "${READY_FILE:-}" ]]; then\n'
-                    '  touch "${STOP_STARTED:?}"\n'
-                    "  sleep 0.5\n"
-                    '  touch "${STOP_COMPLETE:?}"\n'
-                    "fi\n"
-                ),
-            )
-            environment = self.runtime_environment()
-            environment.update(
-                {
-                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
-                    "CONTAINER_RUNTIME_RUN_ID": "termination-test-run",
-                    "CONTAINER_RUNTIME_LOCK_FILE": str(
-                        temporary_root / "runtime.lock"
-                    ),
-                    "CONTAINER_TEST_LOG": str(container_log),
-                    "READY_FILE": str(ready),
-                    "STOP_STARTED": str(stop_started),
-                    "STOP_COMPLETE": str(stop_complete),
-                }
-            )
+            for delivered_signal, expected_status in (
+                (signal.SIGHUP, 129),
+                (signal.SIGINT, 130),
+                (signal.SIGQUIT, 131),
+                (signal.SIGTERM, 143),
+            ):
+                with self.subTest(signal=delivered_signal.name):
+                    case_root = temporary_root / delivered_signal.name
+                    case_root.mkdir()
+                    app_root = case_root / "app-root"
+                    container_log = case_root / "container.log"
+                    ready = case_root / "ready"
+                    stop_started = case_root / "stop-started"
+                    stop_complete = case_root / "stop-complete"
+                    fake_container = case_root / "container-cli"
+                    self.write_fake_container(
+                        fake_container,
+                        body=(
+                            'if [[ "$*" == "system stop" && -e "${READY_FILE:-}" ]]; then\n'
+                            '  touch "${STOP_STARTED:?}"\n'
+                            "  sleep 0.5\n"
+                            '  touch "${STOP_COMPLETE:?}"\n'
+                            "fi\n"
+                        ),
+                    )
+                    environment = self.runtime_environment()
+                    environment.update(
+                        {
+                            "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                            "CONTAINER_RUNTIME_RUN_ID": (
+                                f"{delivered_signal.name.lower()}-test-run"
+                            ),
+                            "CONTAINER_RUNTIME_LOCK_FILE": str(
+                                case_root / "runtime.lock"
+                            ),
+                            "CONTAINER_TEST_LOG": str(container_log),
+                            "READY_FILE": str(ready),
+                            "STOP_STARTED": str(stop_started),
+                            "STOP_COMPLETE": str(stop_complete),
+                        }
+                    )
 
-            process = subprocess.Popen(
-                [
-                    str(SCRIPT),
-                    str(fake_container),
-                    "/bin/sh",
-                    "-c",
-                    'touch "$READY_FILE"; while :; do sleep 1; done',
-                ],
-                cwd=ROOT,
-                env=environment,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                start_new_session=True,
-            )
-            deadline = time.monotonic() + 10
-            while not ready.exists() and process.poll() is None:
-                if time.monotonic() >= deadline:
-                    process.kill()
-                    self.fail("candidate command did not become ready")
-                time.sleep(0.05)
+                    process = subprocess.Popen(
+                        [
+                            str(SCRIPT),
+                            str(fake_container),
+                            "/bin/sh",
+                            "-c",
+                            'touch "$READY_FILE"; while :; do sleep 1; done',
+                        ],
+                        cwd=ROOT,
+                        env=environment,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        start_new_session=True,
+                    )
+                    deadline = time.monotonic() + 10
+                    while not ready.exists() and process.poll() is None:
+                        if time.monotonic() >= deadline:
+                            process.kill()
+                            self.fail("candidate command did not become ready")
+                        time.sleep(0.05)
+                    if process.poll() is not None:
+                        stdout, stderr = process.communicate(timeout=10)
+                        self.fail(
+                            "candidate command exited before signal\n"
+                            + stdout
+                            + stderr
+                        )
 
-            os.killpg(process.pid, signal.SIGTERM)
-            deadline = time.monotonic() + 10
-            while not stop_started.exists() and process.poll() is None:
-                if time.monotonic() >= deadline:
-                    process.kill()
-                    self.fail("runtime stop did not begin")
-                time.sleep(0.01)
-            os.killpg(process.pid, signal.SIGTERM)
-            stdout, stderr = process.communicate(timeout=10)
+                    os.killpg(process.pid, delivered_signal)
+                    deadline = time.monotonic() + 10
+                    while not stop_started.exists() and process.poll() is None:
+                        if time.monotonic() >= deadline:
+                            process.kill()
+                            self.fail("runtime stop did not begin")
+                        time.sleep(0.01)
+                    try:
+                        os.killpg(process.pid, delivered_signal)
+                    except ProcessLookupError:
+                        # Cleanup may have completed between observing its
+                        # marker and re-delivering the signal.
+                        pass
+                    stdout, stderr = process.communicate(timeout=10)
 
-            self.assertEqual(process.returncode, 143, stdout + stderr)
-            invocations = container_log.read_text(encoding="utf-8").splitlines()
-            self.assertGreaterEqual(invocations.count("system stop"), 2)
-            self.assertIn("Stopping matched container runtime...", stdout)
-            self.assertTrue(stop_complete.exists(), stdout + stderr)
+                    self.assertEqual(
+                        process.returncode, expected_status, stdout + stderr
+                    )
+                    invocations = container_log.read_text(
+                        encoding="utf-8"
+                    ).splitlines()
+                    self.assertGreaterEqual(invocations.count("system stop"), 2)
+                    self.assertIn("Stopping matched container runtime...", stdout)
+                    self.assertTrue(stop_complete.exists(), stdout + stderr)
 
     def test_rejects_legacy_global_stop_helper_before_service_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -676,6 +815,65 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertIn("checkout must be clean before staging", result.stderr)
             self.assertFalse(container_log.exists())
 
+    def test_source_validation_hang_consumes_complete_startup_deadline(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source, _ = self.create_containerization_source(temporary_root)
+            init_repo = temporary_root / "container"
+            init_repo.mkdir()
+            (init_repo / "Makefile").write_text(
+                "init-block:\n\t@true\n", encoding="utf-8"
+            )
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            real_git = shutil.which("git")
+            self.assertIsNotNone(real_git)
+            fake_git = fake_bin / "git"
+            fake_git.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if [[ "$*" == *"rev-parse --show-toplevel"* ]]; then\n'
+                '  touch "${SOURCE_VALIDATION_STARTED:?}"\n'
+                "  sleep 30\n"
+                "fi\n"
+                f'exec "{real_git}" "$@"\n',
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            fake_container = fake_bin / "container-cli"
+            self.write_fake_container(fake_container)
+            command_marker = temporary_root / "command-ran"
+            validation_started = temporary_root / "source-validation-started"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(init_repo),
+                    "CONTAINERIZATION_INIT_SOURCE_PATH": str(source),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "3",
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                    "SOURCE_VALIDATION_STARTED": str(validation_started),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=7,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 6)
+            self.assertTrue(validation_started.exists())
+            self.assertFalse(command_marker.exists())
+
     def test_stages_clean_init_source_and_separate_build_scratch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -752,6 +950,65 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertIn(f"staged_source_root={staged_source}", fingerprint)
             self.assertIn(f"build_scratch_root={scratch_root}", fingerprint)
 
+    def test_source_staging_hang_consumes_the_shared_startup_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source, _ = self.create_containerization_source(temporary_root)
+            init_repo = temporary_root / "container"
+            init_repo.mkdir()
+            (init_repo / "Makefile").write_text(
+                "init-block:\n\t@true\n", encoding="utf-8"
+            )
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            fake_git = fake_bin / "git"
+            clone_started = temporary_root / "clone-started"
+            real_git = shutil.which("git")
+            self.assertIsNotNone(real_git)
+            fake_git.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if [[ "${1:-}" == "clone" ]]; then\n'
+                f"  touch {clone_started}\n"
+                "  sleep 30\n"
+                "fi\n"
+                f'exec "{real_git}" "$@"\n',
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            fake_container = fake_bin / "container-cli"
+            container_log = temporary_root / "container.log"
+            command_marker = temporary_root / "command-ran"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(init_repo),
+                    "CONTAINERIZATION_INIT_SOURCE_PATH": str(source),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "8",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=11,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 10)
+            self.assertTrue(clone_started.exists())
+            self.assertFalse(command_marker.exists())
+
     def test_configures_default_init_image_only_after_build(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -814,6 +1071,133 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertEqual(invocations.count("system start"), 2)
             self.assertGreaterEqual(invocations.count("system stop"), 2)
             self.assertIn("--enable-kernel-install", starts[0])
+
+    def test_source_built_init_restart_shares_the_startup_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            command_marker = temporary_root / "command-ran"
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            init_repo = temporary_root / "container"
+            init_repo.mkdir()
+            (init_repo / "Makefile").write_text(
+                "init-block:\n\t@true\n",
+                encoding="utf-8",
+            )
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(init_repo),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=7,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertFalse(command_marker.exists())
+            invocations = container_log.read_text(encoding="utf-8")
+            self.assertEqual(invocations.count("system start"), 1)
+
+    def test_stale_runtime_stop_hang_consumes_the_shared_startup_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            command_marker = temporary_root / "command-ran"
+            stop_started = temporary_root / "stop-started"
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "system stop" && ! -e "${STOP_STARTED:?}" ]]; then\n'
+                    '  touch "${STOP_STARTED}"\n'
+                    "  sleep 30\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "3",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "STOP_STARTED": str(stop_started),
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=7,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 6)
+            self.assertTrue(stop_started.exists())
+            self.assertFalse(command_marker.exists())
+
+    def test_builder_image_install_shares_the_startup_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            command_marker = temporary_root / "command-ran"
+            container_log = temporary_root / "container.log"
+            builder_archive = temporary_root / "builder.tar"
+            builder_archive.touch()
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "image load -i "* ]]; then\n'
+                    "  sleep 30\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_BUILDER_IMAGE": "local/builder:test",
+                    "CONTAINER_RUNTIME_BUILDER_IMAGE_TAR": str(builder_archive),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=9,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 8, result.stdout + result.stderr)
+            self.assertFalse(command_marker.exists())
+            self.assertIn("image load -i", container_log.read_text(encoding="utf-8"))
 
     def test_installs_and_configures_unpublished_builder_before_init_build(
         self,
@@ -1025,6 +1409,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.create_oci_archive(init_archive, DEFAULT_INIT_IMAGE)
             container_log = temporary_root / "container.log"
             archive_digest_log = temporary_root / "archive-digest.log"
+            child_archive_path_log = temporary_root / "child-archive-path.log"
             fake_container = temporary_root / "container-cli"
             self.write_fake_container(
                 fake_container,
@@ -1053,11 +1438,19 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     ),
                     "CONTAINER_TEST_LOG": str(container_log),
                     "CONTAINER_ARCHIVE_DIGEST_LOG": str(archive_digest_log),
+                    "CHILD_ARCHIVE_PATH_LOG": str(child_archive_path_log),
                 }
             )
 
             subprocess.run(
-                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                [
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/bin/sh",
+                    "-c",
+                    'printf "%s\\n" "$CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE" '
+                    '>"$CHILD_ARCHIVE_PATH_LOG"',
+                ],
                 cwd=ROOT,
                 env=environment,
                 check=True,
@@ -1087,6 +1480,10 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertEqual(
                 archive_digest_log.read_text(encoding="utf-8").split()[0],
                 expected_digest,
+            )
+            self.assertEqual(
+                child_archive_path_log.read_text(encoding="utf-8").strip(),
+                str(staged_init_archive),
             )
             self.assertFalse(staged_init_archive.parent.exists())
 
@@ -1597,6 +1994,111 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertEqual(container_commands[-1], "list --all --format json")
             self.assertFalse(any("system stop" in command for command in container_commands))
 
+    def test_managed_runtime_api_hang_stays_inside_the_shared_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            command_marker = temporary_root / "command-ran"
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "list --all --format json" ]]; then\n'
+                    "  sleep 30\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "outer-owner",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=4,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 3)
+            self.assertFalse(command_marker.exists())
+            self.assertEqual(
+                container_log.read_text(encoding="utf-8").splitlines(),
+                ["list --all --format json"],
+            )
+
+    def test_managed_start_state_creation_stays_inside_the_shared_deadline(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            mktemp_arguments = temporary_root / "mktemp-arguments"
+            mktemp_started = temporary_root / "mktemp-started"
+            self.write_blocking_mktemp(fake_bin / "mktemp")
+            command_marker = temporary_root / "command-ran"
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "list --all --format json" ]]; then\n'
+                    "  exit 1\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "BLOCKED_MKTEMP_PATTERN": (
+                        "container-compose-runtime-managed-start."
+                    ),
+                    "CONTAINER_RUNTIME_APP_ROOT": str(
+                        temporary_root / "app-root"
+                    ),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "outer-owner",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "3",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "MKTEMP_STARTED": str(mktemp_started),
+                    "MKTEMP_ARGUMENTS": str(mktemp_arguments),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=6,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 5)
+            self.assertTrue(
+                mktemp_started.exists(), result.stdout + result.stderr
+            )
+            self.assertNotIn(
+                str(temporary_root), mktemp_arguments.read_text(encoding="utf-8")
+            )
+            self.assertFalse(command_marker.exists())
+
     def test_api_round_trip_failure_blocks_the_candidate_command(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -1632,6 +2134,146 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(command_marker.exists())
+
+    def test_non_transient_start_failure_is_not_retried(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == *"system start"* ]]; then\n'
+                    "  printf 'invalid runtime configuration\\n' >&2\n"
+                    "  exit 42\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
+            invocations = container_log.read_text(encoding="utf-8")
+            self.assertEqual(invocations.count("system start"), 1)
+            self.assertNotIn("restarting the matched runtime once", result.stderr)
+
+    def test_start_state_creation_stays_inside_the_shared_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            mktemp_arguments = temporary_root / "mktemp-arguments"
+            mktemp_started = temporary_root / "mktemp-started"
+            self.write_blocking_mktemp(fake_bin / "mktemp")
+            (fake_bin / "sleep").write_text(
+                "#!/usr/bin/env bash\nexit 0\n",
+                encoding="utf-8",
+            )
+            (fake_bin / "sleep").chmod(0o755)
+            command_marker = temporary_root / "command-ran"
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "BLOCKED_MKTEMP_PATTERN": "container-compose-runtime-start.",
+                    "CONTAINER_RUNTIME_APP_ROOT": str(
+                        temporary_root / "app-root"
+                    ),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "4",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "MKTEMP_STARTED": str(mktemp_started),
+                    "MKTEMP_ARGUMENTS": str(mktemp_arguments),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=7,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 6)
+            self.assertTrue(
+                mktemp_started.exists(), result.stdout + result.stderr
+            )
+            self.assertNotIn(
+                str(temporary_root), mktemp_arguments.read_text(encoding="utf-8")
+            )
+            self.assertFalse(command_marker.exists())
+
+    def test_api_round_trip_hang_consumes_the_shared_startup_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            container_log = temporary_root / "container.log"
+            command_marker = temporary_root / "command-ran"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "list --all --format json" ]]; then\n'
+                    "  sleep 30\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=9,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(
+                time.monotonic() - started,
+                8,
+                result.stdout + result.stderr,
+            )
+            self.assertFalse(command_marker.exists())
+            invocations = container_log.read_text(encoding="utf-8")
+            self.assertEqual(invocations.count("system start"), 1)
+            self.assertEqual(invocations.count("list --all --format json"), 1)
 
     def test_restarts_once_after_transient_xpc_start_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

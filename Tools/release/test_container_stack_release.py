@@ -1003,10 +1003,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             "container_targets=(check container dsym docs coverage)",
             validation,
         )
-        self.assertIn(
-            "release-gate-hosted: container-stack-hosted-release-validation ci",
-            makefile,
-        )
+        self.assertIn("release-gate-hosted:", makefile)
+        self.assertIn("--stage sibling-stack-hosted", makefile)
+        self.assertIn("container-stack-hosted-release-validation", makefile)
+        self.assertIn("--stage compose-ci-hosted", makefile)
         self.assertIn(
             "containerization_targets=(check containerization examples docs coverage)",
             validation,
@@ -1032,10 +1032,26 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1", makefile)
         self.assertIn("docker-compose-devices-parity", makefile)
         self.assertIn("docker-compose-named-volume-reuse-parity", makefile)
+        self.assertIn("release-gate:", makefile)
+        for stage in ("sibling-stack", "compose-ci", "swift-runtime", "compose-parity"):
+            self.assertIn(f"--stage {stage}", makefile)
+        self.assertIn("docker-compose-parity-stages:", makefile)
         self.assertIn(
-            "release-gate: container-stack-release-validation ci swift-runtime-test docker-compose-parity",
+            "docker-compose-parity: build container-stack-build docker-compose-reference",
             makefile,
         )
+        self.assertIn("RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT", makefile)
+        self.assertIn("init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT)", makefile)
+        self.assertIn("fingerprint-release-environment.py", makefile)
+        self.assertIn(
+            "--fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py",
+            makefile,
+        )
+        self.assertNotIn(
+            "release-gate: release-gate-environment-fingerprint-check", makefile
+        )
+        self.assertIn("parity-inputs=$(RELEASE_GATE_PARITY_INPUT_FINGERPRINT)", makefile)
+        self.assertIn("run-release-checkpoint.py", makefile)
         self.assertEqual(
             makefile.count("env -u CONTAINER_BIN -u CONTAINER_COMPOSE_CONTAINER"),
             2,
@@ -1043,6 +1059,118 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.3.1", makefile)
         self.assertIn("DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff", makefile)
         self.assertNotIn("repackage-release", makefile)
+
+    def test_release_gate_fingerprint_tracks_archive_and_parity_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "init.oci.tar"
+            archive.write_bytes(b"first archive")
+
+            def fingerprint(
+                repetitions: int,
+                core_coverage: int = 90,
+                runtime_filter: str = "ComposeRuntimeTests",
+                test_flags: str = "",
+                test_attempts: int = 2,
+                go_build_flags: str = "-trimpath",
+                parity_overrides: dict[str, str] | None = None,
+            ) -> str:
+                parity_overrides = parity_overrides or {}
+                completed = subprocess.run(
+                    [
+                        "make",
+                        "--no-print-directory",
+                        "-s",
+                        "print-release-gate-fingerprint",
+                        f"CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE={archive}",
+                        f"PARITY_REPETITIONS={repetitions}",
+                        f"SWIFT_CORE_COVERAGE_MIN={core_coverage}",
+                        f"SWIFT_RUNTIME_TEST_FILTER={runtime_filter}",
+                        f"SWIFT_TEST_FLAGS={test_flags}",
+                        f"SWIFT_TEST_ATTEMPTS={test_attempts}",
+                        f"GO_RELEASE_BUILD_FLAGS={go_build_flags}",
+                        *(
+                            f"{name}={value}"
+                            for name, value in parity_overrides.items()
+                        ),
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    env=self.non_interactive_environment(),
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                return completed.stdout.strip()
+
+            initial = fingerprint(1)
+            archive.write_bytes(b"second archive")
+            changed_archive = fingerprint(1)
+            changed_repetitions = fingerprint(3)
+            changed_coverage = fingerprint(3, core_coverage=91)
+            changed_filter = fingerprint(3, 91, runtime_filter="OtherRuntimeTests")
+            changed_flags = fingerprint(3, 91, "OtherRuntimeTests", "-Xswiftc -DSTRICT")
+            changed_attempts = fingerprint(
+                3, 91, "OtherRuntimeTests", "-Xswiftc -DSTRICT", test_attempts=3
+            )
+            changed_go_flags = fingerprint(
+                3,
+                91,
+                "OtherRuntimeTests",
+                "-Xswiftc -DSTRICT",
+                3,
+                "-trimpath -buildvcs=false",
+            )
+
+            self.assertNotEqual(initial, changed_archive)
+            self.assertNotEqual(changed_archive, changed_repetitions)
+            self.assertNotEqual(changed_repetitions, changed_coverage)
+            self.assertNotEqual(changed_coverage, changed_filter)
+            self.assertNotEqual(changed_filter, changed_flags)
+            self.assertNotEqual(changed_flags, changed_attempts)
+            self.assertNotEqual(changed_attempts, changed_go_flags)
+            self.assertNotIn(str(archive), changed_archive)
+
+            parity_baseline = fingerprint(3)
+            for name, value in {
+                "DOCKER_COMPOSE_PARITY_TARGETS": "docker-compose-links-parity",
+                "PARITY_TIMING_MAX_RATIO": "9",
+                "PARITY_TIMING_MIN_DELTA_SECONDS": "4",
+                "PARITY_COMPARABLE_NOISE_PCT": "4",
+                "PARITY_SINK_STALL_SECONDS": "3",
+                "PARITY_PRESSURE_RECORDS": "32768",
+                "PARITY_DOCKER_HOST_ADDRESS": "docker.example.invalid",
+                "PARITY_CONTAINER_HOST_ADDRESS": "127.0.0.2",
+            }.items():
+                with self.subTest(parity_input=name):
+                    self.assertNotEqual(
+                        parity_baseline,
+                        fingerprint(3, parity_overrides={name: value}),
+                    )
+
+    def test_release_gate_fingerprints_all_defaulted_parity_result_inputs(
+        self,
+    ) -> None:
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        parity_source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (ROOT / "Tools" / "parity").glob("*.sh")
+        )
+        defaulted_inputs = set(
+            re.findall(r'\b(PARITY_[A-Z0-9_]+)="\$\{\1:-', parity_source)
+        )
+        output_only_inputs = {"PARITY_EVIDENCE_DIR", "PARITY_TIMING_OUTPUT"}
+        result_inputs = defaulted_inputs - output_only_inputs
+        parity_fingerprint = makefile[
+            makefile.index("RELEASE_GATE_PARITY_INPUT_FINGERPRINT") : makefile.index(
+                "override RELEASE_GATE_STATIC_FINGERPRINT ="
+            )
+        ]
+
+        self.assertTrue(result_inputs)
+        for name in result_inputs:
+            with self.subTest(parity_input=name):
+                self.assertIn(f"$({name})", parity_fingerprint)
+        self.assertIn("$(DOCKER_COMPOSE_PARITY_TARGETS)", parity_fingerprint)
 
     def test_phase5_builder_suites_are_unconditionally_restored(self) -> None:
         validation = STACK_RELEASE_VALIDATION.read_text(encoding="utf-8")
@@ -1175,24 +1303,53 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertEqual(full.returncode, 0, full.stderr)
             full_commands = log.read_text(encoding="utf-8")
             resolved_container = container.resolve()
+
+            def assert_make_targets(
+                commands: str,
+                repository: Path | str,
+                targets: tuple[str, ...],
+                required_fragment: str = "",
+            ) -> None:
+                prefix = f"make:-C {repository} "
+                command_lines = commands.splitlines()
+                for target in targets:
+                    self.assertTrue(
+                        any(
+                            line.startswith(prefix)
+                            and required_fragment in line
+                            and line.endswith(f" {target}")
+                            for line in command_lines
+                        ),
+                        f"missing independent {repository} stage {target}:\n{commands}",
+                    )
+
             self.assertIn(
                 f"make:-C {containerization} PATH={candidate_tools_resolved}{os.pathsep}{tools}",
                 full_commands,
             )
-            self.assertIn(
-                "check containerization examples docs coverage fetch-default-kernel integration",
+            assert_make_targets(
                 full_commands,
+                containerization,
+                (
+                    "check",
+                    "containerization",
+                    "examples",
+                    "docs",
+                    "coverage",
+                    "fetch-default-kernel",
+                    "integration",
+                ),
             )
-            self.assertIn(
-                "make:-C "
-                f"{container} "
-                f"PATH={candidate_tools_resolved}{os.pathsep}{tools}"
-                f"{os.pathsep}{environment['PATH'].split(os.pathsep, 1)[1]} "
-                f"APP_ROOT={explicit_runtime_root.resolve()}/stack-release-app-root "
-                f"LOG_ROOT={explicit_runtime_root.resolve()}/stack-release-log-root "
-                "INTEGRATION_SERVICE_NAMESPACE=io.github.container.stack-validation.fixture "
-                "check container dsym docs coverage",
+            assert_make_targets(
                 full_commands,
+                container,
+                ("check", "container", "dsym", "docs", "coverage"),
+                required_fragment=(
+                    f"APP_ROOT={explicit_runtime_root.resolve()}/stack-release-app-root "
+                    f"LOG_ROOT={explicit_runtime_root.resolve()}/stack-release-log-root "
+                    "INTEGRATION_SERVICE_NAMESPACE="
+                    "io.github.container.stack-validation.fixture"
+                ),
             )
             self.assertNotIn("CONCURRENT_TEST_SUITES=", full_commands)
             self.assertIn("bootstrap:/tmp/runtime-init.oci.tar", full_commands)
@@ -1214,7 +1371,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertEqual(repeated_full.returncode, 0, repeated_full.stderr)
             self.assertEqual(log.read_text(encoding="utf-8"), full_commands)
             self.assertIn(
-                "reusing exact-input validation checkpoint: containerization",
+                "reusing exact-input validation checkpoint: containerization-check",
                 repeated_full.stdout,
             )
 
@@ -1249,7 +1406,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertEqual(log.read_text(encoding="utf-8"), full_commands)
             self.assertEqual(
                 changed_compose.stdout.count("reusing exact-input validation checkpoint:"),
-                4,
+                18,
                 changed_compose.stdout,
             )
 
@@ -1265,7 +1422,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             changed_commands = log.read_text(encoding="utf-8")
             self.assertEqual(
                 changed_commands.count(f"make:-C {builder}"),
-                2,
+                10,
                 full.stdout
                 + repeated_full.stdout
                 + changed_toolchain.stdout
@@ -1331,7 +1488,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 second_packaged.stdout.count(
                     "reusing exact-input validation checkpoint:"
                 ),
-                4,
+                18,
                 second_packaged.stdout,
             )
 
@@ -1366,7 +1523,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertEqual(drift.returncode, 2)
             self.assertIn("Container CLI content drifted", drift.stderr)
             self.assertFalse(
-                (root / "drift-checkpoints" / "full-containerization.sha256").exists()
+                (
+                    root
+                    / "drift-checkpoints"
+                    / "full-containerization-check.sha256"
+                ).exists()
             )
 
             log.unlink()
@@ -1380,17 +1541,19 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
             self.assertEqual(hosted.returncode, 0, hosted.stderr)
             hosted_commands = log.read_text(encoding="utf-8")
-            self.assertIn(
-                f"make:-C {containerization} check containerization examples docs coverage",
+            assert_make_targets(
                 hosted_commands,
+                containerization,
+                ("check", "containerization", "examples", "docs", "coverage"),
             )
-            self.assertIn(
-                "make:-C "
-                f"{container} "
-                f"APP_ROOT={resolved_container}/.test-scratch/runtime/stack-release-app-root "
-                f"LOG_ROOT={resolved_container}/.test-scratch/runtime/stack-release-log-root "
-                "check container dsym docs coverage-unit",
+            assert_make_targets(
                 hosted_commands,
+                container,
+                ("check", "container", "dsym", "docs", "coverage-unit"),
+                required_fragment=(
+                    f"APP_ROOT={resolved_container}/.test-scratch/runtime/"
+                    "stack-release-app-root"
+                ),
             )
             self.assertNotIn(" integration", hosted_commands)
             self.assertNotIn(" fetch-default-kernel", hosted_commands)
@@ -1409,16 +1572,15 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(relative.returncode, 0, relative.stderr)
-            relative_commands = log.read_text(encoding="utf-8")
-            self.assertIn(
-                "make:-C container "
-                f"APP_ROOT={resolved_container}/.test-scratch/runtime/stack-release-app-root "
-                f"LOG_ROOT={resolved_container}/.test-scratch/runtime/stack-release-log-root "
-                "check container dsym docs coverage-unit",
-                relative_commands,
+            self.assertFalse(log.exists())
+            self.assertEqual(
+                relative.stdout.count(
+                    "reusing exact-input validation checkpoint:"
+                ),
+                16,
+                relative.stdout,
             )
 
-            log.unlink()
             container_link = root / "container-link"
             container_link.symlink_to(container, target_is_directory=True)
             symlink_paths = validation_paths.copy()
@@ -1431,21 +1593,22 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(symlinked.returncode, 0, symlinked.stderr)
-            symlinked_commands = log.read_text(encoding="utf-8")
-            self.assertIn(
-                "make:-C "
-                f"{container_link} "
-                f"APP_ROOT={resolved_container}/.test-scratch/runtime/stack-release-app-root "
-                f"LOG_ROOT={resolved_container}/.test-scratch/runtime/stack-release-log-root "
-                "check container dsym docs coverage-unit",
-                symlinked_commands,
+            self.assertFalse(log.exists())
+            self.assertEqual(
+                symlinked.stdout.count(
+                    "reusing exact-input validation checkpoint:"
+                ),
+                16,
+                symlinked.stdout,
             )
 
-            log.unlink()
             external_scratch = root / "external-runtime"
             external_environment = environment.copy()
             external_environment["CONTAINER_STACK_VALIDATION_SCRATCH_ROOT"] = str(
                 external_scratch
+            )
+            external_environment["CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR"] = str(
+                root / "external-checkpoints"
             )
             external = subprocess.run(
                 [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
@@ -1457,13 +1620,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertEqual(external.returncode, 0, external.stderr)
             external_commands = log.read_text(encoding="utf-8")
             resolved_external_scratch = external_scratch.resolve()
-            self.assertIn(
-                "make:-C "
-                f"{container} "
-                f"APP_ROOT={resolved_external_scratch}/runtime/stack-release-app-root "
-                f"LOG_ROOT={resolved_external_scratch}/runtime/stack-release-log-root "
-                "check container dsym docs coverage-unit",
+            assert_make_targets(
                 external_commands,
+                container,
+                ("check", "container", "dsym", "docs", "coverage-unit"),
+                required_fragment=(
+                    f"APP_ROOT={resolved_external_scratch}/runtime/"
+                    "stack-release-app-root"
+                ),
             )
 
             log.unlink()
@@ -1484,13 +1648,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
             self.assertEqual(split.returncode, 0, split.stderr)
             split_commands = log.read_text(encoding="utf-8")
-            self.assertIn(
-                "make:-C "
-                f"{container} "
-                f"APP_ROOT={internal_runtime.resolve()}/stack-release-app-root "
-                f"LOG_ROOT={internal_runtime.resolve()}/stack-release-log-root "
-                "check container dsym docs coverage-unit",
+            assert_make_targets(
                 split_commands,
+                container,
+                ("check", "container", "dsym", "docs", "coverage-unit"),
+                required_fragment=(
+                    f"APP_ROOT={internal_runtime.resolve()}/stack-release-app-root"
+                ),
             )
 
             invalid_environment = environment.copy()
@@ -1812,7 +1976,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             for delivered_signal, expected_status in (
+                (signal.SIGHUP, 129),
                 (signal.SIGINT, 130),
+                (signal.SIGQUIT, 131),
                 (signal.SIGTERM, 143),
             ):
                 for signal_scope in ("process", "group"):
@@ -1833,14 +1999,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                     fake_gate.write_text(
                         "#!/usr/bin/env bash\n"
                         "set -u\n"
-                        "cleanup() { trap '' INT TERM; "
+                        "cleanup() { trap '' HUP INT QUIT TERM; "
                         "test -x \"$CANDIDATE_ROOT/bin/container\"; "
                         "touch \"$CLEANUP_STARTED\"; sleep 0.5; "
                         "touch \"$STOP_COMPLETE\"; }\n"
+                        "trap 'cleanup; exit 129' HUP\n"
                         "trap 'cleanup; exit 130' INT\n"
+                        "trap 'cleanup; exit 131' QUIT\n"
                         "trap 'cleanup; exit 143' TERM\n"
                         "touch \"$READY\"\n"
-                        "while :; do sleep 1; done\n",
+                        # A signal sent only to this wrapper leaves its
+                        # synchronous gate descendant alive and defers the
+                        # wrapper trap. The helper must supervise and signal
+                        # their complete process group.
+                        "/bin/sh -c 'while :; do sleep 1; done'\n",
                         encoding="utf-8",
                     )
                     fake_gate.chmod(0o755)
@@ -1908,6 +2080,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                     self.assertTrue(removed.exists(), stdout + stderr)
                     self.assertFalse(candidate_root.exists(), stdout + stderr)
 
+        local_gate = self.script[
+            self.script.index("run_local_release_gate_command() {") : self.script.index(
+                "# Resolve retained evidence"
+            )
+        ]
+        self.assertIn('"${RELEASE_COMMAND_DEADLINE_RUNNER}"', local_gate)
+        self.assertIn("--no-deadline", local_gate)
+
     def test_outer_marker_cleans_a_pre_runtime_interrupt_root(self) -> None:
         with tempfile.TemporaryDirectory(dir="/tmp", prefix="cc-parent-test.") as directory:
             fixture_root = Path(directory)
@@ -1937,6 +2117,229 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
 
             self.assertEqual(cleaned.returncode, 0, cleaned.stderr)
+
+    def test_parent_cleanup_stops_exact_namespace_before_removing_roots(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="cc-cleanup-test.") as directory:
+            root = Path(directory)
+            runtime_parent = Path(
+                tempfile.mkdtemp(prefix="c.parent-stop-test.", dir="/tmp")
+            )
+            candidate_root = Path(
+                tempfile.mkdtemp(
+                    prefix="container-compose-runtime-candidate.stop-test.",
+                    dir="/tmp",
+                )
+            )
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(runtime_parent), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if runtime_parent.exists()
+                else None
+            )
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(candidate_root), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if candidate_root.exists()
+                else None
+            )
+            (runtime_parent / ".container-compose-release-runtime-parent").write_text(
+                "container-compose release runtime parent v1\n", encoding="utf-8"
+            )
+            runtime_app_root = runtime_parent / "app"
+            runtime_app_root.mkdir()
+            (candidate_root / ".container-compose-runtime-candidate-run").write_text(
+                "container-compose runtime candidate run v1 fixture digest\n",
+                encoding="utf-8",
+            )
+            candidate_bin = candidate_root / "bin"
+            candidate_bin.mkdir()
+            stop_log = root / "stop.log"
+            candidate_cli = candidate_bin / "container"
+            candidate_cli.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'test -d "$CONTAINER_APP_ROOT"\n'
+                'printf "%s|%s|%s\\n" "$CONTAINER_APP_ROOT" '
+                '"$CONTAINER_SERVICE_NAMESPACE" "$*" >"$STOP_LOG"\n',
+                encoding="utf-8",
+            )
+            candidate_cli.chmod(0o755)
+            namespace = (
+                "io.github.stephenlclarke.container-compose.runtime.parentstoptest"
+            )
+
+            cleaned = self.run_release_function(
+                root,
+                "cleanup_local_release_gate_resources "
+                f"{shlex.quote(str(candidate_cli))} "
+                f"{shlex.quote(str(runtime_parent))} "
+                f"{shlex.quote(str(runtime_app_root))} "
+                f"{shlex.quote(namespace)}; "
+                f"test ! -e {shlex.quote(str(runtime_parent))}; "
+                f"test ! -e {shlex.quote(str(candidate_root))}",
+                shell_setup=(
+                    f"CONTAINER_RUNTIME_CANDIDATE_ROOT={shlex.quote(str(candidate_root))}\n"
+                    f"export STOP_LOG={shlex.quote(str(stop_log))}"
+                ),
+            )
+
+            self.assertEqual(cleaned.returncode, 0, cleaned.stderr)
+            self.assertEqual(
+                stop_log.read_text(encoding="utf-8").strip(),
+                f"{runtime_app_root}|{namespace}|system stop",
+            )
+
+    def test_parent_cleanup_retains_roots_when_exact_stop_fails(self) -> None:
+        runtime_parent = Path(
+            tempfile.mkdtemp(prefix="c.failed-stop-test.", dir="/tmp")
+        )
+        candidate_root = Path(
+            tempfile.mkdtemp(
+                prefix="container-compose-runtime-candidate.failed-stop-test.",
+                dir="/tmp",
+            )
+        )
+        self.addCleanup(
+            lambda: subprocess.run(
+                ["find", str(runtime_parent), "-depth", "-delete"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if runtime_parent.exists()
+            else None
+        )
+        self.addCleanup(
+            lambda: subprocess.run(
+                ["find", str(candidate_root), "-depth", "-delete"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if candidate_root.exists()
+            else None
+        )
+        (runtime_parent / ".container-compose-release-runtime-parent").write_text(
+            "container-compose release runtime parent v1\n", encoding="utf-8"
+        )
+        runtime_app_root = runtime_parent / "app"
+        runtime_app_root.mkdir()
+        (candidate_root / ".container-compose-runtime-candidate-run").write_text(
+            "container-compose runtime candidate run v1 fixture digest\n",
+            encoding="utf-8",
+        )
+        candidate_bin = candidate_root / "bin"
+        candidate_bin.mkdir()
+        candidate_cli = candidate_bin / "container"
+        candidate_cli.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+        candidate_cli.chmod(0o755)
+        namespace = "io.github.stephenlclarke.container-compose.runtime.failedstoptest"
+
+        retained = self.run_release_function(
+            Path("/tmp"),
+            "if cleanup_local_release_gate_resources "
+            f"{shlex.quote(str(candidate_cli))} "
+            f"{shlex.quote(str(runtime_parent))} "
+            f"{shlex.quote(str(runtime_app_root))} "
+            f"{shlex.quote(namespace)}; then exit 99; fi; "
+            f"test -d {shlex.quote(str(runtime_parent))}; "
+            f"test -d {shlex.quote(str(candidate_root))}",
+            shell_setup=(
+                f"CONTAINER_RUNTIME_CANDIDATE_ROOT={shlex.quote(str(candidate_root))}"
+            ),
+        )
+
+        self.assertEqual(retained.returncode, 0, retained.stderr)
+        self.assertIn("failed to stop release runtime namespace", retained.stderr)
+
+    def test_parent_cleanup_bounds_a_hung_exact_stop_and_retains_roots(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="cc-stop-timeout-test.") as directory:
+            fixture_root = Path(directory)
+            stop_started = fixture_root / "stop-started"
+            runtime_parent = Path(
+                tempfile.mkdtemp(prefix="c.stop-timeout-test.", dir="/tmp")
+            )
+            candidate_root = Path(
+                tempfile.mkdtemp(
+                    prefix="container-compose-runtime-candidate.stop-timeout-test.",
+                    dir="/tmp",
+                )
+            )
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(runtime_parent), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if runtime_parent.exists()
+                else None
+            )
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(candidate_root), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if candidate_root.exists()
+                else None
+            )
+            (runtime_parent / ".container-compose-release-runtime-parent").write_text(
+                "container-compose release runtime parent v1\n", encoding="utf-8"
+            )
+            runtime_app_root = runtime_parent / "app"
+            runtime_app_root.mkdir()
+            (candidate_root / ".container-compose-runtime-candidate-run").write_text(
+                "container-compose runtime candidate run v1 fixture digest\n",
+                encoding="utf-8",
+            )
+            candidate_bin = candidate_root / "bin"
+            candidate_bin.mkdir()
+            candidate_cli = candidate_bin / "container"
+            candidate_cli.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'touch "$STOP_STARTED"\n'
+                "sleep 30\n",
+                encoding="utf-8",
+            )
+            candidate_cli.chmod(0o755)
+            namespace = (
+                "io.github.stephenlclarke.container-compose.runtime.stoptimeouttest"
+            )
+
+            started = time.monotonic()
+            retained = self.run_release_function(
+                fixture_root,
+                "if cleanup_local_release_gate_resources "
+                f"{shlex.quote(str(candidate_cli))} "
+                f"{shlex.quote(str(runtime_parent))} "
+                f"{shlex.quote(str(runtime_app_root))} "
+                f"{shlex.quote(namespace)}; then exit 99; fi; "
+                f"test -d {shlex.quote(str(runtime_parent))}; "
+                f"test -d {shlex.quote(str(candidate_root))}",
+                shell_setup=(
+                    f"CONTAINER_RUNTIME_CANDIDATE_ROOT={shlex.quote(str(candidate_root))}\n"
+                    "CANDIDATE_STOP_TIMEOUT_SECONDS=1\n"
+                    f"export STOP_STARTED={shlex.quote(str(stop_started))}"
+                ),
+            )
+
+            self.assertEqual(retained.returncode, 0, retained.stderr)
+            self.assertLess(time.monotonic() - started, 5, retained.stderr)
+            self.assertTrue(stop_started.exists(), retained.stderr)
+            self.assertIn(
+                "timed out stopping release runtime namespace", retained.stderr
+            )
 
     def test_creator_cleanup_stays_armed_through_path_publication(self) -> None:
         runtime_parent = Path("/tmp") / (
@@ -2059,7 +2462,17 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             local_gate,
         )
         self.assertIn("trap cleanup_local_release_gate_roots EXIT", local_gate)
-        self.assertIn("cleanup_container_runtime_candidate || cleanup_failed=1", local_gate)
+        self.assertIn("cleanup_local_release_gate_resources", local_gate)
+        self.assertIn(
+            'CONTAINER_RUNTIME_RUN_ID="${runtime_run_id}"', local_gate
+        )
+        self.assertIn(
+            'CONTAINER_RUNTIME_SERVICE_NAMESPACE="${runtime_service_namespace}"',
+            local_gate,
+        )
+        self.assertIn(
+            '.container-compose-release-runtime-identity', local_gate
+        )
         self.assertIn(
             "/private/tmp/container-compose-runtime-candidate.*",
             self.script,

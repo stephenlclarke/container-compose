@@ -107,7 +107,8 @@ SWIFT_TEST_ATTEMPTS ?= 2
 SWIFT_COVERAGE_TEST_ATTEMPTS ?= 3
 SWIFT_TEST_RUN_FLAGS ?= --no-parallel
 SWIFT_RUNTIME_TEST_FILTER ?= ComposeRuntimeTests
-COMPOSE_TEST_BINARY ?= $(abspath .build/debug/compose)
+DEFAULT_COMPOSE_TEST_BINARY := $(abspath .build/debug/compose)
+COMPOSE_TEST_BINARY ?= $(DEFAULT_COMPOSE_TEST_BINARY)
 CONTAINER_STACK_REPO ?= $(abspath ../container)
 CONTAINERIZATION_STACK_REPO ?= $(abspath ../containerization)
 CONTAINER_ENGINE_API_STACK_REPO ?= $(abspath ../container-engine-api)
@@ -140,6 +141,29 @@ CONTAINER_COMPOSE_LIVE ?= 0
 PARITY_EVIDENCE_DIR ?=
 PARITY_REPETITIONS ?= 3
 PARITY_TIMEOUT_SECONDS ?= 300
+RELEASE_GATE_STAGE_TIMEOUT_SECONDS ?= 7200
+RELEASE_GATE_STACK_TIMEOUT_SECONDS ?= 14400
+RELEASE_GATE_PARITY_TIMEOUT_SECONDS ?= 14400
+PARITY_STAGE_TIMEOUT_SECONDS ?= 900
+CONTAINER_RUNTIME_START_DEADLINE_SECONDS ?= 300
+RELEASE_GATE_CHECKPOINT_DIR = $(if $(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR),$(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR)/compose-release-gate,)
+PARITY_GATE_CHECKPOINT_DIR = $(if $(RELEASE_GATE_CHECKPOINT_DIR),$(RELEASE_GATE_CHECKPOINT_DIR)/parity,)
+RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT = $(shell if [[ -z "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" ]]; then printf unset; elif [[ -f "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" ]]; then shasum -a 256 "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" | awk '{print $$1}'; else printf missing; fi)
+RELEASE_GATE_COMPOSE_TEST_BINARY_FINGERPRINT = $(shell { printf 'selector=%s\n' "$(COMPOSE_TEST_BINARY)"; if [[ "$(COMPOSE_TEST_BINARY)" == "$(DEFAULT_COMPOSE_TEST_BINARY)" ]]; then printf 'source-built\n'; elif [[ -f "$(COMPOSE_TEST_BINARY)" ]]; then shasum -a 256 "$(COMPOSE_TEST_BINARY)"; else printf 'missing\n'; fi; } | shasum -a 256 | awk '{print $$1}')
+RELEASE_GATE_TOOL_FINGERPRINT = $(shell { record_tool() { local label="$$1" selector="$$2" executable="$$3" path; if [[ "$$executable" == */* && -e "$$executable" ]]; then path="$$executable"; else path="$$(command -v "$$executable" 2>/dev/null || true)"; fi; printf '%s=%s\n%s-path=%s\n' "$$label" "$$selector" "$$label" "$${path:-missing}"; if [[ -f "$$path" ]]; then shasum -a 256 "$$path"; fi; }; for tool in git make swift clang go gofmt ruby python3 docker hawkeye shellcheck markdownlint markdownlint-cli2 xcodebuild xcrun codesign shasum tar curl jq; do record_tool "$$tool" "$$tool" "$$tool"; done; record_tool selected-swift "$(SWIFT)" "$(firstword $(SWIFT))"; record_tool selected-go "$(GO)" "$(firstword $(GO))"; record_tool selected-python "$(PYTHON)" "$(firstword $(PYTHON))"; record_tool selected-markdownlint "$(MARKDOWNLINT)" "$(firstword $(MARKDOWNLINT))"; record_tool selected-hawkeye "$(HAWKEYE)" "$(firstword $(HAWKEYE))"; record_tool selected-llvm-cov "$(SWIFT_LLVM_COV)" "$(SWIFT_LLVM_COV)"; record_tool selected-llvm-profdata "$(SWIFT_LLVM_PROFDATA)" "$(SWIFT_LLVM_PROFDATA)"; record_tool selected-docker-compose "$(DOCKER_COMPOSE_REFERENCE)" "$(firstword $(DOCKER_COMPOSE_REFERENCE))"; } | shasum -a 256 | awk '{print $$1}')
+RELEASE_GATE_PARITY_INPUT_FINGERPRINT = $(shell { printf '%s\n' \
+	'targets=$(DOCKER_COMPOSE_PARITY_TARGETS)' \
+	'repetitions=$(PARITY_REPETITIONS)' \
+	'timeout=$(PARITY_TIMEOUT_SECONDS)' \
+	'timing-max-ratio=$(PARITY_TIMING_MAX_RATIO)' \
+	'timing-min-delta-seconds=$(PARITY_TIMING_MIN_DELTA_SECONDS)' \
+	'comparable-noise-pct=$(PARITY_COMPARABLE_NOISE_PCT)' \
+	'sink-stall-seconds=$(PARITY_SINK_STALL_SECONDS)' \
+	'pressure-records=$(PARITY_PRESSURE_RECORDS)' \
+	'docker-host-address=$(PARITY_DOCKER_HOST_ADDRESS)' \
+	'container-host-address=$(PARITY_CONTAINER_HOST_ADDRESS)'; \
+	} | shasum -a 256 | awk '{print $$1}')
+override RELEASE_GATE_STATIC_FINGERPRINT = compose=$(shell /usr/bin/git rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):builder=$(shell /usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):containerization=$(shell /usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):container=$(shell /usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):homebrew=$(shell if [[ -f "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" ]]; then shasum -a 256 "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" | awk '{print $$1}'; else printf missing; fi):candidate=$(CONTAINER_RUNTIME_CANDIDATE_SHA256):init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT):compose-test=$(RELEASE_GATE_COMPOSE_TEST_BINARY_FINGERPRINT):tools=$(RELEASE_GATE_TOOL_FINGERPRINT):engine=$(PARITY_CONTAINER_ENGINE_API_REF):container-source=$(CONTAINER_SOURCE):container-ref=$(PARITY_CONTAINER_REF):containerization-source=$(CONTAINERIZATION_SOURCE):containerization-ref=$(PARITY_CONTAINERIZATION_REF):swift=$(shell $(SWIFT) --version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):swift-resolved-flags=$(SWIFT_RESOLVED_FLAGS):swift-test-flags=$(SWIFT_TEST_FLAGS):swift-test-run-flags=$(SWIFT_TEST_RUN_FLAGS):swift-test-attempts=$(SWIFT_TEST_ATTEMPTS):swift-coverage-attempts=$(SWIFT_COVERAGE_TEST_ATTEMPTS):swift-runtime-filter=$(SWIFT_RUNTIME_TEST_FILTER):go=$(shell $(GO) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):go-release-env=$(GO_RELEASE_ENV):go-release-build-flags=$(GO_RELEASE_BUILD_FLAGS):go-release-ldflags=$(GO_RELEASE_LDFLAGS):docker=$(shell $(DOCKER_COMPOSE_REFERENCE) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):reference=$(DOCKER_COMPOSE_REFERENCE_VERSION):fixtures=$(DOCKER_COMPOSE_E2E_REF):parity-inputs=$(RELEASE_GATE_PARITY_INPUT_FINGERPRINT):release-stack-timeout=$(RELEASE_GATE_STACK_TIMEOUT_SECONDS):release-parity-timeout=$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS):parity-stage-timeout=$(PARITY_STAGE_TIMEOUT_SECONDS):runtime-start-deadline=$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS):parity-live=1:build-check-live=1:swift-core-min=$(SWIFT_CORE_COVERAGE_MIN):swift-runtime-spi-min=$(SWIFT_RUNTIME_SPI_COVERAGE_MIN):swift-provider-min=$(SWIFT_PROVIDER_COVERAGE_MIN):swift-plugin-min=$(SWIFT_PLUGIN_COVERAGE_MIN):swift-aggregate-min=$(SWIFT_AGGREGATE_COVERAGE_MIN):go-min=$(GO_COVERAGE_MIN)
 PARITY_ENV = \
 	CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" \
 	CONTAINER_COMPOSE_LIVE="$(CONTAINER_COMPOSE_LIVE)" \
@@ -234,8 +258,9 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 SWIFT_TEST_FLAGS ?=
 SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -F -Xswiftc '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' -Xlinker -rpath -Xlinker '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' $(if $(strip $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)),-Xlinker -rpath -Xlinker '$(SWIFT_TEST_RUNTIME_LIBRARY_PATH)'))
 
-.PHONY: all workflow ci ci-fast release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
+.PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: core-runtime-neutrality
 .PHONY: codeql-local codeql-sarif-upload codeql-sarif-upload-dry-run
@@ -254,9 +279,29 @@ ci: check coverage-check go-build cli-smoke-built
 
 ci-fast: check test go-build cli-smoke-built
 
-release-gate: container-stack-release-validation ci swift-runtime-test docker-compose-parity
+release-gate-environment-fingerprint-check:
+	@environment_fingerprint="$$( $(PYTHON) ./Tools/ci/fingerprint-release-environment.py)"; \
+	if ! [[ "$$environment_fingerprint" =~ ^[0-9a-f]{64}$$ ]]; then \
+		printf 'could not fingerprint the inherited release-gate environment\n' >&2; \
+		exit 2; \
+	fi
 
-release-gate-hosted: container-stack-hosted-release-validation ci
+print-release-gate-static-fingerprint:
+	@printf '%s\n' "$(RELEASE_GATE_STATIC_FINGERPRINT)"
+
+print-release-gate-fingerprint: release-gate-environment-fingerprint-check
+	@environment_fingerprint="$$( $(PYTHON) ./Tools/ci/fingerprint-release-environment.py)"; \
+	printf '%s:environment=%s\n' "$(RELEASE_GATE_STATIC_FINGERPRINT)" "$$environment_fingerprint"
+
+release-gate:
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage sibling-stack --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory container-stack-release-validation
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-ci --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory ci
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage swift-runtime --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory swift-runtime-test
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-parity --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory docker-compose-parity
+
+release-gate-hosted:
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage sibling-stack-hosted --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory container-stack-hosted-release-validation
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-ci-hosted --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory ci
 
 ci-release: release-gate package-release
 
@@ -277,8 +322,8 @@ build:
 	@if [[ -n "$(CONTAINER_PACKAGE_PATH)$(CONTAINERIZATION_PACKAGE_PATH)" ]]; then \
 		lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
 		cp Package.resolved "$$lock_backup"; \
-		restore_lock() { trap - EXIT HUP INT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
-		trap restore_lock EXIT HUP INT TERM; \
+		restore_lock() { trap - EXIT HUP INT QUIT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
+		trap restore_lock EXIT HUP INT QUIT TERM; \
 		$(PARITY_ENV) $(SWIFT) build --product compose; \
 	else \
 		$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --product compose; \
@@ -288,8 +333,8 @@ build-release:
 	@if [[ -n "$(CONTAINER_PACKAGE_PATH)$(CONTAINERIZATION_PACKAGE_PATH)" ]]; then \
 		lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
 		cp Package.resolved "$$lock_backup"; \
-		restore_lock() { trap - EXIT HUP INT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
-		trap restore_lock EXIT HUP INT TERM; \
+		restore_lock() { trap - EXIT HUP INT QUIT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
+		trap restore_lock EXIT HUP INT QUIT TERM; \
 		$(PARITY_ENV) $(SWIFT) build -c release --product compose $(SWIFT_RELEASE_FLAGS); \
 	else \
 		$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose $(SWIFT_RELEASE_FLAGS); \
@@ -326,6 +371,7 @@ swift-runtime-test: container-stack-build build swift-runtime-test-build
 	CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
+		CONTAINER_RUNTIME_START_DEADLINE_SECONDS="$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		env CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
@@ -1388,13 +1434,21 @@ container-stack-build:
 
 .PHONY: container-stack-release-validation container-stack-hosted-release-validation
 container-stack-release-validation:
-	CONTAINER_RUNTIME_CLI="$(CONTAINER_COMPOSE_CONTAINER)" \
+	environment_fingerprint="$$( $(PYTHON) ./Tools/ci/fingerprint-release-environment.py)" && \
+		CONTAINER_RUNTIME_CLI="$(CONTAINER_COMPOSE_CONTAINER)" \
+		RELEASE_GATE_INHERITED_ENVIRONMENT_FINGERPRINT="$$environment_fingerprint" \
+		RELEASE_GATE_STACK_TIMEOUT_SECONDS="$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" \
+		RELEASE_GATE_TOOL_FINGERPRINT="$(RELEASE_GATE_TOOL_FINGERPRINT)" \
 		./Tools/ci/run-stack-release-validation.sh full "$(CURDIR)" \
 		"$(CONTAINER_BUILDER_SHIM_STACK_REPO)" "$(CONTAINERIZATION_STACK_REPO)" \
 		"$(CONTAINER_STACK_REPO)" "$(HOMEBREW_TAP_REPO)"
 
 container-stack-hosted-release-validation:
-	./Tools/ci/run-stack-release-validation.sh hosted "$(CURDIR)" \
+	environment_fingerprint="$$( $(PYTHON) ./Tools/ci/fingerprint-release-environment.py)" && \
+		RELEASE_GATE_INHERITED_ENVIRONMENT_FINGERPRINT="$$environment_fingerprint" \
+		RELEASE_GATE_STACK_TIMEOUT_SECONDS="$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" \
+		RELEASE_GATE_TOOL_FINGERPRINT="$(RELEASE_GATE_TOOL_FINGERPRINT)" \
+		./Tools/ci/run-stack-release-validation.sh hosted "$(CURDIR)" \
 		"$(CONTAINER_BUILDER_SHIM_STACK_REPO)" "$(CONTAINERIZATION_STACK_REPO)" \
 		"$(CONTAINER_STACK_REPO)" "$(HOMEBREW_TAP_REPO)"
 
@@ -1405,7 +1459,7 @@ docker-compose-reference:
 docker-compose-e2e-fixtures:
 	DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)" ./Tools/parity/sync-docker-compose-e2e-fixtures.sh --strict
 
-docker-compose-parity: container-stack-build docker-compose-reference
+docker-compose-parity: build container-stack-build docker-compose-reference
 	container_binary="$(CONTAINER_COMPOSE_CONTAINER)"; \
 	if [[ "$$container_binary" == "container" ]]; then \
 		for candidate in "$(LOCAL_CONTAINER_BINARY)" "$(LOCAL_CONTAINER_PACKAGE_BINARY)"; do \
@@ -1415,6 +1469,7 @@ docker-compose-parity: container-stack-build docker-compose-reference
 	CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
+		CONTAINER_RUNTIME_START_DEADLINE_SECONDS="$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		$(MAKE) --no-print-directory -j1 \
@@ -1424,7 +1479,19 @@ docker-compose-parity: container-stack-build docker-compose-reference
 			DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)" \
 			CONTAINER_COMPOSE_LIVE=1 \
 			CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1 \
-			$(DOCKER_COMPOSE_PARITY_TARGETS)
+			docker-compose-parity-stages
+
+docker-compose-parity-stages:
+	@set -e; \
+	for target in $(DOCKER_COMPOSE_PARITY_TARGETS); do \
+		RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py \
+			--checkpoint-dir "$(PARITY_GATE_CHECKPOINT_DIR)" \
+			--stage "$$target" \
+			--fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py \
+			--seconds "$(PARITY_STAGE_TIMEOUT_SECONDS)" -- \
+			$(MAKE) --no-print-directory -o build -o docker-compose-reference \
+				-o container-stack-build "$$target"; \
+	done
 
 docker-compose-named-volume-reuse-parity: build docker-compose-reference
 
@@ -1620,6 +1687,7 @@ docker-compose-performance-matrix: build docker-compose-reference
 	CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
+		CONTAINER_RUNTIME_START_DEADLINE_SECONDS="$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 			env CONTAINER_COMPOSE_CONTAINER="$$container_binary" \
@@ -1650,8 +1718,8 @@ docker-compose-lifecycle-hooks-parity: build docker-compose-reference
 docker-compose-signal-log-reliability-parity: docker-compose-reference
 	@lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
 	cp Package.resolved "$$lock_backup"; \
-	restore_lock() { trap - EXIT HUP INT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
-	trap restore_lock EXIT HUP INT TERM; \
+	restore_lock() { trap - EXIT HUP INT QUIT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
+	trap restore_lock EXIT HUP INT QUIT TERM; \
 	$(PARITY_ENV) $(SWIFT) build --product compose; \
 	$(PARITY_ENV) ./Tools/parity/check-compose-signal-log-reliability.sh --strict
 

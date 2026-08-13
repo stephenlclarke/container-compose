@@ -130,6 +130,26 @@ Useful focused targets are:
 | `make upstream-divergence-check` | Run the same report as a strict check that fails on dirty worktrees, unpushed local commits, missing refs, or Apple upstream merge conflicts. |
 | `make upstream-divergence-release-check` | Stable-release check: also fails when a fork `main` is behind Apple upstream. |
 
+The release gate is a content-addressed stage graph rather than one opaque
+command. When the release helper supplies
+`CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR`, successful sibling-stack, Compose
+CI, runtime, and parity stages are recorded beneath that evidence directory and
+an interrupted retry resumes only exact-input stages. Sibling repository targets
+and individual Docker Compose parity contracts have their own checkpoints, so a
+late failure does not repeat unrelated successful work. The identity includes
+all four source trees, the tap formula, the runtime candidate, relevant fixture
+revisions, and tool versions; a changed input invalidates the affected proof.
+
+Every stage has a wall-clock deadline and terminates its complete process group
+when that deadline expires. Tune the outer bounds with
+`RELEASE_GATE_STAGE_TIMEOUT_SECONDS`, `RELEASE_GATE_STACK_TIMEOUT_SECONDS`, and
+`RELEASE_GATE_PARITY_TIMEOUT_SECONDS`; tune individual parity contracts with
+`PARITY_STAGE_TIMEOUT_SECONDS`. `CONTAINER_RUNTIME_START_DEADLINE_SECONDS`
+bounds the complete isolated-runtime startup, including archive load and unpack.
+Do not delete a retained candidate or runtime root after cleanup reports that
+the exact namespace could not be stopped: preserve it for diagnosis and stop
+that namespace successfully before removing its files.
+
 Before publishing a Current prerelease, dispatch the full hosted Quality gate
 against the exact `main` revision:
 

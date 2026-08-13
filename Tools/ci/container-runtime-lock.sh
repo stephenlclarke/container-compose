@@ -83,7 +83,7 @@ acquire_container_runtime_lock() {
     # the host-wide lock after the owner exits.
     local lock_owner_pid=$$
     (
-        trap 'exit 0' HUP INT TERM
+        trap 'exit 0' HUP INT QUIT TERM
         while kill -0 "$lock_owner_pid" >/dev/null 2>&1; do
             sleep 0.1
         done

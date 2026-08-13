@@ -22,6 +22,7 @@ SELF_DIRECTORY="$(cd "$(dirname "${SELF_PATH}")" && pwd -P)"
 readonly SELF_DIRECTORY
 readonly COMPOSE_PROMOTION_REVIEW_TOOL="${SELF_DIRECTORY}/../Tools/release/compose_promotion_review.py"
 readonly OCI_IMAGE_LAYOUT_VALIDATOR="${SELF_DIRECTORY}/../Tools/release/validate-oci-image-layout.py"
+readonly RELEASE_COMMAND_DEADLINE_RUNNER="${SELF_DIRECTORY}/../Tools/ci/run-command-with-deadline.py"
 SCRIPT_NAME="$(basename "${SELF_PATH}")"
 readonly SCRIPT_NAME
 readonly SCRIPT_USAGE="scripts/${SCRIPT_NAME}"
@@ -139,6 +140,10 @@ Environment:
   CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS
       Override the default one-hour package workflow wait and 30-second poll.
 
+  CONTAINER_STACK_RELEASE_CANDIDATE_STOP_TIMEOUT_SECONDS
+      Override the default 30-second bound for stopping the exact candidate
+      runtime namespace during local release-gate cleanup.
+
   CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE
       Absolute path to the retained OCI init-image archive used by the local
       release gate. Execute mode requires this hermetic bootstrap input so
@@ -206,6 +211,7 @@ COMPOSE_PACKAGE_POLL_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS:-30
 STABLE_RELEASE_GATE_WAIT_SECONDS="${CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS:-10800}"
 PROMOTION_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS:-3600}"
 PROMOTION_POLL_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS:-30}"
+CANDIDATE_STOP_TIMEOUT_SECONDS="${CONTAINER_STACK_RELEASE_CANDIDATE_STOP_TIMEOUT_SECONDS:-30}"
 COMPOSE_MAIN_PROMOTION_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE:-pr}"
 COMPOSE_MAIN_MERGE_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE:-checked-admin}"
 RELEASE_INTENT="${CONTAINER_STACK_RELEASE_INTENT:-}"
@@ -644,7 +650,7 @@ stage_container_runtime_candidate() {
     cleanup_unpublished_runtime_candidate_build() {
       local trapped_status="${1:-$?}"
       trap - EXIT
-      trap '' INT TERM
+      trap '' HUP INT QUIT TERM
       if [[ -n "${build_root:-}" && -d "${build_root}" ]]; then
         case "${build_root}" in
           "${artifact_parent}/.build-${container_head}."*)
@@ -659,7 +665,9 @@ stage_container_runtime_candidate() {
       fi
       return "${trapped_status}"
     }
+    trap 'exit 129' HUP
     trap 'exit 130' INT
+    trap 'exit 131' QUIT
     trap 'exit 143' TERM
     trap 'cleanup_unpublished_runtime_candidate_build $?' EXIT
     archive="${build_root}/container-homebrew-debug-arm64.tar.gz"
@@ -679,7 +687,7 @@ stage_container_runtime_candidate() {
       "${container_head}" >"${build_root}/.container-compose-runtime-candidate-artifact"
     mv "${build_root}" "${artifact_root}"
     build_root=""
-    trap - EXIT INT TERM
+    trap - EXIT HUP INT QUIT TERM
     archive="${artifact_root}/container-homebrew-debug-arm64.tar.gz"
   fi
 
@@ -741,6 +749,79 @@ cleanup_container_runtime_candidate() {
   find "${CONTAINER_RUNTIME_CANDIDATE_ROOT}" -depth -delete
 }
 
+# Stop the exact candidate-owned namespace before either its runtime root or
+# executable is removed. A failed stop deliberately retains both roots so the
+# service cannot outlive the binary needed to clean it up.
+stop_release_runtime_candidate() {
+  local container_binary="$1"
+  local runtime_app_root="$2"
+  local runtime_service_namespace="$3"
+
+  if [[ -z "${container_binary}" || -z "${runtime_app_root}" ||
+    -z "${runtime_service_namespace}" ]]; then
+    return 0
+  fi
+  if [[ -z "${CONTAINER_RUNTIME_CANDIDATE_ROOT:-}" ||
+    "${container_binary}" != "${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container" ||
+    ! -x "${container_binary}" ]]; then
+    printf 'refusing to stop a release runtime without its exact candidate CLI: %s\n' \
+      "${container_binary}" >&2
+    return 1
+  fi
+  case "${runtime_app_root}" in
+    /private/tmp/c.*/app | /tmp/c.*/app) ;;
+    *)
+      printf 'refusing to stop a release runtime outside its marked parent: %s\n' \
+        "${runtime_app_root}" >&2
+      return 1
+      ;;
+  esac
+  if [[ ! "${runtime_service_namespace}" =~ ^io\.github\.stephenlclarke\.container-compose\.runtime\.[A-Za-z0-9_-]+$ ]]; then
+    printf 'refusing to stop an unexpected release runtime namespace: %s\n' \
+      "${runtime_service_namespace}" >&2
+    return 1
+  fi
+
+  if [[ ! "${CANDIDATE_STOP_TIMEOUT_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'release runtime candidate stop timeout must be a positive integer: %s\n' \
+      "${CANDIDATE_STOP_TIMEOUT_SECONDS}" >&2
+    return 1
+  fi
+
+  local stop_status
+  if env CONTAINER_APP_ROOT="${runtime_app_root}" \
+    CONTAINER_SERVICE_NAMESPACE="${runtime_service_namespace}" \
+    "${RELEASE_COMMAND_DEADLINE_RUNNER}" \
+      --seconds "${CANDIDATE_STOP_TIMEOUT_SECONDS}" --grace-seconds 0 -- \
+      "${container_binary}" system stop; then
+    return 0
+  else
+    stop_status="$?"
+  fi
+  if [[ "${stop_status}" -eq 124 ]]; then
+    printf 'timed out stopping release runtime namespace before cleanup: %s\n' \
+      "${runtime_service_namespace}" >&2
+  else
+    printf 'failed to stop release runtime namespace before cleanup: %s\n' \
+      "${runtime_service_namespace}" >&2
+  fi
+  return 1
+}
+
+# Stop the exact runtime and then remove its marker-protected runtime and
+# candidate roots in dependency order.
+cleanup_local_release_gate_resources() {
+  local container_binary="$1"
+  local runtime_parent="$2"
+  local runtime_app_root="$3"
+  local runtime_service_namespace="$4"
+
+  stop_release_runtime_candidate "${container_binary}" "${runtime_app_root}" \
+    "${runtime_service_namespace}" || return 1
+  cleanup_release_runtime_parent "${runtime_parent}" || return 1
+  cleanup_container_runtime_candidate
+}
+
 # Delete only the fresh short runtime parent created and marked by this gate.
 # This outer marker exists before the wrapper starts, so an interrupt during
 # input staging, lock acquisition, or the initial stop can still clean up.
@@ -785,7 +866,7 @@ create_release_runtime_parent() {
   cleanup_incomplete_release_runtime_parent() {
     local trapped_status=$?
     trap - EXIT
-    trap '' INT TERM
+    trap '' HUP INT QUIT TERM
     if ((trapped_status == 0 && runtime_parent_published != 0)); then
       return 0
     fi
@@ -804,7 +885,9 @@ create_release_runtime_parent() {
     return "${trapped_status}"
   }
 
+  trap 'exit 129' HUP
   trap 'exit 130' INT
+  trap 'exit 131' QUIT
   trap 'exit 143' TERM
   trap cleanup_incomplete_release_runtime_parent EXIT
   runtime_parent="$(mktemp -d "${runtime_parent_base}/c.XXXXXX")"
@@ -814,14 +897,14 @@ create_release_runtime_parent() {
   printf '%s\n' "${runtime_parent}"
   # Publication is complete. Ignore a late signal before disarming EXIT so it
   # cannot outlive this function and expand locals that have left scope.
-  trap '' INT TERM
+  trap '' HUP INT QUIT TERM
   trap - EXIT
 }
 
-# Run the candidate-owned gate in the background so this shell can explicitly
-# wait for its namespace cleanup when the process group receives INT or TERM.
-# The candidate extraction must remain present until the wrapper's signal trap
-# has completed its namespace-scoped `system stop`.
+# Run the candidate-owned gate in a separately supervised process group so a
+# signal sent only to this helper still reaches the wrapper and every release-
+# gate descendant. The candidate extraction must remain present until both the
+# wrapper's namespace cleanup and process-group cleanup have completed.
 run_local_release_gate_command() {
   local child_pid=""
   local child_status=0
@@ -834,11 +917,11 @@ run_local_release_gate_command() {
     signal_status="$2"
     # A second signal must not interrupt the one wait that protects the
     # candidate executable used by the child's cleanup trap.
-    trap '' INT TERM
+    trap '' HUP INT QUIT TERM
     if [[ -n "${child_pid}" ]]; then
-      # A direct signal to this helper does not reach the background cleanup
-      # owner. Forward it before waiting; a process-group signal is harmlessly
-      # redelivered because the wrapper ignores repeats while cleaning up.
+      # A direct signal to this helper does not reach the background group
+      # supervisor. Forward it before waiting; the supervisor relays it to the
+      # complete detached gate group and waits for every descendant.
       kill -s "${signal_name}" "${child_pid}" 2>/dev/null || true
       if wait "${child_pid}"; then
         child_status=0
@@ -849,16 +932,20 @@ run_local_release_gate_command() {
     fi
   }
 
+  trap 'wait_for_candidate_cleanup_on_signal HUP 129' HUP
   trap 'wait_for_candidate_cleanup_on_signal INT 130' INT
+  trap 'wait_for_candidate_cleanup_on_signal QUIT 131' QUIT
   trap 'wait_for_candidate_cleanup_on_signal TERM 143' TERM
 
   # Bash gives asynchronous commands ignored SIGINT/SIGQUIT dispositions and
   # otherwise keeps an intermediate subshell whose death would make this wait
-  # finish before the exec'd wrapper cleans up. Reset the dispositions inside
-  # that child and exec the wrapper so child_pid remains the runtime owner.
+  # finish before cleanup. Reset dispositions and exec the process-group
+  # supervisor so child_pid remains the complete gate-tree owner.
   (
-    trap - INT TERM
-    exec "$@"
+    trap - HUP INT QUIT TERM
+    exec "${RELEASE_COMMAND_DEADLINE_RUNNER}" \
+      --no-deadline --grace-seconds "${CANDIDATE_STOP_TIMEOUT_SECONDS}" -- \
+      "$@"
   ) &
   child_pid=$!
   # Cover a signal delivered after the launch decision but before Bash stored
@@ -875,7 +962,7 @@ run_local_release_gate_command() {
     child_pid=""
   fi
 
-  trap - INT TERM
+  trap - HUP INT QUIT TERM
   if ((signal_status != 0)); then
     return "${signal_status}"
   fi
@@ -906,7 +993,7 @@ resolve_release_evidence_root() {
 run_local_release_gate() {
   (
   local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive
-  local containerization_reference required_init_references status
+  local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest
   path="$(repo_path "${COMPOSE_REPO}")"
   container_path="$(repo_path "${CONTAINER_REPO}")"
   containerization_path="$(repo_path "containerization")"
@@ -969,10 +1056,9 @@ PY
   # shellcheck disable=SC2329
   cleanup_local_release_gate_roots() {
     local trapped_status=$?
-    local cleanup_failed=0
-    cleanup_release_runtime_parent "${runtime_parent}" || cleanup_failed=1
-    cleanup_container_runtime_candidate || cleanup_failed=1
-    if ((cleanup_failed != 0)); then
+    if ! cleanup_local_release_gate_resources "${container_binary:-}" \
+      "${runtime_parent:-}" "${runtime_app_root:-}" \
+      "${runtime_service_namespace:-}"; then
       return 1
     fi
     return "${trapped_status}"
@@ -987,6 +1073,14 @@ PY
   # nested provider socket below Darwin's 103-byte sockaddr_un limit.
   runtime_parent="$(create_release_runtime_parent "${runtime_parent_base}")"
   runtime_app_root="${runtime_parent}/app"
+  runtime_run_id="release-$(id -u)-$$-${RANDOM}-${SECONDS}"
+  runtime_namespace_digest="$(LC_ALL=C printf '%s' \
+    "${runtime_app_root}:$(id -u):${runtime_run_id}" \
+    | shasum -a 256 | awk '{print substr($1, 1, 24)}')"
+  runtime_service_namespace="io.github.stephenlclarke.container-compose.runtime.${runtime_namespace_digest}"
+  printf 'run_id=%s\nnamespace=%s\napp_root=%s\n' \
+    "${runtime_run_id}" "${runtime_service_namespace}" "${runtime_app_root}" \
+    >"${runtime_parent}/.container-compose-release-runtime-identity"
   profile_root="${runtime_parent}/profiles"
   mkdir -p "${profile_root}"
   status=0
@@ -994,6 +1088,8 @@ PY
     -u CONTAINER_RUNTIME_SERVICE_NAMESPACE -u CONTAINER_RUNTIME_RUN_ID \
     HAWKEYE_AUTO_INSTALL=1 \
     CONTAINER_RUNTIME_APP_ROOT="${runtime_app_root}" \
+    CONTAINER_RUNTIME_RUN_ID="${runtime_run_id}" \
+    CONTAINER_RUNTIME_SERVICE_NAMESPACE="${runtime_service_namespace}" \
     CONTAINER_RUNTIME_INIT_BLOCK_REPO="${container_path}" \
     CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="${init_image_archive}" \
     CONTAINERIZATION_INIT_SOURCE_PATH="${containerization_path}" \
@@ -1011,13 +1107,13 @@ PY
     "CONTAINER_COMPOSE_CONTAINER=${container_binary}" \
     "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}" || status=$?
 
-  if ! cleanup_release_runtime_parent "${runtime_parent}"; then
+  if ! cleanup_local_release_gate_resources "${container_binary}" \
+    "${runtime_parent}" "${runtime_app_root}" "${runtime_service_namespace}"; then
     status=1
   fi
   runtime_parent=""
-  if ! cleanup_container_runtime_candidate; then
-    status=1
-  fi
+  runtime_app_root=""
+  runtime_service_namespace=""
   CONTAINER_RUNTIME_CANDIDATE_ROOT=""
   trap - EXIT
   return "${status}"

@@ -30,32 +30,8 @@ source "$SCRIPT_DIRECTORY/../Tools/ci/container-runtime-lock.sh"
 requested_container_binary=$1
 container_binary=$requested_container_binary
 shift
-if [[ "$container_binary" != */* ]]; then
-    if ! container_binary=$(command -v "$container_binary"); then
-        printf 'candidate container command was not found on PATH: %s\n' \
-            "$requested_container_binary" >&2
-        exit 2
-    fi
-fi
-if [[ ! -x "$container_binary" ]]; then
-    printf 'candidate container binary is not executable: %s\n' "$container_binary" >&2
-    exit 2
-fi
-container_binary_directory=$(cd "$(dirname "$container_binary")" && pwd -P)
-container_binary="$container_binary_directory/$(basename "$container_binary")"
-container_binary_sha256=$(shasum -a 256 "$container_binary" | awk '{print $1}')
-if [[ -n "${CONTAINER_RUNTIME_CLI_SHA256:-}" &&
-    "${CONTAINER_RUNTIME_CLI_SHA256}" != "$container_binary_sha256" ]]; then
-    printf 'candidate container binary digest mismatch (expected %s, got %s): %s\n' \
-        "${CONTAINER_RUNTIME_CLI_SHA256}" "$container_binary_sha256" "$container_binary" >&2
-    exit 2
-fi
-# Every nested Makefile and helper must resolve the same candidate CLI that
-# owns the isolated runtime. Otherwise a host-installed `container` earlier in
-# PATH can silently target the default service namespace mid-validation.
-export PATH="$container_binary_directory${PATH:+:$PATH}"
-export CONTAINER_RUNTIME_CLI="$container_binary"
-export CONTAINER_RUNTIME_CLI_SHA256="$container_binary_sha256"
+container_binary_directory=
+container_binary_sha256=
 runtime_app_root=${CONTAINER_RUNTIME_APP_ROOT:-}
 runtime_service_namespace=${CONTAINER_RUNTIME_SERVICE_NAMESPACE:-}
 runtime_run_id=${CONTAINER_RUNTIME_RUN_ID:-}
@@ -80,6 +56,9 @@ runtime_root_marker=.container-compose-runtime-root
 runtime_root_marker_value='container-compose isolated runtime state v1'
 provider_socket_path_limit=103
 runtime_service_inputs_root=
+runtime_start_state_root=
+runtime_start_deadline_seconds=${CONTAINER_RUNTIME_START_DEADLINE_SECONDS:-300}
+runtime_start_sequence_deadline=
 
 # Derive and export the one non-default namespace used by this candidate.
 configure_runtime_namespace() {
@@ -125,6 +104,8 @@ configure_runtime_namespace() {
 # validation run. The outer stable-release gate supplies both Compose's local
 # alias and Container's immutable Containerization reference.
 validate_runtime_init_image_archive() {
+    local deadline="$1"
+
     [[ -n "$runtime_init_image_archive" ]] || return 0
 
     local required_references="$matched_init_image"
@@ -133,11 +114,14 @@ validate_runtime_init_image_archive() {
     fi
     local references=()
     read -r -a references <<<"$required_references"
-    "$SCRIPT_DIRECTORY/../Tools/release/validate-oci-image-layout.py" \
+    run_runtime_start_command "$deadline" \
+        "$SCRIPT_DIRECTORY/../Tools/release/validate-oci-image-layout.py" \
         "$runtime_init_image_archive" "${references[@]}"
 }
 
 validate_runtime_inputs() {
+    local deadline="$1"
+
     if [[ -z "$runtime_app_root" || "$runtime_app_root" != /* ]]; then
         printf 'CONTAINER_RUNTIME_APP_ROOT must be an absolute marker-protected candidate root\n' >&2
         exit 2
@@ -170,26 +154,25 @@ validate_runtime_inputs() {
         printf 'CONTAINER_RUNTIME_BUILDER_IMAGE and CONTAINER_RUNTIME_BUILDER_IMAGE_TAR must be set together\n' >&2
         exit 2
     fi
-    if [[ -n "$runtime_builder_image_tar" && ! -f "$runtime_builder_image_tar" ]]; then
-        printf 'container runtime builder image archive does not exist: %s\n' "$runtime_builder_image_tar" >&2
-        exit 2
+    if [[ -n "$runtime_builder_image_tar" ]]; then
+        require_runtime_start_regular_file "$deadline" "$runtime_builder_image_tar" \
+            'container runtime builder image archive does not exist'
     fi
-    if [[ -n "$runtime_bootstrap_image_tar" && ! -f "$runtime_bootstrap_image_tar" ]]; then
-        printf 'container runtime bootstrap image archive does not exist: %s\n' "$runtime_bootstrap_image_tar" >&2
-        exit 2
+    if [[ -n "$runtime_bootstrap_image_tar" ]]; then
+        require_runtime_start_regular_file "$deadline" "$runtime_bootstrap_image_tar" \
+            'container runtime bootstrap image archive does not exist'
     fi
-    if [[ -n "$matched_init_image_tar" && ! -f "$matched_init_image_tar" ]]; then
-        printf 'container runtime init image archive does not exist: %s\n' "$matched_init_image_tar" >&2
-        exit 2
+    if [[ -n "$matched_init_image_tar" ]]; then
+        require_runtime_start_regular_file "$deadline" "$matched_init_image_tar" \
+            'container runtime init image archive does not exist'
     fi
-    if [[ -n "$runtime_init_image_archive" && ! -f "$runtime_init_image_archive" ]]; then
-        printf 'container runtime init-image archive does not exist: %s\n' \
-            "$runtime_init_image_archive" >&2
-        exit 2
+    if [[ -n "$runtime_init_image_archive" ]]; then
+        require_runtime_start_regular_file "$deadline" "$runtime_init_image_archive" \
+            'container runtime init-image archive does not exist'
     fi
-    if [[ -n "$runtime_init_block_repo" && ! -f "$runtime_init_block_repo/Makefile" ]]; then
-        printf 'container runtime init-block repo does not contain a Makefile: %s\n' "$runtime_init_block_repo" >&2
-        exit 2
+    if [[ -n "$runtime_init_block_repo" ]]; then
+        require_runtime_start_regular_file "$deadline" "$runtime_init_block_repo/Makefile" \
+            'container runtime init-block repo does not contain a Makefile'
     fi
     if [[ -n "$containerization_init_source_path" && -z "$runtime_init_block_repo" ]]; then
         printf 'CONTAINERIZATION_INIT_SOURCE_PATH requires CONTAINER_RUNTIME_INIT_BLOCK_REPO\n' >&2
@@ -199,6 +182,8 @@ validate_runtime_inputs() {
 
 # Resolve a clean, exact source checkout before any candidate service mutation.
 validate_containerization_init_source() {
+    local deadline="$1"
+
     [[ -n "$containerization_init_source_path" ]] || return 0
 
     if ! command -v git >/dev/null 2>&1; then
@@ -207,28 +192,60 @@ validate_containerization_init_source() {
     fi
 
     local requested_source_path
-    if ! requested_source_path=$(cd "$containerization_init_source_path" && pwd -P); then
+    local requested_source_status=0
+    # Resolve the caller-controlled path in the bounded child rather than
+    # allowing an unresponsive external mount to block this owner shell.
+    # shellcheck disable=SC2016 # Expand $1 in the bounded child shell.
+    requested_source_path=$(run_runtime_start_command "$deadline" \
+        /bin/bash -c 'cd "$1" && pwd -P' source-root \
+        "$containerization_init_source_path") || requested_source_status=$?
+    if [[ "$requested_source_status" != "0" ]]; then
+        [[ "$requested_source_status" != "124" ]] || return "$requested_source_status"
         printf 'containerization init source path does not exist: %s\n' \
             "$containerization_init_source_path" >&2
         exit 2
     fi
-    if ! containerization_init_source_root=$(git -C "$requested_source_path" rev-parse --show-toplevel 2>/dev/null); then
+    local source_root_status=0
+    containerization_init_source_root=$(run_runtime_start_command "$deadline" \
+        git -C "$requested_source_path" rev-parse --show-toplevel 2>/dev/null) || \
+        source_root_status=$?
+    if [[ "$source_root_status" != "0" ]]; then
+        [[ "$source_root_status" != "124" ]] || return "$source_root_status"
         printf 'containerization init source path is not a Git checkout: %s\n' \
             "$requested_source_path" >&2
         exit 2
     fi
-    containerization_init_source_root=$(cd "$containerization_init_source_root" && pwd -P)
+    local reported_source_root="$containerization_init_source_root"
+    local canonical_root_status=0
+    # shellcheck disable=SC2016 # Expand $1 in the bounded child shell.
+    containerization_init_source_root=$(run_runtime_start_command "$deadline" \
+        /bin/bash -c 'cd "$1" && pwd -P' source-root \
+        "$reported_source_root") || canonical_root_status=$?
+    [[ "$canonical_root_status" != "124" ]] || return "$canonical_root_status"
+    if [[ "$canonical_root_status" != "0" ]]; then
+        printf 'containerization init source root is no longer accessible: %s\n' \
+            "$reported_source_root" >&2
+        exit 2
+    fi
     if [[ "$requested_source_path" != "$containerization_init_source_root" ]]; then
         printf 'CONTAINERIZATION_INIT_SOURCE_PATH must name the checkout root, not a subdirectory: %s\n' \
             "$requested_source_path" >&2
         exit 2
     fi
-    if [[ -n "$(git -C "$containerization_init_source_root" status --porcelain --untracked-files=all)" ]]; then
+    local source_status
+    source_status=$(run_runtime_start_command "$deadline" \
+        git -C "$containerization_init_source_root" status --porcelain --untracked-files=all) || return "$?"
+    if [[ -n "$source_status" ]]; then
         printf 'containerization init source checkout must be clean before staging: %s\n' \
             "$containerization_init_source_root" >&2
         exit 2
     fi
-    if ! containerization_init_source_head=$(git -C "$containerization_init_source_root" rev-parse --verify 'HEAD^{commit}' 2>/dev/null); then
+    local source_head_status=0
+    containerization_init_source_head=$(run_runtime_start_command "$deadline" \
+        git -C "$containerization_init_source_root" rev-parse --verify 'HEAD^{commit}' 2>/dev/null) || \
+        source_head_status=$?
+    if [[ "$source_head_status" != "0" ]]; then
+        [[ "$source_head_status" != "124" ]] || return "$source_head_status"
         printf 'containerization init source checkout does not resolve HEAD to a commit: %s\n' \
             "$containerization_init_source_root" >&2
         exit 2
@@ -238,61 +255,79 @@ validate_containerization_init_source() {
 # Clone the validated source input below the disposable candidate root so the
 # guest sees only tracked files and a self-contained Git metadata directory.
 stage_containerization_init_source() {
+    local deadline="$1"
+
     [[ -n "$containerization_init_source_root" ]] || return 0
 
     local source_inputs_root="$runtime_app_root/source-inputs"
     local staged_source_path="$source_inputs_root/containerization"
-    if [[ -e "$staged_source_path" ]]; then
-        printf 'refusing to overwrite an existing staged containerization source: %s\n' \
-            "$staged_source_path" >&2
-        exit 2
-    fi
+    reject_runtime_start_existing_path "$deadline" "$staged_source_path" \
+        'refusing to overwrite an existing staged containerization source' \
+        "$staged_source_path"
 
-    mkdir -p "$source_inputs_root"
-    if ! git clone --quiet --no-local --no-checkout --no-tags \
-        "$containerization_init_source_root" "$staged_source_path"; then
+    run_runtime_start_command "$deadline" mkdir -p "$source_inputs_root"
+    local clone_status=0
+    run_runtime_start_command "$deadline" \
+        git clone --quiet --no-local --no-checkout --no-tags \
+        "$containerization_init_source_root" "$staged_source_path" || clone_status=$?
+    if [[ "$clone_status" != "0" ]]; then
+        [[ "$clone_status" != "124" ]] || return "$clone_status"
         printf 'failed to clone the exact containerization init source into: %s\n' \
             "$staged_source_path" >&2
         exit 2
     fi
-    if ! git -C "$staged_source_path" checkout --detach --quiet "$containerization_init_source_head"; then
+    local checkout_status=0
+    run_runtime_start_command "$deadline" \
+        git -C "$staged_source_path" checkout --detach --quiet "$containerization_init_source_head" || \
+        checkout_status=$?
+    if [[ "$checkout_status" != "0" ]]; then
+        [[ "$checkout_status" != "124" ]] || return "$checkout_status"
         printf 'failed to check out the pinned containerization init source commit: %s\n' \
             "$containerization_init_source_head" >&2
         exit 2
     fi
 
     local staged_source_head
-    staged_source_head=$(git -C "$staged_source_path" rev-parse HEAD)
+    staged_source_head=$(run_runtime_start_command "$deadline" \
+        git -C "$staged_source_path" rev-parse HEAD) || return "$?"
     if [[ "$staged_source_head" != "$containerization_init_source_head" ]]; then
         printf 'staged containerization init source commit mismatch (expected %s, got %s)\n' \
             "$containerization_init_source_head" "$staged_source_head" >&2
         exit 2
     fi
-    if [[ -n "$(git -C "$staged_source_path" status --porcelain --untracked-files=all)" ]]; then
+    local staged_source_status
+    staged_source_status=$(run_runtime_start_command "$deadline" \
+        git -C "$staged_source_path" status --porcelain --untracked-files=all) || return "$?"
+    if [[ -n "$staged_source_status" ]]; then
         printf 'staged containerization init source checkout is unexpectedly dirty: %s\n' \
             "$staged_source_path" >&2
         exit 2
     fi
-    if [[ -e "$staged_source_path/.build" || -e "$staged_source_path/vminitd/.build" ]]; then
-        printf 'staged containerization init source contains ignored Swift build artifacts: %s\n' \
-            "$staged_source_path" >&2
-        exit 2
-    fi
+    reject_runtime_start_existing_path "$deadline" "$staged_source_path/.build" \
+        'staged containerization init source contains ignored Swift build artifacts' \
+        "$staged_source_path"
+    reject_runtime_start_existing_path "$deadline" "$staged_source_path/vminitd/.build" \
+        'staged containerization init source contains ignored Swift build artifacts' \
+        "$staged_source_path"
 
     containerization_init_source_snapshot_path="$staged_source_path"
     containerization_init_source_path="$staged_source_path"
     containerization_init_build_scratch_root="$runtime_app_root/source-build-cache"
-    mkdir -p "$containerization_init_build_scratch_root"
+    run_runtime_start_command "$deadline" \
+        mkdir -p "$containerization_init_build_scratch_root"
 
     local fingerprints_root="$runtime_app_root/fingerprints"
-    mkdir -p "$fingerprints_root"
-    printf 'source_root=%s\nsource_head=%s\nstaged_source_root=%s\nstaged_source_head=%s\nbuild_scratch_root=%s\n' \
+    run_runtime_start_command "$deadline" mkdir -p "$fingerprints_root"
+    local source_fingerprint
+    printf -v source_fingerprint \
+        'source_root=%s\nsource_head=%s\nstaged_source_root=%s\nstaged_source_head=%s\nbuild_scratch_root=%s\n' \
         "$containerization_init_source_root" \
         "$containerization_init_source_head" \
         "$containerization_init_source_snapshot_path" \
         "$staged_source_head" \
-        "$containerization_init_build_scratch_root" \
-        >"$fingerprints_root/containerization-init-source.txt"
+        "$containerization_init_build_scratch_root"
+    write_runtime_start_file "$deadline" \
+        "$fingerprints_root/containerization-init-source.txt" "$source_fingerprint"
 }
 
 # Report whether a source checkout or retained archive can provide the matched init image.
@@ -303,16 +338,35 @@ has_matched_init_image_source() {
 }
 
 stop_runtime() {
-    "$container_binary" system stop >/dev/null 2>&1 || true
+    local deadline="${1:-}"
+    if [[ -n "$deadline" ]]; then
+        local stop_status=0
+        run_runtime_start_command "$deadline" \
+            "$container_binary" system stop >/dev/null 2>&1 || stop_status=$?
+        if [[ "$stop_status" == "124" ]]; then
+            return "$stop_status"
+        fi
+        return 0
+    fi
+
+    "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
+        --seconds 10 --grace-seconds 0 --ignore-parent-signals -- \
+        "$container_binary" system stop >/dev/null 2>&1 || true
 }
 
 # Fail before any service mutation unless this binary exposes this candidate's
 # namespace-derived Docker socket through the read-only status command.
 verify_runtime_namespace_support() {
+    local deadline="$1"
     local status_output
     local reported_socket
 
-    status_output=$("$container_binary" system status --format json 2>/dev/null) || true
+    local status=0
+    status_output=$(run_runtime_start_command "$deadline" \
+        "$container_binary" system status --format json 2>/dev/null) || status=$?
+    if [[ "$status" == "124" ]]; then
+        return "$status"
+    fi
     if ! reported_socket=$(printf '%s' "$status_output" | python3 -c '
 import json
 import sys
@@ -345,36 +399,333 @@ is_transient_xpc_start_failure() {
         "$start_log"
 }
 
+# Reject an invalid deadline before its value is used to launch any filesystem work.
+validate_runtime_start_deadline_seconds() {
+    if ! [[ "$runtime_start_deadline_seconds" =~ ^[1-9][0-9]*$ ]]; then
+        printf 'CONTAINER_RUNTIME_START_DEADLINE_SECONDS must be a positive integer: %s\n' \
+            "$runtime_start_deadline_seconds" >&2
+        exit 2
+    fi
+}
+
+# Return an absolute monotonic deadline for the complete runtime-start sequence.
+runtime_start_deadline() {
+    python3 - "$runtime_start_deadline_seconds" <<'PY'
+import sys
+import time
+
+print(f"{time.monotonic() + float(sys.argv[1]):.9f}")
+PY
+}
+
+# Print the positive wall-clock budget remaining before a runtime-start deadline.
+runtime_start_remaining_seconds() {
+    local deadline="$1"
+
+    python3 - "$deadline" <<'PY'
+import sys
+import time
+
+remaining = float(sys.argv[1]) - time.monotonic()
+if remaining <= 0:
+    raise SystemExit(1)
+print(f"{remaining:.6f}")
+PY
+}
+
+# Run one startup-side operation with only the budget left for the complete
+# startup flow. This keeps image loads and source builds inside the same bound
+# as service start and readiness.
+run_runtime_start_command() {
+    local deadline="$1"
+    shift
+    local remaining_seconds
+
+    remaining_seconds=$(runtime_start_remaining_seconds "$deadline") || return 124
+    "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
+        --seconds "$remaining_seconds" --grace-seconds 0 -- "$@"
+}
+
+# Create short-lived startup evidence on trusted local storage while charging
+# even the directory creation to the one complete runtime-start deadline.  An
+# inherited TMPDIR can name removable, privacy-controlled, or stalled storage
+# and therefore cannot participate in runtime readiness.
+create_runtime_start_state_root() {
+    local deadline="$1"
+    local prefix="$2"
+    local trusted_temporary_root=/private/tmp
+
+    case "$prefix" in
+        container-compose-runtime-start | container-compose-runtime-managed-start) ;;
+        *)
+            printf 'refusing unexpected runtime-start state prefix: %s\n' "$prefix" >&2
+            return 2
+            ;;
+    esac
+    if [[ ! -d "$trusted_temporary_root" || ! -w "$trusted_temporary_root" ]]; then
+        trusted_temporary_root=/tmp
+    fi
+    runtime_start_state_root=$(run_runtime_start_command "$deadline" \
+        mktemp -d "$trusted_temporary_root/$prefix.XXXXXX") || return "$?"
+}
+
+cleanup_runtime_start_state_root() {
+    [[ -n "$runtime_start_state_root" ]] || return 0
+    case "$runtime_start_state_root" in
+        /private/tmp/container-compose-runtime-start.*|/private/tmp/container-compose-runtime-managed-start.*|/tmp/container-compose-runtime-start.*|/tmp/container-compose-runtime-managed-start.*) ;;
+        *)
+            printf 'refusing to clear unexpected runtime-start state root: %s\n' \
+                "$runtime_start_state_root" >&2
+            return 1
+            ;;
+    esac
+    find "$runtime_start_state_root" -depth -delete 2>/dev/null || true
+    runtime_start_state_root=
+}
+
+# Check a caller-controlled filesystem input without letting its mount outlive
+# the complete startup deadline.
+runtime_start_regular_file_status() {
+    local deadline="$1"
+    local path="$2"
+
+    run_runtime_start_command "$deadline" /bin/test -f "$path"
+}
+
+# Check whether a caller-controlled path exists inside the complete startup deadline.
+runtime_start_path_exists_status() {
+    local deadline="$1"
+    local path="$2"
+
+    run_runtime_start_command "$deadline" /bin/test -e "$path"
+}
+
+# Reject an existing runtime path without inspecting its filesystem in the owner shell.
+reject_runtime_start_existing_path() {
+    local deadline="$1"
+    local path="$2"
+    local error_message="$3"
+    local reported_path="$4"
+    local status=0
+
+    runtime_start_path_exists_status "$deadline" "$path" || status=$?
+    [[ "$status" != "124" ]] || return "$status"
+    if [[ "$status" == "0" ]]; then
+        printf '%s: %s\n' "$error_message" "$reported_path" >&2
+        exit 2
+    fi
+}
+
+# Write one runtime-owned file without letting its backing filesystem outlive
+# the complete startup deadline.
+write_runtime_start_file() {
+    local deadline="$1"
+    local path="$2"
+    local content="$3"
+
+    # shellcheck disable=SC2016 # Expand positional values in the bounded child shell.
+    run_runtime_start_command "$deadline" \
+        /bin/bash -c 'printf "%s" "$2" >"$1"' runtime-file "$path" "$content"
+}
+
+# Require one caller-controlled regular file without allowing an unresponsive
+# mount to outlive the complete startup deadline.
+require_runtime_start_regular_file() {
+    local deadline="$1"
+    local path="$2"
+    local error_message="$3"
+    local status=0
+
+    runtime_start_regular_file_status "$deadline" "$path" || status=$?
+    [[ "$status" != "124" ]] || return "$status"
+    if [[ "$status" != "0" ]]; then
+        printf '%s: %s\n' "$error_message" "$path" >&2
+        exit 2
+    fi
+}
+
+# Resolve and fingerprint the caller-selected runtime CLI within the same
+# deadline as every other startup input. A candidate on an unresponsive mount
+# must not block the release gate before its liveness owner starts.
+resolve_container_binary() {
+    local deadline="$1"
+    local binary_directory_input
+    local binary_name
+    local digest_output
+    local status=0
+
+    if [[ "$container_binary" != */* ]]; then
+        # shellcheck disable=SC2016 # Expand $1 in the bounded child shell.
+        container_binary=$(run_runtime_start_command "$deadline" \
+            /bin/bash -c 'command -v "$1"' container-command \
+            "$container_binary") || status=$?
+        if [[ "$status" != "0" ]]; then
+            [[ "$status" != "124" ]] || return "$status"
+            printf 'candidate container command was not found on PATH: %s\n' \
+                "$requested_container_binary" >&2
+            exit 2
+        fi
+    fi
+
+    status=0
+    run_runtime_start_command "$deadline" /bin/test -x "$container_binary" || \
+        status=$?
+    if [[ "$status" != "0" ]]; then
+        [[ "$status" != "124" ]] || return "$status"
+        printf 'candidate container binary is not executable: %s\n' "$container_binary" >&2
+        exit 2
+    fi
+
+    binary_name=${container_binary##*/}
+    binary_directory_input=${container_binary%/*}
+    [[ -n "$binary_directory_input" ]] || binary_directory_input=/
+    status=0
+    # shellcheck disable=SC2016 # Expand $1 in the bounded child shell.
+    container_binary_directory=$(run_runtime_start_command "$deadline" \
+        /bin/bash -c 'cd "$1" && pwd -P' container-binary-directory \
+        "$binary_directory_input") || status=$?
+    if [[ "$status" != "0" ]]; then
+        [[ "$status" != "124" ]] || return "$status"
+        printf 'candidate container binary directory is not accessible: %s\n' \
+            "$binary_directory_input" >&2
+        exit 2
+    fi
+    container_binary="$container_binary_directory/$binary_name"
+
+    status=0
+    digest_output=$(run_runtime_start_command "$deadline" \
+        /usr/bin/shasum -a 256 "$container_binary") || status=$?
+    if [[ "$status" != "0" ]]; then
+        [[ "$status" != "124" ]] || return "$status"
+        printf 'could not fingerprint candidate container binary: %s\n' \
+            "$container_binary" >&2
+        exit 2
+    fi
+    read -r container_binary_sha256 _ <<<"$digest_output"
+    if ! [[ "$container_binary_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+        printf 'candidate container binary produced an invalid SHA-256 digest: %s\n' \
+            "$container_binary" >&2
+        exit 2
+    fi
+    if [[ -n "${CONTAINER_RUNTIME_CLI_SHA256:-}" &&
+        "${CONTAINER_RUNTIME_CLI_SHA256}" != "$container_binary_sha256" ]]; then
+        printf 'candidate container binary digest mismatch (expected %s, got %s): %s\n' \
+            "${CONTAINER_RUNTIME_CLI_SHA256}" "$container_binary_sha256" "$container_binary" >&2
+        exit 2
+    fi
+
+    # Every nested Makefile and helper must resolve the same candidate CLI that
+    # owns the isolated runtime. Otherwise a host-installed `container` earlier
+    # in PATH can silently target the default service namespace mid-validation.
+    export PATH="$container_binary_directory${PATH:+:$PATH}"
+    export CONTAINER_RUNTIME_CLI="$container_binary"
+    export CONTAINER_RUNTIME_CLI_SHA256="$container_binary_sha256"
+}
+
+# Clamp the host runtime lock wait to the budget left for startup.
+runtime_start_lock_timeout_seconds() {
+    local deadline="$1"
+    local configured_timeout=${CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS:-10800}
+
+    python3 - "$deadline" "$configured_timeout" <<'PY'
+import math
+import sys
+import time
+
+if not sys.argv[2].isdigit() or int(sys.argv[2]) <= 0:
+    print(
+        "CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS must be a positive integer: "
+        + sys.argv[2],
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+remaining = float(sys.argv[1]) - time.monotonic()
+if remaining <= 0:
+    raise SystemExit(124)
+print(max(1, min(int(sys.argv[2]), math.ceil(remaining))))
+PY
+}
+
+# Print a retry delay that never extends beyond the runtime-start deadline.
+runtime_start_retry_delay() {
+    local deadline="$1"
+
+    python3 - "$deadline" <<'PY'
+import sys
+import time
+
+remaining = float(sys.argv[1]) - time.monotonic()
+if remaining <= 0:
+    raise SystemExit(1)
+print(f"{min(3.0, remaining):.6f}")
+PY
+}
+
+# Stop the runtime and wait to retry without exceeding a startup deadline.
+prepare_runtime_restart() {
+    local deadline="$1"
+    local remaining_seconds
+    local retry_delay
+
+    remaining_seconds=$(runtime_start_remaining_seconds "$deadline") || return 124
+    "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
+        --seconds "$remaining_seconds" --grace-seconds 0 -- \
+        "$container_binary" system stop >/dev/null 2>&1 || true
+    retry_delay=$(runtime_start_retry_delay "$deadline") || return 124
+    sleep "$retry_delay"
+}
+
 # Start Container and verify an API round-trip, recovering once from transient XPC startup failure.
 start_runtime() {
     local attempt
+    local remaining_seconds
+    local sequence_deadline="${1:-}"
+    local start_completed
     local start_log
     local start_status
 
+    if [[ -z "$sequence_deadline" ]]; then
+        sequence_deadline=$(runtime_start_deadline)
+    fi
     for attempt in 1 2; do
-        start_log=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-start.XXXXXX")
-        if "$container_binary" "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
-            if "$container_binary" list --all --format json >/dev/null; then
-                rm -f "$start_log"
-                return
-            else
-                start_status=$?
-            fi
+        create_runtime_start_state_root \
+            "$sequence_deadline" container-compose-runtime-start || return "$?"
+        start_completed="$runtime_start_state_root/completed"
+        start_log="$runtime_start_state_root/start.log"
+        if ! remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline"); then
+            cleanup_runtime_start_state_root
+            return 124
+        fi
+        # The inner shell receives all values positionally; expansion here would be unsafe.
+        # shellcheck disable=SC2016
+        if "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
+            --seconds "$remaining_seconds" --grace-seconds 0 -- \
+            /bin/bash -c '
+                container_binary=$1
+                start_completed=$2
+                shift 2
+                "$container_binary" "$@" || exit "$?"
+                touch "$start_completed"
+                "$container_binary" list --all --format json >/dev/null
+            ' runtime-start "$container_binary" "$start_completed" \
+            "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
+            cleanup_runtime_start_state_root
+            return
         else
             start_status=$?
-            if ! is_transient_xpc_start_failure "$start_log"; then
-                rm -f "$start_log"
+            if [[ ! -f "$start_completed" ]] &&
+                ! is_transient_xpc_start_failure "$start_log"; then
+                cleanup_runtime_start_state_root
                 return "$start_status"
             fi
         fi
-        rm -f "$start_log"
+        cleanup_runtime_start_state_root
 
         if [[ "$attempt" == "2" ]]; then
             return "$start_status"
         fi
         printf 'Container API was not ready; restarting the matched runtime once...\n' >&2
-        stop_runtime
-        sleep 3
+        prepare_runtime_restart "$sequence_deadline" || return "$?"
     done
 }
 
@@ -384,55 +735,89 @@ start_runtime() {
 # runtime was started. Recover the same namespace/root once without taking a
 # second lock or stopping the owner.
 ensure_managed_runtime_ready() {
+    local remaining_seconds
+    local sequence_deadline="${1:-}"
     local start_log
     local start_status
 
-    if "$container_binary" list --all --format json >/dev/null; then
+    if [[ -z "$sequence_deadline" ]]; then
+        sequence_deadline=$(runtime_start_deadline)
+    fi
+    remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline") || return 124
+    if "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
+        --seconds "$remaining_seconds" --grace-seconds 0 -- \
+        "$container_binary" list --all --format json >/dev/null; then
         return
+    fi
+    start_status=$?
+    if [[ "$start_status" == "124" ]]; then
+        return "$start_status"
     fi
 
     printf 'Managed Container API is not ready; re-establishing the owner runtime...\n' >&2
-    start_log=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-managed-start.XXXXXX")
+    create_runtime_start_state_root \
+        "$sequence_deadline" container-compose-runtime-managed-start || return "$?"
+    start_log="$runtime_start_state_root/start.log"
+    remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline") || {
+        cleanup_runtime_start_state_root
+        return 124
+    }
     start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
     if [[ -n "$runtime_app_root" ]]; then
         start_arguments+=(--app-root "$runtime_app_root")
     fi
-    if "$container_binary" "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
+    # The inner shell receives all values positionally; expansion here would be unsafe.
+    # shellcheck disable=SC2016
+    if "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
+        --seconds "$remaining_seconds" --grace-seconds 0 -- \
+        /bin/bash -c '
+            container_binary=$1
+            shift
+            "$container_binary" "$@" || exit "$?"
+            "$container_binary" list --all --format json >/dev/null
+        ' runtime-recovery "$container_binary" "${start_arguments[@]}" \
+        2>&1 | tee "$start_log"; then
         start_status=0
     else
         start_status=${PIPESTATUS[0]}
-        rm -f "$start_log"
+        cleanup_runtime_start_state_root
         return "$start_status"
     fi
-    rm -f "$start_log"
-
-    if ! "$container_binary" list --all --format json >/dev/null; then
-        printf 'Managed Container API remained unavailable after owner-runtime recovery\n' >&2
-        return 1
-    fi
+    cleanup_runtime_start_state_root
 }
 
 prepare_runtime_root() {
-    mkdir -p "$runtime_app_root"
+    local deadline="$1"
+
+    run_runtime_start_command "$deadline" mkdir -p "$runtime_app_root"
     local marker_path="$runtime_app_root/$runtime_root_marker"
-    if [[ -f "$marker_path" ]]; then
+    local marker_status=0
+    runtime_start_regular_file_status "$deadline" "$marker_path" || marker_status=$?
+    [[ "$marker_status" != "124" ]] || return "$marker_status"
+    if [[ "$marker_status" == "0" ]]; then
         local marker_value
-        IFS= read -r marker_value <"$marker_path" || true
+        # shellcheck disable=SC2016 # Read $1 in the bounded child shell.
+        marker_value=$(run_runtime_start_command "$deadline" \
+            /bin/bash -c 'IFS= read -r value <"$1" || true; printf "%s" "$value"' \
+            runtime-root-marker "$marker_path") || return "$?"
         if [[ "$marker_value" != "$runtime_root_marker_value" ]]; then
             printf 'refusing to clear container runtime root with an invalid marker: %s\n' "$runtime_app_root" >&2
             exit 2
         fi
     else
         local existing_entry
-        existing_entry=$(find "$runtime_app_root" -mindepth 1 -maxdepth 1 -print -quit)
+        existing_entry=$(run_runtime_start_command "$deadline" \
+            find "$runtime_app_root" -mindepth 1 -maxdepth 1 -print -quit) || return "$?"
         if [[ -n "$existing_entry" ]]; then
             printf 'refusing to clear unmarked container runtime root: %s\n' "$runtime_app_root" >&2
             exit 2
         fi
-        printf '%s\n' "$runtime_root_marker_value" >"$marker_path"
+        write_runtime_start_file "$deadline" "$marker_path" \
+            "$runtime_root_marker_value"$'\n'
     fi
 
-    find "$runtime_app_root" -mindepth 1 -maxdepth 1 \
+    run_runtime_start_command "$deadline" \
+        find "$runtime_app_root" -mindepth 1 -maxdepth 1 \
         ! -name "$runtime_root_marker" ! -name kernels -exec rm -rf {} +
 }
 
@@ -443,33 +828,47 @@ prepare_runtime_root() {
 # mismatch into a bounded local copy instead of an opaque service-side open(2)
 # hang while the global lock is held.
 stage_runtime_service_inputs() {
+    local deadline="$1"
     local trusted_temporary_root=/private/tmp
     if [[ ! -d "$trusted_temporary_root" ]]; then
         trusted_temporary_root=/tmp
     fi
-    runtime_service_inputs_root=$(mktemp -d \
+    runtime_service_inputs_root=$(run_runtime_start_command "$deadline" mktemp -d \
         "$trusted_temporary_root/container-compose-service-inputs.XXXXXX")
 
-    stage_runtime_service_archive runtime_builder_image_tar builder-image.oci.tar
-    stage_runtime_service_archive runtime_bootstrap_image_tar bootstrap-image.oci.tar
-    stage_runtime_service_archive matched_init_image_tar matched-init-image.oci.tar
-    stage_runtime_service_archive runtime_init_image_archive retained-init-image.oci.tar
+    stage_runtime_service_archive "$deadline" runtime_builder_image_tar builder-image.oci.tar
+    stage_runtime_service_archive "$deadline" runtime_bootstrap_image_tar bootstrap-image.oci.tar
+    stage_runtime_service_archive "$deadline" matched_init_image_tar matched-init-image.oci.tar
+    stage_runtime_service_archive "$deadline" runtime_init_image_archive retained-init-image.oci.tar
+
+    # Nested release validation must inherit the service-readable copies, not
+    # the caller's original paths on a removable or privacy-controlled volume.
+    export CONTAINER_RUNTIME_BUILDER_IMAGE_TAR="$runtime_builder_image_tar"
+    export CONTAINER_RUNTIME_BOOTSTRAP_IMAGE_TAR="$runtime_bootstrap_image_tar"
+    export CONTAINER_RUNTIME_INIT_IMAGE_TAR="$matched_init_image_tar"
+    export CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$runtime_init_image_archive"
 }
 
 stage_runtime_service_archive() {
-    local variable_name="$1"
-    local destination_name="$2"
+    local deadline="$1"
+    local variable_name="$2"
+    local destination_name="$3"
     local source_path="${!variable_name}"
     [[ -n "$source_path" ]] || return 0
 
     local destination_path="$runtime_service_inputs_root/$destination_name"
     local temporary_path="$destination_path.partial"
-    if ! /usr/bin/install -m 0600 "$source_path" "$temporary_path"; then
+    local install_status=0
+    run_runtime_start_command "$deadline" \
+        /usr/bin/install -m 0600 "$source_path" "$temporary_path" || install_status=$?
+    if [[ "$install_status" != "0" ]]; then
         rm -f "$temporary_path"
+        [[ "$install_status" != "124" ]] || return "$install_status"
         printf 'failed to stage container runtime service archive: %s\n' "$source_path" >&2
         exit 2
     fi
-    mv -f "$temporary_path" "$destination_path"
+    run_runtime_start_command "$deadline" \
+        mv -f "$temporary_path" "$destination_path"
     printf -v "$variable_name" '%s' "$destination_path"
 }
 
@@ -485,6 +884,11 @@ cleanup_runtime_service_inputs() {
     esac
     find "$runtime_service_inputs_root" -depth -delete 2>/dev/null || true
     runtime_service_inputs_root=
+}
+
+cleanup_runtime_temporary_state() {
+    cleanup_runtime_start_state_root || true
+    cleanup_runtime_service_inputs || true
 }
 
 resolve_matched_init_image() {
@@ -512,51 +916,66 @@ resolve_initial_start_init_image_archive() {
 }
 
 prepare_runtime_config_home() {
+    local deadline="$1"
+
     has_matched_init_image_source || return 0
     [[ -n "$runtime_app_root" ]] || return 0
 
     runtime_config_home="$runtime_app_root/xdg-config"
-    mkdir -p "$runtime_config_home"
+    run_runtime_start_command "$deadline" mkdir -p "$runtime_config_home"
     export XDG_CONFIG_HOME="$runtime_config_home"
 }
 
 configure_matched_init_image() {
+    local deadline="$1"
+
     [[ -n "$runtime_config_home" ]] || return 0
 
     local container_config_dir="$runtime_config_home/container"
-    mkdir -p "$container_config_dir"
-    {
-        if [[ -n "$runtime_builder_image" ]]; then
-            printf '[build]\nimage = "%s"\n\n' "$runtime_builder_image"
-        fi
-        printf '[vminit]\nimage = "%s"\n' "$matched_init_image"
-    } >"$container_config_dir/config.toml"
+    run_runtime_start_command "$deadline" mkdir -p "$container_config_dir"
+    local config_content=
+    if [[ -n "$runtime_builder_image" ]]; then
+        printf -v config_content '[build]\nimage = "%s"\n\n' "$runtime_builder_image"
+    fi
+    printf -v config_content '%s[vminit]\nimage = "%s"\n' \
+        "$config_content" "$matched_init_image"
+    write_runtime_start_file "$deadline" "$container_config_dir/config.toml" \
+        "$config_content"
 
     local runtime_config_dir="$runtime_app_root/config"
     local runtime_config_path="$runtime_config_dir/config.toml"
     local runtime_config_temp
-    mkdir -p "$runtime_config_dir"
-    runtime_config_temp=$(mktemp "$runtime_config_dir/.config.toml.XXXXXX")
-    cp "$container_config_dir/config.toml" "$runtime_config_temp"
-    chmod 0444 "$runtime_config_temp"
-    mv -f "$runtime_config_temp" "$runtime_config_path"
+    run_runtime_start_command "$deadline" mkdir -p "$runtime_config_dir"
+    runtime_config_temp=$(run_runtime_start_command "$deadline" \
+        mktemp "$runtime_config_dir/.config.toml.XXXXXX") || return "$?"
+    run_runtime_start_command "$deadline" \
+        cp "$container_config_dir/config.toml" "$runtime_config_temp"
+    run_runtime_start_command "$deadline" chmod 0444 "$runtime_config_temp"
+    run_runtime_start_command "$deadline" \
+        mv -f "$runtime_config_temp" "$runtime_config_path"
 
     export CONTAINER_COMPOSE_INIT_IMAGE="$matched_init_image"
 }
 
 configure_runtime_builder_image() {
+    local deadline="$1"
+
     [[ -n "$runtime_config_home" ]] || return 0
     if [[ -z "$runtime_builder_image" ]]; then
         return 0
     fi
 
     local container_config_dir="$runtime_config_home/container"
-    mkdir -p "$container_config_dir"
-    printf '[build]\nimage = "%s"\n' "$runtime_builder_image" \
-        >"$container_config_dir/config.toml"
+    run_runtime_start_command "$deadline" mkdir -p "$container_config_dir"
+    local config_content
+    printf -v config_content '[build]\nimage = "%s"\n' "$runtime_builder_image"
+    write_runtime_start_file "$deadline" "$container_config_dir/config.toml" \
+        "$config_content"
 }
 
 install_runtime_builder_image() {
+    local deadline="$1"
+
     if [[ -z "$runtime_builder_image" && -z "$runtime_builder_image_tar" ]]; then
         return
     fi
@@ -564,62 +983,64 @@ install_runtime_builder_image() {
         printf 'CONTAINER_RUNTIME_BUILDER_IMAGE and CONTAINER_RUNTIME_BUILDER_IMAGE_TAR must be set together\n' >&2
         exit 2
     fi
-    if [[ ! -f "$runtime_builder_image_tar" ]]; then
-        printf 'container runtime builder image archive does not exist: %s\n' "$runtime_builder_image_tar" >&2
-        exit 2
-    fi
+    require_runtime_start_regular_file "$deadline" "$runtime_builder_image_tar" \
+        'container runtime builder image archive does not exist'
 
     printf 'Installing matched container runtime builder image...\n'
-    "$container_binary" image load -i "$runtime_builder_image_tar"
+    run_runtime_start_command "$deadline" \
+        "$container_binary" image load -i "$runtime_builder_image_tar"
 }
 
 install_runtime_bootstrap_image() {
+    local deadline="$1"
+
     [[ -n "$runtime_bootstrap_image_tar" ]] || return 0
     [[ "$initial_start_init_image_archive" != "$runtime_bootstrap_image_tar" ]] || return 0
-    if [[ ! -f "$runtime_bootstrap_image_tar" ]]; then
-        printf 'container runtime bootstrap image archive does not exist: %s\n' "$runtime_bootstrap_image_tar" >&2
-        exit 2
-    fi
+    require_runtime_start_regular_file "$deadline" "$runtime_bootstrap_image_tar" \
+        'container runtime bootstrap image archive does not exist'
 
     printf 'Installing container runtime bootstrap image...\n'
-    "$container_binary" image load -i "$runtime_bootstrap_image_tar"
+    run_runtime_start_command "$deadline" \
+        "$container_binary" image load -i "$runtime_bootstrap_image_tar"
 }
 
 cleanup() {
     local status=$?
     trap - EXIT
-    trap '' INT TERM
+    trap '' HUP INT QUIT TERM
     printf 'Stopping matched container runtime...\n'
     stop_runtime || true
     release_container_runtime_lock
-    cleanup_runtime_service_inputs || true
+    cleanup_runtime_temporary_state
     exit "$status"
 }
 
 # Install a guest init image built from the same source lane as the host runtime.
 install_matched_init_image() {
+    local deadline="$1"
+
     # The startup command has already loaded and unpacked this archive before
     # its registry fallback. Do not load it a second time after startup.
     [[ "$initial_start_image_is_matched" == true ]] && return 0
 
     if [[ -n "$matched_init_image_tar" ]]; then
         printf 'Installing prebuilt matched container runtime init image...\n'
-        "$container_binary" image load -i "$matched_init_image_tar"
+        run_runtime_start_command "$deadline" \
+            "$container_binary" image load -i "$matched_init_image_tar"
         return 0
     fi
 
     if [[ -n "$runtime_init_image_archive" ]]; then
         printf 'Loading matched container runtime init image archive...\n'
-        "$container_binary" image load --input "$runtime_init_image_archive"
+        run_runtime_start_command "$deadline" \
+            "$container_binary" image load --input "$runtime_init_image_archive"
         return 0
     fi
 
     [[ -n "$runtime_init_block_repo" ]] || return 0
 
-    if [[ ! -f "$runtime_init_block_repo/Makefile" ]]; then
-        printf 'container runtime init-block repo does not contain a Makefile: %s\n' "$runtime_init_block_repo" >&2
-        exit 2
-    fi
+    require_runtime_start_regular_file "$deadline" "$runtime_init_block_repo/Makefile" \
+        'container runtime init-block repo does not contain a Makefile'
 
     local init_env=()
     init_env+=(
@@ -643,40 +1064,48 @@ install_matched_init_image() {
     printf 'Installing matched container runtime init image...\n'
     # The initial runtime only hosts the local image build. It must not fetch
     # the default guest before this source-pinned image is available.
-    env "${init_env[@]}" make -C "$runtime_init_block_repo" \
-        KERNEL_INSTALL=false init-block
+    run_runtime_start_command "$deadline" env "${init_env[@]}" \
+        make -C "$runtime_init_block_repo" KERNEL_INSTALL=false init-block
 }
 
-validate_runtime_inputs
-validate_containerization_init_source
+validate_runtime_start_deadline_seconds
+runtime_start_sequence_deadline=$(runtime_start_deadline)
+resolve_container_binary "$runtime_start_sequence_deadline"
+validate_runtime_inputs "$runtime_start_sequence_deadline"
+validate_containerization_init_source "$runtime_start_sequence_deadline"
 resolve_matched_init_image
-validate_runtime_init_image_archive
+validate_runtime_init_image_archive "$runtime_start_sequence_deadline"
 configure_runtime_namespace
-verify_runtime_namespace_support
+verify_runtime_namespace_support "$runtime_start_sequence_deadline"
 
+trap cleanup_runtime_temporary_state EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 131' QUIT
+trap 'exit 143' TERM
 if [[ "${CONTAINER_RUNTIME_MANAGED:-0}" == "1" ]]; then
-    ensure_managed_runtime_ready
+    ensure_managed_runtime_ready "$runtime_start_sequence_deadline"
     "$@"
     exit
 fi
 
-trap cleanup_runtime_service_inputs EXIT
-stage_runtime_service_inputs
-acquire_container_runtime_lock
-trap 'exit 130' INT
-trap 'exit 143' TERM
+stage_runtime_service_inputs "$runtime_start_sequence_deadline"
+runtime_lock_timeout=$(runtime_start_lock_timeout_seconds \
+    "$runtime_start_sequence_deadline")
+CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS="$runtime_lock_timeout" \
+    acquire_container_runtime_lock
 trap cleanup EXIT
 
 printf 'Stopping stale container services...\n'
-stop_runtime
-sleep 3
-prepare_runtime_root
-stage_containerization_init_source
+stop_runtime "$runtime_start_sequence_deadline"
+run_runtime_start_command "$runtime_start_sequence_deadline" sleep 3
+prepare_runtime_root "$runtime_start_sequence_deadline"
+stage_containerization_init_source "$runtime_start_sequence_deadline"
 resolve_initial_start_init_image_archive
-prepare_runtime_config_home
-configure_runtime_builder_image
+prepare_runtime_config_home "$runtime_start_sequence_deadline"
+configure_runtime_builder_image "$runtime_start_sequence_deadline"
 if [[ -n "$initial_start_init_image_archive" ]]; then
-    configure_matched_init_image
+    configure_matched_init_image "$runtime_start_sequence_deadline"
 fi
 
 printf 'Starting matched container runtime...\n'
@@ -697,23 +1126,23 @@ fi
 if [[ -n "$initial_start_init_image_archive" ]]; then
     start_arguments+=(--init-image-archive "$initial_start_init_image_archive")
 fi
-start_runtime
-install_runtime_builder_image
-install_runtime_bootstrap_image
-install_matched_init_image
+start_runtime "$runtime_start_sequence_deadline"
+install_runtime_builder_image "$runtime_start_sequence_deadline"
+install_runtime_bootstrap_image "$runtime_start_sequence_deadline"
+install_matched_init_image "$runtime_start_sequence_deadline"
 if [[ -z "$initial_start_init_image_archive" ]]; then
-    configure_matched_init_image
+    configure_matched_init_image "$runtime_start_sequence_deadline"
 fi
 if [[ -n "$runtime_config_home" ]]; then
     printf 'Restarting matched container runtime with the installed init image...\n'
-    stop_runtime
-    sleep 3
+    prepare_runtime_restart "$runtime_start_sequence_deadline"
     start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
     if [[ -n "$runtime_app_root" ]]; then
         start_arguments+=(--app-root "$runtime_app_root")
     fi
-    start_runtime
+    start_runtime "$runtime_start_sequence_deadline"
 fi
+runtime_start_remaining_seconds "$runtime_start_sequence_deadline" >/dev/null || exit 124
 
 export CONTAINER_RUNTIME_MANAGED=1
 "$@"
