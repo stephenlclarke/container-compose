@@ -1334,6 +1334,8 @@ jobs:
 
       - name: Commit atomic Homebrew stack update
         if: steps.current-freshness.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         shell: bash
         working-directory: homebrew-tap
         run: |
@@ -1346,6 +1348,7 @@ jobs:
             exit 0
           fi
 
+          gh auth setup-git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "Formula/${compose_formula}" "Formula/${container_formula}"
@@ -1610,6 +1613,7 @@ jobs:
         shell: bash
         working-directory: homebrew-tap
         env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           RELEASE_VERSION: ${{ needs.resolve-publish-context.outputs.ref_name }}
         run: |
           set -euo pipefail
@@ -1618,6 +1622,7 @@ jobs:
             exit 0
           fi
 
+          gh auth setup-git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/container-compose.rb Formula/container.rb
