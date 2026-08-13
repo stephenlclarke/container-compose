@@ -440,6 +440,60 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertIn("refusing to clear container runtime root with an invalid marker", result.stderr)
             self.assertEqual(sentinel.read_text(encoding="utf-8"), "preserve\n")
 
+    def test_runtime_root_marker_hang_consumes_complete_startup_deadline(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            app_root.mkdir()
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            real_find = shutil.which("find")
+            self.assertIsNotNone(real_find)
+            marker_inspection_started = temporary_root / "marker-inspection-started"
+            fake_find = fake_bin / "find"
+            fake_find.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if [[ "$*" == *"-print -quit"* ]]; then\n'
+                '  touch "${MARKER_INSPECTION_STARTED:?}"\n'
+                "  sleep 30\n"
+                "fi\n"
+                f'exec "{real_find}" "$@"\n',
+                encoding="utf-8",
+            )
+            fake_find.chmod(0o755)
+            fake_container = fake_bin / "container-cli"
+            self.write_fake_container(fake_container)
+            command_marker = temporary_root / "command-ran"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                    "MARKER_INSPECTION_STARTED": str(marker_inspection_started),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=9,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 8)
+            self.assertTrue(marker_inspection_started.exists())
+            self.assertFalse(command_marker.exists())
+
     def test_scopes_candidate_namespace_and_exports_public_socket(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -886,7 +940,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(init_repo),
                     "CONTAINERIZATION_INIT_SOURCE_PATH": str(source),
                     "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
-                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "8",
                     "CONTAINER_TEST_LOG": str(container_log),
                     "PATH": f"{fake_bin}:{environment['PATH']}",
                 }
@@ -900,11 +954,11 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=8,
+                timeout=11,
             )
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
-            self.assertLess(time.monotonic() - started, 7)
+            self.assertLess(time.monotonic() - started, 10)
             self.assertTrue(clone_started.exists())
             self.assertFalse(command_marker.exists())
 

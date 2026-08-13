@@ -260,11 +260,9 @@ stage_containerization_init_source() {
 
     local source_inputs_root="$runtime_app_root/source-inputs"
     local staged_source_path="$source_inputs_root/containerization"
-    if [[ -e "$staged_source_path" ]]; then
-        printf 'refusing to overwrite an existing staged containerization source: %s\n' \
-            "$staged_source_path" >&2
-        exit 2
-    fi
+    reject_runtime_start_existing_path "$deadline" "$staged_source_path" \
+        'refusing to overwrite an existing staged containerization source' \
+        "$staged_source_path"
 
     run_runtime_start_command "$deadline" mkdir -p "$source_inputs_root"
     local clone_status=0
@@ -304,11 +302,12 @@ stage_containerization_init_source() {
             "$staged_source_path" >&2
         exit 2
     fi
-    if [[ -e "$staged_source_path/.build" || -e "$staged_source_path/vminitd/.build" ]]; then
-        printf 'staged containerization init source contains ignored Swift build artifacts: %s\n' \
-            "$staged_source_path" >&2
-        exit 2
-    fi
+    reject_runtime_start_existing_path "$deadline" "$staged_source_path/.build" \
+        'staged containerization init source contains ignored Swift build artifacts' \
+        "$staged_source_path"
+    reject_runtime_start_existing_path "$deadline" "$staged_source_path/vminitd/.build" \
+        'staged containerization init source contains ignored Swift build artifacts' \
+        "$staged_source_path"
 
     containerization_init_source_snapshot_path="$staged_source_path"
     containerization_init_source_path="$staged_source_path"
@@ -318,13 +317,16 @@ stage_containerization_init_source() {
 
     local fingerprints_root="$runtime_app_root/fingerprints"
     run_runtime_start_command "$deadline" mkdir -p "$fingerprints_root"
-    printf 'source_root=%s\nsource_head=%s\nstaged_source_root=%s\nstaged_source_head=%s\nbuild_scratch_root=%s\n' \
+    local source_fingerprint
+    printf -v source_fingerprint \
+        'source_root=%s\nsource_head=%s\nstaged_source_root=%s\nstaged_source_head=%s\nbuild_scratch_root=%s\n' \
         "$containerization_init_source_root" \
         "$containerization_init_source_head" \
         "$containerization_init_source_snapshot_path" \
         "$staged_source_head" \
-        "$containerization_init_build_scratch_root" \
-        >"$fingerprints_root/containerization-init-source.txt"
+        "$containerization_init_build_scratch_root"
+    write_runtime_start_file "$deadline" \
+        "$fingerprints_root/containerization-init-source.txt" "$source_fingerprint"
 }
 
 # Report whether a source checkout or retained archive can provide the matched init image.
@@ -450,6 +452,42 @@ runtime_start_regular_file_status() {
     local path="$2"
 
     run_runtime_start_command "$deadline" /bin/test -f "$path"
+}
+
+# Check whether a caller-controlled path exists inside the complete startup deadline.
+runtime_start_path_exists_status() {
+    local deadline="$1"
+    local path="$2"
+
+    run_runtime_start_command "$deadline" /bin/test -e "$path"
+}
+
+# Reject an existing runtime path without inspecting its filesystem in the owner shell.
+reject_runtime_start_existing_path() {
+    local deadline="$1"
+    local path="$2"
+    local error_message="$3"
+    local reported_path="$4"
+    local status=0
+
+    runtime_start_path_exists_status "$deadline" "$path" || status=$?
+    [[ "$status" != "124" ]] || return "$status"
+    if [[ "$status" == "0" ]]; then
+        printf '%s: %s\n' "$error_message" "$reported_path" >&2
+        exit 2
+    fi
+}
+
+# Write one runtime-owned file without letting its backing filesystem outlive
+# the complete startup deadline.
+write_runtime_start_file() {
+    local deadline="$1"
+    local path="$2"
+    local content="$3"
+
+    # shellcheck disable=SC2016 # Expand positional values in the bounded child shell.
+    run_runtime_start_command "$deadline" \
+        /bin/bash -c 'printf "%s" "$2" >"$1"' runtime-file "$path" "$content"
 }
 
 # Require one caller-controlled regular file without allowing an unresponsive
@@ -709,21 +747,29 @@ prepare_runtime_root() {
 
     run_runtime_start_command "$deadline" mkdir -p "$runtime_app_root"
     local marker_path="$runtime_app_root/$runtime_root_marker"
-    if [[ -f "$marker_path" ]]; then
+    local marker_status=0
+    runtime_start_regular_file_status "$deadline" "$marker_path" || marker_status=$?
+    [[ "$marker_status" != "124" ]] || return "$marker_status"
+    if [[ "$marker_status" == "0" ]]; then
         local marker_value
-        IFS= read -r marker_value <"$marker_path" || true
+        # shellcheck disable=SC2016 # Read $1 in the bounded child shell.
+        marker_value=$(run_runtime_start_command "$deadline" \
+            /bin/bash -c 'IFS= read -r value <"$1" || true; printf "%s" "$value"' \
+            runtime-root-marker "$marker_path") || return "$?"
         if [[ "$marker_value" != "$runtime_root_marker_value" ]]; then
             printf 'refusing to clear container runtime root with an invalid marker: %s\n' "$runtime_app_root" >&2
             exit 2
         fi
     else
         local existing_entry
-        existing_entry=$(find "$runtime_app_root" -mindepth 1 -maxdepth 1 -print -quit)
+        existing_entry=$(run_runtime_start_command "$deadline" \
+            find "$runtime_app_root" -mindepth 1 -maxdepth 1 -print -quit) || return "$?"
         if [[ -n "$existing_entry" ]]; then
             printf 'refusing to clear unmarked container runtime root: %s\n' "$runtime_app_root" >&2
             exit 2
         fi
-        printf '%s\n' "$runtime_root_marker_value" >"$marker_path"
+        write_runtime_start_file "$deadline" "$marker_path" \
+            "$runtime_root_marker_value"$'\n'
     fi
 
     run_runtime_start_command "$deadline" \
@@ -838,18 +884,21 @@ configure_matched_init_image() {
 
     local container_config_dir="$runtime_config_home/container"
     run_runtime_start_command "$deadline" mkdir -p "$container_config_dir"
-    {
-        if [[ -n "$runtime_builder_image" ]]; then
-            printf '[build]\nimage = "%s"\n\n' "$runtime_builder_image"
-        fi
-        printf '[vminit]\nimage = "%s"\n' "$matched_init_image"
-    } >"$container_config_dir/config.toml"
+    local config_content=
+    if [[ -n "$runtime_builder_image" ]]; then
+        printf -v config_content '[build]\nimage = "%s"\n\n' "$runtime_builder_image"
+    fi
+    printf -v config_content '%s[vminit]\nimage = "%s"\n' \
+        "$config_content" "$matched_init_image"
+    write_runtime_start_file "$deadline" "$container_config_dir/config.toml" \
+        "$config_content"
 
     local runtime_config_dir="$runtime_app_root/config"
     local runtime_config_path="$runtime_config_dir/config.toml"
     local runtime_config_temp
     run_runtime_start_command "$deadline" mkdir -p "$runtime_config_dir"
-    runtime_config_temp=$(mktemp "$runtime_config_dir/.config.toml.XXXXXX")
+    runtime_config_temp=$(run_runtime_start_command "$deadline" \
+        mktemp "$runtime_config_dir/.config.toml.XXXXXX") || return "$?"
     run_runtime_start_command "$deadline" \
         cp "$container_config_dir/config.toml" "$runtime_config_temp"
     run_runtime_start_command "$deadline" chmod 0444 "$runtime_config_temp"
@@ -869,8 +918,10 @@ configure_runtime_builder_image() {
 
     local container_config_dir="$runtime_config_home/container"
     run_runtime_start_command "$deadline" mkdir -p "$container_config_dir"
-    printf '[build]\nimage = "%s"\n' "$runtime_builder_image" \
-        >"$container_config_dir/config.toml"
+    local config_content
+    printf -v config_content '[build]\nimage = "%s"\n' "$runtime_builder_image"
+    write_runtime_start_file "$deadline" "$container_config_dir/config.toml" \
+        "$config_content"
 }
 
 install_runtime_builder_image() {
@@ -883,10 +934,8 @@ install_runtime_builder_image() {
         printf 'CONTAINER_RUNTIME_BUILDER_IMAGE and CONTAINER_RUNTIME_BUILDER_IMAGE_TAR must be set together\n' >&2
         exit 2
     fi
-    if [[ ! -f "$runtime_builder_image_tar" ]]; then
-        printf 'container runtime builder image archive does not exist: %s\n' "$runtime_builder_image_tar" >&2
-        exit 2
-    fi
+    require_runtime_start_regular_file "$deadline" "$runtime_builder_image_tar" \
+        'container runtime builder image archive does not exist'
 
     printf 'Installing matched container runtime builder image...\n'
     run_runtime_start_command "$deadline" \
@@ -898,10 +947,8 @@ install_runtime_bootstrap_image() {
 
     [[ -n "$runtime_bootstrap_image_tar" ]] || return 0
     [[ "$initial_start_init_image_archive" != "$runtime_bootstrap_image_tar" ]] || return 0
-    if [[ ! -f "$runtime_bootstrap_image_tar" ]]; then
-        printf 'container runtime bootstrap image archive does not exist: %s\n' "$runtime_bootstrap_image_tar" >&2
-        exit 2
-    fi
+    require_runtime_start_regular_file "$deadline" "$runtime_bootstrap_image_tar" \
+        'container runtime bootstrap image archive does not exist'
 
     printf 'Installing container runtime bootstrap image...\n'
     run_runtime_start_command "$deadline" \
@@ -943,10 +990,8 @@ install_matched_init_image() {
 
     [[ -n "$runtime_init_block_repo" ]] || return 0
 
-    if [[ ! -f "$runtime_init_block_repo/Makefile" ]]; then
-        printf 'container runtime init-block repo does not contain a Makefile: %s\n' "$runtime_init_block_repo" >&2
-        exit 2
-    fi
+    require_runtime_start_regular_file "$deadline" "$runtime_init_block_repo/Makefile" \
+        'container runtime init-block repo does not contain a Makefile'
 
     local init_env=()
     init_env+=(
