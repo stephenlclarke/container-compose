@@ -1058,7 +1058,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             archive = Path(directory) / "init.oci.tar"
             archive.write_bytes(b"first archive")
 
-            def fingerprint(repetitions: int) -> str:
+            def fingerprint(repetitions: int, core_coverage: int = 90) -> str:
                 completed = subprocess.run(
                     [
                         "make",
@@ -1072,6 +1072,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                         "print-release-gate-fingerprint",
                         f"CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE={archive}",
                         f"PARITY_REPETITIONS={repetitions}",
+                        f"SWIFT_CORE_COVERAGE_MIN={core_coverage}",
                     ],
                     cwd=ROOT,
                     check=False,
@@ -1086,9 +1087,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             archive.write_bytes(b"second archive")
             changed_archive = fingerprint(1)
             changed_repetitions = fingerprint(3)
+            changed_coverage = fingerprint(3, core_coverage=91)
 
             self.assertNotEqual(initial, changed_archive)
             self.assertNotEqual(changed_archive, changed_repetitions)
+            self.assertNotEqual(changed_repetitions, changed_coverage)
             self.assertNotIn(str(archive), changed_archive)
 
     def test_phase5_builder_suites_are_unconditionally_restored(self) -> None:
