@@ -1064,6 +1064,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 runtime_filter: str = "ComposeRuntimeTests",
                 test_flags: str = "",
                 test_attempts: int = 2,
+                go_build_flags: str = "-trimpath",
             ) -> str:
                 completed = subprocess.run(
                     [
@@ -1082,6 +1083,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                         f"SWIFT_RUNTIME_TEST_FILTER={runtime_filter}",
                         f"SWIFT_TEST_FLAGS={test_flags}",
                         f"SWIFT_TEST_ATTEMPTS={test_attempts}",
+                        f"GO_RELEASE_BUILD_FLAGS={go_build_flags}",
                     ],
                     cwd=ROOT,
                     check=False,
@@ -1102,6 +1104,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             changed_attempts = fingerprint(
                 3, 91, "OtherRuntimeTests", "-Xswiftc -DSTRICT", test_attempts=3
             )
+            changed_go_flags = fingerprint(
+                3,
+                91,
+                "OtherRuntimeTests",
+                "-Xswiftc -DSTRICT",
+                3,
+                "-trimpath -buildvcs=false",
+            )
 
             self.assertNotEqual(initial, changed_archive)
             self.assertNotEqual(changed_archive, changed_repetitions)
@@ -1109,6 +1119,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertNotEqual(changed_coverage, changed_filter)
             self.assertNotEqual(changed_filter, changed_flags)
             self.assertNotEqual(changed_flags, changed_attempts)
+            self.assertNotEqual(changed_attempts, changed_go_flags)
             self.assertNotIn(str(archive), changed_archive)
 
     def test_phase5_builder_suites_are_unconditionally_restored(self) -> None:
