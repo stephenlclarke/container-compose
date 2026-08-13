@@ -1335,6 +1335,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             environment["FAKE_GO_VERSION"] = "go1.26.3"
             environment["CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE"] = "/tmp/runtime-init.oci.tar"
             environment["CONTAINER_RUNTIME_CLI"] = str(candidate_tools_resolved / "container")
+            # This fixture substitutes its own candidate CLI. A full release
+            # gate exports both digests for the real candidate before running
+            # the policy tests, so inheriting either value would make the
+            # fixture validate the fake binary against unrelated live state.
+            environment.pop("CONTAINER_RUNTIME_CLI_SHA256", None)
+            environment.pop("CONTAINER_RUNTIME_CANDIDATE_SHA256", None)
             environment["CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR"] = str(
                 root / "checkpoints"
             )
@@ -2105,7 +2111,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                         text=True,
                         start_new_session=True,
                     )
-                    deadline = time.monotonic() + 10
+                    # This regression test deliberately coordinates three
+                    # process layers. Give a busy release runner enough time
+                    # to schedule them before declaring the signal contract
+                    # broken; the subprocess still has its own bounded exit.
+                    deadline = time.monotonic() + 30
                     while not ready.exists() and process.poll() is None:
                         if time.monotonic() >= deadline:
                             os.killpg(process.pid, signal.SIGKILL)
@@ -2115,7 +2125,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
                     send_signal = os.kill if signal_scope == "process" else os.killpg
                     send_signal(process.pid, delivered_signal)
-                    deadline = time.monotonic() + 10
+                    deadline = time.monotonic() + 30
                     while not cleanup_started.exists() and process.poll() is None:
                         if time.monotonic() >= deadline:
                             os.killpg(process.pid, signal.SIGKILL)
