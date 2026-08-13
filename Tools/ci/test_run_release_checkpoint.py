@@ -30,7 +30,9 @@ STACK_SCRIPT = SCRIPT.with_name("run-stack-release-validation.sh")
 
 
 class RunReleaseCheckpointTest(unittest.TestCase):
-    def stack_validation_fingerprints(self, stack_timeout: int) -> tuple[str, ...]:
+    def stack_validation_fingerprints(
+        self, stack_timeout: int, tool_fingerprint: str = "tools-a"
+    ) -> tuple[str, ...]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repositories = [
@@ -58,6 +60,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                     ),
                     "CONTAINER_STACK_VALIDATION_SCRATCH_ROOT": str(root / "scratch"),
                     "RELEASE_GATE_STACK_TIMEOUT_SECONDS": str(stack_timeout),
+                    "RELEASE_GATE_TOOL_FINGERPRINT": tool_fingerprint,
                     "PATH": f"{fake_bin}:{environment['PATH']}",
                 }
             )
@@ -227,6 +230,14 @@ class RunReleaseCheckpointTest(unittest.TestCase):
         self.assertEqual(len(baseline), 4)
         self.assertEqual(len(tightened), 4)
         self.assertNotEqual(tightened, baseline)
+
+    def test_child_stack_fingerprints_track_the_outer_tools(self) -> None:
+        baseline = self.stack_validation_fingerprints(14400, "tools-a")
+        changed = self.stack_validation_fingerprints(14400, "tools-b")
+
+        self.assertEqual(len(baseline), 4)
+        self.assertEqual(len(changed), 4)
+        self.assertNotEqual(changed, baseline)
 
     def test_failure_is_recorded_but_not_reused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
