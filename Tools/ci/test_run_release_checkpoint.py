@@ -91,6 +91,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
         parity_stage_timeout: int = 900,
         runtime_start_deadline: int = 300,
         python: str = "/usr/bin/true",
+        compose_test_binary: str = "/usr/bin/true",
     ) -> str:
         with tempfile.TemporaryDirectory() as directory:
             supplemental_makefile = Path(directory) / "fingerprint.mk"
@@ -117,6 +118,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                     "RELEASE_GATE_TOOL_FINGERPRINT=fixture-tools",
                     "DOCKER_COMPOSE_REFERENCE=/usr/bin/true",
                     f"PYTHON={python}",
+                    f"COMPOSE_TEST_BINARY={compose_test_binary}",
                     "SWIFT=/usr/bin/true",
                     "GO=/usr/bin/true",
                 ],
@@ -280,6 +282,29 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                 self.assertNotEqual(
                     self.release_gate_tool_fingerprint(**overrides), baseline
                 )
+
+    def test_outer_fingerprint_tracks_runtime_compose_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            first_binary = Path(directory) / "compose-first"
+            second_binary = Path(directory) / "compose-second"
+            first_binary.write_bytes(b"first executable")
+            second_binary.write_bytes(b"second executable")
+
+            baseline = self.release_gate_fingerprint(
+                compose_test_binary=str(first_binary)
+            )
+            first_binary.write_bytes(b"replaced executable")
+            changed_content = self.release_gate_fingerprint(
+                compose_test_binary=str(first_binary)
+            )
+            changed_selector = self.release_gate_fingerprint(
+                compose_test_binary=str(second_binary)
+            )
+
+            self.assertNotEqual(changed_content, baseline)
+            self.assertNotEqual(changed_selector, changed_content)
+            self.assertNotIn(str(first_binary), baseline)
+            self.assertNotIn(str(second_binary), changed_selector)
 
     def test_child_stack_fingerprints_track_the_outer_deadline(self) -> None:
         baseline = self.stack_validation_fingerprints(14400)
