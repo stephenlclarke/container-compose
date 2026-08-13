@@ -1611,6 +1611,50 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertEqual(container_commands[-1], "list --all --format json")
             self.assertFalse(any("system stop" in command for command in container_commands))
 
+    def test_managed_runtime_api_hang_stays_inside_the_shared_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            command_marker = temporary_root / "command-ran"
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "list --all --format json" ]]; then\n'
+                    "  sleep 30\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "outer-owner",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=4,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 3)
+            self.assertFalse(command_marker.exists())
+            self.assertEqual(
+                container_log.read_text(encoding="utf-8").splitlines(),
+                ["list --all --format json"],
+            )
+
     def test_api_round_trip_failure_blocks_the_candidate_command(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -1646,6 +1690,43 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(command_marker.exists())
+
+    def test_non_transient_start_failure_is_not_retried(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == *"system start"* ]]; then\n'
+                    "  printf 'invalid runtime configuration\\n' >&2\n"
+                    "  exit 42\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
+            invocations = container_log.read_text(encoding="utf-8")
+            self.assertEqual(invocations.count("system start"), 1)
+            self.assertNotIn("restarting the matched runtime once", result.stderr)
 
     def test_api_round_trip_hang_consumes_the_shared_startup_deadline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

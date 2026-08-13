@@ -399,6 +399,7 @@ start_runtime() {
     local sequence_deadline
     local start_completed
     local start_log
+    local start_state_root
     local start_status
 
     sequence_deadline=$(runtime_start_deadline)
@@ -406,8 +407,9 @@ start_runtime() {
         if ! remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline"); then
             return 124
         fi
-        start_completed=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-started.XXXXXX")
-        start_log=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-start.XXXXXX")
+        start_state_root=$(mktemp -d "${TMPDIR:-/tmp}/container-compose-runtime-start.XXXXXX")
+        start_completed="$start_state_root/completed"
+        start_log="$start_state_root/start.log"
         # The inner shell receives all values positionally; expansion here would be unsafe.
         # shellcheck disable=SC2016
         if "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
@@ -421,17 +423,17 @@ start_runtime() {
                 "$container_binary" list --all --format json >/dev/null
             ' runtime-start "$container_binary" "$start_completed" \
             "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
-            rm -f "$start_completed" "$start_log"
+            rm -rf "$start_state_root"
             return
         else
             start_status=$?
             if [[ ! -f "$start_completed" ]] &&
                 ! is_transient_xpc_start_failure "$start_log"; then
-                rm -f "$start_completed" "$start_log"
+                rm -rf "$start_state_root"
                 return "$start_status"
             fi
         fi
-        rm -f "$start_completed" "$start_log"
+        rm -rf "$start_state_root"
 
         if [[ "$attempt" == "2" ]]; then
             return "$start_status"
@@ -456,22 +458,41 @@ start_runtime() {
 # runtime was started. Recover the same namespace/root once without taking a
 # second lock or stopping the owner.
 ensure_managed_runtime_ready() {
+    local remaining_seconds
+    local sequence_deadline
     local start_log
     local start_status
 
-    if "$container_binary" list --all --format json >/dev/null; then
+    sequence_deadline=$(runtime_start_deadline)
+    remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline") || return 124
+    if "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
+        --seconds "$remaining_seconds" --grace-seconds 0 -- \
+        "$container_binary" list --all --format json >/dev/null; then
         return
     fi
+    start_status=$?
+    if [[ "$start_status" == "124" ]]; then
+        return "$start_status"
+    fi
 
+    remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline") || return 124
     printf 'Managed Container API is not ready; re-establishing the owner runtime...\n' >&2
     start_log=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-managed-start.XXXXXX")
     start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
     if [[ -n "$runtime_app_root" ]]; then
         start_arguments+=(--app-root "$runtime_app_root")
     fi
+    # The inner shell receives all values positionally; expansion here would be unsafe.
+    # shellcheck disable=SC2016
     if "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
-        --seconds "$runtime_start_deadline_seconds" -- \
-        "$container_binary" "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
+        --seconds "$remaining_seconds" --grace-seconds 0 -- \
+        /bin/bash -c '
+            container_binary=$1
+            shift
+            "$container_binary" "$@" || exit "$?"
+            "$container_binary" list --all --format json >/dev/null
+        ' runtime-recovery "$container_binary" "${start_arguments[@]}" \
+        2>&1 | tee "$start_log"; then
         start_status=0
     else
         start_status=${PIPESTATUS[0]}
@@ -479,11 +500,6 @@ ensure_managed_runtime_ready() {
         return "$start_status"
     fi
     rm -f "$start_log"
-
-    if ! "$container_binary" list --all --format json >/dev/null; then
-        printf 'Managed Container API remained unavailable after owner-runtime recovery\n' >&2
-        return 1
-    fi
 }
 
 prepare_runtime_root() {
