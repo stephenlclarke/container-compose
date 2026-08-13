@@ -109,17 +109,30 @@ def wait_for_watchdog(watchdog_pid: int) -> None:
 
 def run(arguments: Sequence[str]) -> int:
     options = parse_arguments(arguments)
+    forwarded_signal: int | None = None
+    previous_handlers: dict[int, signal.Handlers] = {}
+    forwarded_signals = {signal.SIGINT, signal.SIGTERM}
+    previous_signal_mask = signal.pthread_sigmask(
+        signal.SIG_BLOCK, forwarded_signals
+    )
+
+    def restore_child_signal_mask() -> None:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
+
     try:
-        process = subprocess.Popen(options.command, start_new_session=True)
+        process = subprocess.Popen(
+            options.command,
+            start_new_session=True,
+            preexec_fn=restore_child_signal_mask,
+        )
     except FileNotFoundError:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
         print(f"command was not found: {options.command[0]}", file=sys.stderr)
         return 127
     except PermissionError:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
         print(f"command is not executable: {options.command[0]}", file=sys.stderr)
         return 126
-
-    previous_handlers: dict[int, signal.Handlers] = {}
-    forwarded_signal: int | None = None
 
     def forward_signal(number: int, _frame: object) -> None:
         nonlocal forwarded_signal
@@ -131,6 +144,7 @@ def run(arguments: Sequence[str]) -> int:
         previous_handlers[number] = signal.signal(number, forward_signal)
 
     try:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
         deadline = time.monotonic() + options.seconds
         while True:
             if forwarded_signal is not None:

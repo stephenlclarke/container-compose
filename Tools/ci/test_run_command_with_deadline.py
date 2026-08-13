@@ -134,6 +134,57 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
                     self.fail(f"nested deadline child {pid} survived cleanup")
                 time.sleep(0.05)
 
+    def test_signal_after_spawn_is_forwarded_without_a_race(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            process_group_file = root / "process-group"
+            harness = root / "signal-race.py"
+            harness.write_text(
+                f"""\
+import importlib.util
+import os
+import signal
+import subprocess
+
+spec = importlib.util.spec_from_file_location("deadline_runner", {str(SCRIPT)!r})
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+original_popen = module.subprocess.Popen
+
+def signaling_popen(*args, **kwargs):
+    process = original_popen(*args, **kwargs)
+    with open({str(process_group_file)!r}, "w", encoding="utf-8") as stream:
+        stream.write(str(process.pid))
+    os.kill(os.getpid(), signal.SIGTERM)
+    return process
+
+module.subprocess.Popen = signaling_popen
+raise SystemExit(module.run([
+    "--seconds", "30", "--grace-seconds", "0.2", "--",
+    "/bin/sh", "-c", "trap '' TERM; while :; do sleep 1; done",
+]))
+""",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [sys.executable, str(harness)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+
+            self.assertEqual(result.returncode, 143, result.stderr)
+            process_group = int(process_group_file.read_text(encoding="utf-8"))
+            group_state = subprocess.run(
+                ["pgrep", "-g", str(process_group)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(group_state.returncode, 1, group_state.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
