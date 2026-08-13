@@ -148,7 +148,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
 
         for make in make_executables:
             with self.subTest(make=make), tempfile.TemporaryDirectory() as directory:
-                normalizer = Path(directory) / "compose normalizer"
+                normalizer = Path(directory) / "compose normalizer's tool"
                 normalizer.write_bytes(b"first normalizer")
 
                 initial = self.release_gate_fingerprint(

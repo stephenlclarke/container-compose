@@ -127,6 +127,27 @@ class FingerprintReleaseEnvironmentTest(unittest.TestCase):
 
             self.assertNotEqual(initial, changed)
 
+    def test_makeflags_decode_make_escapes_and_preserve_literal_quotes(self) -> None:
+        flags, overrides = self.module.parse_make_inputs(
+            {
+                "MAKEFLAGS": (
+                    "s -- BACKSLASH_INPUT=a\\\\b SPACE_INPUT=a\\ b "
+                    "SOME_RESULT_INPUT=a'b DOUBLE_QUOTE_INPUT=a\"b"
+                )
+            }
+        )
+
+        self.assertEqual(flags, ("s",))
+        self.assertEqual(
+            overrides,
+            (
+                ("BACKSLASH_INPUT", "=", "a\\b"),
+                ("SPACE_INPUT", "=", "a b"),
+                ("SOME_RESULT_INPUT", "=", "a'b"),
+                ("DOUBLE_QUOTE_INPUT", "=", 'a"b'),
+            ),
+        )
+
     def test_fresh_runtime_paths_normalize_to_content_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

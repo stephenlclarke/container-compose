@@ -192,7 +192,29 @@ def parse_make_inputs(
     environment: Mapping[str, str],
 ) -> tuple[tuple[str, ...], tuple[tuple[str, str, str], ...]]:
     makeflags = environment.get("MAKEFLAGS", "")
-    tokens = shlex.split(makeflags)
+    # GNU Make separates MAKEFLAGS words with unescaped whitespace and uses a
+    # backslash to preserve the following character. Quotes have no special
+    # meaning: they are literal variable data, not POSIX shell syntax.
+    tokens: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for character in makeflags:
+        if escaped:
+            current.append(character)
+            escaped = False
+        elif character == "\\":
+            escaped = True
+        elif character.isspace():
+            if current:
+                tokens.append("".join(current))
+                current = []
+        else:
+            current.append(character)
+    if escaped:
+        current.append("\\")
+    if current:
+        tokens.append("".join(current))
+
     flags: list[str] = []
     overrides: list[tuple[str, str, str]] = []
     for token in tokens:
