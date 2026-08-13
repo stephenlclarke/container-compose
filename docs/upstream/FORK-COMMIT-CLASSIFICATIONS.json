@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-08-12",
+  "reviewedAt": "2026-08-13",
   "repositories": {
     "container": {
-      "upstreamHead": "875d80ba07fdcc3aac138ed7fc56643d71aaf860",
-      "forkHead": "59690f21f26a1418d95603c03506937bd0b6f1bd",
+      "upstreamHead": "d2213f49e6f72fdacf5b895b4d23120c18a456df",
+      "forkHead": "4c527d221601935c614e8ab77c736692a91dd043",
       "slices": [
         {
           "id": "container-support-maintenance",
