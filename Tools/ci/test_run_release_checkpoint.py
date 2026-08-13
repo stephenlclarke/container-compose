@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -25,14 +26,68 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("run-release-checkpoint.py")
 ROOT = SCRIPT.parents[2]
+STACK_SCRIPT = SCRIPT.with_name("run-stack-release-validation.sh")
 
 
 class RunReleaseCheckpointTest(unittest.TestCase):
+    def stack_validation_fingerprints(self, stack_timeout: int) -> tuple[str, ...]:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repositories = [
+                root / name
+                for name in ("compose", "builder", "containerization", "container")
+            ]
+            for repository in repositories:
+                repository.mkdir()
+                (repository / "Makefile").touch()
+            tap = root / "tap"
+            (tap / "Formula").mkdir(parents=True)
+            (tap / "Formula" / "container-compose.rb").write_text(
+                "class ContainerCompose < Formula\nend\n", encoding="utf-8"
+            )
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_make = fake_bin / "make"
+            fake_make.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_make.chmod(0o755)
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR": str(
+                        root / "checkpoints"
+                    ),
+                    "CONTAINER_STACK_VALIDATION_SCRATCH_ROOT": str(root / "scratch"),
+                    "RELEASE_GATE_STACK_TIMEOUT_SECONDS": str(stack_timeout),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+            completed = subprocess.run(
+                [
+                    str(STACK_SCRIPT),
+                    "hosted",
+                    *(str(repository) for repository in repositories),
+                    str(tap),
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            return tuple(
+                line.rsplit("=", 1)[-1]
+                for line in completed.stdout.splitlines()
+                if line.startswith("stack validation exact-input fingerprint:")
+            )
+
     def release_gate_fingerprint(
         self,
-        release_parity_timeout: int,
-        parity_stage_timeout: int,
-        runtime_start_deadline: int,
+        release_stack_timeout: int = 14400,
+        release_parity_timeout: int = 14400,
+        parity_stage_timeout: int = 900,
+        runtime_start_deadline: int = 300,
+        python: str = "/usr/bin/true",
     ) -> str:
         with tempfile.TemporaryDirectory() as directory:
             supplemental_makefile = Path(directory) / "fingerprint.mk"
@@ -51,12 +106,14 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                     "-f",
                     str(supplemental_makefile),
                     "print-release-gate-fingerprint",
+                    f"RELEASE_GATE_STACK_TIMEOUT_SECONDS={release_stack_timeout}",
                     f"RELEASE_GATE_PARITY_TIMEOUT_SECONDS={release_parity_timeout}",
                     f"PARITY_STAGE_TIMEOUT_SECONDS={parity_stage_timeout}",
                     f"CONTAINER_RUNTIME_START_DEADLINE_SECONDS={runtime_start_deadline}",
                     "RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT=fixture-init",
                     "RELEASE_GATE_TOOL_FINGERPRINT=fixture-tools",
                     "DOCKER_COMPOSE_REFERENCE=/usr/bin/true",
+                    f"PYTHON={python}",
                     "SWIFT=/usr/bin/true",
                     "GO=/usr/bin/true",
                 ],
@@ -140,17 +197,36 @@ class RunReleaseCheckpointTest(unittest.TestCase):
             self.assertEqual(checkpoint["seconds"], 4)
 
     def test_outer_fingerprint_tracks_nested_deadline_controls(self) -> None:
-        baseline = self.release_gate_fingerprint(14400, 900, 300)
-        tighter_outer_parity = self.release_gate_fingerprint(14399, 900, 300)
-        tighter_parity = self.release_gate_fingerprint(14400, 899, 300)
-        tighter_start = self.release_gate_fingerprint(14400, 900, 299)
+        baseline = self.release_gate_fingerprint()
+        tighter_stack = self.release_gate_fingerprint(release_stack_timeout=14399)
+        tighter_outer_parity = self.release_gate_fingerprint(
+            release_parity_timeout=14399
+        )
+        tighter_parity = self.release_gate_fingerprint(parity_stage_timeout=899)
+        tighter_start = self.release_gate_fingerprint(runtime_start_deadline=299)
 
+        self.assertIn("release-stack-timeout=14400", baseline)
         self.assertIn("release-parity-timeout=14400", baseline)
         self.assertIn("parity-stage-timeout=900", baseline)
         self.assertIn("runtime-start-deadline=300", baseline)
+        self.assertNotEqual(tighter_stack, baseline)
         self.assertNotEqual(tighter_outer_parity, baseline)
         self.assertNotEqual(tighter_parity, baseline)
         self.assertNotEqual(tighter_start, baseline)
+
+    def test_outer_fingerprint_tracks_the_selected_python(self) -> None:
+        baseline = self.release_gate_fingerprint(python="/usr/bin/true")
+        changed = self.release_gate_fingerprint(python="/usr/bin/false")
+
+        self.assertNotEqual(changed, baseline)
+
+    def test_child_stack_fingerprints_track_the_outer_deadline(self) -> None:
+        baseline = self.stack_validation_fingerprints(14400)
+        tightened = self.stack_validation_fingerprints(14399)
+
+        self.assertEqual(len(baseline), 4)
+        self.assertEqual(len(tightened), 4)
+        self.assertNotEqual(tightened, baseline)
 
     def test_failure_is_recorded_but_not_reused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

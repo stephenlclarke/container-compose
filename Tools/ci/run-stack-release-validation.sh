@@ -273,6 +273,8 @@ if [[ -n "${checkpoint_directory}" ]]; then
       printf 'environment=SDKROOT=%s\n' "${SDKROOT:-}"
       printf 'environment=CC=%s\n' "${CC:-}"
       printf 'environment=CXX=%s\n' "${CXX:-}"
+      printf 'environment=RELEASE_GATE_STACK_TIMEOUT_SECONDS=%s\n' \
+        "${RELEASE_GATE_STACK_TIMEOUT_SECONDS:-}"
       for tool_name in git make swift clang go ruby python3 docker hawkeye shellcheck xcodebuild; do
         tool_path=$(command -v "${tool_name}" 2>/dev/null || true)
         printf 'tool=%s:path=%s\n' "${tool_name}" "${tool_path:-missing}"
