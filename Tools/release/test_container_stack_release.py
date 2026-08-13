@@ -489,7 +489,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             'vminit:${CONTAINERIZATION_REF}"',
             workflow,
         )
-        self.assertIn(
+        self.assertIn('with tarfile.open(sys.argv[1], "r:*") as archive:', workflow)
+        self.assertIn('{"index.json", "./index.json"}', workflow)
+        self.assertIn("expected exactly one root index.json member", workflow)
+        self.assertNotIn(
             'tar -xOf "${DEMO_INIT_IMAGE_ARCHIVE}" index.json',
             workflow,
         )

@@ -1042,8 +1042,32 @@ jobs:
           fi
           expected_init_image_ref="ghcr.io/stephenlclarke/containerization/vminit:${CONTAINERIZATION_REF}"
           actual_init_image_ref="$(
-            tar -xOf "${DEMO_INIT_IMAGE_ARCHIVE}" index.json \
-              | python3 -c 'import json, sys; print(json.load(sys.stdin)["manifests"][0]["annotations"]["org.opencontainers.image.ref.name"])'
+            python3 - "${DEMO_INIT_IMAGE_ARCHIVE}" <<'PY'
+          import json
+          import sys
+          import tarfile
+
+          with tarfile.open(sys.argv[1], "r:*") as archive:
+              members = [
+                  member
+                  for member in archive.getmembers()
+                  if member.isfile() and member.name in {"index.json", "./index.json"}
+              ]
+              if len(members) != 1:
+                  raise SystemExit(
+                      f"expected exactly one root index.json member, found {len(members)}"
+                  )
+              stream = archive.extractfile(members[0])
+              if stream is None:
+                  raise SystemExit("root index.json member is unreadable")
+              index = json.load(stream)
+
+          print(
+              index["manifests"][0]["annotations"][
+                  "org.opencontainers.image.ref.name"
+              ]
+          )
+          PY
           )"
           if [[ "${actual_init_image_ref}" != "${expected_init_image_ref}" ]]; then
             printf 'matched Current demo init-image ref mismatch (expected %s, got %s)\n' \
