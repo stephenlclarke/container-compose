@@ -39,9 +39,13 @@ SCHEMA_VERSION = 2
 NON_RESULT_VARIABLES = frozenset(
     {
         "COMPOSE_CLI_SURFACE_REPORT",
+        "CONTAINER_APP_ROOT",
+        "CONTAINER_RUNTIME_DOCKER_HOST",
+        "CONTAINER_RUNTIME_DOCKER_SOCKET",
         "CONTAINER_RUNTIME_APP_ROOT",
         "CONTAINER_RUNTIME_RUN_ID",
         "CONTAINER_RUNTIME_SERVICE_NAMESPACE",
+        "CONTAINER_SERVICE_NAMESPACE",
         "CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR",
         "CONTAINER_STACK_VALIDATION_RUNTIME_ROOT",
         "CONTAINER_STACK_VALIDATION_SCRATCH_ROOT",
@@ -88,6 +92,11 @@ MAKE_ASSIGNMENT = re.compile(
 # contents can affect the result. Bind the proof to the directory tree rather
 # than its random absolute location.
 CONTENT_ROOT_VARIABLES = frozenset({"XDG_CONFIG_HOME"})
+
+# The runtime wrapper copies the retained init image into a fresh staging
+# directory for every attempt. Its bytes and mode affect the proof, but the
+# random staging path does not.
+CONTENT_FILE_VARIABLES = frozenset({"CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE"})
 
 # The release helper extracts the same immutable Container candidate below a
 # fresh mktemp root on every retry. These selectors establish which PATH entry
@@ -326,6 +335,24 @@ def value_entry(
             "normalized_path_sha256": normalized_path_identity(
                 value, relocatable_directories
             )
+        }
+    if name in CONTENT_FILE_VARIABLES:
+        try:
+            artifact = Path(value)
+            if not artifact.is_absolute():
+                artifact = working_directory / artifact
+            if artifact.is_file():
+                return {
+                    "selected_file_mode": (
+                        f"{stat.S_IMODE(artifact.stat().st_mode):04o}"
+                    ),
+                    "selected_file_sha256": sha256_file(artifact),
+                }
+        except (OSError, RuntimeError):
+            pass
+        return {
+            "selected_file_state": "missing",
+            "value_sha256": sha256_bytes(value.encode("utf-8")),
         }
     if name in CONTENT_ROOT_VARIABLES:
         try:
