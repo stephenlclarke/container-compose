@@ -141,6 +141,7 @@ class FingerprintReleaseEnvironmentTest(unittest.TestCase):
                 config.write_text('[build]\nimage = "fixture"\n', encoding="utf-8")
                 candidate_path = str(binary.parent)
                 return {
+                    "CONTAINER_RUNTIME_CANDIDATE_SHA256": "a" * 64,
                     "CONTAINER_RUNTIME_CLI": str(binary),
                     "CONTAINER_RUNTIME_CLI_SHA256": self.module.sha256_file(binary),
                     "MAKEFLAGS": (
@@ -170,7 +171,9 @@ class FingerprintReleaseEnvironmentTest(unittest.TestCase):
             config.parent.mkdir(parents=True)
             config.write_text("first config\n", encoding="utf-8")
             environment = {
+                "CONTAINER_RUNTIME_CANDIDATE_SHA256": "a" * 64,
                 "CONTAINER_RUNTIME_CLI": str(binary),
+                "CONTAINER_RUNTIME_CLI_SHA256": self.module.sha256_file(binary),
                 "MAKEFLAGS": "s -- CONTAINER_COMPOSE_CONTAINER=" + str(binary),
                 "PATH": f"{binary.parent}{os.pathsep}/usr/bin",
                 "XDG_CONFIG_HOME": str(config.parents[1]),

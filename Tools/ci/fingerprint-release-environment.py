@@ -230,6 +230,21 @@ def selected_file_entry(
 def relocatable_path_directories(
     environment: Mapping[str, str], working_directory: Path
 ) -> dict[Path, str]:
+    candidate_sha256 = environment.get("CONTAINER_RUNTIME_CANDIDATE_SHA256", "")
+    runtime_cli_sha256 = environment.get("CONTAINER_RUNTIME_CLI_SHA256", "")
+    runtime_cli = environment.get("CONTAINER_RUNTIME_CLI", "")
+    if not re.fullmatch(r"[0-9a-f]{64}", candidate_sha256):
+        return {}
+    if not re.fullmatch(r"[0-9a-f]{64}", runtime_cli_sha256):
+        return {}
+    runtime_selection = selected_file(runtime_cli, environment, working_directory)
+    if runtime_selection is None:
+        return {}
+    runtime_artifact, _runtime_arguments = runtime_selection
+    if sha256_file(runtime_artifact) != runtime_cli_sha256:
+        return {}
+
+    runtime_directory = runtime_artifact.parent
     directories: dict[Path, list[dict[str, str]]] = {}
     for name in RELOCATABLE_EXECUTABLE_VARIABLES:
         value = environment.get(name)
@@ -239,6 +254,8 @@ def relocatable_path_directories(
         if selection is None:
             continue
         artifact, _arguments = selection
+        if artifact.parent != runtime_directory:
+            continue
         directories.setdefault(artifact.parent, []).append(
             selected_file_entry(selection)
         )
@@ -294,17 +311,28 @@ def value_entry(
             if not content_root.is_absolute():
                 content_root = working_directory / content_root
             if content_root.is_dir():
-                return {
+                entry = {
                     "selected_directory_sha256": sha256_directory(content_root)
                 }
+                if not relocatable_directories:
+                    entry["value_sha256"] = sha256_bytes(value.encode("utf-8"))
+                return entry
         except (OSError, RuntimeError):
             pass
-        return {"selected_directory_state": "missing"}
+        entry = {"selected_directory_state": "missing"}
+        if not relocatable_directories:
+            entry["value_sha256"] = sha256_bytes(value.encode("utf-8"))
+        return entry
 
     selection = selected_file(value, environment, working_directory)
     if selection is not None:
         entry = selected_file_entry(selection)
-        if name not in RELOCATABLE_EXECUTABLE_VARIABLES:
+        artifact, _arguments = selection
+        is_relocated_candidate = (
+            name in RELOCATABLE_EXECUTABLE_VARIABLES
+            and artifact.parent in relocatable_directories
+        )
+        if not is_relocated_candidate:
             entry["value_sha256"] = sha256_bytes(value.encode("utf-8"))
         return entry
     return {"value_sha256": sha256_bytes(value.encode("utf-8"))}
