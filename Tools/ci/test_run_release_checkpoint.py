@@ -137,6 +137,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
         hawkeye: str = "/usr/bin/true",
         llvm_cov: str = "/usr/bin/true",
         llvm_profdata: str = "/usr/bin/true",
+        docker_compose: str = "/usr/bin/true compose",
     ) -> str:
         with tempfile.TemporaryDirectory() as directory:
             supplemental_makefile = Path(directory) / "tool-fingerprint.mk"
@@ -162,6 +163,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                     f"HAWKEYE={hawkeye}",
                     f"SWIFT_LLVM_COV={llvm_cov}",
                     f"SWIFT_LLVM_PROFDATA={llvm_profdata}",
+                    f"DOCKER_COMPOSE_REFERENCE={docker_compose}",
                 ],
                 cwd=ROOT,
                 capture_output=True,
@@ -270,6 +272,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
             "hawkeye": {"hawkeye": "/usr/bin/false"},
             "llvm-cov": {"llvm_cov": "/usr/bin/false"},
             "llvm-profdata": {"llvm_profdata": "/usr/bin/false"},
+            "docker-compose": {"docker_compose": "/usr/bin/false compose"},
         }
 
         for name, overrides in selectors.items():
