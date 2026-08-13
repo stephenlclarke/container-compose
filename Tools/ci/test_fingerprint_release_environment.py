@@ -22,6 +22,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).with_name("fingerprint-release-environment.py")
 
@@ -56,7 +57,11 @@ class FingerprintReleaseEnvironmentTest(unittest.TestCase):
         baseline = self.module.fingerprint_environment(
             {
                 "PATH": "/usr/bin",
+                "CONTAINER_APP_ROOT": "/tmp/first/app",
+                "CONTAINER_RUNTIME_DOCKER_HOST": "unix:///tmp/first/docker.sock",
+                "CONTAINER_RUNTIME_DOCKER_SOCKET": "/tmp/first/docker.sock",
                 "CONTAINER_RUNTIME_RUN_ID": "first",
+                "CONTAINER_SERVICE_NAMESPACE": "example.first",
                 "PARITY_EVIDENCE_DIR": "/tmp/first",
                 "CODEX_THREAD_ID": "first-task",
             },
@@ -65,7 +70,11 @@ class FingerprintReleaseEnvironmentTest(unittest.TestCase):
         changed = self.module.fingerprint_environment(
             {
                 "PATH": "/usr/bin",
+                "CONTAINER_APP_ROOT": "/tmp/second/app",
+                "CONTAINER_RUNTIME_DOCKER_HOST": "unix:///tmp/second/docker.sock",
+                "CONTAINER_RUNTIME_DOCKER_SOCKET": "/tmp/second/docker.sock",
                 "CONTAINER_RUNTIME_RUN_ID": "second",
+                "CONTAINER_SERVICE_NAMESPACE": "example.second",
                 "PARITY_EVIDENCE_DIR": "/tmp/second",
                 "CODEX_THREAD_ID": "second-task",
             },
@@ -73,6 +82,68 @@ class FingerprintReleaseEnvironmentTest(unittest.TestCase):
         )
 
         self.assertEqual(baseline, changed)
+
+    def test_staged_init_archive_uses_content_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "first" / "retained-init-image.oci.tar"
+            second = root / "second" / "retained-init-image.oci.tar"
+            first.parent.mkdir()
+            second.parent.mkdir()
+            first.write_bytes(b"same init image")
+            second.write_bytes(b"same init image")
+
+            first_fingerprint = self.module.fingerprint_environment(
+                {
+                    "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE": str(first),
+                    "PATH": "/usr/bin",
+                },
+                root,
+            )
+            relocated_fingerprint = self.module.fingerprint_environment(
+                {
+                    "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE": str(second),
+                    "PATH": "/usr/bin",
+                },
+                root,
+            )
+            second.write_bytes(b"changed init image")
+            changed_fingerprint = self.module.fingerprint_environment(
+                {
+                    "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE": str(second),
+                    "PATH": "/usr/bin",
+                },
+                root,
+            )
+
+            self.assertEqual(first_fingerprint, relocated_fingerprint)
+            self.assertNotEqual(relocated_fingerprint, changed_fingerprint)
+
+    def test_staged_init_archive_preserves_literal_path_semantics(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "retained-init-image.oci.tar"
+            archive.write_bytes(b"same init image")
+
+            with patch.dict(os.environ, {"HOME": str(root)}):
+                absolute_fingerprint = self.module.fingerprint_environment(
+                    {
+                        "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE": str(archive),
+                        "PATH": "/usr/bin",
+                    },
+                    root,
+                )
+                unexpanded_fingerprint = self.module.fingerprint_environment(
+                    {
+                        "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE": (
+                            "~/retained-init-image.oci.tar"
+                        ),
+                        "PATH": "/usr/bin",
+                    },
+                    root,
+                )
+
+            self.assertNotEqual(absolute_fingerprint, unexpanded_fingerprint)
 
     def test_selected_executable_content_is_part_of_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
