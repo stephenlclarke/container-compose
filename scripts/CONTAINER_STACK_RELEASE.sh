@@ -650,7 +650,7 @@ stage_container_runtime_candidate() {
     cleanup_unpublished_runtime_candidate_build() {
       local trapped_status="${1:-$?}"
       trap - EXIT
-      trap '' INT TERM
+      trap '' HUP INT TERM
       if [[ -n "${build_root:-}" && -d "${build_root}" ]]; then
         case "${build_root}" in
           "${artifact_parent}/.build-${container_head}."*)
@@ -665,6 +665,7 @@ stage_container_runtime_candidate() {
       fi
       return "${trapped_status}"
     }
+    trap 'exit 129' HUP
     trap 'exit 130' INT
     trap 'exit 143' TERM
     trap 'cleanup_unpublished_runtime_candidate_build $?' EXIT
@@ -685,7 +686,7 @@ stage_container_runtime_candidate() {
       "${container_head}" >"${build_root}/.container-compose-runtime-candidate-artifact"
     mv "${build_root}" "${artifact_root}"
     build_root=""
-    trap - EXIT INT TERM
+    trap - EXIT HUP INT TERM
     archive="${artifact_root}/container-homebrew-debug-arm64.tar.gz"
   fi
 
@@ -864,7 +865,7 @@ create_release_runtime_parent() {
   cleanup_incomplete_release_runtime_parent() {
     local trapped_status=$?
     trap - EXIT
-    trap '' INT TERM
+    trap '' HUP INT TERM
     if ((trapped_status == 0 && runtime_parent_published != 0)); then
       return 0
     fi
@@ -883,6 +884,7 @@ create_release_runtime_parent() {
     return "${trapped_status}"
   }
 
+  trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
   trap cleanup_incomplete_release_runtime_parent EXIT
@@ -893,12 +895,12 @@ create_release_runtime_parent() {
   printf '%s\n' "${runtime_parent}"
   # Publication is complete. Ignore a late signal before disarming EXIT so it
   # cannot outlive this function and expand locals that have left scope.
-  trap '' INT TERM
+  trap '' HUP INT TERM
   trap - EXIT
 }
 
 # Run the candidate-owned gate in the background so this shell can explicitly
-# wait for its namespace cleanup when the process group receives INT or TERM.
+# wait for its namespace cleanup when the process group receives HUP, INT, or TERM.
 # The candidate extraction must remain present until the wrapper's signal trap
 # has completed its namespace-scoped `system stop`.
 run_local_release_gate_command() {
@@ -913,7 +915,7 @@ run_local_release_gate_command() {
     signal_status="$2"
     # A second signal must not interrupt the one wait that protects the
     # candidate executable used by the child's cleanup trap.
-    trap '' INT TERM
+    trap '' HUP INT TERM
     if [[ -n "${child_pid}" ]]; then
       # A direct signal to this helper does not reach the background cleanup
       # owner. Forward it before waiting; a process-group signal is harmlessly
@@ -928,6 +930,7 @@ run_local_release_gate_command() {
     fi
   }
 
+  trap 'wait_for_candidate_cleanup_on_signal HUP 129' HUP
   trap 'wait_for_candidate_cleanup_on_signal INT 130' INT
   trap 'wait_for_candidate_cleanup_on_signal TERM 143' TERM
 
@@ -936,7 +939,7 @@ run_local_release_gate_command() {
   # finish before the exec'd wrapper cleans up. Reset the dispositions inside
   # that child and exec the wrapper so child_pid remains the runtime owner.
   (
-    trap - INT TERM
+    trap - HUP INT TERM
     exec "$@"
   ) &
   child_pid=$!
@@ -954,7 +957,7 @@ run_local_release_gate_command() {
     child_pid=""
   fi
 
-  trap - INT TERM
+  trap - HUP INT TERM
   if ((signal_status != 0)); then
     return "${signal_status}"
   fi

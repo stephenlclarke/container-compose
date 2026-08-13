@@ -1926,6 +1926,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             for delivered_signal, expected_status in (
+                (signal.SIGHUP, 129),
                 (signal.SIGINT, 130),
                 (signal.SIGTERM, 143),
             ):
@@ -1947,10 +1948,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                     fake_gate.write_text(
                         "#!/usr/bin/env bash\n"
                         "set -u\n"
-                        "cleanup() { trap '' INT TERM; "
+                        "cleanup() { trap '' HUP INT TERM; "
                         "test -x \"$CANDIDATE_ROOT/bin/container\"; "
                         "touch \"$CLEANUP_STARTED\"; sleep 0.5; "
                         "touch \"$STOP_COMPLETE\"; }\n"
+                        "trap 'cleanup; exit 129' HUP\n"
                         "trap 'cleanup; exit 130' INT\n"
                         "trap 'cleanup; exit 143' TERM\n"
                         "touch \"$READY\"\n"
