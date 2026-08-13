@@ -1058,7 +1058,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             archive = Path(directory) / "init.oci.tar"
             archive.write_bytes(b"first archive")
 
-            def fingerprint(repetitions: int, core_coverage: int = 90) -> str:
+            def fingerprint(
+                repetitions: int,
+                core_coverage: int = 90,
+                runtime_filter: str = "ComposeRuntimeTests",
+                test_flags: str = "",
+                test_attempts: int = 2,
+            ) -> str:
                 completed = subprocess.run(
                     [
                         "make",
@@ -1073,6 +1079,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                         f"CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE={archive}",
                         f"PARITY_REPETITIONS={repetitions}",
                         f"SWIFT_CORE_COVERAGE_MIN={core_coverage}",
+                        f"SWIFT_RUNTIME_TEST_FILTER={runtime_filter}",
+                        f"SWIFT_TEST_FLAGS={test_flags}",
+                        f"SWIFT_TEST_ATTEMPTS={test_attempts}",
                     ],
                     cwd=ROOT,
                     check=False,
@@ -1088,10 +1097,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             changed_archive = fingerprint(1)
             changed_repetitions = fingerprint(3)
             changed_coverage = fingerprint(3, core_coverage=91)
+            changed_filter = fingerprint(3, 91, runtime_filter="OtherRuntimeTests")
+            changed_flags = fingerprint(3, 91, "OtherRuntimeTests", "-Xswiftc -DSTRICT")
+            changed_attempts = fingerprint(
+                3, 91, "OtherRuntimeTests", "-Xswiftc -DSTRICT", test_attempts=3
+            )
 
             self.assertNotEqual(initial, changed_archive)
             self.assertNotEqual(changed_archive, changed_repetitions)
             self.assertNotEqual(changed_repetitions, changed_coverage)
+            self.assertNotEqual(changed_coverage, changed_filter)
+            self.assertNotEqual(changed_filter, changed_flags)
+            self.assertNotEqual(changed_flags, changed_attempts)
             self.assertNotIn(str(archive), changed_archive)
 
     def test_phase5_builder_suites_are_unconditionally_restored(self) -> None:
