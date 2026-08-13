@@ -33,6 +33,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
         log: Path,
         fingerprint: str,
         status: int = 0,
+        seconds: int = 5,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
@@ -45,7 +46,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                 "--fingerprint",
                 fingerprint,
                 "--seconds",
-                "5",
+                str(seconds),
                 "--",
                 "/bin/sh",
                 "-c",
@@ -79,6 +80,23 @@ class RunReleaseCheckpointTest(unittest.TestCase):
             self.assertEqual(checkpoint["executable"], "/bin/sh")
             self.assertIn("command_sha256", checkpoint)
             self.assertNotIn("command", checkpoint)
+
+    def test_tightening_the_deadline_invalidates_the_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoints = root / "checkpoints"
+            log = root / "runs.log"
+
+            first = self.run_stage(checkpoints, log, "tree-a", seconds=5)
+            tightened = self.run_stage(checkpoints, log, "tree-a", seconds=4)
+
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(tightened.returncode, 0, tightened.stderr)
+            self.assertEqual(log.read_text(encoding="utf-8"), "run\nrun\n")
+            checkpoint = json.loads(
+                (checkpoints / "compose-ci.success.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(checkpoint["seconds"], 4)
 
     def test_failure_is_recorded_but_not_reused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

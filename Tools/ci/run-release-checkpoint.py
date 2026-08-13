@@ -61,11 +61,14 @@ def utc_timestamp() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def stage_digest(stage: str, fingerprint: str, command: Sequence[str]) -> str:
+def stage_digest(
+    stage: str, fingerprint: str, seconds: int, command: Sequence[str]
+) -> str:
     encoded = json.dumps(
         {
             "command": list(command),
             "fingerprint": fingerprint,
+            "seconds": seconds,
             "schema": SCHEMA_VERSION,
             "stage": stage,
         },
@@ -102,7 +105,9 @@ def write_json_atomically(path: Path, value: dict[str, object]) -> None:
 
 def run(arguments: Sequence[str]) -> int:
     options = parse_arguments(arguments)
-    digest = stage_digest(options.stage, options.fingerprint, options.command)
+    digest = stage_digest(
+        options.stage, options.fingerprint, options.seconds, options.command
+    )
     checkpoint_directory = (
         Path(options.checkpoint_dir).expanduser().resolve()
         if options.checkpoint_dir
@@ -150,6 +155,7 @@ def run(arguments: Sequence[str]) -> int:
         "finished_at": utc_timestamp(),
         "fingerprint": options.fingerprint,
         "schema": SCHEMA_VERSION,
+        "seconds": options.seconds,
         "stage": options.stage,
         "started_at": started_at,
         "status": completed.returncode,
