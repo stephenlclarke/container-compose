@@ -128,6 +128,49 @@ class RunReleaseCheckpointTest(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             return completed.stdout.strip()
 
+    def release_gate_tool_fingerprint(
+        self,
+        swift: str = "/usr/bin/true",
+        go: str = "/usr/bin/true",
+        python: str = "/usr/bin/true",
+        markdownlint: str = "/usr/bin/true",
+        hawkeye: str = "/usr/bin/true",
+        llvm_cov: str = "/usr/bin/true",
+        llvm_profdata: str = "/usr/bin/true",
+    ) -> str:
+        with tempfile.TemporaryDirectory() as directory:
+            supplemental_makefile = Path(directory) / "tool-fingerprint.mk"
+            supplemental_makefile.write_text(
+                "print-release-gate-tool-fingerprint:\n"
+                "\t@printf '%s\\n' \"$(RELEASE_GATE_TOOL_FINGERPRINT)\"\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-s",
+                    "-f",
+                    str(ROOT / "Makefile"),
+                    "-f",
+                    str(supplemental_makefile),
+                    "print-release-gate-tool-fingerprint",
+                    f"SWIFT={swift}",
+                    f"GO={go}",
+                    f"PYTHON={python}",
+                    f"MARKDOWNLINT={markdownlint}",
+                    f"HAWKEYE={hawkeye}",
+                    f"SWIFT_LLVM_COV={llvm_cov}",
+                    f"SWIFT_LLVM_PROFDATA={llvm_profdata}",
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            return completed.stdout.strip()
+
     def run_stage(
         self,
         checkpoint_directory: Path,
@@ -217,11 +260,23 @@ class RunReleaseCheckpointTest(unittest.TestCase):
         self.assertNotEqual(tighter_parity, baseline)
         self.assertNotEqual(tighter_start, baseline)
 
-    def test_outer_fingerprint_tracks_the_selected_python(self) -> None:
-        baseline = self.release_gate_fingerprint(python="/usr/bin/true")
-        changed = self.release_gate_fingerprint(python="/usr/bin/false")
+    def test_tool_fingerprint_tracks_selected_gate_executables(self) -> None:
+        baseline = self.release_gate_tool_fingerprint()
+        selectors = {
+            "swift": {"swift": "/usr/bin/false"},
+            "go": {"go": "/usr/bin/false"},
+            "python": {"python": "/usr/bin/false"},
+            "markdownlint": {"markdownlint": "/usr/bin/false"},
+            "hawkeye": {"hawkeye": "/usr/bin/false"},
+            "llvm-cov": {"llvm_cov": "/usr/bin/false"},
+            "llvm-profdata": {"llvm_profdata": "/usr/bin/false"},
+        }
 
-        self.assertNotEqual(changed, baseline)
+        for name, overrides in selectors.items():
+            with self.subTest(tool=name):
+                self.assertNotEqual(
+                    self.release_gate_tool_fingerprint(**overrides), baseline
+                )
 
     def test_child_stack_fingerprints_track_the_outer_deadline(self) -> None:
         baseline = self.stack_validation_fingerprints(14400)
