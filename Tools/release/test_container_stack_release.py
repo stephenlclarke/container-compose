@@ -1036,6 +1036,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         for stage in ("sibling-stack", "compose-ci", "swift-runtime", "compose-parity"):
             self.assertIn(f"--stage {stage}", makefile)
         self.assertIn("docker-compose-parity-stages:", makefile)
+        self.assertIn(
+            "docker-compose-parity: build container-stack-build docker-compose-reference",
+            makefile,
+        )
+        self.assertIn("RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT", makefile)
+        self.assertIn("init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT)", makefile)
+        self.assertIn("parity-repetitions=$(PARITY_REPETITIONS)", makefile)
+        self.assertIn("parity-timeout=$(PARITY_TIMEOUT_SECONDS)", makefile)
         self.assertIn("run-release-checkpoint.py", makefile)
         self.assertEqual(
             makefile.count("env -u CONTAINER_BIN -u CONTAINER_COMPOSE_CONTAINER"),
@@ -1044,6 +1052,44 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.3.1", makefile)
         self.assertIn("DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff", makefile)
         self.assertNotIn("repackage-release", makefile)
+
+    def test_release_gate_fingerprint_tracks_archive_and_parity_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "init.oci.tar"
+            archive.write_bytes(b"first archive")
+
+            def fingerprint(repetitions: int) -> str:
+                completed = subprocess.run(
+                    [
+                        "make",
+                        "--no-print-directory",
+                        "-s",
+                        "--eval",
+                        (
+                            "print-release-gate-fingerprint: ; "
+                            "@printf '%s\\n' '$(RELEASE_GATE_FINGERPRINT)'"
+                        ),
+                        "print-release-gate-fingerprint",
+                        f"CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE={archive}",
+                        f"PARITY_REPETITIONS={repetitions}",
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    env=self.non_interactive_environment(),
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                return completed.stdout.strip()
+
+            initial = fingerprint(1)
+            archive.write_bytes(b"second archive")
+            changed_archive = fingerprint(1)
+            changed_repetitions = fingerprint(3)
+
+            self.assertNotEqual(initial, changed_archive)
+            self.assertNotEqual(changed_archive, changed_repetitions)
+            self.assertNotIn(str(archive), changed_archive)
 
     def test_phase5_builder_suites_are_unconditionally_restored(self) -> None:
         validation = STACK_RELEASE_VALIDATION.read_text(encoding="utf-8")

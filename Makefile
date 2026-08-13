@@ -146,7 +146,8 @@ RELEASE_GATE_PARITY_TIMEOUT_SECONDS ?= 14400
 PARITY_STAGE_TIMEOUT_SECONDS ?= 900
 RELEASE_GATE_CHECKPOINT_DIR = $(if $(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR),$(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR)/compose-release-gate,)
 PARITY_GATE_CHECKPOINT_DIR = $(if $(RELEASE_GATE_CHECKPOINT_DIR),$(RELEASE_GATE_CHECKPOINT_DIR)/parity,)
-RELEASE_GATE_FINGERPRINT ?= compose=$(shell /usr/bin/git rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):builder=$(shell /usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):containerization=$(shell /usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):container=$(shell /usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):homebrew=$(shell if [[ -f "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" ]]; then shasum -a 256 "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" | awk '{print $$1}'; else printf missing; fi):candidate=$(CONTAINER_RUNTIME_CANDIDATE_SHA256):engine=$(PARITY_CONTAINER_ENGINE_API_REF):swift=$(shell $(SWIFT) --version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):go=$(shell $(GO) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):docker=$(shell $(DOCKER_COMPOSE_REFERENCE) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):reference=$(DOCKER_COMPOSE_REFERENCE_VERSION):fixtures=$(DOCKER_COMPOSE_E2E_REF)
+RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT = $(shell if [[ -z "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" ]]; then printf unset; elif [[ -f "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" ]]; then shasum -a 256 "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" | awk '{print $$1}'; else printf missing; fi)
+RELEASE_GATE_FINGERPRINT ?= compose=$(shell /usr/bin/git rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):builder=$(shell /usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):containerization=$(shell /usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):container=$(shell /usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):homebrew=$(shell if [[ -f "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" ]]; then shasum -a 256 "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" | awk '{print $$1}'; else printf missing; fi):candidate=$(CONTAINER_RUNTIME_CANDIDATE_SHA256):init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT):engine=$(PARITY_CONTAINER_ENGINE_API_REF):swift=$(shell $(SWIFT) --version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):go=$(shell $(GO) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):docker=$(shell $(DOCKER_COMPOSE_REFERENCE) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):reference=$(DOCKER_COMPOSE_REFERENCE_VERSION):fixtures=$(DOCKER_COMPOSE_E2E_REF):parity-repetitions=$(PARITY_REPETITIONS):parity-timeout=$(PARITY_TIMEOUT_SECONDS):parity-live=1:build-check-live=1
 PARITY_ENV = \
 	CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" \
 	CONTAINER_COMPOSE_LIVE="$(CONTAINER_COMPOSE_LIVE)" \
@@ -1418,7 +1419,7 @@ docker-compose-reference:
 docker-compose-e2e-fixtures:
 	DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)" ./Tools/parity/sync-docker-compose-e2e-fixtures.sh --strict
 
-docker-compose-parity: container-stack-build docker-compose-reference
+docker-compose-parity: build container-stack-build docker-compose-reference
 	container_binary="$(CONTAINER_COMPOSE_CONTAINER)"; \
 	if [[ "$$container_binary" == "container" ]]; then \
 		for candidate in "$(LOCAL_CONTAINER_BINARY)" "$(LOCAL_CONTAINER_PACKAGE_BINARY)"; do \

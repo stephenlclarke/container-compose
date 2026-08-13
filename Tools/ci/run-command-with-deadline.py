@@ -24,6 +24,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from collections.abc import Sequence
 
 TIMEOUT_EXIT_STATUS = 124
@@ -46,13 +47,21 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     return parsed
 
 
-def signal_process_group(process: subprocess.Popen[bytes], number: int) -> None:
-    if process.poll() is not None:
-        return
+def signal_process_group(process_group_id: int, number: int) -> None:
     try:
-        os.killpg(process.pid, number)
+        os.killpg(process_group_id, number)
     except ProcessLookupError:
         pass
+
+
+def process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def normalized_exit_status(return_code: int) -> int:
@@ -75,7 +84,7 @@ def run(arguments: Sequence[str]) -> int:
     previous_handlers: dict[int, signal.Handlers] = {}
 
     def forward_signal(number: int, _frame: object) -> None:
-        signal_process_group(process, number)
+        signal_process_group(process.pid, number)
 
     for number in (signal.SIGINT, signal.SIGTERM):
         previous_handlers[number] = signal.signal(number, forward_signal)
@@ -89,12 +98,18 @@ def run(arguments: Sequence[str]) -> int:
                 + options.command[0],
                 file=sys.stderr,
             )
-            signal_process_group(process, signal.SIGTERM)
-            try:
-                process.wait(timeout=options.grace_seconds)
-            except subprocess.TimeoutExpired:
-                signal_process_group(process, signal.SIGKILL)
-                process.wait()
+            signal_process_group(process.pid, signal.SIGTERM)
+            grace_deadline = time.monotonic() + options.grace_seconds
+            while True:
+                process.poll()
+                if not process_group_exists(process.pid):
+                    break
+                remaining = grace_deadline - time.monotonic()
+                if remaining <= 0:
+                    signal_process_group(process.pid, signal.SIGKILL)
+                    break
+                time.sleep(min(0.05, remaining))
+            process.wait()
             return TIMEOUT_EXIT_STATUS
     finally:
         for number, handler in previous_handlers.items():

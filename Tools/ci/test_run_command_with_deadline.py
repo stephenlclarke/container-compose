@@ -60,12 +60,14 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
                     "--seconds",
                     "0.2",
                     "--grace-seconds",
-                    "1",
+                    "0.3",
                     "--",
                     "/bin/sh",
                     "-c",
-                    f'sleep 30 & printf "%s\\n" "$!" >{child_pid}; '
-                    f'touch {ready}; wait',
+                    "trap 'exit 0' TERM; "
+                    f"(trap '' TERM; exec sleep 30) & "
+                    f'printf "%s\\n" "$!" >{child_pid}; '
+                    f'touch {ready}; while :; do sleep 1; done',
                 ],
                 capture_output=True,
                 text=True,
