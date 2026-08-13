@@ -650,7 +650,7 @@ stage_container_runtime_candidate() {
     cleanup_unpublished_runtime_candidate_build() {
       local trapped_status="${1:-$?}"
       trap - EXIT
-      trap '' HUP INT TERM
+      trap '' HUP INT QUIT TERM
       if [[ -n "${build_root:-}" && -d "${build_root}" ]]; then
         case "${build_root}" in
           "${artifact_parent}/.build-${container_head}."*)
@@ -667,6 +667,7 @@ stage_container_runtime_candidate() {
     }
     trap 'exit 129' HUP
     trap 'exit 130' INT
+    trap 'exit 131' QUIT
     trap 'exit 143' TERM
     trap 'cleanup_unpublished_runtime_candidate_build $?' EXIT
     archive="${build_root}/container-homebrew-debug-arm64.tar.gz"
@@ -686,7 +687,7 @@ stage_container_runtime_candidate() {
       "${container_head}" >"${build_root}/.container-compose-runtime-candidate-artifact"
     mv "${build_root}" "${artifact_root}"
     build_root=""
-    trap - EXIT HUP INT TERM
+    trap - EXIT HUP INT QUIT TERM
     archive="${artifact_root}/container-homebrew-debug-arm64.tar.gz"
   fi
 
@@ -865,7 +866,7 @@ create_release_runtime_parent() {
   cleanup_incomplete_release_runtime_parent() {
     local trapped_status=$?
     trap - EXIT
-    trap '' HUP INT TERM
+    trap '' HUP INT QUIT TERM
     if ((trapped_status == 0 && runtime_parent_published != 0)); then
       return 0
     fi
@@ -886,6 +887,7 @@ create_release_runtime_parent() {
 
   trap 'exit 129' HUP
   trap 'exit 130' INT
+  trap 'exit 131' QUIT
   trap 'exit 143' TERM
   trap cleanup_incomplete_release_runtime_parent EXIT
   runtime_parent="$(mktemp -d "${runtime_parent_base}/c.XXXXXX")"
@@ -895,7 +897,7 @@ create_release_runtime_parent() {
   printf '%s\n' "${runtime_parent}"
   # Publication is complete. Ignore a late signal before disarming EXIT so it
   # cannot outlive this function and expand locals that have left scope.
-  trap '' HUP INT TERM
+  trap '' HUP INT QUIT TERM
   trap - EXIT
 }
 
@@ -915,7 +917,7 @@ run_local_release_gate_command() {
     signal_status="$2"
     # A second signal must not interrupt the one wait that protects the
     # candidate executable used by the child's cleanup trap.
-    trap '' HUP INT TERM
+    trap '' HUP INT QUIT TERM
     if [[ -n "${child_pid}" ]]; then
       # A direct signal to this helper does not reach the background group
       # supervisor. Forward it before waiting; the supervisor relays it to the
@@ -932,6 +934,7 @@ run_local_release_gate_command() {
 
   trap 'wait_for_candidate_cleanup_on_signal HUP 129' HUP
   trap 'wait_for_candidate_cleanup_on_signal INT 130' INT
+  trap 'wait_for_candidate_cleanup_on_signal QUIT 131' QUIT
   trap 'wait_for_candidate_cleanup_on_signal TERM 143' TERM
 
   # Bash gives asynchronous commands ignored SIGINT/SIGQUIT dispositions and
@@ -939,7 +942,7 @@ run_local_release_gate_command() {
   # finish before cleanup. Reset dispositions and exec the process-group
   # supervisor so child_pid remains the complete gate-tree owner.
   (
-    trap - HUP INT TERM
+    trap - HUP INT QUIT TERM
     exec "${RELEASE_COMMAND_DEADLINE_RUNNER}" \
       --no-deadline --grace-seconds "${CANDIDATE_STOP_TIMEOUT_SECONDS}" -- \
       "$@"
@@ -959,7 +962,7 @@ run_local_release_gate_command() {
     child_pid=""
   fi
 
-  trap - HUP INT TERM
+  trap - HUP INT QUIT TERM
   if ((signal_status != 0)); then
     return "${signal_status}"
   fi

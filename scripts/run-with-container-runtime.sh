@@ -56,6 +56,7 @@ runtime_root_marker=.container-compose-runtime-root
 runtime_root_marker_value='container-compose isolated runtime state v1'
 provider_socket_path_limit=103
 runtime_service_inputs_root=
+runtime_start_state_root=
 runtime_start_deadline_seconds=${CONTAINER_RUNTIME_START_DEADLINE_SECONDS:-300}
 runtime_start_sequence_deadline=
 
@@ -445,6 +446,43 @@ run_runtime_start_command() {
         --seconds "$remaining_seconds" --grace-seconds 0 -- "$@"
 }
 
+# Create short-lived startup evidence on trusted local storage while charging
+# even the directory creation to the one complete runtime-start deadline.  An
+# inherited TMPDIR can name removable, privacy-controlled, or stalled storage
+# and therefore cannot participate in runtime readiness.
+create_runtime_start_state_root() {
+    local deadline="$1"
+    local prefix="$2"
+    local trusted_temporary_root=/private/tmp
+
+    case "$prefix" in
+        container-compose-runtime-start | container-compose-runtime-managed-start) ;;
+        *)
+            printf 'refusing unexpected runtime-start state prefix: %s\n' "$prefix" >&2
+            return 2
+            ;;
+    esac
+    if [[ ! -d "$trusted_temporary_root" || ! -w "$trusted_temporary_root" ]]; then
+        trusted_temporary_root=/tmp
+    fi
+    runtime_start_state_root=$(run_runtime_start_command "$deadline" \
+        mktemp -d "$trusted_temporary_root/$prefix.XXXXXX") || return "$?"
+}
+
+cleanup_runtime_start_state_root() {
+    [[ -n "$runtime_start_state_root" ]] || return 0
+    case "$runtime_start_state_root" in
+        /private/tmp/container-compose-runtime-start.*|/private/tmp/container-compose-runtime-managed-start.*|/tmp/container-compose-runtime-start.*|/tmp/container-compose-runtime-managed-start.*) ;;
+        *)
+            printf 'refusing to clear unexpected runtime-start state root: %s\n' \
+                "$runtime_start_state_root" >&2
+            return 1
+            ;;
+    esac
+    find "$runtime_start_state_root" -depth -delete 2>/dev/null || true
+    runtime_start_state_root=
+}
+
 # Check a caller-controlled filesystem input without letting its mount outlive
 # the complete startup deadline.
 runtime_start_regular_file_status() {
@@ -644,19 +682,20 @@ start_runtime() {
     local sequence_deadline="${1:-}"
     local start_completed
     local start_log
-    local start_state_root
     local start_status
 
     if [[ -z "$sequence_deadline" ]]; then
         sequence_deadline=$(runtime_start_deadline)
     fi
     for attempt in 1 2; do
+        create_runtime_start_state_root \
+            "$sequence_deadline" container-compose-runtime-start || return "$?"
+        start_completed="$runtime_start_state_root/completed"
+        start_log="$runtime_start_state_root/start.log"
         if ! remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline"); then
+            cleanup_runtime_start_state_root
             return 124
         fi
-        start_state_root=$(mktemp -d "${TMPDIR:-/tmp}/container-compose-runtime-start.XXXXXX")
-        start_completed="$start_state_root/completed"
-        start_log="$start_state_root/start.log"
         # The inner shell receives all values positionally; expansion here would be unsafe.
         # shellcheck disable=SC2016
         if "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
@@ -670,17 +709,17 @@ start_runtime() {
                 "$container_binary" list --all --format json >/dev/null
             ' runtime-start "$container_binary" "$start_completed" \
             "${start_arguments[@]}" 2>&1 | tee "$start_log"; then
-            rm -rf "$start_state_root"
+            cleanup_runtime_start_state_root
             return
         else
             start_status=$?
             if [[ ! -f "$start_completed" ]] &&
                 ! is_transient_xpc_start_failure "$start_log"; then
-                rm -rf "$start_state_root"
+                cleanup_runtime_start_state_root
                 return "$start_status"
             fi
         fi
-        rm -rf "$start_state_root"
+        cleanup_runtime_start_state_root
 
         if [[ "$attempt" == "2" ]]; then
             return "$start_status"
@@ -715,9 +754,14 @@ ensure_managed_runtime_ready() {
         return "$start_status"
     fi
 
-    remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline") || return 124
     printf 'Managed Container API is not ready; re-establishing the owner runtime...\n' >&2
-    start_log=$(mktemp "${TMPDIR:-/tmp}/container-compose-runtime-managed-start.XXXXXX")
+    create_runtime_start_state_root \
+        "$sequence_deadline" container-compose-runtime-managed-start || return "$?"
+    start_log="$runtime_start_state_root/start.log"
+    remaining_seconds=$(runtime_start_remaining_seconds "$sequence_deadline") || {
+        cleanup_runtime_start_state_root
+        return 124
+    }
     start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
     if [[ -n "$runtime_app_root" ]]; then
         start_arguments+=(--app-root "$runtime_app_root")
@@ -736,10 +780,10 @@ ensure_managed_runtime_ready() {
         start_status=0
     else
         start_status=${PIPESTATUS[0]}
-        rm -f "$start_log"
+        cleanup_runtime_start_state_root
         return "$start_status"
     fi
-    rm -f "$start_log"
+    cleanup_runtime_start_state_root
 }
 
 prepare_runtime_root() {
@@ -840,6 +884,11 @@ cleanup_runtime_service_inputs() {
     esac
     find "$runtime_service_inputs_root" -depth -delete 2>/dev/null || true
     runtime_service_inputs_root=
+}
+
+cleanup_runtime_temporary_state() {
+    cleanup_runtime_start_state_root || true
+    cleanup_runtime_service_inputs || true
 }
 
 resolve_matched_init_image() {
@@ -958,11 +1007,11 @@ install_runtime_bootstrap_image() {
 cleanup() {
     local status=$?
     trap - EXIT
-    trap '' HUP INT TERM
+    trap '' HUP INT QUIT TERM
     printf 'Stopping matched container runtime...\n'
     stop_runtime || true
     release_container_runtime_lock
-    cleanup_runtime_service_inputs || true
+    cleanup_runtime_temporary_state
     exit "$status"
 }
 
@@ -1029,21 +1078,22 @@ validate_runtime_init_image_archive "$runtime_start_sequence_deadline"
 configure_runtime_namespace
 verify_runtime_namespace_support "$runtime_start_sequence_deadline"
 
+trap cleanup_runtime_temporary_state EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 131' QUIT
+trap 'exit 143' TERM
 if [[ "${CONTAINER_RUNTIME_MANAGED:-0}" == "1" ]]; then
     ensure_managed_runtime_ready "$runtime_start_sequence_deadline"
     "$@"
     exit
 fi
 
-trap cleanup_runtime_service_inputs EXIT
 stage_runtime_service_inputs "$runtime_start_sequence_deadline"
 runtime_lock_timeout=$(runtime_start_lock_timeout_seconds \
     "$runtime_start_sequence_deadline")
 CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS="$runtime_lock_timeout" \
     acquire_container_runtime_lock
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
 trap cleanup EXIT
 
 printf 'Stopping stale container services...\n'

@@ -158,6 +158,24 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
         path.chmod(0o755)
 
     @staticmethod
+    def write_blocking_mktemp(path: Path) -> None:
+        real_mktemp = shutil.which("mktemp")
+        if real_mktemp is None:
+            raise RuntimeError("mktemp is required for runtime wrapper tests")
+        path.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            'if [[ "$*" == *"${BLOCKED_MKTEMP_PATTERN:?}"* ]]; then\n'
+            '  printf "%s\\n" "$*" >"${MKTEMP_ARGUMENTS:?}"\n'
+            '  touch "${MKTEMP_STARTED:?}"\n'
+            "  /bin/sleep 30\n"
+            "fi\n"
+            f'exec "{real_mktemp}" "$@"\n',
+            encoding="utf-8",
+        )
+        path.chmod(0o755)
+
+    @staticmethod
     def create_oci_archive(
         path: Path,
         *references: str,
@@ -601,6 +619,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             for delivered_signal, expected_status in (
                 (signal.SIGHUP, 129),
                 (signal.SIGINT, 130),
+                (signal.SIGQUIT, 131),
                 (signal.SIGTERM, 143),
             ):
                 with self.subTest(signal=delivered_signal.name):
@@ -2019,6 +2038,67 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 ["list --all --format json"],
             )
 
+    def test_managed_start_state_creation_stays_inside_the_shared_deadline(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            mktemp_arguments = temporary_root / "mktemp-arguments"
+            mktemp_started = temporary_root / "mktemp-started"
+            self.write_blocking_mktemp(fake_bin / "mktemp")
+            command_marker = temporary_root / "command-ran"
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == "list --all --format json" ]]; then\n'
+                    "  exit 1\n"
+                    "fi\n"
+                ),
+            )
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "BLOCKED_MKTEMP_PATTERN": (
+                        "container-compose-runtime-managed-start."
+                    ),
+                    "CONTAINER_RUNTIME_APP_ROOT": str(
+                        temporary_root / "app-root"
+                    ),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "outer-owner",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "3",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "MKTEMP_STARTED": str(mktemp_started),
+                    "MKTEMP_ARGUMENTS": str(mktemp_arguments),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=6,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 5)
+            self.assertTrue(
+                mktemp_started.exists(), result.stdout + result.stderr
+            )
+            self.assertNotIn(
+                str(temporary_root), mktemp_arguments.read_text(encoding="utf-8")
+            )
+            self.assertFalse(command_marker.exists())
+
     def test_api_round_trip_failure_blocks_the_candidate_command(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -2091,6 +2171,62 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             invocations = container_log.read_text(encoding="utf-8")
             self.assertEqual(invocations.count("system start"), 1)
             self.assertNotIn("restarting the matched runtime once", result.stderr)
+
+    def test_start_state_creation_stays_inside_the_shared_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            mktemp_arguments = temporary_root / "mktemp-arguments"
+            mktemp_started = temporary_root / "mktemp-started"
+            self.write_blocking_mktemp(fake_bin / "mktemp")
+            (fake_bin / "sleep").write_text(
+                "#!/usr/bin/env bash\nexit 0\n",
+                encoding="utf-8",
+            )
+            (fake_bin / "sleep").chmod(0o755)
+            command_marker = temporary_root / "command-ran"
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "BLOCKED_MKTEMP_PATTERN": "container-compose-runtime-start.",
+                    "CONTAINER_RUNTIME_APP_ROOT": str(
+                        temporary_root / "app-root"
+                    ),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "4",
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "MKTEMP_STARTED": str(mktemp_started),
+                    "MKTEMP_ARGUMENTS": str(mktemp_arguments),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=7,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 6)
+            self.assertTrue(
+                mktemp_started.exists(), result.stdout + result.stderr
+            )
+            self.assertNotIn(
+                str(temporary_root), mktemp_arguments.read_text(encoding="utf-8")
+            )
+            self.assertFalse(command_marker.exists())
 
     def test_api_round_trip_hang_consumes_the_shared_startup_deadline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

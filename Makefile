@@ -319,8 +319,8 @@ build:
 	@if [[ -n "$(CONTAINER_PACKAGE_PATH)$(CONTAINERIZATION_PACKAGE_PATH)" ]]; then \
 		lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
 		cp Package.resolved "$$lock_backup"; \
-		restore_lock() { trap - EXIT HUP INT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
-		trap restore_lock EXIT HUP INT TERM; \
+		restore_lock() { trap - EXIT HUP INT QUIT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
+		trap restore_lock EXIT HUP INT QUIT TERM; \
 		$(PARITY_ENV) $(SWIFT) build --product compose; \
 	else \
 		$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --product compose; \
@@ -330,8 +330,8 @@ build-release:
 	@if [[ -n "$(CONTAINER_PACKAGE_PATH)$(CONTAINERIZATION_PACKAGE_PATH)" ]]; then \
 		lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
 		cp Package.resolved "$$lock_backup"; \
-		restore_lock() { trap - EXIT HUP INT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
-		trap restore_lock EXIT HUP INT TERM; \
+		restore_lock() { trap - EXIT HUP INT QUIT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
+		trap restore_lock EXIT HUP INT QUIT TERM; \
 		$(PARITY_ENV) $(SWIFT) build -c release --product compose $(SWIFT_RELEASE_FLAGS); \
 	else \
 		$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose $(SWIFT_RELEASE_FLAGS); \
@@ -1716,8 +1716,8 @@ docker-compose-lifecycle-hooks-parity: build docker-compose-reference
 docker-compose-signal-log-reliability-parity: docker-compose-reference
 	@lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
 	cp Package.resolved "$$lock_backup"; \
-	restore_lock() { trap - EXIT HUP INT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
-	trap restore_lock EXIT HUP INT TERM; \
+	restore_lock() { trap - EXIT HUP INT QUIT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
+	trap restore_lock EXIT HUP INT QUIT TERM; \
 	$(PARITY_ENV) $(SWIFT) build --product compose; \
 	$(PARITY_ENV) ./Tools/parity/check-compose-signal-log-reliability.sh --strict
 

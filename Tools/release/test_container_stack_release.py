@@ -1975,6 +1975,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             for delivered_signal, expected_status in (
                 (signal.SIGHUP, 129),
                 (signal.SIGINT, 130),
+                (signal.SIGQUIT, 131),
                 (signal.SIGTERM, 143),
             ):
                 for signal_scope in ("process", "group"):
@@ -1995,12 +1996,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                     fake_gate.write_text(
                         "#!/usr/bin/env bash\n"
                         "set -u\n"
-                        "cleanup() { trap '' HUP INT TERM; "
+                        "cleanup() { trap '' HUP INT QUIT TERM; "
                         "test -x \"$CANDIDATE_ROOT/bin/container\"; "
                         "touch \"$CLEANUP_STARTED\"; sleep 0.5; "
                         "touch \"$STOP_COMPLETE\"; }\n"
                         "trap 'cleanup; exit 129' HUP\n"
                         "trap 'cleanup; exit 130' INT\n"
+                        "trap 'cleanup; exit 131' QUIT\n"
                         "trap 'cleanup; exit 143' TERM\n"
                         "touch \"$READY\"\n"
                         # A signal sent only to this wrapper leaves its

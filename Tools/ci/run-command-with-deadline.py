@@ -156,7 +156,12 @@ def run(arguments: Sequence[str]) -> int:
     options = parse_arguments(arguments)
     forwarded_signal: int | None = None
     previous_handlers: dict[int, signal.Handlers] = {}
-    forwarded_signals = {signal.SIGHUP, signal.SIGINT, signal.SIGTERM}
+    forwarded_signals = {
+        signal.SIGHUP,
+        signal.SIGINT,
+        signal.SIGQUIT,
+        signal.SIGTERM,
+    }
     previous_signal_mask = signal.pthread_sigmask(
         signal.SIG_BLOCK, forwarded_signals
     )
@@ -185,7 +190,12 @@ def run(arguments: Sequence[str]) -> int:
             forwarded_signal = number
         signal_process_group(process.pid, number)
 
-    for number in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+    for number in (
+        signal.SIGHUP,
+        signal.SIGINT,
+        signal.SIGQUIT,
+        signal.SIGTERM,
+    ):
         handler = signal.SIG_IGN if options.ignore_parent_signals else forward_signal
         previous_handlers[number] = signal.signal(number, handler)
 
