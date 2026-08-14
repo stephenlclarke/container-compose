@@ -166,14 +166,21 @@ def run(arguments: Sequence[str]) -> int:
         signal.SIG_BLOCK, forwarded_signals
     )
 
-    def restore_child_signal_mask() -> None:
+    def restore_child_signal_state() -> None:
+        # This runner is often started as an asynchronous Bash child. Bash
+        # ignores SIGINT and SIGQUIT for such children, and an exec'd shell
+        # cannot later trap a signal that was ignored when it started. Reset
+        # every signal we supervise before exec so the detached command can
+        # install its own cleanup traps consistently.
+        for number in forwarded_signals:
+            signal.signal(number, signal.SIG_DFL)
         signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
 
     try:
         process = subprocess.Popen(
             options.command,
             start_new_session=True,
-            preexec_fn=restore_child_signal_mask,
+            preexec_fn=restore_child_signal_state,
         )
     except FileNotFoundError:
         signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
@@ -186,9 +193,15 @@ def run(arguments: Sequence[str]) -> int:
 
     def forward_signal(number: int, _frame: object) -> None:
         nonlocal forwarded_signal
-        if forwarded_signal is None:
-            forwarded_signal = number
-        signal_process_group(process.pid, number)
+        if forwarded_signal is not None:
+            return
+        forwarded_signal = number
+        # Non-interactive shell trees can ignore inherited control signals
+        # while waiting for foreground children, even when their wrapper has
+        # cleanup traps. Preserve the caller-facing status for the original
+        # signal, but always give the detached command tree one portable,
+        # reliably trappable termination request for orderly cleanup.
+        signal_process_group(process.pid, signal.SIGTERM)
 
     for number in (
         signal.SIGHUP,

@@ -316,6 +316,66 @@ raise SystemExit(module.run([
                         process.returncode, expected_status, stdout + stderr
                     )
 
+    def test_child_traps_work_when_the_runner_inherits_ignored_signals(self) -> None:
+        for delivered_signal, shell_signal, expected_status in (
+            (signal.SIGHUP, "HUP", 129),
+            (signal.SIGINT, "INT", 130),
+            (signal.SIGQUIT, "QUIT", 131),
+        ):
+            with self.subTest(signal=delivered_signal.name):
+                with tempfile.TemporaryDirectory() as directory:
+                    ready = Path(directory) / "ready"
+                    cleanup = Path(directory) / "cleanup"
+                    previous_handler = signal.signal(
+                        delivered_signal, signal.SIG_IGN
+                    )
+                    try:
+                        process = subprocess.Popen(
+                            [
+                                sys.executable,
+                                str(SCRIPT),
+                                "--no-deadline",
+                                "--grace-seconds",
+                                "0.2",
+                                "--",
+                                "/bin/sh",
+                                "-c",
+                                f"trap 'touch {cleanup}; exit 0' "
+                                f"{shell_signal} TERM; "
+                                f"touch {ready}; while :; do sleep 1; done",
+                            ],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                        )
+                    finally:
+                        signal.signal(delivered_signal, previous_handler)
+
+                    ready_deadline = time.monotonic() + 2
+                    while not ready.exists():
+                        if time.monotonic() >= ready_deadline:
+                            process.terminate()
+                            process.communicate(timeout=2)
+                            self.fail("deadline child did not become ready")
+                        time.sleep(0.01)
+
+                    process.send_signal(delivered_signal)
+                    try:
+                        stdout, stderr = process.communicate(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        process.terminate()
+                        stdout, stderr = process.communicate(timeout=2)
+                        self.fail(
+                            "ignored inherited signal prevented child cleanup\n"
+                            + stdout
+                            + stderr
+                        )
+
+                    self.assertEqual(
+                        process.returncode, expected_status, stdout + stderr
+                    )
+                    self.assertTrue(cleanup.exists(), stdout + stderr)
+
     def test_bounded_cleanup_can_ignore_repeated_parent_termination(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

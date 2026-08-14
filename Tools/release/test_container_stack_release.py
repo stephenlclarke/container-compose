@@ -2084,6 +2084,22 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def test_local_release_gate_waits_for_signal_cleanup_before_candidate_deletion(
         self,
     ) -> None:
+        release_signals = (
+            signal.SIGHUP,
+            signal.SIGINT,
+            signal.SIGQUIT,
+            signal.SIGTERM,
+        )
+
+        def reset_release_signals() -> None:
+            # Long-running test supervisors can ignore SIGHUP before they
+            # launch this fixture. Bash cannot trap a signal that was ignored
+            # when the shell started, so normalise the child exactly as a
+            # directly launched release helper before exercising its traps.
+            for number in release_signals:
+                signal.signal(number, signal.SIG_DFL)
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, release_signals)
+
         with tempfile.TemporaryDirectory() as directory:
             for delivered_signal, expected_status in (
                 (signal.SIGHUP, 129),
@@ -2153,6 +2169,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                         stderr=subprocess.PIPE,
                         text=True,
                         start_new_session=True,
+                        preexec_fn=reset_release_signals,
                     )
                     # This regression test deliberately coordinates three
                     # process layers. Give a busy release runner enough time
@@ -2162,8 +2179,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                     while not ready.exists() and process.poll() is None:
                         if time.monotonic() >= deadline:
                             os.killpg(process.pid, signal.SIGKILL)
-                            process.wait(timeout=10)
-                            self.fail("outer release gate did not become ready")
+                            stdout, stderr = process.communicate(timeout=10)
+                            self.fail(
+                                "outer release gate did not become ready for "
+                                f"{delivered_signal.name}/{signal_scope}\n"
+                                + stdout
+                                + stderr
+                            )
                         time.sleep(0.05)
 
                     send_signal = os.kill if signal_scope == "process" else os.killpg
@@ -2172,8 +2194,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                     while not cleanup_started.exists() and process.poll() is None:
                         if time.monotonic() >= deadline:
                             os.killpg(process.pid, signal.SIGKILL)
-                            process.wait(timeout=10)
-                            self.fail("candidate signal cleanup did not start")
+                            stdout, stderr = process.communicate(timeout=10)
+                            self.fail(
+                                "candidate signal cleanup did not start for "
+                                f"{delivered_signal.name}/{signal_scope}\n"
+                                + stdout
+                                + stderr
+                            )
                         time.sleep(0.01)
                     send_signal(process.pid, delivered_signal)
                     try:
