@@ -644,6 +644,22 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("Current build VHS recording is missing", workflow)
         self.assertIn('--current-asset "${{ steps.lane.outputs.demo_asset }}"', workflow)
         tape = (ROOT / "docs" / "container-compose-demo.tape").read_text(encoding="utf-8")
+        typed_command = None
+        for line in tape.splitlines():
+            if line.startswith('Type "'):
+                typed_command = shlex.split(line)[1]
+                continue
+            wait_match = re.fullmatch(r"Wait\+Screen@\S+ /(.*)/", line)
+            if wait_match is None:
+                continue
+            self.assertIsNotNone(typed_command)
+            wait_pattern = wait_match.group(1).replace(
+                "[[:space:]]", r"\s"
+            )
+            self.assertIsNone(
+                re.search(wait_pattern, typed_command or ""),
+                f"screen wait can match its typed command: {line}",
+            )
         self.assertIn('Set TypingSpeed 48ms', tape)
         self.assertIn('Set Width 1600', tape)
         self.assertIn('$CONTAINER_COMPOSE_DEMO_ROOT', tape)

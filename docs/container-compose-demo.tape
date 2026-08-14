@@ -17,7 +17,7 @@ Type "cd $CONTAINER_COMPOSE_DEMO_ROOT || exit 1"
 Enter
 Sleep 2s
 
-Type "(container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --init-image-archive $CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE --enable-kernel-install --timeout 60 || { sleep 5; container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --init-image-archive $CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE --enable-kernel-install --timeout 60; }) && container system status && printf '\ncontainer-compose-system-ready\n'"
+Type "(container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --init-image-archive $CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE --enable-kernel-install --timeout 60 || { sleep 5; container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --init-image-archive $CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE --enable-kernel-install --timeout 60; }) && container system status && printf '\ncontainer-compose-system-%s\n' ready"
 Enter
 Wait+Screen@180s /container-compose-system-ready/
 Sleep 2s
@@ -26,7 +26,7 @@ Sleep 1s
 
 Type "container compose version"
 Enter
-Wait+Screen@30s /version/
+Wait+Screen@30s /container-compose [0-9]/
 Sleep 2s
 Ctrl+L
 Sleep 1s
@@ -57,7 +57,7 @@ Sleep 2s
 Ctrl+L
 Sleep 1s
 
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty nginx sh -c 'echo container-compose-volume-reuse-ok > /var/cache/nginx/.container-compose-volume-reuse && cat /var/cache/nginx/.container-compose-volume-reuse'"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml exec --no-tty nginx sh -c 'echo container-compose-volume-reuse-''ok > /var/cache/nginx/.container-compose-volume-reuse && cat /var/cache/nginx/.container-compose-volume-reuse'"
 Enter
 Wait+Screen@30s /container-compose-volume-reuse-ok/
 Sleep 3s
