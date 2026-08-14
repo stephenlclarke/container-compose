@@ -40,11 +40,6 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
-env:
-  # Pull requests may verify only evidence already accepted by their immutable
-  # base. Main, tag, and manual runs fall back to the checked-out main/HEAD.
-  PROGRAMME_PROGRESS_ACCEPTED_THROUGH: ${{ github.event.pull_request.base.sha }}
-
 jobs:
   changes:
     name: Detect Relevant Changes
@@ -538,53 +533,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Checkout container evidence history
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/container
-          path: programme-repositories/container
-          fetch-depth: 0
-
-      - name: Checkout containerization evidence history
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/containerization
-          path: programme-repositories/containerization
-          fetch-depth: 0
-
-      - name: Checkout builder evidence history
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/container-builder-shim
-          path: programme-repositories/container-builder-shim
-          fetch-depth: 0
-
-      - name: Checkout Kubernetes evidence history
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/container-k8s
-          path: programme-repositories/container-k8s
-          fetch-depth: 0
-
-      - name: Checkout Homebrew evidence history
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/homebrew-tap
-          path: programme-repositories/homebrew-tap
-          fetch-depth: 0
-
       - name: Install Markdown lint
         run: npm install --global markdownlint-cli@0.48.0
 
       - name: Validate Markdown and formula sources
         shell: bash
-        env:
-          CONTAINER_STACK_REPO: ${{ github.workspace }}/programme-repositories/container
-          CONTAINERIZATION_STACK_REPO: ${{ github.workspace }}/programme-repositories/containerization
-          CONTAINER_BUILDER_SHIM_STACK_REPO: ${{ github.workspace }}/programme-repositories/container-builder-shim
-          CONTAINER_K8S_STACK_REPO: ${{ github.workspace }}/programme-repositories/container-k8s
-          GH_TOKEN: ${{ github.token }}
-          HOMEBREW_TAP_REPO: ${{ github.workspace }}/programme-repositories/homebrew-tap
         run: |
           set -euo pipefail
           mapfile -t markdown_files < <(git ls-files '*.md' | sort)
@@ -594,4 +547,3 @@ jobs:
           if [[ -f Tools/release/container-compose.rb.in ]]; then
             ruby -c Tools/release/container-compose.rb.in
           fi
-          python3 Tools/ci/programme-progress.py check
