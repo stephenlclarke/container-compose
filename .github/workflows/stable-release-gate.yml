@@ -306,11 +306,27 @@ jobs:
           done
 
       # `swift package edit` rewrites the workspace lock state for local
-      # checkouts. Validate Compose against the candidate's immutable remote
-      # pins before any such edit can hide the checked-in release provenance.
-      - name: Run Compose CI from immutable source lockfile
+      # checkouts. Validate the Compose application against the candidate's
+      # immutable remote pins before any such edit can hide the checked-in
+      # release provenance. The resolver already requires the candidate's
+      # complete main CI, including the 390 tool-policy tests. Do not rerun its
+      # wall-clock deadline harnesses on a variably loaded macOS host; keep this
+      # lane focused on the macOS application build, coverage, and CLI proof.
+      - name: Run Compose application CI from immutable source lockfile
         shell: bash
-        run: make -C container-compose ci
+        run: |
+          set -euo pipefail
+          make -C container-compose \
+            format \
+            core-runtime-neutrality \
+            stack-consistency \
+            upstream-handoff-registry-check \
+            check-licenses \
+            performance-matrix-harness-test \
+            signal-log-reliability-harness-test \
+            coverage-check \
+            go-build \
+            cli-smoke-built
         env:
           HAWKEYE_AUTO_INSTALL: "1"
 
