@@ -22,11 +22,11 @@ import Foundation
 
 /// `ContainerClient`-backed copier for real service container file copies.
 ///
-/// The documented main Container client supplies filesystem-path copy calls.
-/// Compose layers archive streaming over those calls when a runtime does not
-/// expose a native archive API, preserving the supported copy contract without
-/// binding this adapter to an optional Container revision.
-public struct ContainerClientCopier: ComposeRuntimeCopying {
+/// The pinned Container client supplies both filesystem-path and native archive
+/// copy calls. Native archive streaming is required for ownership preservation:
+/// extracting an archive on macOS cannot retain arbitrary numeric Linux owners
+/// before the staged files cross into the guest.
+public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
     public typealias CopyInto = @Sendable (String, String, String, ContainerCopyTransferOptions) async throws -> Void
     public typealias CopyFrom = @Sendable (String, String, String, ContainerCopyTransferOptions) async throws -> Void
     public typealias CopyArchiveInto =
@@ -59,8 +59,24 @@ public struct ContainerClientCopier: ComposeRuntimeCopying {
                 preserveOwnership: options.preserveOwnership,
             )
         },
-        copyArchiveInto: CopyArchiveInto? = nil,
-        copyArchiveFrom: CopyArchiveFrom? = nil,
+        copyArchiveInto: CopyArchiveInto? = { id, archive, destination, options in
+            try await ContainerClient().copyIn(
+                id: id,
+                archive: archive,
+                destination: destination,
+                createParents: true,
+                preserveOwnership: options.preserveOwnership,
+            )
+        },
+        copyArchiveFrom: CopyArchiveFrom? = { id, source, archive, copyContents, options in
+            try await ContainerClient().copyOut(
+                id: id,
+                source: source,
+                archive: archive,
+                followSymlink: options.followSymlink,
+                copyContents: copyContents,
+            )
+        },
     ) {
         copyIntoOperation = copyInto
         copyFromOperation = copyFrom
