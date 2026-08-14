@@ -1895,8 +1895,23 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("ref: ${{ github.sha }}", workflow)
         self.assertIn("git -C release-tools rev-parse HEAD", workflow)
         self.assertIn("run-stack-release-validation.sh hosted", workflow)
-        self.assertIn("make -C container-compose ci", workflow)
-        self.assertIn("Run Compose CI from immutable source lockfile", workflow)
+        self.assertIn("Run Compose application CI from immutable source lockfile", workflow)
+        self.assertIn("make -C container-compose", workflow)
+        self.assertIn("complete main CI, including the 390 tool-policy tests", workflow)
+        for target in (
+            "format",
+            "core-runtime-neutrality",
+            "stack-consistency",
+            "upstream-handoff-registry-check",
+            "check-licenses",
+            "performance-matrix-harness-test",
+            "signal-log-reliability-harness-test",
+            "coverage-check",
+            "go-build",
+            "cli-smoke-built",
+        ):
+            self.assertIn(target, workflow)
+        self.assertNotIn("make -C container-compose ci", workflow)
         self.assertNotIn("Use pinned container dependency", workflow)
         self.assertNotIn("Use pinned containerization dependency", workflow)
         self.assertIn("checks: write", workflow)
@@ -1923,7 +1938,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow.index("Run hosted release gate"),
         )
         self.assertLess(
-            workflow.index("Run Compose CI from immutable source lockfile"),
+            workflow.index("Run Compose application CI from immutable source lockfile"),
             workflow.index("Run hosted release gate"),
         )
 
