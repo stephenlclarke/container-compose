@@ -1879,6 +1879,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn("git -C homebrew-tap rev-parse HEAD", workflow)
         self.assertIn("Provision pinned stack tools", workflow)
+        self.assertIn("Select supported Bash 5 runtime", workflow)
+        self.assertIn("HOMEBREW_NO_AUTO_UPDATE=1 brew install bash", workflow)
+        self.assertIn("(( BASH_VERSINFO[0] >= 5 ))", workflow)
         self.assertIn("cd container-compose", workflow)
         self.assertIn("HAWKEYE_AUTO_INSTALL=1 ./scripts/install-hawkeye.sh", workflow)
         self.assertIn(
@@ -1910,6 +1913,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertLess(
             workflow.index("Checkout immutable Homebrew tap snapshot"),
             workflow.index("Run hosted release gate"),
+        )
+        self.assertLess(
+            workflow.index("Select supported Bash 5 runtime"),
+            workflow.index("Provision pinned stack tools"),
         )
         self.assertLess(
             workflow.index("Provision pinned stack tools"),
