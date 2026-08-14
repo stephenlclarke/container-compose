@@ -1217,7 +1217,8 @@ struct ComposeRuntimeSmokeTests {
             ],
             timeout: 30
         )
-        #expect(dryRun.stdout.contains(containerDryRun("run --name \(project)-db-1 --detach")))
+        #expect(dryRun.stdout.contains(containerDryRun("create --name \(project)-db-1 ")))
+        #expect(dryRun.stdout.contains(containerDryRun("start \(project)-db-1")))
         #expect(dryRun.stdout.contains(containerDryRun("create --name \(project)-api-1 ")))
         #expect(dryRun.stdout.contains(containerDryRun("start \(project)-api-1")))
         #expect(dryRun.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
