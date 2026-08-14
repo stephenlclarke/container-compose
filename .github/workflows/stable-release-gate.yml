@@ -227,6 +227,35 @@ jobs:
           fetch-depth: 0
           ref: ${{ needs.resolve-candidate.outputs.homebrew_tap_ref }}
 
+      # The project release tooling is validated with Bash 5. GitHub's macOS
+      # image still selects Apple's Bash 3.2 for `shell: bash`, whose parser,
+      # empty-array, and signal semantics differ in release-critical paths.
+      - name: Select supported Bash 5 runtime
+        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          set -u
+          bash_prefix="$(brew --prefix bash 2>/dev/null || true)"
+          bash_path="${bash_prefix:+${bash_prefix}/bin/bash}"
+          if [[ -z "${bash_path}" || ! -x "${bash_path}" ]]; then
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install bash
+            bash_prefix="$(brew --prefix bash)"
+            bash_path="${bash_prefix}/bin/bash"
+          fi
+          bash_major="$("${bash_path}" -c 'printf "%s\n" "${BASH_VERSINFO[0]}"')"
+          if ! [[ "${bash_major}" =~ ^[0-9]+$ ]] || (( bash_major < 5 )); then
+            printf 'stable release gate requires Bash 5 or newer: %s\n' \
+              "${bash_path}" >&2
+            exit 1
+          fi
+          printf '%s\n' "$(dirname "${bash_path}")" >> "${GITHUB_PATH}"
+
+      - name: Verify supported Bash is selected
+        shell: bash
+        run: |
+          set -euo pipefail
+          (( BASH_VERSINFO[0] >= 5 ))
+          [[ "$(command -v bash)" == "$(brew --prefix bash)/bin/bash" ]]
+
       - name: Verify immutable dependency checkouts
         env:
           BUILDER_REF: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
