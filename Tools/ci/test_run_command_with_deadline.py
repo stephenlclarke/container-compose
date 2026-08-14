@@ -336,7 +336,9 @@ raise SystemExit(module.run([
                                 str(SCRIPT),
                                 "--no-deadline",
                                 "--grace-seconds",
-                                "0.2",
+                                # Leave enough time for a loaded release host
+                                # to schedule the shell's cleanup trap.
+                                "2",
                                 "--",
                                 "/bin/sh",
                                 "-c",
@@ -361,7 +363,7 @@ raise SystemExit(module.run([
 
                     process.send_signal(delivered_signal)
                     try:
-                        stdout, stderr = process.communicate(timeout=2)
+                        stdout, stderr = process.communicate(timeout=5)
                     except subprocess.TimeoutExpired:
                         process.terminate()
                         stdout, stderr = process.communicate(timeout=2)
