@@ -331,8 +331,11 @@ jobs:
           HAWKEYE_AUTO_INSTALL: "1"
 
       # GitHub-hosted macOS runners are VMs and cannot launch nested
-      # Virtualization.framework guests. The release helper runs the full live
-      # gate on a supported local Mac before it creates the signed source tag.
+      # Virtualization.framework guests. Hosted stack validation therefore uses
+      # Container's native build, dSYM, docs, and unit-coverage targets rather
+      # than the installer-staging target that builds Linux service workloads
+      # with Colima. The release helper runs the full packaging/live gate on a
+      # supported local Mac before it creates the signed source tag.
       - name: Run hosted release gate
         shell: bash
         run: |

@@ -40,7 +40,12 @@ case "${mode}" in
     ;;
   hosted)
     containerization_targets=(check containerization examples docs coverage)
-    container_targets=(check container dsym docs coverage-unit)
+    # The Container `container` target stages an installer and therefore builds
+    # Linux service workload images with Colima. GitHub-hosted macOS runners do
+    # not expose nested virtualization, so keep this lane on the native macOS
+    # application proofs. The full local gate remains responsible for installer
+    # staging and live runtime validation before the signed tag is created.
+    container_targets=(check build dsym docs coverage-unit)
     ;;
   *)
     printf 'unknown stack release validation mode: %s\n' "${mode}" >&2
