@@ -1128,6 +1128,16 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff", makefile)
         self.assertNotIn("repackage-release", makefile)
 
+    def test_swift_coverage_follows_ssd_backed_build_symlink(self) -> None:
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        coverage_start = makefile.index("swift-coverage: swift-test-build")
+        coverage = makefile[
+            coverage_start : makefile.index("go-test:", coverage_start)
+        ]
+
+        self.assertEqual(coverage.count("find -L .build"), 5)
+        self.assertNotRegex(coverage, r"find \.build(?:\s|$)")
+
     def test_release_gate_fingerprint_tracks_archive_and_parity_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             archive = Path(directory) / "init.oci.tar"
@@ -2887,6 +2897,29 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
             self.assertNotEqual(candidate_head, remote_head)
             self.assertEqual(self.git(local, "diff", "--cached", "--name-only"), "")
+
+    def test_release_helper_retains_the_symlinked_coverage_gate_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _remote, local = self.create_compose_checkout(root)
+            remote_head = self.git(local, "rev-parse", "origin/main")
+            self.commit_file(
+                local,
+                "Makefile",
+                "swift-coverage:\n\tfind -L .build\n",
+                "fix(coverage): follow symlinked build cache",
+            )
+            candidate_head = self.git(local, "rev-parse", "main")
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("retaining unpublished release candidate", result.stdout)
+            self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
+            self.assertNotEqual(candidate_head, remote_head)
 
     def test_retained_candidate_rejects_current_from_any_commit_but_its_parent(
         self,

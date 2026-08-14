@@ -15,12 +15,20 @@
 //===----------------------------------------------------------------------===//
 
 @testable import ComposeContainerRuntime
+import ComposeCore
 import ComposeRuntimeSPI
 import Foundation
 import Testing
 
 @Suite("Container filesystem adapter")
 struct ContainerFilesystemAdapterTests {
+    @Test
+    func `live copier exposes native archive streaming to the orchestrator`() {
+        let copier: any ComposeRuntimeCopying = ContainerClientCopier()
+
+        #expect(copier is any ComposeRuntimeArchiveCopying)
+    }
+
     @Test
     func `export staging is private and cleaned after provider failure`() async throws {
         let sharedRoot = FileManager.default.temporaryDirectory
@@ -97,6 +105,8 @@ struct ContainerFilesystemAdapterTests {
                     options: options,
                 )
             },
+            copyArchiveInto: nil,
+            copyArchiveFrom: nil,
         )
 
         try await copier.copyBetweenContainers(
@@ -129,10 +139,46 @@ struct ContainerFilesystemAdapterTests {
             ),
         ])
     }
+
+    @Test
+    func `archive fallback rejects ownership preservation instead of rewriting owners`() async throws {
+        let archive = FileManager.default.temporaryDirectory
+            .appendingPathComponent("compose-copy-archive-\(UUID().uuidString).tar")
+        try Data("not reached\n".utf8).write(to: archive)
+        defer { try? FileManager.default.removeItem(at: archive) }
+
+        let copier = ContainerClientCopier(
+            copyInto: { _, _, _, _ in
+                throw ArchiveFallbackFailure.pathCopyWasUsed
+            },
+            copyFrom: { _, _, _, _ in
+                throw ArchiveFallbackFailure.pathCopyWasUsed
+            },
+            copyArchiveInto: nil,
+            copyArchiveFrom: nil,
+        )
+        let input = try FileHandle(forReadingFrom: archive)
+        defer { try? input.close() }
+
+        await #expect(throws: ComposeError.invalidProject(
+            "cp '-a -': runtime must provide native archive input to preserve numeric ownership",
+        )) {
+            try await copier.copyArchiveIntoContainer(
+                id: "demo-api-1",
+                archive: input,
+                destination: "/tmp",
+                options: ContainerCopyTransferOptions(preserveOwnership: true),
+            )
+        }
+    }
 }
 
 private enum ExportFailure: Error {
     case expected
+}
+
+private enum ArchiveFallbackFailure: Error {
+    case pathCopyWasUsed
 }
 
 private final class ExportPermissionRecorder: @unchecked Sendable {

@@ -426,7 +426,7 @@ recover_unpublished_release_candidate() {
   fi
   while IFS= read -r subject; do
     case "${subject}" in
-      "chore(release): prepare ${version}"|"chore(deps): pin containerization "[0-9a-f]*|"chore(deps): pin container "[0-9a-f]*|"chore(deps): pin container stack "[0-9a-f]*" "[0-9a-f]*)
+      "chore(release): prepare ${version}"|"chore(deps): pin containerization "[0-9a-f]*|"chore(deps): pin container "[0-9a-f]*|"chore(deps): pin container stack "[0-9a-f]*" "[0-9a-f]*|"fix(coverage): follow symlinked build cache")
         ;;
       *)
         printf 'container-compose main contains an unpublished non-release commit; refusing recovery: %s\n' "${subject}" >&2

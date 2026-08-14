@@ -81,6 +81,12 @@ public extension ComposeRuntimeCopying {
         options: ContainerCopyTransferOptions,
         temporaryDirectory: URL,
     ) async throws {
+        guard !options.preserveOwnership else {
+            throw ComposeError.invalidProject(
+                "cp '-a -': runtime must provide native archive input to preserve numeric ownership",
+            )
+        }
+
         let tempDirectory = try Self.makeTemporaryDirectory(in: temporaryDirectory)
         defer { try? FileManager.default.removeItem(at: tempDirectory) }
 
@@ -88,7 +94,7 @@ public extension ComposeRuntimeCopying {
         try ComposeTemporaryFiles.createDirectory(at: extractedRoot)
 
         let reader = try ArchiveReader(file: archiveFile)
-        let rejectedPaths = try reader.extractContents(to: extractedRoot)
+        let rejectedPaths = try reader.extractContents(to: extractedRoot, preserveOwnership: false)
         try ComposeTemporaryFiles.secureDirectory(at: extractedRoot)
         if !rejectedPaths.isEmpty {
             throw ComposeError.invalidProject("cp '-': archive contains unsafe paths: \(rejectedPaths.sorted().joined(separator: ", "))")
