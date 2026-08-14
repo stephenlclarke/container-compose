@@ -508,22 +508,16 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             '\"${DEMO_INIT_IMAGE_ARCHIVE}\" | awk \'{print $1}\')"',
             workflow,
         )
-        self.assertIn(
-            'expected_init_image_ref="ghcr.io/stephenlclarke/containerization/'
-            'vminit:${CONTAINERIZATION_REF}"',
-            workflow,
+        self.assertEqual(
+            package.count("Tools/release/validate-oci-image-layout.py"),
+            2,
         )
-        self.assertIn('with tarfile.open(sys.argv[1], "r:*") as archive:', workflow)
-        self.assertIn('{"index.json", "./index.json"}', workflow)
-        self.assertIn("expected exactly one root index.json member", workflow)
+        self.assertNotIn('index["manifests"][0]', workflow)
         self.assertNotIn(
             'tar -xOf "${DEMO_INIT_IMAGE_ARCHIVE}" index.json',
             workflow,
         )
-        self.assertIn(
-            'if [[ "${actual_init_image_ref}" != "${expected_init_image_ref}" ]]; then',
-            workflow,
-        )
+        self.assertNotIn("actual_init_image_ref", workflow)
         self.assertIn(
             'demo_session_root="/tmp/cc-current-'
             '${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',

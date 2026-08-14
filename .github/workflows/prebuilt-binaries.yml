@@ -1075,40 +1075,10 @@ jobs:
               "${CONTAINERIZATION_REF:-<unset>}" >&2
             exit 1
           fi
-          expected_init_image_ref="ghcr.io/stephenlclarke/containerization/vminit:${CONTAINERIZATION_REF}"
-          actual_init_image_ref="$(
-            python3 - "${DEMO_INIT_IMAGE_ARCHIVE}" <<'PY'
-          import json
-          import sys
-          import tarfile
-
-          with tarfile.open(sys.argv[1], "r:*") as archive:
-              members = [
-                  member
-                  for member in archive.getmembers()
-                  if member.isfile() and member.name in {"index.json", "./index.json"}
-              ]
-              if len(members) != 1:
-                  raise SystemExit(
-                      f"expected exactly one root index.json member, found {len(members)}"
-                  )
-              stream = archive.extractfile(members[0])
-              if stream is None:
-                  raise SystemExit("root index.json member is unreadable")
-              index = json.load(stream)
-
-          print(
-              index["manifests"][0]["annotations"][
-                  "org.opencontainers.image.ref.name"
-              ]
-          )
-          PY
-          )"
-          if [[ "${actual_init_image_ref}" != "${expected_init_image_ref}" ]]; then
-            printf 'matched Current demo init-image ref mismatch (expected %s, got %s)\n' \
-              "${expected_init_image_ref}" "${actual_init_image_ref:-<missing>}" >&2
-            exit 1
-          fi
+          Tools/release/validate-oci-image-layout.py \
+            "${DEMO_INIT_IMAGE_ARCHIVE}" \
+            vminit:container-compose \
+            "ghcr.io/stephenlclarke/containerization/vminit:${CONTAINERIZATION_REF}"
 
           cp "${DEMO_INIT_IMAGE_ARCHIVE}" "${demo_init_image_archive}"
           staged_init_image_sha256="$(shasum -a 256 "${demo_init_image_archive}" | awk '{print $1}')"
