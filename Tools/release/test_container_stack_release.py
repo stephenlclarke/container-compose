@@ -2898,6 +2898,29 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertNotEqual(candidate_head, remote_head)
             self.assertEqual(self.git(local, "diff", "--cached", "--name-only"), "")
 
+    def test_release_helper_retains_the_symlinked_coverage_gate_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _remote, local = self.create_compose_checkout(root)
+            remote_head = self.git(local, "rev-parse", "origin/main")
+            self.commit_file(
+                local,
+                "Makefile",
+                "swift-coverage:\n\tfind -L .build\n",
+                "fix(coverage): follow symlinked build cache",
+            )
+            candidate_head = self.git(local, "rev-parse", "main")
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("retaining unpublished release candidate", result.stdout)
+            self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
+            self.assertNotEqual(candidate_head, remote_head)
+
     def test_retained_candidate_rejects_current_from_any_commit_but_its_parent(
         self,
     ) -> None:
