@@ -1100,7 +1100,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             validation,
         )
         self.assertIn(
-            "container_targets=(check container dsym docs coverage-unit)",
+            "container_targets=(check build dsym docs coverage-unit)",
             validation,
         )
         self.assertIn("container_runtime_parent_base=/private/tmp", validation)
@@ -1659,11 +1659,19 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             assert_make_targets(
                 hosted_commands,
                 container,
-                ("check", "container", "dsym", "docs", "coverage-unit"),
+                ("check", "build", "dsym", "docs", "coverage-unit"),
                 required_fragment=(
                     f"APP_ROOT={resolved_container}/.test-scratch/runtime/"
                     "stack-release-app-root"
                 ),
+            )
+            self.assertFalse(
+                any(
+                    line.startswith(f"make:-C {container} ")
+                    and line.endswith(" container")
+                    for line in hosted_commands.splitlines()
+                ),
+                hosted_commands,
             )
             self.assertNotIn(" integration", hosted_commands)
             self.assertNotIn(" fetch-default-kernel", hosted_commands)
@@ -1733,7 +1741,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             assert_make_targets(
                 external_commands,
                 container,
-                ("check", "container", "dsym", "docs", "coverage-unit"),
+                ("check", "build", "dsym", "docs", "coverage-unit"),
                 required_fragment=(
                     f"APP_ROOT={resolved_external_scratch}/runtime/"
                     "stack-release-app-root"
@@ -1761,7 +1769,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             assert_make_targets(
                 split_commands,
                 container,
-                ("check", "container", "dsym", "docs", "coverage-unit"),
+                ("check", "build", "dsym", "docs", "coverage-unit"),
                 required_fragment=(
                     f"APP_ROOT={internal_runtime.resolve()}/stack-release-app-root"
                 ),
