@@ -133,7 +133,7 @@ CONTAINERIZATION_INIT_SOURCE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_RE
 # their scripts verbatim, so selecting it here keeps every documented `make
 # docker-compose-…-parity` invocation runnable on either installation layout.
 DOCKER_COMPOSE_REFERENCE ?= $(shell if docker compose version >/dev/null 2>&1; then printf '%s' 'docker compose'; elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then printf '%s' docker-compose; else printf '%s' 'docker compose'; fi)
-DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.3.1
+DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.4.0
 DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff
 DOCKER_TERMINAL_CANDIDATE_SOCKET ?= /tmp/container-engine-$(shell id -u)/docker.sock
 DOCKER_REST_LOGGING_CANDIDATE_SOCKET ?= $(DOCKER_TERMINAL_CANDIDATE_SOCKET)

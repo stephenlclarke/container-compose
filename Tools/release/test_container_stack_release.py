@@ -1035,6 +1035,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def test_release_gate_includes_sibling_coverage_and_runtime_integration(self) -> None:
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         validation = STACK_RELEASE_VALIDATION.read_text(encoding="utf-8")
+        reference_check = (
+            ROOT / "Tools" / "parity" / "check-docker-compose-reference.sh"
+        ).read_text(encoding="utf-8")
         self.assertIn("check-licenses vet lint coverage build", validation)
         self.assertIn("run-stack-release-validation.sh full", makefile)
         self.assertIn("run-stack-release-validation.sh hosted", makefile)
@@ -1117,7 +1120,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             makefile.count("env -u CONTAINER_BIN -u CONTAINER_COMPOSE_CONTAINER"),
             2,
         )
-        self.assertIn("DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.3.1", makefile)
+        self.assertIn("DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.4.0", makefile)
+        self.assertIn(
+            'REQUIRED_VERSION="${DOCKER_COMPOSE_REFERENCE_VERSION:-5.4.0}"',
+            reference_check,
+        )
         self.assertIn("DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff", makefile)
         self.assertNotIn("repackage-release", makefile)
 
