@@ -228,7 +228,7 @@ PY
 dry_run_api_line() {
     local output="$1"
 
-    printf '%s\n' "$output" | grep -F "container run --name $PROJECT_NAME-api-" | head -n 1
+    printf '%s\n' "$output" | grep -E "container (run|create) --name ${PROJECT_NAME}-api-" | head -n 1 || true
 }
 
 # Return success when a dry-run command line includes a device cgroup rule.
@@ -258,7 +258,7 @@ validate_container_compose_behavior() {
     create_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$COMPOSE_FILE" create api)"
     run_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$COMPOSE_FILE" run api true)"
     up_line="$(dry_run_api_line "$up_output")"
-    create_line="$(printf '%s\n' "$create_output" | grep -F "container create --name $PROJECT_NAME-api-" | head -n 1)"
+    create_line="$(dry_run_api_line "$create_output")"
     run_line="$(dry_run_api_line "$run_output")"
 
     [[ -n "$up_line" ]] || { error 'missing dry-run command for device_cgroup_rules service up'; return 1; }
