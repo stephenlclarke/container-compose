@@ -486,8 +486,22 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn(
             "DEMO_INIT_IMAGE_ARCHIVE_SHA256: "
-            "87c8e21ef404d91bd12eac4aeddb78fbfc3eda8f718d9dc0713e864d9164a9d0",
+            "dd0d8d60c1b9dc055b74fdc9655bed2f644a5eb125833696ffd6575f05b3d8f9",
             workflow,
+        )
+        self.assertIn("Validate Current demo init-image authority", package)
+        self.assertIn(
+            'Tools/release/validate-oci-image-layout.py \\\n'
+            '            "${DEMO_INIT_IMAGE_ARCHIVE}"',
+            package,
+        )
+        self.assertLess(
+            package.index("Validate Current demo init-image authority"),
+            package.index("Install Developer ID application certificate"),
+        )
+        self.assertLess(
+            package.index("Validate Current demo init-image authority"),
+            package.index("Build matched runtime package"),
         )
         self.assertIn(
             'actual_init_image_sha256="$(shasum -a 256 '
