@@ -177,18 +177,20 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                 config = runtime / "app" / "xdg-config" / "container" / "config.toml"
                 config.parent.mkdir(parents=True)
                 config.write_text('[build]\nimage = "fixture"\n', encoding="utf-8")
-                environment = os.environ.copy()
-                environment.update(
-                    {
-                        "CONTAINER_RUNTIME_CANDIDATE_SHA256": "a" * 64,
-                        "CONTAINER_RUNTIME_CLI": str(binary),
-                        "CONTAINER_RUNTIME_CLI_SHA256": hashlib.sha256(
-                            binary.read_bytes()
-                        ).hexdigest(),
-                        "PATH": f"{binary.parent}{os.pathsep}{environment['PATH']}",
-                        "XDG_CONFIG_HOME": str(config.parents[1]),
-                    }
-                )
+                # This unit proves relocation normalization, so give both
+                # invocations the same controlled inputs. Hosted CI exposes
+                # bookkeeping files whose contents can change while the test
+                # runs; inheriting those values would test runner activity
+                # instead of runtime-content identity.
+                environment = {
+                    "CONTAINER_RUNTIME_CANDIDATE_SHA256": "a" * 64,
+                    "CONTAINER_RUNTIME_CLI": str(binary),
+                    "CONTAINER_RUNTIME_CLI_SHA256": hashlib.sha256(
+                        binary.read_bytes()
+                    ).hexdigest(),
+                    "PATH": f"{binary.parent}{os.pathsep}{os.environ['PATH']}",
+                    "XDG_CONFIG_HOME": str(config.parents[1]),
+                }
                 return environment, binary
 
             first_environment, first_binary = runtime_inputs("first-run")
