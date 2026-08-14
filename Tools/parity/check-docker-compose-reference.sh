@@ -23,7 +23,7 @@
 #   DOCKER_COMPOSE                    Docker Compose command to validate.
 #                                     Defaults to "docker compose".
 #   DOCKER_COMPOSE_REFERENCE_VERSION  Required Docker Compose version.
-#                                     Defaults to 5.3.1.
+#                                     Defaults to 5.4.0.
 #
 # This preflight makes every parity target use the documented Docker Compose
 # oracle version rather than whichever version happens to be installed.
@@ -34,7 +34,7 @@ readonly SELF_PATH="${BASH_SOURCE[0]:-$0}"
 readonly SCRIPT_NAME="$(basename "$SELF_PATH")"
 
 DOCKER_COMPOSE_VALUE="${DOCKER_COMPOSE:-docker compose}"
-REQUIRED_VERSION="${DOCKER_COMPOSE_REFERENCE_VERSION:-5.3.1}"
+REQUIRED_VERSION="${DOCKER_COMPOSE_REFERENCE_VERSION:-5.4.0}"
 DOCKER_COMPOSE_COMMAND=()
 
 # Print an error message to stderr.
