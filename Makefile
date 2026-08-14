@@ -390,30 +390,30 @@ swift-coverage: swift-test-build
 		exit 1; \
 	fi
 	@rm -f .build/*/debug/codecov/*.profraw .build/*/debug/codecov/*.profdata .build/codecov/fallback.profdata coverage*.lcov coverage*.xml
-	@find .build -maxdepth 3 -path .build/index-build -prune -o -path '*/debug' -type d -exec mkdir -p '{}/codecov' \;
+	@find -L .build -maxdepth 3 -path .build/index-build -prune -o -path '*/debug' -type d -exec mkdir -p '{}/codecov' \;
 	@env -u CONTAINER_BIN -u CONTAINER_COMPOSE_CONTAINER \
 		PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_COVERAGE_TEST_ATTEMPTS)" SWIFT_TEST_ACCEPT_SIGNAL_13=0 \
 		Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
-	test_binary="$$(find .build -path '*.xctest/Contents/MacOS/container-composePackageTests' -type f | head -n 1)"; \
+	test_binary="$$(find -L .build -path '*.xctest/Contents/MacOS/container-composePackageTests' -type f | head -n 1)"; \
 	profile=".build/codecov/fallback.profdata"; \
 	if [[ -z "$$test_binary" ]]; then \
 		printf 'Swift test binary is missing; run make swift-test-build before make swift-coverage\n' >&2; \
 		exit 2; \
 	fi; \
-	raw_profile_count="$$(find .build -path .build/index-build -prune -o -name '*.profraw' -type f -print | wc -l | tr -d ' ')"; \
+	raw_profile_count="$$(find -L .build -path .build/index-build -prune -o -name '*.profraw' -type f -print | wc -l | tr -d ' ')"; \
 	for _ in 1 2 3 4 5 6 7 8 9 10; do \
 		if [[ "$$raw_profile_count" -gt 0 ]]; then \
 			break; \
 		fi; \
 		sleep 1; \
-		raw_profile_count="$$(find .build -path .build/index-build -prune -o -name '*.profraw' -type f -print | wc -l | tr -d ' ')"; \
+		raw_profile_count="$$(find -L .build -path .build/index-build -prune -o -name '*.profraw' -type f -print | wc -l | tr -d ' ')"; \
 	done; \
 	if [[ "$$raw_profile_count" -eq 0 ]]; then \
 		printf 'Swift coverage profile is missing and no raw .profraw files were found\n' >&2; \
 		exit 2; \
 	fi; \
 	mkdir -p .build/codecov; \
-	find .build -path .build/index-build -prune -o -name '*.profraw' -type f -print0 | xargs -0 "$(SWIFT_LLVM_PROFDATA)" merge -sparse -o "$$profile"; \
+	find -L .build -path .build/index-build -prune -o -name '*.profraw' -type f -print0 | xargs -0 "$(SWIFT_LLVM_PROFDATA)" merge -sparse -o "$$profile"; \
 	for coverage_target in \
 		core=Sources/ComposeCore \
 		runtime-spi=Sources/ComposeRuntimeSPI \

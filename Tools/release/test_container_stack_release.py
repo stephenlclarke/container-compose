@@ -1128,6 +1128,16 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff", makefile)
         self.assertNotIn("repackage-release", makefile)
 
+    def test_swift_coverage_follows_ssd_backed_build_symlink(self) -> None:
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        coverage_start = makefile.index("swift-coverage: swift-test-build")
+        coverage = makefile[
+            coverage_start : makefile.index("go-test:", coverage_start)
+        ]
+
+        self.assertEqual(coverage.count("find -L .build"), 5)
+        self.assertNotRegex(coverage, r"find \.build(?:\s|$)")
+
     def test_release_gate_fingerprint_tracks_archive_and_parity_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             archive = Path(directory) / "init.oci.tar"
