@@ -16,6 +16,8 @@ time: both runtime formulae provide the `container` executable.
 
 The formulae install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BUILD.md](BUILD.md).
 
+This guide describes the [`0.11.0` stable lane](https://github.com/stephenlclarke/container-compose/releases/tag/0.11.0), published on 15 August 2026, and the rolling `current` lane. A later immutable semantic release supersedes 0.11.0 automatically in the stable formulae; `container compose version` and `container system version` report the exact installed pair.
+
 Homebrew without a `-current` formula always uses the latest immutable semantic
 release. The opt-in lane follows the single mutable GitHub prerelease named
 **Current build** (tag `current`), which advances only after green `main` CI.

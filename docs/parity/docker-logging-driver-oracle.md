@@ -199,7 +199,7 @@ make docker-compose-signal-log-reliability-parity
 
 The 5 August 2026 Verified checkpoint used Compose `c7a50e28438ca0c5bd5a668d3b8e87db25c4a176`, Container `bfa8b361901e33bc427d5bb551d19b2a224ca3f2`, Containerization `38d9c695e7a6915e5ce45d12c893dc323a661af7`, Engine API `c7973ac641fb6f6e07df1358114f36222bd9ca59`, Docker Compose 5.3.1, and Docker Engine 29.2.1. Both lanes passed readable and `none` foreground output, successful empty static `none` history, restart retention, three-replica foreground/history aggregation, long and filtered tails, signal forwarding, disconnected-client logging, and exact cleanup. The embedded focused Swift gate passed 19 tests in two suites; the sourceable Bash identifier assertion passed three Python regressions, including non-hex hyphenated candidate hostnames.
 
-The candidate graph must use identity-preserving local package roots for Container, Containerization, and Engine API because these coordinated revisions are intentionally unpublished. The target records that graph before runtime validation and restores `Package.resolved` afterwards.
+The 0.11.0 graph can resolve the coordinated Container, Containerization, and Engine API revisions from their owned remotes. A post-release candidate that tests uncommitted or unpublished revisions must still use identity-preserving local package roots. The target records the selected graph before runtime validation and restores `Package.resolved` afterwards.
 
 ## Determinism And Cleanup
 

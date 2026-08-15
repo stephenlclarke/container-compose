@@ -341,12 +341,12 @@ enum ComposeCLIHelp {
     ]
 
     private static let supportDetails: [String: String] = [
-        "attach": "Output-only attach still follows persisted logs instead of an independent live stream, so logging-driver reader failures remain incomplete.",
+        "attach": "Interactive and output-only live attachment are implemented; the complete external-client, provider, failure, migration, security, and comparable-performance matrix remains incomplete.",
         "events": "OOM, explicit restart, rename, resize, update, and attach/detach actions are unavailable; automatic policy restarts emit die then start, and exec lifecycle actions are supported.",
         "exec": "Docker-complete privileged execution is unavailable.",
-        "logs": "Driver/cache read capability, unsupported-reader behavior, stopped-provider reconstruction, and distinct json-file/local histories are incomplete.",
-        "run": "Non-interactive foreground output still depends on the logging live-attach/read split for none and unreadable drivers.",
-        "up": "Foreground output still needs independent live attach when historical log readers are unavailable.",
+        "logs": "Provider/cache reads and stopped-container reconstruction still lack the complete external-client, failure, migration, security, and comparable-performance evidence.",
+        "run": "Exact-process live attachment is implemented; complete logging-provider, external-client, failure, migration, security, and comparable-performance evidence remains incomplete.",
+        "up": "Attach-before-start is implemented; complete logging-provider, external-client, failure, migration, security, and comparable-performance evidence remains incomplete.",
     ]
 
     private static let supportByOption: [String: [String: SupportLevel]] = [

@@ -2,13 +2,14 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Implementation underway: `NET-WP-01` is verified as a static source-model contract; `NET-WP-02` through `NET-WP-09` remain queued. |
+| Status | Implementation underway. The 0.11.0 stable stack ships lossless IPAM modelling, network-scoped DNS/aliases, bridge mapping, IPv6-only networking, allocation ranges, gateway and auxiliary reservations, runtime DNS, and persisted endpoint behavior for the supported vmnet lane. Custom network/IPAM providers, IPv6 range/auxiliary behavior, durable multiple-pool/provider reconciliation, namespace joins, and comparable-performance evidence remain. |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, the shared Engine API, devcontainer, and the common Engine Linux sandbox |
 | Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS; `NET-WP-01` source rendering is also captured against Docker Compose 5.4.0. |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
-| Matched Container revision | `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1` |
-| Matched Containerization revision | `d7377b962af724f8d7c2b640f3ab12184d33f1af` |
+| Stable 0.11.0 Container revision | `9aa1803223e8573f169c2a2effa657392b4d6e30` |
+| Stable 0.11.0 Containerization revision | `f0bc99d26cd27ed58b06236421a298d9e4acd5c1` |
 | Design date | 31 July 2026 |
+| Last documentation review | 15 August 2026 against the 0.11.0 release and current STATUS evidence |
 
 ## Goal
 
@@ -49,7 +50,23 @@ The compatibility contract is observable Docker Compose behavior. It is not an a
 
 `MUST`, `MUST NOT`, `SHOULD`, and `MAY` describe implementation requirements in this document. An oracle is an executable comparison against the pinned Docker Compose and Engine versions on the same Mac.
 
-## Current Evidence and Blockers
+## 0.11.0 Published Boundary
+
+The stable release implements the built-in vmnet subset described above: source
+model retention, supported allocation ranges and reservations, IPv6-only
+networks, network-scoped discovery/aliases, bridge mapping, runtime DNS, and
+persisted endpoint behavior. The remaining design is still required for custom
+network/IPAM providers, IPv6 range and auxiliary-address coverage, durable
+multiple-pool/provider reconciliation, namespace joins, and release-grade
+performance evidence.
+
+## Retained Initial Evidence and Current Blockers
+
+The layer table below records the initial 31 July implementation boundary. Its
+singular-model and in-memory-allocation statements are historical inputs to the
+implemented 0.11.0 subset; the unresolved provider, reconciliation, namespace,
+and evidence consequences remain current where they also appear in
+[STATUS.md](../STATUS.md).
 
 The gap is cross-repository. No Compose-only projection can close it.
 

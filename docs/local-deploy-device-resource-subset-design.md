@@ -2,14 +2,15 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Design complete; implementation not started |
+| Status | Implementation underway. The stable stack maps local CPU/memory/PID limits, memory reservation, GPU reservation metadata, and ordinary `replicated-job`/`global-job` restart, detached-start, and readiness behavior. CPU/generic reservation preservation and the common DeviceBroker path for every valid non-GPU device request remain. |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, the shared Engine API and `devcontainer` runtime providers |
 | Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
-| Matched Container revision | `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1` |
-| Matched Containerization revision | `d7377b962af724f8d7c2b640f3ab12184d33f1af` |
+| Stable 0.11.0 Container revision | `9aa1803223e8573f169c2a2effa657392b4d6e30` |
+| Stable 0.11.0 Containerization revision | `f0bc99d26cd27ed58b06236421a298d9e4acd5c1` |
 | Matched compose-go revision | `v2.14.0` |
 | Docker Compose embedded compose-go | `v2.13.0`; focused Deploy schema/device sources are equivalent, but the programme retains the broader parser skew as a Wave 0 differential gate |
 | Design date | 31 July 2026 |
+| Last documentation review | 15 August 2026 against the 0.11.0 release and current STATUS evidence |
 
 ## Goal
 
@@ -27,7 +28,7 @@ Completion means that the stack:
 - keeps service `devices`, service `gpus`, Deploy reservations, privileged inventory, volumes, and Model Runner on coherent, non-conflicting ownership paths; and
 - removes local scheduler and normalizer rejection behaviour that Docker Compose does not have.
 
-This is a design only. It does not add a Swarm scheduler, invent local reservation guarantees, or claim that every macOS device can be passed through.
+This design does not add a Swarm scheduler, invent local reservation guarantees, or claim that every macOS device can be passed through.
 
 ## Scope
 

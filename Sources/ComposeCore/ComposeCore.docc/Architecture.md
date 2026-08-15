@@ -21,6 +21,13 @@ and library users must likewise supply runtime collaborators. Unconfigured
 defaults report an explicit unsupported-runtime error instead of constructing
 an Apple client.
 
+The 0.11.0 matched stack publishes a schema-versioned capability manifest.
+Runtime-backed commands negotiate the required version-1 contracts before
+side effects, including lifecycle, observation, networking, archive, build,
+image-filesystem, create-configuration, and logging-driver behavior. Unknown
+additional identifiers are accepted, while missing, duplicate, or incompatible
+requirements fail closed with an actionable compatibility error.
+
 `ComposeCore` depends only on `ComposeRuntimeSPI` and imports no Apple modules.
 Its public create-plan values use Compose-owned process, logging, health,
 restart, host, and block-I/O types. `ComposeContainerRuntime` projects those

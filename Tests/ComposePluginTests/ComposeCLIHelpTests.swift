@@ -426,7 +426,8 @@ struct ComposeCLIHelpTests {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "run"))
 
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(help.contains("Non-interactive foreground output still depends on the logging live-attach/read split"))
+        #expect(help.contains("Exact-process live attachment is implemented"))
+        #expect(!help.contains("foreground output still depends on the logging live-attach/read split"))
         #expect(help.contains("\u{001B}[32m--build\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--no-deps\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--service-ports\u{001B}[0m"))
@@ -438,7 +439,7 @@ struct ComposeCLIHelpTests {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "logs"))
 
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(help.contains("Driver/cache read capability, unsupported-reader behavior"))
+        #expect(help.contains("Provider/cache reads and stopped-container reconstruction"))
     }
 
     @Test("exec command discloses the privileged-mode limitation")
@@ -479,7 +480,8 @@ struct ComposeCLIHelpTests {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "attach"))
 
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(help.contains("Output-only attach still follows persisted logs instead of an independent live stream"))
+        #expect(help.contains("Interactive and output-only live attachment are implemented"))
+        #expect(!help.contains("Output-only attach still follows persisted logs"))
         #expect(help.contains("\u{001B}[32m--detach-keys\u{001B}[0m"))
         #expect(help.contains("Ignored with --no-stdin output-only attach."))
         #expect(help.contains("\u{001B}[32m--index\u{001B}[0m"))
@@ -532,7 +534,8 @@ struct ComposeCLIHelpTests {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
 
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(help.contains("Foreground output still needs independent live attach"))
+        #expect(help.contains("Attach-before-start is implemented"))
+        #expect(!help.contains("Foreground output still needs independent live attach"))
         #expect(help.contains("\u{001B}[32m--wait\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--wait-timeout\u{001B}[0m"))
     }
