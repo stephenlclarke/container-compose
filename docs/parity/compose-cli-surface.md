@@ -3,7 +3,7 @@
 This check compares the command paths and documented long options exposed by
 the local `container-compose` binary with an installed Docker Compose v2
 reference binary. It measures CLI discoverability, not runtime behavior.
-Runtime support remains authoritative in [STATUS.md](../../STATUS.md).
+Runtime support remains authoritative in [STATUS.md](../project/STATUS.md).
 
 ## Run The Check
 
@@ -36,7 +36,7 @@ help. It compares command paths and long-option names while ignoring prose,
 spacing, aliases, and terminal color. Command support is not inferred from the
 option list: a command with all green options can still be partial when the
 remaining Docker Compose gap is tied to operands, output shape, or a runtime
-primitive. [STATUS.md](../../STATUS.md) records those partial semantics.
+primitive. [STATUS.md](../project/STATUS.md) records those partial semantics.
 
 ## Documented Differences
 
@@ -58,9 +58,11 @@ versioned snapshot into this file.
 
 ## Related Documentation
 
-- [STATUS.md](../../STATUS.md): every tracked Compose file, service,
-  Dockerfile/build, command, and long-option support indicator.
-- [BUILD.md](../../BUILD.md): contributor validation and aggregate parity
+- [STATUS.md](../project/STATUS.md): current stable functionality and explicit runtime
+  limitations.
+- [BACKLOG.md](../project/BACKLOG.md): planned parity contracts and links to their live
+  GitHub issues.
+- [BUILD.md](../guides/BUILD.md): contributor validation and aggregate parity
   commands.
 - [`check-compose-cli-surface.sh`](../../Tools/parity/check-compose-cli-surface.sh):
   comparison implementation and environment overrides.

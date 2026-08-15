@@ -686,44 +686,34 @@ struct ComposeCLIHelpTests {
         #expect(!options.shouldColorProgress())
     }
 
-    @Test("STATUS command surface matches help support metadata")
-    func statusCommandSurfaceMatchesHelpSupportMetadata() throws {
-        let status = try statusMarkdown()
-        let commandSection = try statusSection("CLI Command Surface", in: status)
-        let commandRows = commandSection
-            .split(separator: "\n")
-            .filter { $0.hasPrefix("| `") }
-        let documentedUnsupportedCommands: [String] = []
+    @Test("STATUS names every command and explains each partial command")
+    func statusNamesEveryCommandAndExplainsEachPartialCommand() throws {
+        let commandSection = try statusSection("CLI Commands", in: try statusMarkdown())
 
-        #expect(commandRows.count == ComposeCLIHelp.commandSupportSnapshots.count + documentedUnsupportedCommands.count)
         for snapshot in ComposeCLIHelp.commandSupportSnapshots {
             let command = format(commandPath: snapshot.commandPath)
-            let expected = statusIndicator(for: snapshot.support)
-
             #expect(
-                commandSection.contains("| `\(command)` | \(expected) |"),
-                "STATUS.md does not list \(command) as \(expected)"
+                commandSection.contains("`\(command)`"),
+                "STATUS.md does not name current command \(command)"
             )
-        }
 
-        for command in documentedUnsupportedCommands {
-            #expect(
-                commandSection.contains("| `\(command)` | ❌ No |"),
-                "STATUS.md does not list Docker-documented unsupported command \(command)"
-            )
+            if snapshot.support == "partially supported" {
+                #expect(
+                    commandSection.contains("### `\(command)`"),
+                    "STATUS.md does not explain the limitation for partial command \(command)"
+                )
+            }
         }
     }
 
-    @Test("STATUS command totals match help support metadata")
-    func statusCommandTotalsMatchHelpSupportMetadata() throws {
+    @Test("STATUS command summary matches help support metadata")
+    func statusCommandSummaryMatchesHelpSupportMetadata() throws {
         let status = try statusMarkdown()
         let supported = ComposeCLIHelp.commandSupportSnapshots.filter { $0.support == "supported" }.count
         let partial = ComposeCLIHelp.commandSupportSnapshots.filter { $0.support == "partially supported" }.count
         let unsupported = ComposeCLIHelp.commandSupportSnapshots.filter { $0.support == "not supported" }.count
-        let unsupportedVerb = unsupported == 1 ? "is" : "are"
-
         #expect(
-            status.contains("\(supported) commands are ✅, \(partial) are ⚠️, and \(unsupported) \(unsupportedVerb) ❌"),
+            status.contains("\(supported) green commands, \(partial) partial commands, and \(unsupported)\nunsupported commands"),
             "STATUS.md CLI command totals do not match ComposeCLIHelp metadata"
         )
     }
@@ -734,184 +724,55 @@ struct ComposeCLIHelpTests {
         let supported = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "supported" }.count
         let partial = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "partially supported" }.count
         let unsupported = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "not supported" }.count
-        let dockerDocumentedUnsupported = 0
-        let partialVerb = partial == 1 ? "is" : "are"
-
         #expect(
-            status.contains("\(supported) documented long options are ✅, \(partial) \(partialVerb) ⚠️, and \(unsupported + dockerDocumentedUnsupported) are ❌"),
-            "STATUS.md CLI option totals do not match ComposeCLIHelp metadata plus Docker-documented unsupported surfaces"
+            status.contains("\(supported) green documented long options, \(partial) partial\nlong option, and \(unsupported) unsupported long options"),
+            "STATUS.md CLI option totals do not match ComposeCLIHelp metadata"
         )
     }
 
-    @Test("STATUS option surface lists every help option")
-    func statusOptionSurfaceListsEveryHelpOption() throws {
-        let section = try statusSection("CLI Option Surface", in: try statusMarkdown())
-        let optionRows: [(String, String)] = statusTableRows(in: section).compactMap { row -> (String, String)? in
-            let columns = row.split(separator: "|", omittingEmptySubsequences: false).map {
-                $0.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            guard columns.count > 3, columns[1] != "Option Surface" else {
-                return nil
-            }
-            return (columns[1], row)
+    @Test("STATUS explains every partial option")
+    func statusExplainsEveryPartialOption() throws {
+        let status = try statusMarkdown()
+        let partialOptions = ComposeCLIHelp.optionSupportSnapshots.filter {
+            $0.support == "partially supported"
         }
-        let rowsBySurface = Dictionary(uniqueKeysWithValues: optionRows)
 
-        let snapshotsByPath = Dictionary(grouping: ComposeCLIHelp.optionSupportSnapshots, by: \.commandPath)
-        for (commandPath, snapshots) in snapshotsByPath {
-            let surface = commandPath.isEmpty ? "Root options" : "`\(format(commandPath: commandPath))` options"
-            let row = rowsBySurface[surface]
-
-            #expect(row != nil, "STATUS.md CLI Option Surface does not list \(surface)")
-            guard let row else {
-                continue
-            }
-
-            let expected = optionGroupIndicator(for: snapshots.map(\.support))
+        for snapshot in partialOptions {
+            let command = format(commandPath: snapshot.commandPath)
             #expect(
-                row.contains("| \(surface) | \(expected) |"),
-                "STATUS.md lists \(surface) with the wrong option parity"
+                status.contains("`\(command) \(snapshot.option)`"),
+                "STATUS.md does not explain partial option \(command) \(snapshot.option)"
             )
-
-            for snapshot in snapshots {
-                let symbol = statusSymbol(for: snapshot.support)
-                #expect(
-                    row.contains("\(symbol) `\(snapshot.option)`"),
-                    "STATUS.md \(surface) does not list \(snapshot.option) as \(symbol)"
-                )
-            }
         }
     }
 
-    @Test("STATUS compose file surface lists required parity rows")
-    func statusComposeFileSurfaceListsRequiredParityRows() throws {
-        let section = try statusSection("Compose File Surface", in: try statusMarkdown())
-        let requiredRows = [
-            "Project file discovery and sources",
-            "Top-level `name` and legacy `version`",
-            "Top-level `services`",
-            "Top-level `networks`",
-            "Top-level `volumes`",
-            "Top-level `configs`",
-            "Top-level `secrets`",
-            "Extensions, fragments, merge, and include",
-            "Compose Build Specification",
-            "Compose Deploy Specification",
-            "Compose Develop Specification",
-            "Provider services and models",
+    @Test("STATUS is a readable current-functionality document")
+    func statusIsReadableCurrentFunctionalityDocument() throws {
+        let status = try statusMarkdown()
+        let requiredSections = [
+            "Current Stable Release",
+            "Project Loading and Configuration",
+            "Compose File Functionality",
+            "Build and Image Functionality",
+            "Service Lifecycle and Orchestration",
+            "Networking",
+            "Volumes, Mounts, Configs, and Secrets",
+            "Logging and Terminal Sessions",
+            "Resources and Security",
+            "Docker-Compatible Engine API",
+            "CLI Commands",
+            "CLI Options",
+            "Current Validation",
+            "Performance Evidence",
+            "Platform Boundaries",
         ]
 
-        for row in requiredRows {
-            #expect(
-                section.contains("| \(row) |"),
-                "STATUS.md Compose File Surface does not list \(row)"
-            )
+        for section in requiredSections {
+            #expect(status.contains("## \(section)"), "STATUS.md is missing the \(section) section")
         }
-    }
 
-    @Test("STATUS names every current Compose specification surface")
-    func statusNamesEveryCurrentComposeSpecificationSurface() throws {
-        let status = try statusMarkdown()
-        let composeFileSection = try statusSection("Compose File Surface", in: status)
-        let serviceSection = try statusSection("Service Attribute Surface", in: status)
-        let buildSection = try statusSection("Dockerfile And Build Surface", in: status)
-
-        expectCodeSpans([
-            "attachable", "driver", "driver_opts", "enable_ipv4", "enable_ipv6",
-            "external", "ipam", "internal", "labels", "name",
-        ], in: try statusTableRow(named: "Top-level `networks`", in: composeFileSection))
-        expectCodeSpans([
-            "driver", "driver_opts", "external", "labels", "name",
-        ], in: try statusTableRow(named: "Top-level `volumes`", in: composeFileSection))
-        expectCodeSpans([
-            "file", "environment", "content", "external", "name",
-        ], in: try statusTableRow(named: "Top-level `configs`", in: composeFileSection))
-        expectCodeSpans([
-            "file", "environment", "external", "name",
-        ], in: try statusTableRow(named: "Top-level `secrets`", in: composeFileSection))
-        expectCodeSpans([
-            "path", "project_directory", "env_file",
-        ], in: try statusTableRow(named: "Extensions, fragments, merge, and include", in: composeFileSection))
-        expectCodeSpans([
-            "type", "options", "model", "context_size", "runtime_flags", "endpoint_var", "model_var",
-        ], in: try statusTableRow(named: "Provider services and models", in: composeFileSection))
-        expectDocumentedCodeSpans([
-            "endpoint_mode", "labels", "mode", "placement", "replicas", "resources", "restart_policy",
-            "rollback_config", "update_config",
-        ], in: try statusTableRow(named: "Compose Deploy Specification", in: composeFileSection))
-        expectCodeSpans([
-            "watch", "path", "action", "target", "ignore", "include", "initial_sync", "exec",
-        ], in: try statusTableRow(named: "Compose Develop Specification", in: composeFileSection))
-
-        expectDocumentedCodeSpans(Self.currentServiceAttributes, in: serviceSection)
-        expectCodeSpans(Self.currentBuildAttributes.map { "build.\($0)" }, in: buildSection)
-        expectCodeSpans(Self.currentDockerfileInstructions, in: buildSection)
-    }
-
-    @Test("STATUS Dockerfile and build surface lists build specification rows")
-    func statusDockerfileAndBuildSurfaceListsBuildSpecificationRows() throws {
-        let section = try statusSection("Dockerfile And Build Surface", in: try statusMarkdown())
-        let requiredRows = [
-            "Dockerfile instruction set and parser directives",
-            "`.dockerignore` context filtering",
-            "Build context string syntax",
-            "`build.context`",
-            "`build.dockerfile`",
-            "`build.dockerfile_inline`",
-            "`build.additional_contexts`",
-            "`build.args` and `build --build-arg`",
-            "`build.cache_from` and `build.cache_to`",
-            "`build.entitlements`",
-            "`build.extra_hosts`",
-            "`build.isolation`",
-            "`build.labels`",
-            "`build.network`",
-            "`build.no_cache` and `--no-cache`",
-            "`build.platforms`",
-            "`build.privileged`",
-            "`build.provenance`",
-            "`build.pull` and `--pull`",
-            "`build.sbom`",
-            "`build.secrets`",
-            "`build.ssh` and `build --ssh`",
-            "`build.shm_size`",
-            "`build.tags`",
-            "`build.target`",
-            "`build.ulimits`",
-            "`build --builder`",
-            "`build --check`",
-            "`build --print`",
-            "Dockerfile `HEALTHCHECK` inheritance",
-        ]
-
-        for row in requiredRows {
-            #expect(
-                section.contains("| \(row) |"),
-                "STATUS.md Dockerfile And Build Surface does not list \(row)"
-            )
-        }
-    }
-
-    @Test("STATUS partial parity rows include gap details")
-    func statusPartialParityRowsIncludeGapDetails() throws {
-        let status = try statusMarkdown()
-        for sectionName in [
-            "Compose Surface Matrix",
-            "Compose File Surface",
-            "Dockerfile And Build Surface",
-            "CLI Command Surface",
-            "CLI Option Surface",
-        ] {
-            let section = try statusSection(sectionName, in: status)
-            for row in statusTableRows(in: section) where row.contains("| ⚠️ Partial |") {
-                let columns = row.split(separator: "|", omittingEmptySubsequences: false).map {
-                    $0.trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-                let detail = columns.count > 3 ? columns[3] : ""
-
-                #expect(!detail.isEmpty, "STATUS.md \(sectionName) partial row has no gap details: \(row)")
-            }
-        }
+        #expect(!status.split(separator: "\n").contains { $0.hasPrefix("|") })
+        #expect(status.contains("[BACKLOG.md](BACKLOG.md)"))
     }
 
     private struct OptionIdentity: Comparable, CustomStringConvertible, Hashable {
@@ -932,90 +793,17 @@ struct ComposeCLIHelpTests {
 
     private typealias RepresentativeParse = (commandPath: [String], options: Set<String>, parse: () throws -> Void)
 
-    private func optionGroupIndicator(for supportLabels: [String]) -> String {
-        if supportLabels.allSatisfy({ $0 == "supported" }) {
-            return "✅ Yes"
-        }
-        if supportLabels.allSatisfy({ $0 == "not supported" }) {
-            return "❌ No"
-        }
-        return "⚠️ Partial"
-    }
-
-    private func statusSymbol(for support: String) -> String {
-        switch support {
-        case "supported":
-            return "✅"
-        case "partially supported":
-            return "⚠️"
-        case "not supported":
-            return "❌"
-        default:
-            return "unknown"
-        }
-    }
-
-    private func statusIndicator(for support: String) -> String {
-        switch support {
-        case "supported":
-            return "✅ Yes"
-        case "partially supported":
-            return "⚠️ Partial"
-        case "not supported":
-            return "❌ No"
-        default:
-            return "unknown"
-        }
-    }
-
     private func statusMarkdown() throws -> String {
         let fileURL = URL(fileURLWithPath: #filePath)
         var directory = fileURL.deletingLastPathComponent()
         for _ in 0..<8 {
-            let statusURL = directory.appendingPathComponent("STATUS.md")
+            let statusURL = directory.appendingPathComponent("docs/project/STATUS.md")
             if FileManager.default.fileExists(atPath: statusURL.path) {
                 return try String(contentsOf: statusURL, encoding: .utf8)
             }
             directory.deleteLastPathComponent()
         }
         throw ComposeError.invalidProject("STATUS.md was not found from \(fileURL.path)")
-    }
-
-    private func statusTableRows(in markdown: String) -> [String] {
-        markdown
-            .split(separator: "\n")
-            .map(String.init)
-            .filter { row in
-                row.hasPrefix("| ") && !row.hasPrefix("| ---")
-            }
-    }
-
-    private func statusTableRow(named name: String, in markdown: String) throws -> String {
-        guard let row = statusTableRows(in: markdown).first(where: { $0.hasPrefix("| \(name) |") }) else {
-            throw ComposeError.invalidProject("STATUS.md is missing the \(name) row")
-        }
-        return row
-    }
-
-    private func expectCodeSpans(_ names: [String], in markdown: String) {
-        for name in names {
-            #expect(markdown.contains("`\(name)`"), "STATUS.md does not name current Compose surface \(name)")
-        }
-    }
-
-    private func expectDocumentedCodeSpans(_ names: [String], in markdown: String) {
-        let documentationAliases = [
-            "resources": ["resources.reservations.memory", "deploy.resources.reservations.memory"],
-            "userns_mode": ["userns_mode: host"],
-        ]
-
-        for name in names {
-            let documentedNames = documentationAliases[name] ?? [name]
-            #expect(
-                documentedNames.contains { markdown.contains("`\($0)`") },
-                "STATUS.md does not name current Compose surface \(name) through \(documentedNames)"
-            )
-        }
     }
 
     private func statusSection(_ heading: String, in markdown: String) throws -> String {
@@ -1027,30 +815,6 @@ struct ComposeCLIHelpTests {
         let end = remainder.range(of: "\n## ")?.lowerBound ?? remainder.endIndex
         return String(remainder[..<end])
     }
-
-    private static let currentServiceAttributes = """
-    annotations attach build blkio_config cpu_count cpu_percent cpu_shares cpu_period cpu_quota
-    cpu_rt_runtime cpu_rt_period cpus cpuset cap_add cap_drop cgroup cgroup_parent command configs
-    container_name credential_spec depends_on deploy develop device_cgroup_rules devices dns dns_opt
-    dns_search domainname driver_opts entrypoint env_file environment expose extends external_links
-    extra_hosts gpus group_add healthcheck hostname image init ipc isolation labels label_file links
-    logging mac_address mem_limit mem_reservation mem_swappiness memswap_limit models network_mode
-    networks oom_kill_disable oom_score_adj pid pids_limit platform ports post_start pre_start pre_stop
-    privileged profiles provider pull_policy read_only restart runtime scale secrets security_opt
-    shm_size stdin_open stop_grace_period stop_signal storage_opt sysctls tmpfs tty ulimits
-    use_api_socket user userns_mode uts volumes volumes_from working_dir
-    """.split(whereSeparator: \.isWhitespace).map(String.init)
-
-    private static let currentBuildAttributes = """
-    additional_contexts args cache_from cache_to context dockerfile dockerfile_inline entitlements
-    extra_hosts isolation labels network no_cache no_cache_filter platforms privileged provenance pull sbom secrets
-    ssh shm_size tags target ulimits
-    """.split(whereSeparator: \.isWhitespace).map(String.init)
-
-    private static let currentDockerfileInstructions = """
-    ADD ARG CMD COPY ENTRYPOINT ENV EXPOSE FROM HEALTHCHECK LABEL MAINTAINER ONBUILD RUN SHELL
-    STOPSIGNAL USER VOLUME WORKDIR
-    """.split(whereSeparator: \.isWhitespace).map(String.init)
 
     private func representativeParses() -> [RepresentativeParse] {
         [

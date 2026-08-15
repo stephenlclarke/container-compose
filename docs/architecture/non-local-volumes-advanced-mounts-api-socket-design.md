@@ -15,7 +15,7 @@
 
 ## Goal
 
-Close the non-local volume, advanced mount, and `use_api_socket` row in [STATUS.md](../STATUS.md) without metadata-only success, unsafe storage sharing, an incomplete Docker API facade, or a performance regression. Completion means that Container Compose:
+Deliver the [non-local volume and advanced-mount parity contract](https://github.com/stephenlclarke/container-compose/issues/269) and the [Engine API contract](https://github.com/stephenlclarke/container-compose/issues/270) without metadata-only success, unsafe storage sharing, an incomplete Docker API facade, or a performance regression. Completion means that Container Compose:
 
 - selects a real volume provider by driver name and fails before mutation when that provider is unavailable;
 - gives named `local` volumes Docker-compatible multi-container sharing instead of attaching one writable ext4 image to several per-container virtual machines;
@@ -64,12 +64,12 @@ This is a cross-repository gap. Passing more strings from Compose cannot close i
 
 | Layer | Current boundary | Consequence |
 | --- | --- | --- |
-| Compose normalization | [`Tools/compose-normalizer/main.go`](../Tools/compose-normalizer/main.go) preserves `use_api_socket`, bind creation/propagation, volume `nocopy`/`subpath`/labels, image subpath, and tmpfs options, but marks consistency, SELinux, and recursive bind fields unsupported. | Valid source data is rejected before a capable runtime can evaluate it. |
-| Compose model | [`ComposeMount`](../Sources/ComposeRuntimeSPI/ComposeRuntimeDiscovery.swift) is a flat collection of optional strings and booleans. | Invalid combinations are easy to represent, requested and effective state are conflated, and lower layers receive no lossless typed plan. |
+| Compose normalization | [`Tools/compose-normalizer/main.go`](../../Tools/compose-normalizer/main.go) preserves `use_api_socket`, bind creation/propagation, volume `nocopy`/`subpath`/labels, image subpath, and tmpfs options, but marks consistency, SELinux, and recursive bind fields unsupported. | Valid source data is rejected before a capable runtime can evaluate it. |
+| Compose model | [`ComposeMount`](../../Sources/ComposeRuntimeSPI/ComposeRuntimeDiscovery.swift) is a flat collection of optional strings and booleans. | Invalid combinations are easy to represent, requested and effective state are conflated, and lower layers receive no lossless typed plan. |
 | Service volume driver | The normalized service retains `volume_driver`, but validation accepts only `local` and no provider choice reaches anonymous/image-declared volume creation. | Docker's per-container default volume driver cannot select a provider for Engine-created volumes. |
-| Compose mount handoff | [`appendMount`](../Sources/ComposeCore/ComposeOrchestratorMountsContainersVolumes.swift) emits comma-delimited CLI arguments. | Advanced semantics cannot be carried safely or capability-negotiated; commas and backend-specific source descriptors are not representable. |
-| Compose volume SPI | [`ComposeRuntimeResourceManaging`](../Sources/ComposeRuntimeSPI/ComposeRuntimeResources.swift) exposes create/list/delete only. | There is no exact inspect, provider resolution, attachment lease, path, health, capability, ownership, or recovery contract. |
-| Compose reconciliation | [`ComposeOrchestratorVolumesAndResources.swift`](../Sources/ComposeCore/ComposeOrchestratorVolumesAndResources.swift) skips external creation and treats create success/already-exists as enough. | A missing external volume can reach a lower layer that auto-creates it; a same-name incompatible volume can be silently reused; hash drift is not reconciled like Docker Compose. |
+| Compose mount handoff | [`appendMount`](../../Sources/ComposeCore/ComposeOrchestratorMountsContainersVolumes.swift) emits comma-delimited CLI arguments. | Advanced semantics cannot be carried safely or capability-negotiated; commas and backend-specific source descriptors are not representable. |
+| Compose volume SPI | [`ComposeRuntimeResourceManaging`](../../Sources/ComposeRuntimeSPI/ComposeRuntimeResources.swift) exposes create/list/delete only. | There is no exact inspect, provider resolution, attachment lease, path, health, capability, ownership, or recovery contract. |
+| Compose reconciliation | [`ComposeOrchestratorVolumesAndResources.swift`](../../Sources/ComposeCore/ComposeOrchestratorVolumesAndResources.swift) skips external creation and treats create success/already-exists as enough. | A missing external volume can reach a lower layer that auto-creates it; a same-name incompatible volume can be silently reused; hash drift is not reconciled like Docker Compose. |
 | Container volume service | Signed Container `8b7c0ef8a911288783883b18b2519225829c4e21` and Engine API `987f05119c0fd6cc8e17c707ffd0c94fbd7d997e` route Docker `VolumeCreate` through the same `VolumesService`: omitted/empty `local` normalizes and unsupported drivers fail before persistence, directory, or ext4 allocation. An isolated public Unix-socket Docker CLI proof is green. | The false local-ext4 success and missing public create adapter are closed at the focused boundary. Typed provider registry, remote driver/options, shared-volume model, inspect/list/remove, and a dependency-compatible full runtime certificate remain. |
 | Container attachment model | Writable native volume images are attached as virtual block devices to one VM per container. | Docker's common concurrent read-write named-volume use is unsafe: multi-attach can fail or corrupt a filesystem with no shared lock manager. |
 | Container persistence | Volume state has no provider ID/`providerGeneration`, requested/effective split, `resourceRevision`, config hash, attachment `leaseGeneration`, health, or recovery marker. | Provider crashes, daemon restarts, interrupted mounts, and delete-in-use behavior cannot be reconciled deterministically. |
@@ -1728,7 +1728,7 @@ The primary gate is the repository definition of comparable: no material regress
 | <a id="storage-wp-12"></a>`STORAGE-WP-12` | `container-compose` and lower stack | Exact `use_api_socket` transform, sealed credential artifacts, socket grants, create/start reconciliation, and security review | Unmodified Docker clients match root/non-root and failure-residue oracles; credentials/sockets have no leak; opt-out has zero artifacts. |
 | <a id="storage-wp-13"></a>`STORAGE-WP-13` | All repositories | Migration drills, full differential matrix, performance release gate, docs, and stack-pin update | All definition-of-done rows pass on the matched release stack with comparable-or-better median/P95. |
 
-Every behavior-changing Container or Containerization slice requires a matched issue and pull-request handoff document, exact revision update in [`Tools/release/stack-refs.json`](../Tools/release/stack-refs.json), package-resolution consistency, and green stock-Apple comparison lanes where the repository requires them.
+Every behavior-changing Container or Containerization slice requires a matched issue and pull-request handoff document, exact revision update in [`Tools/release/stack-refs.json`](../../Tools/release/stack-refs.json), package-resolution consistency, and green stock-Apple comparison lanes where the repository requires them.
 
 ## Required Test and Evidence Matrix
 
@@ -1919,4 +1919,4 @@ No field may be described as supported solely because it parses, renders, is pas
 - [Apple Container documentation](https://apple.github.io/container/documentation/)
 - [Apple Containerization mount documentation](https://apple.github.io/containerization/documentation/containerization/mount/)
 - [Apple Containerization Unix socket documentation](https://apple.github.io/containerization/documentation/containerization/unixsocketconfiguration/)
-- [Current macOS parity and performance review](reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md)
+- [Current macOS parity and performance review](../reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md)

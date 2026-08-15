@@ -345,10 +345,10 @@ class CodeQLLocalTests(unittest.TestCase):
                 text,
                 str(documentation.relative_to(repository_root)),
             )
-        build_documentation = (repository_root / "BUILD.md").read_text(
+        build_documentation = (repository_root / "docs/guides/BUILD.md").read_text(
             encoding="utf-8"
         )
-        contributing = (repository_root / "CONTRIBUTING.md").read_text(
+        contributing = (repository_root / "docs/CONTRIBUTING.md").read_text(
             encoding="utf-8"
         )
         for documentation in (build_documentation, contributing):

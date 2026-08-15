@@ -1,6 +1,6 @@
 # Parity Slice Ledger
 
-This ledger is the durable, compact record for the one active Container-family vertical contract. It is not a capability claim or a second status register: [STATUS.md](../../STATUS.md) remains the single gap-only programme projection. A contract becomes `Verified` only after its stated executable acceptance evidence and a clean checkpoint exist; incomplete work is `Implemented`, `Blocked`, or `Handed off`.
+This ledger is the durable, compact evidence record for one active Container-family vertical contract. It is not a capability claim or a second backlog: [STATUS.md](../project/STATUS.md) describes current stable functionality, while [BACKLOG.md](../project/BACKLOG.md) and the linked GitHub hierarchy own planned parity work. A contract becomes `Verified` only after its stated executable acceptance evidence and a clean checkpoint exist; incomplete work is `Implemented`, `Blocked`, or `Handed off`.
 
 ## KERNEL-ARCHIVE-FRESH-RUNTIME-01
 

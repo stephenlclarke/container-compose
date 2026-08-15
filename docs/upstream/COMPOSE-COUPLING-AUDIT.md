@@ -59,7 +59,7 @@ contracts:
 - External configs now use the Compose-owned filesystem reader, rooted at `CONTAINER_COMPOSE_CONFIG_DIRECTORY` or `~/.config/container-compose/configs`.
 - External secrets now use the caller's Keychain generic-password item, service `com.apple.container-compose`, through the Compose-owned reader.
 - The config/secret reader contracts remain injectable `ComposeRuntimeSPI` interfaces, so another runtime provider can replace the local backends without changing orchestration.
-- The six superseded config/secret handoff and tracking documents were removed. Provisioning and security semantics are documented in [External Compose Resources](../../external-resources.md).
+- The six superseded config/secret handoff and tracking documents were removed. Provisioning and security semantics are documented in [External Compose Resources](../guides/external-resources.md).
 
 The remaining runtime-composition candidates are deliberately retained:
 
@@ -80,7 +80,7 @@ Stock Apple and stale fork builds report the exact missing identifiers before a
 runtime command starts; a matched or forward-compatible fork reports the
 versioned contract deterministically. The schema, identifiers, ownership, and
 change procedure are documented in
-[Runtime Capability Contract](../runtime-capabilities.md).
+[Runtime Capability Contract](../architecture/runtime-capabilities.md).
 
 The complete refreshed classification contains 310 support-maintenance
 commits, 105 generic runtime primitives, 21 temporary upstream ports, and four

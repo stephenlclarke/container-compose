@@ -17,7 +17,7 @@ upstream with minimal reshaping.
 Use pull requests for all human-authored changes. The sole automation exception
 is the deterministic `container` package-pin commit published by the
 release helper under the allowlist, fast-forward, local-check, and assembled-stack
-gates in [BUILD.md](BUILD.md); it is not a feature-delivery or checkpoint path.
+gates in [BUILD.md](guides/BUILD.md); it is not a feature-delivery or checkpoint path.
 
 1. Fork the repository or create a topic branch from `main`.
 2. Keep each pull request focused on one bug fix, feature, or documentation
@@ -29,14 +29,15 @@ gates in [BUILD.md](BUILD.md); it is not a feature-delivery or checkpoint path.
 5. Add or update tests for behavior changes.
 6. Update documentation when behavior, commands, installation, or developer
    workflow changes.
-7. Update [STATUS.md](STATUS.md) when current runtime support or blockers
-   change.
-8. Run the validation described in [BUILD.md](BUILD.md) before requesting
+7. Update [STATUS.md](project/STATUS.md) when current runtime support changes. Update
+   [BACKLOG.md](project/BACKLOG.md) and the linked GitHub issue when planned parity
+   work changes.
+8. Run the validation described in [BUILD.md](guides/BUILD.md) before requesting
    review.
 
 Keep a pull request in draft while active or iterative development is in progress. The repository's CodeQL workflow is currently manually disabled at the owner's request, while the stable `CodeQL` branch-protection context remains configured. Draft, ready-for-review, push, and scheduled events do not start CodeQL while that workflow is disabled, and the absence of a check is not a passing result. Keep draft-state work intact; the owner will explicitly direct when CodeQL should be re-enabled.
 
-Source `Tools/ci/codeql-entry.sh` from a Bash or Zsh process containing neither the `GITHUB_TOKEN` nor `GH_TOKEN` shell variable, then use `container_compose_codeql codeql-local` for the supported exact-build Go analysis while the hosted workflow is paused; raw invocation of `codeql-make.py` or its underlying Make goal is not a supported security boundary. A shell can expand an inherited xtrace prompt before any function body starts, so the supported caller has tracing disabled and contains no credential variable. The entry records and disables incoming tracing, then rejects an already-traced or credential-bearing caller before it starts Python or reads the keyring. Authenticate `gh` into its keyring before starting the credential-free shell; a real upload obtains that credential through the privately extracted pinned GitHub CLI only after the boundary has disabled tracing and functions and removed the inherited environment. Before resolving any caller-shadowable command, the sourced entry removes every enabled shell function in its subshell, disables tracing, uses explicit shell builtins to unexport the complete inherited environment, re-exports only reviewed goal-specific data, and directly execs isolated absolute Python before the Python launcher starts an explicit absolute Makefile. Native-loader controls and inherited command functions cannot execute through an intermediate helper, and the post-scrub GitHub credential never appears in an argument. The inner recipe and script shebang use isolated reviewed `/usr/bin/python3`; unrelated discovery is lazy and uses absolute system Git, configurable roots/upload identity cross into Python as literal exported values rather than shell-interpolated source, and every Git command ignores global/system configuration and replacement objects while overriding executable local settings such as `core.fsmonitor`. Worktree verification bypasses Git conversion filters by comparing HEAD, index, and raw blob bytes directly, so local filter commands and `.git/info/attributes` do not execute. It caches only reviewed archive bytes, copies and authenticates each selected archive inside a randomized private directory, and keeps the privately extracted CodeQL and official Go tools through the operation. It builds from a temporary detached exact-commit clone through recorded absolute Git, archive, download, GNU Make, and Go tools with a fixed system `PATH` and controlled environment, uses fresh temporary Go module/build caches with checksum-database verification and no VCS fallback, retains commit-keyed SARIF, and fails results without a current reviewed baseline disposition. An authorised maintainer can pass an explicit full remote ref and commit in the environment to the function's `codeql-sarif-upload-dry-run` and then `codeql-sarif-upload` goals. A real upload regenerates the analysis with the verified bundle and authenticates its retained projection against in-memory digests; ignored SARIF and manifest files alone never authorize upload. It binds confirmation to GitHub's unique validated SARIF receipt and matching `sarif_id` analysis, so another same-commit upload cannot satisfy the gate. Credential lookup and authenticated API reads use only the operation-private, archive-pinned official GitHub CLI `2.96.0`, which remains available through receipt confirmation; package-manager paths, caller wrappers, environment tokens, and custom CLI overrides are unsupported. Before token selection, the canonical remote-ref lookup, GitHub CLI keyring read, credential-bearing CodeQL call, and receipt queries all discard caller proxy variables and custom certificate roots and use direct system trust; a network that requires an unreviewed interception proxy therefore fails closed. The uploader records the remote-identity and credential policies separately, does not call the Checks API, and does not run the disabled workflow. GitHub can attach an automatic neutral `CodeQL` service record to uploaded SARIF; neutral is not passed and must not be represented as a hosted-workflow result. See [BUILD.md](BUILD.md#temporary-codeql-pause) for pins, credentials, evidence paths, and commands.
+Source `Tools/ci/codeql-entry.sh` from a Bash or Zsh process containing neither the `GITHUB_TOKEN` nor `GH_TOKEN` shell variable, then use `container_compose_codeql codeql-local` for the supported exact-build Go analysis while the hosted workflow is paused; raw invocation of `codeql-make.py` or its underlying Make goal is not a supported security boundary. A shell can expand an inherited xtrace prompt before any function body starts, so the supported caller has tracing disabled and contains no credential variable. The entry records and disables incoming tracing, then rejects an already-traced or credential-bearing caller before it starts Python or reads the keyring. Authenticate `gh` into its keyring before starting the credential-free shell; a real upload obtains that credential through the privately extracted pinned GitHub CLI only after the boundary has disabled tracing and functions and removed the inherited environment. Before resolving any caller-shadowable command, the sourced entry removes every enabled shell function in its subshell, disables tracing, uses explicit shell builtins to unexport the complete inherited environment, re-exports only reviewed goal-specific data, and directly execs isolated absolute Python before the Python launcher starts an explicit absolute Makefile. Native-loader controls and inherited command functions cannot execute through an intermediate helper, and the post-scrub GitHub credential never appears in an argument. The inner recipe and script shebang use isolated reviewed `/usr/bin/python3`; unrelated discovery is lazy and uses absolute system Git, configurable roots/upload identity cross into Python as literal exported values rather than shell-interpolated source, and every Git command ignores global/system configuration and replacement objects while overriding executable local settings such as `core.fsmonitor`. Worktree verification bypasses Git conversion filters by comparing HEAD, index, and raw blob bytes directly, so local filter commands and `.git/info/attributes` do not execute. It caches only reviewed archive bytes, copies and authenticates each selected archive inside a randomized private directory, and keeps the privately extracted CodeQL and official Go tools through the operation. It builds from a temporary detached exact-commit clone through recorded absolute Git, archive, download, GNU Make, and Go tools with a fixed system `PATH` and controlled environment, uses fresh temporary Go module/build caches with checksum-database verification and no VCS fallback, retains commit-keyed SARIF, and fails results without a current reviewed baseline disposition. An authorised maintainer can pass an explicit full remote ref and commit in the environment to the function's `codeql-sarif-upload-dry-run` and then `codeql-sarif-upload` goals. A real upload regenerates the analysis with the verified bundle and authenticates its retained projection against in-memory digests; ignored SARIF and manifest files alone never authorize upload. It binds confirmation to GitHub's unique validated SARIF receipt and matching `sarif_id` analysis, so another same-commit upload cannot satisfy the gate. Credential lookup and authenticated API reads use only the operation-private, archive-pinned official GitHub CLI `2.96.0`, which remains available through receipt confirmation; package-manager paths, caller wrappers, environment tokens, and custom CLI overrides are unsupported. Before token selection, the canonical remote-ref lookup, GitHub CLI keyring read, credential-bearing CodeQL call, and receipt queries all discard caller proxy variables and custom certificate roots and use direct system trust; a network that requires an unreviewed interception proxy therefore fails closed. The uploader records the remote-identity and credential policies separately, does not call the Checks API, and does not run the disabled workflow. GitHub can attach an automatic neutral `CodeQL` service record to uploaded SARIF; neutral is not passed and must not be represented as a hosted-workflow result. See [BUILD.md](guides/BUILD.md#temporary-codeql-pause) for pins, credentials, evidence paths, and commands.
 
 The supported caller is trap-free and has Bash `functrace`/`errtrace` plus shell xtrace disabled. The entry clears inherited Bash `DEBUG`, `RETURN`, and `ERR` handlers, disables their inheritance modes, and rejects their recorded flags before starting any executable. It captures and atomically disables Zsh `TRAP*` functions with the enabled-function table, then rejects that caller too. A shell trap that can run before the function body is unsupported ambient code, not an input the credential boundary can safely sanitize.
 
@@ -53,14 +54,13 @@ discussion.
 
 ## Maintainer Development Cycle
 
-The [Container-family parity development cycle](docs/container-family-development-cycle.md) is the detailed cross-repository process for oracle-first vertical slices, one coherent critical-path implementation stream, focused feedback during development, one immutable full-gate checkpoint, full review convergence, self-hosted MBP jobs, main checkpoints, quality analysis, upstream surveillance, and transactional cleanup. This document remains authoritative for general contribution, commit, pull-request, and worktree rules.
+The [Container-family parity development cycle](architecture/container-family-development-cycle.md) is the detailed cross-repository process for oracle-first vertical slices, one coherent critical-path implementation stream, focused feedback during development, one immutable full-gate checkpoint, full review convergence, self-hosted MBP jobs, main checkpoints, quality analysis, upstream surveillance, and transactional cleanup. This document remains authoritative for general contribution, commit, pull-request, and worktree rules.
 
-When a parity slice changes support or evidence, update [STATUS.md](STATUS.md)
-in the same change. Keep that ledger gap-only: state what is not yet 100%
-compatible, why it is not compatible, and the concrete implementation or
-evidence needed to close it. Put exact accepted heads and detailed validation in
-the affected design or handoff record; do not duplicate the whole programme in
-a second progress register.
+When a parity slice changes released support, update [STATUS.md](project/STATUS.md) in
+the same change. Keep current functionality readable and move future work to
+[BACKLOG.md](project/BACKLOG.md) and the GitHub issue hierarchy. Put exact accepted
+heads and detailed validation in the affected design or handoff record; do not
+duplicate live issue state in another progress register.
 
 For stephenlclarke-owned stack work, keep `main` as the current integration
 branch in `container-builder-shim`, `containerization`, `container`,
@@ -71,7 +71,7 @@ upstream provenance stay attached to a stable diff before the result lands on
 `main`.
 
 Most contributions do not run release automation. Maintainers use the single
-current procedure in [BUILD.md](BUILD.md) after a validated slice lands on
+current procedure in [BUILD.md](guides/BUILD.md) after a validated slice lands on
 `main`.
 
 For a local Apple-shaped handoff, keep the proposed change title and body clear enough to stand alone as a final change description. Use imperative wording, describe what changed, and include the reason. The parity programme does not submit, refresh, or comment on Apple issues, discussions, branches, or pull requests.
@@ -166,7 +166,7 @@ normalizer boundary.
 
 Coverage must stay above the project threshold. New fixes should not drop
 coverage below 80 percent for the affected area, and the repository gate uses
-the stricter threshold documented in [BUILD.md](BUILD.md).
+the stricter threshold documented in [BUILD.md](guides/BUILD.md).
 
 ## Upstream Adoption Friction
 
@@ -175,10 +175,10 @@ Keep every contribution easy for apple/container maintainers to assess:
 - Prefer direct [`apple/container`](https://github.com/apple/container) APIs
   where available and keep CLI compatibility fallbacks explicit.
 - Preserve the Swift orchestration and Go `compose-go` normalization boundary
-  described in [DESIGN.md](DESIGN.md).
-- Keep unsupported Compose surfaces explicit in [STATUS.md](STATUS.md)
-  or the relevant `docs/upstream/` handoff, separating plugin gaps from
-  apple/container runtime primitive gaps.
+  described in [DESIGN.md](project/DESIGN.md).
+- Keep current limitations explicit in [STATUS.md](project/STATUS.md), planned parity
+  work in [BACKLOG.md](project/BACKLOG.md), and Apple-shaped work in the relevant
+  `upstream/` handoff.
 - Follow the Apache License, Version 2.0, and keep license headers current with
   `make update-licenses`.
 - Use `make fmt`, `make check`, and `make pre-commit` so formatting and license
@@ -193,8 +193,9 @@ Keep every contribution easy for apple/container maintainers to assess:
 - Keep orchestration logic in Swift and Compose normalization in the Go helper.
 - Prefer the existing project structure over new abstractions.
 - Keep unsupported Compose features explicit and actionable.
-- Keep [STATUS.md](STATUS.md) aligned with current parity surfaces, runtime
-  blockers, and validation state.
+- Keep [STATUS.md](project/STATUS.md) aligned with current functionality and
+  validation. Keep [BACKLOG.md](project/BACKLOG.md) aligned with the GitHub parity
+  hierarchy.
 - Run `make check` for fast lint and license-header validation before larger
   test runs.
 - Use deterministic names, labels, and output ordering where possible.

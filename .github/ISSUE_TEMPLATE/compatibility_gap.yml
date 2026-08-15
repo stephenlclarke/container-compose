@@ -14,9 +14,9 @@
 # limitations under the License.
 #===----------------------------------------------------------------------===#
 
-name: Compose compatibility gap
-description: Track a Docker Compose v2 surface that is missing or incomplete.
-title: "[Compatibility]: "
+name: Compose parity gap
+description: Track planned work needed for Docker Compose v2 parity.
+title: "[Parity] "
 type: "Feature"
 body:
   - type: markdown
@@ -67,9 +67,9 @@ body:
     id: terms
     attributes:
       label: Code of Conduct and documentation
-      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/stephenlclarke/container-compose/blob/main/CODE_OF_CONDUCT.md).
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/stephenlclarke/container-compose/blob/main/docs/CODE_OF_CONDUCT.md).
       options:
         - label: I agree to follow this project's Code of Conduct
           required: true
-        - label: I checked STATUS.md and the relevant command help.
+        - label: I checked docs/project/BACKLOG.md, the 1.0 root issue, and the relevant command help.
           required: true

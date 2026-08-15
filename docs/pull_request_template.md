@@ -23,7 +23,7 @@
 
 ## container-compose Checks
 
-- [ ] I updated `STATUS.md`, `BRANCHES.md`, or `docs/upstream/` for support, release, or runtime primitive changes, or no update is needed.
+- [ ] I updated `docs/project/STATUS.md`, `docs/project/BACKLOG.md`, or `docs/upstream/` for current support, planned parity, release, or runtime primitive changes, or no update is needed.
 - [ ] This pull request is focused on one issue or one coherent change.
 - [ ] Runtime, release, security, upstream-import, or cross-repository stack changes have review notes and CI attached to this pull request.
 - [ ] I used Conventional Commits in commit messages and the pull request title.

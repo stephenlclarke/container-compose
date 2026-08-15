@@ -2,13 +2,13 @@
 
 This guide covers source builds, validation, parity checks, package creation,
 and the deterministic release procedure. Target-machine installation lives in
-[INSTALL.md](INSTALL.md), and runtime ownership lives in [DESIGN.md](DESIGN.md).
+[INSTALL.md](INSTALL.md), and runtime ownership lives in [DESIGN.md](../project/DESIGN.md).
 
 ## Stack Roles And Branches
 
 `container-compose` coordinates releases for the matched `stephenlclarke` stack. `container` supplies the runtime and CLI, `containerization` supplies its Swift runtime package, `container-builder-shim` supplies the pinned builder image, and `homebrew-tap` publishes the paired formulae.
 
-The [Container-family parity development cycle](docs/container-family-development-cycle.md) defines how cross-repository vertical slices are selected, reviewed, validated, checkpointed, handed off, and cleaned up. This guide remains authoritative for exact build, test, runner, package, and release commands.
+The [Container-family parity development cycle](../architecture/container-family-development-cycle.md) defines how cross-repository vertical slices are selected, reviewed, validated, checkpointed, handed off, and cleaned up. This guide remains authoritative for exact build, test, runner, package, and release commands.
 
 `main` is the releasable integration branch in each repository. Use short-lived review branches for every human-authored change and land the sibling repositories through their own pull requests before promoting Compose. The sole pre-authorised automation exception is the release helper's fast-forwarded, release-generated `container` package-pin commit, required because Compose cannot resolve an unpublished immutable runtime revision. The helper signs a commit it creates, accepts exactly one commit on reviewed `container` main, requires the generated subject, permits only `Package.swift` and `Package.resolved`, runs that repository's `make check test`, verifies the remote exact head, and then subjects the assembled revisions to the complete local release gate before Compose promotion. It aborts on any other diff, ancestry, or publication result. Recovery can currently retain a pre-existing matching local candidate without verifying its signature; the operator must verify its trusted signature/provenance before execution, and the development-cycle enabler must make that check fail closed. No feature, hand-written sibling source branch, ordinary checkpoint, or incomplete handoff uses this exception. Do not create long-lived integration or packaging branches.
 
@@ -190,7 +190,7 @@ counts from the Swift Testing log.
 
 ### Isolated macOS Runtime Ownership
 
-The default Container installation retains its stock launchd/Mach names, but an explicit validated `CONTAINER_SERVICE_NAMESPACE` now gives a candidate runtime its own API, Machine API, images, runtime, network, Engine, and public-socket ownership. `scripts/run-with-container-runtime.sh` derives a bounded namespace from its marker-protected candidate root, UID, and unique run identity, verifies the namespace-derived socket before it starts services, and stops only that namespace. Reusing one namespace after rebuilding the executable is unsupported. [RUNTIME-ISOLATED-PUBLIC-SOCKET-01](docs/parity/handoffs/RUNTIME-ISOLATED-PUBLIC-SOCKET-01.md) verifies one source-pinned public `docker version` lifecycle with the user-owned `devcontainer-engine` healthy before and after candidate cleanup.
+The default Container installation retains its stock launchd/Mach names, but an explicit validated `CONTAINER_SERVICE_NAMESPACE` now gives a candidate runtime its own API, Machine API, images, runtime, network, Engine, and public-socket ownership. `scripts/run-with-container-runtime.sh` derives a bounded namespace from its marker-protected candidate root, UID, and unique run identity, verifies the namespace-derived socket before it starts services, and stops only that namespace. Reusing one namespace after rebuilding the executable is unsupported. [RUNTIME-ISOLATED-PUBLIC-SOCKET-01](../parity/handoffs/RUNTIME-ISOLATED-PUBLIC-SOCKET-01.md) verifies one source-pinned public `docker version` lifecycle with the user-owned `devcontainer-engine` healthy before and after candidate cleanup.
 
 The default lock is `/tmp/container-compose-runtime-${UID}.lock`; `CONTAINER_RUNTIME_LOCK_FILE` changes it and `CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS` changes the default 10,800-second wait. The helper uses `lockf` on macOS and the equivalent `flock` file-descriptor lock in Linux source-check runners. Every cooperating workflow on the host must use the same lock path. The lock remains required for legacy/default-namespace callers and controlled release workflows; it is no longer the only safety boundary for a correctly namespaced candidate. A unique per-job lock still defeats serialization for callers that share the default namespace.
 
@@ -457,15 +457,15 @@ Run every maintained Docker Compose v2 comparison in deterministic sequence:
 make docker-compose-parity
 ```
 
-The aggregate target requires Docker Compose `5.3.1`, pins Docker's e2e fixtures to commit `f32009d4a2c687dd405398cc7975d12dccaf8dff`, builds the sibling runtime when available, starts it with isolated state, builds `compose`, runs each target in `DOCKER_COMPOSE_PARITY_TARGETS`, and stops the runtime on exit. The reference scripts establish Docker behavior; the isolated runtime suite and the Compose side of each comparison establish local behavior. [STATUS.md](STATUS.md) owns the support ledger.
+The aggregate target requires Docker Compose `5.3.1`, pins Docker's e2e fixtures to commit `f32009d4a2c687dd405398cc7975d12dccaf8dff`, builds the sibling runtime when available, starts it with isolated state, builds `compose`, runs each target in `DOCKER_COMPOSE_PARITY_TARGETS`, and stops the runtime on exit. The reference scripts establish Docker behavior; the isolated runtime suite and the Compose side of each comparison establish local behavior. [STATUS.md](../project/STATUS.md) describes current support and [BACKLOG.md](../project/BACKLOG.md) owns the human parity roadmap.
 
-The latest controlled run on 30 July 2026 completed all 62 maintained targets without interruption in 1,152.03s against Docker Compose 5.3.1 and Docker Engine 29.2.1. Its embedded three-repetition warm-image bridge comparator measured Docker/container-compose `up` medians of 0.153s/1.228s (8.01×) and `down` medians of 10.178s/5.916s (0.58×). Named-network service discovery and links passed their live behavioral and timing oracles; service-discovery startup improved 13.0% from its pre-optimization candidate baseline but remained 8.81× slower than Docker. Exact revisions, host, warnings, timing tables, and evidence paths are recorded in [STATUS.md](STATUS.md#retained-controlled-full-suite-evidence). The green 10× bridge guard does not make the slower startup comparable to Docker or complete the broader performance matrix.
+The latest controlled run on 30 July 2026 completed all 62 maintained targets without interruption in 1,152.03s against Docker Compose 5.3.1 and Docker Engine 29.2.1. Its embedded three-repetition warm-image bridge comparator measured Docker/container-compose `up` medians of 0.153s/1.228s (8.01×) and `down` medians of 10.178s/5.916s (0.58×). Named-network service discovery and links passed their live behavioral and timing oracles; service-discovery startup improved 13.0% from its pre-optimization candidate baseline but remained 8.81× slower than Docker. Exact revisions, host, warnings, timing tables, and evidence paths are retained in the [macOS Compose parity and performance review](../reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md). The green 10× bridge guard does not make the slower startup comparable to Docker or complete the broader performance matrix.
 
-This functional suite is part of the project's [macOS Docker Compose parity
-and performance goal](STATUS.md#project-goal-macos-docker-compose-parity-and-performance),
-not a substitute for performance evidence. Changes on a measured execution
-path must also retain same-host Docker Compose benchmark evidence for the
-representative workloads and reporting requirements in that goal.
+This functional suite is part of the project's macOS Docker Compose parity and
+performance goal, not a substitute for performance evidence. The remaining
+performance contract is in [BACKLOG.md](../project/BACKLOG.md#comparable-or-better-performance).
+Changes on a measured execution path must also retain same-host Docker Compose
+benchmark evidence for its representative workloads.
 
 ### Lifecycle Performance Matrix
 
@@ -482,7 +482,7 @@ and a median/P95 Markdown matrix under `PARITY_EVIDENCE_DIR` (or its default
 performance-matrix path). `PARITY_REPETITIONS` defaults to five; do not use a
 debug candidate or fewer samples as release-grade performance evidence. Logs,
 `develop.watch` sync, and build-context transfer still require their own
-matrix lanes; see [the remaining-gap register](STATUS.md#what-prevents-100-parity).
+matrix lanes; see the [performance backlog](../project/BACKLOG.md#comparable-or-better-performance).
 
 Run a focused target directly while iterating:
 
@@ -497,7 +497,7 @@ Run a focused target directly while iterating:
 
 The CLI surface target writes the exact compared versions and differences to
 `.build/parity/compose-cli-surface.md`; documented intentional differences live
-in [docs/parity/compose-cli-surface.md](docs/parity/compose-cli-surface.md) and
+in [docs/parity/compose-cli-surface.md](../parity/compose-cli-surface.md) and
 `Tools/parity/compose-cli-surface.allowlist`.
 
 `oci://` Compose project artifact loading, `compose publish --dry-run`, the

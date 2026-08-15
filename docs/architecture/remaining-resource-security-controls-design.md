@@ -12,7 +12,7 @@
 
 ## Goal
 
-Close the remaining resource and security controls row in [STATUS.md](../STATUS.md) without metadata-only success, invented cgroup-v1 behavior on a cgroup-v2 guest, a mutable security-profile dependency, or a storage option that silently changes meaning. Completion means that Container Compose:
+Deliver the [remaining resource and security parity contract](https://github.com/stephenlclarke/container-compose/issues/273) without metadata-only success, invented cgroup-v1 behavior on a cgroup-v2 guest, a mutable security-profile dependency, or a storage option that silently changes meaning. Completion means that Container Compose:
 
 - preserves realtime CPU, memory swappiness, OOM-kill, user-namespace, profile-based security, writable-cgroup, and rootfs storage requests losslessly through `config`, hashing, create, inspect, restart, and recreation;
 - distinguishes requested, effective, defaulted, and capability-discarded values so a Docker warning or no-op is not presented as enforcement;
@@ -60,11 +60,11 @@ This is a cross-stack gap. The normalizer already retains most source values, bu
 
 | Layer | Current boundary | Consequence |
 | --- | --- | --- |
-| Compose normalization | [`main.go`](../Tools/compose-normalizer/main.go) preserves CPU realtime, memory swappiness, OOM-kill, `security_opt`, `storage_opt`, and `userns_mode`. | Source acceptance and `config` output exist, but they do not prove runtime behavior. |
-| Compose validation | [`unsupportedCPUResourceFields`](../Sources/ComposeCore/ComposeOrchestratorRuntimeSupport.swift) rejects realtime CPU; the same file rejects swappiness, OOM-kill disable, and non-empty storage options with generic gap messages. | Docker capability warnings/no-ops are converted into unconditional Compose errors at the wrong layer and phase. |
-| Security parsing | [`ComposeOrchestratorRuntimeSecurityOptions.swift`](../Sources/ComposeCore/ComposeOrchestratorRuntimeSecurityOptions.swift) maps no-new-privileges and system paths, consumes unconfined seccomp/AppArmor and `label=disable`, and rejects actual profiles. | A custom profile cannot be applied; an unsupported-kernel no-op cannot be distinguished from a profile silently ignored by Compose. |
-| Typed create plan | [`ContainerServiceCreateRuntime`](../Sources/ComposeCore/ContainerServiceCreateAdapter.swift) carries block I/O, CPU shares, cgroup parent, memory reservation and swap, but not a complete resource, namespace, security, mapping, or storage policy. | Most controls still rely on Docker-shaped CLI strings and cannot preserve requested/effective distinctions. |
-| Process model | [`ComposeProcessConfiguration`](../Sources/ComposeRuntimeSPI/ComposeRuntimeCreateModels.swift) stores `privileged`, no-new-privileges, OOM score and rlimits. | Container-wide device, namespace, profile, rootfs and cgroup policy is incorrectly compressed into process fields or omitted. |
+| Compose normalization | [`main.go`](../../Tools/compose-normalizer/main.go) preserves CPU realtime, memory swappiness, OOM-kill, `security_opt`, `storage_opt`, and `userns_mode`. | Source acceptance and `config` output exist, but they do not prove runtime behavior. |
+| Compose validation | [`unsupportedCPUResourceFields`](../../Sources/ComposeCore/ComposeOrchestratorRuntimeSupport.swift) rejects realtime CPU; the same file rejects swappiness, OOM-kill disable, and non-empty storage options with generic gap messages. | Docker capability warnings/no-ops are converted into unconditional Compose errors at the wrong layer and phase. |
+| Security parsing | [`ComposeOrchestratorRuntimeSecurityOptions.swift`](../../Sources/ComposeCore/ComposeOrchestratorRuntimeSecurityOptions.swift) maps no-new-privileges and system paths, consumes unconfined seccomp/AppArmor and `label=disable`, and rejects actual profiles. | A custom profile cannot be applied; an unsupported-kernel no-op cannot be distinguished from a profile silently ignored by Compose. |
+| Typed create plan | [`ContainerServiceCreateRuntime`](../../Sources/ComposeCore/ContainerServiceCreateAdapter.swift) carries block I/O, CPU shares, cgroup parent, memory reservation and swap, but not a complete resource, namespace, security, mapping, or storage policy. | Most controls still rely on Docker-shaped CLI strings and cannot preserve requested/effective distinctions. |
+| Process model | [`ComposeProcessConfiguration`](../../Sources/ComposeRuntimeSPI/ComposeRuntimeCreateModels.swift) stores `privileged`, no-new-privileges, OOM score and rlimits. | Container-wide device, namespace, profile, rootfs and cgroup policy is incorrectly compressed into process fields or omitted. |
 | Container resources | The pinned [`ContainerConfiguration.Resources`](https://github.com/stephenlclarke/container/blob/88460ab2ab0ca2f3fa9f91b2911b3b77647596c1/Sources/ContainerResource/Container/ContainerConfiguration.swift#L244-L273) combines VM CPU/memory allocation with workload quota and has an unwired `storage` value. | A shared Linux engine cannot apply Docker cgroups accurately while VM capacity and container limits are the same field. |
 | Container user namespace | The pinned Container configuration has only `privateUserNamespace: Bool`; Containerization maps it to identity ranges `0 0 4294967295`. | There is no engine remap policy, host exemption, subordinate range validation, ownership projection, or truthful Docker inspection. |
 | Container privilege | Privileged currently restores all capabilities and clears default masked/read-only paths. | It does not yet coordinate security profiles, writable cgroups, `/sys`, user mappings, or full device policy; those dependencies are addressed by the coherent isolation design. |
@@ -74,7 +74,7 @@ This is a cross-stack gap. The normalizer already retains most source values, bu
 | Capability surface | Runtime capability negotiation is feature-ID based but has no per-controller kernel/security/storage fingerprint or warning disposition. | Compose cannot tell an applied value from a valid Docker discard and direct Engine clients cannot receive equivalent warnings. |
 | Runtime topology | Production Container creates one VM per container; the coherent closure designs require a per-user shared Linux sandbox with per-workload namespaces/cgroups. | VM CPU/memory fields must be split from workload resource policy before these controls can be implemented without changing meaning. |
 
-The checked-in matched refs remain the source of truth in [`Tools/release/stack-refs.json`](../Tools/release/stack-refs.json). Current sibling repository heads are not evidence for this design unless those exact refs are updated and the entire stack is revalidated.
+The checked-in matched refs remain the source of truth in [`Tools/release/stack-refs.json`](../../Tools/release/stack-refs.json). Current sibling repository heads are not evidence for this design unless those exact refs are updated and the entire stack is revalidated.
 
 ## Docker Reference Contract
 
@@ -531,7 +531,7 @@ Add independent manifest capabilities so clients fail only for features they use
 - `io.github.stephenlclarke.container.rootfs-storage-options.v1` for provider-resolved storage options; and
 - the shared Linux sandbox capability defined by [the coherent design](coherent-container-family-parity-design.md).
 
-Update [`runtime-capabilities.json`](../Tools/release/runtime-capabilities.json), Container's manifest, stack consistency checks and capability documentation together. A single broad “resources supported” flag is insufficient.
+Update [`runtime-capabilities.json`](../../Tools/release/runtime-capabilities.json), Container's manifest, stack consistency checks and capability documentation together. A single broad “resources supported” flag is insufficient.
 
 ## Validation and Resolution Phases
 
@@ -2469,7 +2469,7 @@ Behavioral parity is judged separately from performance. The repository's 10-tim
 | <a id="security-wp-10"></a>`SECURITY-WP-10` | `devcontainer`, gateway, and `container` | Prepare and validate this controller's exact contributions to `resourcesSecurityProfilesAndIDMaps` and `rootfsConfigsAndSecrets`; sign only the frozen rootfs disposition/descriptor; keep mutable transfer/protected state token-private; leave every generic operation/key/retry/outcome/tombstone/finaliser solely in `identityLifecycleEvents`; promote only during reconciliation; and admit the ordinary writer only after signed Complete. | Canonical ownership, immutable-payload rejection, generic-operation reference/collision, staged import, committed/reconciling/Complete crash, ready-with-no-activation promotion, cross-part/domain reference, and no-independent-tombstone tests pass. |
 | <a id="security-wp-11"></a>`SECURITY-WP-11` | All repositories | Migrate legacy state, run security/performance gates, update docs/capabilities and move all matched pins together. | Full DoD matrix passes on the published exact stack. |
 
-Each behavior-changing Container or Containerization slice requires a matched issue and pull-request handoff, exact revision updates in [`stack-refs.json`](../Tools/release/stack-refs.json), Package resolution consistency and green stock-Apple comparison lanes where applicable.
+Each behavior-changing Container or Containerization slice requires a matched issue and pull-request handoff, exact revision updates in [`stack-refs.json`](../../Tools/release/stack-refs.json), Package resolution consistency and green stock-Apple comparison lanes where applicable.
 
 ## Required Test and Evidence Matrix
 

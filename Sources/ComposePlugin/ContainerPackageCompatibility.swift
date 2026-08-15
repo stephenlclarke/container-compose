@@ -73,7 +73,7 @@ enum ContainerPackageCompatibility {
   private static let requiredContainerizationSource = "stephenlclarke/containerization"
   private static let defaultInstallGuideURLComponents = [
     "https:", "", "github.com", "stephenlclarke", "container-compose", "blob", "main",
-    "INSTALL.md",
+    "docs", "guides", "INSTALL.md",
   ]
   private static let defaultEnvExecutableComponents = ["", "usr", "bin", "env"]
 

@@ -16,7 +16,7 @@
 
 name: Feature request
 description: File a request for a feature or enhancement.
-title: "[Request]: "
+title: "[Request] "
 type: "Feature"
 body:
   - type: markdown
@@ -45,7 +45,7 @@ body:
     id: terms
     attributes:
       label: Code of Conduct
-      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/stephenlclarke/container-compose/blob/main/CODE_OF_CONDUCT.md).
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/stephenlclarke/container-compose/blob/main/docs/CODE_OF_CONDUCT.md).
       options:
         - label: I agree to follow this project's Code of Conduct
           required: true
