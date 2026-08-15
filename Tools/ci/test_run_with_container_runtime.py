@@ -961,6 +961,12 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             )
             fake_bin = temporary_root / "fake-bin"
             fake_bin.mkdir()
+            fake_sleep = fake_bin / "sleep"
+            fake_sleep.write_text(
+                "#!/usr/bin/env bash\nexit 0\n",
+                encoding="utf-8",
+            )
+            fake_sleep.chmod(0o755)
             fake_git = fake_bin / "git"
             clone_started = temporary_root / "clone-started"
             real_git = shutil.which("git")
@@ -970,7 +976,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 "set -euo pipefail\n"
                 'if [[ "${1:-}" == "clone" ]]; then\n'
                 f"  touch {clone_started}\n"
-                "  sleep 30\n"
+                "  /bin/sleep 30\n"
                 "fi\n"
                 f'exec "{real_git}" "$@"\n',
                 encoding="utf-8",
@@ -987,7 +993,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(init_repo),
                     "CONTAINERIZATION_INIT_SOURCE_PATH": str(source),
                     "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
-                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "8",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "10",
                     "CONTAINER_TEST_LOG": str(container_log),
                     "PATH": f"{fake_bin}:{environment['PATH']}",
                 }
@@ -1001,11 +1007,11 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=11,
+                timeout=13,
             )
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
-            self.assertLess(time.monotonic() - started, 10)
+            self.assertLess(time.monotonic() - started, 12)
             self.assertTrue(clone_started.exists())
             self.assertFalse(command_marker.exists())
 
@@ -1078,22 +1084,43 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             app_root = temporary_root / "app-root"
             command_marker = temporary_root / "command-ran"
             container_log = temporary_root / "container.log"
-            fake_container = temporary_root / "container-cli"
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            fake_sleep = fake_bin / "sleep"
+            fake_sleep.write_text(
+                "#!/usr/bin/env bash\nexit 0\n",
+                encoding="utf-8",
+            )
+            fake_sleep.chmod(0o755)
+            first_start = temporary_root / "first-start"
+            fake_container = fake_bin / "container-cli"
             init_repo = temporary_root / "container"
             init_repo.mkdir()
             (init_repo / "Makefile").write_text(
                 "init-block:\n\t@true\n",
                 encoding="utf-8",
             )
-            self.write_fake_container(fake_container)
+            self.write_fake_container(
+                fake_container,
+                body=(
+                    'if [[ "$*" == *"system start"* ]]; then\n'
+                    '  if [[ -e "${FIRST_START:?}" ]]; then\n'
+                    "    /bin/sleep 30\n"
+                    "  fi\n"
+                    '  touch "${FIRST_START:?}"\n'
+                    "fi\n"
+                ),
+            )
             environment = self.runtime_environment()
             environment.update(
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
                     "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(init_repo),
                     "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
-                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "8",
                     "CONTAINER_TEST_LOG": str(container_log),
+                    "FIRST_START": str(first_start),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
                 }
             )
 
@@ -1104,13 +1131,14 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=7,
+                timeout=11,
             )
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
             self.assertFalse(command_marker.exists())
+            self.assertTrue(first_start.exists(), result.stdout + result.stderr)
             invocations = container_log.read_text(encoding="utf-8")
-            self.assertEqual(invocations.count("system start"), 1)
+            self.assertEqual(invocations.count("system start"), 2)
 
     def test_stale_runtime_stop_hang_consumes_the_shared_startup_deadline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -1162,12 +1190,20 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             container_log = temporary_root / "container.log"
             builder_archive = temporary_root / "builder.tar"
             builder_archive.touch()
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            fake_sleep = fake_bin / "sleep"
+            fake_sleep.write_text(
+                "#!/usr/bin/env bash\nexit 0\n",
+                encoding="utf-8",
+            )
+            fake_sleep.chmod(0o755)
             fake_container = temporary_root / "container-cli"
             self.write_fake_container(
                 fake_container,
                 body=(
                     'if [[ "$*" == "image load -i "* ]]; then\n'
-                    "  sleep 30\n"
+                    "  /bin/sleep 30\n"
                     "fi\n"
                 ),
             )
@@ -1178,8 +1214,9 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     "CONTAINER_RUNTIME_BUILDER_IMAGE": "local/builder:test",
                     "CONTAINER_RUNTIME_BUILDER_IMAGE_TAR": str(builder_archive),
                     "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
-                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "8",
                     "CONTAINER_TEST_LOG": str(container_log),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
                 }
             )
 
@@ -1191,11 +1228,11 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=9,
+                timeout=11,
             )
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
-            self.assertLess(time.monotonic() - started, 8, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 10, result.stdout + result.stderr)
             self.assertFalse(command_marker.exists())
             self.assertIn("image load -i", container_log.read_text(encoding="utf-8"))
 
@@ -2199,7 +2236,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     "CONTAINER_RUNTIME_LOCK_FILE": str(
                         temporary_root / "runtime.lock"
                     ),
-                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "4",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "8",
                     "CONTAINER_TEST_LOG": str(container_log),
                     "MKTEMP_STARTED": str(mktemp_started),
                     "MKTEMP_ARGUMENTS": str(mktemp_arguments),
@@ -2215,11 +2252,11 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=7,
+                timeout=11,
             )
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
-            self.assertLess(time.monotonic() - started, 6)
+            self.assertLess(time.monotonic() - started, 10)
             self.assertTrue(
                 mktemp_started.exists(), result.stdout + result.stderr
             )

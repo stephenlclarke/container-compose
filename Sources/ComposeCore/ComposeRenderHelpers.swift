@@ -412,7 +412,7 @@ func startWaitState(_ container: ComposeContainerSummary) -> ComposeStartWaitSta
     switch container.status.lowercased() {
     case "running":
         return .ready
-    case "created", "creating", "starting", "stopping", "unknown":
+    case "created", "creating", "restarting", "starting", "stopping", "unknown":
         return .pending
     case "stopped":
         return .failed("is stopped")
@@ -813,13 +813,13 @@ func psStatusFilters(statuses: [String], filters: [String]) throws -> Set<String
 /// Validates Compose status values that the current runtime presentation can expose.
 func normalizedRuntimeStatus(_ status: String) throws -> String {
     switch status.lowercased() {
-    case "created", "exited", "paused", "running", "stopping", "unknown":
+    case "created", "dead", "exited", "paused", "removing", "restarting", "running", "stopping", "unknown":
         return status.lowercased()
     // Keep a legacy generic-runtime filter nonmatching. Docker Compose V2
     // accepts it but does not treat it as an alias for `exited`.
     case "stopped":
         return "stopped"
     default:
-        throw ComposeError.unsupported("ps status '\(status)'; current macOS Compose exposes created, exited, paused, running, stopping, and unknown")
+        throw ComposeError.unsupported("ps status '\(status)'; current macOS Compose exposes created, dead, exited, paused, removing, restarting, running, stopping, and unknown")
     }
 }

@@ -221,6 +221,9 @@ public protocol ComposeRuntimeLifecycleManaging: Sendable {
     /// Stops container `id` with the supplied signal and timeout.
     func stopContainer(id: String, signal: String?, timeoutInSeconds: Int?) async throws
 
+    /// Atomically restarts container `id` through the selected authority.
+    func restartContainer(id: String, signal: String?, timeoutInSeconds: Int?) async throws
+
     /// Pauses container `id`.
     func pauseContainer(id: String) async throws
 

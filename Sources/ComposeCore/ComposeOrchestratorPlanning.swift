@@ -82,6 +82,44 @@ public extension ComposeOrchestrator {
         return ordered
     }
 
+    /// Resolves Docker Compose restart propagation and dependency order.
+    internal func restartServices(
+        project: ComposeProject,
+        selected: [String],
+        noDeps: Bool,
+    ) throws -> [ComposeService] {
+        var included = selected.isEmpty ? Set(project.services.keys) : Set(selected)
+        for name in included where project.services[name] == nil {
+            throw ComposeError.invalidProject("unknown service '\(name)'")
+        }
+
+        if !noDeps, !selected.isEmpty {
+            var insertedDependent = true
+            while insertedDependent {
+                insertedDependent = false
+                for service in project.services.values where !included.contains(service.name) {
+                    let restartsAfterIncludedDependency = service.dependsOn?.contains { dependency in
+                        dependency.value.restart && included.contains(dependency.key)
+                    } ?? false
+                    if restartsAfterIncludedDependency {
+                        included.insert(service.name)
+                        insertedDependent = true
+                    }
+                }
+            }
+        }
+
+        let services = try selectedServices(project: project, selected: included.sorted())
+        let restartGraph = services.map { service in
+            var service = service
+            service.dependsOn = service.dependsOn?.filter { dependency in
+                dependency.value.restart && included.contains(dependency.key)
+            }
+            return service
+        }
+        return try Array(serviceDependencyLayers(services: restartGraph).joined())
+    }
+
     /// Groups selected services into dependency-safe runtime layers.
     func serviceDependencyLayers(
         services: [ComposeService],

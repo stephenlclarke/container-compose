@@ -839,8 +839,7 @@ extension ComposeOrchestratorTests {
         #expect(await lifecycleManager.requests == [
             .start(id: "demo-api-1"),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
-            .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
-            .start(id: "demo-api-1"),
+            .restart(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
             .delete(id: "demo-api-1", force: true),
             .kill(id: "demo-api-1", signal: "SIGTERM"),
@@ -1025,35 +1024,42 @@ extension ComposeOrchestratorTests {
             ),
         ])
         #expect(await lifecycleManager.requests == [
-            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
-            .start(id: "demo-api-1"),
+            .restart(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
         ])
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("restart includes dependencies unless no-deps is set")
-    func restartIncludesDependenciesUnlessNoDepsIsSet() async throws {
+    @Test("restart follows restart dependencies unless no-deps is set")
+    func restartFollowsRestartDependenciesUnlessNoDepsIsSet() async throws {
         let lifecycleManager = RecordingContainerLifecycleManager()
         let project = ComposeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                    $0.dependsOn = [
+                        "cache": ComposeDependency(condition: "service_started"),
+                        "db": ComposeDependency(condition: "service_started", restart: true),
+                    ]
                 },
+                "cache": ComposeService(name: "cache", image: "redis"),
                 "db": ComposeService(name: "db", image: "postgres"),
+                "worker": composeService(name: "worker", image: "example/worker") {
+                    $0.dependsOn = [
+                        "api": ComposeDependency(condition: "service_started", restart: true),
+                    ]
+                },
             ]
         )
 
         try await ComposeOrchestrator(
             runner: RecordingRunner(),
             lifecycleManager: lifecycleManager
-        ).restart(project: project, services: ["api"])
+        ).restart(project: project, services: ["db"])
 
         #expect(await lifecycleManager.requests == [
-            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
-            .stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
-            .start(id: "demo-db-1"),
-            .start(id: "demo-api-1"),
+            .restart(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
+            .restart(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .restart(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil),
         ])
 
         let noDepsLifecycleManager = RecordingContainerLifecycleManager()
@@ -1061,14 +1067,61 @@ extension ComposeOrchestratorTests {
             runner: RecordingRunner(),
             lifecycleManager: noDepsLifecycleManager
         ).restart(project: project, options: ComposeRestartOptions {
-            $0.services = ["api"]
+            $0.services = ["db"]
             $0.noDeps = true
         })
 
         #expect(await noDepsLifecycleManager.requests == [
-            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
-            .start(id: "demo-api-1"),
+            .restart(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
         ])
+
+        let selectedNoDepsLifecycleManager = RecordingContainerLifecycleManager()
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            lifecycleManager: selectedNoDepsLifecycleManager
+        ).restart(project: project, options: ComposeRestartOptions {
+            $0.services = ["api", "db"]
+            $0.noDeps = true
+        })
+
+        #expect(await selectedNoDepsLifecycleManager.requests == [
+            .restart(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
+            .restart(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+        ])
+    }
+
+    @Test("restart dry run renders one native restart between lifecycle hooks")
+    func restartDryRunRendersOneNativeRestartBetweenLifecycleHooks() async throws {
+        let emitted = MessageRecorder()
+        let execManager = RecordingContainerExecManager()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.preStop = [ComposeServiceHook(command: ["sh", "-c", "echo stopping"])]
+                    $0.postStart = [ComposeServiceHook(command: ["sh", "-c", "echo started"])]
+                    $0.stopSignal = "SIGUSR1"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.execManager = execManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).restart(project: project, services: ["api"], timeout: 13)
+
+        #expect(emitted.messages == [
+            "+ container exec demo-api-1 sh -c 'echo stopping'",
+            "+ container restart --signal SIGUSR1 --time 13 demo-api-1",
+            "+ container exec demo-api-1 sh -c 'echo started'",
+        ])
+        #expect(await execManager.attachedRequests.isEmpty)
+        #expect(await lifecycleManager.requests.isEmpty)
     }
 
     @Test("lifecycle hooks render exec commands in dry run")
@@ -1546,8 +1599,8 @@ extension ComposeOrchestratorTests {
         ])
     }
 
-    @Test("pre start treats a paused replica as already running")
-    func preStartTreatsPausedReplicaAsAlreadyRunning() async throws {
+    @Test("pre start treats paused and restarting replicas as already running")
+    func preStartTreatsPausedAndRestartingReplicasAsAlreadyRunning() async throws {
         let runner = RecordingRunner()
         let lifecycleManager = RecordingContainerLifecycleManager()
         let service = composeService(name: "api", image: "example/api") {
@@ -1571,6 +1624,15 @@ extension ComposeOrchestratorTests {
                         ),
                         ComposeContainerSummary(
                             id: "demo-api-2",
+                            status: "restarting",
+                            labels: [
+                                composeProjectLabel: "demo",
+                                composeServiceLabel: "api",
+                                composeOneOffLabel: "false",
+                            ]
+                        ),
+                        ComposeContainerSummary(
+                            id: "demo-api-3",
                             status: "stopped",
                             labels: [
                                 composeProjectLabel: "demo",
@@ -1589,7 +1651,7 @@ extension ComposeOrchestratorTests {
 
         #expect(runner.commands.isEmpty)
         #expect(await lifecycleManager.requests == [
-            .start(id: "demo-api-2"),
+            .start(id: "demo-api-3"),
         ])
     }
 
@@ -2968,6 +3030,7 @@ extension ComposeOrchestratorTests {
         try await manager.killContainer(id: "demo-api-1", signal: "SIGTERM")
         try await manager.stopContainer(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 12)
         try await manager.stopContainer(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil)
+        try await manager.restartContainer(id: "demo-api-1", signal: "SIGUSR2", timeoutInSeconds: 9)
         try await manager.pauseContainer(id: "demo-api-1")
         try await manager.unpauseContainer(id: "demo-api-1")
         let exitCode = try await manager.waitContainer(id: "demo-api-1")
@@ -2979,6 +3042,7 @@ extension ComposeOrchestratorTests {
             .kill(id: "demo-api-1", signal: "SIGTERM"),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 12),
             .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil),
+            .restart(id: "demo-api-1", signal: "SIGUSR2", timeoutInSeconds: 9),
             .pause(id: "demo-api-1"),
             .unpause(id: "demo-api-1"),
             .wait(id: "demo-api-1"),
@@ -3026,6 +3090,9 @@ extension ComposeOrchestratorTests {
                 stop: { id, options in
                     try await recorder.stopContainer(id: id, options: options)
                 },
+                restart: { id, options in
+                    try await recorder.restartContainer(id: id, options: options)
+                },
                 pause: { id in
                     try await recorder.pauseContainer(id: id)
                 },
@@ -3047,6 +3114,7 @@ extension ComposeOrchestratorTests {
         try await client.startContainer(id: "demo-api-1")
         try await client.killContainer(id: "demo-api-1", signal: "SIGTERM")
         try await client.stopContainer(id: "demo-api-1", options: stopOptions)
+        try await client.restartContainer(id: "demo-api-1", options: stopOptions)
         try await client.pauseContainer(id: "demo-api-1")
         try await client.unpauseContainer(id: "demo-api-1")
         _ = try await client.waitContainer(id: "demo-api-1")
@@ -3056,6 +3124,7 @@ extension ComposeOrchestratorTests {
             .start(id: "demo-api-1"),
             .kill(id: "demo-api-1", signal: "SIGTERM"),
             .stop(id: "demo-api-1", signal: "SIGQUIT", timeoutInSeconds: 15),
+            .restart(id: "demo-api-1", signal: "SIGQUIT", timeoutInSeconds: 15),
             .pause(id: "demo-api-1"),
             .unpause(id: "demo-api-1"),
             .wait(id: "demo-api-1"),
@@ -3155,7 +3224,24 @@ extension ComposeOrchestratorTests {
                 exitedDate: Date(timeIntervalSince1970: 1_700_000_000)
             ),
         ]
-        let client = RecordingContainerDiscoveryAPIClient(listResponse: snapshots, getResponse: snapshots[1])
+        let workerLifecycle = ContainerLifecycleRecordV2(
+            containerID: String(repeating: "b", count: 64),
+            canonicalName: "demo-worker-1",
+            immutableBundleKey: "demo-worker-1",
+            selectedProviderFingerprint: "runtime",
+            snapshot: ContainerLifecycleSnapshotV2(
+                state: .restarting,
+                running: true,
+                restarting: true,
+                exitCode: 17,
+                finishedAt: Date(timeIntervalSince1970: 1_700_000_000)
+            )
+        )
+        let client = RecordingContainerDiscoveryAPIClient(
+            listResponse: snapshots,
+            getResponse: snapshots[1],
+            lifecycleResponse: [workerLifecycle]
+        )
         let manager = ContainerClientDiscoveryManager(client: client)
 
         let running = try await manager.listContainers(all: false)
@@ -3217,8 +3303,9 @@ extension ComposeOrchestratorTests {
             ),
             state: ComposeContainerSummary.State(health: "healthy")
         ))
-        #expect(all.map(\.status) == ["running", "exited"])
+        #expect(all.map(\.status) == ["running", "restarting"])
         #expect(worker?.id == "demo-worker-1")
+        #expect(worker?.status == "restarting")
         #expect(worker?.platform == "linux/amd64")
         #expect(worker?.exitCode == 17)
         #expect(worker?.exitedDate == Date(timeIntervalSince1970: 1_700_000_000))
@@ -3228,12 +3315,50 @@ extension ComposeOrchestratorTests {
 
         let filters = await client.listFilters
         #expect(filters.count == 2)
-        #expect(filters[0].status == .running)
+        #expect(filters[0].status == nil)
         #expect(filters[0].labels[ResourceLabelKeys.plugin] == ContainerListFilters.exclude("machine"))
         #expect(filters[1].status == nil)
         #expect(filters[1].labels[ResourceLabelKeys.plugin] == ContainerListFilters.exclude("machine"))
         #expect(await client.getRequests == ["demo-worker-1"])
         #expect(await missingClient.getRequests == ["demo-missing-1"])
+    }
+
+    @Test("discovery manager does not revive legacy state cleared by lifecycle authority")
+    func discoveryManagerDoesNotReviveLegacyStateClearedByLifecycleAuthority() async throws {
+        let snapshot = try containerSnapshot(
+            id: "demo-api-1",
+            status: .stopped,
+            imageReference: "example/api:latest",
+            imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            platform: "linux/arm64",
+            startedDate: Date(timeIntervalSince1970: 1_699_999_000),
+            exitCode: 23,
+            exitedDate: Date(timeIntervalSince1970: 1_700_000_000),
+            health: .unhealthy
+        )
+        let lifecycle = ContainerLifecycleRecordV2(
+            containerID: String(repeating: "a", count: 64),
+            canonicalName: "demo-api-1",
+            immutableBundleKey: "demo-api-1",
+            selectedProviderFingerprint: "runtime",
+            snapshot: ContainerLifecycleSnapshotV2(
+                state: .running,
+                running: true
+            )
+        )
+        let manager = ContainerClientDiscoveryManager(
+            client: RecordingContainerDiscoveryAPIClient(
+                getResponse: snapshot,
+                lifecycleResponse: [lifecycle]
+            )
+        )
+
+        let summary = try #require(try await manager.getContainer(id: "demo-api-1"))
+
+        #expect(summary.status == "running")
+        #expect(summary.exitCode == 0)
+        #expect(summary.exitedDate == nil)
+        #expect(summary.health == nil)
     }
 
     @Test("CLI JSON discovery manager maps container list output to compose summaries")

@@ -1493,6 +1493,7 @@ enum ContainerLifecycleRequest: Equatable {
     case start(id: String)
     case kill(id: String, signal: String)
     case stop(id: String, signal: String?, timeoutInSeconds: Int?)
+    case restart(id: String, signal: String?, timeoutInSeconds: Int?)
     case pause(id: String)
     case unpause(id: String)
     case wait(id: String)
@@ -1505,7 +1506,7 @@ extension ContainerLifecycleRequest {
         switch self {
         case let .start(id), let .pause(id), let .unpause(id), let .wait(id), let .get(id):
             id
-        case let .kill(id, _), let .stop(id, _, _), let .delete(id, _):
+        case let .kill(id, _), let .stop(id, _, _), let .restart(id, _, _), let .delete(id, _):
             id
         }
     }
@@ -2125,6 +2126,10 @@ actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
         }
     }
 
+    func restartContainer(id: String, signal: String?, timeoutInSeconds: Int?) async throws {
+        storage.append(.restart(id: id, signal: signal, timeoutInSeconds: timeoutInSeconds))
+    }
+
     func pauseContainer(id: String) async throws {
         storage.append(.pause(id: id))
     }
@@ -2199,6 +2204,7 @@ actor RecordingContainerDiscoveryManager: ContainerDiscoveryManaging {
 actor RecordingContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
     private let listResponse: [ContainerSnapshot]
     private let getResponse: ContainerSnapshot?
+    private let lifecycleResponse: [ContainerLifecycleRecordV2]
     private let getError: (any Error)?
     private var filters: [ContainerListFilters] = []
     private var gets: [String] = []
@@ -2206,10 +2212,12 @@ actor RecordingContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
     init(
         listResponse: [ContainerSnapshot] = [],
         getResponse: ContainerSnapshot? = nil,
+        lifecycleResponse: [ContainerLifecycleRecordV2] = [],
         getError: (any Error)? = nil
     ) {
         self.listResponse = listResponse
         self.getResponse = getResponse
+        self.lifecycleResponse = lifecycleResponse
         self.getError = getError
     }
 
@@ -2232,6 +2240,10 @@ actor RecordingContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
             throw getError
         }
         return getResponse
+    }
+
+    func listLifecycleRecords() async throws -> [ContainerLifecycleRecordV2] {
+        lifecycleResponse
     }
 }
 
@@ -3545,6 +3557,14 @@ actor RecordingContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
 
     func stopContainer(id: String, options: ContainerStopOptions) async throws {
         storage.append(.stop(
+            id: id,
+            signal: options.signal,
+            timeoutInSeconds: options.timeoutInSeconds.map(Int.init)
+        ))
+    }
+
+    func restartContainer(id: String, options: ContainerStopOptions) async throws {
+        storage.append(.restart(
             id: id,
             signal: options.signal,
             timeoutInSeconds: options.timeoutInSeconds.map(Int.init)

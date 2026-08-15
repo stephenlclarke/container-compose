@@ -402,8 +402,27 @@ extension ComposeOrchestrator {
 
     /// Restarts a service container through the direct API.
     func restartContainer(service: ComposeService, containerName: String, timeout: Int? = nil) async throws {
-        try await stopContainer(service: service, containerName: containerName, timeout: timeout)
-        try await startContainer(service: service, containerName: containerName)
+        try validateLifecycleHookSupport(service: service)
+        try await runPreStopHooks(service: service, containerID: containerName)
+        let resolvedTimeout = timeout ?? service.stopGracePeriodSeconds
+        if options.dryRun {
+            var args = ["restart"]
+            if let signal = service.stopSignal, !signal.isEmpty {
+                args.append(contentsOf: ["--signal", signal])
+            }
+            if let resolvedTimeout {
+                args.append(contentsOf: ["--time", "\(resolvedTimeout)"])
+            }
+            args.append(containerName)
+            try await runContainer(args, check: false)
+        } else {
+            try await lifecycleManager.restartContainer(
+                id: containerName,
+                signal: service.stopSignal,
+                timeoutInSeconds: resolvedTimeout,
+            )
+        }
+        try await runPostStartHooks(service: service, containerID: containerName)
     }
 
     /// Stops a container that may not map to a declared service, such as an

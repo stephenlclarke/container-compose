@@ -884,23 +884,25 @@ public extension ComposeOrchestrator {
         })
     }
 
-    /// Restarts selected service containers, including dependencies unless disabled.
+    /// Restarts selected service containers and restart-propagating dependents.
     func restart(project: ComposeProject, options restart: ComposeRestartOptions) async throws {
         try validateTimeoutSeconds(restart.timeout, command: "restart")
-        let services = try restart.noDeps && !restart.services.isEmpty
-            ? selectedServices(project: project, selected: restart.services)
-            : orderedServices(project: project, selected: restart.services)
-        for service in services.reversed() where service.provider != nil {
-            _ = try await runProvider(project: project, service: service, action: .stop)
-        }
-        for service in services.reversed() {
-            for target in try await serviceContainerTargets(project: project, services: [service]) {
-                try await stopContainer(service: target.service, containerName: target.name, timeout: restart.timeout)
-            }
-        }
+        let services = try restartServices(
+            project: project,
+            selected: restart.services,
+            noDeps: restart.noDeps,
+        )
         for service in services {
+            if service.provider != nil {
+                _ = try await runProvider(project: project, service: service, action: .stop)
+                continue
+            }
             for target in try await serviceContainerTargets(project: project, services: [service]) {
-                try await startContainer(service: target.service, containerName: target.name)
+                try await restartContainer(
+                    service: target.service,
+                    containerName: target.name,
+                    timeout: restart.timeout,
+                )
             }
         }
     }

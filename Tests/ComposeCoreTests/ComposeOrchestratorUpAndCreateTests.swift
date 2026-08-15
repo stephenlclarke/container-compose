@@ -3171,14 +3171,15 @@ extension ComposeOrchestratorTests {
         #expect(await discoveryManager.listRequests == [true, true])
     }
 
-    @Test("up wait implies detached containers and polls until running")
-    func upWaitImpliesDetachedContainersAndPollsUntilRunning() async throws {
+    @Test("up wait implies detached containers and polls through restarting until running")
+    func upWaitImpliesDetachedContainersAndPollsThroughRestartingUntilRunning() async throws {
         let runner = RecordingRunner(responses: [.success])
         let discoveryManager = RecordingContainerDiscoveryManager(
             getResponses: [
                 "demo-api-1": [
                     nil,
                     ComposeContainerSummary(id: "demo-api-1", status: "starting"),
+                    ComposeContainerSummary(id: "demo-api-1", status: "restarting"),
                     ComposeContainerSummary(id: "demo-api-1", status: "running"),
                 ],
             ]
@@ -3200,7 +3201,7 @@ extension ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 1)
         #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
-        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1", "demo-api-1"])
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1", "demo-api-1", "demo-api-1"])
     }
 
     @Test("up wait treats deploy job modes as ordinary running services")

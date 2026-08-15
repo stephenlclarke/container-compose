@@ -29,6 +29,15 @@ public protocol ContainerDiscoveryAPIClienting: Sendable {
 
     /// Returns a container snapshot when `id` exists.
     func getContainer(id: String) async throws -> ContainerSnapshot?
+
+    /// Returns one coherent lifecycle-v2 snapshot for all containers.
+    func listLifecycleRecords() async throws -> [ContainerLifecycleRecordV2]
+}
+
+public extension ContainerDiscoveryAPIClienting {
+    func listLifecycleRecords() async throws -> [ContainerLifecycleRecordV2] {
+        []
+    }
 }
 
 /// Live Compose discovery through the stable container CLI JSON boundary.
@@ -127,16 +136,22 @@ public struct ContainerCLIJSONDiscoveryManager: ContainerDiscoveryManaging {
 public struct ContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
     public typealias List = @Sendable (ContainerListFilters) async throws -> [ContainerSnapshot]
     public typealias Get = @Sendable (String) async throws -> ContainerSnapshot
+    public typealias LifecycleList = @Sendable () async throws -> [ContainerLifecycleRecordV2]
 
     private let listOperation: List
     private let getOperation: Get
+    private let lifecycleListOperation: LifecycleList
 
     public init(
         list: @escaping List = { try await ContainerClient().list(filters: $0) },
         get: @escaping Get = { try await ContainerClient().get(id: $0) },
+        lifecycleList: @escaping LifecycleList = {
+            try await ContainerClient().lifecycleRecords()
+        },
     ) {
         listOperation = list
         getOperation = get
+        lifecycleListOperation = lifecycleList
     }
 
     /// Lists containers through `ContainerClient`.
@@ -152,6 +167,10 @@ public struct ContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
             return nil
         }
     }
+
+    public func listLifecycleRecords() async throws -> [ContainerLifecycleRecordV2] {
+        try await lifecycleListOperation()
+    }
 }
 
 /// `ContainerClient`-backed discovery manager for Compose project metadata.
@@ -164,25 +183,59 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
 
     /// Lists non-machine containers through `ContainerClient.list(filters:)`.
     public func listContainers(all: Bool) async throws -> [ComposeContainerSummary] {
-        let filters = ContainerListFilters(status: all ? nil : .running).withoutMachines()
-        let snapshots = try await client.listContainers(filters: filters)
-        return snapshots.map(ComposeContainerSummary.init(snapshot:))
+        // Lifecycle-v2 transient states do not all have a corresponding legacy
+        // RuntimeStatus. Fetch one coherent unfiltered snapshot and apply the
+        // Docker-visible active-state projection after joining lifecycle data.
+        let filters = ContainerListFilters().withoutMachines()
+        async let snapshots = client.listContainers(filters: filters)
+        async let lifecycleRecords = client.listLifecycleRecords()
+        let records = try await lifecycleRecords
+        let recordsByBundleKey = Dictionary(
+            uniqueKeysWithValues: records.map { ($0.immutableBundleKey, $0) },
+        )
+        let summaries = try await snapshots.map {
+            ComposeContainerSummary(
+                snapshot: $0,
+                lifecycle: recordsByBundleKey[$0.id],
+            )
+        }
+        guard !all else {
+            return summaries
+        }
+        return summaries.filter {
+            $0.status == "running" || $0.status == "paused"
+                || $0.status == "restarting"
+        }
     }
 
     /// Fetches one container through `ContainerClient.get(id:)`.
     public func getContainer(id: String) async throws -> ComposeContainerSummary? {
-        guard let snapshot = try await client.getContainer(id: id) else {
+        async let snapshotResult = client.getContainer(id: id)
+        async let lifecycleRecords = client.listLifecycleRecords()
+        guard let snapshot = try await snapshotResult else {
             return nil
         }
-        return ComposeContainerSummary(snapshot: snapshot)
+        let lifecycle = try await lifecycleRecords.first {
+            $0.immutableBundleKey == snapshot.id
+                || $0.containerID == id
+                || $0.canonicalName == id
+        }
+        return ComposeContainerSummary(snapshot: snapshot, lifecycle: lifecycle)
     }
 }
 
 private extension ComposeContainerSummary {
-    init(snapshot: ContainerSnapshot) {
+    init(
+        snapshot: ContainerSnapshot,
+        lifecycle: ContainerLifecycleRecordV2? = nil,
+    ) {
         self.init(
             id: snapshot.id,
-            status: Self.composeStatus(runtimeStatus: snapshot.status, startedDate: snapshot.startedDate),
+            status: lifecycle?.snapshot.state.rawValue
+                ?? Self.composeStatus(
+                    runtimeStatus: snapshot.status,
+                    startedDate: snapshot.startedDate,
+                ),
             labels: snapshot.configuration.labels,
             image: ComposeContainerSummary.Image(
                 reference: snapshot.configuration.image.reference,
@@ -194,7 +247,13 @@ private extension ComposeContainerSummary {
                 mounts: snapshot.configuration.mounts.map(Self.mount(from:)),
                 networks: snapshot.networks.map(Self.network(from:)),
             ),
-            state: ComposeContainerSummary.State(
+            state: lifecycle.map {
+                ComposeContainerSummary.State(
+                    exitCode: $0.snapshot.exitCode,
+                    exitedDate: $0.snapshot.finishedAt,
+                    health: $0.snapshot.health,
+                )
+            } ?? ComposeContainerSummary.State(
                 exitCode: snapshot.exitCode,
                 exitedDate: snapshot.exitedDate,
                 health: snapshot.health?.rawValue,
