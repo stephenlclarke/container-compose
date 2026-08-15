@@ -9,7 +9,9 @@ Parse, normalize, and execute Compose projects with the `container` runtime.
 
 ## Overview
 
-`ComposeCore` is the reusable Swift library behind the `compose` container plugin. It models Compose configuration, prepares runtime-neutral service execution plans, and orchestrates them through `ComposeRuntimeSPI` providers. The plugin supplies the [`container`](https://github.com/apple/container)-backed provider.
+`ComposeCore` is the reusable Swift library behind the `compose` container plugin. It models Compose configuration, prepares runtime-neutral service execution plans, and orchestrates them through `ComposeRuntimeSPI` providers. The plugin supplies the matched [`stephenlclarke/container`](https://github.com/stephenlclarke/container)-backed provider; stock Apple releases do not yet expose every runtime primitive required by the supported lane.
+
+The 0.11.0 release negotiates a versioned runtime-capability manifest before runtime-backed commands execute. Its matched provider includes the logging-driver contract, attach-before-start lifecycle, advanced networking/IPAM, archive and image-filesystem extensions, and the other version-1 contracts documented in the [runtime capability guide](https://github.com/stephenlclarke/container-compose/blob/main/docs/runtime-capabilities.md).
 
 The generated reference covers the public configuration models and adapter protocols used to integrate Compose behavior into container-based tools.
 

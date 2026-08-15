@@ -2,11 +2,12 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Design complete; implementation not started |
+| Status | Implementation underway. The 0.11.0 release closes the logging live-attachment/publication prerequisite and ships several networking, lifecycle, image, and security subsets. STATUS/help reconciliation is current; the remaining functional designs, release-grade performance lanes, hardware/provider feasibility proofs, and stock-Apple compatibility work remain. |
 | Scope | Residual gaps between [`STATUS.md`](../STATUS.md) and the focused Container-family parity designs |
 | Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
 | Primary execution host | Local MBP, using matched non-debug release artefacts |
 | Design date | 31 July 2026 |
+| Last documentation review | 15 August 2026 against the 0.11.0 release and current STATUS/help ledger |
 
 ## Outcome
 
@@ -27,8 +28,9 @@ speculative feature work:
 3. `userns_mode: private` is described as compatible despite the pinned
    empty/`host` Engine contract and must be reconciled without blessing the
    migration-only identity-map path;
-4. `attach`, `logs`, `run`, and `up` plus the aggregate command counts must stay
-   partial until the logging live-attach/history split passes;
+4. `attach`, `logs`, `run`, and `up` retain partial markers after the released
+   live-attach/history split because their complete external-client, provider,
+   failure, migration, security, and comparable-performance evidence remains;
 5. Windows-only `credential_spec` must not be worded as a macOS runtime gap;
    and
 6. stock Apple release support depends on APIs outside this programme's control

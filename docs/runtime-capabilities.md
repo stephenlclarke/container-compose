@@ -39,6 +39,7 @@ that it exactly matches the typed Compose and sibling Container definitions.
 | `create-configuration.v1` | Typed process, mount, network, resource, namespace, security, device, and GPU configuration used when creating service and one-off containers |
 | `image-filesystem.v1` | Image metadata and declared-volume discovery, image-volume copy-up, commit/export, and live snapshot behaviour |
 | `lifecycle.v1` | Create/start/stop/restart/exec/attach/kill/pause/wait controls, persisted exit state, and process metadata |
+| `logging-drivers.v1` | Typed logging requests, durable native histories, remote/provider lifecycle, cache/read policy, and exact-process foreground attachment |
 | `network-scoped-aliases.v1` | Source-scoped dynamic DNS aliases used to preserve Compose link isolation and target address changes |
 | `observation.v1` | Container discovery, health, logs, events, statistics, top, and network/port observation |
 
@@ -68,17 +69,17 @@ logging create request, authority-owned protected options, native and remote
 provider lifecycle, canonical reads, dual cache, and exact-process foreground
 attachment in the
 [Docker logging-driver design](docker-logging-driver-semantics-design.md).
-It is present in the coordinated release manifest because the exact matched
-Container candidate `c7924e375d98d82af37902f4a0c310ee389eab97`, Engine API
-`5e6e24d017691596783515285e1ff56d29701235`, and Containerization
-`7f62f5b940630811573a34f70cdd6f3fa11d014d` are now published on the owned
-GitHub remotes and can be resolved by hosted builds. Compose preflight still
-negotiates the identifier before using advanced logging; advertising the
-requirement does not make individual remote providers universally available.
-The exact stack also passes the six blocked runtime contracts, including C04's
-recreate, restart, shutdown, and residue-free cleanup lifecycle in 18.595
-seconds. Stable publication remains conditional on the repository CI and
-release gates passing for this same dependency graph.
+It is present in the coordinated release manifest and shipped by
+[`container-compose` 0.11.0](https://github.com/stephenlclarke/container-compose/releases/tag/0.11.0).
+The immutable release uses Compose `98ffb22858752ee33d041130f36929b1f9b5ab2b`,
+Container `9aa1803223e8573f169c2a2effa657392b4d6e30`, Engine API
+`5e6e24d017691596783515285e1ff56d29701235`, Containerization
+`f0bc99d26cd27ed58b06236421a298d9e4acd5c1`, and SwiftNIO SSL
+`a9d648535c62e640d1df258a70c9117a8ddea43e`. The hosted Stable Release Gate
+passed for this graph. Compose preflight still negotiates the identifier before
+using advanced logging; advertising the requirement does not make every remote
+provider universally available or close the remaining external-client,
+failure, migration, security, and comparable-performance evidence.
 
 Earlier signed logging checkpoints include Container
 `ac77f7a38819c4f96581220bb58d89107b51826a` with Engine API
@@ -143,5 +144,6 @@ draining-generation routing, rolls back failed/unhealthy activation, and
 recovers after restart without provider lifecycle effects. Later signed heads
 complete reference-aware quiescence, durable configuration/history migration,
 terminal proof before alias cutover, final N reclamation, and distributable
-plugin certification. Release trust, coordinated dependency publication, and
-paired Docker certification remain.
+plugin certification. Release trust and coordinated dependency publication
+shipped in 0.11.0; complete paired Docker provider certification and
+programme-level failure, migration, security, and performance evidence remain.
