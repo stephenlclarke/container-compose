@@ -9,10 +9,10 @@ This review began as a documentation-only assessment. It is now the current
 evidence-backed assessment and records later implementation and measurement
 updates without treating them as proof of full parity. It uses:
 
-- the current [parity ledger](../../STATUS.md) and its executable-target
+- the current [parity ledger](../project/STATUS.md) and its executable-target
   references;
-- [the build and validation policy](../../BUILD.md);
-- [the stable architecture boundary](../../DESIGN.md);
+- [the build and validation policy](../guides/BUILD.md);
+- [the stable architecture boundary](../project/DESIGN.md);
 - the latest successful `main` CI run, including its successful
   [SonarQube scan](https://github.com/stephenlclarke/container-compose/actions/runs/30513608967);
 - the public [SonarQube Cloud project](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2),
@@ -29,7 +29,7 @@ The [implementation update](#implementation-update) at the end records the same-
 The project has a substantial and well-tested Compose surface, but it does
 not yet have 100% macOS Docker Compose parity or a complete comparable-performance
 gate. Those outcomes are now first-class project goals in
-[STATUS.md](../../STATUS.md#project-goal-macos-docker-compose-parity-and-performance),
+[STATUS.md](../project/STATUS.md#project-goal-macos-docker-compose-parity-and-performance),
 not aspirational statements.
 
 Named-network service identity, aliases, and source-scoped links are now

@@ -11,7 +11,7 @@
 
 ## Goal
 
-Close the shared-namespace and Docker-complete privileged-isolation row in [STATUS.md](../STATUS.md). Completion means that Container provides one Docker-host-equivalent Linux kernel in which workloads are isolated by default but can independently:
+Deliver the [shared-namespace and privileged-isolation parity contract](https://github.com/stephenlclarke/container-compose/issues/267). Completion means that Container provides one Docker-host-equivalent Linux kernel in which workloads are isolated by default but can independently:
 
 - use private, engine-host, shareable, or donor PID, IPC, and network namespaces with Docker-compatible validation and lifecycle;
 - retain per-workload mount/rootfs isolation, while UTS, user, and cgroup namespaces remain private unless their supported host mode is explicitly selected;
@@ -952,5 +952,5 @@ Paired release-build median/P95 evidence covers cold/warm sandbox, 1/10/50 priva
 - [Moby 29.2.1 namespace canonicalisation](https://github.com/moby/moby/blob/6bc6209b88a7a834c91f77d848e025c79e0227a1/daemon/daemon_unix.go)
 - [Moby 29.2.1 privileged OCI handling](https://github.com/moby/moby/blob/6bc6209b88a7a834c91f77d848e025c79e0227a1/daemon/oci_linux.go)
 - [Pinned Containerization LinuxPod](https://github.com/stephenlclarke/containerization/blob/d7377b962af724f8d7c2b640f3ab12184d33f1af/Sources/Containerization/LinuxPod.swift)
-- [Current runtime namespace support](../Sources/ComposeCore/ComposeOrchestratorRuntimeSupport.swift)
-- [Current parity ledger](../STATUS.md)
+- [Current runtime namespace support](../../Sources/ComposeCore/ComposeOrchestratorRuntimeSupport.swift)
+- [Current stable functionality](../project/STATUS.md)

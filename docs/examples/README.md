@@ -6,7 +6,7 @@ Run commands from the repository root so the relative build context in `examples
 
 ## Alpine Shell
 
-The default example builds a tiny Alpine image from [Dockerfile](Dockerfile) and runs a one-off shell service from [compose.yml](compose.yml).
+The default example builds a tiny Alpine image from [Dockerfile](../../examples/Dockerfile) and runs a one-off shell service from [compose.yml](../../examples/compose.yml).
 
 Use a non-interactive command for a quick smoke test:
 
@@ -67,4 +67,4 @@ Remove any project resources left behind during manual experiments with:
 
 ## Monitoring Stack
 
-[monitoring-stack/docker-compose.yaml](monitoring-stack/docker-compose.yaml) captures a larger Grafana/Prometheus/Loki/Tempo monitoring stack used as a compatibility example for real-world service options. It uses relative nginx example paths, `MONITORING_HOST` / `MONITORING_HOSTNAME` defaults for site-specific URLs, and Grafana `admin` / `admin` defaults for local demos. It still intentionally includes host-observability bind mounts such as Docker, journal, rootfs, `/proc`, and `/sys`; copy or adapt those paths before running it directly.
+[monitoring-stack/docker-compose.yaml](../../examples/monitoring-stack/docker-compose.yaml) captures a larger Grafana/Prometheus/Loki/Tempo monitoring stack used as a compatibility example for real-world service options. It uses relative nginx example paths, `MONITORING_HOST` / `MONITORING_HOSTNAME` defaults for site-specific URLs, and Grafana `admin` / `admin` defaults for local demos. It still intentionally includes host-observability bind mounts such as Docker, journal, rootfs, `/proc`, and `/sys`; copy or adapt those paths before running it directly.

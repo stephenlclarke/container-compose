@@ -276,7 +276,7 @@ Required durability/checkpoint points are:
 
 At each point, complete/releasable work uses the reviewed `main` pull request; incomplete work uses the topic branch/draft pull request and a safe handoff. The checkpoint trigger never relaxes the main acceptance bar.
 
-Complete, releasable human-authored work lands on `main` through its exact-head-reviewed pull request. Incomplete or knowingly broken work does not go to `main` merely to create a backup; preserve it on a remote topic branch/draft pull request containing signed commits with an exact handoff record, then close that branch promptly after the coherent slice lands. Merging the reviewed pull request is the periodic main checkpoint; direct unreviewed pushes are not a shortcut. The sole existing exception is the deterministic `container` package-pin commit generated and published by release automation under [BUILD.md](../BUILD.md)'s exact ancestry/file allowlist, local checks, remote-head verification, and assembled-stack gate. The helper signs newly generated candidates; a retained pre-existing candidate also requires trusted signature/provenance verification. The exception is not available to ordinary slices, hand-written changes, or handoffs.
+Complete, releasable human-authored work lands on `main` through its exact-head-reviewed pull request. Incomplete or knowingly broken work does not go to `main` merely to create a backup; preserve it on a remote topic branch/draft pull request containing signed commits with an exact handoff record, then close that branch promptly after the coherent slice lands. Merging the reviewed pull request is the periodic main checkpoint; direct unreviewed pushes are not a shortcut. The sole existing exception is the deterministic `container` package-pin commit generated and published by release automation under [BUILD.md](../guides/BUILD.md)'s exact ancestry/file allowlist, local checks, remote-head verification, and assembled-stack gate. The helper signs newly generated candidates; a retained pre-existing candidate also requires trusted signature/provenance verification. The exception is not available to ordinary slices, hand-written changes, or handoffs.
 
 For a multi-repository slice:
 
@@ -424,7 +424,8 @@ Each slice keeps a compact durable record that another MBP or maintainer can res
 The design set is a living delivery contract. Every slice reviews the complete
 documentation inventory and updates all affected material in the same reviewed
 change as the behaviour. At minimum this inventory covers focused and coherent
-designs, `STATUS.md`, README/build/install/contribution guidance, API and schema
+designs, `STATUS.md`, `BACKLOG.md`, the GitHub issue hierarchy,
+README/build/install/contribution guidance, API and schema
 documentation, generated references, CLI help, examples, compatibility and
 capability manifests, test/performance instructions, migration/rollback notes,
 upstream handoffs, and release notes. An item that remains unchanged is recorded
@@ -432,14 +433,17 @@ as reviewed with a reason; silence is not evidence that it is current.
 
 Each focused design keeps stable requirement/work-package identifiers and its
 own exact implementation, test, review, quality, migration, and performance
-evidence. [STATUS.md](../STATUS.md) is the single current programme projection
-and lists only remaining compatibility or performance gaps. A row closes only
-when its design acceptance and pinned executable evidence are complete; local
-code or a design checkbox alone never upgrades support.
+evidence. [STATUS.md](../project/STATUS.md) describes the functionality available in the
+current stable release. [BACKLOG.md](../project/BACKLOG.md) explains the remaining parity
+contracts, while the linked GitHub hierarchy is the live source of work state.
+A contract closes only when its design acceptance and pinned executable
+evidence are complete; local code or a design checkbox alone never upgrades
+support.
 
 If implementation evidence changes a design decision, update the focused
-design, coherent architecture, dependency/order map, `STATUS.md`, tests,
-and user-facing documentation together after an explicit review decision. Do
+design, coherent architecture, dependency/order map, the affected GitHub issue,
+`BACKLOG.md`, `STATUS.md` when released functionality changes, tests, and
+user-facing documentation together after an explicit review decision. Do
 not preserve a known-stale design as historical truth inside the active spec;
 move genuinely superseded material to a clearly marked decision/history record.
 Markdown, link, generated-reference, example, and CLI-help checks are part of
@@ -447,8 +451,9 @@ the affected slice gate.
 
 Exact accepted heads remain in the affected design or upstream handoff record,
 where they can describe the actual repository set and evidence boundary without
-self-reference. Update every affected documentation surface and `STATUS.md` in
-the implementation slice. `make check` continues to validate active source,
+self-reference. Update every affected documentation surface, backlog contract,
+issue, and current-status claim in the implementation slice. `make check`
+continues to validate active source,
 documentation, stack consistency, and the handoff registry; it does not accept
 a stale generated status projection as programme truth.
 
@@ -469,7 +474,7 @@ A slice is complete only when:
 - applicable Docker integration uses a retained Dockerfile, Compose file, or Bash harness that exercises the built CLI through the user-visible contract;
 - every affected executable lane has paired release-build median/P95 comparable to or better than Docker outside the declared noise band; a demonstrably non-executable slice records `not applicable` with rationale and cannot close a performance gap;
 - exact stack pins, documentation, compatibility manifests, and `STATUS.md` agree with the delivered behaviour;
-- every documentation surface has a recorded review disposition, `STATUS.md` agrees with the remaining gaps, and affected design or handoff records point to exact final-head evidence;
+- every documentation surface has a recorded review disposition, `BACKLOG.md` agrees with the live GitHub hierarchy, and affected design or handoff records point to exact final-head evidence;
 - the stable exact-head-reviewed checkpoint is on `main`; and
 - no obsolete slice-owned pull request, remote branch, local branch, worktree, runtime state, or unregistered/machine-local completed handoff is left dangling.
 
@@ -497,7 +502,7 @@ Before large-scale implementation begins, add and prove these workflow capabilit
 12. <a id="workflow-enabler-12"></a>`WORKFLOW-ENABLER-12` — **Complete — upstream-handoff registry baseline.** The performance-matrix issue and pull-request records are classified through the documented archive lifecycle, the reader view is regenerated, and `make upstream-handoff-registry-check` and the exact-stack `make check` pass. The implementation and evidence are recorded in `docs/upstream/container-compose/ISSUE-180.md` and `PR-180.md`; this baseline no longer blocks repository-wide programme evidence.
 13. <a id="workflow-enabler-13"></a>`WORKFLOW-ENABLER-13` — **Complete — exact-head-reviewed Compose promotion.** The release helper proves the open pull request still names the locally gated full commit, requires every existing Codex thread to have a later Stephen response and be resolved, posts a literal `@codex review`, and accepts only the connector's thumbs-up on that exact request or its explicit no-major-issues comment naming the expected commit prefix. A query after the request, head drift, malformed or truncated evidence, or timeout fails closed and requires a fresh invocation; any diff therefore receives a new request. Pull-request checks run only after the clean decision. The helper immediately revalidates the exact head, all query threads, and the clean signal before a head-matched normal merge and again before the optional checked-admin merge. Auto-merge is never enabled. Deterministic stale-head, unanswered-query, timeout, clean-comment merge, pagination, and stale-review tests are recorded in `docs/upstream/container-compose/ISSUE-182.md` and `PR-182.md`.
 14. <a id="workflow-enabler-14"></a>`WORKFLOW-ENABLER-14` — **Complete — PR-only Compose source promotion.** `CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE=pr` is the sole accepted mode. The retired `direct` value fails before any GitHub or Git mutation, and the direct push branch has been removed. Maintenance, milestone, and security classifications do not bypass exact-head review or pull-request checks. The focused direct-mode and clean-merge regressions prove only the reviewed PR path can promote Compose source; implementation and evidence are recorded with Enabler 13 in `docs/upstream/container-compose/ISSUE-182.md` and `PR-182.md`.
-15. <a id="workflow-enabler-15"></a>`WORKFLOW-ENABLER-15` — **Superseded — gap-only programme status.** Stable requirement/work-package IDs remain in focused designs, while `STATUS.md` is the single current gap-only projection. The duplicate generated register was retired after it drifted far behind implemented work and produced misleading programme counts.
+15. <a id="workflow-enabler-15"></a>`WORKFLOW-ENABLER-15` — **Complete — separate current status and parity backlog.** Stable requirement and work-package IDs remain in focused designs, `STATUS.md` describes current stable functionality, `BACKLOG.md` explains the parity contracts, and the native cross-repository GitHub issue hierarchy owns live progress. Generated or duplicated progress registers remain retired.
 
 The release helper now enforces Enablers 13 and 14 before any programme source
 promotion. Its checked-admin option handles only GitHub's solo-maintainer review
@@ -511,9 +516,10 @@ These enablers are themselves small reviewed slices. They must not delay oracle 
 ## Primary References
 
 - [Coherent Container-family parity architecture](coherent-container-family-parity-design.md)
-- [Remaining macOS parity closure design](remaining-macos-parity-closure-design.md)
+- [Archived macOS parity closure review](../archive/remaining-macos-parity-closure-design.md)
 - [Container Compose contributor workflow](../CONTRIBUTING.md)
-- [Build, validation, and release workflow](../BUILD.md)
+- [Build, validation, and release workflow](../guides/BUILD.md)
 - [Runtime capability negotiation](runtime-capabilities.md)
-- [Current parity ledger](../STATUS.md)
-- [Apple upstream handoff records](upstream/README.md)
+- [Current stable functionality](../project/STATUS.md)
+- [Parity backlog](../project/BACKLOG.md)
+- [Apple upstream handoff records](../upstream/README.md)

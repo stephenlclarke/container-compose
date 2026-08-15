@@ -305,9 +305,10 @@ class UpstreamHandoffRegistryTests(unittest.TestCase):
             "2026-07-29",
             set(),
         )
-        current = root / "STATUS.md"
+        current = root / "docs/project/STATUS.md"
+        current.parent.mkdir(parents=True, exist_ok=True)
         current.write_text(
-            "[handoff](docs/upstream/apple-container/PR-demo.md)\n",
+            "[handoff](../upstream/apple-container/PR-demo.md)\n",
             encoding="utf-8",
         )
         for path in (root / "docs/upstream").rglob("*.md"):
@@ -316,7 +317,7 @@ class UpstreamHandoffRegistryTests(unittest.TestCase):
         self.assertEqual(len(registry.archived_relative_link_errors(payload, root)), 1)
         changed = registry.rewrite_archived_links(payload, root)
 
-        self.assertEqual(changed, [Path("STATUS.md")])
+        self.assertEqual(changed, [Path("docs/project/STATUS.md")])
         self.assertEqual(
             registry.archived_relative_link_errors(payload, root),
             [],

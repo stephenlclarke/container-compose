@@ -13,8 +13,9 @@ contract target. `ComposeContainerRuntime` owns Apple DTO, archive, OCI, and
 live API translation for the matched runtime stack.
 
 The package and source boundary is enforced by
-`make core-runtime-neutrality`.
-[STATUS.md](STATUS.md) is the authoritative feature ledger.
+`make core-runtime-neutrality`. [STATUS.md](STATUS.md) describes current stable
+functionality. [BACKLOG.md](BACKLOG.md) and its linked GitHub issue hierarchy
+own planned parity work.
 
 ## Goals
 
@@ -89,7 +90,7 @@ adapter carries the resulting `--memory-swap` value. The lower stack receives
 only the generic typed primitive and projects it to OCI.
 
 Missing runtime capabilities belong in Apple-shaped issue and pull request
-drafts under [`docs/upstream/`](docs/upstream/). Those drafts request reusable
+drafts under [`docs/upstream/`](../upstream). Those drafts request reusable
 runtime primitives, not Compose service selection or Docker output policy.
 
 ## Architecture
@@ -250,5 +251,6 @@ when packaged provenance is absent.
 - Use upstream Apple APIs when they overlap local code and remain sufficient.
 - Keep every Apple-backed local change in an Apple-shaped commit with focused
   tests and a complete handoff draft.
-- Keep support claims in [STATUS.md](STATUS.md), validation and release policy
-  in [BUILD.md](BUILD.md), and installation steps in [INSTALL.md](INSTALL.md).
+- Keep current support claims in [STATUS.md](STATUS.md), planned parity work in
+  [BACKLOG.md](BACKLOG.md), validation and release policy in
+  [BUILD.md](../guides/BUILD.md), and installation steps in [INSTALL.md](../guides/INSTALL.md).

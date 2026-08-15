@@ -54,26 +54,9 @@ The release adds:
 
 The complete release notes and immutable dependency revisions are on the
 [0.11.0 release page](https://github.com/stephenlclarke/container-compose/releases/tag/0.11.0).
-Partial entries in [STATUS.md](STATUS.md) describe compatibility or evidence
-still outstanding beyond this stable baseline; they do not mean the listed
-0.11.0 functionality is absent.
-
-At the 0.11.0 release snapshot, the three support forks were **0 commits
-behind and 879 commits ahead of Apple upstream**:
-
-- [`containerization`](https://github.com/stephenlclarke/containerization):
-  **0 behind, 194 ahead** at
-  [`f0bc99d26cd2`](https://github.com/stephenlclarke/containerization/commit/f0bc99d26cd27ed58b06236421a298d9e4acd5c1).
-- [`container`](https://github.com/stephenlclarke/container): **0 behind, 645
-  ahead** at
-  [`9aa1803223e8`](https://github.com/stephenlclarke/container/commit/9aa1803223e8573f169c2a2effa657392b4d6e30).
-- [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim):
-  **0 behind, 40 ahead** at
-  [`88332c96705b`](https://github.com/stephenlclarke/container-builder-shim/commit/88332c96705b024bbc5cd210642118ee82f8793d).
-- [`container-compose`](https://github.com/stephenlclarke/container-compose):
-  release source
-  [`98ffb2285875`](https://github.com/stephenlclarke/container-compose/commit/98ffb22858752ee33d041130f36929b1f9b5ab2b),
-  with no Apple repository to compare against.
+[STATUS.md](docs/project/STATUS.md) describes the functionality and explicit limitations
+in this stable baseline. Planned compatibility work is kept separately in
+[BACKLOG.md](docs/project/BACKLOG.md) and its linked GitHub issues.
 
 > [!WARNING]
 > 🤬 **This project is a maintenance nightmare.** 🤬
@@ -123,21 +106,20 @@ option for that command is green.
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
 
-The authoritative parity ledger is [STATUS.md](STATUS.md). Start with its
-[short list of what prevents 100% parity](STATUS.md#what-prevents-100-parity):
-each gap states why it exists and the change required to close it. The
-remaining tables retain every tracked Compose file, service, Dockerfile/build,
-command, and long-option surface with ✅ yes, ⚠️ partial, or ❌ no.
+Use [STATUS.md](docs/project/STATUS.md) for the current stable functionality and
+[BACKLOG.md](docs/project/BACKLOG.md) for the remaining 1.0 parity contracts. The live
+source of backlog state is the cross-repository GitHub hierarchy rooted at
+[[Parity] Container Compose 1.0.0 completion](https://github.com/stephenlclarke/container-compose/issues/266).
 
-The key project goal is [100% observable Docker Compose v2 parity on macOS
-with comparable or better performance](STATUS.md#project-goal-macos-docker-compose-parity-and-performance).
-The ledger and executable reference comparisons must expose every remaining
-project-owned difference; they must not become implicit exceptions.
+The key project goal remains 100% observable Docker Compose v2 parity on macOS
+with comparable or better performance. The backlog and executable reference
+comparisons must expose every remaining project-owned difference; they must not
+become implicit exceptions.
 
 > [!IMPORTANT]
 > **Retained controlled full-suite evidence (30 July 2026)**
 >
-> The complete maintained 62-target Docker Compose comparison suite passed in one uninterrupted 1,152.03-second run against Docker Compose 5.3.1 and Docker Engine 29.2.1 on a Mac17,9 running macOS 26.5.2. Its three-sample warm-image bridge comparator measured `up` at 0.153s for Docker Compose and 1.228s for container-compose (8.01×), while `down` measured 10.178s and 5.916s respectively (0.58×). Named-network service discovery, aliases, one-off aliases, recreate behavior, and source-scoped links all passed their live Docker oracles. Exact revisions, timing tables, fingerprints, and interpretation are recorded in [STATUS.md](STATUS.md#retained-controlled-full-suite-evidence).
+> The complete maintained 62-target Docker Compose comparison suite passed in one uninterrupted 1,152.03-second run against Docker Compose 5.3.1 and Docker Engine 29.2.1 on a Mac17,9 running macOS 26.5.2. Its three-sample warm-image bridge comparator measured `up` at 0.153s for Docker Compose and 1.228s for container-compose (8.01×), while `down` measured 10.178s and 5.916s respectively (0.58×). Named-network service discovery, aliases, one-off aliases, recreate behavior, and source-scoped links all passed their live Docker oracles. Exact revisions, timing tables, fingerprints, and interpretation are retained in the [macOS Compose parity and performance review](docs/reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md).
 >
 > This retained run predates 0.11.0 and is not a claim that the project goal is complete. Its lifecycle matrix covers warm-image 1/10/50-service detached startup and teardown, but its 31 July one-repetition debug diagnostic was slower than Docker at 10 and 50 services and is not release-grade evidence. That run did not include the later logging performance lanes; cold-resource collection, `develop.watch` sync, and build-context transfer remain open, and every partial surface in the current ledger remains open.
 
@@ -158,9 +140,9 @@ The recording is a complete matched-runtime execution of the portable nginx and 
 
 ## Install And Project Map
 
-Use [INSTALL.md](INSTALL.md) for install, upgrade, verification, and uninstall
+Use [INSTALL.md](docs/guides/INSTALL.md) for install, upgrade, verification, and uninstall
 commands. The supported Homebrew install uses the matched `stephenlclarke`
-runtime stack; [BUILD.md](BUILD.md) covers repository roles, branch policy, and
+runtime stack; [BUILD.md](docs/guides/BUILD.md) covers repository roles, branch policy, and
 deterministic release promotion.
 
 ## Plugin Recognition
@@ -173,23 +155,24 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 
 - [Container developer API collection](https://stephenlclarke.github.io/api/): browse the unified documentation for `container-engine-api`, `container`, `containerization`, `container-k8s`, `container-builder-shim`, `container-compose`, and `devcontainer`.
 - [container-compose API reference](https://stephenlclarke.github.io/api/container-compose/): browse the Compose plugin API reference generated from the Swift source.
-- [INSTALL.md](INSTALL.md): install, upgrade, verify, uninstall, recover bad installs, and diagnose runtime issues.
-- [BUILD.md](BUILD.md): build, test, package, validate parity, and promote the current build to a stable release, including the weekly minor-release scheduler and manual major-release dispatch.
-- [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
-- [STATUS.md](STATUS.md): see every remaining evidence-backed compatibility or performance gap, why it remains, and what must change to close it.
-- [Runtime capability contract](docs/runtime-capabilities.md): see the versioned matched-runtime requirements negotiated by 0.11.0 before side effects.
-- [Docker logging-driver design](docs/docker-logging-driver-semantics-design.md): review the released logging architecture, retained evidence, and remaining provider and certification gaps.
-- [Container-family parity architecture](docs/coherent-container-family-parity-design.md): understand the integrated authority, runtime topology, dependency order, and devcontainer/shared Engine design.
-- [Container-family parity development cycle](docs/container-family-development-cycle.md): deliver vertical slices with local-first validation, review-to-clean convergence, MBP runners, clean GitHub state, upstream monitoring, and comparable-or-better performance.
-- [Remaining macOS parity closure](docs/remaining-macos-parity-closure-design.md): reconcile STATUS coverage, implement the release-grade performance plan, and distinguish actionable device/provider work from host-specific non-goals and stock-Apple dependencies.
+- [INSTALL.md](docs/guides/INSTALL.md): install, upgrade, verify, uninstall, recover bad installs, and diagnose runtime issues.
+- [BUILD.md](docs/guides/BUILD.md): build, test, package, validate parity, and promote the current build to a stable release, including the weekly minor-release scheduler and manual major-release dispatch.
+- [DESIGN.md](docs/project/DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
+- [STATUS.md](docs/project/STATUS.md): understand the functionality and explicit limitations in the current stable release.
+- [BACKLOG.md](docs/project/BACKLOG.md): understand the remaining parity contracts and follow their live GitHub issues.
+- [Runtime capability contract](docs/architecture/runtime-capabilities.md): see the versioned matched-runtime requirements negotiated by 0.11.0 before side effects.
+- [Docker logging-driver design](docs/architecture/docker-logging-driver-semantics-design.md): review the released logging architecture, retained evidence, and remaining provider and certification gaps.
+- [Container-family parity architecture](docs/architecture/coherent-container-family-parity-design.md): understand the integrated authority, runtime topology, dependency order, and devcontainer/shared Engine design.
+- [Container-family parity development cycle](docs/architecture/container-family-development-cycle.md): deliver vertical slices with local-first validation, review-to-clean convergence, MBP runners, clean GitHub state, upstream monitoring, and comparable-or-better performance.
+- [Archived macOS parity closure review](docs/archive/remaining-macos-parity-closure-design.md): retain the 31 July 2026 analysis that preceded the GitHub-backed 1.0 backlog.
 - [macOS Compose parity and performance review](docs/reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md): review the current parity, performance, design, and SonarQube-quality gaps.
-- [docs/external-resources.md](docs/external-resources.md): provision Compose-owned external config files and Keychain secrets.
-- [CONTRIBUTING.md](CONTRIBUTING.md): prepare reviewable changes.
+- [External resources](docs/guides/external-resources.md): provision Compose-owned external config files and Keychain secrets.
+- [CONTRIBUTING.md](docs/CONTRIBUTING.md): prepare reviewable changes.
 - [docs/parity/compose-cli-surface.md](docs/parity/compose-cli-surface.md): review local Docker Compose CLI surface parity and documented differences.
-- [SUPPORT.md](SUPPORT.md): ask for help or report non-security issues.
-- [SECURITY.md](SECURITY.md): report security issues.
+- [SUPPORT.md](docs/SUPPORT.md): ask for help or report non-security issues.
+- [SECURITY.md](docs/SECURITY.md): report security issues.
 
-[INSTALL.md](INSTALL.md), [BUILD.md](BUILD.md), [STATUS.md](STATUS.md), and [CONTRIBUTING.md](CONTRIBUTING.md) are the maintained sources of truth for current operation. The coherent architecture and development cycle describe the approved future design/process and identify automation that still has to be implemented.
+[INSTALL.md](docs/guides/INSTALL.md), [BUILD.md](docs/guides/BUILD.md), [STATUS.md](docs/project/STATUS.md), [BACKLOG.md](docs/project/BACKLOG.md), and [CONTRIBUTING.md](docs/CONTRIBUTING.md) are the maintained sources of truth for operation and planned parity work. The coherent architecture and development cycle describe the approved future design and process.
 
 The Apple-facing drafts under [docs/upstream/](docs/upstream/README.md) are current handoff records for unresolved or Apple-shaped work; they are not install, release, support, or Apple-submission runbooks.
 

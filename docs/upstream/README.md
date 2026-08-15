@@ -2,7 +2,7 @@
 
 This directory is the durable handoff area for Apple-facing work that affects `container-compose`. [HANDOFF-REGISTRY.json](HANDOFF-REGISTRY.json) is the maintained source of truth; [HANDOFF-REGISTRY.md](HANDOFF-REGISTRY.md) is its generated reader view. Current installation, release, support, and build instructions remain at the repository root.
 
-For the coherent parity programme, the [Container-family parity development cycle](../container-family-development-cycle.md) is normative: Apple repositories and their issues, pull requests, discussions, and comments remain read-only throughout every development wave. New generic work stops at an Apple-shaped signed commit series plus an `active-draft` or `unsubmitted` handoff. Existing submitted records remain tracked historically. New or refreshed Apple submissions are deferred to one programme-wide publication step after all planned development and integrated gates are complete, and still require explicit authorisation.
+For the coherent parity programme, the [Container-family parity development cycle](../architecture/container-family-development-cycle.md) is normative: Apple repositories and their issues, pull requests, discussions, and comments remain read-only throughout every development wave. New generic work stops at an Apple-shaped signed commit series plus an `active-draft` or `unsubmitted` handoff. Existing submitted records remain tracked historically. New or refreshed Apple submissions are deferred to one programme-wide publication step after all planned development and integrated gates are complete, and still require explicit authorisation.
 
 ## Programme-Wide Publication Gate
 

@@ -12,8 +12,8 @@ one matching object in Container's native image catalog.
 This closes only `GET /images/json` and `GET /images/{name...}/json`. Image
 mutation, pull, push, search, history, auth, build/session, credential
 projection, typed guest socket grants, and external-client adoption remain in
-[STATUS.md](../../STATUS.md) and the
-[API socket design](../non-local-volumes-advanced-mounts-api-socket-design.md).
+[BACKLOG.md](../project/BACKLOG.md), [issue #270](https://github.com/stephenlclarke/container-compose/issues/270), and the
+[API socket design](../architecture/non-local-volumes-advanced-mounts-api-socket-design.md).
 
 ## Pinned Oracle
 

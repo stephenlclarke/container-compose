@@ -41,4 +41,4 @@ is normalized and validated with `mem_limit` into a typed service-create plan;
 the current CLI provider transports the resulting generic total
 memory-plus-swap value to the matched runtime stack.
 
-The repository's [full design document](https://github.com/stephenlclarke/container-compose/blob/main/DESIGN.md) contains the ownership rules and layer diagram.
+The repository's [full design document](https://github.com/stephenlclarke/container-compose/blob/main/docs/project/DESIGN.md) contains the ownership rules and layer diagram.

@@ -1939,7 +1939,7 @@ Stable ID: `COHERENT-WAVE-09`.
 
 ### Wave 9: integrated gates and publication
 
-- Implement and run the [remaining macOS parity closure](remaining-macos-parity-closure-design.md): reconcile every STATUS requirement, classify provider feasibility, and execute the complete cross-client fault, security, migration, rollback, compatibility, and release-build performance matrices against immutable candidates.
+- Implement the contracts in [BACKLOG.md](../project/BACKLOG.md) and the linked GitHub hierarchy: keep current STATUS claims accurate, classify provider feasibility, and execute the complete cross-client fault, security, migration, rollback, compatibility, and release-build performance matrices against immutable candidates.
 - Move all stack pins/manifests/docs together, with an explicit rollback stack.
 - Publish only after exact-head GitHub-recorded authorities pass and the matched stack satisfies the integrated definition of done.
 
@@ -2135,6 +2135,7 @@ Performance does not compensate for behavioural divergence, and parity does not 
 - [Socktainer 1.1.1 source and API/socket contract](https://github.com/socktainer/socktainer/tree/6cc7a32cc37d4ad0c07e9c88a7bbf2abdaceeea0)
 - [Pinned Containerization LinuxPod](https://github.com/stephenlclarke/containerization/blob/d7377b962af724f8d7c2b640f3ab12184d33f1af/Sources/Containerization/LinuxPod.swift)
 - [Runtime capability negotiation](runtime-capabilities.md)
-- [Remaining macOS parity closure design](remaining-macos-parity-closure-design.md)
-- [Current stack pins](../Tools/release/stack-refs.json)
-- [Current parity ledger](../STATUS.md)
+- [Parity backlog](../project/BACKLOG.md)
+- [Archived macOS parity closure review](../archive/remaining-macos-parity-closure-design.md)
+- [Current stack pins](../../Tools/release/stack-refs.json)
+- [Current stable functionality](../project/STATUS.md)

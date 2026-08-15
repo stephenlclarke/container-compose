@@ -9,7 +9,7 @@ dist/
 CODEX-SCHEDULE.md
 RESUME.md
 PLAN.md
-STATUS.md
+/STATUS.md
 HOMEBREW_TAP_RUNBOOK.md
 container-compose-plugin.tar.gz
 container-compose-plugin-*.tar.gz
@@ -21,3 +21,4 @@ coverage.out
 *.profraw
 .scannerwork/
 Tools/compose-normalizer/compose-normalizer
+_site/

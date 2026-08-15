@@ -13,7 +13,7 @@
 
 ## Goal
 
-Close the advanced network and IPAM row in [STATUS.md](../STATUS.md) without metadata-only success, hidden semantic differences, or a performance regression. Completion means that Container Compose:
+Deliver the [advanced networking and IPAM parity contract](https://github.com/stephenlclarke/container-compose/issues/268) without metadata-only success, hidden semantic differences, or a performance regression. Completion means that Container Compose:
 
 - preserves every relevant Compose network and endpoint field without flattening or dropping information;
 - matches Docker Compose's separation between configuration rendering and runtime validation;
@@ -66,7 +66,7 @@ The layer table below records the initial 31 July implementation boundary. Its
 singular-model and in-memory-allocation statements are historical inputs to the
 implemented 0.11.0 subset; the unresolved provider, reconciliation, namespace,
 and evidence consequences remain current where they also appear in
-[STATUS.md](../STATUS.md).
+[STATUS.md](../project/STATUS.md).
 
 The gap is cross-repository. No Compose-only projection can close it.
 
@@ -84,7 +84,7 @@ The gap is cross-repository. No Compose-only projection can close it.
 
 The pinned compose-go 2.14.0 model already exposes `EnableIPv4`, `EnableIPv6`, network driver/options, IPAM driver/options, and ordered `IPAMPool` entries. The first data loss is the local normalizer projection, so no parser fork is required.
 
-The exact runtime pins are recorded in [`Tools/release/stack-refs.json`](../Tools/release/stack-refs.json). Apple's public [`ClientNetwork`](https://apple.github.io/container/documentation/containerclient/clientnetwork/) and [`NetworkConfiguration`](https://apple.github.io/container/documentation/containernetworkservice/networkconfiguration/) surfaces are narrower than the requested design, while Containerization's public [`Interface`](https://apple.github.io/containerization/documentation/containerization/interface/) surface currently assumes an IPv4-shaped primary address. The fork changes below therefore remain explicit matched-stack requirements until equivalent Apple APIs are available.
+The exact runtime pins are recorded in [`Tools/release/stack-refs.json`](../../Tools/release/stack-refs.json). Apple's public [`ClientNetwork`](https://apple.github.io/container/documentation/containerclient/clientnetwork/) and [`NetworkConfiguration`](https://apple.github.io/container/documentation/containernetworkservice/networkconfiguration/) surfaces are narrower than the requested design, while Containerization's public [`Interface`](https://apple.github.io/containerization/documentation/containerization/interface/) surface currently assumes an IPv4-shaped primary address. The fork changes below therefore remain explicit matched-stack requirements until equivalent Apple APIs are available.
 
 ## Docker Reference Contract
 
@@ -852,9 +852,9 @@ The primary release criterion is the repository definition of comparable: no mat
 
 | Stable ID | Repository | Work package | Exit condition |
 | ---: | --- | --- | --- |
-| <a id="net-wp-01"></a>`NET-WP-01` | `container-compose` | Lossless compose-go projection and source model | **Verified static-model subset:** [NET-IPAM-MODEL-01](parity/handoffs/NET-IPAM-MODEL-01.md) preserves full ordered pools, named aux, drivers, options, and tri-state flags through `config`/`convert` without enabling runtime behavior. |
+| <a id="net-wp-01"></a>`NET-WP-01` | `container-compose` | Lossless compose-go projection and source model | **Verified static-model subset:** [NET-IPAM-MODEL-01](../parity/handoffs/NET-IPAM-MODEL-01.md) preserves full ordered pools, named aux, drivers, options, and tri-state flags through `config`/`convert` without enabling runtime behavior. |
 | <a id="net-wp-02"></a>`NET-WP-02` | Shared authority | Immutable identity, common typed-provider registry, workload journal, v2 resources, inspect API, capabilities, and migration | Network mutations are one domain transaction under the selected authority; legacy fixtures dual-read and advanced values round-trip. |
-| <a id="net-wp-03"></a>`NET-WP-03` | `container` | Transactional endpoint ledger, canonical namespace-delegation reference, custom-mode resolver, and sparse default IPAM | **Verified limited subset:** [NET-IPAM-ALLOCATION-RANGE-01](parity/handoffs/NET-IPAM-ALLOCATION-RANGE-01.md) proves one VMNet IPv4 pool’s range/gateway/auxiliary reservation behavior and service restart retention. The full exit condition remains deterministic lease conflicts, custom existing-network attachment, donor joins, stop/start, service restart, exhaustion, and crash recovery across the durable ledger. |
+| <a id="net-wp-03"></a>`NET-WP-03` | `container` | Transactional endpoint ledger, canonical namespace-delegation reference, custom-mode resolver, and sparse default IPAM | **Verified limited subset:** [NET-IPAM-ALLOCATION-RANGE-01](../parity/handoffs/NET-IPAM-ALLOCATION-RANGE-01.md) proves one VMNet IPv4 pool’s range/gateway/auxiliary reservation behavior and service restart retention. The full exit condition remains deterministic lease conflicts, custom existing-network attachment, donor joins, stop/start, service restart, exhaustion, and crash recovery across the durable ledger. |
 | <a id="net-wp-04"></a>`NET-WP-04` | `containerization` | Engine Linux sandbox dynamic netns, optional-family interface, route, DNS, and sysctl primitives | IPv6-only and private/joined live workloads have correct endpoints, routes, DNS, connectivity, and isolation. |
 | <a id="net-wp-05"></a>`NET-WP-05` | `container` | Structured provider contract, controller-action identity, protected-effect storage/reconciliation, backend descriptors, and v2 vmnet provider through the common registry | Built-in bridge passes family/range/aux/options oracles and exact repeated-pool negatives; raw effect material never enters general state and lost replies do not duplicate effects. |
 | <a id="net-wp-06"></a>`NET-WP-06` | `container-compose` | SPI v2 adapter, custom `network_mode` projection, capability gating, hashing, ownership, and reconciliation | Advanced fields and custom existing-network mode reach the runtime, same-name label rules match Docker, and hash-divergent networks recreate correctly. |
@@ -990,4 +990,4 @@ No field may be described as supported solely because it parses, renders, is pas
 - [Moby 29.2.1 remote network-driver protocol](https://github.com/moby/moby/blob/6bc6209b88a7a834c91f77d848e025c79e0227a1/daemon/libnetwork/docs/remote.md)
 - [Apple Container documentation](https://apple.github.io/container/documentation/)
 - [Apple Containerization documentation](https://apple.github.io/containerization/documentation/containerization/)
-- [Current macOS parity and performance review](reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md)
+- [Current macOS parity and performance review](../reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md)

@@ -558,7 +558,7 @@ cli-smoke-built:
 	[[ "$$compat_output" == *"brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose || brew install --formula stephenlclarke/tap/container-compose"* ]]; \
 	[[ "$$compat_output" == *"brew postinstall stephenlclarke/tap/container"* ]]; \
 	[[ "$$compat_output" == *"brew services restart stephenlclarke/tap/container"* ]]; \
-	[[ "$$compat_output" == *"https://github.com/stephenlclarke/container-compose/blob/main/INSTALL.md"* ]]; \
+	[[ "$$compat_output" == *"https://github.com/stephenlclarke/container-compose/blob/main/docs/guides/INSTALL.md"* ]]; \
 	service_tmp="$$(mktemp -d)"; \
 	trap 'rm -rf "$$service_tmp"' EXIT; \
 	printf '%s\n' '{"version":"0.11.0","source":"stephenlclarke/container-compose","branch":"service-smoke","lane":"stable","commit":"service-smoke","buildType":"release","containerSource":"stephenlclarke/container","containerRef":"matched-container","containerizationSource":"stephenlclarke/containerization","containerizationRef":"matched-containerization","composeGoVersion":"$(COMPOSE_GO_VERSION)"}' > "$$service_tmp/build-info.json"; \

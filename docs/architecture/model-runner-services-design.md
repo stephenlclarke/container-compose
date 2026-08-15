@@ -12,7 +12,7 @@
 
 ## Goal
 
-Close the model-runner services row in [STATUS.md](../STATUS.md) by supporting Compose `models` through one host-native, per-user model service owned by the enhanced Container authority and reached by Container Compose, Docker-compatible Engine clients, and devcontainer through the selected-provider gateway. Completion means that the stack:
+Deliver the [Model Runner services parity contract](https://github.com/stephenlclarke/container-compose/issues/275) by supporting Compose `models` through one host-native, per-user model service owned by the enhanced Container authority and reached by Container Compose, Docker-compatible Engine clients, and devcontainer through the selected-provider gateway. Completion means that the stack:
 
 - accepts and preserves the complete Compose model schema;
 - performs Docker Compose's list, conditional pull, configure, status, and environment-injection sequence at the same command boundaries;
@@ -55,9 +55,9 @@ Compose remains the project orchestrator. It does not own model content, inferen
 
 | Layer | Current boundary | Consequence |
 | --- | --- | --- |
-| Normalisation | [`NormalizedProject.swift`](../Sources/ComposeCore/NormalizedProject.swift) retains top-level models as untyped values. | Validation, hashing, selection, and environment derivation cannot use one complete contract. |
+| Normalisation | [`NormalizedProject.swift`](../../Sources/ComposeCore/NormalizedProject.swift) retains top-level models as untyped values. | Validation, hashing, selection, and environment derivation cannot use one complete contract. |
 | Service binding | Only `endpoint_var` and `model_var` survive as partially typed binding data. | The top-level artifact and runtime configuration are not connected to service intent. |
-| Runtime validation | [`ComposeOrchestratorValidation.swift`](../Sources/ComposeCore/ComposeOrchestratorValidation.swift) rejects services with models. | No native execution path exists. |
+| Runtime validation | [`ComposeOrchestratorValidation.swift`](../../Sources/ComposeCore/ComposeOrchestratorValidation.swift) rejects services with models. | No native execution path exists. |
 | Parser | The compose-go normaliser already preserves `model`, `name`, `context_size`, ordered `runtime_flags`, and list/mapping binding syntax. | The input layer is ahead of the runtime; replacing it would add risk without closing parity. |
 | Runtime service | There is no shared model manager, OCI model store, Metal-backed runner, or guest endpoint. | Compose cannot implement models by translation alone. |
 | Engine boundary | There is no common Docker Model route/CLI integration shared with devcontainer. | A local devcontainer implementation would create another socket, model store, and authority. |
@@ -1103,6 +1103,6 @@ Paired tests record cold pull, warm cache, configure acknowledgement, endpoint d
 - [Docker Model Runner source](https://github.com/docker/model-runner/tree/b4ba47bb1ae49e13681888fda732ee0cf4144c3c)
 - [Docker Compose 5.3.1 model orchestration](https://github.com/docker/compose/tree/v5.3.1/pkg/compose)
 - [Docker Engine API](https://docs.docker.com/reference/api/engine/)
-- [Current normalised project model](../Sources/ComposeCore/NormalizedProject.swift)
-- [Current runtime validation](../Sources/ComposeCore/ComposeOrchestratorValidation.swift)
-- [Current parity ledger](../STATUS.md)
+- [Current normalised project model](../../Sources/ComposeCore/NormalizedProject.swift)
+- [Current runtime validation](../../Sources/ComposeCore/ComposeOrchestratorValidation.swift)
+- [Current stable functionality](../project/STATUS.md)

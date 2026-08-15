@@ -12,7 +12,7 @@
 
 ## Goal
 
-Close the Docker lifecycle states and actions row in [STATUS.md](../STATUS.md) by making container identity, public state, transitions, waits, and events one durable runtime contract. Completion means that every native, Compose, devcontainer, and Docker HTTP client observes:
+Deliver the [Docker lifecycle states and actions parity contract](https://github.com/stephenlclarke/container-compose/issues/274) by making container identity, public state, transitions, waits, and events one durable runtime contract. Completion means that every native, Compose, devcontainer, and Docker HTTP client observes:
 
 - the same immutable container ID and independently mutable canonical name;
 - Docker's `created`, `running`, `paused`, `restarting`, `exited`, `removing`, and `dead` states with complete inspect fields;
@@ -56,10 +56,10 @@ The design replaces inferred state and synthetic event translation with a centra
 | Layer | Current boundary | Consequence |
 | --- | --- | --- |
 | Container status | The pinned runtime exposes only `unknown`, `stopped`, `running`, `paused`, and `stopping`. | It cannot represent Docker `created`, `restarting`, `removing`, `exited`, or `dead` truthfully. |
-| Compose discovery | [`ComposeRuntimeDiscovery.swift`](../Sources/ComposeRuntimeSPI/ComposeRuntimeDiscovery.swift) carries a string status plus only exit code/date and health. | PID, OOM, error, restart count, exact timestamps, and transient state are lost. |
+| Compose discovery | [`ComposeRuntimeDiscovery.swift`](../../Sources/ComposeRuntimeSPI/ComposeRuntimeDiscovery.swift) carries a string status plus only exit code/date and health. | PID, OOM, error, restart count, exact timestamps, and transient state are lost. |
 | Identity | Compose and lower adapters commonly use one string as both container name and ID. | Atomic rename and stable event actor identity are impossible. |
-| Restart | [`ContainerLifecycleAdapter.swift`](../Sources/ComposeContainerRuntime/ContainerLifecycleAdapter.swift) exposes start/stop but no atomic runtime restart. Compose implements restart as separate stop/start calls. | Interleaving clients, hooks, events, restart-policy suppression, and failure residue can diverge from Docker. |
-| Events | [`ContainerEventsAdapter.swift`](../Sources/ComposeContainerRuntime/ContainerEventsAdapter.swift) renders runtime JSONL and suppresses a generic delete event. | It cannot create missing provenance or guarantee the state commit associated with an action. |
+| Restart | [`ContainerLifecycleAdapter.swift`](../../Sources/ComposeContainerRuntime/ContainerLifecycleAdapter.swift) exposes start/stop but no atomic runtime restart. Compose implements restart as separate stop/start calls. | Interleaving clients, hooks, events, restart-policy suppression, and failure residue can diverge from Docker. |
+| Events | [`ContainerEventsAdapter.swift`](../../Sources/ComposeContainerRuntime/ContainerEventsAdapter.swift) renders runtime JSONL and suppresses a generic delete event. | It cannot create missing provenance or guarantee the state commit associated with an action. |
 | Exit events | The pinned runtime emits `die` and `stop` for every process exit. | Natural exit and automatic policy restart incorrectly look like explicit stop; Docker emits `stop` only for the Stop operation. |
 | OOM | Exit code alone is available; no reliable per-container cgroup counter observation feeds state. | Exit 137 cannot distinguish OOM, SIGKILL, or daemon interruption. |
 | Removal | There is no durable public removal intent/dead tombstone transaction. | A service crash can leave resources partially removed without an inspectable recovery state. |
@@ -825,6 +825,6 @@ Paired median/P95 tests cover create/start/stop/restart/remove, list/inspect 1/1
 - [Docker Compose 5.3.1 restart implementation](https://github.com/docker/compose/blob/v5.3.1/pkg/compose/restart.go)
 - [Moby 29.2.1 container state model](https://github.com/moby/moby/blob/6bc6209b88a7a834c91f77d848e025c79e0227a1/daemon/container/state.go)
 - [Moby 29.2.1 event service](https://github.com/moby/moby/tree/6bc6209b88a7a834c91f77d848e025c79e0227a1/daemon/events)
-- [Current Compose event adapter](../Sources/ComposeContainerRuntime/ContainerEventsAdapter.swift)
-- [Current Compose lifecycle adapter](../Sources/ComposeContainerRuntime/ContainerLifecycleAdapter.swift)
-- [Current parity ledger](../STATUS.md)
+- [Current Compose event adapter](../../Sources/ComposeContainerRuntime/ContainerEventsAdapter.swift)
+- [Current Compose lifecycle adapter](../../Sources/ComposeContainerRuntime/ContainerLifecycleAdapter.swift)
+- [Current stable functionality](../project/STATUS.md)

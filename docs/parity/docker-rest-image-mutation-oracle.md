@@ -14,8 +14,8 @@ This closes `POST /images/create`, `POST /images/{name...}/tag`, and
 `DELETE /images/{name...}` for public, unauthenticated pulls and tag deletion.
 Registry credentials, push, search, history, build/session, credential
 projection, typed guest socket grants, and external-client adoption remain in
-[STATUS.md](../../STATUS.md) and the
-[API socket design](../non-local-volumes-advanced-mounts-api-socket-design.md).
+[BACKLOG.md](../project/BACKLOG.md), [issue #270](https://github.com/stephenlclarke/container-compose/issues/270), and the
+[API socket design](../architecture/non-local-volumes-advanced-mounts-api-socket-design.md).
 
 ## Pinned Oracle
 

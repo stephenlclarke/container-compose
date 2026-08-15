@@ -14,7 +14,7 @@
 
 ## Goal
 
-Close the Local Deploy device/resource subset row in [STATUS.md](../STATUS.md) by matching Docker Compose's local, non-Swarm projection exactly. The current row overstates the implementation gap: Docker Compose local mode does not schedule CPU, PID, or generic-resource reservations, and the Compose schema does not accept reservation PIDs or device/generic resource limits. The only missing runtime mapping in this row is the complete set of `deploy.resources.reservations.devices` requests, including non-GPU requests. Compose-layer corrections must also preserve/ignore valid scheduler metadata. The job-mode wait/restart correction is now `Verified`: the exact main graph builds, its five focused regressions pass, and the strict Docker/CLI certificate passes.
+Deliver the [Local Deploy reservation parity contract](https://github.com/stephenlclarke/container-compose/issues/276) by matching Docker Compose's local, non-Swarm projection exactly. Docker Compose local mode does not schedule CPU, PID, or generic-resource reservations, and the Compose schema does not accept reservation PIDs or device/generic resource limits. The missing runtime mapping is the complete set of `deploy.resources.reservations.devices` requests, including non-GPU requests. Compose-layer corrections must also preserve or ignore valid scheduler metadata. The job-mode wait and restart correction is `Verified`: the exact main graph builds, its five focused regressions pass, and the strict Docker and CLI certificate passes.
 
 Completion means that the stack:
 
@@ -118,11 +118,11 @@ Static non-CDI service device mappings remain in `HostConfig.Devices`; `device_c
 
 | Layer | Current boundary | Consequence |
 | --- | --- | --- |
-| Parity ledger | [STATUS.md](../STATUS.md) records CPU/generic reservations as valid values that are incorrectly rejected instead of preserved/ignored, non-GPU device reservations as blocked on DeviceBroker, reservation PIDs plus device/generic limits as schema-invalid, and job-specific wait/restart handling as verified removed. | The design-time correction removes the earlier Swarm/runtime conflation without claiming that the remaining implementation exists. |
-| Normalizer | [`main.go`](../Tools/compose-normalizer/main.go) retains raw Deploy data but derives only `DeployGPURequests` and an `UnsupportedDeployFields` list. | Valid generic reservations and non-GPU device reservations are rejected instead of preserved or mapped. |
+| Current status | [STATUS.md](../project/STATUS.md) records CPU/generic reservations as valid values that are incorrectly rejected instead of preserved/ignored, non-GPU device reservations as blocked on DeviceBroker, reservation PIDs plus device/generic limits as schema-invalid, and job-specific wait/restart handling as verified removed. | The design-time correction removes the earlier Swarm/runtime conflation without claiming that the remaining implementation exists. |
+| Normalizer | [`main.go`](../../Tools/compose-normalizer/main.go) retains raw Deploy data but derives only `DeployGPURequests` and an `UnsupportedDeployFields` list. | Valid generic reservations and non-GPU device reservations are rejected instead of preserved or mapped. |
 | Local jobs | `deploy.mode` now follows ordinary local service convergence and restart projection. | The prior extra job-completion wait and restart rejection are verified removed; per-node scheduling remains out of scope. |
-| Compose model | [`NormalizedProject.swift`](../Sources/ComposeCore/NormalizedProject.swift) stores service/Deploy GPU requests as generic values and no general runtime `DeviceRequest`. | Capabilities, defaults, source order, and Engine OR alternatives cannot share one typed contract. |
-| Compose projection | [`ComposeOrchestratorRuntimeSupport.swift`](../Sources/ComposeCore/ComposeOrchestratorRuntimeSupport.swift) converts requests to `--gpus` strings and validates only the single virtio-GPU subset. | Non-GPU, CDI, multiple provider, and Engine API request semantics cannot pass losslessly. |
+| Compose model | [`NormalizedProject.swift`](../../Sources/ComposeCore/NormalizedProject.swift) stores service/Deploy GPU requests as generic values and no general runtime `DeviceRequest`. | Capabilities, defaults, source order, and Engine OR alternatives cannot share one typed contract. |
+| Compose projection | [`ComposeOrchestratorRuntimeSupport.swift`](../../Sources/ComposeCore/ComposeOrchestratorRuntimeSupport.swift) converts requests to `--gpus` strings and validates only the single virtio-GPU subset. | Non-GPU, CDI, multiple provider, and Engine API request semantics cannot pass losslessly. |
 | Container transport | The matched `LinuxRuntimeData` carries flat `LinuxGPURequest` plus direct guest device mappings. | It cannot carry an Engine OR-of-AND capability request or provider lease identity. |
 | Container runtime | The matched runtime knows a short fixed list of guest pseudo-devices and one virtio-GPU/DRM path. | Metadata can be constructed, but there is no discoverable engine inventory, provider resolution, CDI registry, capacity decision, or durable lease. |
 | Containerization | The matched lower layer can create typed OCI device nodes/cgroup rules and discover selected guest paths. | It is a suitable plan executor, but it must not become a provider registry or macOS hardware authority. |
@@ -1301,7 +1301,7 @@ Behavioural parity and performance are judged separately. The candidate median a
 
 ## STATUS Alignment
 
-[STATUS.md](../STATUS.md) now records the corrected current-state boundary: local CPU/memory/PID limits and memory/GPU reservations are mapped; valid CPU/generic reservations are still rejected instead of preserved/ignored; non-GPU device reservations do not yet reach DeviceBroker; and `replicated-job`/`global-job` use verified ordinary local restart, detached-start, and readiness behavior. Reservation PIDs and device/generic limits are Compose schema errors, not missing runtime mappings.
+[STATUS.md](../project/STATUS.md) now records the corrected current-state boundary: local CPU/memory/PID limits and memory/GPU reservations are mapped; valid CPU/generic reservations are still rejected instead of preserved/ignored; non-GPU device reservations do not yet reach DeviceBroker; and `replicated-job`/`global-job` use verified ordinary local restart, detached-start, and readiness behavior. Reservation PIDs and device/generic limits are Compose schema errors, not missing runtime mappings.
 
 Only after this design's implementation definition of done passes may the Local Deploy gap row be replaced with the following supported-state substance:
 

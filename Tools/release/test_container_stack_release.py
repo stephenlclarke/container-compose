@@ -612,14 +612,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             '/^Set MarginFill / { printf "Env PATH \\\"%s\\\"\\n", runtime_path }',
             workflow,
         )
-        self.assertIn("docs/container-compose-demo.tape", workflow)
+        self.assertIn("docs/assets/container-compose-demo.tape", workflow)
         self.assertIn("VHS itself is the fail-closed runtime gate", workflow)
         self.assertIn(
             'RUNNER_TEMP="${demo_session_root}" '
             "bash Tools/release/record-vhs-live-demo.sh",
             workflow,
         )
-        tape = (ROOT / "docs/container-compose-demo.tape").read_text(
+        tape = (ROOT / "docs/assets/container-compose-demo.tape").read_text(
             encoding="utf-8"
         )
         self.assertEqual(
@@ -643,7 +643,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('"${vhs_bin}" "${tape}"', recorder)
         self.assertIn("Current build VHS recording is missing", workflow)
         self.assertIn('--current-asset "${{ steps.lane.outputs.demo_asset }}"', workflow)
-        tape = (ROOT / "docs" / "container-compose-demo.tape").read_text(encoding="utf-8")
+        tape = (ROOT / "docs" / "assets" / "container-compose-demo.tape").read_text(encoding="utf-8")
         typed_command = None
         for line in tape.splitlines():
             if line.startswith('Type "'):
@@ -2022,7 +2022,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('milestone Current soak override accepted:', readiness)
         self.assertLess(readiness.index('current tag targets'), readiness.index('MILESTONE_SOAK_OVERRIDE_REASON'))
         self.assertLess(readiness.index('current GitHub prerelease or package asset is missing'), readiness.index('MILESTONE_SOAK_OVERRIDE_REASON'))
-        build_doc = (ROOT / "BUILD.md").read_text(encoding="utf-8")
+        build_doc = (ROOT / "docs/guides/BUILD.md").read_text(encoding="utf-8")
         self.assertIn("CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON", build_doc)
         self.assertIn("Current source and package", build_doc)
 

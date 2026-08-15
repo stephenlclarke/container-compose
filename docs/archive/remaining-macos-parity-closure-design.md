@@ -1,9 +1,16 @@
 # Remaining macOS Parity Closure Design
 
+> [!NOTE]
+> This 31 July 2026 programme review is archived. Its live backlog role was
+> superseded on 15 August 2026 by
+> [BACKLOG.md](../project/BACKLOG.md) and the cross-repository GitHub issue
+> hierarchy rooted at [issue #266](https://github.com/stephenlclarke/container-compose/issues/266).
+> It remains here only as historical design and audit evidence.
+
 | Item | Value |
 | --- | --- |
-| Status | Implementation underway. The 0.11.0 release closes the logging live-attachment/publication prerequisite and ships several networking, lifecycle, image, and security subsets. STATUS/help reconciliation is current; the remaining functional designs, release-grade performance lanes, hardware/provider feasibility proofs, and stock-Apple compatibility work remain. |
-| Scope | Residual gaps between [`STATUS.md`](../STATUS.md) and the focused Container-family parity designs |
+| Status | Archived; superseded as a live programme tracker by BACKLOG.md and GitHub issue #266. |
+| Scope | Residual gaps between [`STATUS.md`](../project/STATUS.md) and the focused Container-family parity designs |
 | Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
 | Primary execution host | Local MBP, using matched non-debug release artefacts |
 | Design date | 31 July 2026 |
@@ -38,7 +45,7 @@ speculative feature work:
    provider.
 
 This design closes those residual design gaps. It does not replace the
-[coherent Container-family architecture](coherent-container-family-parity-design.md)
+[coherent Container-family architecture](../architecture/coherent-container-family-parity-design.md)
 or any focused design. It supplies the performance implementation plan,
 machine-checkable STATUS coverage, hardware/provider feasibility rules, and
 oracle-first reconciliation needed to decide when the parity ledger can
@@ -83,16 +90,16 @@ truthfully become green.
 
 | STATUS row | Design owner | Residual disposition |
 | --- | --- | --- |
-| Comparable performance evidence | This design plus the [development cycle](container-family-development-cycle.md) | Confirmed actionable residual. Implement the harness and optimisation plan below. |
-| Shared namespaces and Docker-complete privileged isolation | [Shared namespaces and privileged isolation](shared-namespaces-privileged-isolation-design.md) | Fully designed. |
-| Advanced network and IPAM semantics | [Advanced network and IPAM](advanced-network-ipam-design.md) | Fully designed; the links oracle reconciliation below may add fixtures, not another network authority. |
-| Non-local volumes, advanced mounts, and `use_api_socket` | [Volumes, mounts, and API socket](non-local-volumes-advanced-mounts-api-socket-design.md) | Fully designed. |
-| Docker logging-driver semantics | [Docker logging drivers](docker-logging-driver-semantics-design.md) | Fully designed. Performance lanes are supplied here. |
-| Devices and GPU parity | [Local Deploy and DeviceBroker](local-deploy-device-resource-subset-design.md) plus [privileged inventory](shared-namespaces-privileged-isolation-design.md) | Generic request, CDI, lease, inventory, non-GPU, and truthful-unavailable behaviour are designed. Provider-specific positive support is conditional on the feasibility contract below. |
-| Remaining resource and security controls | [Resource and security controls](remaining-resource-security-controls-design.md) | Fully designed. Unsupported cgroup-v2 behaviour still requires Docker-matched warning/error evidence, not fake enforcement. |
-| Docker lifecycle states and actions | [Docker lifecycle](docker-lifecycle-states-actions-design.md) | Fully designed, including exit finalisation, auto-remove, waits, removal/dead recovery, and events. |
-| Model-runner services | [Model Runner](model-runner-services-design.md) | Fully designed. |
-| Local Deploy device/resource subset | [Local Deploy subset](local-deploy-device-resource-subset-design.md) | Fully designed. |
+| Comparable performance evidence | This design plus the [development cycle](../architecture/container-family-development-cycle.md) | Confirmed actionable residual. Implement the harness and optimisation plan below. |
+| Shared namespaces and Docker-complete privileged isolation | [Shared namespaces and privileged isolation](../architecture/shared-namespaces-privileged-isolation-design.md) | Fully designed. |
+| Advanced network and IPAM semantics | [Advanced network and IPAM](../architecture/advanced-network-ipam-design.md) | Fully designed; the links oracle reconciliation below may add fixtures, not another network authority. |
+| Non-local volumes, advanced mounts, and `use_api_socket` | [Volumes, mounts, and API socket](../architecture/non-local-volumes-advanced-mounts-api-socket-design.md) | Fully designed. |
+| Docker logging-driver semantics | [Docker logging drivers](../architecture/docker-logging-driver-semantics-design.md) | Fully designed. Performance lanes are supplied here. |
+| Devices and GPU parity | [Local Deploy and DeviceBroker](../architecture/local-deploy-device-resource-subset-design.md) plus [privileged inventory](../architecture/shared-namespaces-privileged-isolation-design.md) | Generic request, CDI, lease, inventory, non-GPU, and truthful-unavailable behaviour are designed. Provider-specific positive support is conditional on the feasibility contract below. |
+| Remaining resource and security controls | [Resource and security controls](../architecture/remaining-resource-security-controls-design.md) | Fully designed. Unsupported cgroup-v2 behaviour still requires Docker-matched warning/error evidence, not fake enforcement. |
+| Docker lifecycle states and actions | [Docker lifecycle](../architecture/docker-lifecycle-states-actions-design.md) | Fully designed, including exit finalisation, auto-remove, waits, removal/dead recovery, and events. |
+| Model-runner services | [Model Runner](../architecture/model-runner-services-design.md) | Fully designed. |
+| Local Deploy device/resource subset | [Local Deploy subset](../architecture/local-deploy-device-resource-subset-design.md) | Fully designed. |
 | Stock Apple `container` release support | This design and coherent stock-provider boundary | External compatibility dependency. It remains visible but does not block enhanced-provider parity. |
 
 ### Surface-table inconsistencies
@@ -531,11 +538,11 @@ Apple-shaped signed commits with complete local handoff documentation.
 
 ## Primary References
 
-- [Current parity ledger](../STATUS.md)
-- [Coherent Container-family parity architecture](coherent-container-family-parity-design.md)
-- [Container-family development cycle](container-family-development-cycle.md)
-- [Current macOS Compose parity and performance review](reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md)
-- [Runtime capability contract](runtime-capabilities.md)
-- [Advanced network and IPAM design](advanced-network-ipam-design.md)
-- [Local Deploy and DeviceBroker design](local-deploy-device-resource-subset-design.md)
-- [Docker lifecycle states and actions design](docker-lifecycle-states-actions-design.md)
+- [Current parity ledger](../project/STATUS.md)
+- [Coherent Container-family parity architecture](../architecture/coherent-container-family-parity-design.md)
+- [Container-family development cycle](../architecture/container-family-development-cycle.md)
+- [Current macOS Compose parity and performance review](../reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md)
+- [Runtime capability contract](../architecture/runtime-capabilities.md)
+- [Advanced network and IPAM design](../architecture/advanced-network-ipam-design.md)
+- [Local Deploy and DeviceBroker design](../architecture/local-deploy-device-resource-subset-design.md)
+- [Docker lifecycle states and actions design](../architecture/docker-lifecycle-states-actions-design.md)

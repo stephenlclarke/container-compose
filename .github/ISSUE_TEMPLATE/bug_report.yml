@@ -16,7 +16,7 @@
 
 name: Bug report
 description: File a bug report.
-title: "[Bug]: "
+title: "[Bug] "
 type: "Bug"
 body:
   - type: markdown
@@ -44,7 +44,7 @@ body:
 
         A minimal Compose file and command sequence are very helpful.
 
-        Need help? See our guide: [How to write effective reproduction steps](https://github.com/stephenlclarke/container-compose/blob/main/docs/bug-report-how-to.md#steps-to-reproduce).
+        Need help? See our guide: [How to write effective reproduction steps](https://github.com/stephenlclarke/container-compose/blob/main/docs/guides/bug-report-how-to.md#steps-to-reproduce).
       placeholder: |
         ```yaml
         services:
@@ -64,7 +64,7 @@ body:
       description: |
         Briefly describe your problem, and what you believe the correct behavior should be.
 
-        Need help? See our guide: [Problem description](https://github.com/stephenlclarke/container-compose/blob/main/docs/bug-report-how-to.md#problem-description).
+        Need help? See our guide: [Problem description](https://github.com/stephenlclarke/container-compose/blob/main/docs/guides/bug-report-how-to.md#problem-description).
     validations:
       required: true
   - type: textarea
@@ -77,7 +77,7 @@ body:
           - **Container**: Container CLI version 0.1.0
           - **container-compose**: 0.1.0
 
-        Need help gathering this info? See our guide: [Environment information](https://github.com/stephenlclarke/container-compose/blob/main/docs/bug-report-how-to.md#environment-information).
+        Need help gathering this info? See our guide: [Environment information](https://github.com/stephenlclarke/container-compose/blob/main/docs/guides/bug-report-how-to.md#environment-information).
       value: |
         - OS:
         - Xcode:
@@ -90,7 +90,7 @@ body:
     id: terms
     attributes:
       label: Code of Conduct
-      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/stephenlclarke/container-compose/blob/main/CODE_OF_CONDUCT.md).
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/stephenlclarke/container-compose/blob/main/docs/CODE_OF_CONDUCT.md).
       options:
         - label: I agree to follow this project's Code of Conduct
           required: true

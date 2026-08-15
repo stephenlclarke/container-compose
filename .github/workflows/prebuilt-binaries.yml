@@ -1098,7 +1098,7 @@ jobs:
           # waits for that command's live output before proceeding.
           export CONTAINER_COMPOSE_DEMO_ROOT="${demo_source_root}"
           sed "1s#^Output .*#Output \"${demo_output}\"#" \
-            docs/container-compose-demo.tape \
+            docs/assets/container-compose-demo.tape \
             | awk -v runtime_path="${demo_root}/bin:${PATH}" '
                 { print }
                 /^Set MarginFill / { printf "Env PATH \"%s\"\n", runtime_path }
@@ -1426,7 +1426,7 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --bootstrap-command "brew install go node python" \
             --build-command "make package" \
-            --source-guidance "BUILD.md and INSTALL.md" \
+            --source-guidance "docs/guides/BUILD.md and docs/guides/INSTALL.md" \
             --stable-install-command "brew install --formula stephenlclarke/tap/container stephenlclarke/tap/container-compose" \
             --current-install-command "brew install --formula stephenlclarke/tap/container-current stephenlclarke/tap/container-compose-current" \
             --install-command "sudo rm -rf /usr/local/libexec/container-plugins/compose && sudo install -d /usr/local/libexec/container-plugins && sudo tar -xzf container-compose-plugin-release-arm64.tar.gz -C /usr/local/libexec/container-plugins" \

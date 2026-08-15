@@ -4,7 +4,7 @@
 
 The Docker REST discovery contract is functionally **Verified** on the same MBP against Docker Engine 29.2.1/API 1.53 and the matched Container public socket. The retained Bash certificate drives Docker CLI 29.7.1 without modification and covers `docker version`, created/exited/running container rows, default/all listing, label/status/name filters, exactly one matching native Container object for every Docker row, Docker-compatible health summaries, and exact cleanup.
 
-This closes only `GET /version` and `GET /containers/json`. It is not a full Docker REST or `use_api_socket` claim. Image, auth, push, build/session, archive, events, exec, credential projection, typed guest socket grants, handoff, external clients, and the remaining generated route ledger are tracked in [STATUS.md](../../STATUS.md) and the [API socket design](../non-local-volumes-advanced-mounts-api-socket-design.md).
+This closes only `GET /version` and `GET /containers/json`. It is not a full Docker REST or `use_api_socket` claim. Image, auth, push, build/session, archive, events, exec, credential projection, typed guest socket grants, handoff, external clients, and the remaining generated route ledger are tracked in [BACKLOG.md](../project/BACKLOG.md), [issue #270](https://github.com/stephenlclarke/container-compose/issues/270), and the [API socket design](../architecture/non-local-volumes-advanced-mounts-api-socket-design.md).
 
 ## Pinned Oracle
 
