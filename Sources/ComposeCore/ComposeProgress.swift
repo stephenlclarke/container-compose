@@ -39,21 +39,7 @@ public struct ComposeProgressReporter: Sendable {
         emitData: @escaping @Sendable (Data) -> Void = { _ in
             // Silent until the CLI wires progress output to stderr.
         },
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { duration in
-            let components = duration.components
-            let seconds = UInt64(clamping: components.seconds)
-            let attoseconds = UInt64(clamping: components.attoseconds)
-            let secondsAsNanoseconds = seconds.multipliedReportingOverflow(
-                by: 1_000_000_000,
-            )
-            let totalNanoseconds = secondsAsNanoseconds.partialValue.addingReportingOverflow(
-                attoseconds / 1_000_000_000,
-            )
-            let nanoseconds = secondsAsNanoseconds.overflow || totalNanoseconds.overflow
-                ? UInt64.max
-                : totalNanoseconds.partialValue
-            try await Task<Never, Never>.sleep(nanoseconds: nanoseconds)
-        },
+        sleep: @escaping @Sendable (Duration) async throws -> Void = ComposeTaskSleep.sleep,
     ) {
         self.style = style
         self.colorEnabled = colorEnabled

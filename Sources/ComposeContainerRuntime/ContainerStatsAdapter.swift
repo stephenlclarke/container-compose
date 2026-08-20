@@ -84,7 +84,7 @@ public struct ContainerClientStatsManager: ComposeRuntimeStatsDataManaging {
         client: ContainerStatsAPIClienting = ContainerStatsAPIClient(),
         sampleInterval: Duration = .seconds(2),
         sampleIntervalMicroseconds: UInt64 = 2_000_000,
-        sleep: @escaping Sleeper = { try await Task.sleep(for: $0) },
+        sleep: @escaping Sleeper = ComposeTaskSleep.sleep,
     ) {
         self.client = client
         self.sampleInterval = sampleInterval

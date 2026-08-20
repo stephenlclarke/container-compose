@@ -30,7 +30,7 @@ public struct ComposeExecutionOptions {
         public var oneOffIdentifier: @Sendable () -> String = ComposeExecutionOptions.defaultOneOffIdentifier
         public var currentDate: @Sendable () -> Date = Date.init
         public var hostPortAllocator: @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16 = ComposeExecutionOptions.defaultHostPortAllocator
-        public var sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) } {
+        public var sleep: @Sendable (Duration) async throws -> Void = ComposeTaskSleep.sleep {
             didSet {
                 usesDefaultSleep = false
             }
@@ -179,7 +179,7 @@ public struct ComposeExecutionOptions {
         materializedConfigSecretDirectory = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
         temporaryDirectory = FileManager.default.temporaryDirectory
         runtimeCapabilities = ComposeRuntimeCapabilities()
-        sleep = { try await Task.sleep(for: $0) }
+        sleep = ComposeTaskSleep.sleep
         usesDefaultSleep = true
         confirm = ComposeExecutionOptions.defaultConfirmation
         emitStatus = ComposeExecutionOptions.defaultStatusEmitter
