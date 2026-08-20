@@ -624,7 +624,10 @@ extension ComposeOrchestrator {
     }
 
     convenience init(runner: CommandRunning, copier: ContainerCopying) {
-        self.init(runner: runner, dependencies: orchestratorDependencies { $0.copier = copier })
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.copier = copier
+            $0.discoveryManager = RecordingContainerDiscoveryManager(containers: runtimeServiceContainers())
+        })
     }
 
     convenience init(runner: CommandRunning, discoveryManager: ContainerDiscoveryManaging) {
@@ -632,11 +635,17 @@ extension ComposeOrchestrator {
     }
 
     convenience init(runner: CommandRunning, execManager: ContainerExecManaging) {
-        self.init(runner: runner, dependencies: orchestratorDependencies { $0.execManager = execManager })
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.discoveryManager = RecordingContainerDiscoveryManager(containers: runtimeServiceContainers())
+            $0.execManager = execManager
+        })
     }
 
     convenience init(runner: CommandRunning, exporter: ContainerExporting) {
-        self.init(runner: runner, dependencies: orchestratorDependencies { $0.exporter = exporter })
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.discoveryManager = RecordingContainerDiscoveryManager(containers: runtimeServiceContainers())
+            $0.exporter = exporter
+        })
     }
 
     convenience init(runner: CommandRunning, imageManager: ContainerImageManaging) {
@@ -722,7 +731,10 @@ extension ComposeOrchestrator {
         options: ComposeExecutionOptions,
         copier: ContainerCopying
     ) {
-        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.copier = copier })
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies {
+            $0.copier = copier
+            $0.discoveryManager = RecordingContainerDiscoveryManager(containers: runtimeServiceContainers())
+        })
     }
 
     convenience init(
@@ -754,7 +766,10 @@ extension ComposeOrchestrator {
         options: ComposeExecutionOptions,
         execManager: ContainerExecManaging
     ) {
-        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.execManager = execManager })
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies {
+            $0.discoveryManager = RecordingContainerDiscoveryManager(containers: runtimeServiceContainers())
+            $0.execManager = execManager
+        })
     }
 
     convenience init(
@@ -798,7 +813,10 @@ extension ComposeOrchestrator {
         options: ComposeExecutionOptions,
         logManager: ContainerLogManaging
     ) {
-        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.logManager = logManager })
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies {
+            $0.discoveryManager = RecordingContainerDiscoveryManager(containers: runtimeServiceContainers())
+            $0.logManager = logManager
+        })
     }
 
     convenience init(
@@ -1252,6 +1270,33 @@ func discoveredContainers() -> [ComposeContainerSummary] {
                 digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                 platform: "linux/amd64"
             )
+        ),
+    ]
+}
+
+func runtimeServiceContainers() -> [ComposeContainerSummary] {
+    discoveredContainers() + [
+        ComposeContainerSummary(
+            id: "custom-db",
+            status: "running",
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "db",
+                composeConfigHashLabel: "db-hash",
+                composeProjectConfigFilesLabel: "/tmp/demo/compose.yml",
+            ],
+            image: .init(reference: "postgres:latest", platform: "linux/arm64")
+        ),
+        ComposeContainerSummary(
+            id: "demo-db-1",
+            status: "running",
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "db",
+                composeConfigHashLabel: "db-hash",
+                composeProjectConfigFilesLabel: "/tmp/demo/compose.yml",
+            ],
+            image: .init(reference: "postgres:latest", platform: "linux/arm64")
         ),
     ]
 }
@@ -2197,7 +2242,9 @@ actor RecordingContainerDiscoveryManager: ContainerDiscoveryManaging {
             getResponses[id] = responses
             return response
         }
-        return containers.first { $0.id == id }
+        return containers.first {
+            $0.id == id || $0.displayName == id || $0.bundleKey == id
+        }
     }
 }
 

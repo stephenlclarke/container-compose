@@ -493,7 +493,7 @@ extension ComposeOrchestratorTests {
             }
         )
 
-        #expect(await discoveryManager.listRequests == [])
+        #expect(await discoveryManager.listRequests == [true])
         #expect(await logManager.requests == [
             ContainerLogRequest(id: "demo-api-1", tail: nil, follow: false),
         ])
@@ -1407,6 +1407,7 @@ extension ComposeOrchestratorTests {
             options: ComposeExecutionOptions { $0.emitAttachedData = { emitted.append(String(decoding: $0, as: UTF8.self)) } },
             dependencies: orchestratorDependencies {
                 $0.attachManager = attachManager
+                $0.discoveryManager = RecordingContainerDiscoveryManager(containers: runtimeServiceContainers())
                 $0.logManager = logManager
             }
         ).attach(
@@ -1444,6 +1445,7 @@ extension ComposeOrchestratorTests {
             options: ComposeExecutionOptions { $0.emitAttachedData = { emitted.append(String(decoding: $0, as: UTF8.self)) } },
             dependencies: orchestratorDependencies {
                 $0.attachManager = attachManager
+                $0.discoveryManager = RecordingContainerDiscoveryManager(containers: runtimeServiceContainers())
                 $0.logManager = logManager
             }
         ).attach(
@@ -1499,7 +1501,11 @@ extension ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).attach(
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(),
+            logManager: RecordingContainerLogManager()
+        ).attach(
             project: project,
             serviceName: "api",
             options: ComposeAttachOptions { $0.sigProxy = "false" }
@@ -1518,7 +1524,11 @@ extension ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).attach(
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(),
+            logManager: RecordingContainerLogManager()
+        ).attach(
             project: project,
             serviceName: "api",
             options: ComposeAttachOptions { $0.detachKeys = "ctrl-x,x" }
@@ -1548,6 +1558,7 @@ extension ComposeOrchestratorTests {
             options: ComposeExecutionOptions { $0.emitAttachedData = { emitted.append(String(decoding: $0, as: UTF8.self)) } },
             dependencies: orchestratorDependencies {
                 $0.attachManager = attachManager
+                $0.discoveryManager = RecordingContainerDiscoveryManager(containers: runtimeServiceContainers())
                 $0.lifecycleManager = lifecycleManager
                 $0.logManager = logManager
                 $0.signalProxy = signalProxy
@@ -1593,6 +1604,7 @@ extension ComposeOrchestratorTests {
             runner: RecordingRunner(),
             dependencies: orchestratorDependencies {
                 $0.attachManager = attachManager
+                $0.discoveryManager = RecordingContainerDiscoveryManager(containers: runtimeServiceContainers())
                 $0.lifecycleManager = lifecycleManager
                 $0.logManager = logManager
                 $0.signalProxy = signalProxy

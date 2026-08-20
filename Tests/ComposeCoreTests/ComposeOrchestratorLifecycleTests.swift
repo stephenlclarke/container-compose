@@ -3780,7 +3780,7 @@ extension ComposeOrchestratorTests {
 
         #expect(listed.map(\.id) == ["demo-api-1"])
         #expect(fetched?.id == "demo-api-1")
-        #expect(views.map(\.lifecycle.containerID) == ["demo-api-1"])
+        #expect(views.map(\.lifecycle.containerID) == [lifecycleView.lifecycle.containerID])
         #expect(await recorder.listFilters.map(\.ids) == [["demo-api-1"]])
         #expect(await recorder.getRequests == ["demo-api-1"])
         #expect(await recorder.lifecycleViewFilters.map(\.ids) == [["demo-api-1"]])
