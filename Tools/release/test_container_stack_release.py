@@ -629,6 +629,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             ),
             2,
         )
+        self.assertIn('demo_config_home="${demo_session_root}/config-home"', workflow)
+        self.assertIn('mkdir -p "${demo_config_home}/container"', workflow)
+        self.assertIn('[vminit]\n          image = "vminit:container-compose"', workflow)
+        self.assertIn('export XDG_CONFIG_HOME="${demo_config_home}"', workflow)
         self.assertNotIn("record_monitoring_stack_transcript", workflow)
         self.assertNotIn("demo_transcript", workflow)
         self.assertNotIn("current-build-demo-transcript", workflow)
