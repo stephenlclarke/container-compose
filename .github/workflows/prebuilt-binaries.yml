@@ -1016,6 +1016,7 @@ jobs:
           # volume; self-hosted runner work and caches may live on an external
           # volume that dyld cannot safely use for a launched service.
           demo_app_root="${demo_session_root}/app"
+          demo_config_home="${demo_session_root}/config-home"
           demo_source_root="${demo_session_root}/source"
           demo_output="${demo_session_root}/${DEMO_ASSET}"
           tape="${demo_session_root}/container-compose-current-demo.tape"
@@ -1050,7 +1051,12 @@ jobs:
 
           mkdir -p "${demo_root}/libexec/container-plugins"
           mkdir -p "${demo_app_root}"
+          mkdir -p "${demo_config_home}/container"
           mkdir -p "${demo_source_root}/examples"
+          cat > "${demo_config_home}/container/config.toml" <<'EOF'
+          [vminit]
+          image = "vminit:container-compose"
+          EOF
           cp -R examples/monitoring-stack "${demo_source_root}/examples/"
           tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"
           tar -xzf "${PLUGIN_ARCHIVE}" -C "${demo_root}/libexec/container-plugins"
@@ -1091,6 +1097,7 @@ jobs:
           export CONTAINER_INSTALL_ROOT="${demo_root}"
           export CONTAINER_APP_ROOT="${demo_app_root}"
           export CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE="${demo_init_image_archive}"
+          export XDG_CONFIG_HOME="${demo_config_home}"
           export PATH="${demo_root}/bin:${PATH}"
 
           # VHS itself is the fail-closed runtime gate. It types every command
