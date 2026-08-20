@@ -486,7 +486,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn(
             "DEMO_INIT_IMAGE_ARCHIVE_SHA256: "
-            "61bd3bb4efa642e1be868deca6270f4a1309492b3bd0fc1de18ecb2c810aa73b",
+            "07ab89568d2805665ea82bd4556f683a0c28aa476805d584875a3feadca97991",
             workflow,
         )
         self.assertIn("Validate Current demo init-image authority", package)
