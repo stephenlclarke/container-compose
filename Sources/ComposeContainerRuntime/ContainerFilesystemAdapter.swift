@@ -187,43 +187,27 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
         let (reader, writer) = try Self.archivePipe()
         let destinationOptions = ContainerCopyTransferOptions(preserveOwnership: options.preserveOwnership)
 
-        do {
-            try await withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask {
-                    defer { try? writer.close() }
-                    try await copyFromContainerAsArchive(
-                        id: sourceID,
-                        source: archiveSource.path,
-                        archive: writer,
-                        copyContents: archiveSource.copyContents,
-                        options: options,
-                    )
-                }
-                group.addTask {
-                    defer { try? reader.close() }
-                    try await copyArchiveIntoContainer(
-                        id: destinationID,
-                        archive: reader,
-                        destination: destination,
-                        options: destinationOptions,
-                    )
-                }
-                do {
-                    for try await _ in group {
-                        // Drain both child completions so neither transfer outlives the pipe.
-                    }
-                } catch {
-                    try? writer.close()
-                    try? reader.close()
-                    group.cancelAll()
-                    throw error
-                }
-            }
-        } catch {
-            try? writer.close()
-            try? reader.close()
-            throw error
-        }
+        try await Self.transferArchive(
+            reader: reader,
+            writer: writer,
+            export: {
+                try await copyFromContainerAsArchive(
+                    id: sourceID,
+                    source: archiveSource.path,
+                    archive: writer,
+                    copyContents: archiveSource.copyContents,
+                    options: options,
+                )
+            },
+            import: {
+                try await copyArchiveIntoContainer(
+                    id: destinationID,
+                    archive: reader,
+                    destination: destination,
+                    options: destinationOptions,
+                )
+            },
+        )
     }
 
     private func copyBetweenContainersUsingStagedArchive(
@@ -293,6 +277,73 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
             FileHandle(fileDescriptor: descriptors[0], closeOnDealloc: true),
             FileHandle(fileDescriptor: descriptors[1], closeOnDealloc: true),
         )
+    }
+}
+
+private extension ContainerClientCopier {
+    static func transferArchive(
+        reader: FileHandle,
+        writer: FileHandle,
+        export: @escaping @Sendable () async throws -> Void,
+        import: @escaping @Sendable () async throws -> Void,
+    ) async throws {
+        let transferError = await withTaskGroup(of: Result<Void, any Error>.self) { group in
+            group.addTask {
+                defer { try? writer.close() }
+                return await transferResult(export)
+            }
+            group.addTask {
+                defer { try? reader.close() }
+                return await transferResult(`import`)
+            }
+
+            var failures = [any Error]()
+            while let result = await group.next() {
+                if case let .failure(error) = result {
+                    if failures.isEmpty {
+                        // Closing both endpoints unblocks synchronous reads and writes.
+                        try? writer.close()
+                        try? reader.close()
+                        group.cancelAll()
+                    }
+                    failures.append(error)
+                }
+            }
+
+            // Pipe closure can surface before the operation that caused it.
+            return failures.first(where: { !isBrokenPipe($0) }) ?? failures.first
+        }
+
+        if let transferError {
+            try? writer.close()
+            try? reader.close()
+            throw transferError
+        }
+    }
+
+    static func transferResult(
+        _ operation: @escaping @Sendable () async throws -> Void,
+    ) async -> Result<Void, any Error> {
+        do {
+            try await operation()
+            return .success(())
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    static func isBrokenPipe(_ error: any Error) -> Bool {
+        var candidate: NSError? = error as NSError
+        while let current = candidate {
+            if current.domain == NSPOSIXErrorDomain, current.code == Int(EPIPE) {
+                return true
+            }
+            candidate = current.userInfo[NSUnderlyingErrorKey] as? NSError
+            if candidate === current {
+                break
+            }
+        }
+        return false
     }
 }
 
