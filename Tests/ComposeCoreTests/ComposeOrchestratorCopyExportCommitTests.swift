@@ -1151,8 +1151,8 @@ extension ComposeOrchestratorTests {
         )
 
         #expect(await exporter.requests == [
-            ContainerExportRequest(id: "demo-api-1", output: nil, live: false),
-            ContainerExportRequest(id: "custom-db", output: "db.tar", live: false),
+            ContainerExportRequest(id: "demo-api-1", output: nil, live: true),
+            ContainerExportRequest(id: "custom-db", output: "db.tar", live: true),
         ])
         #expect(runner.commands.isEmpty)
     }
@@ -2033,6 +2033,10 @@ extension ComposeOrchestratorTests {
             ComposeContainerSummary(
                 id: "demo-api-1",
                 status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ],
                 publishedPorts: [
                     ComposeContainerPublishedPort(hostAddress: "0.0.0.0", hostPort: 8080, containerPort: 80, protocolName: "tcp"),
                     ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 8443, containerPort: 443, protocolName: "tcp"),
@@ -2100,6 +2104,10 @@ extension ComposeOrchestratorTests {
             ComposeContainerSummary(
                 id: "demo-api-1",
                 status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ],
                 publishedPorts: [
                     ComposeContainerPublishedPort(hostAddress: "0.0.0.0", hostPort: 8080, containerPort: 80, protocolName: "tcp", count: 3),
                 ]
@@ -2217,6 +2225,10 @@ extension ComposeOrchestratorTests {
             ComposeContainerSummary(
                 id: "demo-api-1",
                 status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ],
                 publishedPorts: [
                     ComposeContainerPublishedPort(hostAddress: "0.0.0.0", hostPort: 8080, containerPort: 80, protocolName: "tcp"),
                 ]
