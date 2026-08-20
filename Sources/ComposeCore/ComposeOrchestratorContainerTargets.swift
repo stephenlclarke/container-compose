@@ -53,16 +53,19 @@ extension ComposeOrchestrator {
 
     /// Resolves the runtime ID for a service container index.
     func serviceContainerID(project: ComposeProject, service: ComposeService, index: Int) async throws -> String {
-        let id = try serviceContainerName(project: project, service: service, index: index)
-        guard index != 1, !options.dryRun else {
-            return id
+        let name = try serviceContainerName(project: project, service: service, index: index)
+        guard !options.dryRun else {
+            return name
         }
 
         let containers = try await projectContainers(projectName: project.name, all: true)
-        guard serviceContainerExists(containers, service: service, id: id) else {
-            throw ComposeError.invalidProject("service '\(service.name)' container '\(id)' does not exist")
+        guard let container = containers.first(where: {
+            ($0.displayName == name || $0.bundleKey == name)
+                && $0.serviceName == service.name && !$0.isOneOff
+        }) else {
+            throw ComposeError.invalidProject("service '\(service.name)' container '\(name)' does not exist")
         }
-        return id
+        return container.id
     }
 
     /// Returns the deterministic runtime name for a service container index.
@@ -121,12 +124,14 @@ extension ComposeOrchestrator {
                 let index = serviceContainerIndex(
                     project: project,
                     service: service,
-                    containerID: container.id,
+                    containerID: container.bundleKey ?? container.displayName,
                 ) ?? Int.max
                 return ServiceContainerTarget(
                     service: service,
                     index: index,
                     name: container.id,
+                    displayName: container.displayName,
+                    bundleKey: container.bundleKey,
                     status: container.status,
                 )
             }
@@ -176,7 +181,11 @@ extension ComposeOrchestrator {
             .filter { $0.serviceName == service.name && !$0.isOneOff }
             .sorted(by: serviceContainerSummaryOrder(project: project, service: service))
         for container in containers {
-            let index = serviceContainerIndex(project: project, service: service, containerID: container.id)
+            let index = serviceContainerIndex(
+                project: project,
+                service: service,
+                containerID: container.bundleKey ?? container.displayName,
+            )
             guard desiredCount == 0 || (index.map { $0 > desiredCount } ?? false) else {
                 continue
             }
@@ -188,12 +197,12 @@ extension ComposeOrchestrator {
     /// Returns a stable ordering for service container discovery.
     func serviceContainerSummaryOrder(project: ComposeProject, service: ComposeService) -> (ComposeContainerSummary, ComposeContainerSummary) -> Bool {
         { [self] lhs, rhs in
-            let lhsIndex = serviceContainerIndex(project: project, service: service, containerID: lhs.id) ?? Int.max
-            let rhsIndex = serviceContainerIndex(project: project, service: service, containerID: rhs.id) ?? Int.max
+            let lhsIndex = serviceContainerIndex(project: project, service: service, containerID: lhs.bundleKey ?? lhs.displayName) ?? Int.max
+            let rhsIndex = serviceContainerIndex(project: project, service: service, containerID: rhs.bundleKey ?? rhs.displayName) ?? Int.max
             if lhsIndex != rhsIndex {
                 return lhsIndex < rhsIndex
             }
-            return lhs.id < rhs.id
+            return lhs.displayName < rhs.displayName
         }
     }
 

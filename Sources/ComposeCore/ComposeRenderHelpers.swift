@@ -117,7 +117,7 @@ func renderComposeContainerTable(
         ["NAME", "IMAGE", "SERVICE", "STATUS", "PORTS"],
     ] + containers.map { container in
         [
-            container.id,
+            container.displayName,
             container.imageReference,
             container.serviceName ?? "",
             container.status,
@@ -212,8 +212,8 @@ private func composeContainerStructuredTemplateValues(
             $0.type == "volume" || $0.type == "external-volume"
         }),
         "Mounts": .string(mounts),
-        "Name": .string(container.id),
-        "Names": .string(container.id),
+        "Name": .string(container.displayName),
+        "Names": .string(container.displayName),
         "Networks": .string(networks),
         "Ports": .string(ports),
         "Project": .string(container.projectName ?? ""),
@@ -280,7 +280,7 @@ func containerServiceNames(_ containers: [ComposeContainerSummary]) -> [String] 
         guard let service = container.serviceName, !service.isEmpty else {
             return nil
         }
-        return (container.id, service)
+        return (container.displayName, service)
     }
     var seen: Set<String> = []
     var services: [String] = []
@@ -352,7 +352,7 @@ func composeImageRecords(containers: [ComposeContainerSummary], selectedServices
         }
         let reference = splitImageReference(container.imageReference)
         return ComposeImageRecord(
-            container: container.id,
+            container: container.displayName,
             service: service,
             repository: reference.repository,
             tag: reference.tag,
@@ -430,7 +430,8 @@ enum ComposeStartWaitState {
 /// Returns true when a discovered normal service container matches an ID.
 func serviceContainerExists(_ containers: [ComposeContainerSummary], service: ComposeService, id: String) -> Bool {
     containers.contains { container in
-        container.id == id && container.serviceName == service.name && !container.isOneOff
+        (container.displayName == id || container.bundleKey == id)
+            && container.serviceName == service.name && !container.isOneOff
     }
 }
 
@@ -439,7 +440,7 @@ func compareCopyTargetContainers(_ lhs: ComposeContainerSummary, _ rhs: ComposeC
     if lhs.isOneOff != rhs.isOneOff {
         return !lhs.isOneOff
     }
-    return lhs.id < rhs.id
+    return lhs.displayName < rhs.displayName
 }
 
 /// Validates the `compose ls --format` value.

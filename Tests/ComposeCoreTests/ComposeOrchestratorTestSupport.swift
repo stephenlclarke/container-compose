@@ -2204,21 +2204,25 @@ actor RecordingContainerDiscoveryManager: ContainerDiscoveryManaging {
 actor RecordingContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
     private let listResponse: [ContainerSnapshot]
     private let getResponse: ContainerSnapshot?
-    private let lifecycleResponse: [ContainerLifecycleRecordV2]
+    private let lifecycleViewsResponse: [ContainerLifecycleViewV2]
     private let getError: (any Error)?
+    private let lifecycleViewsError: (any Error)?
     private var filters: [ContainerListFilters] = []
+    private var lifecycleFilters: [ContainerListFilters] = []
     private var gets: [String] = []
 
     init(
         listResponse: [ContainerSnapshot] = [],
         getResponse: ContainerSnapshot? = nil,
-        lifecycleResponse: [ContainerLifecycleRecordV2] = [],
-        getError: (any Error)? = nil
+        lifecycleViewsResponse: [ContainerLifecycleViewV2] = [],
+        getError: (any Error)? = nil,
+        lifecycleViewsError: (any Error)? = nil
     ) {
         self.listResponse = listResponse
         self.getResponse = getResponse
-        self.lifecycleResponse = lifecycleResponse
+        self.lifecycleViewsResponse = lifecycleViewsResponse
         self.getError = getError
+        self.lifecycleViewsError = lifecycleViewsError
     }
 
     var listFilters: [ContainerListFilters] {
@@ -2227,6 +2231,10 @@ actor RecordingContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
 
     var getRequests: [String] {
         gets
+    }
+
+    var lifecycleViewFilters: [ContainerListFilters] {
+        lifecycleFilters
     }
 
     func listContainers(filters: ContainerListFilters) async throws -> [ContainerSnapshot] {
@@ -2242,8 +2250,12 @@ actor RecordingContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
         return getResponse
     }
 
-    func listLifecycleRecords() async throws -> [ContainerLifecycleRecordV2] {
-        lifecycleResponse
+    func listLifecycleViews(filters: ContainerListFilters) async throws -> [ContainerLifecycleViewV2] {
+        lifecycleFilters.append(filters)
+        if let lifecycleViewsError {
+            throw lifecycleViewsError
+        }
+        return lifecycleViewsResponse
     }
 }
 

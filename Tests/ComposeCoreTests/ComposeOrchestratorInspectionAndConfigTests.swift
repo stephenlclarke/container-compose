@@ -1238,7 +1238,7 @@ extension ComposeOrchestratorTests {
         let discoveryClient = ContainerDiscoveryAPIClient(
             list: { _ in [] },
             get: { _ in throw ComposeError.invalidProject("unexpected lookup") },
-            lifecycleList: { [] }
+            lifecycleViewList: { _ in [] }
         )
         let orchestrator = ComposeOrchestrator(
             runner: runner,

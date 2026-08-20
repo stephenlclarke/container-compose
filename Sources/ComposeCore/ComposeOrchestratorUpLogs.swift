@@ -356,7 +356,9 @@ private final class ComposeUpAttachedOutputRenderer: @unchecked Sendable {
         if let containerName = target.service.containerName, !containerName.isEmpty {
             return containerName
         }
-        return target.index == Int.max ? target.name : "\(target.service.name)-\(target.index)"
+        return target.index == Int.max
+            ? target.displayName ?? target.name
+            : "\(target.service.name)-\(target.index)"
     }
 
     private static func colorCode(for target: ServiceContainerTarget) -> String {

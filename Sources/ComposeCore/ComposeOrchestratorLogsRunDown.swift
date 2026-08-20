@@ -189,7 +189,7 @@ public extension ComposeOrchestrator {
             return containerName
         }
         guard target.index != Int.max else {
-            return target.name
+            return target.displayName ?? target.name
         }
         return "\(target.service.name)-\(target.index)"
     }

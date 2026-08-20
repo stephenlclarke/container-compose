@@ -209,6 +209,10 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
     }
 
     public var id: String
+    /// Canonical runtime name used for presentation and name-based matching.
+    public var name: String?
+    /// Stable resource key used to retain Compose replica identity across renames.
+    public var bundleKey: String?
     public var status: String
     public var labels: [String: String]
     public var imageReference: String
@@ -223,6 +227,8 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
 
     public init(
         id: String,
+        name: String? = nil,
+        bundleKey: String? = nil,
         status: String,
         labels: [String: String] = [:],
         image: Image = Image(),
@@ -230,6 +236,8 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         state: State = State(),
     ) {
         self.id = id
+        self.name = name
+        self.bundleKey = bundleKey
         self.status = status
         self.labels = labels
         imageReference = image.reference
@@ -241,6 +249,11 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         exitCode = state.exitCode
         exitedDate = state.exitedDate
         health = state.health
+    }
+
+    /// Canonical runtime name, falling back to the operation identifier for legacy providers.
+    public var displayName: String {
+        name ?? id
     }
 
     public init(id: String, status: String, labels: [String: String] = [:], exitCode: Int32) {

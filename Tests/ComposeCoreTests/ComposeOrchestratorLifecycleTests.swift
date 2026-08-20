@@ -3224,8 +3224,19 @@ extension ComposeOrchestratorTests {
                 exitedDate: Date(timeIntervalSince1970: 1_700_000_000)
             ),
         ]
+        let apiLifecycle = ContainerLifecycleRecordV2(
+            containerID: "api-operation-id",
+            canonicalName: "demo-api-1",
+            immutableBundleKey: "demo-api-1",
+            selectedProviderFingerprint: "runtime",
+            snapshot: ContainerLifecycleSnapshotV2(
+                state: .running,
+                running: true,
+                health: "healthy"
+            )
+        )
         let workerLifecycle = ContainerLifecycleRecordV2(
-            containerID: String(repeating: "b", count: 64),
+            containerID: "worker-operation-id",
             canonicalName: "demo-worker-1",
             immutableBundleKey: "demo-worker-1",
             selectedProviderFingerprint: "runtime",
@@ -3238,9 +3249,10 @@ extension ComposeOrchestratorTests {
             )
         )
         let client = RecordingContainerDiscoveryAPIClient(
-            listResponse: snapshots,
-            getResponse: snapshots[1],
-            lifecycleResponse: [workerLifecycle]
+            lifecycleViewsResponse: [
+                ContainerLifecycleViewV2(container: snapshots[0], lifecycle: apiLifecycle),
+                ContainerLifecycleViewV2(container: snapshots[1], lifecycle: workerLifecycle),
+            ]
         )
         let manager = ContainerClientDiscoveryManager(client: client)
 
@@ -3263,15 +3275,27 @@ extension ComposeOrchestratorTests {
             platform: "linux/arm64"
         )
         let createdClient = RecordingContainerDiscoveryAPIClient(
-            listResponse: [createdSnapshot],
-            getResponse: createdSnapshot
+            lifecycleViewsResponse: [
+                ContainerLifecycleViewV2(
+                    container: createdSnapshot,
+                    lifecycle: ContainerLifecycleRecordV2(
+                        containerID: "created-operation-id",
+                        canonicalName: "demo-created-1",
+                        immutableBundleKey: "demo-created-1",
+                        selectedProviderFingerprint: "runtime",
+                        snapshot: ContainerLifecycleSnapshotV2(state: .created)
+                    )
+                ),
+            ]
         )
         let createdManager = ContainerClientDiscoveryManager(client: createdClient)
         let created = try await createdManager.getContainer(id: "demo-created-1")
 
-        #expect(running.map(\.id) == ["demo-api-1", "demo-worker-1"])
+        #expect(running.map(\.id) == ["api-operation-id", "worker-operation-id"])
         #expect(running.first == ComposeContainerSummary(
-            id: "demo-api-1",
+            id: "api-operation-id",
+            name: "demo-api-1",
+            bundleKey: "demo-api-1",
             status: "running",
             labels: [
                 composeProjectLabel: "demo",
@@ -3301,26 +3325,86 @@ extension ComposeOrchestratorTests {
                     ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
                 ]
             ),
-            state: ComposeContainerSummary.State(health: "healthy")
+            state: ComposeContainerSummary.State(exitCode: 0, health: "healthy")
         ))
         #expect(all.map(\.status) == ["running", "restarting"])
-        #expect(worker?.id == "demo-worker-1")
+        #expect(worker?.id == "worker-operation-id")
+        #expect(worker?.name == "demo-worker-1")
+        #expect(worker?.bundleKey == "demo-worker-1")
         #expect(worker?.status == "restarting")
         #expect(worker?.platform == "linux/amd64")
         #expect(worker?.exitCode == 17)
         #expect(worker?.exitedDate == Date(timeIntervalSince1970: 1_700_000_000))
         #expect(created?.status == "created")
-        #expect(created?.exitCode == nil)
+        #expect(created?.exitCode == 0)
         #expect(missing == nil)
 
-        let filters = await client.listFilters
-        #expect(filters.count == 2)
+        let filters = await client.lifecycleViewFilters
+        #expect(filters.count == 3)
         #expect(filters[0].status == nil)
         #expect(filters[0].labels[ResourceLabelKeys.plugin] == ContainerListFilters.exclude("machine"))
         #expect(filters[1].status == nil)
         #expect(filters[1].labels[ResourceLabelKeys.plugin] == ContainerListFilters.exclude("machine"))
-        #expect(await client.getRequests == ["demo-worker-1"])
-        #expect(await missingClient.getRequests == ["demo-missing-1"])
+        #expect(filters[2].ids.isEmpty)
+        #expect(filters[2].labels.isEmpty)
+        #expect(await client.getRequests.isEmpty)
+        #expect(await missingClient.getRequests.isEmpty)
+    }
+
+    @Test("atomic discovery preserves canonical presentation and immutable operation identity")
+    func atomicDiscoveryPreservesCanonicalAndImmutableIdentity() async throws {
+        var snapshot = try containerSnapshot(
+            id: "demo-api-1",
+            status: .running,
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+            ],
+            imageReference: "example/api:latest",
+            imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            platform: "linux/arm64"
+        )
+        snapshot.configuration.dockerName = "renamed-api"
+        let immutableID = String(repeating: "a", count: 64)
+        let lifecycle = ContainerLifecycleRecordV2(
+            containerID: immutableID,
+            canonicalName: "renamed-api",
+            immutableBundleKey: snapshot.id,
+            selectedProviderFingerprint: "runtime",
+            snapshot: ContainerLifecycleSnapshotV2(state: .running, running: true)
+        )
+        let manager = ContainerClientDiscoveryManager(
+            client: RecordingContainerDiscoveryAPIClient(
+                lifecycleViewsResponse: [
+                    ContainerLifecycleViewV2(container: snapshot, lifecycle: lifecycle),
+                ]
+            )
+        )
+
+        let summary = try #require(try await manager.getContainer(id: "renamed-api"))
+        let operationSummary = try #require(try await manager.getContainer(id: immutableID))
+        let service = composeService(name: "api", image: "example/api:latest")
+        let project = ComposeProject(name: "demo", services: ["api": service])
+        let orchestrator = ComposeOrchestrator(discoveryManager: manager)
+        let targets = try await orchestrator.serviceContainerTargets(
+            project: project,
+            services: [service]
+        )
+        let resolvedOperationID = try await orchestrator.serviceContainerID(
+            project: project,
+            service: service,
+            index: 1
+        )
+
+        #expect(summary.id == immutableID)
+        #expect(summary.displayName == "renamed-api")
+        #expect(summary.bundleKey == "demo-api-1")
+        #expect(operationSummary == summary)
+        #expect(containerIdentifiers([summary]) == [immutableID])
+        #expect(renderComposeContainerTable([summary], noTrunc: false).contains("renamed-api"))
+        #expect(targets.map(\.name) == [immutableID])
+        #expect(targets.compactMap(\.displayName) == ["renamed-api"])
+        #expect(resolvedOperationID == immutableID)
     }
 
     @Test("discovery manager does not revive legacy state cleared by lifecycle authority")
@@ -3348,8 +3432,9 @@ extension ComposeOrchestratorTests {
         )
         let manager = ContainerClientDiscoveryManager(
             client: RecordingContainerDiscoveryAPIClient(
-                getResponse: snapshot,
-                lifecycleResponse: [lifecycle]
+                lifecycleViewsResponse: [
+                    ContainerLifecycleViewV2(container: snapshot, lifecycle: lifecycle),
+                ]
             )
         )
 
@@ -3443,6 +3528,7 @@ extension ComposeOrchestratorTests {
         #expect(running == [
             ComposeContainerSummary(
                 id: "demo-api-1",
+                bundleKey: "demo-api-1",
                 status: "running",
                 labels: [
                     composeProjectLabel: "demo",
@@ -3592,7 +3678,20 @@ extension ComposeOrchestratorTests {
             imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             platform: "linux/arm64"
         )
-        let recorder = RecordingContainerDiscoveryAPIClient(listResponse: [snapshot], getResponse: snapshot)
+        let lifecycleView = ContainerLifecycleViewV2(
+            container: snapshot,
+            lifecycle: ContainerLifecycleRecordV2.migrate(
+                bundleKey: snapshot.id,
+                canonicalName: snapshot.id,
+                selectedProviderFingerprint: "runtime",
+                legacy: nil
+            )
+        )
+        let recorder = RecordingContainerDiscoveryAPIClient(
+            listResponse: [snapshot],
+            getResponse: snapshot,
+            lifecycleViewsResponse: [lifecycleView]
+        )
         let client = ContainerDiscoveryAPIClient(
             list: { filters in
                 try await recorder.listContainers(filters: filters)
@@ -3602,17 +3701,23 @@ extension ComposeOrchestratorTests {
                     throw ComposeError.invalidProject("missing test snapshot")
                 }
                 return snapshot
+            },
+            lifecycleViewList: { filters in
+                try await recorder.listLifecycleViews(filters: filters)
             }
         )
         let filters = ContainerListFilters(ids: ["demo-api-1"], status: .running)
 
         let listed = try await client.listContainers(filters: filters)
         let fetched = try await client.getContainer(id: "demo-api-1")
+        let views = try await client.listLifecycleViews(filters: filters)
 
         #expect(listed.map(\.id) == ["demo-api-1"])
         #expect(fetched?.id == "demo-api-1")
+        #expect(views.map(\.lifecycle.containerID) == ["demo-api-1"])
         #expect(await recorder.listFilters.map(\.ids) == [["demo-api-1"]])
         #expect(await recorder.getRequests == ["demo-api-1"])
+        #expect(await recorder.lifecycleViewFilters.map(\.ids) == [["demo-api-1"]])
     }
 
     @Test("discovery API client maps not found and surfaces get failures")
@@ -3645,22 +3750,23 @@ extension ComposeOrchestratorTests {
         }
     }
 
-    @Test("discovery manager surfaces get failures")
-    func discoveryManagerSurfacesGetFailures() async throws {
-        let expected = ComposeError.invalidProject("get failed")
-        let client = RecordingContainerDiscoveryAPIClient(getError: expected)
+    @Test("discovery manager surfaces atomic lifecycle-view failures")
+    func discoveryManagerSurfacesLifecycleViewFailures() async throws {
+        let expected = ComposeError.invalidProject("lifecycle views failed")
+        let client = RecordingContainerDiscoveryAPIClient(lifecycleViewsError: expected)
         let manager = ContainerClientDiscoveryManager(client: client)
 
         do {
             _ = try await manager.getContainer(id: "demo-api-1")
-            Issue.record("Expected discovery get failure")
+            Issue.record("Expected lifecycle-view failure")
         } catch let error as ComposeError {
             #expect(error == expected)
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
-        #expect(await client.getRequests == ["demo-api-1"])
+        #expect(await client.getRequests.isEmpty)
+        #expect(await client.lifecycleViewFilters.count == 1)
     }
 
 }

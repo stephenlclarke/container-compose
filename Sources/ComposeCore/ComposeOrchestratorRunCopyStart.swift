@@ -387,7 +387,7 @@ extension ComposeOrchestrator {
             throw ComposeError.invalidProject("service '\(service.name)' container '\(indexedID)' does not exist")
         }
         return containers
-            .filter { $0.id == indexedID || $0.isOneOff }
+            .filter { $0.displayName == indexedID || $0.bundleKey == indexedID || $0.isOneOff }
             .map { ComposeCopyContainerTarget(id: $0.id, path: path) }
     }
 

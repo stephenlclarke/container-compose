@@ -312,7 +312,8 @@ extension ComposeOrchestrator {
             .filter {
                 $0.labels[projectLabel] == project.name
                     && $0.labels[imageVolumeAnonymousLabel] == "true"
-                    && $0.labels[imageVolumeContainerLabel] == target.name
+                    && $0.labels[imageVolumeContainerLabel]
+                    == (target.bundleKey ?? target.displayName ?? target.name)
             }
             .map(\.name)
         names.formUnion(imageVolumeNames)
@@ -567,7 +568,7 @@ extension ComposeOrchestrator {
             preservingServices: serviceNames,
         )
         if confirmBeforeRemoval, !remainingContainers.isEmpty {
-            let names = remainingContainers.map(\.id).joined(separator: ", ")
+            let names = remainingContainers.map(\.displayName).joined(separator: ", ")
             guard try await options.confirm("Going to remove orphan containers \(names)\nAre you sure? [yN] ") else {
                 return
             }
@@ -599,7 +600,7 @@ extension ComposeOrchestrator {
         guard !remainingContainers.isEmpty else {
             return
         }
-        let names = remainingContainers.map(\.id).joined(separator: ", ")
+        let names = remainingContainers.map(\.displayName).joined(separator: ", ")
         options.emitStatus(
             "warning: found orphan containers (\(names)) for this project; run with --remove-orphans to remove them",
         )
@@ -613,13 +614,13 @@ extension ComposeOrchestrator {
     ) async throws -> [ComposeContainerSummary] {
         try await projectContainers(projectName: project.name, all: true)
             .filter { container in
-                guard !declaredContainers.contains(container.id) else {
+                guard !declaredContainers.contains(container.bundleKey ?? container.displayName) else {
                     return false
                 }
                 let isPreservedService = container.serviceName.map { serviceNames.contains($0) } ?? false
                 return container.isOneOff || !isPreservedService
             }
-            .sorted { $0.id < $1.id }
+            .sorted { $0.displayName < $1.displayName }
     }
 
     /// Stops a project-scoped cleanup target with service hooks when its
