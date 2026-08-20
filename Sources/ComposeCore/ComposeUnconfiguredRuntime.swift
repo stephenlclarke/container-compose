@@ -117,6 +117,10 @@ struct ComposeUnconfiguredRuntime: ComposeRuntimeCopying, ComposeRuntimeExportin
         throw unavailable("container stop")
     }
 
+    func restartContainer(id _: String, signal _: String?, timeoutInSeconds _: Int?) async throws {
+        throw unavailable("container restart")
+    }
+
     func pauseContainer(id _: String) async throws {
         throw unavailable("container pause")
     }

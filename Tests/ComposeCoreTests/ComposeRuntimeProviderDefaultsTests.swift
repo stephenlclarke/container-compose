@@ -159,6 +159,9 @@ struct ComposeRuntimeProviderDefaultsTests {
         await expectUnavailable("container stop") {
             try await lifecycle.stopContainer(id: "app", signal: nil, timeoutInSeconds: nil)
         }
+        await expectUnavailable("container restart") {
+            try await lifecycle.restartContainer(id: "app", signal: nil, timeoutInSeconds: nil)
+        }
         await expectUnavailable("container pause") {
             try await lifecycle.pauseContainer(id: "app")
         }

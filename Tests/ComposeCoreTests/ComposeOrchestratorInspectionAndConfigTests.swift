@@ -1226,32 +1226,33 @@ extension ComposeOrchestratorTests {
         #expect(try listedContainerIDs(from: #require(emitted.messages.first)) == ["demo-api-1"])
     }
 
-    @Test("ps default discovery uses configured container binary and environment launcher")
-    func psDefaultDiscoveryUsesConfiguredContainerBinaryAndEnvironmentLauncher() async throws {
+    @Test("ps default discovery uses the native lifecycle API")
+    func psDefaultDiscoveryUsesNativeLifecycleAPI() async throws {
         let emitted = MessageRecorder()
-        let runner = RecordingRunner(responses: [
-            CommandResult(status: 0, stdout: "[]", stderr: ""),
-        ])
+        let runner = RecordingRunner()
         let options = ComposeExecutionOptions(
             containerBinary: "custom-container",
             environmentLauncher: "custom-env",
             runtimeHooks: .init(emit: { emitted.append($0) })
         )
+        let discoveryClient = ContainerDiscoveryAPIClient(
+            list: { _ in [] },
+            get: { _ in throw ComposeError.invalidProject("unexpected lookup") },
+            lifecycleViewList: { _ in [] }
+        )
         let orchestrator = ComposeOrchestrator(
             runner: runner,
             options: options,
-            dependencies: ComposeContainerRuntime.dependencies(runner: runner, options: options)
+            dependencies: ComposeContainerRuntime.dependencies(
+                runner: runner,
+                options: options,
+                discoveryClient: discoveryClient
+            )
         )
 
         try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]))
 
-        let command = try #require(runner.commands.first)
-        #expect(runner.commands.count == 1)
-        #expect(command.executable == "custom-env")
-        #expect(command.arguments == ["custom-container", "list", "--format", "json"])
-        #expect(command.workingDirectory == nil)
-        #expect(command.environment == nil)
-        #expect(command.io == .captured(input: nil))
+        #expect(runner.commands.isEmpty)
         let output = try #require(emitted.messages.first)
         let rows = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [[String: Any]]
         #expect(rows?.isEmpty == true)
@@ -2030,6 +2031,14 @@ extension ComposeOrchestratorTests {
         #expect(try listedContainerIDs(from: #require(emitted.messages.first)) == ["demo-paused-1"])
     }
 
+    @Test("ps accepts lifecycle v2 status filters")
+    func psAcceptsLifecycleV2StatusFilters() throws {
+        #expect(try psStatusFilters(
+            statuses: ["restarting"],
+            filters: ["status=removing", "status=dead"]
+        ) == ["restarting", "removing", "dead"])
+    }
+
     @Test("ps status filters services projection")
     func psStatusFiltersServicesProjection() async throws {
         let emitted = MessageRecorder()
@@ -2102,11 +2111,11 @@ extension ComposeOrchestratorTests {
         do {
             try await orchestrator.ps(
                 project: ComposeProject(name: "demo", services: [:]),
-                options: ComposePsOptions { $0.statuses = ["restarting"] }
+                options: ComposePsOptions { $0.statuses = ["ghost"] }
             )
             Issue.record("Expected unsupported status error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("ps status 'restarting'; current macOS Compose exposes created, exited, paused, running, stopping, and unknown"))
+            #expect(error == .unsupported("ps status 'ghost'; current macOS Compose exposes created, dead, exited, paused, removing, restarting, running, stopping, and unknown"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

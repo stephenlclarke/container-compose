@@ -2623,8 +2623,7 @@ extension ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 12),
-            .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 13),
-            .start(id: "demo-api-1"),
+            .restart(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 13),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 14),
             .delete(id: "demo-api-1", force: false),
         ])

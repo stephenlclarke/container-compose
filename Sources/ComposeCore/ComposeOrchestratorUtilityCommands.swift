@@ -38,11 +38,17 @@ public extension ComposeOrchestrator {
                 }
                 .sorted(by: serviceContainerSummaryOrder(project: project, service: service))
                 .map { container in
-                    let index = serviceContainerIndex(project: project, service: service, containerID: container.id)
+                    let index = serviceContainerIndex(
+                        project: project,
+                        service: service,
+                        containerID: container.bundleKey ?? container.displayName,
+                    )
                     return ServiceContainerTarget(
                         service: service,
                         index: index ?? Int.max,
                         name: container.id,
+                        displayName: container.displayName,
+                        bundleKey: container.bundleKey,
                         status: container.status,
                     )
                 }

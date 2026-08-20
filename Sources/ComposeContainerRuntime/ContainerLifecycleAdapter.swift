@@ -31,6 +31,9 @@ public protocol ContainerLifecycleAPIClienting: Sendable {
     /// Stops container `id` with fully resolved stop options.
     func stopContainer(id: String, options: ContainerStopOptions) async throws
 
+    /// Atomically restarts container `id`.
+    func restartContainer(id: String, options: ContainerStopOptions) async throws
+
     /// Pauses container `id`.
     func pauseContainer(id: String) async throws
 
@@ -52,6 +55,7 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
     public typealias Start = @Sendable (String) async throws -> Void
     public typealias Kill = @Sendable (String, String) async throws -> Void
     public typealias Stop = @Sendable (String, ContainerStopOptions) async throws -> Void
+    public typealias Restart = @Sendable (String, ContainerStopOptions) async throws -> Void
     public typealias Pause = @Sendable (String) async throws -> Void
     public typealias Unpause = @Sendable (String) async throws -> Void
     public typealias Wait = @Sendable (String) async throws -> Int32
@@ -61,6 +65,7 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
     private let startOperation: Start
     private let killOperation: Kill
     private let stopOperation: Stop
+    private let restartOperation: Restart
     private let pauseOperation: Pause
     private let unpauseOperation: Unpause
     private let waitOperation: Wait
@@ -72,6 +77,7 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
         public var start: Start
         public var kill: Kill
         public var stop: Stop
+        public var restart: Restart
         public var pause: Pause
         public var unpause: Unpause
 
@@ -79,12 +85,14 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
             start: @escaping Start = ContainerLifecycleLiveAdapter.start,
             kill: @escaping Kill = { try await ContainerClient().kill(id: $0, signal: $1) },
             stop: @escaping Stop = { try await ContainerClient().stop(id: $0, opts: $1) },
+            restart: @escaping Restart = { try await ContainerClient().restart(id: $0, opts: $1) },
             pause: @escaping Pause = { try await ContainerClient().pause(id: $0) },
             unpause: @escaping Unpause = { try await ContainerClient().unpause(id: $0) },
         ) {
             self.start = start
             self.kill = kill
             self.stop = stop
+            self.restart = restart
             self.pause = pause
             self.unpause = unpause
         }
@@ -111,6 +119,7 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
         startOperation = control.start
         killOperation = control.kill
         stopOperation = control.stop
+        restartOperation = control.restart
         pauseOperation = control.pause
         unpauseOperation = control.unpause
         waitOperation = state.wait
@@ -131,6 +140,11 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
     /// Stops a container through `ContainerClient`.
     public func stopContainer(id: String, options: ContainerStopOptions) async throws {
         try await stopOperation(id, options)
+    }
+
+    /// Restarts a container through one authority operation.
+    public func restartContainer(id: String, options: ContainerStopOptions) async throws {
+        try await restartOperation(id, options)
     }
 
     /// Pauses a container through `ContainerClient`.
@@ -204,6 +218,14 @@ public struct ContainerClientLifecycleManager: ComposeRuntimeLifecycleManaging {
             signal: signal,
         )
         try await client.stopContainer(id: id, options: options)
+    }
+
+    public func restartContainer(id: String, signal: String?, timeoutInSeconds: Int?) async throws {
+        let options = try ContainerStopOptions(
+            timeoutInSeconds: stopTimeout(timeoutInSeconds),
+            signal: signal,
+        )
+        try await client.restartContainer(id: id, options: options)
     }
 
     /// Pauses a running container through `ContainerClient.pause(id:)`.

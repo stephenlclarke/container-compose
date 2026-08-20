@@ -915,6 +915,8 @@ struct ServiceContainerTarget {
     var service: ComposeService
     var index: Int
     var name: String
+    var displayName: String? = nil
+    var bundleKey: String? = nil
     var status: String?
 }
 

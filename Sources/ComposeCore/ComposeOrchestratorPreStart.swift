@@ -63,12 +63,12 @@ extension ComposeOrchestrator {
         }
     }
 
-    /// Treats Apple `paused` as Docker's running state for start convergence.
+    /// Treats active lifecycle states as already started for convergence.
     func isStartedServiceTarget(_ target: ServiceContainerTarget) -> Bool {
         guard let status = target.status?.lowercased() else {
             return false
         }
-        return status == "running" || status == "paused"
+        return status == "running" || status == "paused" || status == "restarting"
     }
 
     /// Executes `pre_start` helpers sequentially against the lowest-numbered

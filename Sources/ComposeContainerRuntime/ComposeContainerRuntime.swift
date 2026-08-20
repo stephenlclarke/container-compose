@@ -26,6 +26,7 @@ public enum ComposeContainerRuntime {
     public static func dependencies(
         runner: CommandRunning = ProcessRunner(),
         options: ComposeExecutionOptions = ComposeExecutionOptions(),
+        discoveryClient: ContainerDiscoveryAPIClienting = ContainerDiscoveryAPIClient(),
     ) -> ComposeOrchestratorDependencies {
         let commands = ComposeOrchestratorCommandDependencies(
             archiveManager: ContainerArchiveManager(),
@@ -45,11 +46,7 @@ public enum ComposeContainerRuntime {
                 resourceManager: ContainerClientResourceManager(),
                 secretReader: ComposeExternalSecretReader(),
             ),
-            discoveryManager: ContainerLiveDiscoveryManager(
-                runner: runner,
-                environmentLauncher: options.environmentLauncher,
-                containerBinary: options.containerBinary,
-            ),
+            discoveryManager: ContainerClientDiscoveryManager(client: discoveryClient),
             inspection: .init(
                 statsManager: ContainerClientStatsManager(),
                 topManager: ContainerClientTopManager(),
