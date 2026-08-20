@@ -60,7 +60,7 @@ extension ComposeOrchestrator {
 
         let containers = try await projectContainers(projectName: project.name, all: true)
         guard let container = containers.first(where: {
-            ($0.displayName == name || $0.bundleKey == name)
+            (($0.bundleKey.map { $0 == name }) ?? ($0.displayName == name))
                 && $0.serviceName == service.name && !$0.isOneOff
         }) else {
             throw ComposeError.invalidProject("service '\(service.name)' container '\(name)' does not exist")

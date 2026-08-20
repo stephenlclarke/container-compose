@@ -3407,6 +3407,72 @@ extension ComposeOrchestratorTests {
         #expect(resolvedOperationID == immutableID)
     }
 
+    @Test("replica index resolution prefers stable bundle identity over a reused canonical name")
+    func replicaIndexResolutionPrefersStableBundleIdentity() async throws {
+        var firstSnapshot = try containerSnapshot(
+            id: "demo-api-1",
+            status: .running,
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+            ],
+            imageReference: "example/api:latest",
+            imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            platform: "linux/arm64"
+        )
+        firstSnapshot.configuration.dockerName = "demo-api-2"
+        var secondSnapshot = try containerSnapshot(
+            id: "demo-api-2",
+            status: .running,
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+            ],
+            imageReference: "example/api:latest",
+            imageDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            platform: "linux/arm64"
+        )
+        secondSnapshot.configuration.dockerName = "renamed-api"
+        let firstID = String(repeating: "a", count: 64)
+        let secondID = String(repeating: "b", count: 64)
+        let manager = ContainerClientDiscoveryManager(
+            client: RecordingContainerDiscoveryAPIClient(
+                lifecycleViewsResponse: [
+                    ContainerLifecycleViewV2(
+                        container: firstSnapshot,
+                        lifecycle: ContainerLifecycleRecordV2(
+                            containerID: firstID,
+                            canonicalName: "demo-api-2",
+                            immutableBundleKey: firstSnapshot.id,
+                            selectedProviderFingerprint: "runtime",
+                            snapshot: ContainerLifecycleSnapshotV2(state: .running, running: true)
+                        )
+                    ),
+                    ContainerLifecycleViewV2(
+                        container: secondSnapshot,
+                        lifecycle: ContainerLifecycleRecordV2(
+                            containerID: secondID,
+                            canonicalName: "renamed-api",
+                            immutableBundleKey: secondSnapshot.id,
+                            selectedProviderFingerprint: "runtime",
+                            snapshot: ContainerLifecycleSnapshotV2(state: .running, running: true)
+                        )
+                    ),
+                ]
+            )
+        )
+        let service = composeService(name: "api", image: "example/api:latest")
+        let orchestrator = ComposeOrchestrator(discoveryManager: manager)
+
+        let resolvedID = try await orchestrator.serviceContainerID(
+            project: ComposeProject(name: "demo", services: ["api": service]),
+            service: service,
+            index: 2
+        )
+
+        #expect(resolvedID == secondID)
+    }
+
     @Test("discovery manager does not revive legacy state cleared by lifecycle authority")
     func discoveryManagerDoesNotReviveLegacyStateClearedByLifecycleAuthority() async throws {
         let snapshot = try containerSnapshot(
