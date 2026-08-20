@@ -637,7 +637,9 @@ extension ComposeOrchestratorTests {
         let copier = RecordingContainerCopier()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
             ComposeContainerSummary(
-                id: "demo-api-run-first",
+                id: String(repeating: "e", count: 64),
+                name: "renamed-api-run-first",
+                bundleKey: "demo-api-run-first",
                 status: "stopped",
                 labels: [
                     composeProjectLabel: "demo",
@@ -647,7 +649,9 @@ extension ComposeOrchestratorTests {
                 ]
             ),
             ComposeContainerSummary(
-                id: "demo-api-1",
+                id: String(repeating: "f", count: 64),
+                name: "renamed-api",
+                bundleKey: "demo-api-1",
                 status: "running",
                 labels: [
                     composeProjectLabel: "demo",
@@ -1311,7 +1315,17 @@ extension ComposeOrchestratorTests {
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
             discoveredServiceContainer(id: "demo-api-2", serviceName: "api", status: "stopped"),
             discoveredServiceContainer(id: "demo-worker-1", serviceName: "worker", status: "stopped"),
-            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+            ComposeContainerSummary(
+                id: String(repeating: "1", count: 64),
+                name: "renamed-api",
+                bundleKey: "demo-api-1",
+                status: "stopped",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                ]
+            ),
             ComposeContainerSummary(id: "demo-api-run-abc", status: "stopped", labels: [
                 composeProjectLabel: "demo",
                 composeServiceLabel: "api",

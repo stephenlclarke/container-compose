@@ -2527,8 +2527,19 @@ extension ComposeOrchestratorTests {
     @Test("rm confirms before stopping containers")
     func rmConfirmsBeforeStoppingContainers() async throws {
         let runner = RecordingRunner()
+        let dockerID = String(repeating: "a", count: 64)
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
-            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "running"),
+            ComposeContainerSummary(
+                id: dockerID,
+                name: "renamed-api",
+                bundleKey: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                ]
+            ),
         ])
         let lifecycleManager = RecordingContainerLifecycleManager()
         let prompts = MessageRecorder()
@@ -2861,9 +2872,12 @@ extension ComposeOrchestratorTests {
     func execResolvesSelectedServiceContainerIndexes() async throws {
         let runner = RecordingRunner()
         let execManager = RecordingContainerExecManager()
+        let dockerID = String(repeating: "b", count: 64)
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
             ComposeContainerSummary(
-                id: "demo-api-2",
+                id: dockerID,
+                name: "renamed-api",
+                bundleKey: "demo-api-2",
                 status: "running",
                 labels: [
                     composeProjectLabel: "demo",
@@ -2898,6 +2912,45 @@ extension ComposeOrchestratorTests {
         #expect(await execManager.attachedRequests == [
             ContainerAttachedExecRequest(
                 id: "demo-api-2",
+                command: ["true"],
+                terminal: .init(interactive: true, tty: true)
+            ),
+        ])
+    }
+
+    @Test("exec preserves legacy discovery operation identifiers")
+    func execPreservesLegacyDiscoveryOperationIdentifiers() async throws {
+        let execManager = RecordingContainerExecManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "legacy-operation-id",
+                name: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                ]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.execManager = execManager
+        })
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+
+        try await orchestrator.exec(
+            project: project,
+            serviceName: "api",
+            options: ComposeExecOptions { $0.command = ["true"] }
+        )
+
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "legacy-operation-id",
                 command: ["true"],
                 terminal: .init(interactive: true, tty: true)
             ),

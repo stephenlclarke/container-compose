@@ -46,7 +46,7 @@ public extension ComposeOrchestrator {
                     return ServiceContainerTarget(
                         service: service,
                         index: index ?? Int.max,
-                        name: container.id,
+                        name: container.runtimeIdentifier,
                         displayName: container.displayName,
                         bundleKey: container.bundleKey,
                         status: container.status,

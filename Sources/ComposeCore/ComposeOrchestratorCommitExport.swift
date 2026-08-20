@@ -108,7 +108,7 @@ public extension ComposeOrchestrator {
         let rootfs = tempDirectory.appendingPathComponent("rootfs.tar")
         let archive = tempDirectory.appendingPathComponent("image.tar")
         try await exporter.exportContainer(
-            id: container.id,
+            id: container.runtimeIdentifier,
             output: rootfs.path,
             live: live,
             noFreeze: noFreeze,
@@ -149,7 +149,7 @@ public extension ComposeOrchestrator {
         guard let selected = matches.first else {
             throw ComposeError.invalidProject("service '\(service.name)' has no container to commit")
         }
-        return selected.id
+        return selected.runtimeIdentifier
     }
 
     /// Returns image config metadata used to seed Docker-compatible commit config when available.

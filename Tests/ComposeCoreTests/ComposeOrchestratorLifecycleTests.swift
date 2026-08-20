@@ -383,7 +383,30 @@ extension ComposeOrchestratorTests {
     func downRemovesRemainingProjectScopedContainers() async throws {
         let runner = RecordingRunner()
         let lifecycleManager = RecordingContainerLifecycleManager()
-        let discoveryManager = RecordingContainerDiscoveryManager(containers: discoveredContainers())
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: String(repeating: "c", count: 64),
+                name: "renamed-api",
+                bundleKey: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: String(repeating: "d", count: 64),
+                name: "renamed-worker",
+                bundleKey: "demo-worker-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "worker",
+                    composeOneOffLabel: "false",
+                ]
+            ),
+        ])
         let orchestrator = ComposeOrchestrator(
             runner: runner,
             discoveryManager: discoveryManager,
@@ -3351,7 +3374,7 @@ extension ComposeOrchestratorTests {
         #expect(await missingClient.getRequests.isEmpty)
     }
 
-    @Test("atomic discovery preserves canonical presentation and immutable operation identity")
+    @Test("atomic discovery preserves canonical presentation and uses stable bundle operation identity")
     func atomicDiscoveryPreservesCanonicalAndImmutableIdentity() async throws {
         var snapshot = try containerSnapshot(
             id: "demo-api-1",
@@ -3402,9 +3425,9 @@ extension ComposeOrchestratorTests {
         #expect(operationSummary == summary)
         #expect(containerIdentifiers([summary]) == [immutableID])
         #expect(renderComposeContainerTable([summary], noTrunc: false).contains("renamed-api"))
-        #expect(targets.map(\.name) == [immutableID])
+        #expect(targets.map(\.name) == ["demo-api-1"])
         #expect(targets.compactMap(\.displayName) == ["renamed-api"])
-        #expect(resolvedOperationID == immutableID)
+        #expect(resolvedOperationID == "demo-api-1")
     }
 
     @Test("replica index resolution prefers stable bundle identity over a reused canonical name")
@@ -3470,7 +3493,7 @@ extension ComposeOrchestratorTests {
             index: 2
         )
 
-        #expect(resolvedID == secondID)
+        #expect(resolvedID == secondSnapshot.id)
     }
 
     @Test("discovery manager does not revive legacy state cleared by lifecycle authority")

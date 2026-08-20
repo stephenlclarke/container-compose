@@ -578,7 +578,7 @@ extension ComposeOrchestrator {
                 try await stopRemainingProjectContainer(project: project, container: container, timeout: timeout)
             }
             try await ignoringMissingContainer {
-                try await deleteContainer(container.id)
+                try await deleteContainer(container.runtimeIdentifier)
             }
         }
     }
@@ -633,10 +633,10 @@ extension ComposeOrchestrator {
         guard let serviceName = container.serviceName,
               let service = project.services[serviceName]
         else {
-            try await stopContainer(id: container.id, timeout: timeout)
+            try await stopContainer(id: container.runtimeIdentifier, timeout: timeout)
             return
         }
-        try await stopContainer(service: service, containerName: container.id, timeout: timeout)
+        try await stopContainer(service: service, containerName: container.runtimeIdentifier, timeout: timeout)
     }
 
     /// Lists containers scoped to a Compose project through the direct API.
