@@ -197,6 +197,19 @@ struct ComposeProgressTests {
     }
 
     @Test
+    func `default tty sleeper cancels cleanly`() async throws {
+        let emitted = LockedDataRecorder()
+        let reporter = ComposeProgressReporter(
+            style: .tty,
+            emitData: { emitted.append($0) },
+        )
+
+        try await reporter.activity("Loading Compose model") {}
+
+        #expect(emitted.string == "\r⠓ Loading Compose model\r\u{001B}[K✓ Loading Compose model\n")
+    }
+
+    @Test
     func `colored tty progress uses blue spinner and green done tick`() async throws {
         let emitted = LockedDataRecorder()
         let reporter = ComposeProgressReporter(
