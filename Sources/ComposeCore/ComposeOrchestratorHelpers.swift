@@ -122,6 +122,15 @@ let networkMTUDriverOptionKeys = [
 let rfc1123LabelPattern = #"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"#
 
 extension ComposeContainerSummary {
+    /// Stable identifier accepted by native Container operations.
+    ///
+    /// Atomic discovery exposes the Docker-compatible ID separately from the
+    /// bundle key used by ContainerClient lookups. Legacy providers may not
+    /// expose a bundle key, so retain their established operation ID.
+    var runtimeIdentifier: String {
+        bundleKey ?? id
+    }
+
     /// Compose project label attached to a runtime container.
     var projectName: String? {
         labels[projectLabel]

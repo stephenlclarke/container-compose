@@ -65,7 +65,7 @@ extension ComposeOrchestrator {
         }) else {
             throw ComposeError.invalidProject("service '\(service.name)' container '\(name)' does not exist")
         }
-        return container.id
+        return container.runtimeIdentifier
     }
 
     /// Returns the deterministic runtime name for a service container index.
@@ -129,7 +129,7 @@ extension ComposeOrchestrator {
                 return ServiceContainerTarget(
                     service: service,
                     index: index,
-                    name: container.id,
+                    name: container.runtimeIdentifier,
                     displayName: container.displayName,
                     bundleKey: container.bundleKey,
                     status: container.status,
@@ -189,16 +189,24 @@ extension ComposeOrchestrator {
             guard desiredCount == 0 || (index.map { $0 > desiredCount } ?? false) else {
                 continue
             }
-            try await stopContainer(service: service, containerName: container.id, timeout: timeout)
-            try await deleteContainer(container.id)
+            try await stopContainer(service: service, containerName: container.runtimeIdentifier, timeout: timeout)
+            try await deleteContainer(container.runtimeIdentifier)
         }
     }
 
     /// Returns a stable ordering for service container discovery.
     func serviceContainerSummaryOrder(project: ComposeProject, service: ComposeService) -> (ComposeContainerSummary, ComposeContainerSummary) -> Bool {
         { [self] lhs, rhs in
-            let lhsIndex = serviceContainerIndex(project: project, service: service, containerID: lhs.bundleKey ?? lhs.displayName) ?? Int.max
-            let rhsIndex = serviceContainerIndex(project: project, service: service, containerID: rhs.bundleKey ?? rhs.displayName) ?? Int.max
+            let lhsIndex = serviceContainerIndex(
+                project: project,
+                service: service,
+                containerID: lhs.bundleKey ?? lhs.displayName,
+            ) ?? Int.max
+            let rhsIndex = serviceContainerIndex(
+                project: project,
+                service: service,
+                containerID: rhs.bundleKey ?? rhs.displayName,
+            ) ?? Int.max
             if lhsIndex != rhsIndex {
                 return lhsIndex < rhsIndex
             }

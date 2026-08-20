@@ -379,7 +379,7 @@ extension ComposeOrchestrator {
             .sorted(by: compareCopyTargetContainers)
 
         if index == 1 {
-            return containers.map { ComposeCopyContainerTarget(id: $0.id, path: path) }
+            return containers.map { ComposeCopyContainerTarget(id: $0.runtimeIdentifier, path: path) }
         }
 
         let indexedID = try serviceContainerName(project: project, service: service, index: index)
@@ -388,7 +388,7 @@ extension ComposeOrchestrator {
         }
         return containers
             .filter { $0.displayName == indexedID || $0.bundleKey == indexedID || $0.isOneOff }
-            .map { ComposeCopyContainerTarget(id: $0.id, path: path) }
+            .map { ComposeCopyContainerTarget(id: $0.runtimeIdentifier, path: path) }
     }
 
     /// Returns whether a copy operand prefix has Compose service-reference shape.
