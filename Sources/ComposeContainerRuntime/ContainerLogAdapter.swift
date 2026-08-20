@@ -397,7 +397,7 @@ public struct ContainerClientLogManager: ComposeRuntimeLogManaging {
             let stopTask = Task {
                 while !Task.isCancelled {
                     do {
-                        try await Task.sleep(for: .milliseconds(250))
+                        try await ComposeTaskSleep.sleep(for: .milliseconds(250))
                         guard try await followStateProvider.isLiveForLogFollow(id: id) else {
                             fileHandle.readabilityHandler = nil
                             continuation.finish()

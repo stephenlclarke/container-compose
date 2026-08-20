@@ -953,6 +953,38 @@ extension ComposeOrchestratorTests {
         #expect(await client.statsRequests == ["demo-api-1", "demo-api-1"])
     }
 
+    @Test("stats manager default sleeper completes a static sample")
+    func statsManagerDefaultSleeperCompletesStaticSample() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: "demo-api-1", status: "running")],
+            statsResponses: [
+                "demo-api-1": [
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_000_000),
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_250_000),
+                ],
+            ]
+        )
+        let manager = ContainerClientStatsManager(
+            client: client,
+            sampleInterval: .milliseconds(1),
+            sampleIntervalMicroseconds: 1_000,
+        )
+
+        try await manager.stats(
+            ids: ["demo-api-1"],
+            format: "table",
+            noStream: true,
+            noTrunc: false,
+            includeStopped: false,
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages.count == 1)
+        #expect(emitted.messages[0].contains("demo-api-1"))
+        #expect(await client.statsRequests == ["demo-api-1", "demo-api-1"])
+    }
+
     @Test("stats manager renders template output from direct API stats")
     func statsManagerRendersTemplateOutputFromDirectAPIStats() async throws {
         let emitted = MessageRecorder()
