@@ -119,6 +119,42 @@ class FingerprintReleaseEnvironmentTest(unittest.TestCase):
             self.assertEqual(first_fingerprint, relocated_fingerprint)
             self.assertNotEqual(relocated_fingerprint, changed_fingerprint)
 
+    def test_staged_builder_archive_uses_content_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "first" / "builder-image.oci.tar"
+            second = root / "second" / "builder-image.oci.tar"
+            first.parent.mkdir()
+            second.parent.mkdir()
+            first.write_bytes(b"same builder image")
+            second.write_bytes(b"same builder image")
+
+            first_fingerprint = self.module.fingerprint_environment(
+                {
+                    "CONTAINER_RUNTIME_BUILDER_IMAGE_TAR": str(first),
+                    "PATH": "/usr/bin",
+                },
+                root,
+            )
+            relocated_fingerprint = self.module.fingerprint_environment(
+                {
+                    "CONTAINER_RUNTIME_BUILDER_IMAGE_TAR": str(second),
+                    "PATH": "/usr/bin",
+                },
+                root,
+            )
+            second.write_bytes(b"changed builder image")
+            changed_fingerprint = self.module.fingerprint_environment(
+                {
+                    "CONTAINER_RUNTIME_BUILDER_IMAGE_TAR": str(second),
+                    "PATH": "/usr/bin",
+                },
+                root,
+            )
+
+            self.assertEqual(first_fingerprint, relocated_fingerprint)
+            self.assertNotEqual(relocated_fingerprint, changed_fingerprint)
+
     def test_staged_init_archive_preserves_literal_path_semantics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
