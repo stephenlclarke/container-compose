@@ -1,6 +1,6 @@
 # Fork Commit Classifications
 
-Updated: 20 August 2026
+Updated: 21 August 2026
 
 This review classifies every patch-unique non-merge commit in the three
 Stephen-supported Apple forks. The machine-readable source is
@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `04324afe634839ed9c3990c77ec25d1ae5c9e47e` | `21808d7760111ce4bab0a416d0e1398224fdf840` | 0 | 653 | 573 |
+| `container` | `d6de5694200468d99a61662bfb9bb3aba763e3e5` | `a7ff132653e1a4f71de7ebb193beb9d651254b85` | 0 | 655 | 573 |
 | `containerization` | `5427fd21ded4b84034126caef5b3182900b4776d` | `3e078480b85dceb843133392573cdd4d9efeec0d` | 0 | 195 | 159 |
 | `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `88332c96705b024bbc5cd210642118ee82f8793d` | 0 | 40 | 34 |
-| **Total** | | | **0** | **888** | **766** |
+| **Total** | | | **0** | **890** | **766** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -182,11 +182,11 @@ Containerization dependency pin and Containerization's recursive
 signal-cancellation lock repair are independently reviewed release maintenance;
 they add no Compose-owned policy or temporary upstream port.
 
-The 20 August 2026 release refresh advances Apple Container through
-`04324afe6348`, Container through `21808d776011`, and Containerization through
+The 21 August 2026 release refresh advances Apple Container through
+`d6de56942004`, Container through `a7ff132653e1`, and Containerization through
 `3e078480b85d`. Apple's Kubernetes provisioner split, machine mount hardening,
-CLI conformance cleanup, and disk-usage identifier-validation tests are
-upstream history after the reviewed merges. Container's atomic lifecycle
-discovery commits and Containerization's lifecycle primitive are classified as
-generic runtime work. No temporary upstream port or rejected Compose-policy
-disposition changed in this refresh.
+CLI conformance cleanup, disk-usage identifier-validation tests, and Kata
+Containers 3.32.0 debug-kernel default are upstream history after the reviewed
+merges. Container's atomic lifecycle discovery commits and Containerization's
+lifecycle primitive are classified as generic runtime work. No temporary
+upstream port or rejected Compose-policy disposition changed in this refresh.
