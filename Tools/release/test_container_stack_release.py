@@ -1121,6 +1121,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             'CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"',
             validation,
         )
+        self.assertIn(
+            'CONTAINER_INIT_BUILDER_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_BUILDER_IMAGE_TAR:-}"',
+            validation,
+        )
         self.assertIn("CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1", makefile)
         self.assertIn("docker-compose-devices-parity", makefile)
         self.assertIn("docker-compose-named-volume-reuse-parity", makefile)
@@ -1344,6 +1348,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                     "fi\n"
                     "printf '%s:%s\\n' \"$(basename \"$0\")\" \"$*\" >> \"${STACK_VALIDATION_LOG:?}\"\n"
                     "printf 'bootstrap:%s\\n' \"${CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE:-}\" >> \"${STACK_VALIDATION_LOG:?}\"\n"
+                    "printf 'builder:%s\\n' \"${CONTAINER_INIT_BUILDER_IMAGE_ARCHIVE:-}\" >> \"${STACK_VALIDATION_LOG:?}\"\n"
                     "if [[ \"$(basename \"$0\")\" == make && "
                     "-n \"${MUTATE_RUNTIME_CLI_AFTER_MATCH:-}\" && "
                     "\"$*\" == *\"${MUTATE_RUNTIME_CLI_AFTER_MATCH}\"* ]]; then\n"
@@ -1379,6 +1384,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             environment["STACK_VALIDATION_LOG"] = str(log)
             environment["FAKE_GO_VERSION"] = "go1.26.3"
             environment["CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE"] = "/tmp/runtime-init.oci.tar"
+            environment["CONTAINER_RUNTIME_BUILDER_IMAGE_TAR"] = "/tmp/runtime-builder.oci.tar"
             environment["CONTAINER_RUNTIME_CLI"] = str(candidate_tools_resolved / "container")
             # This fixture substitutes its own candidate CLI. A full release
             # gate exports candidate identity and scratch locations for the
@@ -1467,6 +1473,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
             self.assertNotIn("CONCURRENT_TEST_SUITES=", full_commands)
             self.assertIn("bootstrap:/tmp/runtime-init.oci.tar", full_commands)
+            self.assertIn("builder:/tmp/runtime-builder.oci.tar", full_commands)
 
             repeated_runtime_directory = tempfile.TemporaryDirectory(
                 prefix="ccsv-retry-test.", dir="/tmp"

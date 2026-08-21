@@ -461,6 +461,7 @@ for target in "${container_targets[@]}"; do
   run_checkpointed "container-${target//_/-}" \
     env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
       CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}" \
+      CONTAINER_INIT_BUILDER_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_BUILDER_IMAGE_TAR:-}" \
       make -C "${container_repo}" "${runtime_make_args[@]}" \
         "${container_make_args[@]}" "${target}"
 done

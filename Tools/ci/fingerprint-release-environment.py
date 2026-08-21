@@ -93,10 +93,15 @@ MAKE_ASSIGNMENT = re.compile(
 # than its random absolute location.
 CONTENT_ROOT_VARIABLES = frozenset({"XDG_CONFIG_HOME"})
 
-# The runtime wrapper copies the retained init image into a fresh staging
-# directory for every attempt. Its bytes and mode affect the proof, but the
-# random staging path does not.
-CONTENT_FILE_VARIABLES = frozenset({"CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE"})
+# The runtime wrapper copies retained OCI archives into a fresh staging
+# directory for every attempt. Their bytes and modes affect the proof, but the
+# random staging paths do not.
+CONTENT_FILE_VARIABLES = frozenset(
+    {
+        "CONTAINER_RUNTIME_BUILDER_IMAGE_TAR",
+        "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE",
+    }
+)
 
 # The release helper extracts the same immutable Container candidate below a
 # fresh mktemp root on every retry. These selectors establish which PATH entry
