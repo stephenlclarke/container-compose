@@ -1473,6 +1473,83 @@ unedit_release_dependency() {
   return 1
 }
 
+# Report whether Package.resolved already records an immutable dependency at
+# the requested revision. Avoid asking SwiftPM to refresh the whole graph when
+# the release manifest and lockfile are already aligned.
+resolved_package_pin_matches() {
+  local path="$1" identity="$2" ref="$3"
+  python3 - "${path}/Package.resolved" "${identity}" "${ref}" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+resolved = Path(sys.argv[1])
+identity = sys.argv[2]
+revision = sys.argv[3]
+if not resolved.is_file():
+    raise SystemExit(1)
+document = json.loads(resolved.read_text(encoding="utf-8"))
+for pin in document.get("pins", []):
+    if pin.get("identity") == identity:
+        raise SystemExit(0 if pin.get("state", {}).get("revision") == revision else 1)
+raise SystemExit(1)
+PY
+}
+
+# Resolve intentional release-pin changes without silently refreshing unrelated
+# transitive dependencies. Any such drift needs its own reviewed dependency PR;
+# restore the previous lockfile so a release retry starts from a clean decision.
+resolve_release_dependency_pins() {
+  local path="$1" backup
+  shift
+  if [[ ! -f "${path}/Package.resolved" ]]; then
+    run swift package --package-path "${path}" resolve
+    return 0
+  fi
+
+  backup="$(mktemp "${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"
+  cp "${path}/Package.resolved" "${backup}"
+  if ! run swift package --package-path "${path}" resolve; then
+    cp "${backup}" "${path}/Package.resolved"
+    rm -f "${backup}"
+    return 1
+  fi
+  if ! python3 - "${backup}" "${path}/Package.resolved" "$@" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+before_path = Path(sys.argv[1])
+after_path = Path(sys.argv[2])
+allowed = set(sys.argv[3:])
+
+def pins(path):
+    document = json.loads(path.read_text(encoding="utf-8"))
+    return {pin["identity"]: pin for pin in document.get("pins", [])}
+
+before = pins(before_path)
+after = pins(after_path)
+changed = sorted(
+    identity
+    for identity in before.keys() | after.keys()
+    if identity not in allowed and before.get(identity) != after.get(identity)
+)
+if changed:
+    print(
+        "release pin resolution changed unrelated dependencies: " + ", ".join(changed),
+        file=sys.stderr,
+    )
+    print("review those updates in a separate dependency PR", file=sys.stderr)
+    raise SystemExit(1)
+PY
+  then
+    cp "${backup}" "${path}/Package.resolved"
+    rm -f "${backup}"
+    return 1
+  fi
+  rm -f "${backup}"
+}
+
 # Update one SwiftPM manifest to the current containerization stack revision.
 update_containerization_package_pin() {
   local repo="$1" ref="$2" resolve="${3:-1}" path
@@ -1545,7 +1622,13 @@ package.write_text(updated, encoding="utf-8")
 PY
   if [[ "${resolve}" == "1" ]]; then
     unedit_release_dependency "${path}" containerization
-    run swift package --package-path "${path}" resolve
+    if git -C "${path}" diff --quiet -- Package.swift && \
+      resolved_package_pin_matches "${path}" containerization "${ref}"; then
+      printf '%s resolved containerization pin already points at %s; skipping graph refresh\n' \
+        "${repo}" "${ref}"
+    else
+      resolve_release_dependency_pins "${path}" containerization
+    fi
   fi
 }
 
@@ -1647,7 +1730,13 @@ package.write_text(updated, encoding="utf-8")
 PY
   if [[ "${resolve}" == "1" ]]; then
     unedit_release_dependency "${path}" container
-    run swift package --package-path "${path}" resolve
+    if git -C "${path}" diff --quiet -- Package.swift && \
+      resolved_package_pin_matches "${path}" container "${ref}"; then
+      printf '%s resolved container pin already points at %s; skipping graph refresh\n' \
+        "${COMPOSE_REPO}" "${ref}"
+    else
+      resolve_release_dependency_pins "${path}" container
+    fi
   fi
 }
 
@@ -1699,7 +1788,13 @@ sync_container_package_pin() {
   update_container_package_pin "${container_ref}" 0
   unedit_release_dependency "${path}" containerization
   unedit_release_dependency "${path}" container
-  run swift package --package-path "${path}" resolve
+  if git -C "${path}" diff --quiet -- Package.swift && \
+    resolved_package_pin_matches "${path}" container "${container_ref}" && \
+    resolved_package_pin_matches "${path}" containerization "${containerization_ref}"; then
+    printf '%s resolved stack pins already match; skipping SwiftPM graph refresh\n' "${COMPOSE_REPO}"
+  else
+    resolve_release_dependency_pins "${path}" container containerization
+  fi
   commit_compose_stack_package_pins "${container_ref}" "${containerization_ref}"
 }
 
