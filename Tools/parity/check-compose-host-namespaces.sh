@@ -768,13 +768,15 @@ validate_live_bridge_parity_and_timing() {
     finalize_timing_evidence
 }
 
-# Return the first dry-run command line for a service container.
+# Return the first dry-run create/run command line for a service container.
 dry_run_line_for_service() {
     local output="$1"
     local service="$2"
     local name_pattern="$CONTAINER_PROJECT_NAME-$service-"
 
-    printf '%s\n' "$output" | grep -F "container run --name $name_pattern" | head -n 1
+    printf '%s\n' "$output" \
+        | grep -E "container (create|run) --name ${name_pattern}" \
+        | head -n 1
 }
 
 # Validate container-compose dry-run output for supported and blocked modes.
