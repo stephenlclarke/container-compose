@@ -81,6 +81,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('ROOT="${CONTAINER_STACK_RELEASE_ROOT:-${HOME}/github}"', self.script)
         self.assertIn("CONTAINER_STACK_RELEASE_ROOT", self.script)
 
+    def test_local_release_gate_stages_the_init_archive_on_the_system_volume(self) -> None:
+        staging = 'staged_init_image_archive="${runtime_parent}/vminit.oci.tar"'
+        copy = 'cp "${init_image_archive}" "${staged_init_image_archive}"'
+        use = 'init_image_archive="${staged_init_image_archive}"'
+
+        self.assertIn(staging, self.script)
+        self.assertIn(copy, self.script)
+        self.assertIn(use, self.script)
+        self.assertLess(self.script.index(staging), self.script.index(copy))
+        self.assertLess(self.script.index(copy), self.script.index(use))
+        self.assertLess(
+            self.script.index(use), self.script.index("run_local_release_gate_command env")
+        )
+
     def test_release_helper_retains_only_its_unpublished_candidate_before_readiness(self) -> None:
         recovery = self.script[
             self.script.index("recover_unpublished_release_candidate() {") : self.script.index(

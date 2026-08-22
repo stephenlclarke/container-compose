@@ -992,7 +992,7 @@ resolve_release_evidence_root() {
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
   (
-  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive
+  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive
   local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest
   path="$(repo_path "${COMPOSE_REPO}")"
   container_path="$(repo_path "${CONTAINER_REPO}")"
@@ -1072,6 +1072,17 @@ PY
   # Keep both this candidate's provider socket and Container integration's
   # nested provider socket below Darwin's 103-byte sockaddr_un limit.
   runtime_parent="$(create_release_runtime_parent "${runtime_parent_base}")"
+  # Stage the retained init archive on the local system volume. launchd-managed
+  # services can be denied access to archives on removable volumes even after
+  # the release helper has validated them successfully.
+  staged_init_image_archive="${runtime_parent}/vminit.oci.tar"
+  if ! cp "${init_image_archive}" "${staged_init_image_archive}"; then
+    printf 'failed to stage the retained init-image archive locally: %s\n' \
+      "${init_image_archive}" >&2
+    return 1
+  fi
+  chmod a-w "${staged_init_image_archive}"
+  init_image_archive="${staged_init_image_archive}"
   runtime_app_root="${runtime_parent}/app"
   runtime_run_id="release-$(id -u)-$$-${RANDOM}-${SECONDS}"
   runtime_namespace_digest="$(LC_ALL=C printf '%s' \
