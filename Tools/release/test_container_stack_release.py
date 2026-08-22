@@ -210,12 +210,85 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertLess(
             sync.index('unedit_release_dependency "${path}" container\n'),
-            sync.index('swift package --package-path "${path}" resolve'),
+            sync.index('resolve_release_dependency_pins "${path}" container containerization'),
         )
         self.assertIn("commit_compose_stack_package_pins", sync)
         self.assertIn("chore(deps): pin container stack", self.script)
         self.assertIn("Release-Note: none", runtime_pin)
         self.assertIn("sync_container_package_pin", self.script)
+
+    def test_release_pin_sync_skips_aligned_graph_and_rejects_transitive_drift(self) -> None:
+        helper = self.script[
+            self.script.index("resolved_package_pin_matches() {") : self.script.index(
+                "# Update one SwiftPM manifest"
+            )
+        ]
+        sync = self.script[
+            self.script.index("sync_container_package_pin() {") : self.script.index(
+                "write_release_stack_manifest() {"
+            )
+        ]
+
+        self.assertIn("resolve_release_dependency_pins() {", helper)
+        self.assertIn("release pin resolution changed unrelated dependencies", helper)
+        self.assertIn('cp "${backup}" "${path}/Package.resolved"', helper)
+        self.assertIn('git -C "${path}" diff --quiet -- Package.swift', sync)
+        self.assertIn(
+            'resolved_package_pin_matches "${path}" container "${container_ref}"',
+            sync,
+        )
+        self.assertIn(
+            'resolved_package_pin_matches "${path}" containerization "${containerization_ref}"',
+            sync,
+        )
+        self.assertIn(
+            'resolve_release_dependency_pins "${path}" container containerization',
+            sync,
+        )
+
+    def test_release_pin_resolution_restores_lockfile_after_transitive_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "package"
+            package.mkdir()
+            before = {
+                "pins": [
+                    {"identity": "container", "state": {"revision": "old"}},
+                    {"identity": "transitive", "state": {"version": "1.0.0"}},
+                ]
+            }
+            after = {
+                "pins": [
+                    {"identity": "container", "state": {"revision": "new"}},
+                    {"identity": "transitive", "state": {"version": "1.1.0"}},
+                ]
+            }
+            resolved = package / "Package.resolved"
+            resolved.write_text(json.dumps(before), encoding="utf-8")
+            replacement = root / "after.json"
+            replacement.write_text(json.dumps(after), encoding="utf-8")
+            bin_directory = root / "bin"
+            bin_directory.mkdir()
+            fake_swift = bin_directory / "swift"
+            fake_swift.write_text(
+                "#!/bin/sh\ncp \"$TEST_AFTER\" \"$TEST_PACKAGE/Package.resolved\"\n",
+                encoding="utf-8",
+            )
+            fake_swift.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                f"resolve_release_dependency_pins {shlex.quote(str(package))} container",
+                shell_setup=(
+                    f"export PATH={shlex.quote(str(bin_directory))}:/usr/bin:/bin\n"
+                    f"export TEST_AFTER={shlex.quote(str(replacement))}\n"
+                    f"export TEST_PACKAGE={shlex.quote(str(package))}"
+                ),
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("changed unrelated dependencies: transitive", result.stderr)
+            self.assertEqual(json.loads(resolved.read_text(encoding="utf-8")), before)
 
     def test_containerization_pin_supports_literal_named_and_dynamic_revisions(self) -> None:
         revision = "a" * 40
