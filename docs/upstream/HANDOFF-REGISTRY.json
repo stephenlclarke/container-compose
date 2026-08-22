@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-08-06",
+  "generatedAt": "2026-08-22",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -6957,6 +6957,28 @@
           "path": "docs/upstream/container-compose/PR-206.md"
         }
       ]
+    },
+    {
+      "id": "container-compose-304",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Pin lifecycle identity inspection support",
+      "state": "submitted",
+      "lastVerified": "2026-08-22",
+      "commits": [
+        "b636d3f9d07de7ef3b4721de17eb47351c2544c1",
+        "e76a28de2dcf2c3650871d8e5240d41d6a36cf12"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-304.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-304.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/304"
     },
     {
       "id": "container-compose-logging-syslog-tls-trust-fixture",
