@@ -228,7 +228,8 @@ check_supported_menu_forms() {
 
 # Assert container-compose preserves the dry-run exit-control lifecycle plan.
 assert_container_menu_exit_control_plan() {
-    assert_file_contains "$LAST_STDOUT_FILE" "container run --name $PROJECT_NAME-api-1 --detach"
+    assert_file_contains "$LAST_STDOUT_FILE" "container create --name $PROJECT_NAME-api-1"
+    assert_file_contains "$LAST_STDOUT_FILE" "container start $PROJECT_NAME-api-1"
     assert_file_contains "$LAST_STDOUT_FILE" "compose-runtime wait $PROJECT_NAME-api-1"
     assert_file_contains "$LAST_STDOUT_FILE" "container delete $PROJECT_NAME-api-1"
 }
@@ -272,8 +273,9 @@ check_menu_watch() {
     expect_status 'container-compose accepts --menu with --watch dry-run' 0 \
         "$CONTAINER_COMPOSE" --ansi never -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
         --dry-run up --menu --watch api
-    assert_file_contains "$LAST_STDOUT_FILE" "container run --name $PROJECT_NAME-api-1 --detach"
-    assert_file_contains "$LAST_STDOUT_FILE" "compose-runtime logs --follow $PROJECT_NAME-api-1"
+    assert_file_contains "$LAST_STDOUT_FILE" "container create --name $PROJECT_NAME-api-1"
+    assert_file_contains "$LAST_STDOUT_FILE" "container start $PROJECT_NAME-api-1"
+    assert_file_contains "$LAST_STDOUT_FILE" "compose-runtime attach --no-stdin $PROJECT_NAME-api-1"
 }
 
 # Run the local-only Docker Compose V2 parity check.
