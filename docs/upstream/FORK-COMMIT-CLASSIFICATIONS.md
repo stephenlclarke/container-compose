@@ -20,7 +20,7 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `d6de5694200468d99a61662bfb9bb3aba763e3e5` | `e76a28de2dcf2c3650871d8e5240d41d6a36cf12` | 0 | 666 | 579 |
+| `container` | `d6de5694200468d99a61662bfb9bb3aba763e3e5` | `95787ab5585d5af6b1768a98cb04fd2ffd29d1e6` | 0 | 668 | 580 |
 | `containerization` | `5427fd21ded4b84034126caef5b3182900b4776d` | `3e078480b85dceb843133392573cdd4d9efeec0d` | 0 | 195 | 159 |
 | `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `88332c96705b024bbc5cd210642118ee82f8793d` | 0 | 40 | 34 |
 | **Total** | | | **0** | **901** | **772** |
