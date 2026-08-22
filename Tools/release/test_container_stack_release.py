@@ -982,11 +982,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "- name: Enforce SonarQube failures when the service is available"
             )
         ]
+        sonar_install = ci[
+            ci.index("- name: Install Sonar Scanner CLI") : ci.index(
+                "- name: SonarQube scan"
+            )
+        ]
         self.assertIn("timeout-minutes: 105", runtime_job)
         self.assertIn("continue-on-error: true", sonar)
         self.assertIn("timeout-minutes: 25", sonar)
         self.assertIn('SONAR_QUALITYGATE_WAIT: "true"', sonar)
         self.assertIn("run: make sonar-scan", sonar)
+        self.assertIn('gpgconf --homedir "$gpg_home" --launch gpg-agent', sonar_install)
+        self.assertIn('gpgconf --homedir "$gpg_home" --kill gpg-agent', sonar_install)
 
     def test_stable_package_requires_candidate_bound_release_authority(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")

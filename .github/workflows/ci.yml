@@ -421,6 +421,8 @@ jobs:
           rm -rf "$scanner_root" "$gpg_home"
           mkdir -p "$scanner_root" "$gpg_home"
           chmod 700 "$gpg_home"
+          gpgconf --homedir "$gpg_home" --launch gpg-agent
+          trap 'gpgconf --homedir "$gpg_home" --kill gpg-agent 2>/dev/null || true' EXIT
 
           curl --fail --location --silent --show-error "$scanner_url" --output "$scanner_zip"
           curl --fail --location --silent --show-error "${scanner_url}.asc" --output "$scanner_signature"
@@ -436,6 +438,8 @@ jobs:
           fi
 
           gpg --homedir "$gpg_home" --batch --verify "$scanner_signature" "$scanner_zip"
+          gpgconf --homedir "$gpg_home" --kill gpg-agent
+          trap - EXIT
           unzip -q "$scanner_zip" -d "$scanner_root"
 
           scanner_bin="${scanner_root}/sonar-scanner-${SONAR_SCANNER_VERSION}-${scanner_flavor}/bin"
