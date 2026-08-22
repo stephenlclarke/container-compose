@@ -1076,11 +1076,16 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_release_gate_includes_sibling_coverage_and_runtime_integration(self) -> None:
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8")
         validation = STACK_RELEASE_VALIDATION.read_text(encoding="utf-8")
         reference_check = (
             ROOT / "Tools" / "parity" / "check-docker-compose-reference.sh"
         ).read_text(encoding="utf-8")
         self.assertIn("check-licenses vet lint coverage build", validation)
+        self.assertIn(
+            "runs-on: [self-hosted, macOS, ARM64, container-compose-current]",
+            ci_workflow,
+        )
         self.assertIn("run-stack-release-validation.sh full", makefile)
         self.assertIn("run-stack-release-validation.sh hosted", makefile)
         direct_full_gate = subprocess.run(
@@ -1889,6 +1894,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self,
     ) -> None:
         workflow = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            "runs-on: [self-hosted, macOS, ARM64, container-compose-release]",
+            workflow,
+        )
         self.assertIn("stable tag %s is not GitHub-verified", workflow)
         self.assertIn("stable tag %s is not the latest semantic source tag", workflow)
         self.assertIn("stable release %s already exists and is immutable", workflow)
