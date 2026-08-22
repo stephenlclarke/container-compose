@@ -1458,9 +1458,78 @@ print_component_refs() {
 
 # Remove a development edit so SwiftPM resolves the immutable release dependency.
 unedit_release_dependency() {
-  local path="$1" identity="$2" output
+  local path="$1" identity="$2" output backup="" status had_resolved=0
+  local previous_hup_trap previous_int_trap previous_quit_trap previous_term_trap
 
-  if output="$(swift package --package-path "${path}" unedit --force "${identity}" 2>&1)"; then
+  previous_hup_trap="$(trap -p HUP)"
+  previous_int_trap="$(trap -p INT)"
+  previous_quit_trap="$(trap -p QUIT)"
+  previous_term_trap="$(trap -p TERM)"
+
+  if [[ -f "${path}/Package.resolved" ]]; then
+    had_resolved=1
+    backup="$(mktemp "${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"
+    cp "${path}/Package.resolved" "${backup}"
+  fi
+
+  restore_unedit_lockfile() {
+    if [[ -n "${backup}" && -f "${backup}" ]]; then
+      cp "${backup}" "${path}/Package.resolved"
+      rm -f "${backup}"
+    elif [[ "${had_resolved}" == "0" ]]; then
+      rm -f "${path}/Package.resolved"
+    fi
+  }
+
+  restore_unedit_signal_trap() {
+    local saved="$1" signal="$2"
+    if [[ -n "${saved}" ]]; then
+      eval "${saved}"
+    else
+      trap - "${signal}"
+    fi
+  }
+
+  restore_unedit_signal_traps() {
+    restore_unedit_signal_trap "${previous_hup_trap}" HUP
+    restore_unedit_signal_trap "${previous_int_trap}" INT
+    restore_unedit_signal_trap "${previous_quit_trap}" QUIT
+    restore_unedit_signal_trap "${previous_term_trap}" TERM
+  }
+
+  forward_unedit_signal_after_restore() {
+    local signal="$1"
+    restore_unedit_lockfile
+    restore_unedit_signal_traps
+    kill -s "${signal}" "$$"
+  }
+
+  # A trapped signal is deferred while Bash waits for the synchronous command
+  # substitution. Restore after that child finishes, then preserve the caller's
+  # original signal behaviour.
+  trap 'forward_unedit_signal_after_restore HUP' HUP
+  trap 'forward_unedit_signal_after_restore INT' INT
+  trap 'forward_unedit_signal_after_restore QUIT' QUIT
+  trap 'forward_unedit_signal_after_restore TERM' TERM
+
+  if output="$(
+    trap restore_unedit_lockfile EXIT
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 131' QUIT
+    trap 'exit 143' TERM
+    swift package --package-path "${path}" unedit --force "${identity}" 2>&1
+  )"; then
+    status=0
+  else
+    status=$?
+  fi
+  restore_unedit_signal_traps
+
+  # SwiftPM may refresh unrelated transitive pins before reporting that a
+  # package is not editable. Pin resolution below owns every intentional
+  # lockfile change, so unedit must only change workspace edit state.
+  if [[ "${status}" == "0" ]]; then
     printf 'removed editable SwiftPM dependency %s from %s\n' "${identity}" "${path}"
     return 0
   fi

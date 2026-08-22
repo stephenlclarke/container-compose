@@ -290,6 +290,119 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn("changed unrelated dependencies: transitive", result.stderr)
             self.assertEqual(json.loads(resolved.read_text(encoding="utf-8")), before)
 
+    def test_unedit_restores_lockfile_after_swiftpm_graph_refresh(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "package"
+            package.mkdir()
+            before = {
+                "pins": [
+                    {"identity": "container", "state": {"revision": "expected"}},
+                    {"identity": "transitive", "state": {"version": "1.0.0"}},
+                ]
+            }
+            after = {
+                "pins": [
+                    {"identity": "container", "state": {"revision": "expected"}},
+                    {"identity": "transitive", "state": {"version": "1.1.0"}},
+                ]
+            }
+            resolved = package / "Package.resolved"
+            replacement = root / "after.json"
+            replacement.write_text(json.dumps(after), encoding="utf-8")
+            bin_directory = root / "bin"
+            bin_directory.mkdir()
+            fake_swift = bin_directory / "swift"
+            fake_swift.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/bin/sh
+                    cp "$TEST_AFTER" "$TEST_PACKAGE/Package.resolved"
+                    if [ "${TEST_SWIFT_SIGNAL_PARENT:-0}" -eq 1 ]; then
+                        kill -TERM "$PPID"
+                        exit 0
+                    fi
+                    if [ "${TEST_SWIFT_SIGNAL_OUTER:-0}" -eq 1 ]; then
+                        outer_pid=$(ps -o ppid= -p "$PPID" | awk '{print $1}')
+                        kill -TERM "$outer_pid"
+                        exit 0
+                    fi
+                    if [ "$TEST_SWIFT_STATUS" -ne 0 ]; then
+                        printf 'not in edit mode\n' >&2
+                        exit "$TEST_SWIFT_STATUS"
+                    fi
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_swift.chmod(0o755)
+
+            for status in (0, 1):
+                with self.subTest(swift_status=status):
+                    resolved.write_text(json.dumps(before), encoding="utf-8")
+                    result = self.run_release_function(
+                        root,
+                        f"unedit_release_dependency {shlex.quote(str(package))} container",
+                        shell_setup=(
+                            f"export PATH={shlex.quote(str(bin_directory))}:/usr/bin:/bin\n"
+                            f"export TEST_AFTER={shlex.quote(str(replacement))}\n"
+                            f"export TEST_PACKAGE={shlex.quote(str(package))}\n"
+                            f"export TEST_SWIFT_STATUS={status}"
+                        ),
+                    )
+
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(
+                        json.loads(resolved.read_text(encoding="utf-8")), before
+                    )
+
+            resolved.unlink()
+            result = self.run_release_function(
+                root,
+                f"unedit_release_dependency {shlex.quote(str(package))} container",
+                shell_setup=(
+                    f"export PATH={shlex.quote(str(bin_directory))}:/usr/bin:/bin\n"
+                    f"export TEST_AFTER={shlex.quote(str(replacement))}\n"
+                    f"export TEST_PACKAGE={shlex.quote(str(package))}\n"
+                    "export TEST_SWIFT_STATUS=0"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(resolved.exists())
+
+            resolved.write_text(json.dumps(before), encoding="utf-8")
+            result = self.run_release_function(
+                root,
+                f"unedit_release_dependency {shlex.quote(str(package))} container",
+                shell_setup=(
+                    f"export PATH={shlex.quote(str(bin_directory))}:/usr/bin:/bin\n"
+                    f"export TEST_AFTER={shlex.quote(str(replacement))}\n"
+                    f"export TEST_PACKAGE={shlex.quote(str(package))}\n"
+                    "export TEST_SWIFT_STATUS=0\n"
+                    "export TEST_SWIFT_SIGNAL_PARENT=1"
+                ),
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(json.loads(resolved.read_text(encoding="utf-8")), before)
+
+            resolved.write_text(json.dumps(before), encoding="utf-8")
+            result = self.run_release_function(
+                root,
+                f"unedit_release_dependency {shlex.quote(str(package))} container",
+                shell_setup=(
+                    f"export PATH={shlex.quote(str(bin_directory))}:/usr/bin:/bin\n"
+                    f"export TEST_AFTER={shlex.quote(str(replacement))}\n"
+                    f"export TEST_PACKAGE={shlex.quote(str(package))}\n"
+                    "export TEST_SWIFT_STATUS=0\n"
+                    "export TEST_SWIFT_SIGNAL_OUTER=1"
+                ),
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(json.loads(resolved.read_text(encoding="utf-8")), before)
+
     def test_containerization_pin_supports_literal_named_and_dynamic_revisions(self) -> None:
         revision = "a" * 40
         with tempfile.TemporaryDirectory() as directory:
