@@ -416,13 +416,13 @@ jobs:
           scanner_zip="${RUNNER_TEMP}/${scanner_name}.zip"
           scanner_signature="${scanner_zip}.asc"
           scanner_root="${RUNNER_TEMP}/sonar-scanner-cli"
-          gpg_home="${RUNNER_TEMP}/sonar-scanner-gpg"
+          gpg_home="$(mktemp -d /private/tmp/container-compose-sonar-gpg.XXXXXX)"
 
-          rm -rf "$scanner_root" "$gpg_home"
-          mkdir -p "$scanner_root" "$gpg_home"
+          rm -rf "$scanner_root"
+          mkdir -p "$scanner_root"
           chmod 700 "$gpg_home"
           gpgconf --homedir "$gpg_home" --launch gpg-agent
-          trap 'gpgconf --homedir "$gpg_home" --kill gpg-agent 2>/dev/null || true' EXIT
+          trap 'gpgconf --homedir "$gpg_home" --kill gpg-agent 2>/dev/null || true; find "$gpg_home" -depth -delete' EXIT
 
           curl --fail --location --silent --show-error "$scanner_url" --output "$scanner_zip"
           curl --fail --location --silent --show-error "${scanner_url}.asc" --output "$scanner_signature"
@@ -439,6 +439,7 @@ jobs:
 
           gpg --homedir "$gpg_home" --batch --verify "$scanner_signature" "$scanner_zip"
           gpgconf --homedir "$gpg_home" --kill gpg-agent
+          find "$gpg_home" -depth -delete
           trap - EXIT
           unzip -q "$scanner_zip" -d "$scanner_root"
 
