@@ -119,9 +119,11 @@ WebSocket resize, selected image mutations, and volume creation.
 
 Remaining work includes the unimplemented generated routes, registry
 credentials, image push, search and history, build and session transports,
-large streams, typed guest socket grants, explicit authority handoff,
-Testcontainers and devcontainer adoption, root and non-root proof, and the
-exact `use_api_socket` transformation.
+large streams, durable generation-fenced guest socket grant records and
+recovery, explicit authority handoff, Testcontainers and devcontainer adoption,
+root and non-root end-to-end proof, and the exact `use_api_socket`
+transformation. The typed inbound Unix-socket transport primitive is complete;
+it does not by itself satisfy the grant or `use_api_socket` contract.
 
 `use_api_socket` remains disabled until the complete authority, credential,
 grant, security, recovery, and external-client contracts are proved.
