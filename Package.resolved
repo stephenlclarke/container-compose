@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephenlclarke/container.git",
       "state" : {
-        "revision" : "95787ab5585d5af6b1768a98cb04fd2ffd29d1e6"
+        "revision" : "d28f51eeb5a5cc0189b4c29e5dd7e40ac322ee04"
       }
     },
     {
