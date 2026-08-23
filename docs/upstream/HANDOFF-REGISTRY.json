@@ -6983,6 +6983,52 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/304"
     },
     {
+      "id": "container-compose-309",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Include lifecycle helper images in config output",
+      "state": "submitted",
+      "lastVerified": "2026-08-23",
+      "commits": [
+        "23cf93c4d74e862a37992afcfec2b306a7fb4f7a",
+        "f31dc1a14f8f76baac87509ec4c3f6c27262998c",
+        "d28f51eeb5a5cc0189b4c29e5dd7e40ac322ee04"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-308.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-309.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/309"
+    },
+    {
+      "id": "container-compose-307",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Accept redacted create logging options",
+      "state": "closed",
+      "lastVerified": "2026-08-23",
+      "commits": [
+        "53d57ea17fc7fe93f15708db4176d37aacfdfc21",
+        "47712162fde811c0856bd96b1d972314be82af99",
+        "a956cbe7955ada0f35f12048676cf2cd4e3619df"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-306.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-307.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/307"
+    },
+    {
       "id": "container-compose-logging-syslog-tls-trust-fixture",
       "owner": "stephenlclarke/container-compose",
       "title": "Add the Syslog TLS trust-rejection parity fixture",
