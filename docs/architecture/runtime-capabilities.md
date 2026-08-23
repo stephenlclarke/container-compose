@@ -39,6 +39,7 @@ that it exactly matches the typed Compose and sibling Container definitions.
 | `create-configuration.v1` | Typed process, mount, network, resource, namespace, security, device, and GPU configuration used when creating service and one-off containers |
 | `image-filesystem.v1` | Image metadata and declared-volume discovery, image-volume copy-up, commit/export, and live snapshot behaviour |
 | `lifecycle.v1` | Create/start/stop/restart/exec/attach/kill/pause/wait controls, persisted exit state, and process metadata |
+| `inbound-unix-socket.v1` | Canonical guest socket intent, authority-selected host socket resolution, stable relay identity, and Docker-compatible guest ownership and mode; this transport primitive does not constitute a durable Engine API grant |
 | `logging-drivers.v1` | Typed logging requests, durable native histories, remote/provider lifecycle, cache/read policy, and exact-process foreground attachment |
 | `network-scoped-aliases.v1` | Source-scoped dynamic DNS aliases used to preserve Compose link isolation and target address changes |
 | `observation.v1` | Container discovery, health, logs, events, statistics, top, and network/port observation |

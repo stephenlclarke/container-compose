@@ -249,10 +249,15 @@ discovery, logs, lifecycle, TTY attach and resize, unauthenticated image pull,
 tag and delete, and volume creation through the native authority. Focused
 unmodified Docker CLI certificates cover these paths.
 
+The matched runtime now also provides the typed inbound Unix-socket transport:
+canonical guest intent, authority-selected host socket resolution, stable relay
+identity, and Docker-oracled guest ownership and mode. This is a lower transport
+primitive, not the complete Engine API socket grant.
+
 Registry credentials, push, search, history, build and session transports,
-most remaining generated routes, typed guest socket grants, complete
-Testcontainers and devcontainer adoption, and `use_api_socket` are not current
-functionality.
+most remaining generated routes, durable generation-fenced socket grant
+records and recovery, complete Testcontainers and devcontainer adoption, and
+`use_api_socket` are not current functionality.
 
 ## CLI Commands
 
