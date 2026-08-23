@@ -104,7 +104,7 @@ extension ComposeOrchestrator {
         try ComposeImageReference.normalized(reference)
     }
 
-    /// Returns images referenced by selected services, including generated build tags.
+    /// Returns service, build, and explicit lifecycle-helper images for selected services.
     func configImages(project: ComposeProject, services: [String]) throws -> [String] {
         let selected = try selectedServices(project: project, selected: services)
         let serviceImages = selected.compactMap { serviceImage(project: project, service: $0) }

@@ -4,8 +4,8 @@
 
 Docker Compose includes explicit `pre_start.image` references in
 `config --images`. Container Compose projected only service images and generated
-build tags, so lifecycle projects omitted helper images even though the same
-images were used by pull and runtime preparation.
+build tags, so lifecycle projects omitted helper images even though create and
+up preparation consumed them.
 
 ## Resolution
 
@@ -22,7 +22,8 @@ services are not reported.
 
 ## Scope
 
-This fixes the configuration projection only. Lifecycle execution and pull
-behavior already consumed explicit helper images.
+This fixes the configuration projection only. Lifecycle execution and create/up
+image-policy preparation already consumed explicit helper images. An explicit
+`compose pull` remains scoped to ordinary service images.
 
 Refs [#308](https://github.com/stephenlclarke/container-compose/issues/308).
