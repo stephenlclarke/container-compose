@@ -5,14 +5,14 @@ go 1.26.3
 require (
 	github.com/DefangLabs/secret-detector v0.0.0-20250403165618-22662109213e
 	github.com/compose-spec/compose-go/v2 v2.14.0
-	github.com/containerd/containerd/v2 v2.3.3
+	github.com/containerd/containerd/v2 v2.3.4
 	github.com/containerd/errdefs v1.0.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.7.2+incompatible
 	github.com/moby/buildkit v0.32.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
-	github.com/sirupsen/logrus v1.9.4
+	github.com/sirupsen/logrus v1.10.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/sys v0.47.0
 )
