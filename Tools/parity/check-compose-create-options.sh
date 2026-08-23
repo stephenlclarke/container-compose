@@ -364,36 +364,54 @@ validate_container_compose_dry_run() {
 
     dry_run_output="$("$CONTAINER_COMPOSE" --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" create --build --force-recreate)"
 
-    [[ "$dry_run_output" == *"container build --tag $CONTAINER_PROJECT_NAME-built:latest"* ]]
-    [[ "$dry_run_output" == *"--file $FIXTURE_DIR/Dockerfile $FIXTURE_DIR"* ]]
-    [[ "$dry_run_output" == *"container create --name $CONTAINER_PROJECT_NAME-built-1"* ]]
-    [[ "$dry_run_output" == *"container create --name $CONTAINER_PROJECT_NAME-api-1"* ]]
-    [[ "$dry_run_output" == *"--log-opt max-file=3"* ]]
-    [[ "$dry_run_output" == *"--log-opt max-size=512b"* ]]
-    [[ "$dry_run_output" == *"--health-cmd 'test -f /tmp/ready || exit 1'"* ]]
-    [[ "$dry_run_output" == *"--health-interval 5s"* ]]
-    [[ "$dry_run_output" == *"--health-timeout 1s"* ]]
-    [[ "$dry_run_output" == *"--health-start-period 3s"* ]]
-    [[ "$dry_run_output" == *"--health-start-interval 1s"* ]]
-    [[ "$dry_run_output" == *"--health-retries 2"* ]]
-    [[ "$dry_run_output" == *"--restart unless-stopped"* ]]
-    [[ "$dry_run_output" == *"--publish 127.0.0.1:18080:8080"* ]]
-    [[ "$dry_run_output" == *"--volume $FIXTURE_DIR/api.conf:/etc/api.conf:ro"* ]]
-    [[ "$dry_run_output" == *"--volume $FIXTURE_DIR/api-token.txt:/run/secrets/api_token:ro"* ]]
-    [[ "$dry_run_output" == *"--workdir /srv/app"* ]]
-    [[ "$dry_run_output" == *"--user 1000:1000"* ]]
-    [[ "$dry_run_output" == *"--hostname api-host"* ]]
-    [[ "$dry_run_output" == *"--domainname compose.test"* ]]
-    [[ "$dry_run_output" == *"--dns-option use-vc"* ]]
-    [[ "$dry_run_output" == *"--add-host host.docker.internal:host-gateway"* ]]
-    [[ "$dry_run_output" == *"--add-host static.local:127.0.0.44"* ]]
-    [[ "$dry_run_output" == *"--sysctl net.ipv4.ip_unprivileged_port_start=1024"* ]]
-    [[ "$dry_run_output" == *"--blkio weight=300"* ]]
-    [[ "$dry_run_output" == *"container create --name $CONTAINER_PROJECT_NAME-worker-1"* ]]
-    [[ "$dry_run_output" == *"--log-driver none"* ]]
-    [[ "$dry_run_output" == *"--restart on-failure:4"* ]]
-    [[ "$dry_run_output" == *"--restart-delay 2s"* ]]
-    [[ "$dry_run_output" == *"--restart-window 6s"* ]]
+    require_dry_run_fragment() {
+        local expected="$1"
+        if [[ "$dry_run_output" != *"$expected"* ]]; then
+            error "container-compose dry run omitted expected fragment: $expected"
+            return 1
+        fi
+    }
+
+    reject_dry_run_fragment() {
+        local forbidden="$1"
+        if [[ "$dry_run_output" == *"$forbidden"* ]]; then
+            error "container-compose dry run exposed forbidden fragment: $forbidden"
+            return 1
+        fi
+    }
+
+    require_dry_run_fragment "container build --tag $CONTAINER_PROJECT_NAME-built:latest"
+    require_dry_run_fragment "--file $FIXTURE_DIR/Dockerfile $FIXTURE_DIR"
+    require_dry_run_fragment "container create --name $CONTAINER_PROJECT_NAME-built-1"
+    require_dry_run_fragment "container create --name $CONTAINER_PROJECT_NAME-api-1"
+    require_dry_run_fragment "--log-opt 'max-file=<redacted>'"
+    require_dry_run_fragment "--log-opt 'max-size=<redacted>'"
+    reject_dry_run_fragment "--log-opt max-file=3"
+    reject_dry_run_fragment "--log-opt max-size=512b"
+    require_dry_run_fragment "--health-cmd 'test -f /tmp/ready || exit 1'"
+    require_dry_run_fragment "--health-interval 5s"
+    require_dry_run_fragment "--health-timeout 1s"
+    require_dry_run_fragment "--health-start-period 3s"
+    require_dry_run_fragment "--health-start-interval 1s"
+    require_dry_run_fragment "--health-retries 2"
+    require_dry_run_fragment "--restart unless-stopped"
+    require_dry_run_fragment "--publish 127.0.0.1:18080:8080"
+    require_dry_run_fragment "--volume $FIXTURE_DIR/api.conf:/etc/api.conf:ro"
+    require_dry_run_fragment "--volume $FIXTURE_DIR/api-token.txt:/run/secrets/api_token:ro"
+    require_dry_run_fragment "--workdir /srv/app"
+    require_dry_run_fragment "--user 1000:1000"
+    require_dry_run_fragment "--hostname api-host"
+    require_dry_run_fragment "--domainname compose.test"
+    require_dry_run_fragment "--dns-option use-vc"
+    require_dry_run_fragment "--add-host host.docker.internal:host-gateway"
+    require_dry_run_fragment "--add-host static.local:127.0.0.44"
+    require_dry_run_fragment "--sysctl net.ipv4.ip_unprivileged_port_start=1024"
+    require_dry_run_fragment "--blkio weight=300"
+    require_dry_run_fragment "container create --name $CONTAINER_PROJECT_NAME-worker-1"
+    require_dry_run_fragment "--log-driver none"
+    require_dry_run_fragment "--restart on-failure:4"
+    require_dry_run_fragment "--restart-delay 2s"
+    require_dry_run_fragment "--restart-window 6s"
 }
 
 # Run container-compose create against the same fixture.
