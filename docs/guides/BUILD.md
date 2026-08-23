@@ -181,12 +181,36 @@ Target-specific outputs are `coverage-core.*`, `coverage-runtime-spi.*`,
 `coverage.lcov` and `coverage.xml` are aggregate copies for SonarQube.
 Go output remains `Tools/compose-normalizer/coverage.out`.
 
-`make swift-runtime-test` uses the sibling runtime, isolates state under the
-marker-protected `.build/container-runtime` directory, retains only the kernel
-cache between runs, and always stops the test runtime when it exits. Normal CI
-reports the 25 live smoke tests as explicitly skipped with the activation
-reason. Both normal and live lanes print authoritative `executed` and `skipped`
-counts from the Swift Testing log.
+`make swift-runtime-test` uses the sibling runtime and always stops the test
+runtime when it exits. Its `container-stack-build` prerequisite requires a
+local Developer ID Application identity and signs every runtime executable
+with that stable identity. Set `CONTAINER_RUNTIME_CODESIGN_IDENTITY` to the
+identity's 40-character fingerprint when automatic selection is unsuitable.
+Apple's Local Network privacy service tracks a program by its code signature;
+an ad-hoc signature changes on every build and therefore cannot support
+unattended testing. The runtime wrapper rejects an ad-hoc packaged candidate
+before it can launch and display another approval dialog.
+
+When the checkout or configured runtime root is on a
+removable volume, Desktop, Documents, or Downloads,
+`scripts/run-with-container-runtime.sh` automatically stages the packaged
+runtime at one persistent, marker-protected `/private/tmp` path per source
+package and relocates marker-protected state there. The executable path does
+not change between builds of that package. This prevents launchd-managed
+services from blocking behind removable-volume approval dialogs while the
+Developer ID signature preserves the runtime's identity between builds. Set
+`CONTAINER_RUNTIME_STAGE_CANDIDATE=never` or
+`CONTAINER_RUNTIME_LOCALIZE_APP_ROOT=never` only when deliberately validating
+the host privacy policy itself.
+
+Runtime validation treats GHCR fixtures as public and exports
+`CONTAINER_REGISTRY_ANONYMOUS_HOSTS=ghcr.io`, preventing an anonymous pull from
+consulting the developer login Keychain. Override
+`CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS` with an empty value only for an
+authenticated-registry test. Normal CI reports the live smoke tests as
+explicitly skipped with the activation reason. Both normal and live lanes
+print authoritative `executed` and `skipped` counts from the Swift Testing
+log.
 
 ### Isolated macOS Runtime Ownership
 

@@ -59,6 +59,12 @@ runtime_service_inputs_root=
 runtime_start_state_root=
 runtime_start_deadline_seconds=${CONTAINER_RUNTIME_START_DEADLINE_SECONDS:-300}
 runtime_start_sequence_deadline=
+runtime_candidate_staging_root=
+runtime_candidate_staging_complete=false
+runtime_candidate_stage_mode=${CONTAINER_RUNTIME_STAGE_CANDIDATE:-auto}
+runtime_app_root_localization_mode=${CONTAINER_RUNTIME_LOCALIZE_APP_ROOT:-auto}
+runtime_local_execution_root=${CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT:-/private/tmp}
+runtime_anonymous_registry_hosts=${CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS-ghcr.io}
 
 # Derive and export the one non-default namespace used by this candidate.
 configure_runtime_namespace() {
@@ -406,6 +412,256 @@ validate_runtime_start_deadline_seconds() {
             "$runtime_start_deadline_seconds" >&2
         exit 2
     fi
+}
+
+# Validate the privacy-protection controls before inspecting caller paths.
+validate_runtime_localization_modes() {
+    case "$runtime_candidate_stage_mode" in
+        auto | always | never) ;;
+        *)
+            printf 'CONTAINER_RUNTIME_STAGE_CANDIDATE must be auto, always, or never: %s\n' \
+                "$runtime_candidate_stage_mode" >&2
+            exit 2
+            ;;
+    esac
+    case "$runtime_app_root_localization_mode" in
+        auto | always | never) ;;
+        *)
+            printf 'CONTAINER_RUNTIME_LOCALIZE_APP_ROOT must be auto, always, or never: %s\n' \
+                "$runtime_app_root_localization_mode" >&2
+            exit 2
+            ;;
+    esac
+    case "$runtime_local_execution_root" in
+        /private/tmp | /tmp) ;;
+        *)
+            printf 'CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT must be /private/tmp or /tmp: %s\n' \
+                "$runtime_local_execution_root" >&2
+            exit 2
+            ;;
+    esac
+    if [[ ! -d "$runtime_local_execution_root" || ! -w "$runtime_local_execution_root" ]]; then
+        printf 'container runtime local execution root is not writable: %s\n' \
+            "$runtime_local_execution_root" >&2
+        exit 2
+    fi
+}
+
+# Return success for locations that launchd or TCC can classify as removable
+# or user-controlled. Services launched from these paths can block behind a
+# GUI approval dialog that an unattended build cannot answer.
+runtime_path_requires_localization() {
+    local path="$1"
+    case "$path" in
+        /Volumes/* | "$HOME"/Desktop/* | "$HOME"/Documents/* | "$HOME"/Downloads/*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Keep marker-protected runtime state on the local system volume whenever the
+# configured build root lives on removable or privacy-controlled storage.
+localize_runtime_app_root() {
+    local should_localize=false
+    case "$runtime_app_root_localization_mode" in
+        always) should_localize=true ;;
+        auto)
+            if runtime_path_requires_localization "$runtime_app_root"; then
+                should_localize=true
+            fi
+            ;;
+        never) ;;
+    esac
+    [[ "$should_localize" == true ]] || return 0
+
+    local requested_root="$runtime_app_root"
+    local requested_root_digest
+    requested_root_digest=$(LC_ALL=C printf '%s' "$requested_root" \
+        | shasum -a 256 | awk '{print substr($1, 1, 16)}')
+    runtime_app_root="$runtime_local_execution_root/container-compose-runtime-$(id -u)-$requested_root_digest"
+    printf 'Relocating Container runtime state from privacy-controlled storage: %s -> %s\n' \
+        "$requested_root" "$runtime_app_root"
+}
+
+# Reject ad-hoc Mach-O signatures before macOS can treat every rebuild as a
+# new Local Network or Keychain client.
+validate_runtime_candidate_signatures() {
+    local source_package_root="$1"
+    local executable
+    local file_description
+    local signature_description
+    local macho_count=0
+
+    while IFS= read -r -d '' executable; do
+        file_description=$(/usr/bin/file -b "$executable")
+        [[ "$file_description" == *Mach-O* ]] || continue
+        ((macho_count += 1))
+        if ! signature_description=$(/usr/bin/codesign --display --verbose=4 "$executable" 2>&1); then
+            printf 'Container runtime executable has no valid code signature: %s\n' \
+                "$executable" >&2
+            return 2
+        fi
+        if [[ "$signature_description" == *$'Signature=adhoc'* ]] ||
+            [[ "$signature_description" != *$'Authority=Developer ID Application:'* ]]; then
+            printf 'Container runtime executable lacks a stable Developer ID signature: %s\n' \
+                "$executable" >&2
+            printf 'rebuild it through make container-stack-build before running unattended runtime tests\n' >&2
+            return 2
+        fi
+    done < <(find "$source_package_root/bin" "$source_package_root/libexec/container" \
+        -type f -perm -111 -print0)
+
+    if ((macho_count == 0)); then
+        return 0
+    fi
+}
+
+# Validate every complete source package regardless of whether its path needs
+# relocation. A package under ~/github is local but an ad-hoc rebuild there is
+# still a new privacy identity.
+validate_packaged_runtime_candidate_signatures() {
+    local source_bin_directory="${container_binary%/*}"
+    local source_package_root="${source_bin_directory%/*}"
+
+    [[ "${source_bin_directory##*/}" == bin ]] || return 0
+    [[ -x "$source_package_root/bin/container-apiserver" ]] || return 0
+    [[ -x "$source_package_root/bin/container-engine" ]] || return 0
+    [[ -d "$source_package_root/libexec/container" ]] || return 0
+    validate_runtime_candidate_signatures "$source_package_root"
+}
+
+# Copy a source-built packaged runtime onto the local system volume before any
+# launchd plist refers to it. Installed system candidates and candidates
+# already staged under /tmp are left in place.
+stage_runtime_candidate_if_needed() {
+    local deadline="$1"
+    local should_stage=false
+    case "$runtime_candidate_stage_mode" in
+        always) should_stage=true ;;
+        auto)
+            if runtime_path_requires_localization "$container_binary"; then
+                should_stage=true
+            fi
+            ;;
+        never) ;;
+    esac
+    [[ "$should_stage" == true ]] || return 0
+
+    local source_bin_directory="${container_binary%/*}"
+    local source_package_root="${source_bin_directory%/*}"
+    if [[ "${source_bin_directory##*/}" != bin ]] ||
+        [[ ! -x "$source_package_root/bin/container-apiserver" ]] ||
+        [[ ! -x "$source_package_root/bin/container-engine" ]] ||
+        [[ ! -d "$source_package_root/libexec/container" ]]; then
+        printf 'privacy-safe staging requires a packaged Container bin/ and libexec/container/ layout: %s\n' \
+            "$container_binary" >&2
+        exit 2
+    fi
+    local source_package_root_digest
+    source_package_root_digest=$(LC_ALL=C printf '%s' "$source_package_root" \
+        | shasum -a 256 | awk '{print substr($1, 1, 16)}')
+    runtime_candidate_staging_root="$runtime_local_execution_root/container-compose-runtime-candidate-$(id -u)-$source_package_root_digest"
+    local marker="$runtime_candidate_staging_root/.container-compose-runtime-candidate-staging"
+    local existing_marker_value=
+    if [[ -e "$runtime_candidate_staging_root" ]]; then
+        if [[ -L "$runtime_candidate_staging_root" ]] || [[ ! -d "$runtime_candidate_staging_root" ]]; then
+            printf 'refusing to use an indirect local Container candidate: %s\n' \
+                "$runtime_candidate_staging_root" >&2
+            exit 2
+        fi
+        local staging_owner
+        local staging_mode
+        staging_owner=$(/usr/bin/stat -f '%u' "$runtime_candidate_staging_root")
+        staging_mode=$(/usr/bin/stat -f '%Lp' "$runtime_candidate_staging_root")
+        if [[ "$staging_owner" != "$(id -u)" ]] || (( (8#$staging_mode & 022) != 0 )); then
+            printf 'refusing to use an unowned or writable local Container candidate: %s\n' \
+                "$runtime_candidate_staging_root" >&2
+            exit 2
+        fi
+        if [[ -L "$marker" ]] || [[ -e "$marker" && ! -f "$marker" ]]; then
+            printf 'refusing to use an indirect local Container candidate marker: %s\n' \
+                "$marker" >&2
+            exit 2
+        fi
+        if [[ -f "$marker" ]]; then
+            IFS= read -r existing_marker_value <"$marker" || true
+        fi
+        if ! [[ "$existing_marker_value" =~ ^container-compose\ runtime\ candidate\ staging\ v1\ [0-9a-f]{64}$ ]]; then
+            printf 'refusing to replace an unmarked local Container candidate: %s\n' \
+                "$runtime_candidate_staging_root" >&2
+            exit 2
+        fi
+        if pgrep -f -- "$runtime_candidate_staging_root/" >/dev/null 2>&1; then
+            printf 'refusing to replace a local Container candidate while it is running: %s\n' \
+                "$runtime_candidate_staging_root" >&2
+            exit 2
+        fi
+        run_runtime_start_command "$deadline" find \
+            "$runtime_candidate_staging_root" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    else
+        run_runtime_start_command "$deadline" mkdir -m 0700 \
+            "$runtime_candidate_staging_root"
+    fi
+    run_runtime_start_command "$deadline" chmod 0700 \
+        "$runtime_candidate_staging_root"
+    write_runtime_start_file "$deadline" "$marker" \
+        "container-compose runtime candidate staging v1 $container_binary_sha256"$'\n'
+    run_runtime_start_command "$deadline" mkdir -p \
+        "$runtime_candidate_staging_root/bin" "$runtime_candidate_staging_root/libexec"
+    run_runtime_start_command "$deadline" /bin/cp -p \
+        "$source_package_root/bin/container" \
+        "$source_package_root/bin/container-apiserver" \
+        "$source_package_root/bin/container-engine" \
+        "$runtime_candidate_staging_root/bin/"
+    run_runtime_start_command "$deadline" /bin/cp -a \
+        "$source_package_root/libexec/container" \
+        "$runtime_candidate_staging_root/libexec/container"
+    local staged_symlink
+    staged_symlink=$(run_runtime_start_command "$deadline" find \
+        "$runtime_candidate_staging_root" -type l -print -quit) || return "$?"
+    if [[ -n "$staged_symlink" ]]; then
+        printf 'privacy-safe Container staging does not permit symlinks: %s\n' \
+            "$staged_symlink" >&2
+        exit 2
+    fi
+
+    container_binary="$runtime_candidate_staging_root/bin/container"
+    container_binary_directory="$runtime_candidate_staging_root/bin"
+    export PATH="$container_binary_directory${PATH:+:$PATH}"
+    export CONTAINER_RUNTIME_CLI="$container_binary"
+    export CONTAINER_BIN="$container_binary"
+    export CONTAINER_COMPOSE_CONTAINER="$container_binary"
+    runtime_candidate_staging_complete=true
+    printf 'Staged Container runtime candidate at its persistent local path: %s\n' \
+        "$container_binary"
+}
+
+cleanup_runtime_candidate_staging() {
+    [[ -n "$runtime_candidate_staging_root" ]] || return 0
+    [[ "$runtime_candidate_staging_complete" == false ]] || return 0
+    case "$runtime_candidate_staging_root" in
+        /private/tmp/container-compose-runtime-candidate-[0-9]*-[0-9a-f]* | /tmp/container-compose-runtime-candidate-[0-9]*-[0-9a-f]*) ;;
+        *)
+            printf 'refusing to clear unexpected runtime candidate staging root: %s\n' \
+                "$runtime_candidate_staging_root" >&2
+            return 1
+            ;;
+    esac
+    local marker="$runtime_candidate_staging_root/.container-compose-runtime-candidate-staging"
+    local marker_value=
+    if [[ -f "$marker" ]]; then
+        IFS= read -r marker_value <"$marker" || true
+    fi
+    if [[ "$marker_value" != "container-compose runtime candidate staging v1 $container_binary_sha256" ]]; then
+        printf 'refusing to clear unmarked runtime candidate staging root: %s\n' \
+            "$runtime_candidate_staging_root" >&2
+        return 1
+    fi
+    find "$runtime_candidate_staging_root" -depth -delete 2>/dev/null || true
+    runtime_candidate_staging_root=
 }
 
 # Return an absolute monotonic deadline for the complete runtime-start sequence.
@@ -889,6 +1145,7 @@ cleanup_runtime_service_inputs() {
 cleanup_runtime_temporary_state() {
     cleanup_runtime_start_state_root || true
     cleanup_runtime_service_inputs || true
+    cleanup_runtime_candidate_staging || true
 }
 
 resolve_matched_init_image() {
@@ -1069,8 +1326,20 @@ install_matched_init_image() {
 }
 
 validate_runtime_start_deadline_seconds
+validate_runtime_localization_modes
 runtime_start_sequence_deadline=$(runtime_start_deadline)
+trap cleanup_runtime_temporary_state EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 131' QUIT
+trap 'exit 143' TERM
 resolve_container_binary "$runtime_start_sequence_deadline"
+validate_packaged_runtime_candidate_signatures
+localize_runtime_app_root
+stage_runtime_candidate_if_needed "$runtime_start_sequence_deadline"
+if [[ -n "$runtime_anonymous_registry_hosts" ]]; then
+    export CONTAINER_REGISTRY_ANONYMOUS_HOSTS="$runtime_anonymous_registry_hosts"
+fi
 validate_runtime_inputs "$runtime_start_sequence_deadline"
 validate_containerization_init_source "$runtime_start_sequence_deadline"
 resolve_matched_init_image
@@ -1078,11 +1347,6 @@ validate_runtime_init_image_archive "$runtime_start_sequence_deadline"
 configure_runtime_namespace
 verify_runtime_namespace_support "$runtime_start_sequence_deadline"
 
-trap cleanup_runtime_temporary_state EXIT
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 131' QUIT
-trap 'exit 143' TERM
 if [[ "${CONTAINER_RUNTIME_MANAGED:-0}" == "1" ]]; then
     ensure_managed_runtime_ready "$runtime_start_sequence_deadline"
     "$@"
