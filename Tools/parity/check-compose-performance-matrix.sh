@@ -32,6 +32,9 @@
 #   PARITY_COMPARABLE_NOISE_PCT  Comparable-performance noise band (default: 5).
 #   PARITY_SINK_STALL_SECONDS    Host slow-sink pause (default: 2).
 #   PARITY_PRESSURE_RECORDS      Records in pressure workloads (default: 65536).
+#   PARITY_SINK_BIND_ADDRESS     Host address for the remote logging sink
+#                                (default: 127.0.0.1). Cross-VM Docker probes
+#                                must explicitly opt into a reachable address.
 #   PARITY_DOCKER_HOST_ADDRESS   Host address visible to Docker (default:
 #                                host.docker.internal).
 #   PARITY_CONTAINER_HOST_ADDRESS
@@ -68,6 +71,7 @@ PARITY_TIMING_MAX_RATIO="${PARITY_TIMING_MAX_RATIO:-10}"
 PARITY_COMPARABLE_NOISE_PCT="${PARITY_COMPARABLE_NOISE_PCT:-5}"
 PARITY_SINK_STALL_SECONDS="${PARITY_SINK_STALL_SECONDS:-2}"
 PARITY_PRESSURE_RECORDS="${PARITY_PRESSURE_RECORDS:-65536}"
+PARITY_SINK_BIND_ADDRESS="${PARITY_SINK_BIND_ADDRESS:-127.0.0.1}"
 PARITY_DOCKER_HOST_ADDRESS="${PARITY_DOCKER_HOST_ADDRESS:-host.docker.internal}"
 PARITY_CONTAINER_HOST_ADDRESS="${PARITY_CONTAINER_HOST_ADDRESS:-127.0.0.1}"
 readonly FIXTURE_IMAGE="alpine:3.20"
@@ -182,6 +186,9 @@ check_tools() {
     [[ "$PARITY_COMPARABLE_NOISE_PCT" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { error "PARITY_COMPARABLE_NOISE_PCT must be zero or positive"; return 2; }
     [[ "$PARITY_SINK_STALL_SECONDS" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { error "PARITY_SINK_STALL_SECONDS must be zero or positive"; return 2; }
     [[ "$PARITY_PRESSURE_RECORDS" =~ ^[1-9][0-9]*$ ]] || { error "PARITY_PRESSURE_RECORDS must be a positive integer"; return 2; }
+    if [[ "$PARITY_SINK_BIND_ADDRESS" == "127.0.0.1" && "$PARITY_DOCKER_HOST_ADDRESS" != "127.0.0.1" ]]; then
+        skip_or_fail 'Docker remote-logging probes require an explicit host-reachable PARITY_SINK_BIND_ADDRESS (for example 0.0.0.0); refusing to request local-network access implicitly'
+    fi
 }
 
 # Remove generated projects and the local fixture directory.
@@ -397,11 +404,11 @@ initialize_evidence() {
         "$(sw_vers -productVersion)" "$(uname -m)" "$(shasum -a 256 "$CONTAINER_COMPOSE" | awk '{print $1}')" \
         "$(shasum -a 256 "$(command -v "$CONTAINER_BINARY")" | awk '{print $1}')" \
         "$PARITY_COMPARABLE_NOISE_PCT" "$PARITY_PRESSURE_RECORDS" \
-        "$PARITY_SINK_STALL_SECONDS" "$PARITY_DOCKER_HOST_ADDRESS" \
+        "$PARITY_SINK_STALL_SECONDS" "$PARITY_SINK_BIND_ADDRESS" "$PARITY_DOCKER_HOST_ADDRESS" \
         "$PARITY_CONTAINER_HOST_ADDRESS" <<'PY'
 import json, os, pathlib, sys
 from datetime import datetime, timezone
-(timing, fingerprints, docker_compose, docker_engine, compose_version, runtime_version, commit, model, memory, macos, architecture, compose_sha, runtime_sha, noise, pressure_records, sink_stall, docker_host, container_host) = sys.argv[1:]
+(timing, fingerprints, docker_compose, docker_engine, compose_version, runtime_version, commit, model, memory, macos, architecture, compose_sha, runtime_sha, noise, pressure_records, sink_stall, sink_bind, docker_host, container_host) = sys.argv[1:]
 def decode(value):
     try: return json.loads(value)
     except json.JSONDecodeError: return value
@@ -415,6 +422,7 @@ pathlib.Path(fingerprints).write_text(json.dumps({
         "pressureRecords": int(pressure_records),
         "repetitions": int(os.environ["PARITY_REPETITIONS"]),
         "schedule": "Docker-first on odd repetitions; candidate-first on even repetitions",
+        "sinkBindAddress": sink_bind,
         "sinkEndpoints": {"container": container_host, "docker": docker_host},
         "sinkStallSeconds": float(sink_stall),
         "timingDirection": "lower-is-better fixed-work duration",
@@ -517,6 +525,7 @@ start_sink() {
     SINK_STOP_FILE="$PARITY_EVIDENCE_DIR/sinks/$label.stop"
     rm -f "$SINK_PORT_FILE" "$SINK_RESULT_FILE" "$SINK_STOP_FILE"
     "$LOGGING_SINK" \
+        --bind-address "$PARITY_SINK_BIND_ADDRESS" \
         --port-file "$SINK_PORT_FILE" \
         --result-file "$SINK_RESULT_FILE" \
         --stop-file "$SINK_STOP_FILE" \

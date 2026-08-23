@@ -36,6 +36,7 @@ def parse_arguments() -> argparse.Namespace:
     """Parse the isolated sink configuration."""
 
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--bind-address", default="127.0.0.1")
     parser.add_argument("--port-file", required=True, type=Path)
     parser.add_argument("--result-file", required=True, type=Path)
     parser.add_argument("--stop-file", type=Path)
@@ -80,7 +81,7 @@ def receive(arguments: argparse.Namespace) -> dict[str, object]:
             socket.SO_RCVBUF,
             arguments.receive_buffer_bytes,
         )
-        listener.bind(("0.0.0.0", 0))
+        listener.bind((arguments.bind_address, 0))
         listener.listen(4)
         listener.settimeout(min(0.1, arguments.accept_timeout_seconds))
         write_atomic(arguments.port_file, f"{listener.getsockname()[1]}\n")
@@ -136,6 +137,7 @@ def receive(arguments: argparse.Namespace) -> dict[str, object]:
     markers = [int(value) for value in MARKER_PATTERN.findall(payload)]
     unique_markers = sorted(set(markers))
     return {
+        "bindAddress": arguments.bind_address,
         "byteCount": len(payload),
         "connectionCount": connection_count,
         "durationSeconds": round(time.monotonic() - started, 9),

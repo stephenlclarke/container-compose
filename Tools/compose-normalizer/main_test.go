@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -27,6 +28,8 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -646,6 +649,39 @@ services:
 	api := project.Services["api"]
 	if api.Build == nil || !strings.HasSuffix(filepath.ToSlash(api.Build.Context), "/stacks/extended/context") {
 		t.Fatalf("api.Build = %#v, want context relative to remote extends file", api.Build)
+	}
+}
+
+func TestGitRemoteFixtureStopsAnIdleClient(t *testing.T) {
+	var idleClient net.Conn
+	t.Cleanup(func() {
+		if idleClient != nil {
+			_ = idleClient.Close()
+		}
+	})
+
+	remote := newGitComposeRemote(t)
+	baseURL, _, _ := strings.Cut(remote, "#")
+	address := strings.TrimSuffix(strings.TrimPrefix(baseURL, "git://"), "/project.git")
+	connection, err := net.Dial("tcp", address)
+	if err != nil {
+		t.Fatalf("connect idle Git fixture client: %v", err)
+	}
+	idleClient = connection
+	payload := "git-upload-pack /project.git\x00host=127.0.0.1\x00"
+	request := fmt.Sprintf("%04x%s", len(payload)+4, payload)
+	if _, err := idleClient.Write([]byte(request)); err != nil {
+		t.Fatalf("start idle Git fixture request: %v", err)
+	}
+	if err := idleClient.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set idle Git fixture deadline: %v", err)
+	}
+	response := make([]byte, 1)
+	if _, err := idleClient.Read(response); err != nil {
+		t.Fatalf("wait for idle Git fixture response: %v", err)
+	}
+	if err := idleClient.SetReadDeadline(time.Time{}); err != nil {
+		t.Fatalf("clear idle Git fixture deadline: %v", err)
 	}
 }
 
@@ -2974,47 +3010,115 @@ services:
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("reserve Git daemon port: %v", err)
+		t.Fatalf("start Git fixture listener: %v", err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
-	if err := listener.Close(); err != nil {
-		t.Fatalf("release Git daemon port: %v", err)
-	}
-
-	daemon := exec.Command(
-		"git", "daemon", "--reuseaddr", "--export-all",
-		"--base-path="+root, "--listen=127.0.0.1", fmt.Sprintf("--port=%d", port), root,
-	)
 	daemonLogPath := filepath.Join(root, "git-daemon.log")
 	daemonLog, err := os.Create(daemonLogPath)
 	if err != nil {
+		_ = listener.Close()
 		t.Fatalf("create Git daemon log: %v", err)
 	}
-	daemon.Stdout = daemonLog
-	daemon.Stderr = daemonLog
-	if err := daemon.Start(); err != nil {
-		_ = daemonLog.Close()
-		t.Fatalf("start Git daemon: %v", err)
-	}
+	serverContext, stopServer := context.WithCancel(context.Background())
+	serverErrors := make(chan error, 1)
+	activeConnections := make(map[net.Conn]struct{})
+	var connectionMutex sync.Mutex
+	var serverWaitGroup sync.WaitGroup
+	serverWaitGroup.Add(1)
+	go func() {
+		defer serverWaitGroup.Done()
+		for {
+			connection, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				if serverContext.Err() == nil {
+					select {
+					case serverErrors <- fmt.Errorf("accept Git fixture connection: %w", acceptErr):
+					default:
+					}
+				}
+				return
+			}
+			connectionMutex.Lock()
+			if serverContext.Err() != nil {
+				connectionMutex.Unlock()
+				_ = connection.Close()
+				return
+			}
+			activeConnections[connection] = struct{}{}
+			serverWaitGroup.Add(1)
+			connectionMutex.Unlock()
+			go func(connection net.Conn) {
+				defer serverWaitGroup.Done()
+				defer func() {
+					connectionMutex.Lock()
+					delete(activeConnections, connection)
+					connectionMutex.Unlock()
+					_ = connection.Close()
+				}()
+				daemon := exec.CommandContext(
+					serverContext, "git", "daemon", "--inetd", "--export-all",
+					"--strict-paths", "--base-path="+root, bare,
+				)
+				daemon.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+				daemon.Cancel = func() error {
+					if daemon.Process == nil {
+						return os.ErrProcessDone
+					}
+					if killErr := syscall.Kill(-daemon.Process.Pid, syscall.SIGKILL); killErr != nil {
+						if killErr == syscall.ESRCH {
+							return os.ErrProcessDone
+						}
+						return killErr
+					}
+					return nil
+				}
+				daemon.WaitDelay = time.Second
+				daemon.Stdin = connection
+				daemon.Stdout = connection
+				daemon.Stderr = daemonLog
+				if runErr := daemon.Run(); runErr != nil && serverContext.Err() == nil {
+					select {
+					case serverErrors <- fmt.Errorf("serve Git fixture connection: %w", runErr):
+					default:
+					}
+				}
+			}(connection)
+		}
+	}()
 	t.Cleanup(func() {
-		_ = daemon.Process.Kill()
-		_ = daemon.Wait()
-		_ = daemonLog.Close()
+		connectionMutex.Lock()
+		stopServer()
+		_ = listener.Close()
+		for connection := range activeConnections {
+			_ = connection.Close()
+		}
+		connectionMutex.Unlock()
+		waitResult := make(chan struct{})
+		go func() {
+			serverWaitGroup.Wait()
+			close(waitResult)
+		}()
+		select {
+		case <-waitResult:
+		case <-time.After(time.Second):
+			t.Errorf("Git fixture server did not stop within one second")
+		}
+		if err := daemonLog.Close(); err != nil {
+			t.Errorf("close Git daemon log: %v", err)
+		}
+		select {
+		case serverErr := <-serverErrors:
+			t.Errorf("Git fixture server failed: %v", serverErr)
+		default:
+		}
 	})
 
 	baseURL := fmt.Sprintf("git://127.0.0.1:%d/project.git", port)
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		probe := exec.Command("git", "ls-remote", baseURL, "HEAD")
-		if err := probe.Run(); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			_ = daemonLog.Sync()
-			output, _ := os.ReadFile(daemonLogPath)
-			t.Fatalf("Git daemon did not become ready: %s", output)
-		}
-		time.Sleep(20 * time.Millisecond)
+	probeContext, cancelProbe := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelProbe()
+	probe := exec.CommandContext(probeContext, "git", "ls-remote", baseURL, "HEAD")
+	if output, probeErr := probe.CombinedOutput(); probeErr != nil {
+		t.Fatalf("Git fixture did not become ready: %v\n%s", probeErr, output)
 	}
 	return baseURL + "#HEAD:stacks/demo"
 }

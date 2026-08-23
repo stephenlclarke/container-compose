@@ -18,8 +18,12 @@ The [Container-family parity development cycle](../architecture/container-family
 - The Swift toolchain declared by `Package.swift`, aligned with the matching
   `container` and `containerization` checkouts.
 - The Go toolchain declared by `Tools/compose-normalizer/go.mod`.
+- Bash 5 or newer for repository checks; the recoverable pipeline records and
+  exposes this executable instead of falling back to macOS Bash 3.2.
 - Python 3 for coverage and release tooling.
 - Node.js plus `markdownlint-cli` for Markdown validation.
+- The exact Java 21.0.11 runtime recorded by the recoverable-pipeline wrapper
+  when using the pinned Nextflow launcher.
 - Internet access for SwiftPM to fetch the exact checked-in `container` and
   `containerization` revisions. A sibling runtime checkout is required only for
   full stack, runtime, or release-gate validation.
@@ -29,7 +33,7 @@ The [Container-family parity development cycle](../architecture/container-family
 Install the user-space prerequisites with Homebrew when needed:
 
 ```sh
-brew install go node python sonar-scanner
+brew install bash go node openjdk@21 python sonar-scanner
 npm install --global markdownlint-cli
 ```
 
@@ -129,19 +133,53 @@ Useful focused targets are:
 | `make upstream-divergence-report` | Fetch Apple upstream and stephenlclarke refs for the Apple-backed sibling repos, then write `.build/reports/upstream-divergence.md` and `.build/reports/upstream-divergence.json`. |
 | `make upstream-divergence-check` | Run the same report as a strict check that fails on dirty worktrees, unpushed local commits, missing refs, or Apple upstream merge conflicts. |
 | `make upstream-divergence-release-check` | Stable-release check: also fails when a fork `main` is behind Apple upstream. |
+| `make pipeline-bootstrap` | Explicitly download and SHA-256 verify the pinned Nextflow OSS runtime. Normal pipeline runs never install or update it. |
+| `make pipeline-plan` | Print the selected recoverable-pipeline repositories and stages without building. |
+| `make pipeline-preflight` | Validate the host, clean repositories, exact commits, full Git bundles for source checks, path-scoped tree archives for functional/build stages, and stage-specific tools. |
+| `make pipeline PIPELINE_PROFILE=repository` | Run Compose source, Swift-test, Go-test, and CLI-smoke stages with durable cache and evidence. This profile does not run coverage. |
+| `make pipeline PIPELINE_PROFILE=focused PIPELINE_STAGE_SELECTOR=compose-source` | Run explicitly selected stages. Selecting a functional/build stage automatically adds its same-repository source stage. |
+| `make pipeline-resume PIPELINE_SESSION=<failed-session-uuid>` | Resume exactly one failed session after a correction. Bare resume is rejected. |
+| `make pipeline-status` | List durable Nextflow session history. |
+| `make pipeline-self-test` | Inject a downstream failure and prove that exact-session recovery reuses the successful upstream task. |
 
-The release gate is a content-addressed stage graph rather than one opaque
-command. When the release helper supplies
-`CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR`, successful sibling-stack, Compose
-CI, runtime, and parity stages are recorded beneath that evidence directory and
-an interrupted retry resumes only exact-input stages. Sibling repository targets
-and individual Docker Compose parity contracts have their own checkpoints, so a
-late failure does not repeat unrelated successful work. The identity includes
-all four source trees, the tap formula, the runtime candidate, relevant fixture
-revisions, and tool versions; a changed input invalidates the affected proof.
+The new OSS recovery graph is documented in
+[Recoverable Container-family builds](../architecture/recoverable-container-family-builds.md).
+Its phase-one profiles cover source, build-only, and non-runtime functional
+validation; they do not yet replace the stable release gate.
 
-Every stage has a wall-clock deadline and terminates its complete process group
-when that deadline expires. Tune the outer bounds with
+Source-check stages receive a self-contained Git bundle for the repository's
+exact commit. Functional and build stages receive deterministic tree archives
+containing only their declared paths, and each waits only for its own
+repository's source-check receipt. Stage commands execute below `/private/tmp`
+with a sealed private tool directory followed by the fixed system path. Every
+stage pins and revalidates the selected Apple developer directory and its
+resolved Git and Python tools. Swift stages additionally identify the SDK,
+Swift, Clang, frontend, and linker, Go stages identify and hash the complete
+`GOROOT`, and Markdown stages hash the installed `markdownlint-cli` package
+tree. Repository scripts resolve the recorded Bash 5 executable from the
+sealed directory.
+
+On failure, the pipeline preserves the receipt, stage command, stdout,
+stderr, `.command.sh`, and `.command.run` under
+`$PIPELINE_STATE_ROOT/failures/<session-uuid>/<stage>`. The wrapper copies that
+tree into the attempt evidence directory as `failures/`. Phase one does not
+emit output-artifact manifests or coverage-floor evidence, and explicit
+missing/corrupt cached-output recovery tests remain future work. Runtime,
+parity, packaging, and release authority remain on the existing gates.
+
+The stable release gate still uses the legacy Python checkpoint wrappers. Its
+single release fingerprint includes all matched source trees and many host and
+runtime inputs, so a local change can invalidate unrelated proof. Retained
+historical checkpoints also contain manually carried-forward records that the
+implementation cannot authenticate. Treat those checkpoints as migration-era
+acceleration only, not as independently verified exact-input cache entries.
+Never create or edit a `carried_forward` record.
+
+Every stage has a wall-clock deadline and terminates its complete process
+session, including descendant process groups, when that deadline expires. A
+command that reports success but leaves a live descendant after the bounded
+natural-drain interval is cleaned up and fails as
+an infrastructure error instead of leaking work into a later stage. Tune the outer bounds with
 `RELEASE_GATE_STAGE_TIMEOUT_SECONDS`, `RELEASE_GATE_STACK_TIMEOUT_SECONDS`, and
 `RELEASE_GATE_PARITY_TIMEOUT_SECONDS`; tune individual parity contracts with
 `PARITY_STAGE_TIMEOUT_SECONDS`. `CONTAINER_RUNTIME_START_DEADLINE_SECONDS`
@@ -440,9 +478,10 @@ behind Apple upstream, requires `kern.hv_support=1`, bootstraps the matched
 stack tools, fetches the required `containerization` integration kernel when it
 is absent, and runs the full local `make release-gate` inside one fresh,
 marker-protected, uniquely namespaced runtime lifecycle. Nested runtime targets
-reuse that owner without stopping it, and exact-input sibling validation
-checkpoints under the release evidence directory are reused after an
-interrupted retry. An unpublished helper-generated candidate commit is likewise
+reuse that owner without stopping it, and sibling validation checkpoints under
+the release evidence directory may be reused after an interrupted retry,
+subject to the legacy checkpoint limitations described above. An unpublished
+helper-generated candidate commit is likewise
 retained rather than recommitted with a new identity. The hosted gate then runs
 the `make release-gate-hosted` equivalent from its immutable
 release-control checkout against the immutable source, runtime, and tap
@@ -520,6 +559,20 @@ performance-matrix path). `PARITY_REPETITIONS` defaults to five; do not use a
 debug candidate or fewer samples as release-grade performance evidence. Logs,
 `develop.watch` sync, and build-context transfer still require their own
 matrix lanes; see the [performance backlog](../project/BACKLOG.md#comparable-or-better-performance).
+
+The performance sink binds to `127.0.0.1` by default, which avoids a macOS
+Local Network approval for ordinary local checks. Cross-VM remote logging
+requires an explicit wildcard bind on a dedicated or otherwise provisioned
+host:
+
+```sh
+PARITY_SINK_BIND_ADDRESS=0.0.0.0 make docker-compose-performance-matrix
+```
+
+Do not use the wildcard opt-in for an unattended host whose approval state is
+unknown. The harness fails before the expensive matrix when cross-VM logging
+cannot use a reachable bind. This performance matrix is not part of the
+phase-one Nextflow graph.
 
 Run a focused target directly while iterating:
 
