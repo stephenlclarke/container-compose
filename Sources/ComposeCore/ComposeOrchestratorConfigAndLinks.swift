@@ -107,7 +107,8 @@ extension ComposeOrchestrator {
     /// Returns images referenced by selected services, including generated build tags.
     func configImages(project: ComposeProject, services: [String]) throws -> [String] {
         let selected = try selectedServices(project: project, selected: services)
-        return Array(Set(selected.compactMap { serviceImage(project: project, service: $0) })).sorted()
+        let serviceImages = selected.compactMap { serviceImage(project: project, service: $0) }
+        return Array(Set(serviceImages + explicitPreStartImages(services: selected))).sorted()
     }
 
     /// Returns the interpolation environment loaded by compose-go.

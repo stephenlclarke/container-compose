@@ -2930,9 +2930,14 @@ extension ComposeOrchestratorTests {
                     $0.profiles = ["debug", "dev"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                     $0.networks = ["front"]
+                    $0.preStart = [
+                        ComposeServiceHook(command: ["prepare"], image: "example/api-init:1"),
+                        ComposeServiceHook(command: ["reuse"], image: "example/api-init:1"),
+                    ]
                 },
                 "worker": composeService(name: "worker") {
                     $0.build = ComposeBuild(context: "./worker")
+                    $0.preStart = [ComposeServiceHook(command: ["prepare"], image: "example/worker-init:1")]
                 },
             ]
         ) {
@@ -2951,7 +2956,11 @@ extension ComposeOrchestratorTests {
             $0.servicesOnly = true
             $0.services = ["missing"]
         }) == "api\nworker")
-        #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.images = true }) == "demo_worker:latest\nexample/api")
+        #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.images = true }) == "demo_worker:latest\nexample/api\nexample/api-init:1\nexample/worker-init:1")
+        #expect(try orchestrator.config(project: project, options: ComposeConfigOptions {
+            $0.images = true
+            $0.services = ["api"]
+        }) == "example/api\nexample/api-init:1")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.networks = true }) == "back\nfront")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.profiles = true }) == "debug\ndev")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions {

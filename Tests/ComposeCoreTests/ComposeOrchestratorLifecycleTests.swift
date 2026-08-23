@@ -1732,8 +1732,8 @@ extension ComposeOrchestratorTests {
         ])
     }
 
-    @Test("pre start images stay out of service image projections and explicit pull")
-    func preStartImagesStayOutOfServiceImageProjectionsAndExplicitPull() async throws {
+    @Test("pre start images appear in config images but stay out of explicit pull")
+    func preStartImagesAppearInConfigImagesButStayOutOfExplicitPull() async throws {
         let imageManager = RecordingContainerImageManager()
         let project = ComposeProject(
             name: "demo",
@@ -1763,6 +1763,8 @@ extension ComposeOrchestratorTests {
             options: ComposeConfigOptions { $0.images = true }
         ) == """
         example/api:1
+        example/init:1
+        example/skip:1
         example/worker:1
         """)
 
