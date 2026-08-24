@@ -46,7 +46,8 @@ cleanup or launch operation.
 - The local release gate supplies the source CLI through the environment, so
   the wrapper's staged alias wins before managed Make targets run.
 - The wrapper gives the staged CLI final GNU Make command-line precedence, so
-  inherited `MAKEFLAGS` cannot restore a mutable source path in recursive makes.
+  inherited `MAKEFLAGS` cannot restore a mutable source path through either
+  supported Container CLI alias in recursive makes.
 - Cleanup authorization precedes first staging-directory creation; an
   interrupted `mkdir` is removed after ownership and mode revalidation.
 - Developer ID acceptance is anchored to an `Authority=` record, so package
