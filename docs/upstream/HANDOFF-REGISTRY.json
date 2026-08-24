@@ -7046,6 +7046,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/314"
     },
     {
+      "id": "container-compose-315",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Add a recoverable Nextflow build and test pipeline",
+      "state": "submitted",
+      "lastVerified": "2026-08-24",
+      "commits": [
+        "e8599798b29299064c0628379c4dba0c105e6cba"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-313.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-315.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/315"
+    },
+    {
       "id": "container-compose-307",
       "owner": "stephenlclarke/container-compose",
       "title": "Accept redacted create logging options",
