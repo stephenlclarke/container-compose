@@ -49,6 +49,10 @@ cleanup or launch operation.
   inherited `MAKEFLAGS` cannot restore a mutable source path in recursive makes.
 - Cleanup authorization precedes first staging-directory creation; an
   interrupted `mkdir` is removed after ownership and mode revalidation.
+- Developer ID acceptance is anchored to an `Authority=` record, so package
+  path text cannot spoof the signing identity.
+- An unchanged, revalidated staged generation is reused while an orphaned
+  process still runs from it; changed running generations remain protected.
 
 ## Scope
 
