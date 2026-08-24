@@ -38,7 +38,10 @@ permissions:
 
 concurrency:
   group: container-compose-current-demo
-  cancel-in-progress: true
+  # A replacement is a delete-upload transaction against one immutable
+  # release ID. Let the running transaction reach its recovery path; a queued
+  # newer run will supersede the finished recording after freshness checks.
+  cancel-in-progress: false
 
 jobs:
   resolve-current:

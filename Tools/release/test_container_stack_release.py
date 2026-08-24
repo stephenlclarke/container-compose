@@ -688,7 +688,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
 
         self.assertIn("- Prebuilt Binaries", workflow)
-        self.assertIn("cancel-in-progress: true", workflow)
+        self.assertIn("group: container-compose-current-demo", workflow)
+        self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn(
             "runs-on: [self-hosted, macOS, ARM64, "
             "container-compose-release, container-compose-current]",
