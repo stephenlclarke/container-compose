@@ -1212,6 +1212,25 @@ jobs:
             fi
           done
 
+          # Finalizing Current recreates the mutable release. Carry the last
+          # successful, non-authoritative demo through that replacement so a
+          # failed asynchronous recording never leaves the README asset absent.
+          retained_demo="${RUNNER_TEMP}/container-compose-demo-current.gif"
+          demo_asset_present="$(
+            gh release view "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --json assets \
+              --jq '[.assets[].name == "container-compose-demo-current.gif"] | any'
+          )"
+          if [[ "${demo_asset_present}" == "true" ]]; then
+            gh release download "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --pattern "container-compose-demo-current.gif" \
+              --dir "${RUNNER_TEMP}" \
+              --clobber
+            printf '%s\n' "${retained_demo}" >> "${extra_assets}"
+          fi
+
           RELEASE_REPOSITORY="${GITHUB_REPOSITORY}" \
             RELEASE_TAG="${RELEASE_TAG}" \
             RELEASE_TITLE="${RELEASE_TITLE}" \

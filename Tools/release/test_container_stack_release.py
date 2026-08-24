@@ -672,8 +672,17 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertNotIn("Install VHS", release_critical)
         self.assertNotIn("Generate Current build VHS recording", release_critical)
         self.assertNotIn("Validate Current demo init-image authority", release_critical)
-        self.assertNotIn("container-compose-demo-current.gif", release_critical)
         self.assertNotIn("CURRENT_DEMO_INIT_IMAGE_ARCHIVE", release_critical)
+        self.assertIn(
+            'gh release view "${RELEASE_TAG}"', release_critical
+        )
+        self.assertIn(
+            '--pattern "container-compose-demo-current.gif"', release_critical
+        )
+        self.assertIn(
+            'printf \'%s\\n\' "${retained_demo}" >> "${extra_assets}"',
+            release_critical,
+        )
         self.assertIn(
             '--current-asset "container-compose-demo-current.gif"', package
         )
