@@ -10,7 +10,7 @@
         "repository": "ghcr.io/stephenlclarke/container-builder-shim/builder",
         "tag": "current-31545611348-88332c96705b"
       },
-      "ref": "88332c96705b024bbc5cd210642118ee82f8793d",
+      "ref": "e4829be2203b7baa33cae75ca58be967e4b81280",
       "repository": "stephenlclarke/container-builder-shim"
     },
     "containerization": {
