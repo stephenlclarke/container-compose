@@ -825,6 +825,47 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 result.stderr,
             )
 
+    def test_anonymous_registry_opt_out_clears_inherited_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            container_log = temporary_root / "container.log"
+            inherited_policy_log = temporary_root / "anonymous-policy"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS": "",
+                    "CONTAINER_REGISTRY_ANONYMOUS_HOSTS": "ghcr.io",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "INHERITED_POLICY_LOG": str(inherited_policy_log),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/bin/sh",
+                    "-c",
+                    'printf "%s\\n" "${CONTAINER_REGISTRY_ANONYMOUS_HOSTS-unset}" '
+                    '>"$INHERITED_POLICY_LOG"',
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                inherited_policy_log.read_text(encoding="utf-8"), "unset\n"
+            )
+
     @unittest.skipUnless(
         os.uname().sysname == "Darwin", "requires macOS codesign"
     )

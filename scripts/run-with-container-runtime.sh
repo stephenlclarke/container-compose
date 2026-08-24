@@ -562,6 +562,11 @@ validate_runtime_candidate_signatures() {
         file_description=$(/usr/bin/file -b "$executable")
         [[ "$file_description" == *Mach-O* ]] || continue
         ((macho_count += 1))
+        if ! /usr/bin/codesign --verify --strict "$executable" >/dev/null 2>&1; then
+            printf 'Container runtime executable has an invalid code signature: %s\n' \
+                "$executable" >&2
+            return 2
+        fi
         if ! signature_description=$(/usr/bin/codesign --display --verbose=4 "$executable" 2>&1); then
             printf 'Container runtime executable has no valid code signature: %s\n' \
                 "$executable" >&2
@@ -1463,6 +1468,8 @@ localize_runtime_app_root
 stage_runtime_candidate_if_needed "$runtime_start_sequence_deadline"
 if [[ -n "$runtime_anonymous_registry_hosts" ]]; then
     export CONTAINER_REGISTRY_ANONYMOUS_HOSTS="$runtime_anonymous_registry_hosts"
+else
+    unset CONTAINER_REGISTRY_ANONYMOUS_HOSTS
 fi
 validate_runtime_inputs "$runtime_start_sequence_deadline"
 validate_containerization_init_source "$runtime_start_sequence_deadline"
