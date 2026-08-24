@@ -639,7 +639,7 @@ jobs:
         env:
           CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
           DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
-          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 07ab89568d2805665ea82bd4556f683a0c28aa476805d584875a3feadca97991
+          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 27761bf109808075f8ffec8c89e9137c6586a21caad40aabb49c3f6a384cad29
         shell: bash
         working-directory: container-compose
         run: |
@@ -996,7 +996,7 @@ jobs:
           CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
           DEMO_ASSET: ${{ steps.lane.outputs.demo_asset }}
           DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
-          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 07ab89568d2805665ea82bd4556f683a0c28aa476805d584875a3feadca97991
+          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 27761bf109808075f8ffec8c89e9137c6586a21caad40aabb49c3f6a384cad29
           PLUGIN_ARCHIVE: ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
           RUNTIME_ARCHIVE: ${{ steps.runtime-package.outputs.local_asset }}
         shell: bash
