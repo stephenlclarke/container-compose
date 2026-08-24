@@ -739,6 +739,33 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "- name: Save bounded demo diagnostics"
             )
         ]
+        self.assertIn("DEMO_ASSET: container-compose-demo-current.gif", publish_step)
+        self.assertIn(
+            "PUBLISH_SHA: ${{ needs.resolve-current.outputs.sha }}", publish_step
+        )
+        self.assertIn("current_release_matches()", publish_step)
+        self.assertGreaterEqual(
+            publish_step.count("if ! current_release_matches; then"), 3
+        )
+        candidate_upload = publish_step.index(
+            'gh release upload current "${DEMO_OUTPUT}"'
+        )
+        upload_guard = publish_step.rfind(
+            "if ! current_release_matches; then", 0, candidate_upload
+        )
+        self.assertGreater(
+            upload_guard,
+            publish_step.index(
+                'gh release download current --repo "${GITHUB_REPOSITORY}"'
+            ),
+        )
+        restore_upload = publish_step.index(
+            'gh release upload current "${prior_demo}"'
+        )
+        restore_guard = publish_step.rfind(
+            "if ! current_release_matches; then", candidate_upload, restore_upload
+        )
+        self.assertGreater(restore_guard, candidate_upload)
         self.assertIn(
             'prior_demo_dir="${RUNNER_TEMP}/container-compose-prior-current-demo"',
             publish_step,

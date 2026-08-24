@@ -355,10 +355,49 @@ jobs:
       - name: Publish exact Current demo
         if: env.PUBLISH_DEMO == 'true'
         env:
+          DEMO_ASSET: container-compose-demo-current.gif
           GH_TOKEN: ${{ github.token }}
+          PUBLISH_SHA: ${{ needs.resolve-current.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
+
+          current_release_matches() {
+            local remote="https://github.com/${GITHUB_REPOSITORY}.git"
+            local main_sha
+            local current_tag_sha
+            local release_target
+            main_sha="$(
+              git ls-remote --heads "${remote}" refs/heads/main \
+                | awk '{ print $1 }' \
+                | tail -n 1
+            )" || return 1
+            current_tag_sha="$(
+              git ls-remote --tags "${remote}" refs/tags/current 'refs/tags/current^{}' \
+                | awk '$2 == "refs/tags/current^{}" { print $1; found = 1 } END { if (!found) print "" }' \
+                | tail -n 1
+            )" || return 1
+            if [[ -z "${current_tag_sha}" ]]; then
+              current_tag_sha="$(
+                git ls-remote --tags --refs "${remote}" refs/tags/current \
+                  | awk '{ print $1 }' \
+                  | tail -n 1
+              )" || return 1
+            fi
+            release_target="$(
+              gh release view current --repo "${GITHUB_REPOSITORY}" \
+                --json targetCommitish --jq .targetCommitish
+            )" || return 1
+            [[ "${PUBLISH_SHA}" == "${main_sha}" &&
+               "${PUBLISH_SHA}" == "${current_tag_sha}" &&
+               "${PUBLISH_SHA}" == "${release_target}" ]]
+          }
+
+          if ! current_release_matches; then
+            printf 'Current moved before demo publication; leaving its existing asset unchanged.\n'
+            exit 0
+          fi
+
           prior_demo_dir="${RUNNER_TEMP}/container-compose-prior-current-demo"
           recovery_demo_dir="${RUNNER_TEMP}/container-compose-recovery-current-demo"
           rm -rf -- "${prior_demo_dir}" "${recovery_demo_dir}"
@@ -369,6 +408,11 @@ jobs:
             gh release download current --repo "${GITHUB_REPOSITORY}" \
               --pattern "${DEMO_ASSET}" --dir "${prior_demo_dir}"
             test -s "${prior_demo_dir}/${DEMO_ASSET}"
+          fi
+
+          if ! current_release_matches; then
+            printf 'Current moved immediately before demo upload; leaving its existing asset unchanged.\n'
+            exit 0
           fi
 
           set +e
@@ -383,6 +427,11 @@ jobs:
           prior_demo="${prior_demo_dir}/${DEMO_ASSET}"
           if [[ ! -s "${prior_demo}" ]]; then
             printf 'Current demo upload failed and no prior asset is available to restore.\n' >&2
+            exit "${upload_status}"
+          fi
+
+          if ! current_release_matches; then
+            printf 'Current moved after the failed demo upload; refusing to modify the newer release.\n' >&2
             exit "${upload_status}"
           fi
 
