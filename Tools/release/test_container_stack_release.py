@@ -1233,6 +1233,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             "$(MAKE) --no-print-directory container-stack-build",
             conditional_build,
         )
+        default_runtime_environment = self.non_interactive_environment()
+        default_runtime_environment.pop("CONTAINER_COMPOSE_CONTAINER", None)
         default_runtime = subprocess.run(
             [
                 "make",
@@ -1244,10 +1246,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             check=False,
             capture_output=True,
             text=True,
-            env=self.non_interactive_environment(),
+            env=default_runtime_environment,
         )
         self.assertEqual(default_runtime.returncode, 0, default_runtime.stderr)
-        self.assertNotIn("Using explicit Container runtime candidate", default_runtime.stdout)
+        self.assertNotIn(
+            "Using explicit Container runtime candidate",
+            default_runtime.stdout,
+        )
         explicit_runtime = subprocess.run(
             [
                 "make",
