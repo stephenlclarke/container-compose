@@ -14,10 +14,11 @@ automating, bypassing, or resetting macOS privacy controls.
 ## Resolution
 
 The runtime build requires a Developer ID Application identity and the wrapper
-rejects unsigned or ad-hoc packaged Mach-O executables before launch. Candidates
-and marker-protected state originating on privacy-controlled storage are staged
-under a persistent internal-volume path. Public GHCR fixtures use the existing
-anonymous-registry contract, so they do not consult saved credentials.
+rejects unsigned, ad-hoc, or non-Mach-O launchable packaged executables before
+launch. Every complete source package is pinned under a persistent
+internal-volume path, while marker-protected state originating on
+privacy-controlled storage is relocated there. Public GHCR fixtures use the
+existing anonymous-registry contract, so they do not consult saved credentials.
 
 The staging root is a private, owner-validated, non-symbolic directory. An
 indirect, unowned, or group/other-writable candidate is rejected before any
@@ -36,6 +37,10 @@ cleanup or launch operation.
   interrupted replacement retains a marker that the next run can recover.
   Required packaged binaries reject non-Mach-O artifacts unless the explicit
   portable unit-fixture switch is active.
+- Six focused latest-review tests prove automatic local-package pinning,
+  launchable plugin rejection, managed nested-wrapper reuse without lock
+  reacquisition, serialization, mixed-generation rejection, and interrupted
+  replacement recovery.
 
 ## Scope
 

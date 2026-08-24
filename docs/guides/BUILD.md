@@ -190,21 +190,28 @@ Apple's Local Network privacy service tracks a program by its code signature;
 an ad-hoc signature changes on every build and therefore cannot support
 unattended testing. The runtime wrapper rejects an ad-hoc packaged candidate
 before it can launch and display another approval dialog. Each of the three
-required packaged binaries must be Mach-O; scripts, ELF files, and corrupted
-artifacts are rejected instead of escaping signature verification. Repository
-unit tests set `CONTAINER_RUNTIME_ALLOW_NON_MACHO_TEST_FIXTURES=1` only for
-their portable temporary shell fixtures. Do not set that test-only switch for
-a live runtime, CI validation, or release.
+required packaged binaries and every launchable plugin or helper must be
+Mach-O; scripts, ELF files, and corrupted artifacts in those locations are
+rejected instead of escaping signature verification. Executable resource
+scripts remain data owned by their signed launcher. Repository unit tests set
+`CONTAINER_RUNTIME_ALLOW_NON_MACHO_TEST_FIXTURES=1` only for their three
+portable top-level shell fixtures; it never exempts a launchable plugin or
+helper. Do not set that test-only switch for a live runtime, CI validation, or
+release.
 
 When the checkout or configured runtime root is on a
 removable volume, Desktop, Documents, or Downloads,
-`scripts/run-with-container-runtime.sh` automatically stages the packaged
-runtime at one persistent, marker-protected `/private/tmp` path per source
-package and relocates marker-protected state there. The executable path does
-not change between builds of that package. This prevents launchd-managed
-services from blocking behind removable-volume approval dialogs while the
-Developer ID signature preserves the runtime's identity between builds. Set
-`CONTAINER_RUNTIME_STAGE_CANDIDATE=never` or
+`scripts/run-with-container-runtime.sh` automatically relocates
+marker-protected state there. Every complete source package is also staged at
+one persistent, marker-protected `/private/tmp` path per source package, even
+when its source checkout is already local, so a concurrent rebuild cannot
+change the validated generation. Nested managed wrappers reuse the owner's
+staged path only after its marker, complete-package fingerprint, signatures,
+ownership, and permissions match; the owner retains the staging lock. The
+executable path does not change between builds of that package. This prevents
+launchd-managed services from blocking behind removable-volume approval
+dialogs while the Developer ID signature preserves the runtime's identity
+between builds. Set `CONTAINER_RUNTIME_STAGE_CANDIDATE=never` or
 `CONTAINER_RUNTIME_LOCALIZE_APP_ROOT=never` only when deliberately validating
 the host privacy policy itself.
 
