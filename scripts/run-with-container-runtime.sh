@@ -514,20 +514,30 @@ runtime_path_requires_localization() {
     esac
 }
 
+runtime_app_root_requires_localization() {
+    case "$runtime_app_root_localization_mode" in
+        always) return 0 ;;
+        auto) runtime_path_requires_localization "$runtime_app_root" ;;
+        never) return 1 ;;
+    esac
+}
+
+runtime_candidate_requires_staging() {
+    case "$runtime_candidate_stage_mode" in
+        always) return 0 ;;
+        auto) runtime_path_requires_localization "$container_binary" ;;
+        never) return 1 ;;
+    esac
+}
+
+runtime_requires_local_user_root() {
+    runtime_app_root_requires_localization || runtime_candidate_requires_staging
+}
+
 # Keep marker-protected runtime state on the local system volume whenever the
 # configured build root lives on removable or privacy-controlled storage.
 localize_runtime_app_root() {
-    local should_localize=false
-    case "$runtime_app_root_localization_mode" in
-        always) should_localize=true ;;
-        auto)
-            if runtime_path_requires_localization "$runtime_app_root"; then
-                should_localize=true
-            fi
-            ;;
-        never) ;;
-    esac
-    [[ "$should_localize" == true ]] || return 0
+    runtime_app_root_requires_localization || return 0
 
     local requested_root="$runtime_app_root"
     local requested_root_digest
@@ -577,6 +587,7 @@ validate_runtime_candidate_signatures() {
     fi
 
     while IFS= read -r -d '' executable; do
+        [[ -x "$executable" ]] || continue
         file_description=$(/usr/bin/file -b "$executable")
         [[ "$file_description" == *Mach-O* ]] || continue
         ((macho_count += 1))
@@ -598,7 +609,7 @@ validate_runtime_candidate_signatures() {
             return 2
         fi
     done < <(find "$source_package_root/bin" "$source_package_root/libexec/container" \
-        -type f -perm -111 -print0)
+        -type f -print0)
 
     if ((macho_count == 0)); then
         return 0
@@ -658,17 +669,7 @@ validate_packaged_runtime_candidate_signatures() {
 # already staged under /tmp are left in place.
 stage_runtime_candidate_if_needed() {
     local deadline="$1"
-    local should_stage=false
-    case "$runtime_candidate_stage_mode" in
-        always) should_stage=true ;;
-        auto)
-            if runtime_path_requires_localization "$container_binary"; then
-                should_stage=true
-            fi
-            ;;
-        never) ;;
-    esac
-    [[ "$should_stage" == true ]] || return 0
+    runtime_candidate_requires_staging || return 0
 
     local source_bin_directory="${container_binary%/*}"
     local source_package_root="${source_bin_directory%/*}"
@@ -743,6 +744,19 @@ stage_runtime_candidate_if_needed() {
             "$staged_symlink" >&2
         exit 2
     fi
+
+    local staged_digest_output
+    local staged_container_sha256
+    staged_digest_output=$(run_runtime_start_command "$deadline" \
+        /usr/bin/shasum -a 256 "$runtime_candidate_staging_root/bin/container") || \
+        return "$?"
+    read -r staged_container_sha256 _ <<<"$staged_digest_output"
+    if [[ "$staged_container_sha256" != "$container_binary_sha256" ]]; then
+        printf 'staged Container runtime CLI changed during copy (expected %s, got %s)\n' \
+            "$container_binary_sha256" "${staged_container_sha256:-invalid}" >&2
+        exit 2
+    fi
+    validate_runtime_candidate_signatures "$runtime_candidate_staging_root"
 
     container_binary="$runtime_candidate_staging_root/bin/container"
     container_binary_directory="$runtime_candidate_staging_root/bin"
@@ -1481,7 +1495,9 @@ trap 'exit 143' TERM
 resolve_container_binary "$runtime_start_sequence_deadline"
 validate_packaged_runtime_candidate_signatures
 validate_requested_runtime_app_root
-prepare_local_user_root "$runtime_start_sequence_deadline"
+if runtime_requires_local_user_root; then
+    prepare_local_user_root "$runtime_start_sequence_deadline"
+fi
 localize_runtime_app_root
 stage_runtime_candidate_if_needed "$runtime_start_sequence_deadline"
 if [[ -n "$runtime_anonymous_registry_hosts" ]]; then

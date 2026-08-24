@@ -959,20 +959,19 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             package_libexec = package_root / "libexec" / "container"
             package_bin.mkdir(parents=True)
             package_libexec.mkdir(parents=True)
-            for executable_name in (
-                "container",
-                "container-apiserver",
-                "container-engine",
-            ):
-                executable = package_bin / executable_name
-                shutil.copyfile("/usr/bin/true", executable)
-                executable.chmod(0o755)
-                subprocess.run(
-                    ["/usr/bin/codesign", "--force", "--sign", "-", str(executable)],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
+            executable = package_bin / "container"
+            shutil.copyfile("/usr/bin/true", executable)
+            executable.chmod(0o700)
+            subprocess.run(
+                ["/usr/bin/codesign", "--force", "--sign", "-", str(executable)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            for executable_name in ("container-apiserver", "container-engine"):
+                companion = package_bin / executable_name
+                companion.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                companion.chmod(0o755)
 
             environment = self.runtime_environment()
             environment.update(
@@ -1096,6 +1095,41 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                         "Relocating Container runtime state", result.stdout
                     )
                     self.assertFalse(command_marker.exists())
+
+    def test_privacy_opt_out_skips_unused_local_user_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_LOCALIZE_APP_ROOT": "never",
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "never",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-x",
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/usr/bin/true",
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("+ prepare_local_user_root ", result.stderr)
 
     def test_rejects_indirect_localized_runtime_state_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
