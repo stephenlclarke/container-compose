@@ -31,8 +31,11 @@ requested_container_binary=$1
 container_binary=$requested_container_binary
 shift
 container_binary_directory=
+container_binary_localization_path=
 container_binary_sha256=
 runtime_app_root=${CONTAINER_RUNTIME_APP_ROOT:-}
+runtime_app_root_localization_path=
+runtime_privacy_home=
 runtime_service_namespace=${CONTAINER_RUNTIME_SERVICE_NAMESPACE:-}
 runtime_run_id=${CONTAINER_RUNTIME_RUN_ID:-}
 runtime_init_block_repo=${CONTAINER_RUNTIME_INIT_BLOCK_REPO:-}
@@ -505,7 +508,7 @@ prepare_local_user_root() {
 runtime_path_requires_localization() {
     local path="$1"
     case "$path" in
-        /Volumes/* | "$HOME"/Desktop/* | "$HOME"/Documents/* | "$HOME"/Downloads/*)
+        /Volumes | /Volumes/* | "$runtime_privacy_home"/Desktop | "$runtime_privacy_home"/Desktop/* | "$runtime_privacy_home"/Documents | "$runtime_privacy_home"/Documents/* | "$runtime_privacy_home"/Downloads | "$runtime_privacy_home"/Downloads/*)
             return 0
             ;;
         *)
@@ -517,7 +520,7 @@ runtime_path_requires_localization() {
 runtime_app_root_requires_localization() {
     case "$runtime_app_root_localization_mode" in
         always) return 0 ;;
-        auto) runtime_path_requires_localization "$runtime_app_root" ;;
+        auto) runtime_path_requires_localization "$runtime_app_root_localization_path" ;;
         never) return 1 ;;
     esac
 }
@@ -525,7 +528,7 @@ runtime_app_root_requires_localization() {
 runtime_candidate_requires_staging() {
     case "$runtime_candidate_stage_mode" in
         always) return 0 ;;
-        auto) runtime_path_requires_localization "$container_binary" ;;
+        auto) runtime_path_requires_localization "$container_binary_localization_path" ;;
         never) return 1 ;;
     esac
 }
@@ -553,6 +556,7 @@ localize_runtime_app_root() {
 # generated local path. Otherwise an empty or relative input can be hidden by
 # the generated path and multiple unrelated runs can share one state root.
 validate_requested_runtime_app_root() {
+    local deadline="$1"
     if [[ -z "$runtime_app_root" || "$runtime_app_root" != /* ]]; then
         printf 'CONTAINER_RUNTIME_APP_ROOT must be an absolute marker-protected candidate root\n' >&2
         exit 2
@@ -565,6 +569,98 @@ validate_requested_runtime_app_root() {
         printf 'CONTAINER_RUNTIME_APP_ROOT must not be /\n' >&2
         exit 2
     fi
+    local canonical_root
+    local status=0
+    canonical_root=$(run_runtime_start_command "$deadline" python3 -c \
+        'import os, sys; print(os.path.realpath(sys.argv[1]))' \
+        "$runtime_app_root") || status=$?
+    if [[ "$status" != "0" ]]; then
+        [[ "$status" != "124" ]] || return "$status"
+        printf 'could not resolve CONTAINER_RUNTIME_APP_ROOT: %s\n' \
+            "$runtime_app_root" >&2
+        exit 2
+    fi
+    runtime_app_root_localization_path="$canonical_root"
+    status=0
+    runtime_privacy_home=$(run_runtime_start_command "$deadline" python3 -c \
+        'import os, sys; print(os.path.realpath(sys.argv[1]))' \
+        "${HOME:-/nonexistent}") || status=$?
+    if [[ "$status" != "0" ]]; then
+        [[ "$status" != "124" ]] || return "$status"
+        printf 'could not resolve the home directory for runtime privacy classification\n' >&2
+        exit 2
+    fi
+}
+
+# Fingerprint the complete packaged runtime closure rather than only the main
+# CLI. The pre-copy, staged, and post-copy fingerprints must agree so a source
+# rebuild cannot produce a validly signed but mixed-generation candidate.
+fingerprint_runtime_package() {
+    local deadline="$1"
+    local package_root="$2"
+    local fingerprint
+    local status=0
+
+    fingerprint=$(run_runtime_start_command "$deadline" python3 -c '
+import hashlib
+import os
+import stat
+import sys
+
+package_root = os.fsencode(sys.argv[1])
+entries = []
+
+def add_path(path):
+    relative_path = os.path.relpath(path, package_root)
+    metadata = os.lstat(path)
+    mode = stat.S_IMODE(metadata.st_mode)
+    if stat.S_ISLNK(metadata.st_mode):
+        raise SystemExit(
+            f"runtime package contains an indirect entry: {os.fsdecode(path)}"
+        )
+    if stat.S_ISDIR(metadata.st_mode):
+        entries.append((relative_path, b"d", mode, b""))
+        return
+    if not stat.S_ISREG(metadata.st_mode):
+        raise SystemExit(
+            f"runtime package contains a non-regular entry: {os.fsdecode(path)}"
+        )
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    entries.append((relative_path, b"f", mode, digest.hexdigest().encode()))
+
+for binary_name in (b"container", b"container-apiserver", b"container-engine"):
+    add_path(os.path.join(package_root, b"bin", binary_name))
+
+libexec_root = os.path.join(package_root, b"libexec/container")
+if not os.path.isdir(libexec_root) or os.path.islink(libexec_root):
+    raise SystemExit(f"invalid runtime package root: {os.fsdecode(libexec_root)}")
+for current_root, directories, files in os.walk(libexec_root, followlinks=False):
+    for name in sorted(directories + files):
+        add_path(os.path.join(current_root, name))
+
+manifest = hashlib.sha256(b"container-runtime-package-v1\0")
+for relative_path, kind, mode, digest in sorted(entries):
+    manifest.update(kind + b"\0")
+    manifest.update(relative_path + b"\0")
+    manifest.update(f"{mode:04o}".encode() + b"\0")
+    manifest.update(digest + b"\0")
+print(manifest.hexdigest())
+' "$package_root") || status=$?
+    if [[ "$status" != "0" ]]; then
+        [[ "$status" != "124" ]] || return "$status"
+        printf 'could not fingerprint complete Container runtime package: %s\n' \
+            "$package_root" >&2
+        return 2
+    fi
+    if ! [[ "$fingerprint" =~ ^[0-9a-f]{64}$ ]]; then
+        printf 'Container runtime package produced an invalid fingerprint: %s\n' \
+            "$package_root" >&2
+        return 2
+    fi
+    printf '%s\n' "$fingerprint"
 }
 
 # Reject ad-hoc Mach-O signatures before macOS can treat every rebuild as a
@@ -686,6 +782,9 @@ stage_runtime_candidate_if_needed() {
         | shasum -a 256 | awk '{print substr($1, 1, 16)}')
     runtime_candidate_staging_root="$runtime_local_user_root/candidate-$source_package_root_digest"
     acquire_runtime_candidate_staging_lock "$deadline" || return "$?"
+    local source_package_sha256_before
+    source_package_sha256_before=$(fingerprint_runtime_package \
+        "$deadline" "$source_package_root") || return "$?"
     local marker="$runtime_candidate_staging_root/.container-compose-runtime-candidate-staging"
     local existing_marker_value=
     if [[ -e "$runtime_candidate_staging_root" ]]; then
@@ -754,6 +853,19 @@ stage_runtime_candidate_if_needed() {
     if [[ "$staged_container_sha256" != "$container_binary_sha256" ]]; then
         printf 'staged Container runtime CLI changed during copy (expected %s, got %s)\n' \
             "$container_binary_sha256" "${staged_container_sha256:-invalid}" >&2
+        exit 2
+    fi
+    local staged_package_sha256
+    local source_package_sha256_after
+    staged_package_sha256=$(fingerprint_runtime_package \
+        "$deadline" "$runtime_candidate_staging_root") || return "$?"
+    source_package_sha256_after=$(fingerprint_runtime_package \
+        "$deadline" "$source_package_root") || return "$?"
+    if [[ "$staged_package_sha256" != "$source_package_sha256_before" ]] ||
+        [[ "$source_package_sha256_after" != "$source_package_sha256_before" ]]; then
+        printf 'complete Container runtime package changed during staging (expected %s, staged %s, source %s)\n' \
+            "$source_package_sha256_before" "$staged_package_sha256" \
+            "$source_package_sha256_after" >&2
         exit 2
     fi
     validate_runtime_candidate_signatures "$runtime_candidate_staging_root"
@@ -994,6 +1106,17 @@ resolve_container_binary() {
     container_binary="$container_binary_directory/$binary_name"
 
     status=0
+    container_binary_localization_path=$(run_runtime_start_command "$deadline" \
+        python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' \
+        "$container_binary") || status=$?
+    if [[ "$status" != "0" ]]; then
+        [[ "$status" != "124" ]] || return "$status"
+        printf 'could not resolve candidate Container binary: %s\n' \
+            "$container_binary" >&2
+        exit 2
+    fi
+
+    status=0
     digest_output=$(run_runtime_start_command "$deadline" \
         /usr/bin/shasum -a 256 "$container_binary") || status=$?
     if [[ "$status" != "0" ]]; then
@@ -1020,6 +1143,8 @@ resolve_container_binary() {
     # in PATH can silently target the default service namespace mid-validation.
     export PATH="$container_binary_directory${PATH:+:$PATH}"
     export CONTAINER_RUNTIME_CLI="$container_binary"
+    export CONTAINER_BIN="$container_binary"
+    export CONTAINER_COMPOSE_CONTAINER="$container_binary"
     export CONTAINER_RUNTIME_CLI_SHA256="$container_binary_sha256"
 }
 
@@ -1494,7 +1619,7 @@ trap 'exit 131' QUIT
 trap 'exit 143' TERM
 resolve_container_binary "$runtime_start_sequence_deadline"
 validate_packaged_runtime_candidate_signatures
-validate_requested_runtime_app_root
+validate_requested_runtime_app_root "$runtime_start_sequence_deadline"
 if runtime_requires_local_user_root; then
     prepare_local_user_root "$runtime_start_sequence_deadline"
 fi
