@@ -2671,6 +2671,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_local_release_gate_freezes_the_container_runtime_candidate(self) -> None:
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        stack_validation = makefile[
+            makefile.index("container-stack-release-validation:") : makefile.index(
+                "container-stack-hosted-release-validation:"
+            )
+        ]
         staging = self.script[
             self.script.index("stage_container_runtime_candidate() {") : self.script.index(
                 "# Delete only the fresh marker-protected candidate extraction"
@@ -2685,7 +2690,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("git -C \"${container_path}\" rev-parse", staging)
         self.assertIn(
             'CONTAINER_RUNTIME_CODESIGN_IDENTITY="$(CONTAINER_RUNTIME_CODESIGN_IDENTITY)"',
-            makefile,
+            stack_validation,
         )
         self.assertIn("homebrew-package", staging)
         self.assertIn('"HOMEBREW_ARCHIVE=${archive}"', staging)
