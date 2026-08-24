@@ -70,6 +70,7 @@ runtime_candidate_staging_lock_held=false
 runtime_candidate_is_complete_package=false
 runtime_candidate_stage_mode=${CONTAINER_RUNTIME_STAGE_CANDIDATE:-auto}
 runtime_app_root_localization_mode=${CONTAINER_RUNTIME_LOCALIZE_APP_ROOT:-auto}
+runtime_allow_non_macho_test_fixtures=${CONTAINER_RUNTIME_ALLOW_NON_MACHO_TEST_FIXTURES:-0}
 runtime_local_execution_root=${CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT:-}
 runtime_local_user_root=
 runtime_app_root_localized=false
@@ -448,6 +449,14 @@ validate_runtime_localization_modes() {
             exit 2
             ;;
     esac
+    case "$runtime_allow_non_macho_test_fixtures" in
+        0 | 1) ;;
+        *)
+            printf 'CONTAINER_RUNTIME_ALLOW_NON_MACHO_TEST_FIXTURES must be 0 or 1: %s\n' \
+                "$runtime_allow_non_macho_test_fixtures" >&2
+            exit 2
+            ;;
+    esac
     case "$runtime_local_execution_root" in
         /private/tmp | /tmp) ;;
         *)
@@ -675,6 +684,7 @@ validate_runtime_candidate_signatures() {
     run_runtime_start_command "$deadline" /bin/bash -c '
 set -euo pipefail
 source_package_root=$1
+allow_non_macho_test_fixtures=$2
 indirect_executable=$(find \
     "$source_package_root/bin" "$source_package_root/libexec/container" \
     -type l -print -quit)
@@ -692,6 +702,20 @@ executable_list=$(mktemp "$trusted_temporary_root/container-runtime-signatures.X
 trap '\''rm -f "$executable_list"'\'' EXIT
 find "$source_package_root/bin" "$source_package_root/libexec/container" \
     -type f -print0 >"$executable_list"
+
+for binary_name in container container-apiserver container-engine; do
+    executable="$source_package_root/bin/$binary_name"
+    file_description=$(/usr/bin/file -b "$executable")
+    if [[ "$file_description" != *Mach-O* ]]; then
+        if [[ "$allow_non_macho_test_fixtures" == 1 ]]; then
+            continue
+        fi
+        printf "Container runtime packaged binary must be Mach-O: %s\n" \
+            "$executable" >&2
+        exit 2
+    fi
+done
+
 while IFS= read -r -d "" executable; do
     [[ -x "$executable" ]] || continue
     file_description=$(/usr/bin/file -b "$executable")
@@ -714,7 +738,8 @@ while IFS= read -r -d "" executable; do
         exit 2
     fi
 done <"$executable_list"
-' runtime-signatures "$source_package_root"
+' runtime-signatures "$source_package_root" \
+        "$runtime_allow_non_macho_test_fixtures"
 }
 
 acquire_runtime_candidate_staging_lock() {
