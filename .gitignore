@@ -1,6 +1,8 @@
 .build/
 .swiftpm/
 .local/
+/.nextflow/
+/.nextflow.log*
 .vscode/
 .DS_Store
 __pycache__/

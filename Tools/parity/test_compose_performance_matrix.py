@@ -111,6 +111,7 @@ class LoggingPerformanceSinkTests(unittest.TestCase):
 
             result = json.loads(result_file.read_text(encoding="utf-8"))
 
+        self.assertEqual(result["bindAddress"], "127.0.0.1")
         self.assertEqual(result["connectionCount"], 1)
         self.assertEqual(result["recordCount"], 3)
         self.assertEqual(result["firstRecord"], 0)
@@ -130,6 +131,54 @@ class PerformanceMatrixInventoryTests(unittest.TestCase):
         )
 
         self.assertEqual(result.stdout.splitlines(), FIXTURES)
+
+
+class PerformanceMatrixSinkSafetyTests(unittest.TestCase):
+    def test_non_loopback_sink_requires_explicit_opt_in(self) -> None:
+        default_result = self.run_tool_check()
+        explicit_result = self.run_tool_check(bind_address="0.0.0.0")
+
+        self.assertNotEqual(default_result.returncode, 0)
+        self.assertIn(
+            "refusing to request local-network access implicitly",
+            default_result.stderr,
+        )
+        self.assertEqual(explicit_result.returncode, 0, explicit_result.stderr)
+
+    def run_tool_check(
+        self, bind_address: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        environment = dict(os.environ)
+        environment.update(
+            {
+                "CONTAINER_COMPOSE": "/usr/bin/true",
+                "CONTAINER_COMPOSE_CONTAINER": "/usr/bin/true",
+            }
+        )
+        if bind_address is not None:
+            environment["PARITY_SINK_BIND_ADDRESS"] = bind_address
+        else:
+            environment.pop("PARITY_SINK_BIND_ADDRESS", None)
+
+        return subprocess.run(
+            [
+                "bash",
+                "-c",
+                (
+                    'source "$1"; STRICT=1; '
+                    "detect_docker_compose() { DOCKER_COMPOSE_COMMAND=(/usr/bin/true); }; "
+                    "docker() { return 0; }; "
+                    "check_tools"
+                ),
+                "_",
+                HARNESS,
+            ],
+            cwd=REPOSITORY,
+            env=environment,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
 
 
 class PerformanceMatrixCompletionMarkerTests(unittest.TestCase):

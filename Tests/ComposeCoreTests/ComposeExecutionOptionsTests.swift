@@ -96,9 +96,9 @@ struct ComposeExecutionOptionsTests {
     }
 
     @Test
-    func `dynamic host port allocation supports wildcard UDP and bracketed IPv6`() throws {
-        let wildcardUDPPort = try ComposeExecutionOptions.defaultHostPortAllocator(
-            hostAddress: nil,
+    func `dynamic host port allocation supports loopback UDP and bracketed IPv6`() throws {
+        let loopbackUDPPort = try ComposeExecutionOptions.defaultHostPortAllocator(
+            hostAddress: "127.0.0.1",
             protocolName: "udp",
         )
         let ipv6TCPPort = try ComposeExecutionOptions.defaultHostPortAllocator(
@@ -106,7 +106,7 @@ struct ComposeExecutionOptionsTests {
             protocolName: "tcp",
         )
 
-        #expect(wildcardUDPPort > 0)
+        #expect(loopbackUDPPort > 0)
         #expect(ipv6TCPPort > 0)
     }
 

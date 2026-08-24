@@ -26,8 +26,26 @@ import subprocess
 import sys
 import time
 from collections.abc import Sequence
+from enum import Enum
+from typing import NamedTuple
 
 TIMEOUT_EXIT_STATUS = 124
+LEAKED_PROCESS_GROUP_EXIT_STATUS = 125
+NATURAL_DRAIN_SECONDS = 0.5
+FORCED_CLEANUP_SECONDS = 1.0
+PROCESS_INSPECTION_SECONDS = 1.0
+
+
+class SessionState(Enum):
+    LIVE = "live"
+    DRAINED = "drained"
+    UNKNOWN = "unknown"
+
+
+class SessionInspection(NamedTuple):
+    state: SessionState
+    process_ids: tuple[int, ...] = ()
+    group_fallback_safe: bool = False
 
 
 def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
@@ -72,41 +90,152 @@ def signal_process_group(process_group_id: int, number: int) -> None:
             pass
 
 
-def process_group_exists(process_group_id: int) -> bool:
+def inspect_process_group(process_group_id: int) -> SessionState:
+    """Probe one process group without treating permission denial as liveness."""
     try:
         os.killpg(process_group_id, 0)
     except ProcessLookupError:
-        return False
+        return SessionState.DRAINED
     except PermissionError:
-        return True
-    return True
+        return SessionState.UNKNOWN
+    return SessionState.LIVE
 
 
-def process_group_has_live_members(process_group_id: int) -> bool:
-    """Treat zombie-only groups as complete while retaining a safe fallback."""
+def inspect_supervised_session(session_id: int) -> SessionInspection:
+    """Inspect non-zombie members without guessing when identity is uncertain."""
     try:
         completed = subprocess.run(
-            ["ps", "-axo", "pgid=,state="],
+            ["/bin/ps", "-axo", "pid=,state="],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
             check=False,
+            timeout=PROCESS_INSPECTION_SECONDS,
         )
-    except OSError:
-        return process_group_exists(process_group_id)
+    except (OSError, subprocess.TimeoutExpired):
+        return SessionInspection(SessionState.UNKNOWN)
     if completed.returncode != 0:
-        return process_group_exists(process_group_id)
+        return SessionInspection(SessionState.UNKNOWN)
 
+    live_process_ids: list[int] = []
     for line in completed.stdout.splitlines():
         fields = line.split()
         if len(fields) < 2 or not fields[0].isdigit():
             continue
-        if int(fields[0]) != process_group_id:
+        process_id = int(fields[0])
+        if fields[1].upper().startswith("Z"):
             continue
-        if not fields[1].upper().startswith("Z"):
-            return True
-    return False
+        try:
+            process_session_id = os.getsid(process_id)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            return SessionInspection(SessionState.UNKNOWN)
+        if process_session_id == session_id:
+            live_process_ids.append(process_id)
+    if live_process_ids:
+        return SessionInspection(SessionState.LIVE, tuple(live_process_ids))
+    return SessionInspection(SessionState.DRAINED)
+
+
+def inspect_with_child_fallback(
+    session_id: int, process: subprocess.Popen[bytes] | subprocess.Popen[str]
+) -> SessionInspection:
+    """Use group probing only while the known direct child remains unreaped."""
+    inspection = inspect_supervised_session(session_id)
+    if inspection.state is not SessionState.UNKNOWN:
+        return inspection
+    if process.poll() is not None:
+        return inspection
+    group_state = inspect_process_group(session_id)
+    return SessionInspection(
+        group_state,
+        group_fallback_safe=group_state is SessionState.LIVE,
+    )
+
+
+def signal_inspected_session(
+    session_id: int, inspection: SessionInspection, number: int
+) -> SessionState:
+    """Signal only members whose supervised-session identity is still valid."""
+    if inspection.group_fallback_safe:
+        signal_process_group(session_id, number)
+        return SessionState.LIVE
+    uncertain = False
+    for process_id in inspection.process_ids:
+        try:
+            if os.getsid(process_id) != session_id:
+                continue
+            os.kill(process_id, number)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            uncertain = True
+    return SessionState.UNKNOWN if uncertain else inspection.state
+
+
+def terminate_live_session(
+    session_id: int,
+    grace_seconds: float,
+    process: subprocess.Popen[bytes] | subprocess.Popen[str] | None = None,
+) -> SessionState:
+    """Terminate a verified session and preserve unknown identity as unknown."""
+    inspection = (
+        inspect_with_child_fallback(session_id, process)
+        if process is not None
+        else inspect_supervised_session(session_id)
+    )
+    if inspection.state is not SessionState.LIVE:
+        return inspection.state
+
+    if signal_inspected_session(session_id, inspection, signal.SIGTERM) \
+        is SessionState.UNKNOWN:
+        return SessionState.UNKNOWN
+    cleanup_deadline = time.monotonic() + grace_seconds
+    while True:
+        inspection = (
+            inspect_with_child_fallback(session_id, process)
+            if process is not None
+            else inspect_supervised_session(session_id)
+        )
+        if inspection.state is not SessionState.LIVE:
+            return inspection.state
+        remaining = cleanup_deadline - time.monotonic()
+        if remaining <= 0:
+            forced_deadline = time.monotonic() + FORCED_CLEANUP_SECONDS
+            while True:
+                inspection = (
+                    inspect_with_child_fallback(session_id, process)
+                    if process is not None
+                    else inspect_supervised_session(session_id)
+                )
+                if inspection.state is not SessionState.LIVE:
+                    return inspection.state
+                if signal_inspected_session(
+                    session_id, inspection, signal.SIGKILL
+                ) is SessionState.UNKNOWN:
+                    return SessionState.UNKNOWN
+                forced_remaining = forced_deadline - time.monotonic()
+                if forced_remaining <= 0:
+                    return SessionState.LIVE
+                time.sleep(min(0.05, forced_remaining))
+        time.sleep(min(0.05, remaining))
+
+
+def wait_for_session_to_drain(
+    session_id: int, wait_seconds: float
+) -> SessionState:
+    """Allow short-lived descendants to exit naturally after their parent."""
+    drain_deadline = time.monotonic() + wait_seconds
+    while True:
+        inspection = inspect_supervised_session(session_id)
+        if inspection.state is not SessionState.LIVE:
+            return inspection.state
+        remaining = drain_deadline - time.monotonic()
+        if remaining <= 0:
+            return SessionState.LIVE
+        time.sleep(min(0.05, remaining))
 
 
 def normalized_exit_status(return_code: int) -> int:
@@ -116,7 +245,7 @@ def normalized_exit_status(return_code: int) -> int:
 
 
 def start_detached_cleanup_watchdog(
-    process_group_id: int, grace_seconds: float
+    session_id: int, grace_seconds: float
 ) -> int:
     """Keep cleanup alive if a parent deadline kills this runner."""
     watchdog_pid = os.fork()
@@ -130,26 +259,48 @@ def start_detached_cleanup_watchdog(
                 os.close(descriptor)
             except OSError:
                 pass
-        cleanup_deadline = time.monotonic() + grace_seconds
-        while process_group_has_live_members(process_group_id):
-            remaining = cleanup_deadline - time.monotonic()
-            if remaining <= 0:
-                signal_process_group(process_group_id, signal.SIGKILL)
-                break
-            time.sleep(min(0.05, remaining))
+        terminate_live_session(session_id, grace_seconds)
     finally:
         os._exit(0)
 
 
-def wait_for_watchdog(watchdog_pid: int) -> None:
+def wait_for_watchdog(watchdog_pid: int, wait_seconds: float) -> bool:
+    """Reap a cleanup watchdog without making signal handling unbounded."""
+    wait_deadline = time.monotonic() + wait_seconds
     while True:
         try:
-            os.waitpid(watchdog_pid, 0)
-            return
+            reaped_pid, _ = os.waitpid(watchdog_pid, os.WNOHANG)
+            if reaped_pid == watchdog_pid:
+                return True
         except InterruptedError:
             continue
         except ChildProcessError:
-            return
+            return True
+        remaining = wait_deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(0.05, remaining))
+
+
+def reap_direct_child(
+    process: subprocess.Popen[bytes] | subprocess.Popen[str],
+) -> bool:
+    """Bound waiting for the exact child, then force that known PID to exit."""
+    try:
+        process.wait(timeout=FORCED_CLEANUP_SECONDS)
+        return True
+    except subprocess.TimeoutExpired:
+        # Popen still owns this exact, unreaped child identity, so killing this
+        # session's process group cannot target a recycled identity. Kill the
+        # group before the exact-PID fallback so detached shell children cannot
+        # retain pipes or contaminate a later stage.
+        signal_process_group(process.pid, signal.SIGKILL)
+        process.kill()
+    try:
+        process.wait(timeout=FORCED_CLEANUP_SECONDS)
+        return True
+    except subprocess.TimeoutExpired:
+        return False
 
 
 def run(arguments: Sequence[str]) -> int:
@@ -196,12 +347,8 @@ def run(arguments: Sequence[str]) -> int:
         if forwarded_signal is not None:
             return
         forwarded_signal = number
-        # Non-interactive shell trees can ignore inherited control signals
-        # while waiting for foreground children, even when their wrapper has
-        # cleanup traps. Preserve the caller-facing status for the original
-        # signal, but always give the detached command tree one portable,
-        # reliably trappable termination request for orderly cleanup.
-        signal_process_group(process.pid, signal.SIGTERM)
+        # Keep the Python signal handler minimal. The main loop and its
+        # detached watchdog perform bounded session enumeration and cleanup.
 
     for number in (
         signal.SIGHUP,
@@ -224,13 +371,51 @@ def run(arguments: Sequence[str]) -> int:
                 watchdog_pid = start_detached_cleanup_watchdog(
                     process.pid, options.grace_seconds
                 )
-                process.wait()
-                wait_for_watchdog(watchdog_pid)
+                cleanup_state = terminate_live_session(
+                    process.pid, options.grace_seconds, process
+                )
+                if cleanup_state is SessionState.UNKNOWN:
+                    print(
+                        "could not inspect the command session during signal cleanup: "
+                        + options.command[0],
+                        file=sys.stderr,
+                    )
+                if not reap_direct_child(process):
+                    print(
+                        "could not reap the command after forced cleanup: "
+                        + options.command[0],
+                        file=sys.stderr,
+                    )
+                wait_for_watchdog(
+                    watchdog_pid,
+                    options.grace_seconds + FORCED_CLEANUP_SECONDS,
+                )
                 return 128 + forwarded_signal
 
             return_code = process.poll()
             if return_code is not None:
-                return normalized_exit_status(return_code)
+                exit_status = normalized_exit_status(return_code)
+                drain_state = wait_for_session_to_drain(
+                    process.pid, NATURAL_DRAIN_SECONDS
+                )
+                if drain_state is SessionState.UNKNOWN:
+                    print(
+                        "could not verify that the command session drained: "
+                        + options.command[0],
+                        file=sys.stderr,
+                    )
+                    if exit_status == 0:
+                        return LEAKED_PROCESS_GROUP_EXIT_STATUS
+                elif drain_state is SessionState.LIVE:
+                    terminate_live_session(process.pid, options.grace_seconds)
+                    print(
+                        "command left live processes after exit: "
+                        + options.command[0],
+                        file=sys.stderr,
+                    )
+                    if exit_status == 0:
+                        return LEAKED_PROCESS_GROUP_EXIT_STATUS
+                return exit_status
 
             if deadline is None:
                 time.sleep(0.05)
@@ -243,18 +428,21 @@ def run(arguments: Sequence[str]) -> int:
                     + options.command[0],
                     file=sys.stderr,
                 )
-                signal_process_group(process.pid, signal.SIGTERM)
-                grace_deadline = time.monotonic() + options.grace_seconds
-                while True:
-                    process.poll()
-                    if not process_group_has_live_members(process.pid):
-                        break
-                    grace_remaining = grace_deadline - time.monotonic()
-                    if grace_remaining <= 0:
-                        signal_process_group(process.pid, signal.SIGKILL)
-                        break
-                    time.sleep(min(0.05, grace_remaining))
-                process.wait()
+                cleanup_state = terminate_live_session(
+                    process.pid, options.grace_seconds, process
+                )
+                if cleanup_state is SessionState.UNKNOWN:
+                    print(
+                        "could not inspect the command session during deadline cleanup: "
+                        + options.command[0],
+                        file=sys.stderr,
+                    )
+                if not reap_direct_child(process):
+                    print(
+                        "could not reap the command after forced cleanup: "
+                        + options.command[0],
+                        file=sys.stderr,
+                    )
                 return TIMEOUT_EXIT_STATUS
             time.sleep(min(0.05, remaining))
     finally:
