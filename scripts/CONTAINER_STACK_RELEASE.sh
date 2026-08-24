@@ -1109,13 +1109,13 @@ PY
     CONTAINER_STACK_VALIDATION_SCRATCH_ROOT="${evidence_root}/container-scratch" \
     CONTAINER_STACK_VALIDATION_RUNTIME_ROOT="${runtime_parent}/i" \
     CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR="${evidence_root}/stack-validation" \
+    CONTAINER_COMPOSE_CONTAINER="${container_binary}" \
     LLVM_PROFILE_FILE="${profile_root}/%p-%m.profraw" \
     "${path}/scripts/run-with-container-runtime.sh" "${container_binary}" \
     make -C "${path}" release-gate \
     "CONTAINER_BUILDER_SHIM_STACK_REPO=$(repo_path "container-builder-shim")" \
     "CONTAINERIZATION_STACK_REPO=${containerization_path}" \
     "CONTAINER_STACK_REPO=${container_path}" \
-    "CONTAINER_COMPOSE_CONTAINER=${container_binary}" \
     "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}" || status=$?
 
   if ! cleanup_local_release_gate_resources "${container_binary}" \
