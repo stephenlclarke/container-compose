@@ -43,6 +43,8 @@ cleanup or launch operation.
   replacement recovery.
 - The focused privacy-path regression also proves differently cased canonical
   paths cannot bypass automatic localization on case-insensitive macOS filesystems.
+- The local release gate supplies the source CLI through the environment, so
+  the wrapper's staged alias wins before managed Make targets run.
 
 ## Scope
 
