@@ -752,6 +752,15 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             real_find = shutil.which("find")
             self.assertIsNotNone(real_find)
             marker_inspection_started = temporary_root / "marker-inspection-started"
+            fake_sleep = fake_bin / "sleep"
+            fake_sleep.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if [[ "$*" == 3 ]]; then exit 0; fi\n'
+                'exec /bin/sleep "$@"\n',
+                encoding="utf-8",
+            )
+            fake_sleep.chmod(0o755)
             fake_find = fake_bin / "find"
             fake_find.write_text(
                 "#!/usr/bin/env bash\n"
