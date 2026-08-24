@@ -7069,6 +7069,34 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/315"
     },
     {
+      "id": "container-compose-322",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Remove documentation and demo work from the release critical path",
+      "state": "submitted",
+      "lastVerified": "2026-08-24",
+      "commits": [
+        "01b1f72e8d74573de91ae743fbad3991e9b550bc",
+        "a0f83a1a637af31b9a468b161da2b052f3a3bc5a",
+        "ba5c3c710addbe0a001c00bd4a54959d2690aa79",
+        "8d90f6ca0b18a985e408f58d9794653a1eb2b459",
+        "d16720755d60c21138192b56c199c7fe089d4510",
+        "9b3960c606dfea266d8f1f7ee5720710376792c9",
+        "04ed76315caafcf2ddf5b8cc9020cd4f711986dd",
+        "3bb829f79f1fc815b72d3a1281e83826e45aee30"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-321.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-322.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/322"
+    },
+    {
       "id": "container-compose-307",
       "owner": "stephenlclarke/container-compose",
       "title": "Accept redacted create logging options",
