@@ -84,7 +84,7 @@ def sourceStageSpecs() {
     [
         ['container-compose', 'compose-source', 'source', params.sourceTimeoutSeconds as Integer,
             'HAWKEYE_AUTO_INSTALL=0 make --no-print-directory PYTHON=python3 SWIFT=/usr/bin/swift GO=go MARKDOWNLINT=markdownlint HAWKEYE=hawkeye check',
-            'make,apple-swift,go,gofmt,python3,markdownlint,hawkeye', '.', 'commit'],
+            'make,apple-swift,go,gofmt,python3,ruby,markdownlint,hawkeye', '.', 'commit'],
         ['container-builder-shim', 'builder-source', 'source', params.sourceTimeoutSeconds as Integer,
             'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && GOTOOLCHAIN=local make --no-print-directory GO=go GOLANGCI_LINT="$(command -v golangci-lint)" check-licenses vet lint',
             'make,go,golangci-lint,hawkeye', '.', 'commit,describe'],
@@ -112,8 +112,8 @@ def functionalStageSpecs() {
     [
         ['container-compose', 'compose-swift-test', 'test', params.functionalTimeoutSeconds as Integer,
             'CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=0 make --no-print-directory SWIFT=/usr/bin/swift PYTHON=python3 swift-test',
-            'make,apple-swift,python3',
-            'Package.swift Package.resolved Sources Tests Tools scripts Makefile config.toml docs/project/STATUS.md',
+            'make,apple-swift,go,python3',
+            'Package.swift Package.resolved Sources Tests Tools scripts Makefile config.toml docs/project/STATUS.md examples/logging/compose.yml',
             'none'],
         ['container-compose', 'compose-go-test', 'test', params.functionalTimeoutSeconds as Integer,
             'GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org make --no-print-directory GO=go go-test',
