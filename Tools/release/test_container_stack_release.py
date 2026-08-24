@@ -2822,6 +2822,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn("must not resolve to /", rejected.stderr)
 
     def test_local_release_gate_freezes_the_container_runtime_candidate(self) -> None:
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         staging = self.script[
             self.script.index("stage_container_runtime_candidate() {") : self.script.index(
                 "# Delete only the fresh marker-protected candidate extraction"
@@ -2834,7 +2835,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         ]
 
         self.assertIn("git -C \"${container_path}\" rev-parse", staging)
-        self.assertIn("homebrew-package \"HOMEBREW_ARCHIVE=${archive}\"", staging)
+        self.assertIn(
+            'CONTAINER_RUNTIME_CODESIGN_IDENTITY="$(CONTAINER_RUNTIME_CODESIGN_IDENTITY)"',
+            makefile,
+        )
+        self.assertIn("homebrew-package", staging)
+        self.assertIn('"HOMEBREW_ARCHIVE=${archive}"', staging)
+        self.assertIn(
+            '"CODESIGN_OPTS=--force --sign ${signing_identity} --timestamp=none"',
+            staging,
+        )
+        self.assertIn(
+            'artifact_root="${artifact_parent}/${container_head}-${signing_identity}"',
+            staging,
+        )
         self.assertIn("shasum -a 256 -c", staging)
         self.assertIn("tar -xzf \"${archive}\"", staging)
         self.assertIn("chmod -R a-w", staging)
@@ -2911,10 +2925,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
             bin_directory = root / "bin"
             bin_directory.mkdir()
+            make_arguments = root / "make-arguments"
+            signing_identity = "A" * 40
             fake_make = bin_directory / "make"
             fake_make.write_text(
                 "#!/usr/bin/env bash\n"
                 "set -euo pipefail\n"
+                "printf '%s\\n' \"$@\" >\"${MAKE_ARGUMENTS:?}\"\n"
                 "archive=\n"
                 "for argument in \"$@\"; do\n"
                 "  case \"$argument\" in\n"
@@ -2946,7 +2963,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "candidate_root=$CONTAINER_RUNTIME_CANDIDATE_ROOT; "
                 "test \"${#CONTAINER_RUNTIME_CANDIDATE_SHA256}\" -eq 64; "
                 "cleanup_container_runtime_candidate; test ! -e \"$candidate_root\"",
-                shell_setup=f"export PATH={shlex.quote(str(bin_directory))}:$PATH",
+                shell_setup=(
+                    f"export PATH={shlex.quote(str(bin_directory))}:$PATH\n"
+                    f"export MAKE_ARGUMENTS={shlex.quote(str(make_arguments))}\n"
+                    "export CONTAINER_RUNTIME_CODESIGN_IDENTITY="
+                    f"{signing_identity}"
+                ),
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -2955,6 +2977,29 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertTrue(
                 (artifacts[0] / ".container-compose-runtime-candidate-artifact").is_file()
             )
+            self.assertIn(
+                "CODESIGN_OPTS=--force --sign "
+                f"{signing_identity} --timestamp=none",
+                make_arguments.read_text(encoding="utf-8").splitlines(),
+            )
+
+    def test_runtime_candidate_staging_rejects_invalid_signing_identity(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rejected = self.run_release_function(
+                root,
+                "stage_container_runtime_candidate /does/not/exist evidence",
+                shell_setup="export CONTAINER_RUNTIME_CODESIGN_IDENTITY=adhoc",
+            )
+
+            self.assertEqual(rejected.returncode, 2)
+            self.assertIn(
+                "set CONTAINER_RUNTIME_CODESIGN_IDENTITY to its 40-character fingerprint",
+                rejected.stderr,
+            )
+            self.assertFalse((root / "evidence").exists())
 
     def test_runtime_candidate_staging_cleans_interrupted_build_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2994,6 +3039,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                     "EXECUTE=1",
                     f"export PATH={shlex.quote(str(bin_directory))}:$PATH",
                     f"export BUILD_READY={shlex.quote(str(ready))}",
+                    f"export CONTAINER_RUNTIME_CODESIGN_IDENTITY={'B' * 40}",
                     "stage_container_runtime_candidate "
                     f"{shlex.quote(str(container))} {shlex.quote(str(evidence))}",
                 ]

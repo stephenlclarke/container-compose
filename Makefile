@@ -1087,7 +1087,8 @@ release:
 		printf 'VERSION_SELECTOR is required, for example: make release VERSION_SELECTOR=--+\n' >&2; \
 		exit 2; \
 	}
-	./scripts/CONTAINER_STACK_RELEASE.sh release "$(VERSION_SELECTOR)" --execute
+	CONTAINER_RUNTIME_CODESIGN_IDENTITY="$(CONTAINER_RUNTIME_CODESIGN_IDENTITY)" \
+		./scripts/CONTAINER_STACK_RELEASE.sh release "$(VERSION_SELECTOR)" --execute
 
 release-plan:
 	./scripts/CONTAINER_STACK_RELEASE.sh plan

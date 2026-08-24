@@ -615,13 +615,20 @@ require_local_virtualization() {
 stage_container_runtime_candidate() {
   local container_path="$1" evidence_root="$2"
   local container_head artifact_parent artifact_root build_root archive archive_digest
-  local marker marker_value candidate_parent
+  local marker marker_value candidate_parent signing_identity expected_marker
+
+  signing_identity="${CONTAINER_RUNTIME_CODESIGN_IDENTITY:-}"
+  if [[ ! "${signing_identity}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+    printf 'a Developer ID Application identity is required for the packaged Container runtime candidate; set CONTAINER_RUNTIME_CODESIGN_IDENTITY to its 40-character fingerprint\n' >&2
+    return 2
+  fi
 
   container_head="$(git -C "${container_path}" rev-parse --verify 'HEAD^{commit}')"
   artifact_parent="${evidence_root}/runtime-candidates"
-  artifact_root="${artifact_parent}/${container_head}"
+  artifact_root="${artifact_parent}/${container_head}-${signing_identity}"
   archive="${artifact_root}/container-homebrew-debug-arm64.tar.gz"
   marker="${artifact_root}/.container-compose-runtime-candidate-artifact"
+  expected_marker="container-compose runtime candidate artifact v2 ${container_head} ${signing_identity}"
 
   mkdir -p "${artifact_parent}"
   if [[ -e "${artifact_root}" ]]; then
@@ -629,7 +636,7 @@ stage_container_runtime_candidate() {
     if [[ -f "${marker}" ]]; then
       IFS= read -r marker_value <"${marker}" || true
     fi
-    if [[ "${marker_value}" != "container-compose runtime candidate artifact v1 ${container_head}" ]]; then
+    if [[ "${marker_value}" != "${expected_marker}" ]]; then
       printf 'refusing to reuse an unmarked Container runtime candidate artifact: %s\n' \
         "${artifact_root}" >&2
       return 1
@@ -671,7 +678,9 @@ stage_container_runtime_candidate() {
     trap 'exit 143' TERM
     trap 'cleanup_unpublished_runtime_candidate_build $?' EXIT
     archive="${build_root}/container-homebrew-debug-arm64.tar.gz"
-    if ! make -C "${container_path}" homebrew-package "HOMEBREW_ARCHIVE=${archive}"; then
+    if ! make -C "${container_path}" homebrew-package \
+      "HOMEBREW_ARCHIVE=${archive}" \
+      "CODESIGN_OPTS=--force --sign ${signing_identity} --timestamp=none"; then
       printf 'failed to build the packaged Container runtime candidate in: %s\n' \
         "${build_root}" >&2
       cleanup_unpublished_runtime_candidate_build 1 || true
@@ -683,8 +692,8 @@ stage_container_runtime_candidate() {
       cleanup_unpublished_runtime_candidate_build 1 || true
       return 1
     fi
-    printf 'container-compose runtime candidate artifact v1 %s\n' \
-      "${container_head}" >"${build_root}/.container-compose-runtime-candidate-artifact"
+    printf '%s\n' "${expected_marker}" \
+      >"${build_root}/.container-compose-runtime-candidate-artifact"
     mv "${build_root}" "${artifact_root}"
     build_root=""
     trap - EXIT HUP INT QUIT TERM
