@@ -61,9 +61,13 @@ runtime_start_deadline_seconds=${CONTAINER_RUNTIME_START_DEADLINE_SECONDS:-300}
 runtime_start_sequence_deadline=
 runtime_candidate_staging_root=
 runtime_candidate_staging_complete=false
+runtime_candidate_staging_cleanup_allowed=false
+runtime_candidate_staging_lock_held=false
 runtime_candidate_stage_mode=${CONTAINER_RUNTIME_STAGE_CANDIDATE:-auto}
 runtime_app_root_localization_mode=${CONTAINER_RUNTIME_LOCALIZE_APP_ROOT:-auto}
 runtime_local_execution_root=${CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT:-}
+runtime_local_user_root=
+runtime_app_root_localized=false
 runtime_anonymous_registry_hosts=${CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS-ghcr.io}
 
 if [[ -z "$runtime_local_execution_root" ]]; then
@@ -465,6 +469,36 @@ runtime_path_owner_and_mode() {
     fi
 }
 
+validate_private_runtime_directory() {
+    local path="$1"
+    local description="$2"
+    local owner
+    local mode
+
+    if [[ -L "$path" || ! -d "$path" ]]; then
+        printf 'refusing to use an indirect %s: %s\n' "$description" "$path" >&2
+        return 2
+    fi
+    read -r owner mode < <(runtime_path_owner_and_mode "$path")
+    if [[ "$owner" != "$(id -u)" ]] || (( (8#$mode & 077) != 0 )); then
+        printf 'refusing to use an unowned or accessible %s: %s\n' \
+            "$description" "$path" >&2
+        return 2
+    fi
+}
+
+prepare_local_user_root() {
+    local deadline="$1"
+
+    runtime_local_user_root="$runtime_local_execution_root/container-compose-runtime-$(id -u)"
+    if [[ ! -e "$runtime_local_user_root" && ! -L "$runtime_local_user_root" ]]; then
+        run_runtime_start_command "$deadline" mkdir -m 0700 \
+            "$runtime_local_user_root" || return "$?"
+    fi
+    validate_private_runtime_directory \
+        "$runtime_local_user_root" 'local Container runtime root'
+}
+
 # Return success for locations that launchd or TCC can classify as removable
 # or user-controlled. Services launched from these paths can block behind a
 # GUI approval dialog that an unattended build cannot answer.
@@ -499,7 +533,8 @@ localize_runtime_app_root() {
     local requested_root_digest
     requested_root_digest=$(LC_ALL=C printf '%s' "$requested_root" \
         | shasum -a 256 | awk '{print substr($1, 1, 16)}')
-    runtime_app_root="$runtime_local_execution_root/container-compose-runtime-$(id -u)-$requested_root_digest"
+    runtime_app_root="$runtime_local_user_root/state-$requested_root_digest"
+    runtime_app_root_localized=true
     printf 'Relocating Container runtime state from privacy-controlled storage: %s -> %s\n' \
         "$requested_root" "$runtime_app_root"
 }
@@ -512,6 +547,16 @@ validate_runtime_candidate_signatures() {
     local file_description
     local signature_description
     local macho_count=0
+
+    local indirect_executable
+    indirect_executable=$(find \
+        "$source_package_root/bin" "$source_package_root/libexec/container" \
+        -type l -print -quit)
+    if [[ -n "$indirect_executable" ]]; then
+        printf 'Container runtime package contains an indirect executable: %s\n' \
+            "$indirect_executable" >&2
+        return 2
+    fi
 
     while IFS= read -r -d '' executable; do
         file_description=$(/usr/bin/file -b "$executable")
@@ -535,6 +580,40 @@ validate_runtime_candidate_signatures() {
     if ((macho_count == 0)); then
         return 0
     fi
+}
+
+acquire_runtime_candidate_staging_lock() {
+    local deadline="$1"
+    local lock_file="${runtime_candidate_staging_root}.lock"
+    local lock_backend
+    local remaining_seconds
+
+    if command -v lockf >/dev/null 2>&1; then
+        lock_backend=lockf
+    elif command -v flock >/dev/null 2>&1; then
+        lock_backend=flock
+    else
+        printf 'lockf or flock is required to serialize local Container candidate staging\n' >&2
+        return 2
+    fi
+    remaining_seconds=$(runtime_start_lock_timeout_seconds "$deadline") || return "$?"
+    exec 8>>"$lock_file"
+    case "$lock_backend" in
+        lockf) lockf -t "$remaining_seconds" 8 ;;
+        flock) flock -w "$remaining_seconds" 8 ;;
+    esac || {
+        exec 8>&-
+        printf 'timed out waiting for local Container candidate staging lock: %s\n' \
+            "$lock_file" >&2
+        return 124
+    }
+    runtime_candidate_staging_lock_held=true
+}
+
+release_runtime_candidate_staging_lock() {
+    [[ "$runtime_candidate_staging_lock_held" == true ]] || return 0
+    exec 8>&-
+    runtime_candidate_staging_lock_held=false
 }
 
 # Validate every complete source package regardless of whether its path needs
@@ -581,7 +660,8 @@ stage_runtime_candidate_if_needed() {
     local source_package_root_digest
     source_package_root_digest=$(LC_ALL=C printf '%s' "$source_package_root" \
         | shasum -a 256 | awk '{print substr($1, 1, 16)}')
-    runtime_candidate_staging_root="$runtime_local_execution_root/container-compose-runtime-candidate-$(id -u)-$source_package_root_digest"
+    runtime_candidate_staging_root="$runtime_local_user_root/candidate-$source_package_root_digest"
+    acquire_runtime_candidate_staging_lock "$deadline" || return "$?"
     local marker="$runtime_candidate_staging_root/.container-compose-runtime-candidate-staging"
     local existing_marker_value=
     if [[ -e "$runtime_candidate_staging_root" ]]; then
@@ -590,16 +670,8 @@ stage_runtime_candidate_if_needed() {
                 "$runtime_candidate_staging_root" >&2
             exit 2
         fi
-        local staging_owner
-        local staging_mode
-        read -r staging_owner staging_mode < <(
-            runtime_path_owner_and_mode "$runtime_candidate_staging_root"
-        )
-        if [[ "$staging_owner" != "$(id -u)" ]] || (( (8#$staging_mode & 022) != 0 )); then
-            printf 'refusing to use an unowned or writable local Container candidate: %s\n' \
-                "$runtime_candidate_staging_root" >&2
-            exit 2
-        fi
+        validate_private_runtime_directory \
+            "$runtime_candidate_staging_root" 'local Container candidate' || exit "$?"
         if [[ -L "$marker" ]] || [[ -e "$marker" && ! -f "$marker" ]]; then
             printf 'refusing to use an indirect local Container candidate marker: %s\n' \
                 "$marker" >&2
@@ -618,11 +690,13 @@ stage_runtime_candidate_if_needed() {
                 "$runtime_candidate_staging_root" >&2
             exit 2
         fi
+        runtime_candidate_staging_cleanup_allowed=true
         run_runtime_start_command "$deadline" find \
             "$runtime_candidate_staging_root" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
     else
         run_runtime_start_command "$deadline" mkdir -m 0700 \
             "$runtime_candidate_staging_root"
+        runtime_candidate_staging_cleanup_allowed=true
     fi
     run_runtime_start_command "$deadline" chmod 0700 \
         "$runtime_candidate_staging_root"
@@ -654,21 +728,35 @@ stage_runtime_candidate_if_needed() {
     export CONTAINER_BIN="$container_binary"
     export CONTAINER_COMPOSE_CONTAINER="$container_binary"
     runtime_candidate_staging_complete=true
+    release_runtime_candidate_staging_lock
     printf 'Staged Container runtime candidate at its persistent local path: %s\n' \
         "$container_binary"
 }
 
 cleanup_runtime_candidate_staging() {
+    if [[ "$runtime_candidate_staging_cleanup_allowed" != true ]]; then
+        release_runtime_candidate_staging_lock
+        return 0
+    fi
     [[ -n "$runtime_candidate_staging_root" ]] || return 0
-    [[ "$runtime_candidate_staging_complete" == false ]] || return 0
+    if [[ "$runtime_candidate_staging_complete" == true ]]; then
+        release_runtime_candidate_staging_lock
+        return 0
+    fi
     case "$runtime_candidate_staging_root" in
-        /private/tmp/container-compose-runtime-candidate-[0-9]*-[0-9a-f]* | /tmp/container-compose-runtime-candidate-[0-9]*-[0-9a-f]*) ;;
+        "$runtime_local_user_root"/candidate-[0-9a-f]*) ;;
         *)
             printf 'refusing to clear unexpected runtime candidate staging root: %s\n' \
                 "$runtime_candidate_staging_root" >&2
+            release_runtime_candidate_staging_lock
             return 1
             ;;
     esac
+    if ! validate_private_runtime_directory \
+        "$runtime_candidate_staging_root" 'local Container candidate'; then
+        release_runtime_candidate_staging_lock
+        return 1
+    fi
     local marker="$runtime_candidate_staging_root/.container-compose-runtime-candidate-staging"
     local marker_value=
     if [[ -f "$marker" ]]; then
@@ -677,10 +765,12 @@ cleanup_runtime_candidate_staging() {
     if [[ "$marker_value" != "container-compose runtime candidate staging v1 $container_binary_sha256" ]]; then
         printf 'refusing to clear unmarked runtime candidate staging root: %s\n' \
             "$runtime_candidate_staging_root" >&2
+        release_runtime_candidate_staging_lock
         return 1
     fi
     find "$runtime_candidate_staging_root" -depth -delete 2>/dev/null || true
     runtime_candidate_staging_root=
+    release_runtime_candidate_staging_lock
 }
 
 # Return an absolute monotonic deadline for the complete runtime-start sequence.
@@ -1064,8 +1154,22 @@ ensure_managed_runtime_ready() {
 prepare_runtime_root() {
     local deadline="$1"
 
-    run_runtime_start_command "$deadline" mkdir -p "$runtime_app_root"
+    if [[ "$runtime_app_root_localized" == true ]]; then
+        if [[ ! -e "$runtime_app_root" && ! -L "$runtime_app_root" ]]; then
+            run_runtime_start_command "$deadline" mkdir -m 0700 \
+                "$runtime_app_root" || return "$?"
+        fi
+        validate_private_runtime_directory \
+            "$runtime_app_root" 'localized Container runtime state root' || exit "$?"
+    else
+        run_runtime_start_command "$deadline" mkdir -p "$runtime_app_root"
+    fi
     local marker_path="$runtime_app_root/$runtime_root_marker"
+    if [[ -L "$marker_path" || ( -e "$marker_path" && ! -f "$marker_path" ) ]]; then
+        printf 'refusing to use an indirect container runtime root marker: %s\n' \
+            "$marker_path" >&2
+        exit 2
+    fi
     local marker_status=0
     runtime_start_regular_file_status "$deadline" "$marker_path" || marker_status=$?
     [[ "$marker_status" != "124" ]] || return "$marker_status"
@@ -1354,6 +1458,7 @@ trap 'exit 131' QUIT
 trap 'exit 143' TERM
 resolve_container_binary "$runtime_start_sequence_deadline"
 validate_packaged_runtime_candidate_signatures
+prepare_local_user_root "$runtime_start_sequence_deadline"
 localize_runtime_app_root
 stage_runtime_candidate_if_needed "$runtime_start_sequence_deadline"
 if [[ -n "$runtime_anonymous_registry_hosts" ]]; then
