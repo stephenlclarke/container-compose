@@ -565,8 +565,12 @@ prepare_local_user_root() {
 # GUI approval dialog that an unattended build cannot answer.
 runtime_path_requires_localization() {
     local path="$1"
-    case "$path" in
-        /Volumes | /Volumes/* | "$runtime_privacy_home"/Desktop | "$runtime_privacy_home"/Desktop/* | "$runtime_privacy_home"/Documents | "$runtime_privacy_home"/Documents/* | "$runtime_privacy_home"/Downloads | "$runtime_privacy_home"/Downloads/*)
+    local normalized_path
+    local normalized_home
+    normalized_path=$(LC_ALL=C printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
+    normalized_home=$(LC_ALL=C printf '%s' "$runtime_privacy_home" | tr '[:upper:]' '[:lower:]')
+    case "$normalized_path" in
+        /volumes | /volumes/* | "$normalized_home"/desktop | "$normalized_home"/desktop/* | "$normalized_home"/documents | "$normalized_home"/documents/* | "$normalized_home"/downloads | "$normalized_home"/downloads/*)
             return 0
             ;;
         *)

@@ -1484,15 +1484,17 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             temporary_root = Path(temporary_directory)
             fake_home = temporary_root / "home"
             exact_root = fake_home / "Downloads"
+            case_variant_root = fake_home / "downloads" / "runtime"
             symlink_target = fake_home / "Documents" / "runtime"
             exact_root.mkdir(parents=True)
+            case_variant_root.mkdir(parents=True)
             symlink_target.mkdir(parents=True)
             alias_root = temporary_root / "runtime-alias"
             alias_root.symlink_to(symlink_target, target_is_directory=True)
             candidate = temporary_root / "container-cli"
             self.write_fake_container(candidate)
 
-            for requested_root in (exact_root, alias_root):
+            for requested_root in (exact_root, case_variant_root, alias_root):
                 with self.subTest(requested_root=requested_root):
                     localized_root_log = temporary_root / "localized-root"
                     environment = self.runtime_environment()
