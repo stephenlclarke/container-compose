@@ -520,6 +520,21 @@ select_managed_runtime_candidate() {
     container_binary=$inherited_cli
 }
 
+# Keep GNU Make's command-line precedence from restoring a mutable source CLI
+# through inherited MAKEFLAGS. A final direct assignment replaces every
+# inherited definition and is propagated unchanged to recursive makes.
+run_with_managed_runtime_candidate() {
+    local command_name=${1##*/}
+    case "$command_name" in
+        make | gmake)
+            "$@" "CONTAINER_COMPOSE_CONTAINER=$container_binary" 8>&-
+            ;;
+        *)
+            "$@" 8>&-
+            ;;
+    esac
+}
+
 # Print owner and permission mode in a stable form on both BSD/macOS and GNU
 # stat. Hosted Linux checks exercise the same staging boundary as macOS.
 runtime_path_owner_and_mode() {
@@ -968,10 +983,10 @@ stage_runtime_candidate_if_needed() {
             ! -name '.container-compose-runtime-candidate-staging' \
             -exec rm -rf {} +
     else
-        run_runtime_start_command "$deadline" mkdir -m 0700 \
-            "$runtime_candidate_staging_root"
         runtime_candidate_staging_cleanup_allowed=true
         runtime_candidate_staging_created=true
+        run_runtime_start_command "$deadline" mkdir -m 0700 \
+            "$runtime_candidate_staging_root"
     fi
     run_runtime_start_command "$deadline" chmod 0700 \
         "$runtime_candidate_staging_root"
@@ -1830,7 +1845,7 @@ verify_runtime_namespace_support "$runtime_start_sequence_deadline"
 if [[ "${CONTAINER_RUNTIME_MANAGED:-0}" == "1" ]]; then
     ensure_managed_runtime_ready "$runtime_start_sequence_deadline"
     # The parent retains the staging lock; commands must not inherit its fd.
-    "$@" 8>&-
+    run_with_managed_runtime_candidate "$@"
     exit
 fi
 
@@ -1892,4 +1907,4 @@ runtime_start_remaining_seconds "$runtime_start_sequence_deadline" >/dev/null ||
 export CONTAINER_RUNTIME_MANAGED=1
 # Keep the candidate immutable for this invocation without leaking the lock to
 # the caller's command or any long-lived descendant it may create.
-"$@" 8>&-
+run_with_managed_runtime_candidate "$@"

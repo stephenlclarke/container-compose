@@ -1043,6 +1043,94 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 if staged_root.is_dir():
                     shutil.rmtree(staged_root)
 
+    def test_interrupted_initial_staging_directory_is_recoverable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            self.local_user_root().mkdir(mode=0o700, exist_ok=True)
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            fake_mkdir = fake_bin / "mkdir"
+            fake_mkdir.write_text(
+                "#!/bin/bash\n"
+                "set -euo pipefail\n"
+                'if [[ "$*" == "-m 0700 ${INTERRUPTED_STAGING_ROOT:?}" ]]; then\n'
+                '  /bin/mkdir -m 0700 "${INTERRUPTED_STAGING_ROOT}"\n'
+                "  sleep 30\n"
+                "else\n"
+                "  exec /bin/mkdir \"$@\"\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            fake_mkdir.chmod(0o755)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "interrupted-initial-staging",
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                    "INTERRUPTED_STAGING_ROOT": str(staged_root),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+            try:
+                interrupted = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                self.assertEqual(
+                    interrupted.returncode,
+                    124,
+                    interrupted.stdout + interrupted.stderr,
+                )
+                self.assertFalse(staged_root.exists())
+
+                recovered_environment = environment.copy()
+                recovered_environment["PATH"] = self.runtime_environment()["PATH"]
+                recovered_environment["CONTAINER_RUNTIME_START_DEADLINE_SECONDS"] = "5"
+                recovered = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=recovered_environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                )
+                self.assertEqual(
+                    recovered.returncode,
+                    0,
+                    recovered.stdout + recovered.stderr,
+                )
+            finally:
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
     def test_staged_candidate_lock_is_held_until_command_completion(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -1179,6 +1267,75 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     .read_text(encoding="utf-8")
                     .splitlines(),
                     ["list --all --format json", "list --all --format json"],
+                )
+            finally:
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
+    def test_make_command_replaces_inherited_source_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            makefile = temporary_root / "Makefile"
+            result_path = temporary_root / "candidate-path"
+            makefile.write_text(
+                "all:\n"
+                '\t@printf \'%s\\n\' "$(CONTAINER_COMPOSE_CONTAINER)" '
+                '> "$(RESULT_PATH)"\n',
+                encoding="utf-8",
+            )
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "make-override",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "5",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                    "MAKEFLAGS": (
+                        " -- CONTAINER_COMPOSE_CONTAINER=" + str(candidate)
+                    ),
+                }
+            )
+            try:
+                result = subprocess.run(
+                    [
+                        str(SCRIPT),
+                        str(candidate),
+                        "make",
+                        "-f",
+                        str(makefile),
+                        f"RESULT_PATH={result_path}",
+                    ],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                )
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(
+                    result_path.read_text(encoding="utf-8").strip(),
+                    str(staged_root / "bin" / "container"),
                 )
             finally:
                 if staged_root.is_dir():
