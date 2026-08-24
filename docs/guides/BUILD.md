@@ -189,7 +189,12 @@ identity's 40-character fingerprint when automatic selection is unsuitable.
 Apple's Local Network privacy service tracks a program by its code signature;
 an ad-hoc signature changes on every build and therefore cannot support
 unattended testing. The runtime wrapper rejects an ad-hoc packaged candidate
-before it can launch and display another approval dialog.
+before it can launch and display another approval dialog. Each of the three
+required packaged binaries must be Mach-O; scripts, ELF files, and corrupted
+artifacts are rejected instead of escaping signature verification. Repository
+unit tests set `CONTAINER_RUNTIME_ALLOW_NON_MACHO_TEST_FIXTURES=1` only for
+their portable temporary shell fixtures. Do not set that test-only switch for
+a live runtime, CI validation, or release.
 
 When the checkout or configured runtime root is on a
 removable volume, Desktop, Documents, or Downloads,
