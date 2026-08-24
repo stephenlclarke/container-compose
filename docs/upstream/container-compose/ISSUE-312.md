@@ -53,6 +53,11 @@ cleanup or launch operation.
   path text cannot spoof the signing identity.
 - An unchanged, revalidated staged generation is reused while an orphaned
   process still runs from it; changed running generations remain protected.
+- Incomplete packaged layouts fail closed before launch instead of falling
+  back to standalone-CLI handling.
+- Runtime-root marker type checks and reads share the complete startup
+  deadline, so stalled filesystems cannot leave the wrapper waiting after the
+  host runtime lock is held.
 
 ## Scope
 
