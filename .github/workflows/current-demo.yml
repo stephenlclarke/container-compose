@@ -362,11 +362,17 @@ jobs:
         run: |
           set -euo pipefail
 
+          CURRENT_RELEASE_ID=""
+
           current_release_matches() {
             local remote="https://github.com/${GITHUB_REPOSITORY}.git"
             local main_sha
             local current_tag_sha
+            local release_fields
+            local release_id
             local release_target
+            local release_upload_url
+            local expected_upload_url
             main_sha="$(
               git ls-remote --heads "${remote}" refs/heads/main \
                 | awk '{ print $1 }' \
@@ -384,64 +390,110 @@ jobs:
                   | tail -n 1
               )" || return 1
             fi
-            release_target="$(
+            release_fields="$(
               gh release view current --repo "${GITHUB_REPOSITORY}" \
-                --json targetCommitish --jq .targetCommitish
+                --json databaseId,targetCommitish,uploadUrl \
+                --jq '[.targetCommitish, (.databaseId | tostring), .uploadUrl] | @tsv'
             )" || return 1
+            IFS=$'\t' read -r release_target release_id release_upload_url \
+              <<< "${release_fields}"
+            expected_upload_url="https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets"
+            if [[ ! "${release_id}" =~ ^[0-9]+$ ||
+                  "${release_upload_url}" != "${expected_upload_url}"'{?name,label}' ]]; then
+              return 1
+            fi
             [[ "${PUBLISH_SHA}" == "${main_sha}" &&
                "${PUBLISH_SHA}" == "${current_tag_sha}" &&
-               "${PUBLISH_SHA}" == "${release_target}" ]]
+               "${PUBLISH_SHA}" == "${release_target}" ]] || return 1
+            CURRENT_RELEASE_ID="${release_id}"
+          }
+
+          release_asset_id() {
+            local release_id="$1"
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
+              --jq ".[] | select(.name == \"${DEMO_ASSET}\") | .id" \
+              | tail -n 1
+          }
+
+          download_release_asset() {
+            local asset_id="$1"
+            local output="$2"
+            gh api -H 'Accept: application/octet-stream' \
+              "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" > "${output}"
+          }
+
+          upload_release_asset() {
+            local release_id="$1"
+            local input="$2"
+            gh api --method POST \
+              -H 'Content-Type: image/gif' \
+              --input "${input}" \
+              "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=${DEMO_ASSET}" \
+              --silent
+          }
+
+          replace_release_asset() {
+            local release_id="$1"
+            local input="$2"
+            local existing_asset_id
+            existing_asset_id="$(release_asset_id "${release_id}")" || return 1
+            if [[ -n "${existing_asset_id}" ]]; then
+              gh api --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/releases/assets/${existing_asset_id}" \
+                --silent || return 1
+            fi
+            upload_release_asset "${release_id}" "${input}"
           }
 
           if ! current_release_matches; then
             printf 'Current moved before demo publication; leaving its existing asset unchanged.\n'
             exit 0
           fi
+          publication_release_id="${CURRENT_RELEASE_ID}"
 
           prior_demo_dir="${RUNNER_TEMP}/container-compose-prior-current-demo"
           recovery_demo_dir="${RUNNER_TEMP}/container-compose-recovery-current-demo"
           rm -rf -- "${prior_demo_dir}" "${recovery_demo_dir}"
           mkdir -p "${prior_demo_dir}" "${recovery_demo_dir}"
-          if gh release view current --repo "${GITHUB_REPOSITORY}" \
-            --json assets --jq ".assets | any(.name == \"${DEMO_ASSET}\")" \
-            | grep -qx true; then
-            gh release download current --repo "${GITHUB_REPOSITORY}" \
-              --pattern "${DEMO_ASSET}" --dir "${prior_demo_dir}"
-            test -s "${prior_demo_dir}/${DEMO_ASSET}"
+          prior_asset_id="$(release_asset_id "${publication_release_id}")"
+          prior_demo="${prior_demo_dir}/${DEMO_ASSET}"
+          if [[ -n "${prior_asset_id}" ]]; then
+            download_release_asset "${prior_asset_id}" "${prior_demo}"
+            test -s "${prior_demo}"
           fi
 
-          if ! current_release_matches; then
+          if ! current_release_matches ||
+             [[ "${CURRENT_RELEASE_ID}" != "${publication_release_id}" ]]; then
             printf 'Current moved immediately before demo upload; leaving its existing asset unchanged.\n'
             exit 0
           fi
 
           set +e
-          gh release upload current "${DEMO_OUTPUT}" \
-            --repo "${GITHUB_REPOSITORY}" --clobber
+          replace_release_asset "${publication_release_id}" "${DEMO_OUTPUT}"
           upload_status=$?
           set -e
           if ((upload_status == 0)); then
             exit 0
           fi
 
-          prior_demo="${prior_demo_dir}/${DEMO_ASSET}"
           if [[ ! -s "${prior_demo}" ]]; then
             printf 'Current demo upload failed and no prior asset is available to restore.\n' >&2
             exit "${upload_status}"
           fi
 
-          if ! current_release_matches; then
+          if ! current_release_matches ||
+             [[ "${CURRENT_RELEASE_ID}" != "${publication_release_id}" ]]; then
             printf 'Current moved after the failed demo upload; refusing to modify the newer release.\n' >&2
             exit "${upload_status}"
           fi
 
-          if gh release view current --repo "${GITHUB_REPOSITORY}" \
-            --json assets --jq ".assets | any(.name == \"${DEMO_ASSET}\")" \
-            | grep -qx true; then
-            if gh release download current --repo "${GITHUB_REPOSITORY}" \
-              --pattern "${DEMO_ASSET}" --dir "${recovery_demo_dir}"; then
+          published_asset_id="$(release_asset_id "${publication_release_id}")"
+          if [[ -n "${published_asset_id}" ]]; then
+            published_demo="${recovery_demo_dir}/${DEMO_ASSET}"
+            if download_release_asset "${published_asset_id}" "${published_demo}"; then
               published_sha256="$(shasum -a 256 \
-                "${recovery_demo_dir}/${DEMO_ASSET}" | awk '{ print $1 }')"
+                "${published_demo}" | awk '{ print $1 }')"
               candidate_sha256="$(shasum -a 256 "${DEMO_OUTPUT}" | awk '{ print $1 }')"
               prior_sha256="$(shasum -a 256 "${prior_demo}" | awk '{ print $1 }')"
               if [[ "${published_sha256}" == "${candidate_sha256}" ]]; then
@@ -457,8 +509,12 @@ jobs:
 
           restored=false
           for attempt in 1 2 3; do
-            if gh release upload current "${prior_demo}" \
-              --repo "${GITHUB_REPOSITORY}" --clobber; then
+            if ! current_release_matches ||
+               [[ "${CURRENT_RELEASE_ID}" != "${publication_release_id}" ]]; then
+              printf 'Current moved during demo recovery; refusing to modify the newer release.\n' >&2
+              exit "${upload_status}"
+            fi
+            if replace_release_asset "${publication_release_id}" "${prior_demo}"; then
               restored=true
               break
             fi

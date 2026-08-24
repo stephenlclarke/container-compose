@@ -723,7 +723,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow.index("Verify source and release are still current"),
             workflow.index("Publish exact Current demo"),
         )
-        self.assertIn('gh release upload current "${DEMO_OUTPUT}"', workflow)
+        self.assertNotIn('gh release upload current "${DEMO_OUTPUT}"', workflow)
         self.assertIn(
             'CONTAINER_APP_ROOT="${demo_app_root}" \\\n'
             "              python3 Tools/ci/run-command-with-deadline.py",
@@ -745,37 +745,39 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn("current_release_matches()", publish_step)
         self.assertGreaterEqual(
-            publish_step.count("if ! current_release_matches; then"), 3
+            publish_step.count("if ! current_release_matches"), 4
         )
-        candidate_upload = publish_step.index(
-            'gh release upload current "${DEMO_OUTPUT}"'
+        self.assertIn("release_asset_id()", publish_step)
+        self.assertIn("download_release_asset()", publish_step)
+        self.assertIn("upload_release_asset()", publish_step)
+        self.assertIn("replace_release_asset()", publish_step)
+        self.assertIn(
+            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/"
+            "${release_id}/assets?name=${DEMO_ASSET}",
+            publish_step,
         )
-        upload_guard = publish_step.rfind(
-            "if ! current_release_matches; then", 0, candidate_upload
+        self.assertIn(
+            'replace_release_asset "${publication_release_id}" "${DEMO_OUTPUT}"',
+            publish_step,
         )
-        self.assertGreater(
-            upload_guard,
-            publish_step.index(
-                'gh release download current --repo "${GITHUB_REPOSITORY}"'
-            ),
+        self.assertIn(
+            'replace_release_asset "${publication_release_id}" "${prior_demo}"',
+            publish_step,
         )
-        restore_upload = publish_step.index(
-            'gh release upload current "${prior_demo}"'
+        self.assertIn(
+            '"${CURRENT_RELEASE_ID}" != "${publication_release_id}"',
+            publish_step,
         )
-        restore_guard = publish_step.rfind(
-            "if ! current_release_matches; then", candidate_upload, restore_upload
-        )
-        self.assertGreater(restore_guard, candidate_upload)
         self.assertIn(
             'prior_demo_dir="${RUNNER_TEMP}/container-compose-prior-current-demo"',
             publish_step,
         )
         self.assertIn(
-            'gh release download current --repo "${GITHUB_REPOSITORY}"',
+            "gh api -H 'Accept: application/octet-stream'",
             publish_step,
         )
         self.assertIn("for attempt in 1 2 3; do", publish_step)
-        self.assertIn('gh release upload current "${prior_demo}"', publish_step)
+        self.assertNotIn("gh release upload current", publish_step)
         self.assertIn("restored the prior asset", publish_step)
         self.assertGreaterEqual(workflow.count('--repo "${GITHUB_REPOSITORY}"'), 4)
         self.assertIn("if: failure()", workflow)
