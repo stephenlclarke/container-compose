@@ -222,19 +222,20 @@ GitHub remains necessary for branch protection, pull-request review state, serve
 The family needs a general trusted-CI runner lane in addition to the existing release labels. Before treating this workflow as implemented:
 
 1. Provision dedicated self-hosted labels for trusted container-family CI and keep signing/release labels separate.
-2. Route macOS/ARM64 build, test, parity, Sonar, supported CodeQL, packaging, and documentation jobs to the MBP lane. Use a pinned local Linux executor on the MBP when Linux semantics are required.
+2. Route macOS/ARM64 runtime build, test, parity, Sonar, supported CodeQL, and packaging jobs to the MBP lane. Independent DocC products may fan out across ephemeral hosted macOS runners when they execute no runtime authority, use no release secret, and are assembled only after every exact-input site succeeds. Use a pinned local Linux executor on the MBP when Linux semantics are required.
 3. Never execute untrusted fork pull-request code on a persistent self-hosted runner. Use a GitHub-hosted or disposable isolated worker with no repository secrets for that exceptional lane.
 4. Use a clean per-job workspace, exact checkout SHA, pinned actions/tools, bounded caches keyed by dependency fingerprint, and cleanup that removes only verified job-owned credentials and marker-protected job-owned runtime state.
-5. Serialize jobs sharing launchd service names, runtime stores, VMs, signing identities, Docker oracles, or performance hardware. Run independent compile/static/documentation jobs concurrently when safe.
-6. Record runner identity, host/toolchain fingerprint, job log, artefacts, and cleanup outcome with the tested commit.
-7. Keep the runner current and health-checked; a missing/offline runner is diagnosed promptly rather than left as an unexplained queue.
-8. If an action cannot run safely on the MBP, first reproduce its underlying command locally or in a local container. A GitHub-hosted exception must state the technical reason and remains the fallback, not the default.
+5. Serialize jobs sharing launchd service names, runtime stores, VMs, signing identities, Docker oracles, or performance hardware. Run independent compile, static-analysis, and documentation jobs concurrently when their workspaces and caches are isolated.
+6. Sign any freshly instrumented Container source runtime with the release candidate's stable Developer ID identity before VM-backed tests. An ad-hoc rebuild is a new macOS privacy identity and is not an unattended release-gate input.
+7. Record runner identity, host/toolchain fingerprint, job log, artefacts, and cleanup outcome with the tested commit.
+8. Keep the runner current and health-checked; a missing/offline runner is diagnosed promptly rather than left as an unexplained queue.
+9. If an action cannot run safely on the MBP, first reproduce its underlying command locally or in a local container. A GitHub-hosted exception must state the technical reason and remains the fallback, not the default.
 
 Runner labels describe stable capabilities, not a particular MBP hostname, so an authorised handoff can move work without editing workflow source. Devcontainer and every other family runner must acquire the same Container runtime lock before touching the shared per-user services.
 
 The shared runtime lock protects only cooperating jobs. Before authoritative runtime or parity validation, quiesce authorised cooperating local or self-hosted Container/devcontainer workers that can replace the same per-user launchd/XPC services, then restore them after the controlled run. Never stop an unrelated user session merely because it is visible.
 
-The current repository routes only selected release work to its self-hosted MBP labels; ordinary CI and CodeQL still use hosted runners. General MBP CI routing and a supported local CodeQL target are therefore implementation prerequisites, not capabilities this design assumes already exist.
+The current repository routes selected release work and the nested-virtualization Current demo to its self-hosted MBP labels. Independent DocC sites use hosted macOS fan-out before hosted Pages assembly, while ordinary CI and the GitHub CodeQL authority still use hosted runners. General MBP CI routing and a supported local CodeQL target are therefore implementation prerequisites, not capabilities this design assumes already exist.
 
 ## Productive Work During Long Operations
 
@@ -328,7 +329,7 @@ Static quality is part of slice acceptance, not end-of-programme cleanup.
 
 - `container-compose` currently applies CodeQL to the Go normalizer; it does not claim Swift CodeQL coverage. Until a supported local target exists, record local CodeQL as unavailable rather than claiming a scan.
 - Add a reproducible family-level local target, such as `make codeql-local`, that pins the CodeQL CLI/query-pack versions, creates the database from the same build command, runs the family quality contract, and retains SARIF. The contract must fail on every new applicable alert in maintained source and retain an explicitly reviewed baseline/disposition for pre-existing alerts. Once available, run it before relying on the GitHub result.
-- When the GitHub CodeQL workflow is enabled and required, route its supported trusted job to the self-hosted MBP runner and upload the exact-commit result to GitHub.
+- Keep the GitHub CodeQL authority on an isolated hosted Linux runner when that lane is faster than scheduling and rebuilding its Linux/AMD64 database on the release Mac. Use the reproducible local target for pre-publication evidence and upload its exact-commit SARIF when that authority is selected explicitly.
 - Inspect and resolve new alerts periodically during the slice and before main/release checkpoints. A suppressed alert needs a narrow documented justification.
 - As of this design, the repository CodeQL workflow is manually disabled. Its absence is not a pass, this workflow does not silently re-enable it, and release evidence that requires an exact GitHub CodeQL authority remains blocked until the owner enables it or explicitly approves another authority.
 

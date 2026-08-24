@@ -1,0 +1,371 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Current Demo
+run-name: Current Demo · ${{ inputs.ref || github.event.workflow_run.head_sha }}
+
+on:
+  workflow_run:
+    workflows:
+      - Prebuilt Binaries
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Exact current main SHA, or main"
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-compose-current-demo
+  cancel-in-progress: true
+
+jobs:
+  resolve-current:
+    name: Resolve Current Demo Source
+    if: >
+      github.repository == 'stephenlclarke/container-compose' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.resolve.outputs.publish }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Resolve exact Current release
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_REF: ${{ inputs.ref }}
+          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="https://github.com/${GITHUB_REPOSITORY}.git"
+          main_sha="$(
+            git ls-remote --heads "${remote}" refs/heads/main \
+              | awk '{ print $1 }' \
+              | tail -n 1
+          )"
+          source_sha="${WORKFLOW_HEAD_SHA}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            source_sha="${REQUESTED_REF}"
+            if [[ "${source_sha}" == "main" ]]; then
+              source_sha="${main_sha}"
+            fi
+          fi
+          if [[ ! "${source_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'Current demo source is not an immutable commit: %s\n' \
+              "${source_sha:-<unset>}" >&2
+            exit 1
+          fi
+
+          current_tag_sha="$(
+            git ls-remote --tags "${remote}" refs/tags/current 'refs/tags/current^{}' \
+              | awk '$2 == "refs/tags/current^{}" { print $1; found = 1 } END { if (!found) print "" }' \
+              | tail -n 1
+          )"
+          if [[ -z "${current_tag_sha}" ]]; then
+            current_tag_sha="$(
+              git ls-remote --tags --refs "${remote}" refs/tags/current \
+                | awk '{ print $1 }' \
+                | tail -n 1
+            )"
+          fi
+          release_target="$(
+            gh release view current --repo "${GITHUB_REPOSITORY}" \
+              --json targetCommitish --jq .targetCommitish
+          )"
+
+          publish=false
+          if [[ "${source_sha}" == "${main_sha}" &&
+                "${source_sha}" == "${current_tag_sha}" &&
+                "${source_sha}" == "${release_target}" ]]; then
+            publish=true
+          else
+            printf 'Skipping stale Current demo source %s (main %s, tag %s, release %s).\n' \
+              "${source_sha}" "${main_sha:-missing}" "${current_tag_sha:-missing}" \
+              "${release_target:-missing}"
+          fi
+          {
+            printf 'publish=%s\n' "${publish}"
+            printf 'sha=%s\n' "${source_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+  record:
+    name: Record Current Demo
+    needs: resolve-current
+    if: needs.resolve-current.outputs.publish == 'true'
+    # The live Container guest requires nested virtualization, which hosted
+    # macOS runners do not expose. This non-authoritative visual artifact is
+    # isolated from package, attestation, release, and Homebrew publication.
+    runs-on: [self-hosted, macOS, ARM64, container-compose-release, container-compose-current]
+    timeout-minutes: 50
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact Current source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.resolve-current.outputs.sha }}
+          fetch-depth: 1
+
+      - name: Resolve matched stack refs
+        id: stack-refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path("Tools/release/stack-refs.json").read_text(encoding="utf-8"))
+          components = data["components"]
+          print(f"containerization_ref={components['containerization']['ref']}")
+          PY
+
+      - name: Install VHS
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v vhs >/dev/null 2>&1; then
+            brew install vhs
+          fi
+          vhs --version
+
+      - name: Download and validate exact Current packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_SHA: ${{ needs.resolve-current.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${PUBLISH_SHA:0:12}"
+          plugin_asset="container-compose-plugin-current-${short_sha}-arm64.tar.gz"
+          runtime_asset="container-current-${short_sha}-arm64.tar.gz"
+          download_root="${RUNNER_TEMP}/container-compose-current-demo-downloads"
+          rm -rf -- "${download_root}"
+          mkdir -p "${download_root}"
+          gh release download current \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir "${download_root}" \
+            --pattern "${plugin_asset}" \
+            --pattern "${plugin_asset}.sha256" \
+            --pattern "${runtime_asset}" \
+            --pattern "${runtime_asset}.sha256"
+          (
+            cd "${download_root}"
+            shasum -a 256 -c "${plugin_asset}.sha256"
+            shasum -a 256 -c "${runtime_asset}.sha256"
+          )
+          Tools/release/verify-developer-id-archive.sh "${download_root}/${plugin_asset}"
+          Tools/release/verify-developer-id-archive.sh "${download_root}/${runtime_asset}"
+          {
+            printf 'PLUGIN_ARCHIVE=%s\n' "${download_root}/${plugin_asset}"
+            printf 'RUNTIME_ARCHIVE=%s\n' "${download_root}/${runtime_asset}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Validate Current demo init-image authority
+        env:
+          CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
+          DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
+          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 27761bf109808075f8ffec8c89e9137c6586a21caad40aabb49c3f6a384cad29
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${DEMO_INIT_IMAGE_ARCHIVE}" || ! -f "${DEMO_INIT_IMAGE_ARCHIVE}" ]]; then
+            printf 'matched Current demo init-image archive is unavailable: %s\n' \
+              "${DEMO_INIT_IMAGE_ARCHIVE:-<unset>}" >&2
+            exit 1
+          fi
+          if [[ "${DEMO_INIT_IMAGE_ARCHIVE}" == /Volumes/* || -L "${DEMO_INIT_IMAGE_ARCHIVE}" ]]; then
+            printf 'Current demo init-image archive must be a real file on the internal volume: %s\n' \
+              "${DEMO_INIT_IMAGE_ARCHIVE}" >&2
+            exit 1
+          fi
+          actual_sha256="$(shasum -a 256 "${DEMO_INIT_IMAGE_ARCHIVE}" | awk '{print $1}')"
+          if [[ "${actual_sha256}" != "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" ]]; then
+            printf 'matched Current demo init-image digest mismatch (expected %s, got %s)\n' \
+              "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" "${actual_sha256}" >&2
+            exit 1
+          fi
+          if [[ ! "${CONTAINERIZATION_REF}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'matched Current demo containerization ref is invalid: %s\n' \
+              "${CONTAINERIZATION_REF:-<unset>}" >&2
+            exit 1
+          fi
+          Tools/release/validate-oci-image-layout.py \
+            "${DEMO_INIT_IMAGE_ARCHIVE}" \
+            vminit:container-compose \
+            "ghcr.io/stephenlclarke/containerization/vminit:${CONTAINERIZATION_REF}"
+
+      - name: Record bounded Current demo
+        env:
+          DEMO_ASSET: container-compose-demo-current.gif
+          DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
+          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 27761bf109808075f8ffec8c89e9137c6586a21caad40aabb49c3f6a384cad29
+        shell: bash
+        run: |
+          set -euo pipefail
+          source Tools/ci/container-runtime-lock.sh
+          acquire_container_runtime_lock
+
+          demo_session_root="/private/tmp/container-compose-current-demo"
+          marker="${demo_session_root}/.container-compose-current-demo-root"
+          if [[ -e "${demo_session_root}" ]]; then
+            if [[ ! -d "${demo_session_root}" || -L "${demo_session_root}" ||
+                  ! -f "${marker}" || -L "${marker}" ||
+                  "$(cat "${marker}")" != "container-compose-current-demo-v1" ||
+                  "$(stat -f %u "${demo_session_root}")" != "$(id -u)" ||
+                  "$(stat -f %Lp "${demo_session_root}")" != "700" ]]; then
+              printf 'refusing unsafe stable Current demo root: %s\n' \
+                "${demo_session_root}" >&2
+              exit 1
+            fi
+          else
+            mkdir -m 700 "${demo_session_root}"
+            printf 'container-compose-current-demo-v1\n' > "${marker}"
+            chmod 600 "${marker}"
+          fi
+
+          demo_root="${demo_session_root}/install"
+          demo_app_root="${demo_session_root}/app"
+          demo_config_home="${demo_session_root}/config-home"
+          demo_source_root="${demo_session_root}/source"
+          demo_output="${demo_session_root}/${DEMO_ASSET}"
+          tape="${demo_session_root}/container-compose-current-demo.tape"
+          demo_init_image_archive="${demo_session_root}/init-image.oci.tar"
+          prior_container="${demo_root}/bin/container"
+          if [[ -x "${prior_container}" ]]; then
+            python3 Tools/ci/run-command-with-deadline.py \
+              --seconds 30 --grace-seconds 5 -- \
+              "${prior_container}" system stop || true
+          fi
+          bash Tools/release/wait-for-container-system-stop.sh
+
+          rm -rf -- \
+            "${demo_root}" \
+            "${demo_app_root}" \
+            "${demo_config_home}" \
+            "${demo_source_root}" \
+            "${demo_output}" \
+            "${tape}" \
+            "${demo_init_image_archive}"
+          mkdir -p "${demo_root}/libexec/container-plugins"
+          mkdir -p "${demo_app_root}"
+          mkdir -p "${demo_config_home}/container"
+          mkdir -p "${demo_source_root}/examples"
+          cat > "${demo_config_home}/container/config.toml" <<'EOF'
+          [vminit]
+          image = "vminit:container-compose"
+          EOF
+          cp -R examples/monitoring-stack "${demo_source_root}/examples/"
+          tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"
+          tar -xzf "${PLUGIN_ARCHIVE}" -C "${demo_root}/libexec/container-plugins"
+          cp "${DEMO_INIT_IMAGE_ARCHIVE}" "${demo_init_image_archive}"
+          staged_sha256="$(shasum -a 256 "${demo_init_image_archive}" | awk '{print $1}')"
+          if [[ "${staged_sha256}" != "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" ]]; then
+            printf 'staged Current demo init-image digest mismatch (expected %s, got %s)\n' \
+              "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" "${staged_sha256}" >&2
+            exit 1
+          fi
+
+          container_binary="${demo_root}/bin/container"
+          test -x "${container_binary}"
+          test -x "${demo_root}/libexec/container-plugins/compose/bin/compose"
+          cleanup() {
+            python3 Tools/ci/run-command-with-deadline.py \
+              --seconds 30 --grace-seconds 5 -- \
+              "${container_binary}" system stop || true
+          }
+          trap cleanup EXIT
+
+          export CONTAINER_INSTALL_ROOT="${demo_root}"
+          export CONTAINER_APP_ROOT="${demo_app_root}"
+          export CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE="${demo_init_image_archive}"
+          export CONTAINER_COMPOSE_DEMO_ROOT="${demo_source_root}"
+          export XDG_CONFIG_HOME="${demo_config_home}"
+          export PATH="${demo_root}/bin:${PATH}"
+          sed "1s#^Output .*#Output \"${demo_output}\"#" \
+            docs/assets/container-compose-demo.tape \
+            | awk -v runtime_path="${demo_root}/bin:${PATH}" '
+                { print }
+                /^Set MarginFill / { printf "Env PATH \"%s\"\n", runtime_path }
+              ' > "${tape}"
+          vhs validate "${tape}"
+          RUNNER_TEMP="${demo_session_root}" \
+            python3 Tools/ci/run-command-with-deadline.py \
+              --seconds 2400 --grace-seconds 15 -- \
+              bash Tools/release/record-vhs-live-demo.sh \
+                "${tape}" "${demo_output}" "${container_binary}"
+          test -s "${demo_output}"
+          printf 'DEMO_OUTPUT=%s\n' "${demo_output}" >> "${GITHUB_ENV}"
+
+      - name: Verify source and release are still current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_SHA: ${{ needs.resolve-current.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="https://github.com/${GITHUB_REPOSITORY}.git"
+          main_sha="$(git ls-remote --heads "${remote}" refs/heads/main | awk '{ print $1 }' | tail -n 1)"
+          current_tag_sha="$(
+            git ls-remote --tags "${remote}" refs/tags/current 'refs/tags/current^{}' \
+              | awk '$2 == "refs/tags/current^{}" { print $1; found = 1 } END { if (!found) print "" }' \
+              | tail -n 1
+          )"
+          if [[ -z "${current_tag_sha}" ]]; then
+            current_tag_sha="$(git ls-remote --tags --refs "${remote}" refs/tags/current | awk '{ print $1 }' | tail -n 1)"
+          fi
+          release_target="$(
+            gh release view current --repo "${GITHUB_REPOSITORY}" \
+              --json targetCommitish --jq .targetCommitish
+          )"
+          if ! [[ "${PUBLISH_SHA}" == "${main_sha}" &&
+                  "${PUBLISH_SHA}" == "${current_tag_sha}" &&
+                  "${PUBLISH_SHA}" == "${release_target}" ]]; then
+            printf 'Current moved while the demo was recording; leaving its existing asset unchanged.\n'
+            printf 'PUBLISH_DEMO=false\n' >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          printf 'PUBLISH_DEMO=true\n' >> "${GITHUB_ENV}"
+
+      - name: Publish exact Current demo
+        if: env.PUBLISH_DEMO == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: >-
+          gh release upload current "${DEMO_OUTPUT}"
+          --repo "${GITHUB_REPOSITORY}" --clobber
+
+      - name: Save bounded demo diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: current-demo-diagnostics-${{ needs.resolve-current.outputs.sha }}
+          path: |
+            /private/tmp/container-compose-current-demo/*.log
+            /private/tmp/container-compose-current-demo/*.tape
+          if-no-files-found: ignore
+          retention-days: 7
