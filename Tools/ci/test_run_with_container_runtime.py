@@ -153,6 +153,70 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertLess(time.monotonic() - started, 4)
             self.assertFalse(command_marker.exists())
 
+    def test_signature_inspection_uses_complete_startup_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            real_find = shutil.which("find")
+            self.assertIsNotNone(real_find)
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            fake_find = fake_bin / "find"
+            fake_find.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if [[ "$*" == *"${BLOCKED_SIGNATURE_ROOT:?}/bin"* ]]; then\n'
+                "  /bin/sleep 30\n"
+                "fi\n"
+                f'exec "{real_find}" "$@"\n',
+                encoding="utf-8",
+            )
+            fake_find.chmod(0o755)
+            command_marker = temporary_root / "command-ran"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                    "BLOCKED_SIGNATURE_ROOT": str(package_root),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(candidate),
+                    "/usr/bin/touch",
+                    str(command_marker),
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 4)
+            self.assertFalse(command_marker.exists())
+
     @staticmethod
     def write_fake_container(
         path: Path,
@@ -778,6 +842,97 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 if staged_root.is_dir():
                     shutil.rmtree(staged_root)
 
+    def test_interrupted_replacement_preserves_recoverable_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+            changing_payload = package_libexec / "generation"
+            changing_payload.write_text("generation one\n", encoding="utf-8")
+            for index in range(256):
+                (package_libexec / f"payload-{index:04d}").write_text(
+                    f"payload {index}\n", encoding="utf-8"
+                )
+
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            self.local_user_root().mkdir(mode=0o700, exist_ok=True)
+            staged_root.mkdir(mode=0o700)
+            marker = staged_root / ".container-compose-runtime-candidate-staging"
+            old_marker_value = f"container-compose runtime candidate staging v1 {'0' * 64}"
+            marker.write_text(old_marker_value + "\n", encoding="utf-8")
+            removal_sentinel = staged_root / "old-generation"
+            removal_sentinel.write_text("old\n", encoding="utf-8")
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+            first = subprocess.Popen(
+                [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                deadline = time.monotonic() + 10
+                while removal_sentinel.exists() and first.poll() is None:
+                    if time.monotonic() >= deadline:
+                        self.fail("existing candidate payload was not removed")
+                    time.sleep(0.001)
+                self.assertIsNone(first.poll(), "staging completed before mutation")
+                changing_payload.write_text("generation two\n", encoding="utf-8")
+                first_stdout, first_stderr = first.communicate(timeout=15)
+
+                self.assertEqual(
+                    first.returncode, 2, first_stdout + first_stderr
+                )
+                self.assertTrue(staged_root.is_dir())
+                self.assertEqual(marker.read_text(encoding="utf-8").strip(), old_marker_value)
+
+                second = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+                self.assertEqual(
+                    second.returncode, 0, second.stdout + second.stderr
+                )
+                candidate_digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+                self.assertEqual(
+                    marker.read_text(encoding="utf-8").strip(),
+                    "container-compose runtime candidate staging v1 "
+                    + candidate_digest,
+                )
+            finally:
+                if first.poll() is None:
+                    first.terminate()
+                    first.communicate(timeout=5)
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
     def test_staged_candidate_lock_is_held_until_command_completion(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -832,14 +987,14 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     time.sleep(0.05)
 
                 second_environment = environment.copy()
-                second_environment["CONTAINER_RUNTIME_START_DEADLINE_SECONDS"] = "1"
+                second_environment["CONTAINER_RUNTIME_START_DEADLINE_SECONDS"] = "3"
                 second = subprocess.run(
                     [str(SCRIPT), str(candidate), "/usr/bin/true"],
                     cwd=ROOT,
                     env=second_environment,
                     capture_output=True,
                     text=True,
-                    timeout=5,
+                    timeout=6,
                 )
 
                 self.assertEqual(

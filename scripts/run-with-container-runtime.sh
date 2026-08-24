@@ -65,7 +65,9 @@ runtime_start_sequence_deadline=
 runtime_candidate_staging_root=
 runtime_candidate_staging_complete=false
 runtime_candidate_staging_cleanup_allowed=false
+runtime_candidate_staging_created=false
 runtime_candidate_staging_lock_held=false
+runtime_candidate_is_complete_package=false
 runtime_candidate_stage_mode=${CONTAINER_RUNTIME_STAGE_CANDIDATE:-auto}
 runtime_app_root_localization_mode=${CONTAINER_RUNTIME_LOCALIZE_APP_ROOT:-auto}
 runtime_local_execution_root=${CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT:-}
@@ -666,50 +668,53 @@ print(manifest.hexdigest())
 # Reject ad-hoc Mach-O signatures before macOS can treat every rebuild as a
 # new Local Network or Keychain client.
 validate_runtime_candidate_signatures() {
-    local source_package_root="$1"
-    local executable
-    local file_description
-    local signature_description
-    local macho_count=0
+    local deadline="$1"
+    local source_package_root="$2"
 
-    local indirect_executable
-    indirect_executable=$(find \
-        "$source_package_root/bin" "$source_package_root/libexec/container" \
-        -type l -print -quit)
-    if [[ -n "$indirect_executable" ]]; then
-        printf 'Container runtime package contains an indirect executable: %s\n' \
-            "$indirect_executable" >&2
-        return 2
+    # shellcheck disable=SC2016 # Expand positional values in the bounded child.
+    run_runtime_start_command "$deadline" /bin/bash -c '
+set -euo pipefail
+source_package_root=$1
+indirect_executable=$(find \
+    "$source_package_root/bin" "$source_package_root/libexec/container" \
+    -type l -print -quit)
+if [[ -n "$indirect_executable" ]]; then
+    printf "Container runtime package contains an indirect executable: %s\n" \
+        "$indirect_executable" >&2
+    exit 2
+fi
+
+trusted_temporary_root=/private/tmp
+if [[ ! -d "$trusted_temporary_root" || ! -w "$trusted_temporary_root" ]]; then
+    trusted_temporary_root=/tmp
+fi
+executable_list=$(mktemp "$trusted_temporary_root/container-runtime-signatures.XXXXXX")
+trap '\''rm -f "$executable_list"'\'' EXIT
+find "$source_package_root/bin" "$source_package_root/libexec/container" \
+    -type f -print0 >"$executable_list"
+while IFS= read -r -d "" executable; do
+    [[ -x "$executable" ]] || continue
+    file_description=$(/usr/bin/file -b "$executable")
+    [[ "$file_description" == *Mach-O* ]] || continue
+    if ! /usr/bin/codesign --verify --strict "$executable" >/dev/null 2>&1; then
+        printf "Container runtime executable has an invalid code signature: %s\n" \
+            "$executable" >&2
+        exit 2
     fi
-
-    while IFS= read -r -d '' executable; do
-        [[ -x "$executable" ]] || continue
-        file_description=$(/usr/bin/file -b "$executable")
-        [[ "$file_description" == *Mach-O* ]] || continue
-        ((macho_count += 1))
-        if ! /usr/bin/codesign --verify --strict "$executable" >/dev/null 2>&1; then
-            printf 'Container runtime executable has an invalid code signature: %s\n' \
-                "$executable" >&2
-            return 2
-        fi
-        if ! signature_description=$(/usr/bin/codesign --display --verbose=4 "$executable" 2>&1); then
-            printf 'Container runtime executable has no valid code signature: %s\n' \
-                "$executable" >&2
-            return 2
-        fi
-        if [[ "$signature_description" == *$'Signature=adhoc'* ]] ||
-            [[ "$signature_description" != *$'Authority=Developer ID Application:'* ]]; then
-            printf 'Container runtime executable lacks a stable Developer ID signature: %s\n' \
-                "$executable" >&2
-            printf 'rebuild it through make container-stack-build before running unattended runtime tests\n' >&2
-            return 2
-        fi
-    done < <(find "$source_package_root/bin" "$source_package_root/libexec/container" \
-        -type f -print0)
-
-    if ((macho_count == 0)); then
-        return 0
+    if ! signature_description=$(/usr/bin/codesign --display --verbose=4 "$executable" 2>&1); then
+        printf "Container runtime executable has no valid code signature: %s\n" \
+            "$executable" >&2
+        exit 2
     fi
+    if [[ "$signature_description" == *"Signature=adhoc"* ]] ||
+        [[ "$signature_description" != *"Authority=Developer ID Application:"* ]]; then
+        printf "Container runtime executable lacks a stable Developer ID signature: %s\n" \
+            "$executable" >&2
+        printf "rebuild it through make container-stack-build before running unattended runtime tests\n" >&2
+        exit 2
+    fi
+done <"$executable_list"
+' runtime-signatures "$source_package_root"
 }
 
 acquire_runtime_candidate_staging_lock() {
@@ -750,14 +755,22 @@ release_runtime_candidate_staging_lock() {
 # relocation. A package under ~/github is local but an ad-hoc rebuild there is
 # still a new privacy identity.
 validate_packaged_runtime_candidate_signatures() {
+    local deadline="$1"
     local source_bin_directory="${container_binary%/*}"
     local source_package_root="${source_bin_directory%/*}"
+    local complete_package
 
-    [[ "${source_bin_directory##*/}" == bin ]] || return 0
-    [[ -x "$source_package_root/bin/container-apiserver" ]] || return 0
-    [[ -x "$source_package_root/bin/container-engine" ]] || return 0
-    [[ -d "$source_package_root/libexec/container" ]] || return 0
-    validate_runtime_candidate_signatures "$source_package_root"
+    # shellcheck disable=SC2016 # Expand positional values in the bounded child.
+    complete_package=$(run_runtime_start_command "$deadline" /bin/bash -c '
+if [[ "$1" == bin ]] && [[ -x "$2/bin/container-apiserver" ]] &&
+    [[ -x "$2/bin/container-engine" ]] && [[ -d "$2/libexec/container" ]]; then
+    printf complete
+fi
+' runtime-package-layout "${source_bin_directory##*/}" \
+        "$source_package_root") || return "$?"
+    [[ "$complete_package" == complete ]] || return 0
+    runtime_candidate_is_complete_package=true
+    validate_runtime_candidate_signatures "$deadline" "$source_package_root"
 }
 
 # Copy a source-built packaged runtime onto the local system volume before any
@@ -769,10 +782,7 @@ stage_runtime_candidate_if_needed() {
 
     local source_bin_directory="${container_binary%/*}"
     local source_package_root="${source_bin_directory%/*}"
-    if [[ "${source_bin_directory##*/}" != bin ]] ||
-        [[ ! -x "$source_package_root/bin/container-apiserver" ]] ||
-        [[ ! -x "$source_package_root/bin/container-engine" ]] ||
-        [[ ! -d "$source_package_root/libexec/container" ]]; then
+    if [[ "$runtime_candidate_is_complete_package" != true ]]; then
         printf 'privacy-safe staging requires a packaged Container bin/ and libexec/container/ layout: %s\n' \
             "$container_binary" >&2
         exit 2
@@ -815,16 +825,21 @@ stage_runtime_candidate_if_needed() {
         fi
         runtime_candidate_staging_cleanup_allowed=true
         run_runtime_start_command "$deadline" find \
-            "$runtime_candidate_staging_root" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+            "$runtime_candidate_staging_root" -mindepth 1 -maxdepth 1 \
+            ! -name '.container-compose-runtime-candidate-staging' \
+            -exec rm -rf {} +
     else
         run_runtime_start_command "$deadline" mkdir -m 0700 \
             "$runtime_candidate_staging_root"
         runtime_candidate_staging_cleanup_allowed=true
+        runtime_candidate_staging_created=true
     fi
     run_runtime_start_command "$deadline" chmod 0700 \
         "$runtime_candidate_staging_root"
-    write_runtime_start_file "$deadline" "$marker" \
-        "container-compose runtime candidate staging v1 $container_binary_sha256"$'\n'
+    if [[ "$runtime_candidate_staging_created" == true ]]; then
+        write_runtime_start_file_atomic "$deadline" "$marker" \
+            "container-compose runtime candidate staging v1 $container_binary_sha256"$'\n'
+    fi
     run_runtime_start_command "$deadline" mkdir -p \
         "$runtime_candidate_staging_root/bin" "$runtime_candidate_staging_root/libexec"
     run_runtime_start_command "$deadline" /bin/cp -p \
@@ -868,7 +883,10 @@ stage_runtime_candidate_if_needed() {
             "$source_package_sha256_after" >&2
         exit 2
     fi
-    validate_runtime_candidate_signatures "$runtime_candidate_staging_root"
+    validate_runtime_candidate_signatures \
+        "$deadline" "$runtime_candidate_staging_root"
+    write_runtime_start_file_atomic "$deadline" "$marker" \
+        "container-compose runtime candidate staging v1 $container_binary_sha256"$'\n'
 
     container_binary="$runtime_candidate_staging_root/bin/container"
     container_binary_directory="$runtime_candidate_staging_root/bin"
@@ -910,7 +928,16 @@ cleanup_runtime_candidate_staging() {
     if [[ -f "$marker" ]]; then
         IFS= read -r marker_value <"$marker" || true
     fi
-    if [[ "$marker_value" != "container-compose runtime candidate staging v1 $container_binary_sha256" ]]; then
+    if [[ "$runtime_candidate_staging_created" != true ]] &&
+        [[ "$marker_value" =~ ^container-compose\ runtime\ candidate\ staging\ v1\ [0-9a-f]{64}$ ]] &&
+        [[ "$marker_value" != "container-compose runtime candidate staging v1 $container_binary_sha256" ]]; then
+        printf 'preserving recoverable interrupted Container candidate staging root: %s\n' \
+            "$runtime_candidate_staging_root" >&2
+        release_runtime_candidate_staging_lock
+        return 0
+    fi
+    if [[ "$runtime_candidate_staging_created" != true ]] &&
+        [[ "$marker_value" != "container-compose runtime candidate staging v1 $container_binary_sha256" ]]; then
         printf 'refusing to clear unmarked runtime candidate staging root: %s\n' \
             "$runtime_candidate_staging_root" >&2
         release_runtime_candidate_staging_lock
@@ -1039,6 +1066,26 @@ write_runtime_start_file() {
     # shellcheck disable=SC2016 # Expand positional values in the bounded child shell.
     run_runtime_start_command "$deadline" \
         /bin/bash -c 'printf "%s" "$2" >"$1"' runtime-file "$path" "$content"
+}
+
+# Replace one marker without exposing a truncated value. If the bounded child
+# is interrupted, an existing recovery marker remains authoritative and the
+# next staging attempt can remove the abandoned `.next` file and continue.
+write_runtime_start_file_atomic() {
+    local deadline="$1"
+    local path="$2"
+    local content="$3"
+
+    # shellcheck disable=SC2016 # Expand positional values in the bounded child shell.
+    run_runtime_start_command "$deadline" /bin/bash -c '
+set -euo pipefail
+temporary_path="$1.next.$$"
+trap '\''rm -f "$temporary_path"'\'' EXIT
+umask 077
+printf "%s" "$2" >"$temporary_path"
+mv -f "$temporary_path" "$1"
+trap - EXIT
+' runtime-atomic-file "$path" "$content"
 }
 
 # Require one caller-controlled regular file without allowing an unresponsive
@@ -1618,7 +1665,7 @@ trap 'exit 130' INT
 trap 'exit 131' QUIT
 trap 'exit 143' TERM
 resolve_container_binary "$runtime_start_sequence_deadline"
-validate_packaged_runtime_candidate_signatures
+validate_packaged_runtime_candidate_signatures "$runtime_start_sequence_deadline"
 validate_requested_runtime_app_root "$runtime_start_sequence_deadline"
 if runtime_requires_local_user_root; then
     prepare_local_user_root "$runtime_start_sequence_deadline"
