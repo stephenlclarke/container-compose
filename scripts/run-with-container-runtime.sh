@@ -814,8 +814,8 @@ while IFS= read -r -d "" executable; do
             "$executable" >&2
         exit 2
     fi
-    if [[ "$signature_description" == *"Signature=adhoc"* ]] ||
-        [[ "$signature_description" != *"Authority=Developer ID Application:"* ]]; then
+    if grep -Fqx "Signature=adhoc" <<<"$signature_description" ||
+        ! grep -Eq "^Authority=Developer ID Application:" <<<"$signature_description"; then
         printf "Container runtime executable lacks a stable Developer ID signature: %s\n" \
             "$executable" >&2
         printf "rebuild it through make container-stack-build before running unattended runtime tests\n" >&2
@@ -824,6 +824,21 @@ while IFS= read -r -d "" executable; do
 done <"$executable_list"
 ' runtime-signatures "$source_package_root" \
         "$runtime_allow_non_macho_test_fixtures"
+}
+
+select_staged_runtime_candidate() {
+    local package_sha256="$1"
+
+    container_binary="$runtime_candidate_staging_root/bin/container"
+    container_binary_directory="$runtime_candidate_staging_root/bin"
+    export PATH="$container_binary_directory${PATH:+:$PATH}"
+    export CONTAINER_RUNTIME_CLI="$container_binary"
+    export CONTAINER_BIN="$container_binary"
+    export CONTAINER_COMPOSE_CONTAINER="$container_binary"
+    export CONTAINER_RUNTIME_STAGED_CANDIDATE_ROOT="$runtime_candidate_staging_root"
+    export CONTAINER_RUNTIME_PACKAGE_SHA256="$package_sha256"
+    runtime_candidate_staging_cleanup_allowed=true
+    runtime_candidate_staging_complete=true
 }
 
 acquire_runtime_candidate_staging_lock() {
@@ -972,6 +987,20 @@ stage_runtime_candidate_if_needed() {
                 "$runtime_candidate_staging_root" >&2
             exit 2
         fi
+        local existing_package_sha256=
+        if [[ "$existing_marker_value" == "container-compose runtime candidate staging v1 $container_binary_sha256" ]]; then
+            existing_package_sha256=$(fingerprint_runtime_package \
+                "$deadline" "$runtime_candidate_staging_root") || return "$?"
+        fi
+        if [[ -n "$existing_package_sha256" &&
+            "$existing_package_sha256" == "$source_package_sha256_before" ]]; then
+            validate_runtime_candidate_signatures \
+                "$deadline" "$runtime_candidate_staging_root"
+            select_staged_runtime_candidate "$existing_package_sha256"
+            printf 'Reusing unchanged staged Container runtime candidate: %s\n' \
+                "$container_binary"
+            return 0
+        fi
         if pgrep -f -- "$runtime_candidate_staging_root/" >/dev/null 2>&1; then
             printf 'refusing to replace a local Container candidate while it is running: %s\n' \
                 "$runtime_candidate_staging_root" >&2
@@ -1042,15 +1071,7 @@ stage_runtime_candidate_if_needed() {
     write_runtime_start_file_atomic "$deadline" "$marker" \
         "container-compose runtime candidate staging v1 $container_binary_sha256"$'\n'
 
-    container_binary="$runtime_candidate_staging_root/bin/container"
-    container_binary_directory="$runtime_candidate_staging_root/bin"
-    export PATH="$container_binary_directory${PATH:+:$PATH}"
-    export CONTAINER_RUNTIME_CLI="$container_binary"
-    export CONTAINER_BIN="$container_binary"
-    export CONTAINER_COMPOSE_CONTAINER="$container_binary"
-    export CONTAINER_RUNTIME_STAGED_CANDIDATE_ROOT="$runtime_candidate_staging_root"
-    export CONTAINER_RUNTIME_PACKAGE_SHA256="$staged_package_sha256"
-    runtime_candidate_staging_complete=true
+    select_staged_runtime_candidate "$staged_package_sha256"
     printf 'Staged Container runtime candidate at its persistent local path: %s\n' \
         "$container_binary"
 }
