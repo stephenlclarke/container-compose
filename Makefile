@@ -247,6 +247,7 @@ CONTAINER_K8S_STACK_REPO ?= $(abspath ../container-k8s)
 HOMEBREW_TAP_REPO ?= $(abspath ../homebrew-tap)
 LOCAL_CONTAINER_BINARY ?= $(abspath $(CONTAINER_STACK_REPO)/bin/container)
 LOCAL_CONTAINER_PACKAGE_BINARY ?= $(abspath $(CONTAINER_STACK_REPO)/usr/local/bin/container)
+CONTAINER_COMPOSE_CONTAINER_EXPLICIT := $(if $(filter undefined,$(origin CONTAINER_COMPOSE_CONTAINER)),0,1)
 CONTAINER_COMPOSE_CONTAINER ?= $(or $(firstword $(wildcard $(LOCAL_CONTAINER_BINARY) $(LOCAL_CONTAINER_PACKAGE_BINARY))),container)
 CONTAINER_RUNTIME_APP_ROOT ?= $(abspath .build/container-runtime)
 CONTAINER_RUNTIME_INIT_BLOCK_REPO ?= $(if $(wildcard $(CONTAINER_STACK_REPO)/Makefile),$(CONTAINER_STACK_REPO),)
@@ -2217,7 +2218,7 @@ container-stack-build:
 	fi
 
 container-stack-build-if-needed:
-	@if [[ "$(CONTAINER_COMPOSE_CONTAINER)" == "container" ]]; then \
+	@if [[ "$(CONTAINER_COMPOSE_CONTAINER_EXPLICIT)" != "1" ]]; then \
 		$(MAKE) --no-print-directory container-stack-build; \
 	else \
 		printf 'Using explicit Container runtime candidate without rebuilding sibling source: %s\n' \

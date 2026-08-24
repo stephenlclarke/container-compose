@@ -256,11 +256,13 @@ jobs:
           demo_init_image_archive="${demo_session_root}/init-image.oci.tar"
           prior_container="${demo_root}/bin/container"
           if [[ -x "${prior_container}" ]]; then
-            python3 Tools/ci/run-command-with-deadline.py \
+            CONTAINER_APP_ROOT="${demo_app_root}" \
+              python3 Tools/ci/run-command-with-deadline.py \
               --seconds 30 --grace-seconds 5 -- \
               "${prior_container}" system stop || true
           fi
-          bash Tools/release/wait-for-container-system-stop.sh
+          CONTAINER_APP_ROOT="${demo_app_root}" \
+            bash Tools/release/wait-for-container-system-stop.sh
 
           rm -rf -- \
             "${demo_root}" \
@@ -355,9 +357,70 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: >-
-          gh release upload current "${DEMO_OUTPUT}"
-          --repo "${GITHUB_REPOSITORY}" --clobber
+        run: |
+          set -euo pipefail
+          prior_demo_dir="${RUNNER_TEMP}/container-compose-prior-current-demo"
+          recovery_demo_dir="${RUNNER_TEMP}/container-compose-recovery-current-demo"
+          rm -rf -- "${prior_demo_dir}" "${recovery_demo_dir}"
+          mkdir -p "${prior_demo_dir}" "${recovery_demo_dir}"
+          if gh release view current --repo "${GITHUB_REPOSITORY}" \
+            --json assets --jq ".assets | any(.name == \"${DEMO_ASSET}\")" \
+            | grep -qx true; then
+            gh release download current --repo "${GITHUB_REPOSITORY}" \
+              --pattern "${DEMO_ASSET}" --dir "${prior_demo_dir}"
+            test -s "${prior_demo_dir}/${DEMO_ASSET}"
+          fi
+
+          set +e
+          gh release upload current "${DEMO_OUTPUT}" \
+            --repo "${GITHUB_REPOSITORY}" --clobber
+          upload_status=$?
+          set -e
+          if ((upload_status == 0)); then
+            exit 0
+          fi
+
+          prior_demo="${prior_demo_dir}/${DEMO_ASSET}"
+          if [[ ! -s "${prior_demo}" ]]; then
+            printf 'Current demo upload failed and no prior asset is available to restore.\n' >&2
+            exit "${upload_status}"
+          fi
+
+          if gh release view current --repo "${GITHUB_REPOSITORY}" \
+            --json assets --jq ".assets | any(.name == \"${DEMO_ASSET}\")" \
+            | grep -qx true; then
+            if gh release download current --repo "${GITHUB_REPOSITORY}" \
+              --pattern "${DEMO_ASSET}" --dir "${recovery_demo_dir}"; then
+              published_sha256="$(shasum -a 256 \
+                "${recovery_demo_dir}/${DEMO_ASSET}" | awk '{ print $1 }')"
+              candidate_sha256="$(shasum -a 256 "${DEMO_OUTPUT}" | awk '{ print $1 }')"
+              prior_sha256="$(shasum -a 256 "${prior_demo}" | awk '{ print $1 }')"
+              if [[ "${published_sha256}" == "${candidate_sha256}" ]]; then
+                printf 'Current demo upload completed despite the client failure.\n'
+                exit 0
+              fi
+              if [[ "${published_sha256}" == "${prior_sha256}" ]]; then
+                printf 'Current demo upload failed; the prior asset remains intact.\n' >&2
+                exit "${upload_status}"
+              fi
+            fi
+          fi
+
+          restored=false
+          for attempt in 1 2 3; do
+            if gh release upload current "${prior_demo}" \
+              --repo "${GITHUB_REPOSITORY}" --clobber; then
+              restored=true
+              break
+            fi
+            sleep "$((attempt * 5))"
+          done
+          if [[ "${restored}" != true ]]; then
+            printf 'Current demo upload failed and the prior asset could not be restored.\n' >&2
+            exit 1
+          fi
+          printf 'Current demo upload failed; restored the prior asset.\n' >&2
+          exit "${upload_status}"
 
       - name: Save bounded demo diagnostics
         if: failure()

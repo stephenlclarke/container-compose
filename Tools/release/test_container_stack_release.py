@@ -724,7 +724,33 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow.index("Publish exact Current demo"),
         )
         self.assertIn('gh release upload current "${DEMO_OUTPUT}"', workflow)
-        self.assertEqual(workflow.count('--repo "${GITHUB_REPOSITORY}"'), 4)
+        self.assertIn(
+            'CONTAINER_APP_ROOT="${demo_app_root}" \\\n'
+            "              python3 Tools/ci/run-command-with-deadline.py",
+            workflow,
+        )
+        self.assertIn(
+            'CONTAINER_APP_ROOT="${demo_app_root}" \\\n'
+            "            bash Tools/release/wait-for-container-system-stop.sh",
+            workflow,
+        )
+        publish_step = workflow[
+            workflow.index("- name: Publish exact Current demo") : workflow.index(
+                "- name: Save bounded demo diagnostics"
+            )
+        ]
+        self.assertIn(
+            'prior_demo_dir="${RUNNER_TEMP}/container-compose-prior-current-demo"',
+            publish_step,
+        )
+        self.assertIn(
+            'gh release download current --repo "${GITHUB_REPOSITORY}"',
+            publish_step,
+        )
+        self.assertIn("for attempt in 1 2 3; do", publish_step)
+        self.assertIn('gh release upload current "${prior_demo}"', publish_step)
+        self.assertIn("restored the prior asset", publish_step)
+        self.assertGreaterEqual(workflow.count('--repo "${GITHUB_REPOSITORY}"'), 4)
         self.assertIn("if: failure()", workflow)
         self.assertIn("current-demo-diagnostics-", workflow)
 
@@ -1195,12 +1221,50 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
         ]
         self.assertIn(
-            '[[ "$(CONTAINER_COMPOSE_CONTAINER)" == "container" ]]',
+            '[[ "$(CONTAINER_COMPOSE_CONTAINER_EXPLICIT)" != "1" ]]',
             conditional_build,
+        )
+        self.assertIn(
+            "CONTAINER_COMPOSE_CONTAINER_EXPLICIT := "
+            "$(if $(filter undefined,$(origin CONTAINER_COMPOSE_CONTAINER)),0,1)",
+            makefile,
         )
         self.assertIn(
             "$(MAKE) --no-print-directory container-stack-build",
             conditional_build,
+        )
+        default_runtime = subprocess.run(
+            [
+                "make",
+                "--no-print-directory",
+                "container-stack-build-if-needed",
+                "MAKE=/usr/bin/true",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=self.non_interactive_environment(),
+        )
+        self.assertEqual(default_runtime.returncode, 0, default_runtime.stderr)
+        self.assertNotIn("Using explicit Container runtime candidate", default_runtime.stdout)
+        explicit_runtime = subprocess.run(
+            [
+                "make",
+                "--no-print-directory",
+                "container-stack-build-if-needed",
+                "CONTAINER_COMPOSE_CONTAINER=/private/tmp/release-candidate/bin/container",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=self.non_interactive_environment(),
+        )
+        self.assertEqual(explicit_runtime.returncode, 0, explicit_runtime.stderr)
+        self.assertIn(
+            "Using explicit Container runtime candidate without rebuilding sibling source",
+            explicit_runtime.stdout,
         )
         self.assertIn("RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT", makefile)
         self.assertIn("init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT)", makefile)

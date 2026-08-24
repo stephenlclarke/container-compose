@@ -31,7 +31,8 @@ The GitHub CodeQL workflow is already an isolated, GitHub-authoritative Linux/AM
 - The Current Demo workflow downloads checksum-verified, Developer-ID-verified exact-SHA package assets and validates the matched init image.
 - The demo runtime uses `/private/tmp/container-compose-current-demo`, validates its marker, owner, and mode, and wraps both runtime cleanup and VHS in the existing process-group deadline supervisor.
 - Full stack validation rejects a missing or malformed signing fingerprint, passes that identity only to Container source-runtime targets, and fingerprints it with the Container checkpoints.
-- Compose runtime and parity targets build sibling Container source only for the default `container` selector; release-candidate paths are reused.
+- Compose runtime and parity targets build sibling Container source for defaults and auto-selected local binaries; only caller-supplied release-candidate paths are reused.
+- Current demo replacement keeps a local copy of the prior asset and restores it after a failed clobber upload, while stale runtime cleanup targets the stable demo app root.
 - A stale recording exits without replacing the current demo.
 - Current asset retention preserves the last good demo until the separate workflow replaces it.
 - The tape uses 24 frames per second.
