@@ -68,11 +68,14 @@ runtime_candidate_staging_cleanup_allowed=false
 runtime_candidate_staging_created=false
 runtime_candidate_staging_lock_held=false
 runtime_candidate_is_complete_package=false
+runtime_candidate_is_managed_staging_package=false
 runtime_candidate_stage_mode=${CONTAINER_RUNTIME_STAGE_CANDIDATE:-auto}
 runtime_app_root_localization_mode=${CONTAINER_RUNTIME_LOCALIZE_APP_ROOT:-auto}
 runtime_allow_non_macho_test_fixtures=${CONTAINER_RUNTIME_ALLOW_NON_MACHO_TEST_FIXTURES:-0}
 runtime_local_execution_root=${CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT:-}
 runtime_local_user_root=
+runtime_managed_candidate_root=${CONTAINER_RUNTIME_STAGED_CANDIDATE_ROOT:-}
+runtime_managed_package_sha256=${CONTAINER_RUNTIME_PACKAGE_SHA256:-}
 runtime_app_root_localized=false
 runtime_anonymous_registry_hosts=${CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS-ghcr.io}
 
@@ -472,6 +475,51 @@ validate_runtime_localization_modes() {
     fi
 }
 
+# Reuse the outer wrapper's immutable staged package for managed nested calls.
+# Release gates pass the original source path as a Make command-line variable,
+# so environment aliases alone cannot otherwise prevent a recursive wrapper
+# from waiting on the staging lock retained by its owner.
+select_managed_runtime_candidate() {
+    [[ "${CONTAINER_RUNTIME_MANAGED:-0}" == "1" ]] || return 0
+
+    local inherited_cli=${CONTAINER_RUNTIME_CLI:-}
+    if [[ -z "$runtime_managed_candidate_root" &&
+        -z "$runtime_managed_package_sha256" ]]; then
+        return 0
+    fi
+    if [[ -z "$runtime_managed_candidate_root" ||
+        -z "$runtime_managed_package_sha256" ||
+        -z "$inherited_cli" ||
+        -z "${CONTAINER_RUNTIME_CLI_SHA256:-}" ]]; then
+        printf 'managed Container runtime candidate identity is incomplete\n' >&2
+        exit 2
+    fi
+    if [[ "$inherited_cli" != "$runtime_managed_candidate_root/bin/container" ]]; then
+        printf 'managed Container runtime CLI does not belong to its staged package: %s\n' \
+            "$inherited_cli" >&2
+        exit 2
+    fi
+    case "$runtime_managed_candidate_root" in
+        "$runtime_local_user_root"/candidate-[0-9a-f]*) ;;
+        *)
+            printf 'managed Container runtime candidate is outside the private staging root: %s\n' \
+                "$runtime_managed_candidate_root" >&2
+            exit 2
+            ;;
+    esac
+    local staged_directory_name=${runtime_managed_candidate_root##*/}
+    if ! [[ "$staged_directory_name" =~ ^candidate-[0-9a-f]{16}$ ]]; then
+        printf 'managed Container runtime candidate has an invalid staging identity: %s\n' \
+            "$runtime_managed_candidate_root" >&2
+        exit 2
+    fi
+    if ! [[ "$runtime_managed_package_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+        printf 'managed Container runtime package has an invalid fingerprint\n' >&2
+        exit 2
+    fi
+    container_binary=$inherited_cli
+}
+
 # Print owner and permission mode in a stable form on both BSD/macOS and GNU
 # stat. Hosted Linux checks exercise the same staging boundary as macOS.
 runtime_path_owner_and_mode() {
@@ -504,7 +552,6 @@ validate_private_runtime_directory() {
 prepare_local_user_root() {
     local deadline="$1"
 
-    runtime_local_user_root="$runtime_local_execution_root/container-compose-runtime-$(id -u)"
     if [[ ! -e "$runtime_local_user_root" && ! -L "$runtime_local_user_root" ]]; then
         run_runtime_start_command "$deadline" mkdir -m 0700 \
             "$runtime_local_user_root" || return "$?"
@@ -537,9 +584,17 @@ runtime_app_root_requires_localization() {
 }
 
 runtime_candidate_requires_staging() {
+    if [[ "$runtime_candidate_is_managed_staging_package" == true ]]; then
+        return 1
+    fi
     case "$runtime_candidate_stage_mode" in
         always) return 0 ;;
-        auto) runtime_path_requires_localization "$container_binary_localization_path" ;;
+        auto)
+            if [[ "$runtime_candidate_is_complete_package" == true ]]; then
+                return 0
+            fi
+            runtime_path_requires_localization "$container_binary_localization_path"
+            ;;
         never) return 1 ;;
     esac
 }
@@ -719,7 +774,17 @@ done
 while IFS= read -r -d "" executable; do
     [[ -x "$executable" ]] || continue
     file_description=$(/usr/bin/file -b "$executable")
-    [[ "$file_description" == *Mach-O* ]] || continue
+    if [[ "$file_description" != *Mach-O* ]]; then
+        case "$executable" in
+            "$source_package_root"/libexec/container/plugins/*/bin/* | \
+                "$source_package_root"/libexec/container/helpers/*)
+                printf "Container runtime launchable executable must be Mach-O: %s\n" \
+                    "$executable" >&2
+                exit 2
+                ;;
+        esac
+        continue
+    fi
     if ! /usr/bin/codesign --verify --strict "$executable" >/dev/null 2>&1; then
         printf "Container runtime executable has an invalid code signature: %s\n" \
             "$executable" >&2
@@ -793,9 +858,54 @@ if [[ "$1" == bin ]] && [[ -x "$2/bin/container-apiserver" ]] &&
 fi
 ' runtime-package-layout "${source_bin_directory##*/}" \
         "$source_package_root") || return "$?"
-    [[ "$complete_package" == complete ]] || return 0
+    if [[ "$complete_package" != complete ]]; then
+        if [[ -n "$runtime_managed_candidate_root" ]]; then
+            printf 'managed Container runtime candidate is not a complete package: %s\n' \
+                "$container_binary" >&2
+            exit 2
+        fi
+        return 0
+    fi
     runtime_candidate_is_complete_package=true
     validate_runtime_candidate_signatures "$deadline" "$source_package_root"
+
+    [[ -n "$runtime_managed_candidate_root" ]] || return 0
+    if [[ "$source_package_root" != "$runtime_managed_candidate_root" ]]; then
+        printf 'managed Container runtime candidate root changed during resolution: %s\n' \
+            "$source_package_root" >&2
+        exit 2
+    fi
+    validate_private_runtime_directory \
+        "$runtime_local_user_root" 'local Container runtime root' || exit "$?"
+    validate_private_runtime_directory \
+        "$source_package_root" 'local Container candidate' || exit "$?"
+    local marker="$source_package_root/.container-compose-runtime-candidate-staging"
+    local marker_value
+    local marker_status=0
+    # shellcheck disable=SC2016 # Expand positional values in the bounded child.
+    marker_value=$(run_runtime_start_command "$deadline" /bin/bash -c '
+if [[ -L "$1" || ! -f "$1" ]]; then
+    exit 2
+fi
+IFS= read -r value <"$1"
+printf "%s\n" "$value"
+' managed-candidate-marker "$marker") || marker_status=$?
+    if [[ "$marker_status" != "0" ]] ||
+        [[ "$marker_value" != "container-compose runtime candidate staging v1 $container_binary_sha256" ]]; then
+        [[ "$marker_status" != "124" ]] || return "$marker_status"
+        printf 'managed Container runtime candidate has an invalid recovery marker: %s\n' \
+            "$source_package_root" >&2
+        exit 2
+    fi
+    local package_sha256
+    package_sha256=$(fingerprint_runtime_package \
+        "$deadline" "$source_package_root") || return "$?"
+    if [[ "$package_sha256" != "$runtime_managed_package_sha256" ]]; then
+        printf 'managed Container runtime package fingerprint mismatch (expected %s, got %s)\n' \
+            "$runtime_managed_package_sha256" "$package_sha256" >&2
+        exit 2
+    fi
+    runtime_candidate_is_managed_staging_package=true
 }
 
 # Copy a source-built packaged runtime onto the local system volume before any
@@ -919,6 +1029,8 @@ stage_runtime_candidate_if_needed() {
     export CONTAINER_RUNTIME_CLI="$container_binary"
     export CONTAINER_BIN="$container_binary"
     export CONTAINER_COMPOSE_CONTAINER="$container_binary"
+    export CONTAINER_RUNTIME_STAGED_CANDIDATE_ROOT="$runtime_candidate_staging_root"
+    export CONTAINER_RUNTIME_PACKAGE_SHA256="$staged_package_sha256"
     runtime_candidate_staging_complete=true
     printf 'Staged Container runtime candidate at its persistent local path: %s\n' \
         "$container_binary"
@@ -1683,6 +1795,8 @@ install_matched_init_image() {
 
 validate_runtime_start_deadline_seconds
 validate_runtime_localization_modes
+runtime_local_user_root="$runtime_local_execution_root/container-compose-runtime-$(id -u)"
+select_managed_runtime_candidate
 runtime_start_sequence_deadline=$(runtime_start_deadline)
 trap cleanup_runtime_temporary_state EXIT
 trap 'exit 129' HUP

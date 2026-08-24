@@ -83,6 +83,8 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             "CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT",
             "CONTAINER_RUNTIME_LOCALIZE_APP_ROOT",
             "CONTAINER_RUNTIME_STAGE_CANDIDATE",
+            "CONTAINER_RUNTIME_STAGED_CANDIDATE_ROOT",
+            "CONTAINER_RUNTIME_PACKAGE_SHA256",
             "CONTAINER_RUNTIME_ALLOW_NON_MACHO_TEST_FIXTURES",
             "CONTAINER_REGISTRY_ANONYMOUS_HOSTS",
         ):
@@ -265,6 +267,63 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
             self.assertIn(
                 "Container runtime packaged binary must be Mach-O",
+                result.stderr,
+            )
+            self.assertFalse(command_marker.exists())
+
+    def test_rejects_non_macho_launchable_libexec_plugin(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            plugin_bin = (
+                package_root
+                / "libexec"
+                / "container"
+                / "plugins"
+                / "fixture"
+                / "bin"
+            )
+            package_bin.mkdir(parents=True)
+            plugin_bin.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+            plugin = plugin_bin / "fixture-plugin"
+            plugin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            plugin.chmod(0o755)
+
+            command_marker = temporary_root / "command-ran"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "never",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(candidate),
+                    "/usr/bin/touch",
+                    str(command_marker),
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn(
+                "Container runtime launchable executable must be Mach-O",
                 result.stderr,
             )
             self.assertFalse(command_marker.exists())
@@ -704,7 +763,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             )
             self.assertIn("system start", container_log.read_text(encoding="utf-8"))
 
-    def test_stages_packaged_candidate_and_uses_anonymous_public_registry(self) -> None:
+    def test_auto_stages_complete_candidate_and_uses_anonymous_registry(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
             package_root = temporary_root / "candidate"
@@ -726,7 +785,6 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             environment.update(
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
-                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
                     "CONTAINER_RUNTIME_LOCK_FILE": str(
                         temporary_root / "runtime.lock"
                     ),
@@ -1064,6 +1122,65 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 if first.poll() is None:
                     first.terminate()
                     first.communicate(timeout=5)
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
+    def test_nested_managed_wrapper_reuses_owner_staged_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "outer-owner",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "5",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+            try:
+                result = subprocess.run(
+                    [
+                        str(SCRIPT),
+                        str(candidate),
+                        str(SCRIPT),
+                        str(candidate),
+                        "/usr/bin/true",
+                    ],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                )
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(
+                    (temporary_root / "container.log")
+                    .read_text(encoding="utf-8")
+                    .splitlines(),
+                    ["list --all --format json", "list --all --format json"],
+                )
+            finally:
                 if staged_root.is_dir():
                     shutil.rmtree(staged_root)
 
