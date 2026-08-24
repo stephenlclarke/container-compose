@@ -30,6 +30,7 @@ GO_RELEASE_BUILD_FLAGS ?= -trimpath
 GO_RELEASE_LDFLAGS ?= -s -w
 CODESIGN ?= codesign
 CODESIGN_OPTS ?= --force --sign - --timestamp=none
+CONTAINER_RUNTIME_CODESIGN_IDENTITY ?= $(shell security find-identity -v -p codesigning 2>/dev/null | awk '/"Developer ID Application:/{print $$2; exit}')
 PYTHON ?= python3
 MARKDOWNLINT ?= markdownlint
 HAWKEYE ?= $(shell command -v hawkeye 2>/dev/null || printf '%s' .local/bin/hawkeye)
@@ -375,7 +376,6 @@ swift-runtime-test: container-stack-build build swift-runtime-test-build
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		env CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
-		CONTAINER_BIN="$$container_binary" CONTAINER_COMPOSE_CONTAINER="$$container_binary" \
 		PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_RUNTIME_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS=1 \
 		Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build \
 		--filter "$(SWIFT_RUNTIME_TEST_FILTER)" $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
@@ -1426,7 +1426,14 @@ docker-rest-image-mutation-parity: docker-rest-image-mutation-oracle docker-rest
 
 container-stack-build:
 	@if [[ -f "$(CONTAINER_STACK_REPO)/Makefile" ]]; then \
-		$(MAKE) -C "$(CONTAINER_STACK_REPO)" container; \
+		signing_identity="$(CONTAINER_RUNTIME_CODESIGN_IDENTITY)"; \
+		if ! [[ "$$signing_identity" =~ ^[0-9A-Fa-f]{40}$$ ]]; then \
+			printf 'a Developer ID Application identity is required for unattended Container runtime tests; set CONTAINER_RUNTIME_CODESIGN_IDENTITY to its 40-character fingerprint\n' >&2; \
+			exit 2; \
+		fi; \
+		$(MAKE) -C "$(CONTAINER_STACK_REPO)" \
+			CODESIGN_OPTS="--force --sign $$signing_identity --timestamp=none" \
+			container; \
 	else \
 		printf 'warning: sibling container repo not found at %s; using CONTAINER_COMPOSE_CONTAINER=%s\n' \
 			"$(CONTAINER_STACK_REPO)" "$(CONTAINER_COMPOSE_CONTAINER)" >&2; \
@@ -1473,7 +1480,6 @@ docker-compose-parity: build container-stack-build docker-compose-reference
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		$(MAKE) --no-print-directory -j1 \
-			CONTAINER_COMPOSE_CONTAINER="$$container_binary" \
 			DOCKER_COMPOSE_REFERENCE="$(DOCKER_COMPOSE_REFERENCE)" \
 			DOCKER_COMPOSE_REFERENCE_VERSION="$(DOCKER_COMPOSE_REFERENCE_VERSION)" \
 			DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)" \
@@ -1690,7 +1696,7 @@ docker-compose-performance-matrix: build docker-compose-reference
 		CONTAINER_RUNTIME_START_DEADLINE_SECONDS="$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
-			env CONTAINER_COMPOSE_CONTAINER="$$container_binary" \
+			env \
 			PARITY_REPETITIONS="$${PARITY_REPETITIONS:-5}" \
 			PARITY_TIMEOUT_SECONDS="$${PARITY_TIMEOUT_SECONDS:-300}" \
 			PARITY_TIMING_MAX_RATIO="$${PARITY_TIMING_MAX_RATIO:-10}" \

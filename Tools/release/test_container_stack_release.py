@@ -2860,9 +2860,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             local_gate,
         )
         self.assertIn('"CONTAINER_STACK_REPO=${container_path}"', local_gate)
-        self.assertIn(
+        compose_container_environment = (
+            'CONTAINER_COMPOSE_CONTAINER="${container_binary}" \\'
+        )
+        runtime_wrapper = (
+            '"${path}/scripts/run-with-container-runtime.sh" "${container_binary}"'
+        )
+        self.assertIn(compose_container_environment, local_gate)
+        self.assertLess(
+            local_gate.index(compose_container_environment),
+            local_gate.index(runtime_wrapper),
+        )
+        self.assertNotIn(
             '"CONTAINER_COMPOSE_CONTAINER=${container_binary}"',
-            local_gate,
+            local_gate[local_gate.index(runtime_wrapper) :],
         )
         self.assertIn("trap cleanup_local_release_gate_roots EXIT", local_gate)
         self.assertIn("cleanup_local_release_gate_resources", local_gate)

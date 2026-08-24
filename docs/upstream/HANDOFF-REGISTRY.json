@@ -7006,6 +7006,46 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/309"
     },
     {
+      "id": "container-compose-314",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Prevent repeated macOS privacy prompts during runtime validation",
+      "state": "submitted",
+      "lastVerified": "2026-08-24",
+      "commits": [
+        "2763f1ccee9c2bd5d4a329543a2eb5a0764abf01",
+        "4cbde978971182f9311245f947d4e2924b5e67d8",
+        "9115d096e75b3ddd3b3d2d652d33615a868f525e",
+        "1db73de51a432b8b4c26f947902cce5daa0d2c97",
+        "d48037e99109e13cb9809552b18787f26354b8d1",
+        "a363f7f5fa100d8d6b3ca3847ca1feb90329d97a",
+        "42aa95502c899f825f89c7f677187b8687e05924",
+        "722953ff5069f11602a549ca978bd35f0a72fcc8",
+        "89572c904dabb3240f5200b8168f86258cdb0531",
+        "5e574a15777b4568382a8078f1fb81b2ecfdac3c",
+    "60ff9c13d9fcb38c6359dd310c79a4cdf11b7363",
+    "0e7dbc3693493c4632053b0740341722a0bc44a8",
+    "e258cdec59b7ce30fb5f9dca1b0e72013a4a003b",
+        "a316d628316b2e206dbce231da8d7625670795aa",
+        "18c7d0c071dde6d7f16e6462e8d5802c628f37d7",
+        "75ce16dd5c435538b8d89b3e1632afbf18b22b95",
+        "5f63f64db9a5a9bbd337cf4dffa374e237fef161",
+        "15cfed9a7b179faffb23c1c906520b1956288805",
+        "f370ef9826639f979cde1a0d113f735a4e847665",
+        "a9c0a794a67f2f30d5ecd7b5889b7860184bf2a3"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-312.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-314.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/314"
+    },
+    {
       "id": "container-compose-307",
       "owner": "stephenlclarke/container-compose",
       "title": "Accept redacted create logging options",

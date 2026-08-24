@@ -39,6 +39,17 @@ DEFAULT_INIT_IMAGE = "vminit:container-compose"
 
 class RunWithContainerRuntimeTest(unittest.TestCase):
     @staticmethod
+    def local_execution_root() -> Path:
+        private_tmp = Path("/private/tmp")
+        if private_tmp.is_dir() and os.access(private_tmp, os.W_OK):
+            return private_tmp
+        return Path("/tmp")
+
+    @classmethod
+    def local_user_root(cls) -> Path:
+        return cls.local_execution_root() / f"container-compose-runtime-{os.getuid()}"
+
+    @staticmethod
     def runtime_environment() -> dict[str, str]:
         environment = os.environ.copy()
         for variable in (
@@ -68,8 +79,17 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             "CONTAINER_RUNTIME_START_DEADLINE_SECONDS",
             "CONTAINER_RUNTIME_LOCK_HELD",
             "CONTAINER_RUNTIME_LOCK_KEEPER_PID",
+            "CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS",
+            "CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT",
+            "CONTAINER_RUNTIME_LOCALIZE_APP_ROOT",
+            "CONTAINER_RUNTIME_STAGE_CANDIDATE",
+            "CONTAINER_RUNTIME_STAGED_CANDIDATE_ROOT",
+            "CONTAINER_RUNTIME_PACKAGE_SHA256",
+            "CONTAINER_RUNTIME_ALLOW_NON_MACHO_TEST_FIXTURES",
+            "CONTAINER_REGISTRY_ANONYMOUS_HOSTS",
         ):
             environment.pop(variable, None)
+        environment["CONTAINER_RUNTIME_ALLOW_NON_MACHO_TEST_FIXTURES"] = "1"
         return environment
 
     def test_rejects_a_candidate_cli_that_does_not_match_its_pinned_digest(
@@ -135,6 +155,223 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
             self.assertLess(time.monotonic() - started, 4)
+            self.assertFalse(command_marker.exists())
+
+    def test_signature_inspection_uses_complete_startup_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            real_find = shutil.which("find")
+            self.assertIsNotNone(real_find)
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            fake_find = fake_bin / "find"
+            fake_find.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if [[ "$*" == *"${BLOCKED_SIGNATURE_ROOT:?}/bin"* ]]; then\n'
+                "  /bin/sleep 30\n"
+                "fi\n"
+                f'exec "{real_find}" "$@"\n',
+                encoding="utf-8",
+            )
+            fake_find.chmod(0o755)
+            command_marker = temporary_root / "command-ran"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                    "BLOCKED_SIGNATURE_ROOT": str(package_root),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(candidate),
+                    "/usr/bin/touch",
+                    str(command_marker),
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, 4)
+            self.assertFalse(command_marker.exists())
+
+    def test_rejects_non_macho_required_packaged_binary_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            command_marker = temporary_root / "command-ran"
+            environment = self.runtime_environment()
+            environment.pop(
+                "CONTAINER_RUNTIME_ALLOW_NON_MACHO_TEST_FIXTURES", None
+            )
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "never",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(candidate),
+                    "/usr/bin/touch",
+                    str(command_marker),
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn(
+                "Container runtime packaged binary must be Mach-O",
+                result.stderr,
+            )
+            self.assertFalse(command_marker.exists())
+
+    def test_rejects_incomplete_packaged_layout_before_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_bin.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            partial_companion = package_bin / "container-apiserver"
+            partial_companion.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            partial_companion.chmod(0o755)
+
+            command_marker = temporary_root / "command-ran"
+            container_log = temporary_root / "container.log"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "never",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(candidate),
+                    "/usr/bin/touch",
+                    str(command_marker),
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn(
+                "Container runtime candidate has an incomplete packaged layout",
+                result.stderr,
+            )
+            self.assertFalse(container_log.exists())
+            self.assertFalse(command_marker.exists())
+
+    def test_rejects_non_macho_launchable_libexec_plugin(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            plugin_bin = (
+                package_root
+                / "libexec"
+                / "container"
+                / "plugins"
+                / "fixture"
+                / "bin"
+            )
+            package_bin.mkdir(parents=True)
+            plugin_bin.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+            plugin = plugin_bin / "fixture-plugin"
+            plugin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            plugin.chmod(0o755)
+
+            command_marker = temporary_root / "command-ran"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "never",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(candidate),
+                    "/usr/bin/touch",
+                    str(command_marker),
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn(
+                "Container runtime launchable executable must be Mach-O",
+                result.stderr,
+            )
             self.assertFalse(command_marker.exists())
 
     @staticmethod
@@ -458,6 +695,51 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertIn("refusing to clear container runtime root with an invalid marker", result.stderr)
             self.assertEqual(sentinel.read_text(encoding="utf-8"), "preserve\n")
 
+    def test_rejects_indirect_runtime_root_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            app_root.mkdir()
+            marker_target = temporary_root / "marker-target"
+            marker_target.write_text(
+                "container-compose isolated runtime state v1\n", encoding="utf-8"
+            )
+            marker = app_root / ".container-compose-runtime-root"
+            marker.symlink_to(marker_target)
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            command_marker = temporary_root / "command-ran"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/usr/bin/touch",
+                    str(command_marker),
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn(
+                "refusing to use an indirect container runtime root marker",
+                result.stderr,
+            )
+            self.assertFalse(command_marker.exists())
+
     def test_runtime_root_marker_hang_consumes_complete_startup_deadline(
         self,
     ) -> None:
@@ -470,6 +752,15 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             real_find = shutil.which("find")
             self.assertIsNotNone(real_find)
             marker_inspection_started = temporary_root / "marker-inspection-started"
+            fake_sleep = fake_bin / "sleep"
+            fake_sleep.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if [[ "$*" == 3 ]]; then exit 0; fi\n'
+                'exec /bin/sleep "$@"\n',
+                encoding="utf-8",
+            )
+            fake_sleep.chmod(0o755)
             fake_find = fake_bin / "find"
             fake_find.write_text(
                 "#!/usr/bin/env bash\n"
@@ -571,6 +862,1289 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 [namespace, str(app_root), socket, f"unix://{socket}"],
             )
             self.assertIn("system start", container_log.read_text(encoding="utf-8"))
+
+    def test_auto_stages_complete_candidate_and_uses_anonymous_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            app_root = temporary_root / "app-root"
+            container_log = temporary_root / "container.log"
+            contract_environment = temporary_root / "candidate-environment"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "CONTRACT_ENVIRONMENT": str(contract_environment),
+                }
+            )
+
+            staged_paths: list[str] = []
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            try:
+                for _ in range(2):
+                    result = subprocess.run(
+                        [
+                            str(SCRIPT),
+                            str(candidate),
+                            "/bin/sh",
+                            "-c",
+                            'printf "%s\\n%s\\n%s\\n%s\\n" '
+                            '"$CONTAINER_RUNTIME_CLI" "$CONTAINER_BIN" '
+                            '"$CONTAINER_COMPOSE_CONTAINER" '
+                            '"$CONTAINER_REGISTRY_ANONYMOUS_HOSTS" '
+                            '>"$CONTRACT_ENVIRONMENT"',
+                        ],
+                        cwd=ROOT,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    self.assertEqual(
+                        result.returncode, 0, result.stdout + result.stderr
+                    )
+                    values = contract_environment.read_text(
+                        encoding="utf-8"
+                    ).splitlines()
+                    self.assertEqual(values[0], values[1])
+                    self.assertEqual(values[0], values[2])
+                    self.assertRegex(
+                        values[0],
+                        rf"^/(?:private/)?tmp/container-compose-runtime-{os.getuid()}"
+                        rf"/candidate-[0-9a-f]{{16}}/bin/container$",
+                    )
+                    self.assertEqual(values[3], "ghcr.io")
+                    staged_paths.append(values[0])
+
+                self.assertEqual(staged_paths[0], staged_paths[1])
+                self.assertTrue(staged_root.is_dir())
+                marker = staged_root / ".container-compose-runtime-candidate-staging"
+                self.assertTrue(marker.is_file())
+            finally:
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
+    def test_selected_candidate_replaces_inherited_candidate_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            candidate = temporary_root / "container-cli"
+            self.write_fake_container(candidate)
+            alias_log = temporary_root / "candidate-aliases"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "never",
+                    "CONTAINER_RUNTIME_LOCALIZE_APP_ROOT": "never",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                    "CONTAINER_BIN": "/tmp/stale-container-bin",
+                    "CONTAINER_COMPOSE_CONTAINER": "/tmp/stale-compose-container",
+                    "ALIAS_LOG": str(alias_log),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(candidate),
+                    "/bin/sh",
+                    "-c",
+                    'printf "%s\\n%s\\n" "$CONTAINER_BIN" '
+                    '"$CONTAINER_COMPOSE_CONTAINER" >"$ALIAS_LOG"',
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                alias_log.read_text(encoding="utf-8").splitlines(),
+                [str(candidate.resolve()), str(candidate.resolve())],
+            )
+
+    def test_rejects_source_package_change_during_staging(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+            changing_payload = package_libexec / "generation"
+            changing_payload.write_text("generation one\n", encoding="utf-8")
+            for index in range(512):
+                (package_libexec / f"payload-{index:04d}").write_text(
+                    f"payload {index}\n", encoding="utf-8"
+                )
+
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            marker = staged_root / ".container-compose-runtime-candidate-staging"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+            process = subprocess.Popen(
+                [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                deadline = time.monotonic() + 10
+                while not marker.is_file() and process.poll() is None:
+                    if time.monotonic() >= deadline:
+                        self.fail("candidate staging marker was not created")
+                    time.sleep(0.001)
+                self.assertIsNone(process.poll(), "staging completed before mutation")
+                changing_payload.write_text("generation two\n", encoding="utf-8")
+                stdout, stderr = process.communicate(timeout=15)
+
+                self.assertEqual(process.returncode, 2, stdout + stderr)
+                self.assertIn(
+                    "complete Container runtime package changed during staging",
+                    stderr,
+                )
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    process.communicate(timeout=5)
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
+    def test_interrupted_replacement_preserves_recoverable_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+            changing_payload = package_libexec / "generation"
+            changing_payload.write_text("generation one\n", encoding="utf-8")
+            for index in range(256):
+                (package_libexec / f"payload-{index:04d}").write_text(
+                    f"payload {index}\n", encoding="utf-8"
+                )
+
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            self.local_user_root().mkdir(mode=0o700, exist_ok=True)
+            staged_root.mkdir(mode=0o700)
+            marker = staged_root / ".container-compose-runtime-candidate-staging"
+            old_marker_value = f"container-compose runtime candidate staging v1 {'0' * 64}"
+            marker.write_text(old_marker_value + "\n", encoding="utf-8")
+            removal_sentinel = staged_root / "old-generation"
+            removal_sentinel.write_text("old\n", encoding="utf-8")
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+            first = subprocess.Popen(
+                [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                deadline = time.monotonic() + 10
+                while removal_sentinel.exists() and first.poll() is None:
+                    if time.monotonic() >= deadline:
+                        self.fail("existing candidate payload was not removed")
+                    time.sleep(0.001)
+                self.assertIsNone(first.poll(), "staging completed before mutation")
+                changing_payload.write_text("generation two\n", encoding="utf-8")
+                first_stdout, first_stderr = first.communicate(timeout=15)
+
+                self.assertEqual(
+                    first.returncode, 2, first_stdout + first_stderr
+                )
+                self.assertTrue(staged_root.is_dir())
+                self.assertEqual(marker.read_text(encoding="utf-8").strip(), old_marker_value)
+
+                second = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+                self.assertEqual(
+                    second.returncode, 0, second.stdout + second.stderr
+                )
+                candidate_digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+                self.assertEqual(
+                    marker.read_text(encoding="utf-8").strip(),
+                    "container-compose runtime candidate staging v1 "
+                    + candidate_digest,
+                )
+            finally:
+                if first.poll() is None:
+                    first.terminate()
+                    first.communicate(timeout=5)
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
+    def test_interrupted_initial_staging_directory_is_recoverable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            self.local_user_root().mkdir(mode=0o700, exist_ok=True)
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            fake_mkdir = fake_bin / "mkdir"
+            fake_mkdir.write_text(
+                "#!/bin/bash\n"
+                "set -euo pipefail\n"
+                'if [[ "$*" == "-m 0700 ${INTERRUPTED_STAGING_ROOT:?}" ]]; then\n'
+                '  /bin/mkdir -m 0700 "${INTERRUPTED_STAGING_ROOT}"\n'
+                "  sleep 30\n"
+                "else\n"
+                "  exec /bin/mkdir \"$@\"\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            fake_mkdir.chmod(0o755)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "interrupted-initial-staging",
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                    "INTERRUPTED_STAGING_ROOT": str(staged_root),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                }
+            )
+            try:
+                interrupted = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                self.assertEqual(
+                    interrupted.returncode,
+                    124,
+                    interrupted.stdout + interrupted.stderr,
+                )
+                self.assertFalse(staged_root.exists())
+
+                recovered_environment = environment.copy()
+                recovered_environment["PATH"] = self.runtime_environment()["PATH"]
+                recovered_environment["CONTAINER_RUNTIME_START_DEADLINE_SECONDS"] = "5"
+                recovered = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=recovered_environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                )
+                self.assertEqual(
+                    recovered.returncode,
+                    0,
+                    recovered.stdout + recovered.stderr,
+                )
+            finally:
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
+    def test_marked_incomplete_staged_candidate_is_rebuilt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+            (package_libexec / "generation").write_text(
+                "complete\n", encoding="utf-8"
+            )
+
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            self.local_user_root().mkdir(mode=0o700, exist_ok=True)
+            staged_root.mkdir(mode=0o700)
+            marker = staged_root / ".container-compose-runtime-candidate-staging"
+            candidate_digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            marker.write_text(
+                "container-compose runtime candidate staging v1 "
+                + candidate_digest
+                + "\n",
+                encoding="utf-8",
+            )
+            stale_payload = staged_root / "interrupted-copy"
+            stale_payload.write_text("partial\n", encoding="utf-8")
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_LOCALIZE_APP_ROOT": "never",
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "marked-incomplete-staging",
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "10",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+            try:
+                result = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=13,
+                )
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(stale_payload.exists())
+                self.assertTrue((staged_root / "bin" / "container").is_file())
+                self.assertTrue(
+                    (staged_root / "bin" / "container-apiserver").is_file()
+                )
+                self.assertTrue((staged_root / "bin" / "container-engine").is_file())
+                self.assertTrue(
+                    (staged_root / "libexec" / "container" / "generation").is_file()
+                )
+            finally:
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
+    def test_unchanged_staged_candidate_is_reused_while_running(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(
+                candidate,
+                body='if [[ "$*" == "hold" ]]; then sleep 30; fi\n',
+            )
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            container_log = temporary_root / "container.log"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "staged-reuse",
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "5",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+            held_process = None
+            try:
+                first = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                )
+                self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+
+                held_process = subprocess.Popen(
+                    [str(staged_root / "bin" / "container"), "hold"],
+                    cwd=ROOT,
+                    env=environment,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    start_new_session=True,
+                )
+                deadline = time.monotonic() + 5
+                while "hold" not in container_log.read_text(encoding="utf-8"):
+                    if held_process.poll() is not None:
+                        stdout, stderr = held_process.communicate()
+                        self.fail("held candidate exited: " + stdout + stderr)
+                    if time.monotonic() >= deadline:
+                        self.fail("held candidate did not start")
+                    time.sleep(0.05)
+
+                second = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                )
+                self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+                self.assertIn(
+                    "Reusing unchanged staged Container runtime candidate",
+                    second.stdout,
+                )
+            finally:
+                if held_process is not None and held_process.poll() is None:
+                    os.killpg(held_process.pid, signal.SIGTERM)
+                    held_process.communicate(timeout=5)
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
+    def test_staged_candidate_lock_is_held_until_command_completion(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            ready = temporary_root / "command-ready"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                    "READY": str(ready),
+                }
+            )
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            first = subprocess.Popen(
+                [
+                    str(SCRIPT),
+                    str(candidate),
+                    "/bin/sh",
+                    "-c",
+                    'touch "$READY"; sleep 5',
+                ],
+                cwd=ROOT,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                deadline = time.monotonic() + 15
+                while not ready.exists() and first.poll() is None:
+                    if time.monotonic() >= deadline:
+                        self.fail("first staged command did not become ready")
+                    time.sleep(0.05)
+
+                second_environment = environment.copy()
+                second_environment["CONTAINER_RUNTIME_START_DEADLINE_SECONDS"] = "3"
+                second = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=second_environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=6,
+                )
+
+                self.assertEqual(
+                    second.returncode, 124, second.stdout + second.stderr
+                )
+                self.assertIn(
+                    "timed out waiting for local Container candidate staging lock",
+                    second.stderr,
+                )
+                first_stdout, first_stderr = first.communicate(timeout=15)
+                self.assertEqual(
+                    first.returncode, 0, first_stdout + first_stderr
+                )
+            finally:
+                if first.poll() is None:
+                    first.terminate()
+                    first.communicate(timeout=5)
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
+    def test_nested_managed_wrapper_reuses_owner_staged_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "outer-owner",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "5",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+            try:
+                result = subprocess.run(
+                    [
+                        str(SCRIPT),
+                        str(candidate),
+                        str(SCRIPT),
+                        str(candidate),
+                        "/usr/bin/true",
+                    ],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                )
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(
+                    (temporary_root / "container.log")
+                    .read_text(encoding="utf-8")
+                    .splitlines(),
+                    ["list --all --format json", "list --all --format json"],
+                )
+            finally:
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
+    def test_make_command_replaces_inherited_source_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            makefile = temporary_root / "Makefile"
+            result_path = temporary_root / "candidate-path"
+            makefile.write_text(
+                "all:\n"
+                '\t@printf \'%s\\n%s\\n\' "$(CONTAINER_BIN)" '
+                '"$(CONTAINER_COMPOSE_CONTAINER)" '
+                '> "$(RESULT_PATH)"\n',
+                encoding="utf-8",
+            )
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "make-override",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "5",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                    "MAKEFLAGS": (
+                        " -- CONTAINER_BIN="
+                        + str(candidate)
+                        + " CONTAINER_COMPOSE_CONTAINER="
+                        + str(candidate)
+                    ),
+                }
+            )
+            try:
+                result = subprocess.run(
+                    [
+                        str(SCRIPT),
+                        str(candidate),
+                        "make",
+                        "-f",
+                        str(makefile),
+                        f"RESULT_PATH={result_path}",
+                    ],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                )
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(
+                    result_path.read_text(encoding="utf-8").splitlines(),
+                    [str(staged_root / "bin" / "container")] * 2,
+                )
+            finally:
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
+    def test_rejects_indirect_candidate_staging_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            self.local_user_root().mkdir(mode=0o700, exist_ok=True)
+            protected_target = temporary_root / "protected-target"
+            protected_target.mkdir()
+            protected_file = protected_target / "preserve"
+            protected_file.write_text("unchanged\n", encoding="utf-8")
+            staged_root.symlink_to(protected_target, target_is_directory=True)
+
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                }
+            )
+            try:
+                result = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                )
+
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn(
+                    "refusing to use an indirect local Container candidate",
+                    result.stderr,
+                )
+                self.assertEqual(
+                    protected_file.read_text(encoding="utf-8"), "unchanged\n"
+                )
+            finally:
+                staged_root.unlink(missing_ok=True)
+
+    def test_rejected_candidate_root_is_not_removed_by_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            candidate_digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            self.local_user_root().mkdir(mode=0o700, exist_ok=True)
+            staged_root.mkdir(mode=0o700)
+            marker = staged_root / ".container-compose-runtime-candidate-staging"
+            marker.write_text(
+                f"container-compose runtime candidate staging v1 {candidate_digest}\n",
+                encoding="utf-8",
+            )
+            protected_file = staged_root / "preserve"
+            protected_file.write_text("unchanged\n", encoding="utf-8")
+            staged_root.chmod(0o777)
+
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                }
+            )
+            try:
+                result = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                )
+
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn(
+                    "refusing to use an unowned or accessible local Container candidate",
+                    result.stderr,
+                )
+                self.assertEqual(
+                    protected_file.read_text(encoding="utf-8"), "unchanged\n"
+                )
+            finally:
+                staged_root.chmod(0o700)
+                shutil.rmtree(staged_root)
+
+    def test_rejects_indirect_packaged_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            candidate.symlink_to("/usr/bin/true")
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "never",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                }
+            )
+            result = subprocess.run(
+                [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn(
+                "Container runtime package contains an indirect executable",
+                result.stderr,
+            )
+
+    def test_anonymous_registry_opt_out_clears_inherited_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            container_log = temporary_root / "container.log"
+            inherited_policy_log = temporary_root / "anonymous-policy"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS": "",
+                    "CONTAINER_REGISTRY_ANONYMOUS_HOSTS": "ghcr.io",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "INHERITED_POLICY_LOG": str(inherited_policy_log),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/bin/sh",
+                    "-c",
+                    'printf "%s\\n" "${CONTAINER_REGISTRY_ANONYMOUS_HOSTS-unset}" '
+                    '>"$INHERITED_POLICY_LOG"',
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                inherited_policy_log.read_text(encoding="utf-8"), "unset\n"
+            )
+
+    @unittest.skipUnless(
+        os.uname().sysname == "Darwin", "requires macOS codesign"
+    )
+    def test_signature_authority_cannot_be_spoofed_by_package_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = (
+                temporary_root / "Authority=Developer ID Application: spoof" / "candidate"
+            )
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            for executable_name in (
+                "container",
+                "container-apiserver",
+                "container-engine",
+            ):
+                executable = package_bin / executable_name
+                shutil.copyfile("/usr/bin/true", executable)
+                executable.chmod(0o700)
+
+            environment = self.runtime_environment()
+            environment.pop(
+                "CONTAINER_RUNTIME_ALLOW_NON_MACHO_TEST_FIXTURES", None
+            )
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "never",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                }
+            )
+            result = subprocess.run(
+                [str(SCRIPT), str(package_bin / "container"), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn(
+                "lacks a stable Developer ID signature", result.stderr
+            )
+
+    @unittest.skipUnless(
+        os.uname().sysname == "Darwin", "requires macOS codesign"
+    )
+    def test_rejects_ad_hoc_runtime_before_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            executable = package_bin / "container"
+            shutil.copyfile("/usr/bin/true", executable)
+            executable.chmod(0o700)
+            subprocess.run(
+                ["/usr/bin/codesign", "--force", "--sign", "-", str(executable)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            for executable_name in ("container-apiserver", "container-engine"):
+                companion = package_bin / executable_name
+                companion.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                companion.chmod(0o755)
+
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "never",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                }
+            )
+            result = subprocess.run(
+                [str(SCRIPT), str(package_bin / "container"), "/usr/bin/true"],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn(
+                "lacks a stable Developer ID signature", result.stderr
+            )
+
+    def test_localizes_runtime_state_when_explicitly_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            requested_app_root = temporary_root / "external-app-root"
+            container_log = temporary_root / "container.log"
+            localized_root_log = temporary_root / "localized-root"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(requested_app_root),
+                    "CONTAINER_RUNTIME_LOCALIZE_APP_ROOT": "always",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "LOCALIZED_ROOT_LOG": str(localized_root_log),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/bin/sh",
+                    "-c",
+                    'printf "%s\\n" "$CONTAINER_APP_ROOT" >"$LOCALIZED_ROOT_LOG"',
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            localized_root = Path(
+                localized_root_log.read_text(encoding="utf-8").strip()
+            )
+            self.assertRegex(
+                str(localized_root),
+                rf"^/(?:private/)?tmp/container-compose-runtime-{os.getuid()}"
+                rf"/state-[0-9a-f]{{16}}$",
+            )
+            self.assertNotEqual(localized_root, requested_app_root)
+            marker = localized_root / ".container-compose-runtime-root"
+            self.assertTrue(marker.is_file())
+            shutil.rmtree(localized_root)
+
+    def test_auto_localizes_exact_and_symlinked_privacy_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            fake_home = temporary_root / "home"
+            exact_root = fake_home / "Downloads"
+            case_variant_root = fake_home / "downloads" / "runtime"
+            symlink_target = fake_home / "Documents" / "runtime"
+            exact_root.mkdir(parents=True)
+            case_variant_root.mkdir(parents=True)
+            symlink_target.mkdir(parents=True)
+            alias_root = temporary_root / "runtime-alias"
+            alias_root.symlink_to(symlink_target, target_is_directory=True)
+            candidate = temporary_root / "container-cli"
+            self.write_fake_container(candidate)
+
+            for requested_root in (exact_root, case_variant_root, alias_root):
+                with self.subTest(requested_root=requested_root):
+                    localized_root_log = temporary_root / "localized-root"
+                    environment = self.runtime_environment()
+                    environment.update(
+                        {
+                            "HOME": str(fake_home),
+                            "CONTAINER_RUNTIME_APP_ROOT": str(requested_root),
+                            "CONTAINER_RUNTIME_LOCK_FILE": str(
+                                temporary_root / "runtime.lock"
+                            ),
+                            "CONTAINER_TEST_LOG": str(
+                                temporary_root / "container.log"
+                            ),
+                            "LOCALIZED_ROOT_LOG": str(localized_root_log),
+                        }
+                    )
+                    result = subprocess.run(
+                        [
+                            str(SCRIPT),
+                            str(candidate),
+                            "/bin/sh",
+                            "-c",
+                            'printf "%s\\n" "$CONTAINER_APP_ROOT" '
+                            '>"$LOCALIZED_ROOT_LOG"',
+                        ],
+                        cwd=ROOT,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    self.assertEqual(
+                        result.returncode, 0, result.stdout + result.stderr
+                    )
+                    localized_root = Path(
+                        localized_root_log.read_text(encoding="utf-8").strip()
+                    )
+                    self.assertRegex(
+                        str(localized_root),
+                        rf"^/(?:private/)?tmp/container-compose-runtime-{os.getuid()}"
+                        rf"/state-[0-9a-f]{{16}}$",
+                    )
+                    self.assertNotEqual(localized_root, requested_root.resolve())
+                    shutil.rmtree(localized_root)
+
+    def test_forced_localization_rejects_missing_or_relative_requested_root(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+
+            for invalid_root in ("", "relative/app-root"):
+                with self.subTest(invalid_root=invalid_root):
+                    command_marker = temporary_root / "command-ran"
+                    command_marker.unlink(missing_ok=True)
+                    environment = self.runtime_environment()
+                    environment.update(
+                        {
+                            "CONTAINER_RUNTIME_APP_ROOT": invalid_root,
+                            "CONTAINER_RUNTIME_LOCALIZE_APP_ROOT": "always",
+                            "CONTAINER_RUNTIME_LOCK_FILE": str(
+                                temporary_root / "runtime.lock"
+                            ),
+                            "CONTAINER_TEST_LOG": str(
+                                temporary_root / "container.log"
+                            ),
+                        }
+                    )
+
+                    result = subprocess.run(
+                        [
+                            str(SCRIPT),
+                            str(fake_container),
+                            "/usr/bin/touch",
+                            str(command_marker),
+                        ],
+                        cwd=ROOT,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    self.assertEqual(
+                        result.returncode, 2, result.stdout + result.stderr
+                    )
+                    self.assertIn(
+                        "CONTAINER_RUNTIME_APP_ROOT must be an absolute",
+                        result.stderr,
+                    )
+                    self.assertNotIn(
+                        "Relocating Container runtime state", result.stdout
+                    )
+                    self.assertFalse(command_marker.exists())
+
+    def test_privacy_opt_out_skips_unused_local_user_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_LOCALIZE_APP_ROOT": "never",
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "never",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-x",
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/usr/bin/true",
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("+ prepare_local_user_root ", result.stderr)
+
+    def test_rejects_indirect_localized_runtime_state_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            requested_app_root = temporary_root / "external-app-root"
+            requested_digest = hashlib.sha256(
+                str(requested_app_root).encode()
+            ).hexdigest()[:16]
+            localized_root = self.local_user_root() / f"state-{requested_digest}"
+            self.local_user_root().mkdir(mode=0o700, exist_ok=True)
+            protected_target = temporary_root / "protected-target"
+            protected_target.mkdir()
+            protected_file = protected_target / "preserve"
+            protected_file.write_text("unchanged\n", encoding="utf-8")
+            (protected_target / ".container-compose-runtime-root").write_text(
+                "container-compose isolated runtime state v1\n",
+                encoding="utf-8",
+            )
+            localized_root.symlink_to(protected_target, target_is_directory=True)
+
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(requested_app_root),
+                    "CONTAINER_RUNTIME_LOCALIZE_APP_ROOT": "always",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                }
+            )
+            try:
+                result = subprocess.run(
+                    [str(SCRIPT), str(fake_container), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                )
+
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn(
+                    "refusing to use an indirect localized Container runtime state root",
+                    result.stderr,
+                )
+                self.assertEqual(
+                    protected_file.read_text(encoding="utf-8"), "unchanged\n"
+                )
+            finally:
+                localized_root.unlink(missing_ok=True)
 
     def test_repeated_runs_on_one_root_receive_different_default_namespaces(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -2051,7 +3625,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
                     "CONTAINER_RUNTIME_MANAGED": "1",
                     "CONTAINER_RUNTIME_RUN_ID": "outer-owner",
-                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "3",
                     "CONTAINER_TEST_LOG": str(container_log),
                 }
             )
@@ -2064,11 +3638,11 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=4,
+                timeout=6,
             )
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
-            self.assertLess(time.monotonic() - started, 3)
+            self.assertLess(time.monotonic() - started, 5)
             self.assertFalse(command_marker.exists())
             self.assertEqual(
                 container_log.read_text(encoding="utf-8").splitlines(),
