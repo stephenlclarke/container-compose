@@ -7006,6 +7006,31 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/309"
     },
     {
+      "id": "container-compose-314",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Prevent repeated macOS privacy prompts during runtime validation",
+      "state": "submitted",
+      "lastVerified": "2026-08-24",
+      "commits": [
+        "2763f1ccee9c2bd5d4a329543a2eb5a0764abf01",
+        "4cbde978971182f9311245f947d4e2924b5e67d8",
+        "9115d096e75b3ddd3b3d2d652d33615a868f525e",
+        "1db73de51a432b8b4c26f947902cce5daa0d2c97",
+        "d48037e99109e13cb9809552b18787f26354b8d1"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-312.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-314.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/314"
+    },
+    {
       "id": "container-compose-307",
       "owner": "stephenlclarke/container-compose",
       "title": "Accept redacted create logging options",

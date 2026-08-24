@@ -8,9 +8,9 @@ links to an immutable Git snapshot.
 
 Last verified: 2026-08-22
 
-Entries: 381. Document snapshots: 664. Current supporting documents: 58.
+Entries: 382. Document snapshots: 666. Current supporting documents: 60.
 
-States: `active-draft` 2, `archived` 304, `closed` 17, `merged` 10, `submitted` 6, `tracked-upstream` 15, `unsubmitted` 27.
+States: `active-draft` 2, `archived` 304, `closed` 17, `merged` 10, `submitted` 7, `tracked-upstream` 15, `unsubmitted` 27.
 
 | Owner | Capability or pull request | State | Referenced commits | Documents |
 | --- | --- | --- | --- | --- |
@@ -211,6 +211,7 @@ States: `active-draft` 2, `archived` 304, `closed` 17, `merged` 10, `submitted` 
 | `stephenlclarke/container-compose` | [Pin lifecycle identity inspection support](https://github.com/stephenlclarke/container-compose/pull/304) | `submitted` | `b636d3f9d07d`, `e76a28de2dcf`, `8683b9fde9ca`, `95787ab5585d` | [Issue details](container-compose/ISSUE-304.md); [PR details](container-compose/PR-304.md) |
 | `stephenlclarke/container-compose` | [Accept redacted create logging options](https://github.com/stephenlclarke/container-compose/pull/307) | `closed` | `53d57ea17fc7`, `47712162fde8`, `a956cbe7955a` | [Issue details](container-compose/ISSUE-306.md); [PR details](container-compose/PR-307.md) |
 | `stephenlclarke/container-compose` | [Include lifecycle helper images in config output](https://github.com/stephenlclarke/container-compose/pull/309) | `submitted` | `23cf93c4d74e`, `f31dc1a14f8f`, `d28f51eeb5a5` | [Issue details](container-compose/ISSUE-308.md); [PR details](container-compose/PR-309.md) |
+| `stephenlclarke/container-compose` | [Prevent repeated macOS privacy prompts during runtime validation](https://github.com/stephenlclarke/container-compose/pull/314) | `submitted` | `2763f1ccee9c`, `4cbde9789711`, `9115d096e75b`, `1db73de51a43`, `d48037e99109` | [Issue details](container-compose/ISSUE-312.md); [PR details](container-compose/PR-314.md) |
 | `stephenlclarke/container-compose` | Isolate deterministic anonymous volume identities | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-anonymous-volume-identity.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-anonymous-volume-identity.md) |
 | `stephenlclarke/container-compose` | Support bind create_host_path policy | `archived` | `12c6ed0b8a1e` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-create-host-path.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-create-host-path.md) |
 | `stephenlclarke/container-compose` | Support bind propagation mount options | `archived` | `5fbe9f0937d8` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-propagation.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-propagation.md) |
