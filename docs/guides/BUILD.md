@@ -219,11 +219,14 @@ Target-specific outputs are `coverage-core.*`, `coverage-runtime-spi.*`,
 `coverage.lcov` and `coverage.xml` are aggregate copies for SonarQube.
 Go output remains `Tools/compose-normalizer/coverage.out`.
 
-`make swift-runtime-test` uses the sibling runtime and always stops the test
-runtime when it exits. Its `container-stack-build` prerequisite requires a
-local Developer ID Application identity and signs every runtime executable
-with that stable identity. Set `CONTAINER_RUNTIME_CODESIGN_IDENTITY` to the
-identity's 40-character fingerprint when automatic selection is unsuitable.
+`make swift-runtime-test` uses the selected runtime and always stops the test
+runtime when it exits. With the default `container` selector it builds the
+sibling source and requires a local Developer ID Application identity, signing
+every runtime executable with that stable identity. An explicit packaged
+candidate is reused without rebuilding sibling source; package verification
+still rejects an unsuitable runtime before launch. Set
+`CONTAINER_RUNTIME_CODESIGN_IDENTITY` to the identity's 40-character
+fingerprint when automatic selection is unsuitable.
 Apple's Local Network privacy service tracks a program by its code signature;
 an ad-hoc signature changes on every build and therefore cannot support
 unattended testing. The runtime wrapper rejects an ad-hoc packaged candidate

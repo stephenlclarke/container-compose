@@ -1180,8 +1180,27 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(f"--stage {stage}", makefile)
         self.assertIn("docker-compose-parity-stages:", makefile)
         self.assertIn(
-            "docker-compose-parity: build container-stack-build docker-compose-reference",
+            "docker-compose-parity: build container-stack-build-if-needed "
+            "docker-compose-reference",
             makefile,
+        )
+        self.assertIn(
+            "swift-runtime-test: container-stack-build-if-needed build "
+            "swift-runtime-test-build",
+            makefile,
+        )
+        conditional_build = makefile[
+            makefile.index("container-stack-build-if-needed:") : makefile.index(
+                ".PHONY: container-stack-release-validation"
+            )
+        ]
+        self.assertIn(
+            '[[ "$(CONTAINER_COMPOSE_CONTAINER)" == "container" ]]',
+            conditional_build,
+        )
+        self.assertIn(
+            "$(MAKE) --no-print-directory container-stack-build",
+            conditional_build,
         )
         self.assertIn("RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT", makefile)
         self.assertIn("init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT)", makefile)

@@ -18,6 +18,7 @@ The GitHub CodeQL workflow is already an isolated, GitHub-authoritative Linux/AM
 - Record the Current demo in a separate recoverable workflow on the nested-virtualization-capable self-hosted Mac.
 - Reuse one marker-protected internal-volume runtime path so the signed runtime does not appear as a new executable location on every run.
 - Sign the freshly installed Container coverage runtime with the same Developer ID identity as the immutable packaged candidate before any VM-backed integration starts.
+- Reuse an explicitly selected packaged Container candidate in Compose runtime and parity gates instead of rebuilding the already-validated sibling source again.
 - Bound the complete recording process group, retain failure diagnostics, and never automate or wait indefinitely for a macOS privacy dialog.
 - Recheck main, the `current` tag, and the Current release target immediately before replacing the mutable demo asset.
 - Reduce recording work without changing its observable scenario.
@@ -30,6 +31,7 @@ The GitHub CodeQL workflow is already an isolated, GitHub-authoritative Linux/AM
 - The Current Demo workflow downloads checksum-verified, Developer-ID-verified exact-SHA package assets and validates the matched init image.
 - The demo runtime uses `/private/tmp/container-compose-current-demo`, validates its marker, owner, and mode, and wraps both runtime cleanup and VHS in the existing process-group deadline supervisor.
 - Full stack validation rejects a missing or malformed signing fingerprint, passes that identity only to Container source-runtime targets, and fingerprints it with the Container checkpoints.
+- Compose runtime and parity targets build sibling Container source only for the default `container` selector; release-candidate paths are reused.
 - A stale recording exits without replacing the current demo.
 - Current asset retention preserves the last good demo until the separate workflow replaces it.
 - The tape uses 24 frames per second.
