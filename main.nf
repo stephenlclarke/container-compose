@@ -120,7 +120,7 @@ def functionalStageSpecs() {
             'make,go', 'Tools/compose-normalizer Makefile', 'none'],
         ['container-compose', 'compose-cli-smoke', 'test', params.functionalTimeoutSeconds as Integer,
             'GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org make --no-print-directory SWIFT=/usr/bin/swift PYTHON=python3 GO=go build go-build cli-smoke-built',
-            'make,apple-swift,go,python3,otool',
+            'make,apple-swift,go,python3,otool,codesign',
             'Package.swift Package.resolved Sources Tests Tools scripts Makefile config.toml docs/images/container-compose-icon-octopus.png',
             'none'],
         ['container-builder-shim', 'builder-test', 'test', params.functionalTimeoutSeconds as Integer,
