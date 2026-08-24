@@ -882,17 +882,29 @@ validate_packaged_runtime_candidate_signatures() {
     local deadline="$1"
     local source_bin_directory="${container_binary%/*}"
     local source_package_root="${source_bin_directory%/*}"
-    local complete_package
+    local package_layout_state
 
     # shellcheck disable=SC2016 # Expand positional values in the bounded child.
-    complete_package=$(run_runtime_start_command "$deadline" /bin/bash -c '
+    package_layout_state=$(run_runtime_start_command "$deadline" /bin/bash -c '
 if [[ "$1" == bin ]] && [[ -x "$2/bin/container-apiserver" ]] &&
     [[ -x "$2/bin/container-engine" ]] && [[ -d "$2/libexec/container" ]]; then
     printf complete
+elif [[ "$1" == bin ]] &&
+    { [[ -e "$2/bin/container-apiserver" || -L "$2/bin/container-apiserver" ]] ||
+        [[ -e "$2/bin/container-engine" || -L "$2/bin/container-engine" ]] ||
+        [[ -e "$2/libexec/container" || -L "$2/libexec/container" ]]; }; then
+    printf incomplete
+else
+    printf standalone
 fi
 ' runtime-package-layout "${source_bin_directory##*/}" \
         "$source_package_root") || return "$?"
-    if [[ "$complete_package" != complete ]]; then
+    if [[ "$package_layout_state" == incomplete ]]; then
+        printf 'Container runtime candidate has an incomplete packaged layout: %s\n' \
+            "$container_binary" >&2
+        exit 2
+    fi
+    if [[ "$package_layout_state" != complete ]]; then
         if [[ -n "$runtime_managed_candidate_root" ]]; then
             printf 'managed Container runtime candidate is not a complete package: %s\n' \
                 "$container_binary" >&2
@@ -1207,6 +1219,29 @@ runtime_start_regular_file_status() {
     local path="$2"
 
     run_runtime_start_command "$deadline" /bin/test -f "$path"
+}
+
+# Read an optional marker while keeping its type checks and contents inside
+# the complete startup deadline. Status 1 means absent and status 2 means an
+# indirect or non-regular marker.
+read_optional_runtime_start_marker() {
+    local deadline="$1"
+    local path="$2"
+
+    # shellcheck disable=SC2016 # Expand $1 in the bounded child shell.
+    run_runtime_start_command "$deadline" /bin/bash -c '
+if [[ -L "$1" ]]; then
+    exit 2
+fi
+if [[ ! -e "$1" ]]; then
+    exit 1
+fi
+if [[ ! -f "$1" ]]; then
+    exit 2
+fi
+IFS= read -r value <"$1" || true
+printf "%s" "$value"
+' runtime-marker "$path"
 }
 
 # Check whether a caller-controlled path exists inside the complete startup deadline.
@@ -1550,20 +1585,22 @@ prepare_runtime_root() {
         run_runtime_start_command "$deadline" mkdir -p "$runtime_app_root"
     fi
     local marker_path="$runtime_app_root/$runtime_root_marker"
-    if [[ -L "$marker_path" || ( -e "$marker_path" && ! -f "$marker_path" ) ]]; then
-        printf 'refusing to use an indirect container runtime root marker: %s\n' \
-            "$marker_path" >&2
-        exit 2
-    fi
+    local marker_value=
     local marker_status=0
-    runtime_start_regular_file_status "$deadline" "$marker_path" || marker_status=$?
-    [[ "$marker_status" != "124" ]] || return "$marker_status"
+    marker_value=$(read_optional_runtime_start_marker \
+        "$deadline" "$marker_path") || marker_status=$?
+    case "$marker_status" in
+        0) ;;
+        1) ;;
+        2)
+            printf 'refusing to use an indirect container runtime root marker: %s\n' \
+                "$marker_path" >&2
+            exit 2
+            ;;
+        124) return "$marker_status" ;;
+        *) return "$marker_status" ;;
+    esac
     if [[ "$marker_status" == "0" ]]; then
-        local marker_value
-        # shellcheck disable=SC2016 # Read $1 in the bounded child shell.
-        marker_value=$(run_runtime_start_command "$deadline" \
-            /bin/bash -c 'IFS= read -r value <"$1" || true; printf "%s" "$value"' \
-            runtime-root-marker "$marker_path") || return "$?"
         if [[ "$marker_value" != "$runtime_root_marker_value" ]]; then
             printf 'refusing to clear container runtime root with an invalid marker: %s\n' "$runtime_app_root" >&2
             exit 2

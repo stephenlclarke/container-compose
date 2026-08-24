@@ -271,6 +271,52 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             )
             self.assertFalse(command_marker.exists())
 
+    def test_rejects_incomplete_packaged_layout_before_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_bin.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            partial_companion = package_bin / "container-apiserver"
+            partial_companion.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            partial_companion.chmod(0o755)
+
+            command_marker = temporary_root / "command-ran"
+            container_log = temporary_root / "container.log"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "never",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                }
+            )
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(candidate),
+                    "/usr/bin/touch",
+                    str(command_marker),
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn(
+                "Container runtime candidate has an incomplete packaged layout",
+                result.stderr,
+            )
+            self.assertFalse(container_log.exists())
+            self.assertFalse(command_marker.exists())
+
     def test_rejects_non_macho_launchable_libexec_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -648,6 +694,51 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn("refusing to clear container runtime root with an invalid marker", result.stderr)
             self.assertEqual(sentinel.read_text(encoding="utf-8"), "preserve\n")
+
+    def test_rejects_indirect_runtime_root_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            app_root.mkdir()
+            marker_target = temporary_root / "marker-target"
+            marker_target.write_text(
+                "container-compose isolated runtime state v1\n", encoding="utf-8"
+            )
+            marker = app_root / ".container-compose-runtime-root"
+            marker.symlink_to(marker_target)
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            command_marker = temporary_root / "command-ran"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/usr/bin/touch",
+                    str(command_marker),
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn(
+                "refusing to use an indirect container runtime root marker",
+                result.stderr,
+            )
+            self.assertFalse(command_marker.exists())
 
     def test_runtime_root_marker_hang_consumes_complete_startup_deadline(
         self,
