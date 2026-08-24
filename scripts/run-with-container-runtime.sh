@@ -527,7 +527,8 @@ run_with_managed_runtime_candidate() {
     local command_name=${1##*/}
     case "$command_name" in
         make | gmake)
-            "$@" "CONTAINER_COMPOSE_CONTAINER=$container_binary" 8>&-
+            "$@" "CONTAINER_BIN=$container_binary" \
+                "CONTAINER_COMPOSE_CONTAINER=$container_binary" 8>&-
             ;;
         *)
             "$@" 8>&-

@@ -1478,7 +1478,8 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             result_path = temporary_root / "candidate-path"
             makefile.write_text(
                 "all:\n"
-                '\t@printf \'%s\\n\' "$(CONTAINER_COMPOSE_CONTAINER)" '
+                '\t@printf \'%s\\n%s\\n\' "$(CONTAINER_BIN)" '
+                '"$(CONTAINER_COMPOSE_CONTAINER)" '
                 '> "$(RESULT_PATH)"\n',
                 encoding="utf-8",
             )
@@ -1498,7 +1499,10 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     ),
                     "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
                     "MAKEFLAGS": (
-                        " -- CONTAINER_COMPOSE_CONTAINER=" + str(candidate)
+                        " -- CONTAINER_BIN="
+                        + str(candidate)
+                        + " CONTAINER_COMPOSE_CONTAINER="
+                        + str(candidate)
                     ),
                 }
             )
@@ -1521,8 +1525,8 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
 
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(
-                    result_path.read_text(encoding="utf-8").strip(),
-                    str(staged_root / "bin" / "container"),
+                    result_path.read_text(encoding="utf-8").splitlines(),
+                    [str(staged_root / "bin" / "container")] * 2,
                 )
             finally:
                 if staged_root.is_dir():
