@@ -3552,7 +3552,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                     "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
                     "CONTAINER_RUNTIME_MANAGED": "1",
                     "CONTAINER_RUNTIME_RUN_ID": "outer-owner",
-                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "1",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "3",
                     "CONTAINER_TEST_LOG": str(container_log),
                 }
             )
@@ -3565,11 +3565,11 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=4,
+                timeout=6,
             )
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
-            self.assertLess(time.monotonic() - started, 3)
+            self.assertLess(time.monotonic() - started, 5)
             self.assertFalse(command_marker.exists())
             self.assertEqual(
                 container_log.read_text(encoding="utf-8").splitlines(),
