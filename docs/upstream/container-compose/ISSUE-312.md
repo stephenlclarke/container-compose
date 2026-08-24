@@ -41,6 +41,8 @@ cleanup or launch operation.
   launchable plugin rejection, managed nested-wrapper reuse without lock
   reacquisition, serialization, mixed-generation rejection, and interrupted
   replacement recovery.
+- The focused privacy-path regression also proves differently cased canonical
+  paths cannot bypass automatic localization on case-insensitive macOS filesystems.
 
 ## Scope
 

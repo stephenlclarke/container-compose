@@ -199,8 +199,9 @@ portable top-level shell fixtures; it never exempts a launchable plugin or
 helper. Do not set that test-only switch for a live runtime, CI validation, or
 release.
 
-When the checkout or configured runtime root is on a
-removable volume, Desktop, Documents, or Downloads,
+When the checkout or configured runtime root is on a removable volume,
+Desktop, Documents, or Downloads, case-insensitive canonical-path
+classification matches the standard macOS filesystem behavior and
 `scripts/run-with-container-runtime.sh` automatically relocates
 marker-protected state there. Every complete source package is also staged at
 one persistent, marker-protected `/private/tmp` path per source package, even
