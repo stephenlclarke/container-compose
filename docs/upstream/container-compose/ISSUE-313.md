@@ -31,7 +31,9 @@ records, and content-addressed evidence.
   corrected downstream task completed again.
 - The unchanged implementation tree previously completed immutable Compose
   source and Go stages without leaked Git-daemon descendants.
-- One final signed-head Compose source/Go proof follows base reconciliation.
+- Exact signed head `5fa6dd0c26e3a91430fdd37b23b592e99bd31fa5`
+  completed the immutable Compose source and Go stages in session
+  `pipeline_20260824T073438Z_58943`; both receipts report exit `0`.
 
 ## Scope
 
