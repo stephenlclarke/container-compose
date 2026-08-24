@@ -668,6 +668,88 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 if staged_root.is_dir():
                     shutil.rmtree(staged_root)
 
+    def test_staged_candidate_lock_is_held_until_command_completion(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+
+            ready = temporary_root / "command-ready"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                    "READY": str(ready),
+                }
+            )
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            first = subprocess.Popen(
+                [
+                    str(SCRIPT),
+                    str(candidate),
+                    "/bin/sh",
+                    "-c",
+                    'touch "$READY"; sleep 5',
+                ],
+                cwd=ROOT,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                deadline = time.monotonic() + 15
+                while not ready.exists() and first.poll() is None:
+                    if time.monotonic() >= deadline:
+                        self.fail("first staged command did not become ready")
+                    time.sleep(0.05)
+
+                second_environment = environment.copy()
+                second_environment["CONTAINER_RUNTIME_START_DEADLINE_SECONDS"] = "1"
+                second = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=second_environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                self.assertEqual(
+                    second.returncode, 124, second.stdout + second.stderr
+                )
+                self.assertIn(
+                    "timed out waiting for local Container candidate staging lock",
+                    second.stderr,
+                )
+                first_stdout, first_stderr = first.communicate(timeout=15)
+                self.assertEqual(
+                    first.returncode, 0, first_stdout + first_stderr
+                )
+            finally:
+                if first.poll() is None:
+                    first.terminate()
+                    first.communicate(timeout=5)
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
     def test_rejects_indirect_candidate_staging_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -963,6 +1045,57 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             marker = localized_root / ".container-compose-runtime-root"
             self.assertTrue(marker.is_file())
             shutil.rmtree(localized_root)
+
+    def test_forced_localization_rejects_missing_or_relative_requested_root(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+
+            for invalid_root in ("", "relative/app-root"):
+                with self.subTest(invalid_root=invalid_root):
+                    command_marker = temporary_root / "command-ran"
+                    command_marker.unlink(missing_ok=True)
+                    environment = self.runtime_environment()
+                    environment.update(
+                        {
+                            "CONTAINER_RUNTIME_APP_ROOT": invalid_root,
+                            "CONTAINER_RUNTIME_LOCALIZE_APP_ROOT": "always",
+                            "CONTAINER_RUNTIME_LOCK_FILE": str(
+                                temporary_root / "runtime.lock"
+                            ),
+                            "CONTAINER_TEST_LOG": str(
+                                temporary_root / "container.log"
+                            ),
+                        }
+                    )
+
+                    result = subprocess.run(
+                        [
+                            str(SCRIPT),
+                            str(fake_container),
+                            "/usr/bin/touch",
+                            str(command_marker),
+                        ],
+                        cwd=ROOT,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    self.assertEqual(
+                        result.returncode, 2, result.stdout + result.stderr
+                    )
+                    self.assertIn(
+                        "CONTAINER_RUNTIME_APP_ROOT must be an absolute",
+                        result.stderr,
+                    )
+                    self.assertNotIn(
+                        "Relocating Container runtime state", result.stdout
+                    )
+                    self.assertFalse(command_marker.exists())
 
     def test_rejects_indirect_localized_runtime_state_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

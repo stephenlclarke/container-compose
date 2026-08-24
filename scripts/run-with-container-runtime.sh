@@ -539,6 +539,24 @@ localize_runtime_app_root() {
         "$requested_root" "$runtime_app_root"
 }
 
+# Validate the caller-provided root before localization replaces it with a
+# generated local path. Otherwise an empty or relative input can be hidden by
+# the generated path and multiple unrelated runs can share one state root.
+validate_requested_runtime_app_root() {
+    if [[ -z "$runtime_app_root" || "$runtime_app_root" != /* ]]; then
+        printf 'CONTAINER_RUNTIME_APP_ROOT must be an absolute marker-protected candidate root\n' >&2
+        exit 2
+    fi
+    runtime_app_root=${runtime_app_root%/}
+    if [[ -z "$runtime_app_root" ]]; then
+        runtime_app_root=/
+    fi
+    if [[ "$runtime_app_root" == / ]]; then
+        printf 'CONTAINER_RUNTIME_APP_ROOT must not be /\n' >&2
+        exit 2
+    fi
+}
+
 # Reject ad-hoc Mach-O signatures before macOS can treat every rebuild as a
 # new Local Network or Keychain client.
 validate_runtime_candidate_signatures() {
@@ -733,7 +751,6 @@ stage_runtime_candidate_if_needed() {
     export CONTAINER_BIN="$container_binary"
     export CONTAINER_COMPOSE_CONTAINER="$container_binary"
     runtime_candidate_staging_complete=true
-    release_runtime_candidate_staging_lock
     printf 'Staged Container runtime candidate at its persistent local path: %s\n' \
         "$container_binary"
 }
@@ -813,7 +830,7 @@ run_runtime_start_command() {
 
     remaining_seconds=$(runtime_start_remaining_seconds "$deadline") || return 124
     "$SCRIPT_DIRECTORY/../Tools/ci/run-command-with-deadline.py" \
-        --seconds "$remaining_seconds" --grace-seconds 0 -- "$@"
+        --seconds "$remaining_seconds" --grace-seconds 0 -- "$@" 8>&-
 }
 
 # Create short-lived startup evidence on trusted local storage while charging
@@ -1463,6 +1480,7 @@ trap 'exit 131' QUIT
 trap 'exit 143' TERM
 resolve_container_binary "$runtime_start_sequence_deadline"
 validate_packaged_runtime_candidate_signatures
+validate_requested_runtime_app_root
 prepare_local_user_root "$runtime_start_sequence_deadline"
 localize_runtime_app_root
 stage_runtime_candidate_if_needed "$runtime_start_sequence_deadline"
@@ -1480,7 +1498,8 @@ verify_runtime_namespace_support "$runtime_start_sequence_deadline"
 
 if [[ "${CONTAINER_RUNTIME_MANAGED:-0}" == "1" ]]; then
     ensure_managed_runtime_ready "$runtime_start_sequence_deadline"
-    "$@"
+    # The parent retains the staging lock; commands must not inherit its fd.
+    "$@" 8>&-
     exit
 fi
 
@@ -1488,7 +1507,7 @@ stage_runtime_service_inputs "$runtime_start_sequence_deadline"
 runtime_lock_timeout=$(runtime_start_lock_timeout_seconds \
     "$runtime_start_sequence_deadline")
 CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS="$runtime_lock_timeout" \
-    acquire_container_runtime_lock
+    acquire_container_runtime_lock 8>&-
 trap cleanup EXIT
 
 printf 'Stopping stale container services...\n'
@@ -1540,4 +1559,6 @@ fi
 runtime_start_remaining_seconds "$runtime_start_sequence_deadline" >/dev/null || exit 124
 
 export CONTAINER_RUNTIME_MANAGED=1
-"$@"
+# Keep the candidate immutable for this invocation without leaking the lock to
+# the caller's command or any long-lived descendant it may create.
+"$@" 8>&-
