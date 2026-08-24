@@ -30,9 +30,10 @@ cleanup or launch operation.
 - The protected symlink target remains unchanged in the negative fixture.
 - Bash syntax and `git diff --check` pass.
 - The complete runtime-wrapper test file is the final pre-merge component gate.
-- Ten focused exact-head tests prove inherited candidate aliases are replaced,
+- Twelve focused exact-head tests prove inherited candidate aliases are replaced,
   the entire staged package is one generation, and exact or symlinked protected
-  paths are localized.
+  paths are localized. Signature inspection consumes the shared deadline, and
+  interrupted replacement retains a marker that the next run can recover.
 
 ## Scope
 
