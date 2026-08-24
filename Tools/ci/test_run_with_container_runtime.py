@@ -39,6 +39,13 @@ DEFAULT_INIT_IMAGE = "vminit:container-compose"
 
 class RunWithContainerRuntimeTest(unittest.TestCase):
     @staticmethod
+    def local_execution_root() -> Path:
+        private_tmp = Path("/private/tmp")
+        if private_tmp.is_dir() and os.access(private_tmp, os.W_OK):
+            return private_tmp
+        return Path("/tmp")
+
+    @staticmethod
     def runtime_environment() -> dict[str, str]:
         environment = os.environ.copy()
         for variable in (
@@ -612,9 +619,8 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             source_digest = hashlib.sha256(
                 str(package_root.resolve()).encode()
             ).hexdigest()[:16]
-            staged_root = Path(
-                f"/private/tmp/container-compose-runtime-candidate-"
-                f"{os.getuid()}-{source_digest}"
+            staged_root = self.local_execution_root() / (
+                f"container-compose-runtime-candidate-{os.getuid()}-{source_digest}"
             )
             try:
                 for _ in range(2):
@@ -678,9 +684,8 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             source_digest = hashlib.sha256(
                 str(package_root.resolve()).encode()
             ).hexdigest()[:16]
-            staged_root = Path(
-                f"/private/tmp/container-compose-runtime-candidate-"
-                f"{os.getuid()}-{source_digest}"
+            staged_root = self.local_execution_root() / (
+                f"container-compose-runtime-candidate-{os.getuid()}-{source_digest}"
             )
             protected_target = temporary_root / "protected-target"
             protected_target.mkdir()

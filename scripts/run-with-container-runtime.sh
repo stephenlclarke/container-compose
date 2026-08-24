@@ -63,8 +63,15 @@ runtime_candidate_staging_root=
 runtime_candidate_staging_complete=false
 runtime_candidate_stage_mode=${CONTAINER_RUNTIME_STAGE_CANDIDATE:-auto}
 runtime_app_root_localization_mode=${CONTAINER_RUNTIME_LOCALIZE_APP_ROOT:-auto}
-runtime_local_execution_root=${CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT:-/private/tmp}
+runtime_local_execution_root=${CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT:-}
 runtime_anonymous_registry_hosts=${CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS-ghcr.io}
+
+if [[ -z "$runtime_local_execution_root" ]]; then
+    runtime_local_execution_root=/private/tmp
+    if [[ ! -d "$runtime_local_execution_root" || ! -w "$runtime_local_execution_root" ]]; then
+        runtime_local_execution_root=/tmp
+    fi
+fi
 
 # Derive and export the one non-default namespace used by this candidate.
 configure_runtime_namespace() {
@@ -447,6 +454,17 @@ validate_runtime_localization_modes() {
     fi
 }
 
+# Print owner and permission mode in a stable form on both BSD/macOS and GNU
+# stat. Hosted Linux checks exercise the same staging boundary as macOS.
+runtime_path_owner_and_mode() {
+    local path="$1"
+    if /usr/bin/stat -f '%u %Lp' "$path" >/dev/null 2>&1; then
+        /usr/bin/stat -f '%u %Lp' "$path"
+    else
+        /usr/bin/stat -c '%u %a' "$path"
+    fi
+}
+
 # Return success for locations that launchd or TCC can classify as removable
 # or user-controlled. Services launched from these paths can block behind a
 # GUI approval dialog that an unattended build cannot answer.
@@ -574,8 +592,9 @@ stage_runtime_candidate_if_needed() {
         fi
         local staging_owner
         local staging_mode
-        staging_owner=$(/usr/bin/stat -f '%u' "$runtime_candidate_staging_root")
-        staging_mode=$(/usr/bin/stat -f '%Lp' "$runtime_candidate_staging_root")
+        read -r staging_owner staging_mode < <(
+            runtime_path_owner_and_mode "$runtime_candidate_staging_root"
+        )
         if [[ "$staging_owner" != "$(id -u)" ]] || (( (8#$staging_mode & 022) != 0 )); then
             printf 'refusing to use an unowned or writable local Container candidate: %s\n' \
                 "$runtime_candidate_staging_root" >&2
