@@ -1231,6 +1231,79 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
                 if staged_root.is_dir():
                     shutil.rmtree(staged_root)
 
+    def test_marked_incomplete_staged_candidate_is_rebuilt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            package_root = temporary_root / "candidate"
+            package_bin = package_root / "bin"
+            package_libexec = package_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+            (package_libexec / "generation").write_text(
+                "complete\n", encoding="utf-8"
+            )
+
+            source_digest = hashlib.sha256(
+                str(package_root.resolve()).encode()
+            ).hexdigest()[:16]
+            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            self.local_user_root().mkdir(mode=0o700, exist_ok=True)
+            staged_root.mkdir(mode=0o700)
+            marker = staged_root / ".container-compose-runtime-candidate-staging"
+            candidate_digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            marker.write_text(
+                "container-compose runtime candidate staging v1 "
+                + candidate_digest
+                + "\n",
+                encoding="utf-8",
+            )
+            stale_payload = staged_root / "interrupted-copy"
+            stale_payload.write_text("partial\n", encoding="utf-8")
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_LOCALIZE_APP_ROOT": "never",
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_RUN_ID": "marked-incomplete-staging",
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "10",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+            try:
+                result = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=13,
+                )
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(stale_payload.exists())
+                self.assertTrue((staged_root / "bin" / "container").is_file())
+                self.assertTrue(
+                    (staged_root / "bin" / "container-apiserver").is_file()
+                )
+                self.assertTrue((staged_root / "bin" / "container-engine").is_file())
+                self.assertTrue(
+                    (staged_root / "libexec" / "container" / "generation").is_file()
+                )
+            finally:
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
     def test_unchanged_staged_candidate_is_reused_while_running(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)

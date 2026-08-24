@@ -1001,9 +1001,15 @@ stage_runtime_candidate_if_needed() {
             exit 2
         fi
         local existing_package_sha256=
+        local existing_package_status=0
         if [[ "$existing_marker_value" == "container-compose runtime candidate staging v1 $container_binary_sha256" ]]; then
             existing_package_sha256=$(fingerprint_runtime_package \
-                "$deadline" "$runtime_candidate_staging_root") || return "$?"
+                "$deadline" "$runtime_candidate_staging_root") || \
+                existing_package_status=$?
+            [[ "$existing_package_status" != "124" ]] || return "$existing_package_status"
+            if [[ "$existing_package_status" != "0" ]]; then
+                existing_package_sha256=
+            fi
         fi
         if [[ -n "$existing_package_sha256" &&
             "$existing_package_sha256" == "$source_package_sha256_before" ]]; then
