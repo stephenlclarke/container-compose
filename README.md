@@ -30,14 +30,24 @@ images and publish Compose YAML, env-file layers, and optional image digest
 override layers or application image indexes as OCI project artifacts. Swift owns
 orchestration and maps supported Compose behavior to the matched runtime stack.
 
-## 0.11.0 Stable
+## 0.13.0 Stable
 
-[`0.11.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.11.0)
-is the stable macOS arm64 release published on 15 August 2026. It ships the
-plugin with an immutable matched Container stack and passed the hosted Stable
-Release Gate, including the supported Docker Compose parity suite.
+[`0.13.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.13.0)
+is the current stable macOS arm64 release, published on 24 August 2026. It ships
+the plugin with an immutable matched Container stack and passed the hosted
+Stable Release Gate, including the supported Docker Compose parity suite.
 
-The release adds:
+This release improves reliable, secure delivery of the matched stack:
+
+- unattended runtime validation no longer blocks on recurring macOS privacy or
+  public-GHCR credential dialogs;
+- packaged runtime candidates are staged only after their Developer ID
+  signatures and immutable contents are verified; and
+- the matched runtime now carries the inbound Unix-socket transport primitive
+  required for future Engine API socket support. `use_api_socket` is still not
+  available until its grant, recovery, and route-closure requirements are met.
+
+The supported release line includes:
 
 - durable `json-file` logging plus Syslog, Journald, Fluentd, GELF, Splunk HEC,
   AWS Logs, Google Cloud Logs, and Docker logging-plugin providers;
@@ -53,7 +63,7 @@ The release adds:
   redaction, cancellation, and bounded-resource controls.
 
 The complete release notes and immutable dependency revisions are on the
-[0.11.0 release page](https://github.com/stephenlclarke/container-compose/releases/tag/0.11.0).
+[0.13.0 release page](https://github.com/stephenlclarke/container-compose/releases/tag/0.13.0).
 [STATUS.md](docs/project/STATUS.md) describes the functionality and explicit limitations
 in this stable baseline. Planned compatibility work is kept separately in
 [BACKLOG.md](docs/project/BACKLOG.md) and its linked GitHub issues.
@@ -62,11 +72,11 @@ in this stable baseline. Planned compatibility work is kept separately in
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
 > <!-- upstream-metrics:start -->
-> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 21 August 2026 snapshot, the three support forks are **890 commits ahead of Apple upstream**:
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 25 August 2026 snapshot, the three support forks are **918 commits ahead of Apple upstream**:
 >
-> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 195 ahead** at [`3e078480b85d`](https://github.com/stephenlclarke/containerization/commit/3e078480b85dceb843133392573cdd4d9efeec0d).
-> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 655 ahead** at [`a7ff132653e1`](https://github.com/stephenlclarke/container/commit/a7ff132653e1a4f71de7ebb193beb9d651254b85).
-> - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 40 ahead** at [`88332c96705b`](https://github.com/stephenlclarke/container-builder-shim/commit/88332c96705b024bbc5cd210642118ee82f8793d).
+> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 201 ahead** at [`fefced145304`](https://github.com/stephenlclarke/containerization/commit/fefced145304666076d646609f21397f32909fcf).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 675 ahead** at [`94bb6c4bd1ad`](https://github.com/stephenlclarke/container/commit/94bb6c4bd1ad00deffb68fc40e931ee143c43c65).
+> - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 42 ahead** at [`e4829be2203b`](https://github.com/stephenlclarke/container-builder-shim/commit/e4829be2203b7baa33cae75ca58be967e4b81280).
 > - [`container-compose`](https://github.com/stephenlclarke/container-compose): the integration repository's current `main` branch, with no Apple repository to compare against.
 >
 > What looks like a local Compose change can therefore require coordinated conflict resolution, pin updates, builds, tests, packaging, and release validation across the entire stack. The pinned revisions must move together.
@@ -96,7 +106,7 @@ supported commands include a `Limitations` line that names the remaining gap.
 Use `--ansi never` for plain output. Unsupported runtime behavior fails before
 side effects with an explicit `unsupported compose feature` message.
 
-For 0.11.0, the generated help classifies 40 commands as green and six as
+For 0.13.0, the generated help classifies 40 commands as green and six as
 orange (`attach`, `events`, `exec`, `logs`, `run`, and `up`); no command is
 red. It classifies 262 documented long options as green and only
 `exec --privileged` as orange; no documented long option is red. Orange command
@@ -121,12 +131,17 @@ become implicit exceptions.
 >
 > The complete maintained 62-target Docker Compose comparison suite passed in one uninterrupted 1,152.03-second run against Docker Compose 5.3.1 and Docker Engine 29.2.1 on a Mac17,9 running macOS 26.5.2. Its three-sample warm-image bridge comparator measured `up` at 0.153s for Docker Compose and 1.228s for container-compose (8.01×), while `down` measured 10.178s and 5.916s respectively (0.58×). Named-network service discovery, aliases, one-off aliases, recreate behavior, and source-scoped links all passed their live Docker oracles. Exact revisions, timing tables, fingerprints, and interpretation are retained in the [macOS Compose parity and performance review](docs/reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md).
 >
-> This retained run predates 0.11.0 and is not a claim that the project goal is complete. Its lifecycle matrix covers warm-image 1/10/50-service detached startup and teardown, but its 31 July one-repetition debug diagnostic was slower than Docker at 10 and 50 services and is not release-grade evidence. That run did not include the later logging performance lanes; cold-resource collection, `develop.watch` sync, and build-context transfer remain open, and every partial surface in the current ledger remains open.
+> This retained run predates the current 0.13.0 stable release and is not a claim that the project goal is complete. Its lifecycle matrix covers warm-image 1/10/50-service detached startup and teardown, but its 31 July one-repetition debug diagnostic was slower than Docker at 10 and 50 services and is not release-grade evidence. That run did not include the later logging performance lanes; cold-resource collection, `develop.watch` sync, and build-context transfer remain open, and every partial surface in the current ledger remains open.
 
 <!-- Separate GitHub callouts. -->
 
 > [!NOTE]
-> The CodeQL workflow is temporarily manually disabled. Its branch-protection context remains configured, and the absence of a run must not be interpreted as a passing CodeQL result. It will remain off until the current integration work is complete and will then be turned back on.
+> The CodeQL workflow is active and required on `main`. Every main push,
+> scheduled run, and manual dispatch analyzes the Go normalizer. Ready pull
+> requests analyze relevant Go or CodeQL changes and use an explicit no-op gate
+> for unrelated changes; draft pull requests defer analysis. This does not
+> claim Swift CodeQL coverage, and a missing or failed required check is not a
+> pass.
 
 On macOS, `container-compose` honors the active pull policy, prepares missing default-pull images when needed, then reads image metadata before `up`, `create`, and one-off `run`. It creates deterministic implicit Dockerfile-declared volumes and seeds an empty local volume from the selected image path for both declared and ordinary local volume mounts (including inherited external volumes), preserving the selected directory's ownership and mode on the volume root. `volume.nocopy: true`, a pre-existing `volume.subpath`, and a mount at a missing image path remain empty; populated volumes are preserved across `down`/`up`, matching Docker. Service `pre_start` helpers inherit service runtime context and gate startup, while `post_start` and `pre_stop` cover detached, foreground, and interactive one-off lifecycle paths with Docker-compatible detach and exit-status behavior. Foreground `up --exit-code-from SERVICE` returns the selected service's terminal status even when teardown closes attached log streams. The matched runtime encodes foreground attach signals by Linux-resolvable name, returns complete long records at backward-read tail boundaries, and keeps persistent log capture alive after an attached client disconnects; the committed signal/log reliability fixture verifies all three behaviors against Docker Compose V2.
 
@@ -160,7 +175,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [DESIGN.md](docs/project/DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](docs/project/STATUS.md): understand the functionality and explicit limitations in the current stable release.
 - [BACKLOG.md](docs/project/BACKLOG.md): understand the remaining parity contracts and follow their live GitHub issues.
-- [Runtime capability contract](docs/architecture/runtime-capabilities.md): see the versioned matched-runtime requirements negotiated by 0.11.0 before side effects.
+- [Runtime capability contract](docs/architecture/runtime-capabilities.md): see the versioned matched-runtime requirements negotiated by 0.13.0 before side effects.
 - [Docker logging-driver design](docs/architecture/docker-logging-driver-semantics-design.md): review the released logging architecture, retained evidence, and remaining provider and certification gaps.
 - [Container-family parity architecture](docs/architecture/coherent-container-family-parity-design.md): understand the integrated authority, runtime topology, dependency order, and devcontainer/shared Engine design.
 - [Container-family parity development cycle](docs/architecture/container-family-development-cycle.md): deliver vertical slices with local-first validation, review-to-clean convergence, MBP runners, clean GitHub state, upstream monitoring, and comparable-or-better performance.

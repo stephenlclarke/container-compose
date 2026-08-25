@@ -4,11 +4,12 @@
 | --- | --- |
 | Status | Design complete; implementation not started |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, `devcontainer`, the shared Engine API, and an upstream Docker Model Runner integration |
-| Compatibility target | Docker Compose 5.3.1, Docker Model Runner 1.2.1, and Docker Engine 29.2.1 API 1.53 on macOS |
-| Matched Container revision | `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1` |
-| Matched Containerization revision | `d7377b962af724f8d7c2b640f3ab12184d33f1af` |
+| Compatibility target | Docker Compose 5.4.0, Docker Model Runner 1.2.1, and Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
+| Original design Container revision | `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1` |
+| Original design Containerization revision | `d7377b962af724f8d7c2b640f3ab12184d33f1af` |
 | Reference Model Runner revision | `b4ba47bb1ae49e13681888fda732ee0cf4144c3c` |
 | Design date | 31 July 2026 |
+| Last documentation review | 25 August 2026 against the current 5.4.0 programme oracle and STATUS backlog |
 
 ## Goal
 
@@ -29,7 +30,7 @@ Compose remains the project orchestrator. It does not own model content, inferen
 ### In scope
 
 - Top-level short and long model syntax, service list and mapping bindings, `name`, `model`, `context_size`, ordered `runtime_flags`, `endpoint_var`, and `model_var`.
-- Exact Docker Compose 5.3.1 selection, call ordering, progress, error, cancellation, and environment-injection behaviour.
+- Exact Docker Compose 5.4.0 selection, call ordering, progress, error, cancellation, and environment-injection behaviour.
 - A pinned and audited Docker Model Runner distribution with host-native Metal support.
 - Global OCI content, configuration, leases, concurrent pull deduplication, recovery, and explicit administration.
 - A stable guest-facing inference endpoint and Docker-compatible hostname/routing.
@@ -49,7 +50,7 @@ Compose remains the project orchestrator. It does not own model content, inferen
 
 ## Normative Terms
 
-`MUST`, `MUST NOT`, `SHOULD`, and `MAY` describe implementation requirements. The Docker oracle is Docker Compose 5.3.1 plus Docker Model Runner 1.2.1 at the revisions above. Model identity below distinguishes the Compose key, optional display name, OCI reference, and immutable content digest; these values MUST NOT be conflated.
+`MUST`, `MUST NOT`, `SHOULD`, and `MAY` describe implementation requirements. The Docker oracle is Docker Compose 5.4.0 plus Docker Model Runner 1.2.1 at the revisions above. Model identity below distinguishes the Compose key, optional display name, OCI reference, and immutable content digest; these values MUST NOT be conflated.
 
 ## Current Evidence and Blockers
 
@@ -67,7 +68,7 @@ Compose remains the project orchestrator. It does not own model content, inferen
 
 ### Command boundaries
 
-Docker Compose 5.3.1 calls model preparation in two places:
+Docker Compose 5.4.0 calls model preparation in two places:
 
 - `create`: after service images are available and before networks, volumes, and container reconciliation; and
 - `run`: after dependency and image preparation and before the one-off container is created.

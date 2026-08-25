@@ -811,9 +811,22 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 f"screen wait can match its typed command: {line}",
             )
         self.assertEqual(tape.count("container system start"), 2)
-        self.assertEqual(tape.count("--quiet-pull nginx alertmanager"), 2)
+        up_commands = [
+            shlex.split(line)[1]
+            for line in tape.splitlines()
+            if line.startswith('Type "container compose --ansi never --progress plain')
+        ]
+        self.assertEqual(len(up_commands), 2)
+        self.assertNotIn("--quiet-pull", up_commands[0])
+        self.assertIn("--quiet-pull", up_commands[1])
         self.assertIn("container-compose-volume-reuse-ok", tape)
         self.assertIn("down --volumes --remove-orphans", tape)
+        self.assertIn("project_containers=$(container compose", tape)
+        self.assertIn("project_volumes=$(container compose", tape)
+        self.assertIn(
+            "Wait+Screen@120s /Project containers and volumes removed/",
+            tape,
+        )
         self.assertIn('Type "container system stop; container system status"', tape)
         self.assertIn(
             "releases/download/current/container-compose-demo-current.gif",

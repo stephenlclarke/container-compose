@@ -2,16 +2,16 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Design complete; implementation in progress—the 0.11.0 matched stack provides the neutral Engine API, public gateway, logs/inspect/info/hijack/WebSocket/resize, discovery, unauthenticated image pull/tag/delete, and an `Implemented` Docker `VolumeCreate` route through Container's native authority. The route has focused public-socket Docker CLI proof but not a normal-graph full-service/guest fingerprint. Devcontainer now consumes the coherent Engine API and fork package graph; enhanced-authority cutover, registry credentials, push/build sessions, full route closure, socket grants, full volume providers, advanced mounts, complete external-client proof, and `use_api_socket` remain. |
+| Status | Design complete; implementation in progress—the current 0.13.0 matched stack provides the neutral Engine API, public gateway, logs/inspect/info/hijack/WebSocket/resize, discovery, unauthenticated image pull/tag/delete, and an `Implemented` Docker `VolumeCreate` route through Container's native authority. The route has focused public-socket Docker CLI proof but not a normal-graph full-service/guest fingerprint. Devcontainer now consumes the coherent Engine API and fork package graph; enhanced-authority cutover, registry credentials, push/build sessions, full route closure, socket grants, full volume providers, advanced mounts, complete external-client proof, and `use_api_socket` remain. |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, first-class `devcontainer`, the runtime-neutral `container-engine-api`, and the common Engine Linux sandbox |
-| Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
+| Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
 | Matched Container checkpoints | Image mutation `259878a427de7021b52e40e759d3b261150cc514`; fail-closed volume-driver component `fcec20e20a34b9e8b9a8cf2b23823ce8a065cdb4`; public Engine volume-create route `8b7c0ef8a911288783883b18b2519225829c4e21` is `Implemented` pending a normal-graph whole-service fingerprint |
 | Matched Containerization checkpoints | Exact image-mutation runtime `38d9c695e7a6915e5ce45d12c893dc323a661af7`; published provenance `77f06d4c44341e04241941072fb69e2b85a6f5c1` |
 | Matched Engine API checkpoint | Image-mutation routes and neutral contract `4949e743675f00ec102f7acacdb4e990409e383f`; volume-create route `987f05119c0fd6cc8e17c707ffd0c94fbd7d997e` |
 | Original devcontainer evidence | `b31e80b2b9c09ecc73bb3badf9cd5cf16550a538`; implementation extraction requires a clean reviewed accepted head |
 | Design date | 31 July 2026 |
-| Last documentation review | 15 August 2026 against the 0.11.0 release and current devcontainer graph |
+| Last documentation review | 25 August 2026 against the 0.13.0 release and current devcontainer graph |
 
 ## Goal
 
@@ -94,7 +94,7 @@ The original devcontainer evidence was revision `b31e80b2b9c09ecc73bb3badf9cd5cf
 - [`DevContainerDockerAPI`](https://github.com/stephenlclarke/devcontainer/tree/b31e80b2b9c09ecc73bb3badf9cd5cf16550a538/Sources/DevContainerDockerAPI) supplies Docker HTTP types, API-version routing, error shapes, streams, containers, images, networks, volumes, events, exec, logs, and archives.
 - [`RuntimeProvider.swift`](https://github.com/stephenlclarke/devcontainer/blob/b31e80b2b9c09ecc73bb3badf9cd5cf16550a538/Sources/DevContainerRuntimeSPI/RuntimeProvider.swift) demonstrates narrow runtime-neutral capability contracts.
 
-Those components were inputs to the extraction, not proof of closure. The accepted implementation now lives in the clean `stephenlclarke/container-engine-api` repository: signed release 0.3.5 is revision `78cb4cb5781d6dbe9f0d34a1b925ee8dcaacdc98`, and the 0.11.0 graph resolves later compatible revision `5e6e24d017691596783515285e1ff56d29701235`. The package provides the reusable gateway lifecycle, shared executable/gateway, checksum-pinned generated route ledger, private framed provider session with pull streams and bidirectional hijack, provider-owned state-root identity migration, bounded large-body streaming, gateway ping ownership, WebSocket attach framing, resize routing, and fail-closed whole-response composition. Current devcontainer `main` consumes that coherent graph and retains a bounded provider rather than becoming the enhanced Container authority. Signed Engine API `4949e743675f00ec102f7acacdb4e990409e383f` and Container `259878a427de7021b52e40e759d3b261150cc514` add native-authority system/container/image discovery and public unauthenticated image pull/tag/delete; signed Engine API `987f05119c0fd6cc8e17c707ffd0c94fbd7d997e` and Container `8b7c0ef8a911288783883b18b2519225829c4e21` add public Docker volume creation through that authority. The paired Docker CLI mutation certificate passes on the exact matched release stack, and its cached pull/tag/inspect/remove sequence is 17.79% faster than Docker. Dependency adoption and C04 functional behavior are closed; enhanced-authority cutover plus whole-stack external-client, security, migration, and comparable-performance proof remain incomplete.
+Those components were inputs to the extraction, not proof of closure. The accepted implementation now lives in the clean `stephenlclarke/container-engine-api` repository: signed release 0.3.5 is revision `78cb4cb5781d6dbe9f0d34a1b925ee8dcaacdc98`, and the 0.13.0 graph resolves later compatible revision `386a40c726ecd25d67a3e5933582aebbfbe4fa2f`. The package provides the reusable gateway lifecycle, shared executable/gateway, checksum-pinned generated route ledger, private framed provider session with pull streams and bidirectional hijack, provider-owned state-root identity migration, bounded large-body streaming, gateway ping ownership, WebSocket attach framing, resize routing, and fail-closed whole-response composition. Current devcontainer `main` consumes that coherent graph and retains a bounded provider rather than becoming the enhanced Container authority. Signed Engine API `4949e743675f00ec102f7acacdb4e990409e383f` and Container `259878a427de7021b52e40e759d3b261150cc514` add native-authority system/container/image discovery and public unauthenticated image pull/tag/delete; signed Engine API `987f05119c0fd6cc8e17c707ffd0c94fbd7d997e` and Container `8b7c0ef8a911288783883b18b2519225829c4e21` add public Docker volume creation through that authority. The paired Docker CLI mutation certificate passes on the exact matched release stack, and its cached pull/tag/inspect/remove sequence is 17.79% faster than Docker. Dependency adoption and C04 functional behavior are closed; enhanced-authority cutover plus whole-stack external-client, security, migration, and comparable-performance proof remain incomplete.
 
 `STORAGE-WP-02` remains **in progress**, not complete. The neutral listener/wire protocol, generated API 1.44 through 1.53 ledger, stock/enhanced capability profiles, immutable state-root identity, canonical SHA-256 provider fingerprint, shared `container-engine` executable, fail-closed gateway, private out-of-process provider session, devcontainer provider adapter, enhanced Container logging/inspection/discovery/image-mutation/volume-create adapter, ping, WebSocket attach, resize, and local public service lifecycle now exist. Remaining exit evidence is complete route profiles and external-client conformance, registry credential transformation, immutable authority handoff, typed guest grant, full volume lifecycle, and whole-stack performance proof. Devcontainer's capability set still truthfully omits image push/auth/build sessions, and the managed-volume store still supports only the local directory case.
 
@@ -104,7 +104,7 @@ The implementation MUST follow the pinned behavior, including phase, warning, in
 
 ### Volume resource behavior
 
-| Behavior | Docker Compose 5.3.1 / Engine 29.2.1 result | Required Container result |
+| Behavior | Docker Compose 5.4.0 / Engine 29.2.1 result | Required Container result |
 | --- | --- | --- |
 | Omitted driver | Engine resolves the volume to `local`. | Resolve to the built-in `local` provider without changing source `config` output. |
 | Unavailable driver | Volume creation fails because the named plugin is not found. | Fail provider resolution before state creation, ext4 allocation, container mutation, or credential use. |
@@ -151,7 +151,7 @@ Docker Compose's typed projection is visible in [Docker Compose 5.3.1 `buildMoun
 
 ### `use_api_socket` behavior
 
-Docker Compose 5.3.1 implements `use_api_socket` as a client-side project transformation, not an Engine create flag. If any service enables it, Compose:
+Docker Compose 5.4.0 implements `use_api_socket` as a client-side project transformation, not an Engine create flag. If any service enables it, Compose:
 
 1. rejects a Windows Engine;
 2. resolves all Docker CLI credentials, including credential-helper entries, with `GetAllCredentials()`;
@@ -1461,7 +1461,7 @@ If the Engine service dies while a container is running, the relay returns a con
 
 ## Ownership, Hashing, and Lifecycle
 
-The canonical volume hash follows Docker Compose 5.3.1 exactly: default an empty driver to `local`, then JSON-encode the compose-go `VolumeConfig` fields that participate—resolved `Name`, `Driver`, `DriverOpts`, `External`, and user `Labels`. `CustomLabels` and `Extensions` are tagged out of JSON and therefore MUST NOT affect the hash. Golden fixtures compare Container Compose output byte-for-byte with the pinned Go implementation before hashing.
+The canonical volume hash follows Docker Compose 5.4.0 exactly: default an empty driver to `local`, then JSON-encode the compose-go `VolumeConfig` fields that participate—resolved `Name`, `Driver`, `DriverOpts`, `External`, and user `Labels`. `CustomLabels` and `Extensions` are tagged out of JSON and therefore MUST NOT affect the hash. Golden fixtures compare Container Compose output byte-for-byte with the pinned Go implementation before hashing.
 
 Resolution and teardown rules are normative:
 

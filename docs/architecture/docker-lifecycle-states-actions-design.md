@@ -4,11 +4,12 @@
 | --- | --- |
 | Status | Design complete; implementation not started |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, the shared Engine API, and `devcontainer`'s selected runtime provider |
-| Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
+| Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
-| Matched Container revision | `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1` |
-| Matched Containerization revision | `d7377b962af724f8d7c2b640f3ab12184d33f1af` |
+| Original design Container revision | `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1` |
+| Original design Containerization revision | `d7377b962af724f8d7c2b640f3ab12184d33f1af` |
 | Design date | 31 July 2026 |
+| Last documentation review | 25 August 2026 against the current 5.4.0 programme oracle and STATUS backlog |
 
 ## Goal
 

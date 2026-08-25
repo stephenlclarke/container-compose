@@ -32,7 +32,8 @@ Sleep 2s
 Ctrl+L
 Sleep 1s
 
-Type "container compose --ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 900 --quiet-pull nginx alertmanager && clear && container compose -f examples/monitoring-stack/docker-compose.yaml ps"
+# Keep the first cold image pulls visible so the recording never appears idle.
+Type "container compose --ansi never --progress plain -f examples/monitoring-stack/docker-compose.yaml up --detach --wait --wait-timeout 900 nginx alertmanager && clear && container compose -f examples/monitoring-stack/docker-compose.yaml ps"
 Enter
 Wait+Screen@900s /nginx.*r[[:space:]]*unning/
 Sleep 4s
@@ -105,9 +106,12 @@ Sleep 3s
 Ctrl+L
 Sleep 1s
 
-Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --volumes --remove-orphans && clear && container compose -f examples/monitoring-stack/docker-compose.yaml ps --all"
+Type "container compose -f examples/monitoring-stack/docker-compose.yaml down --volumes --remove-orphans && project_containers=$(container compose -f examples/monitoring-stack/docker-compose.yaml ps --all --quiet) && project_volumes=$(container compose -f examples/monitoring-stack/docker-compose.yaml volumes --quiet) && [[ -z $project_containers && -z $project_volumes ]] && printf '\nProject containers and volumes %s\n' removed"
 Enter
-Sleep 4s
+Wait+Screen@120s /Project containers and volumes removed/
+Sleep 3s
+Ctrl+L
+Sleep 1s
 
 Type "container system stop; container system status"
 Enter

@@ -33,6 +33,10 @@ STACK_REFS_PATH = "Tools/release/stack-refs.json"
 EXPLICIT_RELEASE_LINE_PATTERN = re.compile(
     r"^Release-(?:Note|Highlight):[ \t]*(?P<value>.*)$"
 )
+ESCAPED_TRAILER_LINE_BREAK_PATTERN = re.compile(
+    r"(?:\\n|\\r\\n)+(?=(?:Release-(?:Note|Highlight)|Upstream-Ref|Bug-Ref|Refs|Follow-up-To):)",
+    re.IGNORECASE,
+)
 REFERENCE_TRAILER_PATTERN = re.compile(
     r"^(?:Upstream-Ref|Bug-Ref|Refs|Follow-up-To):[ \t]*(?P<value>.*)$",
     re.IGNORECASE,
@@ -342,7 +346,7 @@ def commits_for_revision(repo: Path, revision: str) -> list[CommitSummary]:
             continue
         short_hash = parts[0]
         subject = parts[1]
-        body = parts[2] if len(parts) >= 3 else ""
+        body = normalize_commit_body(parts[2] if len(parts) >= 3 else "")
         commits.append(
             CommitSummary(
                 short_hash=short_hash,
@@ -354,6 +358,12 @@ def commits_for_revision(repo: Path, revision: str) -> list[CommitSummary]:
             )
         )
     return commits
+
+
+def normalize_commit_body(body: str) -> str:
+    """Restore line breaks accidentally stored literally before known trailers."""
+
+    return ESCAPED_TRAILER_LINE_BREAK_PATTERN.sub("\n", body)
 
 
 def commits_for_range(repo: Path, selected_range: ReleaseRange) -> list[CommitSummary]:
@@ -467,15 +477,19 @@ CONVENTIONAL_SUBJECT_PATTERN = re.compile(
 )
 HIGHLIGHT_TYPES = {"feat", "fix", "perf"}
 INTERNAL_HIGHLIGHT_SCOPES = {
+    "build",
     "ci",
     "deps",
     "docs",
     "integration",
     "quality",
     "release",
+    "runtime",
+    "sockets",
     "status",
     "test",
     "tests",
+    "vminitd",
 }
 
 
@@ -505,13 +519,16 @@ def release_highlights(commits: list[CommitSummary]) -> list[str]:
 
     for commit in reversed(commits):
         match = CONVENTIONAL_SUBJECT_PATTERN.fullmatch(commit.subject)
-        if match is None:
-            if not commit.highlights:
-                continue
-        elif not highlight_eligible(match):
-            continue
-
         commit_highlights = list(commit.highlights)
+        if match is None:
+            if not commit_highlights:
+                continue
+        else:
+            if match.group("type") not in HIGHLIGHT_TYPES:
+                continue
+            if not commit_highlights and not highlight_eligible(match):
+                continue
+
         if not commit_highlights and not commit.suppress_automatic_highlights:
             fallback = commit.body_summary or conventional_highlight(commit.subject)
             if fallback is not None:
@@ -812,19 +829,24 @@ def render_release_notes(
         lines.append("- No user-facing highlights were declared for this build.")
     lines.append("")
 
-    lines.extend(["## Changes", ""])
+    lines.extend(["## Full changelog", ""])
 
-    if selected_range.base_label is None:
-        lines.append(f"- Commits included through `{head_short}`:")
+    if not commits:
+        lines.append("- No source commits changed since the previous package for this lane.")
+    elif selected_range.base_label is None:
+        lines.append(f"- Source history through `{head_short}` is retained in the repository.")
+    elif release_repo:
+        compare_url = (
+            f"https://github.com/{release_repo}/compare/"
+            f"{selected_range.base_label}...{selected_range.head_commit}"
+        )
+        lines.append(
+            f"- [View `{selected_range.base_label}...{head_short}`]({compare_url})."
+        )
     else:
         lines.append(
-            f"- Commits since `{selected_range.base_label}` through `{head_short}`:"
+            f"- Source history: `{selected_range.base_label}..{head_short}`."
         )
-
-    if commits:
-        lines.extend(f"- `{commit.short_hash}` {commit.subject}" for commit in commits)
-    else:
-        lines.append("- No source commits changed since the previous package for this lane.")
 
     component_comparisons = component_pin_comparisons(
         repo=repo,
@@ -840,7 +862,6 @@ def render_release_notes(
                 f"`{selected_range.base_label}`."
             )
 
-        changes_by_name = {change.name: change for change in component_deltas}
         for comparison in component_comparisons:
             previous_ref = comparison.previous_ref
             current_ref = comparison.current_ref
@@ -863,23 +884,15 @@ def render_release_notes(
                 )
                 continue
 
-            change = changes_by_name[comparison.name]
             compare_url = (
-                f"https://github.com/{change.repository}/compare/"
-                f"{change.previous_ref}...{change.current_ref}"
+                f"https://github.com/{comparison.repository}/compare/"
+                f"{previous_ref}...{current_ref}"
             )
             lines.append(
-                f"- `{change.name}` (`{change.repository}`): "
-                f"[`{short_ref(change.previous_ref)}` -> "
-                f"`{short_ref(change.current_ref)}`]({compare_url})"
+                f"- `{comparison.name}` (`{comparison.repository}`): "
+                f"[`{short_ref(previous_ref)}` -> "
+                f"`{short_ref(current_ref)}`]({compare_url})"
             )
-            if change.commits:
-                lines.extend(
-                    f"  - `{commit.short_hash}` {commit.subject}"
-                    for commit in change.commits
-                )
-            else:
-                lines.append("  - No commits are reachable between the pinned revisions.")
 
     lines.extend(
         [

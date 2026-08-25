@@ -2,20 +2,20 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Active overall. The 0.11.0 stable stack publishes the core logging architecture, durable native histories, maintained remote/provider implementations, exact-process attachment, public REST lifecycle, and the retained focused Docker Compose and Docker CLI certificates. The remaining external-client/provider/failure/migration/security matrix, focused GELF retry and Unix-socket validation paths, cold-runtime/resource collectors, and comparable release-artifact performance evidence remain open. |
+| Status | Active overall. The current 0.13.0 stable stack retains the core logging architecture, durable native histories, maintained remote/provider implementations, exact-process attachment, public REST lifecycle, and the retained focused Docker Compose and Docker CLI certificates. The remaining external-client/provider/failure/migration/security matrix, focused GELF retry and Unix-socket validation paths, cold-runtime/resource collectors, and comparable release-artifact performance evidence remain open. |
 | Scope | `container-compose`, `devcontainer`, the matched `container` fork, the matched `containerization` fork, the shared Engine API, and versioned logging providers |
-| Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
+| Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. The verified 5.3.1 logging fixtures below remain retained historical evidence. |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
-| Stable release | [`container-compose` 0.11.0](https://github.com/stephenlclarke/container-compose/releases/tag/0.11.0), published 15 August 2026 after the hosted Stable Release Gate passed |
-| Public-build Container revision | `9aa1803223e8573f169c2a2effa657392b4d6e30` |
-| Compose checkpoints | Stable 0.11.0 source `98ffb22858752ee33d041130f36929b1f9b5ab2b`; earlier signed checkpoints below retain the implementation and oracle history that led to this release |
+| Stable release | [`container-compose` 0.13.0](https://github.com/stephenlclarke/container-compose/releases/tag/0.13.0), published 24 August 2026 after the hosted Stable Release Gate passed |
+| Public-build Container revision | `94bb6c4bd1ad00deffb68fc40e931ee143c43c65` |
+| Compose checkpoints | Stable 0.13.0 source `52805d9539834ab375163d941bada6c4677a187a`; earlier signed checkpoints below retain the implementation and oracle history that led to this release |
 | Local Container checkpoints | Signed enhanced authority `6a668b2b5d42246efcad3316374f6d0e0d2eaf14`; signed public gateway lifecycle and discovery fix `ac1803ec555960ce49fcec1d6a5b718d781629e0`; production journald supervision/reclamation `84d160671f3ba6c265a02b49b2ff4309f6584d30`; isolated Docker-plugin lifecycle implementation `08677dc8b5a677533de80cf634fee1d14f4da069`; complete provider-generation cutover implementation `6e462443dd744bda0b605bf26e093833d7818e77`; public REST lifecycle, durable state, protected-effect reconciliation, and distributable plugin-root certificate `ac77f7a38819c4f96581220bb58d89107b51826a`; created-container attach and foreground descriptor ownership `a10ad44d8675b27a665d72fbe054f12f403f8412`; public unreadable-reader classification and exact reliability candidate `bfa8b361901e33bc427d5bb551d19b2a224ca3f2` |
-| Matched Containerization checkpoints | Stable 0.11.0 revision `f0bc99d26cd27ed58b06236421a298d9e4acd5c1`; earlier validation checkpoints remain recorded below |
-| Shared Engine API | The stable Container graph resolves `container-engine-api` at `5e6e24d017691596783515285e1ff56d29701235`; earlier signed handoff heads below retain the provider-control, public-lifecycle, bounded-history, framing, trust, and exact-process validation history |
+| Matched Containerization checkpoints | Stable 0.13.0 revision `fefced145304666076d646609f21397f32909fcf`; earlier validation checkpoints remain recorded below |
+| Shared Engine API | The stable Container graph resolves `container-engine-api` at `386a40c726ecd25d67a3e5933582aebbfbe4fa2f`; earlier signed handoff heads below retain the provider-control, public-lifecycle, bounded-history, framing, trust, and exact-process validation history |
 | Verified Compose reliability checkpoint | Docker Compose 5.3.1 and the exact signed stack at Compose `c7a50e28438ca0c5bd5a668d3b8e87db25c4a176`, Container `bfa8b361901e33bc427d5bb551d19b2a224ca3f2`, Containerization `38d9c695e7a6915e5ce45d12c893dc323a661af7`, and Engine API `c7973ac641fb6f6e07df1358114f36222bd9ca59` pass one identical Dockerfile/Compose/Bash CLI fixture for readable/`none` non-TTY foreground output, successful empty static `none` history, restart retention, three replicas, tails, signal forwarding, disconnect isolation, and exact cleanup; 19 focused Swift tests and three Bash-harness regressions pass |
 | Logging handoff checkpoints | Signed local Container heads `170b8769e3105169b4a01d99ac3bc93cd860d6fc`, `8005bf8fb8036da0b15d63763d5f51dff12cd5eb`, `0808fa92fcfa3e2a2b3a4c5b05e0057e83edf6ba`, `4e426116968e8382317e9cb3ac17821c9e6733af`, `08e7324b1dc89d0d1acd91680562d9223d807d56`, `16a3419ae31bb5c18a934571c69348767a89233e`, and `62455f657e8d22233736eec7c2438ca7a14553ce` implement and verify destination staging/re-resolution, protected receipt, abort compensation, signed promotion, Complete-only activation, immutable history publication, cursor adoption, the provider-neutral devcontainer payload, the real coordinator's possession/export/manifest/object-transfer/root-commit/promotion/activation transaction, public imported-history read-back plus a greater-sequence writer, staged-abort compensation replay across coordinator reconstruction, strict complete chunk-set validation, ordered one-active-file publication, constant-auxiliary-memory order validation, exact publication beyond 4096 stores, and native framed-file source/destination transport; signed local `devcontainer` heads `385cf69878a87e67589eb36fff2bc3c9dd66695f` and `63d2b4a122dfa0eb187ae82e48d14dc21b73c79e` add quiesced Apple Container history export, durable provider identity/key enrollment, root-scoped trust, object transport, source contribution replay, and authenticated private-session wiring; focused framed-transport evidence passes 8/8 Engine codec, 2/2 Engine gateway, and 7/7 Container transactions on the MBP, and the latest plugin suite remains 10/10 |
 | Verified Syslog UDP/TCP public-socket certificates | Signed local Container `5ebce8a2aa90bf96775285e1a79ac48b375f69c5` fixes native macOS routing of `host.docker.internal` for the fork-only Syslog provider while retaining TCP/TLS identity. Its signed successor `b82e34874b944d2b9ecc65d4068aee5d7b46905e` reconstructs a stopped cache-disabled native Syslog logger before returning the Docker unreadable-history error. The focused provider suite passes 8/8 with 10/10 executable new-method lines covered. Docker CLI 29.7.1 / Engine 29.2.1 and two exact candidates prove UDP delivery and the TCP second empty connection after `docker logs`, including ordering, facility/severity, tag, inspect, unreadable history, native authority, and cleanup. UDP candidates are 3.08×/2.31× Docker; TCP candidates are 2.07×/1.72×. These completed durations are retained for the post-functional performance phase only. [LOGGING-SYSLOG-UDP-REST-01](../parity/handoffs/LOGGING-SYSLOG-UDP-REST-01.md) and [LOGGING-SYSLOG-TCP-REST-01](../parity/handoffs/LOGGING-SYSLOG-TCP-REST-01.md) retain the exact scope and fingerprints. |
-| Last documentation review | 15 August 2026 against the 0.11.0 immutable release graph |
+| Last documentation review | 25 August 2026 against the 0.13.0 immutable release graph |
 
 ## Goal
 
@@ -62,14 +62,15 @@ The compatibility contract is observable Docker Compose and Engine behaviour. It
 
 `MUST`, `MUST NOT`, `SHOULD`, and `MAY` describe implementation requirements in this document. An oracle is a black-box comparison against the pinned Docker Compose and Engine versions on the same Mac. Moby source and Docker documentation explain behaviour, but a versioned executable oracle decides disagreements.
 
-## 0.11.0 Published Boundary
+## Published Logging Boundary
 
-The 0.11.0 immutable release requires
+The current 0.13.0 immutable release requires
 `io.github.stephenlclarke.container.logging-drivers.v1` and ships the Compose,
 Container, Engine API, Containerization, SwiftNIO SSL, and builder inputs named
-in [Runtime Capability Contract](runtime-capabilities.md#logging-capability).
-Its Stable Release Gate passed. The remaining blockers are certification and
-parity gaps beyond that released functional subset: the complete
+in [Runtime Capability Contract](runtime-capabilities.md#logging-capability). It
+retains the functional subset first published in 0.11.0, and its Stable Release
+Gate passed. The remaining blockers are certification and parity gaps beyond
+that released functional subset: the complete
 external-client/provider/failure/migration/security matrix, the focused GELF
 retry and Unix-socket validation paths, cold-resource collection, and
 comparable release-artifact performance.
@@ -129,11 +130,11 @@ The separate [Fluentd TLS trust-failure contract](../parity/handoffs/LOGGING-FLU
 
 ## Retained Implementation History
 
-As of 15 August 2026, the 0.11.0 stable release publishes the core logging
-architecture and exact matched graph. The dated work-package bullets below
-retain how that result was assembled. Publication blockers inside those
-historical bullets are superseded by 0.11.0; incomplete provider, external
-client, failure, migration, security, and performance evidence remains open.
+The 0.11.0 stable release published the core logging architecture and exact
+matched graph. The dated work-package bullets below retain how that result was
+assembled. Publication blockers inside those historical bullets are superseded
+by 0.11.0; incomplete provider, external-client, failure, migration, security,
+and performance evidence remains open.
 
 - The Docker Compose 5.3.1 static `none` history and signal/log reliability contract is Verified on the exact matched MBP stack. Static history for an unreadable driver succeeds with an empty stream and does not suppress readable services, while follow and direct Container/Engine reads preserve the unsupported-reader error. The same Dockerfile/Compose/Bash CLI fixture passes readable/`none` non-TTY foreground output, restart retention, three-replica aggregation with complete identifiers, long and filtered tails, signal forwarding, disconnected-client persistence, and exact cleanup. The focused Swift gate passes 19 tests in two suites and the harness unit gate passes three tests. A separate exact-candidate Docker-CLI Bash certificate now passes the public REST lanes for `json-file`, `local`, and `none`: non-TTY create/start/inspect/static/follow/tail/second-start/stop/delete behavior, Docker's blank `local` `LogPath`, direct `none` errors, one native authority, and exact cleanup.
 - Work package 1 has deterministic Engine 29.2.1 and Compose 5.3.1 fixtures for the locally stable core cases plus Syslog, Fluentd, and direct-Engine GELF UDP-default-gzip/TCP-NUL wire, address/compression/reconnect validation, and selected tag/environment/label metadata semantics. Wire/configuration/metadata provider-component regressions pass on the exact local graph through an identity-preserving editable SwiftPM overlay. Fresh candidate public-socket Docker CLI certificates additionally verify the `local` built-in lifecycle, narrow cache-disabled GELF UDP/TCP delivery, cache-disabled Syslog UDP delivery, stopped-container Syslog TCP logger reconstruction, a bounded forced GELF TCP peer-loss/reconnect path, and narrow cache-disabled Fluentd TCP/ACK delivery with strict output order, metadata/tag, inspect, unsupported history, native authority, and cleanup. Container `359e14e4f991db0f3729d44651b9f82d9ab1b0ed` preserves the Docker alias dial boundary and corrects the Forward `container_name` leading slash; the direct configuration regression passes `8/8` with the changed executable line run 13 times. Two source-built-guest candidates pass the Fluentd gate in `2.768545625s` and `2.345302459s` versus Docker's `0.424317541s`; that is functional evidence only, not comparable-or-better performance. The positive-budget GELF delayed-retry relay remains `Queued`. These proofs do not certify the complete TCP retry/failing-sink matrix or the remaining provider runtime/external-client matrix. The representative paired performance harness now covers attached/detached startup to first log, fixed stdout/stderr/mixed writers, exact 16 KiB/1 MiB records, blocking slow-sink backpressure, three non-blocking queue sizes with drop assertions, compressed `json-file`/`local` rotation, tail/since/until/follow reads, dual-cache delivery/read, and 1/10/50-service aggregation with counterbalanced schedule evidence, semantic digests, median/P95 ratios, and separate comparable-or-better and regression results. Cold-runtime CPU/RSS/I/O collectors, production plugins, cloud-provider reference oracles, and a release-artefact performance run remain open.

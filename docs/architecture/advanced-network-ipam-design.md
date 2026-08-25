@@ -2,14 +2,14 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Implementation underway. The 0.11.0 stable stack ships lossless IPAM modelling, network-scoped DNS/aliases, bridge mapping, IPv6-only networking, allocation ranges, gateway and auxiliary reservations, runtime DNS, and persisted endpoint behavior for the supported vmnet lane. Custom network/IPAM providers, IPv6 range/auxiliary behavior, durable multiple-pool/provider reconciliation, namespace joins, and comparable-performance evidence remain. |
+| Status | Implementation underway. The current 0.13.0 stable stack ships lossless IPAM modelling, network-scoped DNS/aliases, bridge mapping, IPv6-only networking, allocation ranges, gateway and auxiliary reservations, runtime DNS, and persisted endpoint behavior for the supported vmnet lane. Custom network/IPAM providers, IPv6 range/auxiliary behavior, durable multiple-pool/provider reconciliation, namespace joins, and comparable-performance evidence remain. |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, the shared Engine API, devcontainer, and the common Engine Linux sandbox |
-| Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS; `NET-WP-01` source rendering is also captured against Docker Compose 5.4.0. |
+| Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
-| Stable 0.11.0 Container revision | `9aa1803223e8573f169c2a2effa657392b4d6e30` |
-| Stable 0.11.0 Containerization revision | `f0bc99d26cd27ed58b06236421a298d9e4acd5c1` |
+| Stable 0.13.0 Container revision | `94bb6c4bd1ad00deffb68fc40e931ee143c43c65` |
+| Stable 0.13.0 Containerization revision | `fefced145304666076d646609f21397f32909fcf` |
 | Design date | 31 July 2026 |
-| Last documentation review | 15 August 2026 against the 0.11.0 release and current STATUS evidence |
+| Last documentation review | 25 August 2026 against the 0.13.0 release and current STATUS evidence |
 
 ## Goal
 
@@ -50,15 +50,15 @@ The compatibility contract is observable Docker Compose behavior. It is not an a
 
 `MUST`, `MUST NOT`, `SHOULD`, and `MAY` describe implementation requirements in this document. An oracle is an executable comparison against the pinned Docker Compose and Engine versions on the same Mac.
 
-## 0.11.0 Published Boundary
+## Historical 0.11.0 Published Boundary
 
-The stable release implements the built-in vmnet subset described above: source
-model retention, supported allocation ranges and reservations, IPv6-only
-networks, network-scoped discovery/aliases, bridge mapping, runtime DNS, and
-persisted endpoint behavior. The remaining design is still required for custom
-network/IPAM providers, IPv6 range and auxiliary-address coverage, durable
-multiple-pool/provider reconciliation, namespace joins, and release-grade
-performance evidence.
+The original 0.11.0 release implemented the built-in vmnet subset described
+above: source model retention, supported allocation ranges and reservations,
+IPv6-only networks, network-scoped discovery/aliases, bridge mapping, runtime
+DNS, and persisted endpoint behavior. The remaining design is still required
+for custom network/IPAM providers, IPv6 range and auxiliary-address coverage,
+durable multiple-pool/provider reconciliation, namespace joins, and
+release-grade performance evidence.
 
 ## Retained Initial Evidence and Current Blockers
 
@@ -92,13 +92,13 @@ The implementation MUST follow the pinned reference rather than infer behavior f
 
 ### Configuration and create phases
 
-Docker Compose 5.3.1 preserves the network model during `config`, then performs parsing and Engine validation during create or endpoint attachment. Container Compose MUST retain the same phase boundary.
+Docker Compose 5.4.0 preserves the network model during `config`, then performs parsing and Engine validation during create or endpoint attachment. Container Compose MUST retain the same phase boundary.
 
 `container compose config` MUST NOT reject a value merely because network creation later will. The maintained differential fixtures include malformed CIDRs, malformed static addresses, out-of-pool static addresses, repeated same-family pools, malformed endpoint sysctls, and incomplete pool entries. Runtime parsing and provider validation MUST produce the matching failure category at the corresponding later phase.
 
 ### Effective semantics observed on this MBP
 
-| Behavior | Docker Compose 5.3.1 / Engine 29.2.1 result | Required Container result |
+| Behavior | Docker Compose 5.4.0 / Engine 29.2.1 result | Required Container result |
 | --- | --- | --- |
 | Omitted `driver` | Engine selects `bridge`. | Resolve to the built-in `bridge` alias without changing `config` output. |
 | Missing network driver | Creation fails because the named plugin is not found. | Fail at provider resolution with the Docker-compatible driver-not-found category. |
@@ -258,7 +258,7 @@ This ordering is observable. Malformed or locally unsupported creation fields MU
 
 For a create/recreate candidate, Compose parses only network IPAM pool CIDRs and addresses into typed values. Its diagnostics MUST match Docker Compose's network-create parse categories, including `invalid subnet`, `invalid ip-range`, `invalid gateway address`, and `invalid auxiliary address`.
 
-Docker Compose 5.3.1 removes a hash-divergent network and stops its affected services before it parses the replacement pool. Container Compose MUST preserve that order, including the possibility that invalid replacement data leaves the old network absent and services stopped. Persist a recovery marker and emit the matched error/events, but do not silently retain or restore the old network because that would be an observable divergence.
+Docker Compose 5.4.0 removes a hash-divergent network and stops its affected services before it parses the replacement pool. Container Compose MUST preserve that order, including the possibility that invalid replacement data leaves the old network absent and services stopped. Persist a recovery marker and emit the matched error/events, but do not silently retain or restore the old network because that would be an observable divergence.
 
 ### Runtime provider preflight
 
@@ -619,7 +619,7 @@ Capabilities return the provider's default local/global address-space names, equ
 
 `NetworkProviderActionIdentityV1` is the common mutating-call envelope described above: it contains the immutable parent `operationID`, exact `operationGeneration`, stable controller-action ID and action idempotency key, semantic/action digests, and selected provider reference. The network controller creates one child transaction across IPAM and network-driver work beneath that immutable parent operation. Each provider effect has its own stable action identity/key; no child record copies the generic client/workload key or its retry/cached-outcome state. On failure the controller releases only leases created by that child transaction, in reverse order; the parent then compensates the other domain controllers in dependency order. Recovery replays the controller-action keys, routes each operation and protected-effect reference to the recorded `providerGeneration`, reconciles persisted state, and publishes any Docker event only through the canonical lifecycle/event journal.
 
-For Docker Compose 5.3.1, top-level `ipam.options` are retained in requested state but the Compose adapter marks them `inspectionOnly` and does not send them to `requestPool`. This rule is versioned with the Docker reference and MUST be revisited when the pinned Compose implementation changes.
+For Docker Compose 5.4.0, top-level `ipam.options` are retained in requested state but the Compose adapter marks them `inspectionOnly` and does not send them to `requestPool`. This rule is versioned with the Docker reference and MUST be revisited when the pinned Compose implementation changes.
 
 ### Provider error categories
 
@@ -774,7 +774,7 @@ Containerization does not allocate addresses, interpret Compose driver options, 
 
 The canonical network hash covers the resolved network name, normalized requested driver, driver options, tri-state family flags, internal/attachable state, IPAM driver, source IPAM options, ordered pools, named auxiliary addresses, and user labels. Compose-generated custom labels are excluded, matching `NetworkHash`; map keys are sorted only for canonical encoding and pool order remains significant.
 
-Resolution follows Docker Compose 5.3.1:
+Resolution follows Docker Compose 5.4.0:
 
 1. Resolve external networks by exact name or ID. Never create, mutate, hash-reconcile, or delete them.
 2. For a non-external exact-name match, warn when the project label is missing or names another project.

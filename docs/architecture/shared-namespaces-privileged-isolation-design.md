@@ -4,10 +4,11 @@
 | --- | --- |
 | Status | Design complete; implementation not started |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, the shared Engine API, devcontainer, and the common Linux workload sandbox |
-| Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
-| Matched Container revision | `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1` |
-| Matched Containerization revision | `d7377b962af724f8d7c2b640f3ab12184d33f1af` |
+| Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
+| Original design Container revision | `88460ab2ab0ca2f3fa9f91b2911b3b77647596c1` |
+| Original design Containerization revision | `d7377b962af724f8d7c2b640f3ab12184d33f1af` |
 | Design date | 31 July 2026 |
+| Last documentation review | 25 August 2026 against the current 5.4.0 programme oracle and STATUS backlog |
 
 ## Goal
 
@@ -147,7 +148,7 @@ Engine version and configuration, while the requested record remains empty.
 
 ### Compose and Engine resolution
 
-Docker Compose 5.3.1 resolves `service:X` to the first sorted target replica ID for network, IPC, and PID sharing. It rewrites the create request to the equivalent immutable `container:<id>` target. If the service has no eligible replica, create fails at the reference phase.
+Docker Compose 5.4.0 resolves `service:X` to the first sorted target replica ID for network, IPC, and PID sharing. It rewrites the create request to the equivalent immutable `container:<id>` target. If the service has no eligible replica, create fails at the reference phase.
 
 Raw Engine `container:name-or-id` requests are resolved and canonicalised to the donor's immutable ID before container creation. The persistent request records that ID and a durable namespace dependency lease; it does not freeze a live donor process generation at create. The start activation selects and records the exact live donor generation. Rename cannot retarget a dependant.
 

@@ -11,15 +11,15 @@ guidance remains in [INSTALL.md](../guides/INSTALL.md).
 
 ## Current Stable Release
 
-[`0.11.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.11.0)
-was published for macOS arm64 on 15 August 2026 from Compose commit
-`98ffb22858752ee33d041130f36929b1f9b5ab2b`.
+[`0.13.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.13.0)
+was published for macOS arm64 on 24 August 2026 from Compose commit
+`52805d9539834ab375163d941bada6c4677a187a`.
 
 The immutable release manifest selects:
 
-- Container `9aa1803223e8573f169c2a2effa657392b4d6e30`.
-- Containerization `f0bc99d26cd27ed58b06236421a298d9e4acd5c1`.
-- Container builder shim `88332c96705b024bbc5cd210642118ee82f8793d`.
+- Container `94bb6c4bd1ad00deffb68fc40e931ee143c43c65`.
+- Containerization `fefced145304666076d646609f21397f32909fcf`.
+- Container builder shim `e4829be2203b7baa33cae75ca58be967e4b81280`.
 - Builder image digest
   `sha256:c29628471db683a53f4a75bcb759bb9147a65e097ede37c7dde05442afa7518c`.
 
@@ -329,9 +329,9 @@ Normal repository validation uses `make ci`, targeted tests while iterating,
 the complete Docker Compose parity target when Compose or runtime behavior
 changes, and `make release-gate` before stable publication.
 
-The 0.11.0 immutable package passed the hosted Stable Release Gate, including
-the supported parity suite. CI, Quality, CodeQL, Documentation and Prebuilt
-Binaries are green on the current main branch.
+The 0.13.0 immutable package passed the hosted Stable Release Gate, including
+the supported parity suite. Its exact release commit also completed CI,
+Quality, CodeQL, Documentation, and Prebuilt Binaries successfully.
 
 The maintained local parity suite covers project loading, Compose and
 Dockerfile models, lifecycle, logging, terminal sessions, networking, IPAM,

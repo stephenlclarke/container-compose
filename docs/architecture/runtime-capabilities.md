@@ -71,11 +71,11 @@ provider lifecycle, canonical reads, dual cache, and exact-process foreground
 attachment in the
 [Docker logging-driver design](docker-logging-driver-semantics-design.md).
 It is present in the coordinated release manifest and shipped by
-[`container-compose` 0.11.0](https://github.com/stephenlclarke/container-compose/releases/tag/0.11.0).
-The immutable release uses Compose `98ffb22858752ee33d041130f36929b1f9b5ab2b`,
-Container `9aa1803223e8573f169c2a2effa657392b4d6e30`, Engine API
-`5e6e24d017691596783515285e1ff56d29701235`, Containerization
-`f0bc99d26cd27ed58b06236421a298d9e4acd5c1`, and SwiftNIO SSL
+[`container-compose` 0.13.0](https://github.com/stephenlclarke/container-compose/releases/tag/0.13.0).
+The immutable release uses Compose `52805d9539834ab375163d941bada6c4677a187a`,
+Container `94bb6c4bd1ad00deffb68fc40e931ee143c43c65`, Engine API
+`386a40c726ecd25d67a3e5933582aebbfbe4fa2f`, Containerization
+`fefced145304666076d646609f21397f32909fcf`, and SwiftNIO SSL
 `a9d648535c62e640d1df258a70c9117a8ddea43e`. The hosted Stable Release Gate
 passed for this graph. Compose preflight still negotiates the identifier before
 using advanced logging; advertising the requirement does not make every remote
@@ -146,5 +146,6 @@ recovers after restart without provider lifecycle effects. Later signed heads
 complete reference-aware quiescence, durable configuration/history migration,
 terminal proof before alias cutover, final N reclamation, and distributable
 plugin certification. Release trust and coordinated dependency publication
-shipped in 0.11.0; complete paired Docker provider certification and
-programme-level failure, migration, security, and performance evidence remain.
+originally shipped in 0.11.0 and remain part of 0.13.0; complete paired Docker
+provider certification and programme-level failure, migration, security, and
+performance evidence remain.

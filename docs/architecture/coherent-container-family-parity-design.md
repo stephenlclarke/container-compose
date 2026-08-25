@@ -2,15 +2,15 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Integrated design complete; implementation underway. The 0.11.0 stack ships the neutral Engine API/gateway, selected enhanced provider, versioned capabilities, durable logging/provider work, and several network/image/lifecycle subsets. The common multi-workload Engine Linux sandbox, singular-authority devcontainer cutover, remaining resource planes, migration, security, and comparable-performance gates are incomplete. |
+| Status | Integrated design complete; implementation underway. The current 0.13.0 stack ships the neutral Engine API/gateway, selected enhanced provider, versioned capabilities, durable logging/provider work, and several network/image/lifecycle subsets. The common multi-workload Engine Linux sandbox, singular-authority devcontainer cutover, remaining resource planes, migration, security, and comparable-performance gates are incomplete. |
 | Family | `container-engine-api`, `container-engine`, `container`, `containerization`, `container-compose`, `container-builder-shim`, `devcontainer`, and supporting matched-stack projects |
-| Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
-| Stable 0.11.0 Container revision | `9aa1803223e8573f169c2a2effa657392b4d6e30` |
-| Stable 0.11.0 Containerization revision | `f0bc99d26cd27ed58b06236421a298d9e4acd5c1` |
+| Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
+| Stable 0.13.0 Container revision | `94bb6c4bd1ad00deffb68fc40e931ee143c43c65` |
+| Stable 0.13.0 Containerization revision | `fefced145304666076d646609f21397f32909fcf` |
 | Original devcontainer design evidence | `b31e80b2b9c09ecc73bb3badf9cd5cf16550a538` on `origin/main`; extraction head must be reselected from a clean reviewed revision |
 | Socktainer comparison | 1.1.1 at `6cc7a32cc37d4ad0c07e9c88a7bbf2abdaceeea0`; conformance input only |
 | Design date | 31 July 2026 |
-| Last documentation review | 15 August 2026 against the 0.11.0 release and current programme STATUS |
+| Last documentation review | 25 August 2026 against the 0.13.0 release and current programme STATUS |
 
 ## Outcome
 
@@ -1818,8 +1818,8 @@ Stable ID: `COHERENT-WAVE-00`.
 
 ### Wave 0: freeze references and evidence
 
-- Pin Docker Compose 5.3.1, its embedded compose-go 2.13.0, Engine 29.2.1 API 1.53, Docker Model Runner, the repository's compose-go 2.14.0 candidate, Container/Containerization, guest image, and accepted devcontainer extraction revision.
-- Treat the compose-go 2.13.0/2.14.0 skew as an explicit compatibility input. Either align the normaliser or run black-box differential coverage for schema, interpolation, merge, include, extends, project discovery/loading, paths, profiles, and hashes; record every intentional extension. Byte-identical Deploy device/schema files support only that focused conclusion and cannot prove whole-project parser parity.
+- Pin Docker Compose 5.4.0, its embedded compose-go 2.14.0, Engine 29.2.1 API 1.53, Docker Model Runner, the repository's compose-go 2.14.0 dependency, Container/Containerization, guest image, and accepted devcontainer extraction revision.
+- The former compose-go 2.13.0/2.14.0 skew is closed for the current 5.4.0 reference. Retain black-box differential coverage for schema, interpolation, merge, include, extends, project discovery/loading, paths, profiles, and hashes, because version alignment alone cannot prove whole-project parser parity; record every intentional extension.
 - Build reusable oracles for Engine routes, state/events, namespaces, cgroups/security, devices, networks, volumes/mounts, logging, models, socket relay, failure phases, and performance.
 - Record host/kernel/controller capability fingerprints and distinguish environmental unsupported behaviour from design gaps.
 

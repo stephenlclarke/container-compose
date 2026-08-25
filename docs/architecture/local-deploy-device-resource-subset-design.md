@@ -4,13 +4,13 @@
 | --- | --- |
 | Status | Implementation underway. The stable stack maps local CPU/memory/PID limits, memory reservation, GPU reservation metadata, and ordinary `replicated-job`/`global-job` restart, detached-start, and readiness behavior. CPU/generic reservation preservation and the common DeviceBroker path for every valid non-GPU device request remain. |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, the shared Engine API and `devcontainer` runtime providers |
-| Compatibility target | Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53 on macOS |
-| Stable 0.11.0 Container revision | `9aa1803223e8573f169c2a2effa657392b4d6e30` |
-| Stable 0.11.0 Containerization revision | `f0bc99d26cd27ed58b06236421a298d9e4acd5c1` |
+| Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
+| Stable 0.13.0 Container revision | `94bb6c4bd1ad00deffb68fc40e931ee143c43c65` |
+| Stable 0.13.0 Containerization revision | `fefced145304666076d646609f21397f32909fcf` |
 | Matched compose-go revision | `v2.14.0` |
-| Docker Compose embedded compose-go | `v2.13.0`; focused Deploy schema/device sources are equivalent, but the programme retains the broader parser skew as a Wave 0 differential gate |
+| Docker Compose embedded compose-go | `v2.14.0`, aligned with the matched normalizer dependency. The original Docker Compose 5.3.1 / compose-go 2.13.0 checkpoint remains regression evidence. |
 | Design date | 31 July 2026 |
-| Last documentation review | 15 August 2026 against the 0.11.0 release and current STATUS evidence |
+| Last documentation review | 25 August 2026 against the 0.13.0 release and current STATUS evidence |
 
 ## Goal
 
@@ -18,7 +18,7 @@ Deliver the [Local Deploy reservation parity contract](https://github.com/stephe
 
 Completion means that the stack:
 
-- maps Deploy CPU, memory, and PID limits to the same ordinary per-container controls as Docker Compose 5.3.1;
+- maps Deploy CPU, memory, and PID limits to the same ordinary per-container controls as Docker Compose 5.4.0;
 - maps Deploy memory reservation to the existing soft-memory control;
 - preserves but does not enforce CPU and generic-resource reservations or other scheduler-only Deploy fields;
 - sends every valid Deploy device reservation to one lossless DeviceBroker contract rather than rejecting non-GPU requests;
@@ -34,7 +34,7 @@ This design does not add a Swarm scheduler, invent local reservation guarantees,
 
 ### In scope
 
-- Docker Compose 5.3.1 local projection of `deploy.resources.limits` and `deploy.resources.reservations`.
+- Docker Compose 5.4.0 local projection of `deploy.resources.limits` and `deploy.resources.reservations`.
 - Preservation and local no-op behaviour for CPU reservations, generic resources, mode, placement, update/rollback, endpoint mode, and Deploy labels.
 - Removal of current valid-schema `unsupportedDeployFields` rejection gates and local job-mode orchestration.
 - Typed Compose and Engine `DeviceRequest` models, including ordered OR-of-AND capabilities, driver, count, device IDs, and opaque options.
@@ -54,13 +54,13 @@ This design does not add a Swarm scheduler, invent local reservation guarantees,
 
 ## Normative Terms
 
-`MUST`, `MUST NOT`, `SHOULD`, and `MAY` describe implementation requirements. The behavioural oracle is Docker Compose 5.3.1 with Docker Engine 29.2.1 API 1.53. “Engine host” means the Linux host implemented by the shared per-user `EngineLinuxSandbox`; it does not mean the macOS host. A requested device is source/Engine metadata. An effective device is a provider-resolved, leased artefact that has been proved available to the relevant `sandboxGeneration` and, while active, the verified `processGeneration`.
+`MUST`, `MUST NOT`, `SHOULD`, and `MAY` describe implementation requirements. The behavioural oracle is Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53. “Engine host” means the Linux host implemented by the shared per-user `EngineLinuxSandbox`; it does not mean the macOS host. A requested device is source/Engine metadata. An effective device is a provider-resolved, leased artefact that has been proved available to the relevant `sandboxGeneration` and, while active, the verified `processGeneration`.
 
 ## Corrected Compatibility Boundary
 
 ### Exact local resource projection
 
-Docker Compose 5.3.1 builds ordinary Engine `HostConfig.Resources` in this order:
+Docker Compose 5.4.0 builds ordinary Engine `HostConfig.Resources` in this order:
 
 1. apply service-level scalar CPU, memory, PID, block-I/O, and device-cgroup values;
 2. overwrite non-zero matching values from `deploy.resources.limits`;
@@ -70,7 +70,7 @@ Docker Compose 5.3.1 builds ordinary Engine `HostConfig.Resources` in this order
 
 The exact Deploy subset is:
 
-| Compose field | Docker Compose 5.3.1 local behaviour | Required Container behaviour |
+| Compose field | Docker Compose 5.4.0 local behaviour | Required Container behaviour |
 | --- | --- | --- |
 | `deploy.resources.limits.cpus` | Non-zero value sets Engine `NanoCpus`. | Reuse the existing fractional CPU/cgroup v2 quota primitive. Zero remains no limit. |
 | `deploy.resources.limits.memory` | Non-zero value sets Engine `Memory`. | Reuse the existing byte-accurate hard-memory limit. |
@@ -83,7 +83,7 @@ The exact Deploy subset is:
 | `deploy.resources.limits.devices` | Rejected by the Compose 5.3.1 schema. | Leave the compose-go schema error authoritative. |
 | `deploy.resources.limits.generic_resources` | Rejected by the Compose 5.3.1 schema. | Leave the compose-go schema error authoritative. |
 
-The `types.Resource` Go struct can hold fields that the schema does not permit under `limits` or `reservations`. That implementation detail MUST NOT be turned into a public runtime requirement. Docker Compose 5.3.1 embeds compose-go 2.13.0 while this repository pins 2.14.0; the relevant Deploy schema, `types/device.go`, and `transform/devices.go` contracts are equivalent for this focused design, so their schema result—not the broad Go struct—defines accepted input here. That equivalence does not waive the coherent Wave 0 differential gate for 2.14.0 changes to interpolation, include, extends, or project loading.
+The `types.Resource` Go struct can hold fields that the schema does not permit under `limits` or `reservations`. That implementation detail MUST NOT be turned into a public runtime requirement. Docker Compose 5.4.0 and this repository both pin compose-go 2.14.0; the relevant Deploy schema, `types/device.go`, and `transform/devices.go` contracts therefore share the same dependency baseline. Their schema result—not the broad Go struct—defines accepted input here, and the coherent Wave 0 differential gate still covers interpolation, include, extends, and project loading.
 
 ### Scheduler-only Deploy fields
 

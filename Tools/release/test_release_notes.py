@@ -39,9 +39,9 @@ def load_module():
 
 
 class ReleaseNotesTests(unittest.TestCase):
-    """Release notes should show the commits packaged by each lane."""
+    """Release notes should foreground user-facing changes and link full history."""
 
-    def test_main_validation_tag_lists_commits_since_previous_stable_release(self) -> None:
+    def test_main_validation_tag_links_full_history_since_previous_stable_release(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
@@ -60,7 +60,8 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertIn("Commits since `0.6.0`", notes)
+            self.assertIn("## Full changelog", notes)
+            self.assertIn("Source history: `0.6.0..", notes)
             self.assertIn("## Homebrew Formula", notes)
             self.assertIn("## Promotion", notes)
             self.assertIn("## Asset Retention", notes)
@@ -70,8 +71,8 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("single `Current build` prerelease", notes)
             self.assertIn("## Highlights", notes)
             self.assertIn("Support bind propagation.", notes)
-            self.assertIn("feat(mounts): support bind propagation", notes)
-            self.assertIn("docs: refresh compose guidance", notes)
+            self.assertNotIn("feat(mounts): support bind propagation", notes)
+            self.assertNotIn("docs: refresh compose guidance", notes)
             self.assertNotIn("chore: initial import", notes)
 
     def test_current_release_ignores_the_previous_current_pointer_as_a_baseline(self) -> None:
@@ -94,10 +95,10 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertIn("Commits since `0.6.0`", notes)
-            self.assertIn("feat(runtime): add the first current change", notes)
-            self.assertIn("fix(runtime): add the next current change", notes)
-            self.assertNotIn("Commits since `current`", notes)
+            self.assertIn("Source history: `0.6.0..", notes)
+            self.assertNotIn("feat(runtime): add the first current change", notes)
+            self.assertNotIn("fix(runtime): add the next current change", notes)
+            self.assertNotIn("Source history: `current..", notes)
 
     def test_current_notes_record_the_matched_runtime_checksum(self) -> None:
         module = load_module()
@@ -147,15 +148,15 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertIn("Commits since `0.6.0`", notes)
-            self.assertIn("ci(release): simplify package publishing", notes)
-            self.assertIn("fix(release): commit new tap formula files", notes)
-            self.assertIn("fix(integration): preserve serial rootfs", notes)
+            self.assertIn("Source history: `0.6.0..", notes)
+            self.assertNotIn("ci(release): simplify package publishing", notes)
+            self.assertNotIn("fix(release): commit new tap formula files", notes)
+            self.assertNotIn("fix(integration): preserve serial rootfs", notes)
             self.assertIn("## Highlights", notes)
             self.assertIn("No user-facing highlights were declared", notes)
             self.assertNotIn("chore: initial import", notes)
 
-    def test_semver_tag_lists_commits_since_previous_semver_release(self) -> None:
+    def test_semver_tag_links_full_history_since_previous_semver_release(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
@@ -175,7 +176,7 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertIn("Commits since `0.5.0`", notes)
+            self.assertIn("Source history: `0.5.0..", notes)
             self.assertIn("The stable release atomically updates `stephenlclarke/tap/container-compose`", notes)
             self.assertIn(
                 "Stable releases additionally require the hosted Stable Release Gate",
@@ -189,8 +190,8 @@ class ReleaseNotesTests(unittest.TestCase):
                 "builder, containerization, and container coverage and runtime integration checks, Compose CI, and full Docker Compose parity",
                 notes,
             )
-            self.assertIn("fix(cli): report help topic", notes)
-            self.assertIn("feat(examples): add monitoring stack", notes)
+            self.assertNotIn("fix(cli): report help topic", notes)
+            self.assertNotIn("feat(examples): add monitoring stack", notes)
             self.assertIn("Report help topic.", notes)
             self.assertIn("Add monitoring stack.", notes)
             self.assertNotIn("chore: initial import", notes)
@@ -227,7 +228,7 @@ class ReleaseNotesTests(unittest.TestCase):
             metric_rows = [line for line in notes.splitlines() if line.startswith("![")]
             self.assertEqual(metric_rows, [snapshot.splitlines()[2]])
 
-    def test_stable_highlights_and_changes_exclude_the_previous_stable_build(self) -> None:
+    def test_stable_highlights_exclude_the_previous_stable_build(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
@@ -256,8 +257,8 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertIn("Commits since `0.6.1`", notes)
-            self.assertIn("feat(network): add stable release feature", notes)
+            self.assertIn("Source history: `0.6.1..", notes)
+            self.assertNotIn("feat(network): add stable release feature", notes)
             self.assertIn("Adds the feature delivered by this stable release.", notes)
             self.assertNotIn("feat(network): add obsolete release feature", notes)
             self.assertNotIn("This must not appear in the next stable release notes.", notes)
@@ -333,7 +334,7 @@ class ReleaseNotesTests(unittest.TestCase):
                 notes,
             )
             self.assertNotIn("Keep package workflow deterministic.", notes)
-            self.assertIn("fix(release): keep package workflow deterministic", notes)
+            self.assertNotIn("fix(release): keep package workflow deterministic", notes)
 
     def test_commit_body_summary_is_preferred_over_terse_subject(self) -> None:
         module = load_module()
@@ -398,7 +399,7 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("## Highlights", notes)
             self.assertIn("No user-facing highlights were declared", notes)
             self.assertNotIn("Release automation pins containerization", notes)
-            self.assertIn("chore(deps): pin containerization", notes)
+            self.assertNotIn("chore(deps): pin containerization", notes)
 
     def test_release_note_none_suppresses_automatic_highlight(self) -> None:
         module = load_module()
@@ -428,7 +429,65 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("## Highlights", notes)
             self.assertIn("No user-facing highlights were declared", notes)
             self.assertNotIn("retain compatibility diagnostics.", notes)
-            self.assertIn("fix(cli): retain compatibility diagnostics", notes)
+            self.assertNotIn("fix(cli): retain compatibility diagnostics", notes)
+
+    def test_literal_escaped_newlines_before_release_note_are_parsed(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "fix(cli): retain compatibility diagnostics",
+                body=(
+                    "Keep diagnostics stable for failed compatibility checks."
+                    "\\n\\nRelease-Note: none"
+                ),
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn("No user-facing highlights were declared", notes)
+            self.assertNotIn("Keep diagnostics stable", notes)
+            self.assertNotIn("\\n\\nRelease-Note", notes)
+
+    def test_explicit_note_can_promote_an_internal_fix_scope(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "fix(runtime): recover a packaged runtime",
+                body="Release-Note: Prevents a failed runtime replacement from blocking the next command.",
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn(
+                "Prevents a failed runtime replacement from blocking the next command.",
+                notes,
+            )
 
     def test_body_summary_ignores_generic_git_trailers(self) -> None:
         module = load_module()
@@ -461,7 +520,7 @@ class ReleaseNotesTests(unittest.TestCase):
                 "- Preserves Compose project labels while applying configuration changes.",
                 notes,
             )
-            self.assertNotIn("Co-authored-by", notes.split("## Changes", maxsplit=1)[0])
+            self.assertNotIn("Co-authored-by", notes.split("## Full changelog", maxsplit=1)[0])
 
     def test_body_summary_preserves_user_facing_colons(self) -> None:
         module = load_module()
@@ -611,7 +670,7 @@ class ReleaseNotesTests(unittest.TestCase):
                 notes,
             )
 
-    def test_semver_tag_lists_validated_main_changes(self) -> None:
+    def test_semver_tag_omits_internal_commit_dump(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
@@ -631,9 +690,9 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertIn("Commits since `0.6.0`", notes)
-            self.assertIn("feat(release): simplify package lanes", notes)
-            self.assertIn("ci(release): prune older assets", notes)
+            self.assertIn("Source history: `0.6.0..", notes)
+            self.assertNotIn("feat(release): simplify package lanes", notes)
+            self.assertNotIn("ci(release): prune older assets", notes)
             self.assertNotIn("chore: initial import", notes)
 
     def test_published_release_baseline_skips_unpublished_semver_tag(self) -> None:
@@ -689,8 +748,8 @@ class ReleaseNotesTests(unittest.TestCase):
             finally:
                 module.gh_output = original_gh_output
 
-            self.assertIn("Commits since `0.6.0`", notes)
-            self.assertNotIn("Commits since `0.6.1`", notes)
+            self.assertIn("View `0.6.0...", notes)
+            self.assertNotIn("View `0.6.1...", notes)
             self.assertIn(
                 "Supports `container compose commit` for stopped services by "
                 "resolving each service's latest container before creating the "
@@ -703,11 +762,8 @@ class ReleaseNotesTests(unittest.TestCase):
                 "Upstream reference: docker/compose#13331.",
                 notes,
             )
-            self.assertIn("feat(commit): support stopped service image commits", notes)
-            self.assertIn(
-                "fix(normalizer): reject raw git subdirectory traversal",
-                notes,
-            )
+            self.assertNotIn("feat(commit): support stopped service image commits", notes)
+            self.assertNotIn("fix(normalizer): reject raw git subdirectory traversal", notes)
 
     def test_stack_component_changes_render_highlights(self) -> None:
         module = load_module()
@@ -804,10 +860,7 @@ class ReleaseNotesTests(unittest.TestCase):
                 f"unchanged at `{'c' * 12}`.",
                 notes,
             )
-            self.assertIn(
-                "fix(runtime): clean up attached exec on disconnect",
-                notes,
-            )
+            self.assertNotIn("fix(runtime): clean up attached exec on disconnect", notes)
 
     def test_changed_pinned_upstream_requires_resolvable_history(self) -> None:
         module = load_module()
@@ -863,7 +916,7 @@ class ReleaseNotesTests(unittest.TestCase):
                     head_ref="HEAD",
                 )
 
-    def test_first_release_lists_current_commit(self) -> None:
+    def test_first_release_links_repository_history_without_a_commit_dump(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
@@ -879,8 +932,8 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertIn("Commits included through", notes)
-            self.assertIn("chore: initial import", notes)
+            self.assertIn("Source history through", notes)
+            self.assertNotIn("chore: initial import", notes)
             self.assertIn("## Highlights", notes)
             self.assertIn("No user-facing highlights were declared", notes)
 
