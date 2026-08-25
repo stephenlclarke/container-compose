@@ -219,11 +219,14 @@ Target-specific outputs are `coverage-core.*`, `coverage-runtime-spi.*`,
 `coverage.lcov` and `coverage.xml` are aggregate copies for SonarQube.
 Go output remains `Tools/compose-normalizer/coverage.out`.
 
-`make swift-runtime-test` uses the sibling runtime and always stops the test
-runtime when it exits. Its `container-stack-build` prerequisite requires a
-local Developer ID Application identity and signs every runtime executable
-with that stable identity. Set `CONTAINER_RUNTIME_CODESIGN_IDENTITY` to the
-identity's 40-character fingerprint when automatic selection is unsuitable.
+`make swift-runtime-test` uses the selected runtime and always stops the test
+runtime when it exits. With the default `container` selector it builds the
+sibling source and requires a local Developer ID Application identity, signing
+every runtime executable with that stable identity. An explicit packaged
+candidate is reused without rebuilding sibling source; package verification
+still rejects an unsuitable runtime before launch. Set
+`CONTAINER_RUNTIME_CODESIGN_IDENTITY` to the identity's 40-character
+fingerprint when automatic selection is unsuitable.
 Apple's Local Network privacy service tracks a program by its code signature;
 an ad-hoc signature changes on every build and therefore cannot support
 unattended testing. The runtime wrapper rejects an ad-hoc packaged candidate
@@ -236,6 +239,13 @@ scripts remain data owned by their signed launcher. Repository unit tests set
 portable top-level shell fixtures; it never exempts a launchable plugin or
 helper. Do not set that test-only switch for a live runtime, CI validation, or
 release.
+
+The full sibling release gate applies that same identity to Container's
+freshly instrumented coverage install before its VM-backed integration starts.
+That source runtime still executes the exact coverage build; stable signing
+only prevents its new cdhash from being treated as a new Local Network client.
+The gate fails before expensive sibling work when the fingerprint is missing or
+malformed, and the fingerprint is part of Container checkpoint identity.
 
 When the checkout or configured runtime root is on a removable volume,
 Desktop, Documents, or Downloads, case-insensitive canonical-path
@@ -422,7 +432,7 @@ prior SHA.
 
 **Scheduled Stable Release** runs every Monday at 09:17 UTC and promotes the next minor version with `-+-` when the Current build has soaked for seven days and `main` contains source newer than the latest semantic tag. It ends successfully without allocating the release runner when either condition is not met, so an unready week is not a failed release. A manual dispatch of the same workflow permits either `-+-` (minor) or `+--` (major); patch, exact-version, and documented security releases remain explicit local helper invocations.
 
-The scheduled stable-release workflow and the Current package workflow run only from `main` on the dedicated `container-compose-release` Apple-silicon self-hosted runner. It creates clean, disposable stack checkouts, reconstructs the read-only Apple remotes and Stephen-owned push remotes, and invokes the existing helper unchanged. That preserves the required local runtime and Docker Compose parity gate, signed semantic tag, source-promotion pull request, hosted stable gate, immutable package assets, paired Homebrew update, and the live Current VHS recording. GitHub-hosted macOS workers cannot provide the nested virtualization needed to record Container guest startup, so they must never publish that recording.
+The scheduled stable-release workflow and the Current package workflow run only from `main` on the dedicated `container-compose-release` Apple-silicon self-hosted runner. It creates clean, disposable stack checkouts, reconstructs the read-only Apple remotes and Stephen-owned push remotes, and invokes the existing helper unchanged. That preserves the required local runtime and Docker Compose parity gate, signed semantic tag, source-promotion pull request, hosted stable gate, immutable package assets, and paired Homebrew update. The separate Current Demo workflow consumes the already-published exact-SHA signed packages on the same hardware-virtualization-capable runner, uses a stable internal-volume runtime path, and applies a process-group deadline. Its mutable visual asset is recoverable and deliberately outside the package, attestation, release, and Homebrew critical path. GitHub-hosted macOS workers cannot provide the nested virtualization needed to record Container guest startup, so they must never publish that recording.
 
 Bootstrap that runner once on the release Mac after its normal build prerequisites and GitHub CLI login are in place:
 

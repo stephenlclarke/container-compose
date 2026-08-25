@@ -411,12 +411,8 @@ jobs:
     if: >
       needs.resolve-publish-context.outputs.publish == 'true' &&
       needs.resolve-publish-context.outputs.repair_tap != 'true'
-    # The packaged Container runtime starts Linux guests for the Current
-    # recording. GitHub-hosted macOS workers do not expose nested
-    # virtualization, so a hosted runner can only publish a broken transcript.
-    # Current recordings also require the release runner validated for GitHub
-    # action-download TLS; the dedicated label keeps this mutable artifact off
-    # a runner that cannot prepare its pinned actions.
+    # Signing and packaging target the native macOS/ARM64 runtime. Live demo
+    # recording is deliberately handled by its own recoverable workflow.
     runs-on: [self-hosted, macOS, ARM64, container-compose-release, container-compose-current]
     timeout-minutes: 120
     steps:
@@ -455,9 +451,6 @@ jobs:
               # after both matching formulae point at this immutable asset.
               asset="container-compose-plugin-current-${short_sha}-arm64.tar.gz"
               highlights_asset="release-highlights-current-${short_sha}.json"
-              # The README points to this mutable asset so it always renders
-              # the recording made with the matching Current build artifacts.
-              demo_asset="container-compose-demo-current.gif"
               quality_snapshot_asset="quality-snapshot-current.svg"
               formula="container-compose-current.rb"
               formula_class="ContainerComposeCurrent"
@@ -489,7 +482,6 @@ jobs:
               update_tap="true"
               asset="container-compose-plugin-release-arm64.tar.gz"
               highlights_asset="release-highlights.json"
-              demo_asset=""
               quality_snapshot_asset="quality-snapshot.svg"
               formula="container-compose.rb"
               formula_class="ContainerCompose"
@@ -516,7 +508,6 @@ jobs:
             printf 'update_tap=%s\n' "${update_tap}"
             printf 'asset=%s\n' "${asset}"
             printf 'highlights_asset=%s\n' "${highlights_asset}"
-            printf 'demo_asset=%s\n' "${demo_asset}"
             printf 'quality_snapshot_asset=%s\n' "${quality_snapshot_asset}"
             printf 'formula=%s\n' "${formula}"
             printf 'formula_class=%s\n' "${formula_class}"
@@ -629,41 +620,6 @@ jobs:
             printf 'containerization checkout mismatch: expected %s, got %s\n' "$expected" "$actual" >&2
             exit 1
           fi
-
-      # Validate the runner-local demo input before certificate import or any
-      # package build. The archive is intentionally external to the checkout,
-      # so a stale runner variable must fail in seconds rather than after the
-      # signed runtime and plugin archives have already been rebuilt.
-      - name: Validate Current demo init-image authority
-        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
-        env:
-          CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
-          DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
-          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 27761bf109808075f8ffec8c89e9137c6586a21caad40aabb49c3f6a384cad29
-        shell: bash
-        working-directory: container-compose
-        run: |
-          set -euo pipefail
-          if [[ -z "${DEMO_INIT_IMAGE_ARCHIVE}" || ! -f "${DEMO_INIT_IMAGE_ARCHIVE}" ]]; then
-            printf 'matched Current demo init-image archive is unavailable: %s\n' \
-              "${DEMO_INIT_IMAGE_ARCHIVE:-<unset>}" >&2
-            exit 1
-          fi
-          if [[ ! "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
-            printf 'matched Current demo init-image digest is invalid: %s\n' \
-              "${DEMO_INIT_IMAGE_ARCHIVE_SHA256:-<unset>}" >&2
-            exit 1
-          fi
-          actual_init_image_sha256="$(shasum -a 256 "${DEMO_INIT_IMAGE_ARCHIVE}" | awk '{print $1}')"
-          if [[ "${actual_init_image_sha256}" != "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" ]]; then
-            printf 'matched Current demo init-image archive digest mismatch (expected %s, got %s)\n' \
-              "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" "${actual_init_image_sha256}" >&2
-            exit 1
-          fi
-          Tools/release/validate-oci-image-layout.py \
-            "${DEMO_INIT_IMAGE_ARCHIVE}" \
-            vminit:container-compose \
-            "ghcr.io/stephenlclarke/containerization/vminit:${CONTAINERIZATION_REF}"
 
       - name: Require the hosted release authority
         env:
@@ -980,141 +936,6 @@ jobs:
           rm -f "${DEVELOPER_ID_KEYCHAIN}" "${DEVELOPER_ID_ORIGINAL_KEYCHAINS}"
           exit "${restore_status}"
 
-      - name: Install VHS
-        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! command -v vhs >/dev/null; then
-            brew install vhs
-          fi
-          vhs --version
-
-      - name: Generate Current build VHS recording
-        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
-        env:
-          CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
-          DEMO_ASSET: ${{ steps.lane.outputs.demo_asset }}
-          DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
-          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 27761bf109808075f8ffec8c89e9137c6586a21caad40aabb49c3f6a384cad29
-          PLUGIN_ARCHIVE: ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
-          RUNTIME_ARCHIVE: ${{ steps.runtime-package.outputs.local_asset }}
-        shell: bash
-        working-directory: container-compose
-        run: |
-          set -euo pipefail
-          source Tools/ci/container-runtime-lock.sh
-          acquire_container_runtime_lock
-
-          legacy_demo_root="${RUNNER_TEMP}/current-build-demo"
-          demo_session_root="/tmp/cc-current-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          demo_root="${demo_session_root}/install"
-          # Darwin AF_UNIX paths are bounded. Keep the launchd-visible app root
-          # short and real (not a symlink): launchd resolves service plists and
-          # the runtime rejects symlinked persisted-state roots. Keep every
-          # launchd-visible executable and live-demo file on the internal APFS
-          # volume; self-hosted runner work and caches may live on an external
-          # volume that dyld cannot safely use for a launched service.
-          demo_app_root="${demo_session_root}/app"
-          demo_config_home="${demo_session_root}/config-home"
-          demo_source_root="${demo_session_root}/source"
-          demo_output="${demo_session_root}/${DEMO_ASSET}"
-          tape="${demo_session_root}/container-compose-current-demo.tape"
-          demo_init_image_archive="${demo_session_root}/init-image.oci.tar"
-
-          remove_demo_session_root() {
-            if [[ ! "${demo_session_root}" =~ ^/tmp/cc-current-[0-9]+-[0-9]+$ ]]; then
-              printf 'refusing to remove unexpected Current demo session root: %s\n' \
-                "${demo_session_root}" >&2
-              return 1
-            fi
-            rm -rf -- "${demo_session_root}"
-          }
-
-          cleanup() {
-            if [[ -n "${container_binary:-}" ]]; then
-              "${container_binary}" system stop || true
-            fi
-            remove_demo_session_root
-          }
-          trap cleanup EXIT
-
-          # A self-hosted runner can retain a prior service. Use the installed
-          # CLI to stop it: an executable retained under an external runner
-          # temp directory may itself block in dyld before it can issue stop.
-          if command -v container >/dev/null 2>&1; then
-            container system stop || true
-          fi
-          bash Tools/release/wait-for-container-system-stop.sh
-          remove_demo_session_root
-          rm -rf -- "${legacy_demo_root}"
-
-          mkdir -p "${demo_root}/libexec/container-plugins"
-          mkdir -p "${demo_app_root}"
-          mkdir -p "${demo_config_home}/container"
-          mkdir -p "${demo_source_root}/examples"
-          cat > "${demo_config_home}/container/config.toml" <<'EOF'
-          [vminit]
-          image = "vminit:container-compose"
-          EOF
-          cp -R examples/monitoring-stack "${demo_source_root}/examples/"
-          tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"
-          tar -xzf "${PLUGIN_ARCHIVE}" -C "${demo_root}/libexec/container-plugins"
-
-          container_binary="${demo_root}/bin/container"
-          test -x "${container_binary}"
-          test -x "${demo_root}/libexec/container-plugins/compose/bin/compose"
-
-          if [[ -z "${DEMO_INIT_IMAGE_ARCHIVE}" || ! -f "${DEMO_INIT_IMAGE_ARCHIVE}" ]]; then
-            printf 'matched Current demo init-image archive is unavailable: %s\n' \
-              "${DEMO_INIT_IMAGE_ARCHIVE:-<unset>}" >&2
-            exit 1
-          fi
-          actual_init_image_sha256="$(shasum -a 256 "${DEMO_INIT_IMAGE_ARCHIVE}" | awk '{print $1}')"
-          if [[ "${actual_init_image_sha256}" != "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" ]]; then
-            printf 'matched Current demo init-image archive digest mismatch (expected %s, got %s)\n' \
-              "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" "${actual_init_image_sha256}" >&2
-            exit 1
-          fi
-          if [[ ! "${CONTAINERIZATION_REF}" =~ ^[0-9a-f]{40}$ ]]; then
-            printf 'matched Current demo containerization ref is invalid: %s\n' \
-              "${CONTAINERIZATION_REF:-<unset>}" >&2
-            exit 1
-          fi
-          Tools/release/validate-oci-image-layout.py \
-            "${DEMO_INIT_IMAGE_ARCHIVE}" \
-            vminit:container-compose \
-            "ghcr.io/stephenlclarke/containerization/vminit:${CONTAINERIZATION_REF}"
-
-          cp "${DEMO_INIT_IMAGE_ARCHIVE}" "${demo_init_image_archive}"
-          staged_init_image_sha256="$(shasum -a 256 "${demo_init_image_archive}" | awk '{print $1}')"
-          if [[ "${staged_init_image_sha256}" != "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" ]]; then
-            printf 'staged Current demo init-image archive digest mismatch (expected %s, got %s)\n' \
-              "${DEMO_INIT_IMAGE_ARCHIVE_SHA256}" "${staged_init_image_sha256}" >&2
-            exit 1
-          fi
-
-          export CONTAINER_INSTALL_ROOT="${demo_root}"
-          export CONTAINER_APP_ROOT="${demo_app_root}"
-          export CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE="${demo_init_image_archive}"
-          export XDG_CONFIG_HOME="${demo_config_home}"
-          export PATH="${demo_root}/bin:${PATH}"
-
-          # VHS itself is the fail-closed runtime gate. It types every command
-          # in the published terminal session, including system startup, and
-          # waits for that command's live output before proceeding.
-          export CONTAINER_COMPOSE_DEMO_ROOT="${demo_source_root}"
-          sed "1s#^Output .*#Output \"${demo_output}\"#" \
-            docs/assets/container-compose-demo.tape \
-            | awk -v runtime_path="${demo_root}/bin:${PATH}" '
-                { print }
-                /^Set MarginFill / { printf "Env PATH \"%s\"\n", runtime_path }
-              ' > "${tape}"
-          vhs validate "${tape}"
-          RUNNER_TEMP="${demo_session_root}" bash Tools/release/record-vhs-live-demo.sh \
-            "${tape}" "${demo_output}" "${container_binary}"
-          cp "${demo_output}" "${RUNNER_TEMP}/${DEMO_ASSET}"
-
       - name: Attest release package
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -1211,15 +1032,6 @@ jobs:
           printf '%s\n%s\n' \
             "${{ steps.runtime-package.outputs.local_asset }}" \
             "${{ steps.runtime-package.outputs.local_asset }}.sha256" > "${extra_assets}"
-          if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
-            demo_path="${RUNNER_TEMP}/${{ steps.lane.outputs.demo_asset }}"
-            if [[ ! -s "${demo_path}" ]]; then
-              printf 'Current build VHS recording is missing: %s\n' "${demo_path}" >&2
-              exit 1
-            fi
-            printf '%s\n' "${demo_path}" >> "${extra_assets}"
-          fi
-
           notes="${RUNNER_TEMP}/release-notes.md"
           highlights="${RUNNER_TEMP}/${HIGHLIGHTS_ASSET}"
           git fetch --force --tags origin
@@ -1400,6 +1212,25 @@ jobs:
             fi
           done
 
+          # Finalizing Current recreates the mutable release. Carry the last
+          # successful, non-authoritative demo through that replacement so a
+          # failed asynchronous recording never leaves the README asset absent.
+          retained_demo="${RUNNER_TEMP}/container-compose-demo-current.gif"
+          demo_asset_present="$(
+            gh release view "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --json assets \
+              --jq '[.assets[].name == "container-compose-demo-current.gif"] | any'
+          )"
+          if [[ "${demo_asset_present}" == "true" ]]; then
+            gh release download "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --pattern "container-compose-demo-current.gif" \
+              --dir "${RUNNER_TEMP}" \
+              --clobber
+            printf '%s\n' "${retained_demo}" >> "${extra_assets}"
+          fi
+
           RELEASE_REPOSITORY="${GITHUB_REPOSITORY}" \
             RELEASE_TAG="${RELEASE_TAG}" \
             RELEASE_TITLE="${RELEASE_TITLE}" \
@@ -1447,8 +1278,10 @@ jobs:
               --current-asset "${RUNTIME_ASSET}" \
               --current-asset "${RUNTIME_ASSET}.sha256" \
               --current-asset "${HIGHLIGHTS_ASSET}" \
-              --current-asset "${QUALITY_SNAPSHOT_ASSET}" \
-              --current-asset "${{ steps.lane.outputs.demo_asset }}"
+              --current-asset "${QUALITY_SNAPSHOT_ASSET}"
+              # The separately generated demo is non-authoritative, but retain
+              # the last good recording until its recoverable workflow replaces it.
+              --current-asset "container-compose-demo-current.gif"
             )
           fi
           python3 ../release-tools/Tools/release/retain-release-assets.py \

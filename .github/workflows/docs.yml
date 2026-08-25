@@ -24,7 +24,6 @@ on:
     paths:
       - .github/workflows/docs.yml
       - docs/**
-      - Makefile
       - Package.resolved
       - Package.swift
       - README.md
@@ -35,7 +34,6 @@ on:
     paths:
       - .github/workflows/docs.yml
       - docs/**
-      - Makefile
       - Package.resolved
       - Package.swift
       - README.md
@@ -51,65 +49,107 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build DocC Site
+  build-sites:
+    name: Build ${{ matrix.site }} DocC Site
     runs-on: macos-26
-    # A cold SwiftPM/DocC build of the pinned runtime stack can exceed 45
-    # minutes on the hosted macOS image. Keep a bounded window that also
-    # covers that first-build case instead of cancelling healthy compiles.
-    timeout-minutes: 90
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - site: compose
+            repository: stephenlclarke/container-compose
+          - site: container
+            repository: stephenlclarke/container
+          - site: containerization
+            repository: stephenlclarke/containerization
+          - site: k8s
+            repository: stephenlclarke/container-k8s
     steps:
-      - name: Checkout container-compose
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Checkout container
+      - name: Checkout ${{ matrix.site }} source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          repository: stephenlclarke/container
-          ref: main
-          path: upstreams/container
-
-      - name: Checkout containerization
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/containerization
-          ref: main
-          path: upstreams/containerization
-
-      - name: Checkout container-k8s
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/container-k8s
-          ref: main
-          path: upstreams/container-k8s
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.site == 'compose' && github.sha || 'main' }}
+          path: source
 
       - name: Build static API documentation
+        env:
+          SITE: ${{ matrix.site }}
+        shell: bash
         run: |
-          make docs
-          scripts/add-upstream-docc-sites.sh \
-            _site \
-            "$GITHUB_WORKSPACE/upstreams/container" \
-            "$GITHUB_WORKSPACE/upstreams/containerization" \
-            "$GITHUB_WORKSPACE/upstreams/container-k8s"
+          set -euo pipefail
+          output="$GITHUB_WORKSPACE/_site"
+          mkdir -p "${output}"
+          case "${SITE}" in
+            compose)
+              (
+                cd source
+                scripts/make-docs.sh "${output}" container-compose
+              )
+              ;;
+            container|containerization)
+              (
+                cd source
+                scripts/make-docs.sh "${output}" "container-compose/${SITE}"
+              )
+              ;;
+            k8s)
+              (
+                cd source
+                /usr/bin/swift package \
+                  --disable-automatic-resolution \
+                  --allow-writing-to-directory "${output}" \
+                  generate-documentation \
+                  --target K8sCore \
+                  --target K8sPlugin \
+                  --output-path "${output}" \
+                  --disable-indexing \
+                  --transform-for-static-hosting \
+                  --enable-experimental-combined-documentation \
+                  --hosting-base-path container-compose/k8s \
+                  --source-service github \
+                  --source-service-base-url https://github.com/stephenlclarke/container-k8s/blob/main \
+                  --checkout-path "$GITHUB_WORKSPACE/source"
+              )
+              printf '{}\n' > "${output}/theme-settings.json"
+              cat > "${output}/index.html" <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en-US">
+            <head>
+              <meta charset="utf-8">
+              <title>Redirecting...</title>
+              <meta http-equiv="refresh" content="0; url=./documentation/">
+            </head>
+            <body>
+              <p>If you are not redirected automatically, <a href="./documentation/">click here</a>.</p>
+            </body>
+          </html>
+          EOF
+              ;;
+            *)
+              printf 'unsupported documentation site: %s\n' "${SITE}" >&2
+              exit 1
+              ;;
+          esac
 
-      # upload-pages-artifact requires GNU tar, which is unavailable on the
-      # macOS runner used to build this Swift package. Transfer the DocC
-      # output to an Ubuntu job for the Pages-specific artifact upload.
       - name: Archive DocC site
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
-        run: tar -czf api-docs.tgz -C _site .
+        env:
+          SITE: ${{ matrix.site }}
+        run: tar -czf "${SITE}.tgz" -C _site .
 
       - name: Save DocC site
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: api-docs
-          path: api-docs.tgz
+          name: api-docs-${{ matrix.site }}
+          path: ${{ matrix.site }}.tgz
           retention-days: 1
 
   upload-pages-artifact:
-    name: Upload GitHub Pages Artifact
-    needs: build
+    name: Assemble and Upload GitHub Pages Artifact
+    needs: build-sites
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
     runs-on: ubuntu-latest
     permissions:
@@ -118,16 +158,22 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
-      - name: Download DocC site
+      - name: Download DocC sites
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: api-docs
+          pattern: api-docs-*
+          path: downloads
+          merge-multiple: true
 
-      - name: Extract DocC site
+      - name: Assemble DocC portal
         run: |
           set -euo pipefail
           mkdir _site
-          tar -xzf api-docs.tgz -C _site
+          tar -xzf downloads/compose.tgz -C _site
+          for site in container containerization k8s; do
+            mkdir "_site/${site}"
+            tar -xzf "downloads/${site}.tgz" -C "_site/${site}"
+          done
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5

@@ -25,13 +25,15 @@ WORKFLOW = Path(__file__).parents[2] / ".github" / "workflows" / "docs.yml"
 
 
 class DocumentationWorkflowTests(unittest.TestCase):
-    """DocC must have enough time for a cold pinned-stack build."""
+    """Each independent DocC build must remain bounded."""
 
-    def test_cold_docc_build_has_a_bounded_ninety_minute_window(self) -> None:
+    def test_fanout_docc_build_has_a_bounded_sixty_minute_window(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        build_job = workflow[workflow.index("  build:\n") : workflow.index("  upload-pages-artifact:\n")]
+        build_job = workflow[
+            workflow.index("  build-sites:\n") : workflow.index("  upload-pages-artifact:\n")
+        ]
 
-        self.assertIn("    timeout-minutes: 90\n", build_job)
+        self.assertIn("    timeout-minutes: 60\n", build_job)
         self.assertNotIn("    timeout-minutes: 45\n", build_job)
 
 

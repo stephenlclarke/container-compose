@@ -4,6 +4,7 @@ Set Shell "zsh"
 Set FontSize 18
 Set Width 1600
 Set Height 720
+Set Framerate 24
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 48ms
 Set Padding 24

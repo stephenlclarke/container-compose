@@ -35,6 +35,8 @@ ROOT = SCRIPT.parent.parent
 TEMPLATE = ROOT / "Tools" / "release" / "container-compose.rb.in"
 HOMEBREW_WORKFLOW = ROOT / ".github" / "workflows" / "homebrew.yml"
 PACKAGE_WORKFLOW = ROOT / ".github" / "workflows" / "prebuilt-binaries.yml"
+CURRENT_DEMO_WORKFLOW = ROOT / ".github" / "workflows" / "current-demo.yml"
+DOCS_WORKFLOW = ROOT / ".github" / "workflows" / "docs.yml"
 STABLE_GATE_WORKFLOW = ROOT / ".github" / "workflows" / "stable-release-gate.yml"
 SCHEDULED_STABLE_RELEASE_WORKFLOW = (
     ROOT / ".github" / "workflows" / "scheduled-stable-release.yml"
@@ -656,172 +658,135 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("--delete-superseded-current-releases", workflow)
         self.assertIn("release_notes_args=(", workflow)
 
-    def test_current_build_records_and_publishes_the_matched_vhs_demo(self) -> None:
-        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+    def test_current_demo_is_recoverable_and_not_release_critical(self) -> None:
+        package = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        release_critical = package[
+            : package.index("- name: Retain only current release assets")
+        ]
+        workflow = CURRENT_DEMO_WORKFLOW.read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-
-        self.assertIn('demo_asset="container-compose-demo-current.gif"', workflow)
-        package = workflow[workflow.index("  package:") : workflow.index("  repair-stable-tap:")]
-        self.assertIn(
-            "runs-on: [self-hosted, macOS, ARM64, container-compose-release, container-compose-current]",
-            package,
-        )
-        self.assertIn("validated for GitHub", package)
-        self.assertIn("Install VHS", workflow)
-        self.assertIn("Generate Current build VHS recording", workflow)
-        self.assertIn('tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"', workflow)
-        self.assertIn(
-            'tar -xzf "${PLUGIN_ARCHIVE}" -C "${demo_root}/libexec/container-plugins"',
-            workflow,
-        )
-        self.assertIn('export CONTAINER_INSTALL_ROOT="${demo_root}"', workflow)
-        self.assertIn('export CONTAINER_APP_ROOT="${demo_app_root}"', workflow)
-        self.assertIn(
-            "DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}",
-            workflow,
-        )
-        self.assertIn(
-            "CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}",
-            workflow,
-        )
-        self.assertIn(
-            "DEMO_INIT_IMAGE_ARCHIVE_SHA256: "
-            "27761bf109808075f8ffec8c89e9137c6586a21caad40aabb49c3f6a384cad29",
-            workflow,
-        )
-        self.assertIn("Validate Current demo init-image authority", package)
-        self.assertIn(
-            'Tools/release/validate-oci-image-layout.py \\\n'
-            '            "${DEMO_INIT_IMAGE_ARCHIVE}"',
-            package,
-        )
-        self.assertLess(
-            package.index("Validate Current demo init-image authority"),
-            package.index("Install Developer ID application certificate"),
-        )
-        self.assertLess(
-            package.index("Validate Current demo init-image authority"),
-            package.index("Build matched runtime package"),
-        )
-        self.assertIn(
-            'actual_init_image_sha256="$(shasum -a 256 '
-            '\"${DEMO_INIT_IMAGE_ARCHIVE}\" | awk \'{print $1}\')"',
-            workflow,
-        )
-        self.assertEqual(
-            package.count("Tools/release/validate-oci-image-layout.py"),
-            2,
-        )
-        self.assertNotIn('index["manifests"][0]', workflow)
-        self.assertNotIn(
-            'tar -xOf "${DEMO_INIT_IMAGE_ARCHIVE}" index.json',
-            workflow,
-        )
-        self.assertNotIn("actual_init_image_ref", workflow)
-        self.assertIn(
-            'demo_session_root="/tmp/cc-current-'
-            '${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
-            workflow,
-        )
-        self.assertIn('demo_root="${demo_session_root}/install"', workflow)
-        self.assertIn('demo_app_root="${demo_session_root}/app"', workflow)
-        self.assertIn('demo_source_root="${demo_session_root}/source"', workflow)
-        self.assertIn(
-            'demo_output="${demo_session_root}/${DEMO_ASSET}"', workflow
-        )
-        self.assertIn(
-            'tape="${demo_session_root}/container-compose-current-demo.tape"',
-            workflow,
-        )
-        self.assertIn(
-            'demo_init_image_archive="${demo_session_root}/init-image.oci.tar"',
-            workflow,
-        )
-        self.assertIn(
-            'cp "${DEMO_INIT_IMAGE_ARCHIVE}" "${demo_init_image_archive}"',
-            workflow,
-        )
-        self.assertIn(
-            'staged_init_image_sha256="$(shasum -a 256 '
-            '\"${demo_init_image_archive}\" | awk \'{print $1}\')"',
-            workflow,
-        )
-        self.assertIn(
-            'export CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE="${demo_init_image_archive}"',
-            workflow,
-        )
-        self.assertIn('mkdir -p "${demo_app_root}"', workflow)
-        self.assertIn('mkdir -p "${demo_source_root}/examples"', workflow)
-        self.assertIn(
-            'cp -R examples/monitoring-stack "${demo_source_root}/examples/"',
-            workflow,
-        )
-        self.assertIn('remove_demo_session_root() {', workflow)
-        self.assertIn(
-            '[[ ! "${demo_session_root}" =~ '
-            '^/tmp/cc-current-[0-9]+-[0-9]+$ ]]',
-            workflow,
-        )
-        self.assertIn('rm -rf -- "${demo_session_root}"', workflow)
-        self.assertNotIn('ln -s "${demo_app_storage}"', workflow)
-        longest_run_id = str(2**64 - 1)
-        longest_attempt = str(2**32 - 1)
-        provider_socket = (
-            f"/tmp/cc-current-{longest_run_id}-{longest_attempt}"
-            "/app/engine-provider/provider.sock"
-        )
-        self.assertLess(len(os.fsencode(provider_socket)), 104)
-        self.assertIn('trap cleanup EXIT', workflow)
-        self.assertNotIn("trap 'rm -f", workflow)
-        self.assertIn('"${container_binary}" system stop || true', workflow)
-        self.assertNotIn(
-            '"${demo_root}/bin/container" system stop || true', workflow
-        )
-        self.assertIn("if command -v container >/dev/null 2>&1; then", workflow)
-        self.assertIn(
-            "bash Tools/release/wait-for-container-system-stop.sh",
-            workflow,
-        )
-        self.assertLess(
-            workflow.index("if command -v container >/dev/null 2>&1; then"),
-            workflow.index("bash Tools/release/wait-for-container-system-stop.sh"),
-        )
-        self.assertIn(
-            "bash Tools/release/wait-for-container-system-stop.sh\n"
-            "          remove_demo_session_root\n"
-            '          rm -rf -- "${legacy_demo_root}"',
-            workflow,
-        )
-        self.assertLess(
-            workflow.index('rm -rf -- "${legacy_demo_root}"'),
-            workflow.index('tar -xzf "${RUNTIME_ARCHIVE}" -C "${demo_root}"'),
-        )
-        self.assertIn(
-            'export CONTAINER_COMPOSE_DEMO_ROOT="${demo_source_root}"',
-            workflow,
-        )
-        self.assertIn(
-            'sed "1s#^Output .*#Output \\\"${demo_output}\\\"#"',
-            workflow,
-        )
-        self.assertIn(
-            'awk -v runtime_path="${demo_root}/bin:${PATH}"',
-            workflow,
-        )
-        self.assertIn(
-            '/^Set MarginFill / { printf "Env PATH \\\"%s\\\"\\n", runtime_path }',
-            workflow,
-        )
-        self.assertIn("docs/assets/container-compose-demo.tape", workflow)
-        self.assertIn("VHS itself is the fail-closed runtime gate", workflow)
-        self.assertIn(
-            'RUNNER_TEMP="${demo_session_root}" '
-            "bash Tools/release/record-vhs-live-demo.sh",
-            workflow,
-        )
-        tape = (ROOT / "docs/assets/container-compose-demo.tape").read_text(
+        tape = (ROOT / "docs" / "assets" / "container-compose-demo.tape").read_text(
             encoding="utf-8"
         )
+
+        self.assertNotIn("Install VHS", release_critical)
+        self.assertNotIn("Generate Current build VHS recording", release_critical)
+        self.assertNotIn("Validate Current demo init-image authority", release_critical)
+        self.assertNotIn("CURRENT_DEMO_INIT_IMAGE_ARCHIVE", release_critical)
+        self.assertIn(
+            'gh release view "${RELEASE_TAG}"', release_critical
+        )
+        self.assertIn(
+            '--pattern "container-compose-demo-current.gif"', release_critical
+        )
+        self.assertIn(
+            'printf \'%s\\n\' "${retained_demo}" >> "${extra_assets}"',
+            release_critical,
+        )
+        self.assertIn(
+            '--current-asset "container-compose-demo-current.gif"', package
+        )
+
+        self.assertIn("- Prebuilt Binaries", workflow)
+        self.assertIn("group: container-compose-current-demo", workflow)
+        self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn(
+            "runs-on: [self-hosted, macOS, ARM64, "
+            "container-compose-release, container-compose-current]",
+            workflow,
+        )
+        self.assertIn("isolated from package, attestation, release, and Homebrew", workflow)
+        self.assertIn('demo_session_root="/private/tmp/container-compose-current-demo"', workflow)
+        self.assertIn(".container-compose-current-demo-root", workflow)
+        self.assertIn("container-compose-current-demo-v1", workflow)
+        self.assertIn('"$(stat -f %u "${demo_session_root}")" != "$(id -u)"', workflow)
+        self.assertIn('"$(stat -f %Lp "${demo_session_root}")" != "700"', workflow)
+        self.assertNotIn("/tmp/cc-current-${GITHUB_RUN_ID}", workflow)
+        self.assertIn(
+            "python3 Tools/ci/run-command-with-deadline.py \\\n"
+            "              --seconds 2400 --grace-seconds 15 --",
+            workflow,
+        )
+        self.assertIn(
+            "python3 Tools/ci/run-command-with-deadline.py \\\n"
+            "              --seconds 30 --grace-seconds 5 --",
+            workflow,
+        )
+        self.assertIn("bash Tools/release/record-vhs-live-demo.sh", workflow)
+        self.assertIn("Validate Current demo init-image authority", workflow)
+        self.assertIn('"${DEMO_INIT_IMAGE_ARCHIVE}" == /Volumes/*', workflow)
+        self.assertIn('-L "${DEMO_INIT_IMAGE_ARCHIVE}"', workflow)
+        self.assertIn("Tools/release/validate-oci-image-layout.py", workflow)
+        self.assertIn("Tools/release/verify-developer-id-archive.sh", workflow)
+        self.assertIn("shasum -a 256 -c", workflow)
+        self.assertIn("Verify source and release are still current", workflow)
+        self.assertLess(
+            workflow.index("Verify source and release are still current"),
+            workflow.index("Publish exact Current demo"),
+        )
+        self.assertNotIn('gh release upload current "${DEMO_OUTPUT}"', workflow)
+        self.assertIn(
+            'CONTAINER_APP_ROOT="${demo_app_root}" \\\n'
+            "              python3 Tools/ci/run-command-with-deadline.py",
+            workflow,
+        )
+        self.assertIn(
+            'CONTAINER_APP_ROOT="${demo_app_root}" \\\n'
+            "            bash Tools/release/wait-for-container-system-stop.sh",
+            workflow,
+        )
+        publish_step = workflow[
+            workflow.index("- name: Publish exact Current demo") : workflow.index(
+                "- name: Save bounded demo diagnostics"
+            )
+        ]
+        self.assertIn("DEMO_ASSET: container-compose-demo-current.gif", publish_step)
+        self.assertIn(
+            "PUBLISH_SHA: ${{ needs.resolve-current.outputs.sha }}", publish_step
+        )
+        self.assertIn("current_release_matches()", publish_step)
+        self.assertGreaterEqual(
+            publish_step.count("if ! current_release_matches"), 4
+        )
+        self.assertIn("release_asset_id()", publish_step)
+        self.assertIn("download_release_asset()", publish_step)
+        self.assertIn("upload_release_asset()", publish_step)
+        self.assertIn("replace_release_asset()", publish_step)
+        self.assertIn(
+            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/"
+            "${release_id}/assets?name=${DEMO_ASSET}",
+            publish_step,
+        )
+        self.assertIn(
+            'replace_release_asset "${publication_release_id}" "${DEMO_OUTPUT}"',
+            publish_step,
+        )
+        self.assertIn(
+            'replace_release_asset "${publication_release_id}" "${prior_demo}"',
+            publish_step,
+        )
+        self.assertIn(
+            '"${CURRENT_RELEASE_ID}" != "${publication_release_id}"',
+            publish_step,
+        )
+        self.assertIn(
+            'prior_demo_dir="${RUNNER_TEMP}/container-compose-prior-current-demo"',
+            publish_step,
+        )
+        self.assertIn(
+            "gh api -H 'Accept: application/octet-stream'",
+            publish_step,
+        )
+        self.assertIn("for attempt in 1 2 3; do", publish_step)
+        self.assertNotIn("gh release upload current", publish_step)
+        self.assertIn("restored the prior asset", publish_step)
+        self.assertGreaterEqual(workflow.count('--repo "${GITHUB_REPOSITORY}"'), 4)
+        self.assertIn("if: failure()", workflow)
+        self.assertIn("current-demo-diagnostics-", workflow)
+
+        self.assertIn("Set Framerate 24", tape)
+        self.assertIn("Set TypingSpeed 48ms", tape)
+        self.assertIn("Set Width 1600", tape)
         self.assertEqual(
             tape.count(
                 "--init-image-archive "
@@ -829,25 +794,6 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             ),
             2,
         )
-        self.assertIn('demo_config_home="${demo_session_root}/config-home"', workflow)
-        self.assertIn('mkdir -p "${demo_config_home}/container"', workflow)
-        self.assertIn('[vminit]\n          image = "vminit:container-compose"', workflow)
-        self.assertIn('export XDG_CONFIG_HOME="${demo_config_home}"', workflow)
-        self.assertNotIn("record_monitoring_stack_transcript", workflow)
-        self.assertNotIn("demo_transcript", workflow)
-        self.assertNotIn("current-build-demo-transcript", workflow)
-        self.assertNotIn('"${container_binary}" system start', workflow)
-        recorder = (
-            ROOT / "Tools" / "release" / "record-vhs-live-demo.sh"
-        ).read_text(encoding="utf-8")
-        self.assertIn('rm -f "${output}" "${vhs_log}"', recorder)
-        self.assertIn('could not open ttyd', recorder)
-        self.assertIn('refusing to retry a live-demo failure', recorder)
-        self.assertIn('vhs validate "${tape}"', workflow)
-        self.assertIn('"${vhs_bin}" "${tape}"', recorder)
-        self.assertIn("Current build VHS recording is missing", workflow)
-        self.assertIn('--current-asset "${{ steps.lane.outputs.demo_asset }}"', workflow)
-        tape = (ROOT / "docs" / "assets" / "container-compose-demo.tape").read_text(encoding="utf-8")
         typed_command = None
         for line in tape.splitlines():
             if line.startswith('Type "'):
@@ -864,93 +810,33 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 re.search(wait_pattern, typed_command or ""),
                 f"screen wait can match its typed command: {line}",
             )
-        self.assertIn('Set TypingSpeed 48ms', tape)
-        self.assertIn('Set Width 1600', tape)
-        self.assertIn('$CONTAINER_COMPOSE_DEMO_ROOT', tape)
-        self.assertIn('Type "(container system start', tape)
-        self.assertIn('&& container system status', tape)
-        self.assertIn('--app-root $CONTAINER_APP_ROOT', tape)
-        self.assertIn('--install-root $CONTAINER_INSTALL_ROOT', tape)
-        self.assertLess(
-            tape.index('Type "(container system start'),
-            tape.index('Type "container compose version"'),
-        )
         self.assertEqual(tape.count("container system start"), 2)
-        self.assertIn("container-compose-system-ready", tape)
-        self.assertEqual(
-            tape.count(
-                "Wait+Screen@180s /container-compose-system-ready/"
-            ),
-            1,
-        )
-        self.assertNotIn('Wait+Screen@900s /status +running/', tape)
-        self.assertIn('Type "container compose version"', tape)
-        live_up = (
-            "container compose --ansi never --progress plain "
-            "-f examples/monitoring-stack/docker-compose.yaml up --detach --wait "
-            "--wait-timeout 900 --quiet-pull nginx alertmanager && clear && container compose "
-            "-f examples/monitoring-stack/docker-compose.yaml ps"
-        )
-        self.assertEqual(tape.count(live_up), 2)
         self.assertEqual(tape.count("--quiet-pull nginx alertmanager"), 2)
-        retained_volume_down = (
-            "container compose -f examples/monitoring-stack/docker-compose.yaml "
-            "down --remove-orphans && clear && container compose "
-            "-f examples/monitoring-stack/docker-compose.yaml volumes --format json"
-        )
-        final_volume_down = (
-            "container compose -f examples/monitoring-stack/docker-compose.yaml "
-            "down --volumes --remove-orphans && clear && container compose "
-            "-f examples/monitoring-stack/docker-compose.yaml ps --all"
-        )
-        self.assertIn(retained_volume_down, tape)
-        self.assertIn(final_volume_down, tape)
-        self.assertEqual(tape.count("&& clear && container compose"), 4)
-        self.assertEqual(tape.count("stats --no-stream nginx alertmanager"), 2)
-        self.assertEqual(tape.count("Wait+Screen@90s /CONTAINER ID/"), 2)
-        nginx_health = (
-            "container compose -f examples/monitoring-stack/docker-compose.yaml "
-            "exec --no-tty nginx wget -qO- http://127.0.0.1/healthz"
-        )
-        alertmanager_readiness = (
-            "container compose -f examples/monitoring-stack/docker-compose.yaml "
-            "exec --no-tty alertmanager wget -qO- "
-            "http://127.0.0.1:9093/alertmanager/-/ready"
-        )
-        self.assertEqual(tape.count(nginx_health), 2)
-        self.assertEqual(tape.count(alertmanager_readiness), 2)
-        self.assertNotIn("curl -4fsS", tape)
-        self.assertIn("volumes --format json", tape)
         self.assertIn("container-compose-volume-reuse-ok", tape)
         self.assertIn("down --volumes --remove-orphans", tape)
         self.assertIn('Type "container system stop; container system status"', tape)
-        self.assertIn('Wait+Screen@30s /not running/', tape)
-        self.assertEqual(tape.count("--wait-timeout 900"), 2)
-        self.assertEqual(
-            tape.count("Wait+Screen@900s /nginx.*r[[:space:]]*unning/"),
-            2,
-        )
-        self.assertNotIn("--wait-timeout 900 &&", tape)
-        self.assertNotIn("monitoring-stack-.*alertmanager.*running", tape)
-        self.assertNotIn("Wait+Screen@300s /SERVICE.*STATUS/", tape)
-        self.assertNotIn("Wait+Screen@90s /NAME/", tape)
-        self.assertNotIn("Wait+Screen@120s /Removed/", tape)
-        self.assertNotIn("CONTAINER_COMPOSE_DEMO_TRANSCRIPT", tape)
-        self.assertNotIn("replay()", tape)
-        self.assertNotIn("marker()", tape)
-        self.assertNotIn("TAPE_TRANSCRIPT_", tape)
-        self.assertIn("Ctrl+L", tape)
-        self.assertNotIn("Sleep 6s", tape)
-        self.assertNotIn("--dry-run", tape)
         self.assertIn(
             "releases/download/current/container-compose-demo-current.gif",
             readme,
         )
-        monitoring_stack = (ROOT / "examples" / "monitoring-stack" / "docker-compose.yaml").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("nginx_cache:/var/cache/nginx", monitoring_stack)
-        self.assertIn("nginx_cache: {}", monitoring_stack)
+
+    def test_documentation_sites_build_in_parallel_before_pages_assembly(self) -> None:
+        workflow = DOCS_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("strategy:", workflow)
+        self.assertIn("fail-fast: false", workflow)
+        self.assertEqual(workflow.count("- site:"), 4)
+        for site in ("compose", "container", "containerization", "k8s"):
+            self.assertIn(f"- site: {site}", workflow)
+        self.assertIn("downloads/compose.tgz", workflow)
+        self.assertIn('downloads/${site}.tgz', workflow)
+        self.assertIn("name: Build ${{ matrix.site }} DocC Site", workflow)
+        self.assertIn("runs-on: macos-26", workflow)
+        self.assertIn("needs: build-sites", workflow)
+        self.assertIn("merge-multiple: true", workflow)
+        self.assertIn("Assemble DocC portal", workflow)
+        self.assertNotIn("scripts/add-upstream-docc-sites.sh", workflow)
+        self.assertNotIn("      - Makefile", workflow)
 
     def test_package_gate_requires_full_quality_evidence(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
@@ -1217,7 +1103,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         ]
         signing_steps = workflow[
             workflow.index("- name: Build matched runtime package") :
-            workflow.index("- name: Install VHS")
+            workflow.index("- name: Attest release package")
         ]
 
         self.assertIn(
@@ -1350,8 +1236,70 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(f"--stage {stage}", makefile)
         self.assertIn("docker-compose-parity-stages:", makefile)
         self.assertIn(
-            "docker-compose-parity: build container-stack-build docker-compose-reference",
+            "docker-compose-parity: build container-stack-build-if-needed "
+            "docker-compose-reference",
             makefile,
+        )
+        self.assertIn(
+            "swift-runtime-test: container-stack-build-if-needed build "
+            "swift-runtime-test-build",
+            makefile,
+        )
+        conditional_build = makefile[
+            makefile.index("container-stack-build-if-needed:") : makefile.index(
+                ".PHONY: container-stack-release-validation"
+            )
+        ]
+        self.assertIn(
+            '[[ "$(CONTAINER_COMPOSE_CONTAINER_EXPLICIT)" != "1" ]]',
+            conditional_build,
+        )
+        self.assertIn(
+            "CONTAINER_COMPOSE_CONTAINER_EXPLICIT := "
+            "$(if $(filter undefined,$(origin CONTAINER_COMPOSE_CONTAINER)),0,1)",
+            makefile,
+        )
+        self.assertIn(
+            "$(MAKE) --no-print-directory container-stack-build",
+            conditional_build,
+        )
+        default_runtime_environment = self.non_interactive_environment()
+        default_runtime_environment.pop("CONTAINER_COMPOSE_CONTAINER", None)
+        default_runtime = subprocess.run(
+            [
+                "make",
+                "--no-print-directory",
+                "container-stack-build-if-needed",
+                "MAKE=/usr/bin/true",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=default_runtime_environment,
+        )
+        self.assertEqual(default_runtime.returncode, 0, default_runtime.stderr)
+        self.assertNotIn(
+            "Using explicit Container runtime candidate",
+            default_runtime.stdout,
+        )
+        explicit_runtime = subprocess.run(
+            [
+                "make",
+                "--no-print-directory",
+                "container-stack-build-if-needed",
+                "CONTAINER_COMPOSE_CONTAINER=/private/tmp/release-candidate/bin/container",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=self.non_interactive_environment(),
+        )
+        self.assertEqual(explicit_runtime.returncode, 0, explicit_runtime.stderr)
+        self.assertIn(
+            "Using explicit Container runtime candidate without rebuilding sibling source",
+            explicit_runtime.stdout,
         )
         self.assertIn("RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT", makefile)
         self.assertIn("init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT)", makefile)
@@ -1630,6 +1578,22 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 str(tap),
             ]
 
+            environment.pop("CONTAINER_RUNTIME_CODESIGN_IDENTITY", None)
+            missing_signing_identity = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+            self.assertEqual(missing_signing_identity.returncode, 2)
+            self.assertIn(
+                "requires a Developer ID Application identity",
+                missing_signing_identity.stderr,
+            )
+            signing_identity = "A" * 40
+            environment["CONTAINER_RUNTIME_CODESIGN_IDENTITY"] = signing_identity
+
             full = subprocess.run(
                 [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
                 check=False,
@@ -1682,6 +1646,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 container,
                 ("check", "container", "dsym", "docs", "coverage"),
                 required_fragment=(
+                    "CODESIGN_OPTS=--force --sign "
+                    f"{signing_identity} --timestamp=none "
                     f"APP_ROOT={explicit_runtime_root.resolve()}/stack-release-app-root "
                     f"LOG_ROOT={explicit_runtime_root.resolve()}/stack-release-log-root "
                     "INTEGRATION_SERVICE_NAMESPACE="
@@ -2823,6 +2789,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_local_release_gate_freezes_the_container_runtime_candidate(self) -> None:
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        stack_validation = makefile[
+            makefile.index("container-stack-release-validation:") : makefile.index(
+                "container-stack-hosted-release-validation:"
+            )
+        ]
         staging = self.script[
             self.script.index("stage_container_runtime_candidate() {") : self.script.index(
                 "# Delete only the fresh marker-protected candidate extraction"
@@ -2837,7 +2808,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("git -C \"${container_path}\" rev-parse", staging)
         self.assertIn(
             'CONTAINER_RUNTIME_CODESIGN_IDENTITY="$(CONTAINER_RUNTIME_CODESIGN_IDENTITY)"',
-            makefile,
+            stack_validation,
         )
         self.assertIn("homebrew-package", staging)
         self.assertIn('"HOMEBREW_ARCHIVE=${archive}"', staging)

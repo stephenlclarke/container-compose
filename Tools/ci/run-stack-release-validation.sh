@@ -154,8 +154,10 @@ runtime_path=${PATH}
 runtime_cli_fingerprint="unset"
 runtime_cli_sha256="unset"
 runtime_candidate_sha256=${CONTAINER_RUNTIME_CANDIDATE_SHA256:-}
+runtime_codesign_identity=${CONTAINER_RUNTIME_CODESIGN_IDENTITY:-}
 validation_environment_path=${PATH}
 runtime_make_args=()
+container_codesign_make_args=()
 if [[ "${mode}" == "full" ]]; then
   if [[ -z "${runtime_cli}" ]]; then
     printf 'full stack validation requires an executable CONTAINER_RUNTIME_CLI: %s\n' \
@@ -174,6 +176,10 @@ if [[ "${mode}" == "full" ]]; then
   if [[ ! -x "${runtime_cli}" ]]; then
     printf 'full stack validation requires an executable CONTAINER_RUNTIME_CLI: %s\n' \
       "${runtime_cli}" >&2
+    exit 2
+  fi
+  if [[ ! "${runtime_codesign_identity}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+    printf 'full stack validation requires a Developer ID Application identity for unattended source-runtime tests; set CONTAINER_RUNTIME_CODESIGN_IDENTITY to its 40-character fingerprint\n' >&2
     exit 2
   fi
   runtime_cli_directory=$(cd "$(dirname "${runtime_cli}")" && pwd -P)
@@ -237,6 +243,14 @@ PY
     validation_environment_path="${normalized_validation_path}"
   fi
   runtime_make_args+=("PATH=${runtime_path}")
+  # Container's coverage target installs freshly instrumented source binaries
+  # immediately before its VM-backed integration suites. Sign that install with
+  # the same stable Developer ID identity as the packaged candidate so macOS TCC
+  # recognises successive builds as one application instead of opening a Local
+  # Network approval dialog for every new ad-hoc cdhash.
+  container_codesign_make_args+=(
+    "CODESIGN_OPTS=--force --sign ${runtime_codesign_identity} --timestamp=none"
+  )
 fi
 
 # The full gate owns one namespace-scoped Container candidate. Pin PATH as a
@@ -354,6 +368,7 @@ if [[ -n "${checkpoint_directory}" ]]; then
       printf 'tree=%s\n' "${container_tree}"
       printf 'init_archive=%s\n' "${init_archive_fingerprint}"
       printf 'runtime_cli=%s\n' "${runtime_cli_fingerprint}"
+      printf 'runtime_codesign_identity=%s\n' "${runtime_codesign_identity}"
     } | shasum -a 256 | awk '{print $1}'
   )
   homebrew_validation_fingerprint=$(
@@ -463,7 +478,7 @@ for target in "${container_targets[@]}"; do
       CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}" \
       CONTAINER_INIT_BUILDER_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_BUILDER_IMAGE_TAR:-}" \
       make -C "${container_repo}" "${runtime_make_args[@]}" \
-        "${container_make_args[@]}" "${target}"
+        "${container_codesign_make_args[@]}" "${container_make_args[@]}" "${target}"
 done
 run_checkpointed homebrew-formula \
   ruby -c "${homebrew_tap_repo}/Formula/container-compose.rb"
