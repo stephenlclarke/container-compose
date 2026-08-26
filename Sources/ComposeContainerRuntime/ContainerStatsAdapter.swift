@@ -60,6 +60,17 @@ public struct ContainerStatsAPIClient: ContainerStatsAPIClienting {
         statsOperation = stats
     }
 
+    init(containerClient: @escaping ContainerClientProvider) {
+        self.init(
+            list: {
+                try await containerClient().list(
+                    filters: ContainerListFilters(ids: $0).withoutMachines(),
+                ).map { ComposeStatsTarget(id: $0.id, status: $0.status.rawValue) }
+            },
+            stats: { try await containerClient().stats(id: $0) },
+        )
+    }
+
     /// Lists stat targets through `ContainerClient`.
     public func listStatsTargets(ids: [String]) async throws -> [ComposeStatsTarget] {
         try await listOperation(ids)

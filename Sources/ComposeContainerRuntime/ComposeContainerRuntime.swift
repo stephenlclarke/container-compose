@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 import ComposeCore
+import ContainerAPIClient
 
 /// Wires Compose policy to the matched Apple container runtime stack.
 ///
@@ -26,38 +27,119 @@ public enum ComposeContainerRuntime {
     public static func dependencies(
         runner: CommandRunning = ProcessRunner(),
         options: ComposeExecutionOptions = ComposeExecutionOptions(),
-        discoveryClient: ContainerDiscoveryAPIClienting = ContainerDiscoveryAPIClient(),
     ) -> ComposeOrchestratorDependencies {
-        let commands = ComposeOrchestratorCommandDependencies(
-            archiveManager: ContainerArchiveManager(),
-            attachManager: ContainerClientAttachManager(),
-            copier: ContainerClientCopier(),
-            execManager: ContainerClientExecManager(),
-            exporter: ContainerClientExporter(temporaryDirectory: options.temporaryDirectory),
-            launchManager: ContainerCommandLaunchManager(),
-            logManager: ContainerClientLogManager(),
+        dependencies(
+            runner: runner,
+            options: options,
+            discoveryClient: nil,
+            makeContainerClient: ContainerClient.init,
         )
-        let runtime = ComposeOrchestratorRuntimeDependencies(
+    }
+
+    /// Returns matched dependencies with a caller-supplied discovery client.
+    public static func dependencies(
+        runner: CommandRunning = ProcessRunner(),
+        options: ComposeExecutionOptions = ComposeExecutionOptions(),
+        discoveryClient: ContainerDiscoveryAPIClienting,
+    ) -> ComposeOrchestratorDependencies {
+        dependencies(
+            runner: runner,
+            options: options,
+            discoveryClient: discoveryClient,
+            makeContainerClient: ContainerClient.init,
+        )
+    }
+
+    static func dependencies(
+        runner: CommandRunning = ProcessRunner(),
+        options: ComposeExecutionOptions = ComposeExecutionOptions(),
+        discoveryClient: ContainerDiscoveryAPIClienting? = nil,
+        makeContainerClient: @escaping @Sendable () -> ContainerClient,
+    ) -> ComposeOrchestratorDependencies {
+        let invocationClients = InvocationScopedClientPool(create: makeContainerClient)
+        let provideClient: ContainerClientProvider = { invocationClients.control() }
+        let makeSessionClient: ContainerClientProvider = { invocationClients.session() }
+        let resolvedDiscoveryClient = discoveryClient
+            ?? ContainerDiscoveryAPIClient(containerClient: provideClient)
+
+        return ComposeOrchestratorDependencies(
+            runner: runner,
+            options: options,
+            commands: commandDependencies(
+                options: options,
+                discoveryClient: resolvedDiscoveryClient,
+                controlClient: provideClient,
+                makeSessionClient: makeSessionClient,
+            ),
+            runtime: runtimeDependencies(
+                discoveryClient: resolvedDiscoveryClient,
+                controlClient: provideClient,
+            ),
+            imageManager: ContainerClientImageManager(),
+        )
+    }
+
+    private static func commandDependencies(
+        options: ComposeExecutionOptions,
+        discoveryClient: ContainerDiscoveryAPIClienting,
+        controlClient: @escaping ContainerClientProvider,
+        makeSessionClient: @escaping ContainerClientProvider,
+    ) -> ComposeOrchestratorCommandDependencies {
+        ComposeOrchestratorCommandDependencies(
+            archiveManager: ContainerArchiveManager(),
+            attachManager: ContainerClientAttachManager(
+                client: ContainerAttachAPIClient(
+                    controlClient: controlClient,
+                    makeSessionClient: makeSessionClient,
+                ),
+            ),
+            copier: ContainerClientCopier(containerClient: controlClient),
+            execManager: ContainerClientExecManager(
+                client: ContainerExecAPIClient(
+                    controlClient: controlClient,
+                    makeSessionClient: makeSessionClient,
+                ),
+            ),
+            exporter: ContainerClientExporter(
+                temporaryDirectory: options.temporaryDirectory,
+                containerClient: controlClient,
+            ),
+            launchManager: ContainerCommandLaunchManager(),
+            logManager: ContainerClientLogManager(
+                client: ContainerLogAPIClient(containerClient: controlClient),
+                followStateProvider: ContainerClientLogFollowStateProvider(
+                    client: discoveryClient,
+                ),
+            ),
+        )
+    }
+
+    private static func runtimeDependencies(
+        discoveryClient: ContainerDiscoveryAPIClienting,
+        controlClient: @escaping ContainerClientProvider,
+    ) -> ComposeOrchestratorRuntimeDependencies {
+        ComposeOrchestratorRuntimeDependencies(
             services: .init(
                 configReader: ComposeExternalConfigReader(),
-                eventsManager: ContainerClientEventsManager(),
+                eventsManager: ContainerClientEventsManager(
+                    client: ContainerEventsAPIClient(containerClient: controlClient),
+                ),
                 imageVolumeInitializer: ContainerClientImageVolumeInitializer(),
-                lifecycleManager: ContainerClientLifecycleManager(),
+                lifecycleManager: ContainerClientLifecycleManager(
+                    client: ContainerLifecycleAPIClient(containerClient: controlClient),
+                ),
                 resourceManager: ContainerClientResourceManager(),
                 secretReader: ComposeExternalSecretReader(),
             ),
             discoveryManager: ContainerClientDiscoveryManager(client: discoveryClient),
             inspection: .init(
-                statsManager: ContainerClientStatsManager(),
-                topManager: ContainerClientTopManager(),
+                statsManager: ContainerClientStatsManager(
+                    client: ContainerStatsAPIClient(containerClient: controlClient),
+                ),
+                topManager: ContainerClientTopManager(
+                    client: ContainerTopAPIClient(containerClient: controlClient),
+                ),
             ),
-        )
-        return ComposeOrchestratorDependencies(
-            runner: runner,
-            options: options,
-            commands: commands,
-            runtime: runtime,
-            imageManager: ContainerClientImageManager(),
         )
     }
 }

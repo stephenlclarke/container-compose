@@ -113,6 +113,15 @@ public struct ContainerLogAPIClient: ContainerLogAPIClienting {
         followLogRecordsOperation = followLogRecords
     }
 
+    init(containerClient: @escaping ContainerClientProvider) {
+        self.init(
+            logs: { try await containerClient().logs(id: $0, options: $1, replay: $2) },
+            logRecords: { try await containerClient().logRecords(id: $0, options: $1, replay: $2) },
+            followLogs: { try await containerClient().followLogs(id: $0, options: $1) },
+            followLogRecords: { try await containerClient().followLogRecords(id: $0, options: $1) },
+        )
+    }
+
     /// Fetches log file handles through `ContainerClient`.
     public func logFileHandles(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [FileHandle] {
         try await logsOperation(id, options, replay)

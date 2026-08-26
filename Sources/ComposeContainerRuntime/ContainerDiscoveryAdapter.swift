@@ -156,6 +156,14 @@ public struct ContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
         lifecycleViewListOperation = lifecycleViewList
     }
 
+    init(containerClient: @escaping ContainerClientProvider) {
+        self.init(
+            list: { try await containerClient().list(filters: $0) },
+            get: { try await containerClient().get(id: $0) },
+            lifecycleViewList: { try await containerClient().lifecycleViews(filters: $0) },
+        )
+    }
+
     /// Lists containers through `ContainerClient`.
     public func listContainers(filters: ContainerListFilters) async throws -> [ContainerSnapshot] {
         try await listOperation(filters)

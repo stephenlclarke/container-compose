@@ -127,6 +127,24 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
         deleteOperation = state.delete
     }
 
+    init(containerClient: @escaping ContainerClientProvider) {
+        self.init(
+            control: ControlOperations(
+                start: { try await ContainerLifecycleLiveAdapter.start(client: containerClient(), id: $0) },
+                kill: { try await containerClient().kill(id: $0, signal: $1) },
+                stop: { try await containerClient().stop(id: $0, opts: $1) },
+                restart: { try await containerClient().restart(id: $0, opts: $1) },
+                pause: { try await containerClient().pause(id: $0) },
+                unpause: { try await containerClient().unpause(id: $0) },
+            ),
+            state: StateOperations(
+                wait: { try await ContainerLifecycleLiveAdapter.wait(client: containerClient(), id: $0) },
+                get: { try await containerClient().get(id: $0) },
+                delete: { try await containerClient().delete(id: $0, force: $1) },
+            ),
+        )
+    }
+
     /// Starts a container through `ContainerClient`.
     public func startContainer(id: String) async throws {
         try await startOperation(id)

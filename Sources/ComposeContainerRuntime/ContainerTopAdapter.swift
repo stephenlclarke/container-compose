@@ -61,6 +61,10 @@ public struct ContainerTopAPIClient: ContainerTopAPIClienting {
         processesOperation = processes
     }
 
+    init(containerClient: @escaping ContainerClientProvider) {
+        self.init(processes: { try await containerClient().processes(id: $0) })
+    }
+
     /// Reads process information through `ContainerClient`.
     public func processes(id: String) async throws -> ContainerProcesses {
         try await processesOperation(id)
