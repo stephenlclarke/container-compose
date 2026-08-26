@@ -11,6 +11,8 @@ Compose has functional parity evidence, but runtime lifecycle work still pays av
 - Keep generated builder protocol source paired with the immutable builder image used by Container.
 - Preserve the matched before/after evidence and its environment fingerprint without attributing aggregate gains to any isolated commit.
 - Continue tracking the separate Compose scaling gap where 10- and 50-service startup exceed the current Docker parity guard.
+- Reuse a bounded invocation lifetime for ordinary Container API control calls
+  without coupling attach or exec session disconnects to that control lifetime.
 
 ## Acceptance evidence
 
@@ -20,11 +22,24 @@ Compose has functional parity evidence, but runtime lifecycle work still pays av
 - Focused Compose dependency, manifest, and lifecycle contract tests pass.
 - Exact-head review and required GitHub checks find no remaining issue.
 - The retained benchmark shows 84 of 84 operations passing in each lane with functional parity.
+- Focused concurrency evidence proves 100 simultaneous control-client requests
+  construct one value, session clients remain distinct, and dependency wiring
+  stays lazy until a runtime operation occurs.
+- The exact matched-stack client-reuse benchmark retains functional parity and
+  the diagnostic 10x guard without claiming a latency improvement from mixed
+  timing results.
 
 ## Remaining scope
 
-This dependency-integration slice is one measured contribution to issue 278, not its closure. The existing Compose startup scaling guard still exceeds Docker by more than 10x at 10 and 50 services, so issue 278 remains open for Compose-owned profiling and scaling work after this exact optimized runtime stack lands.
+The dependency-integration and invocation-client slices are measured
+contributions to issue 278, not its closure. Client reuse removes redundant XPC
+connection construction and clarifies session ownership, but the seven-run
+latency matrix is mixed: the 1-service startup median improves by 5.3%, while
+the 10- and 50-service startup medians regress by 10.0% and 13.2%. The change
+therefore makes no latency claim. Issue 278 remains open for Compose-owned
+profiling, explicit shared or dedicated VM isolation, pre-warming, and the
+other performance lanes in its public completion contract.
 
 ## Related work
 
-This handoff records [issue 278](https://github.com/stephenlclarke/container-compose/issues/278). Its implementation dependencies are [Containerization pull request 37](https://github.com/stephenlclarke/containerization/pull/37), [builder-shim pull request 12](https://github.com/stephenlclarke/container-builder-shim/pull/12), and [Container pull request 142](https://github.com/stephenlclarke/container/pull/142).
+This handoff records [issue 278](https://github.com/stephenlclarke/container-compose/issues/278). Its implementation dependencies are [Containerization pull request 37](https://github.com/stephenlclarke/containerization/pull/37), [builder-shim pull request 12](https://github.com/stephenlclarke/container-builder-shim/pull/12), and [Container pull request 142](https://github.com/stephenlclarke/container/pull/142). The Compose-owned client reuse is [pull request 327](https://github.com/stephenlclarke/container-compose/pull/327).
