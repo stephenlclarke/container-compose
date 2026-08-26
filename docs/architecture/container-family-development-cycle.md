@@ -207,6 +207,11 @@ and integration tests, Docker oracles, parity comparisons, documentation,
 packaging dry runs, static analysis, Sonar scanning, CodeQL database/query work,
 migration rehearsals, and every reproducible release-gate step.
 
+CodeQL is a release-only required authority. It may run asynchronously on pull
+requests, `main`, or scheduled workflows as non-blocking feedback, but its queue,
+completion, or result must never delay or block a non-release development slice,
+review, pull-request merge, or ordinary `main` checkpoint.
+
 The execution order is mandatory:
 
 1. run the underlying command directly in an isolated local MBP worktree;
@@ -245,7 +250,7 @@ Long gates should run against a committed snapshot in a clean verification workt
 | --- | --- |
 | Compilation or unit suite | Review another repository in the same slice, prepare the next focused test, improve deterministic fixtures, or document the proven contract. |
 | Runtime/parity suite | Inspect the immutable diff, prepare non-executing failure cases, analyse prior timings, review documentation, or inspect upstream evidence. Do not run any work that can touch Container/devcontainer services until independent service namespaces are proved. |
-| SonarQube or CodeQL | Triage existing local findings, review changed-code hotspots, prepare fixes on a separate worktree, or inspect dependency/upstream changes. |
+| Release SonarQube or CodeQL | Triage existing local findings, review changed-code hotspots, prepare fixes on a separate worktree, or inspect dependency/upstream changes. Never wait for CodeQL outside a release. |
 | GitHub workflow | Use the MBP runner log, prepare review/handoff material, or advance an independent local slice. Do not passively wait in a hosted queue when the job can be dispatched locally. |
 | Release/package build | Verify documentation, checksums/signing expectations, install/rollback procedure, and final stack heads without modifying the candidate. |
 
@@ -312,7 +317,8 @@ Do not delete a branch merely because its remote disappeared. Account for unique
 
 ## SonarQube, CodeQL, and Static Quality
 
-Static quality is part of slice acceptance, not end-of-programme cleanup.
+Focused static quality is part of slice acceptance, not end-of-programme cleanup.
+CodeQL is the exception: it is required only for a release.
 
 ### SonarQube
 
@@ -329,9 +335,9 @@ Static quality is part of slice acceptance, not end-of-programme cleanup.
 
 - `container-compose` applies CodeQL to the Go normalizer; it does not claim Swift CodeQL coverage.
 - Use the supported sourced `Tools/ci/codeql-entry.sh` boundary and `container_compose_codeql codeql-local` for reproducible exact-build local analysis. It pins the CodeQL CLI, query pack, Go toolchain, and reviewed baseline, retains commit-keyed SARIF, and fails new or stale undispositioned results.
-- Keep the GitHub CodeQL authority on its isolated hosted Linux runner. The active workflow performs a real analysis for every `main` push, scheduled run, and manual dispatch. Ready pull requests analyze relevant changes and take an explicit no-op gate otherwise; drafts defer.
-- Inspect and resolve new alerts periodically during the slice and before main/release checkpoints. A suppressed alert needs a narrow documented justification.
-- Branch protection requires the aggregate `CodeQL` result. A missing or failed required result is not a pass; a deliberately uploaded exact-commit local SARIF remains a separate authority and must not be represented as the hosted workflow.
+- Keep the GitHub CodeQL authority on its isolated hosted Linux runner. Workflows may analyze `main`, pull requests, schedules, or manual dispatches for asynchronous feedback, but CodeQL is never a required non-release check.
+- Inspect and resolve new alerts as scheduled maintenance or release preparation. A suppressed alert needs a narrow documented justification.
+- Require the aggregate `CodeQL` result only for a release candidate. A missing or failed release result is not a pass; a deliberately uploaded exact-commit local SARIF remains a separate authority and must not be represented as the hosted workflow.
 
 ## Upstream Surveillance and Apple Handoffs
 
@@ -415,7 +421,7 @@ Each slice keeps a compact durable record that another MBP or maintainer can res
 | Documentation | Complete documentation inventory reviewed; every changed page/help/schema/example/status/release/handoff item, or an explicit evidence-backed `unchanged`/`not applicable` disposition. |
 | Validation | Focused, component, cross-client, fault, security, migration and full gates with exact result locations. |
 | Review | Review passes, findings/resolutions, `@codex` queries/responses, unrelated findings/blockers and final clean pass. |
-| Quality | Coverage, SonarQube and supported CodeQL result or explicit missing-authority blocker. |
+| Quality | Coverage and SonarQube; for a release only, the supported CodeQL result or an explicit missing-authority blocker. |
 | Performance | Reference/candidate raw evidence, repetitions, median/P95, noise method and verdict. |
 | Upstream | Issues/PRs/discussions reviewed, divergence result, adopted changes and Apple handoff location. |
 | Delivery | Main/PR heads, stack pin commit, rollback point, branch/worktree cleanup and handoff status. |
@@ -470,7 +476,7 @@ A slice is complete only when:
 - applicable security, migration, rollback, and compatibility tests pass;
 - a complete final-diff review finds no new actionable issue after every earlier issue was resolved;
 - every `@codex` PR query has an explicit response and every reviewed-diff change received a new exact-SHA review;
-- local static analysis, SonarQube, supported CodeQL, and every required exact-head external authority is green;
+- local static analysis, SonarQube, and every required exact-head external authority is green; supported CodeQL is additionally required only for a release;
 - maintained code aims for at least 90% overall line coverage, new or substantially changed code has focused coverage evidence aimed at 90%, and every evidence-backed exception is explicit;
 - applicable Docker integration uses a retained Dockerfile, Compose file, or Bash harness that exercises the built CLI through the user-visible contract;
 - every affected executable lane has paired release-build median/P95 comparable to or better than Docker outside the declared noise band; a demonstrably non-executable slice records `not applicable` with rationale and cannot close a performance gap;
