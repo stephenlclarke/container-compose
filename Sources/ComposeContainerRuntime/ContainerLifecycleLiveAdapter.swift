@@ -23,18 +23,25 @@ import Foundation
 public enum ContainerLifecycleLiveAdapter {
     /// Bootstraps and starts the init process without attaching stdio.
     public static func start(id: String) async throws {
+        try await start(client: ContainerClient(), id: id)
+    }
+
+    static func start(client: ContainerClient, id: String) async throws {
         var dynamicEnv: [String: String] = [:]
         if let sshAuthSock = ProcessInfo.processInfo.environment["SSH_AUTH_SOCK"] {
             dynamicEnv["SSH_AUTH_SOCK"] = sshAuthSock
         }
-        let process = try await ContainerClient().bootstrap(id: id, stdio: [], dynamicEnv: dynamicEnv)
+        let process = try await client.bootstrap(id: id, stdio: [], dynamicEnv: dynamicEnv)
         try await process.start()
     }
 
     /// Waits for a container's init process, replaying stored exit metadata
     /// for containers that have already stopped.
     public static func wait(id: String) async throws -> Int32 {
-        let client = ContainerClient()
+        try await wait(client: ContainerClient(), id: id)
+    }
+
+    static func wait(client: ContainerClient, id: String) async throws -> Int32 {
         let container = try await client.get(id: id)
         switch container.status {
         case .stopped:

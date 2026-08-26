@@ -36,6 +36,10 @@ public struct ContainerEventsAPIClient: ContainerEventsAPIClienting {
         eventsOperation = events
     }
 
+    init(containerClient: @escaping ContainerClientProvider) {
+        self.init(events: { try await containerClient().events(options: $0) })
+    }
+
     /// Opens the runtime event stream through `ContainerClient`.
     public func events(options: ContainerEventOptions = .default) async throws -> FileHandle {
         try await eventsOperation(options)

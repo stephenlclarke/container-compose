@@ -69,6 +69,32 @@ public struct ContainerExecAPIClient: ContainerExecAPIClienting {
         runAttachedOperation = runAttached
     }
 
+    init(
+        controlClient: @escaping ContainerClientProvider,
+        makeSessionClient: @escaping ContainerClientProvider,
+    ) {
+        self.init(
+            get: { try await controlClient().get(id: $0) },
+            createAndStart: { containerID, processID, configuration, stdio in
+                try await ContainerExecSessionAdapter(client: makeSessionClient()).createAndStartProcess(
+                    containerId: containerID,
+                    processId: processID,
+                    configuration: configuration,
+                    stdio: stdio,
+                )
+            },
+            runAttached: { containerID, processID, configuration, interactive, tty in
+                try await ContainerExecSessionAdapter(client: makeSessionClient()).runAttachedProcess(
+                    containerId: containerID,
+                    processId: processID,
+                    configuration: configuration,
+                    interactive: interactive,
+                    tty: tty,
+                )
+            },
+        )
+    }
+
     /// Returns the container snapshot through `ContainerClient`.
     public func getContainer(id: String) async throws -> ContainerSnapshot {
         try await getOperation(id)

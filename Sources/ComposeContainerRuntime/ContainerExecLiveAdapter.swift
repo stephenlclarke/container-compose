@@ -29,13 +29,12 @@ public enum ContainerExecLiveAdapter {
         configuration: ProcessConfiguration,
         stdio: [FileHandle?],
     ) async throws {
-        let process = try await ContainerClient().createProcess(
+        try await ContainerExecSessionAdapter(client: ContainerClient()).createAndStartProcess(
             containerId: containerId,
             processId: processId,
             configuration: configuration,
             stdio: stdio,
         )
-        try await process.start()
     }
 
     /// Creates an attached process and pumps local stdio until it exits.
@@ -46,7 +45,41 @@ public enum ContainerExecLiveAdapter {
         interactive: Bool,
         tty: Bool,
     ) async throws -> Int32 {
-        let client = ContainerClient()
+        try await ContainerExecSessionAdapter(client: ContainerClient()).runAttachedProcess(
+            containerId: containerId,
+            processId: processId,
+            configuration: configuration,
+            interactive: interactive,
+            tty: tty,
+        )
+    }
+}
+
+struct ContainerExecSessionAdapter {
+    let client: ContainerClient
+
+    func createAndStartProcess(
+        containerId: String,
+        processId: String,
+        configuration: ProcessConfiguration,
+        stdio: [FileHandle?],
+    ) async throws {
+        let process = try await client.createProcess(
+            containerId: containerId,
+            processId: processId,
+            configuration: configuration,
+            stdio: stdio,
+        )
+        try await process.start()
+    }
+
+    func runAttachedProcess(
+        containerId: String,
+        processId: String,
+        configuration: ProcessConfiguration,
+        interactive: Bool,
+        tty: Bool,
+    ) async throws -> Int32 {
         let processIO = try ProcessIO.create(tty: tty, interactive: interactive, detach: false)
         defer {
             try? processIO.close()

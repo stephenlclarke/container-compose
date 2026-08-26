@@ -48,13 +48,24 @@ private struct ContainerClientOutputAttachSession: ContainerOutputAttachSession 
 
 /// Thin apple/container client wrapper around output-only attach calls.
 struct ContainerAttachAPIClient: ContainerAttachAPIClienting {
+    private let controlClient: ContainerClientProvider
+    private let makeSessionClient: ContainerClientProvider
+
+    init(
+        controlClient: @escaping ContainerClientProvider = { ContainerClient() },
+        makeSessionClient: @escaping ContainerClientProvider = { ContainerClient() },
+    ) {
+        self.controlClient = controlClient
+        self.makeSessionClient = makeSessionClient
+    }
+
     func getContainer(id: String) async throws -> ContainerSnapshot {
-        try await ContainerClient().get(id: id)
+        try await controlClient().get(id: id)
     }
 
     func attach(id: String, stdio: [FileHandle?]) async throws -> any ContainerOutputAttachSession {
         try await ContainerClientOutputAttachSession(
-            process: ContainerClient().attach(id: id, stdio: stdio),
+            process: makeSessionClient().attach(id: id, stdio: stdio),
         )
     }
 
@@ -64,7 +75,7 @@ struct ContainerAttachAPIClient: ContainerAttachAPIClienting {
             dynamicEnvironment["SSH_AUTH_SOCK"] = sshAuthSocket
         }
         return try await ContainerClientOutputAttachSession(
-            process: ContainerClient().bootstrap(
+            process: makeSessionClient().bootstrap(
                 id: id,
                 stdio: stdio,
                 dynamicEnv: dynamicEnvironment,

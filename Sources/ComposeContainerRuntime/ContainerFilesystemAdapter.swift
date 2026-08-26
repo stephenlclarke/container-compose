@@ -347,6 +347,50 @@ private extension ContainerClientCopier {
     }
 }
 
+extension ContainerClientCopier {
+    init(containerClient: @escaping ContainerClientProvider) {
+        self.init(
+            copyInto: { id, source, destination, options in
+                try await containerClient().copyIn(
+                    id: id,
+                    source: source,
+                    destination: destination,
+                    createParents: true,
+                    followSymlink: options.followSymlink,
+                    preserveOwnership: options.preserveOwnership,
+                )
+            },
+            copyFrom: { id, source, destination, options in
+                try await containerClient().copyOut(
+                    id: id,
+                    source: source,
+                    destination: destination,
+                    followSymlink: options.followSymlink,
+                    preserveOwnership: options.preserveOwnership,
+                )
+            },
+            copyArchiveInto: { id, archive, destination, options in
+                try await containerClient().copyIn(
+                    id: id,
+                    archive: archive,
+                    destination: destination,
+                    createParents: true,
+                    preserveOwnership: options.preserveOwnership,
+                )
+            },
+            copyArchiveFrom: { id, source, archive, copyContents, options in
+                try await containerClient().copyOut(
+                    id: id,
+                    source: source,
+                    archive: archive,
+                    followSymlink: options.followSymlink,
+                    copyContents: copyContents,
+                )
+            },
+        )
+    }
+}
+
 /// `ContainerClient`-backed exporter for real service container exports.
 public struct ContainerClientExporter: ComposeRuntimeExporting {
     public typealias Export = @Sendable (String, URL, Bool, Bool) async throws -> Void
@@ -362,6 +406,20 @@ public struct ContainerClientExporter: ComposeRuntimeExporting {
     ) {
         self.temporaryDirectory = temporaryDirectory
         exportOperation = export
+    }
+
+    init(
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        containerClient: @escaping ContainerClientProvider,
+    ) {
+        self.init(temporaryDirectory: temporaryDirectory) { id, archive, live, noFreeze in
+            try await containerClient().export(
+                id: id,
+                archive: archive,
+                live: live,
+                noFreeze: noFreeze,
+            )
+        }
     }
 
     /// Exports through `ContainerClient.export(id:archive:live:noFreeze:)`.
