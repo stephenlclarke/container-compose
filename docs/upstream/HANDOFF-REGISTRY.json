@@ -7097,6 +7097,28 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/322"
     },
     {
+      "id": "container-compose-325",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Adopt the optimized Container stack",
+      "state": "submitted",
+      "lastVerified": "2026-08-26",
+      "commits": [
+        "abf1a9759307d11ab0148043fba192f40bc6c1eb",
+        "94b6ea99e5c1dd448bc0599d04a392d68f8ac9bf"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-278.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-325.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/325"
+    },
+    {
       "id": "container-compose-307",
       "owner": "stephenlclarke/container-compose",
       "title": "Accept redacted create logging options",
