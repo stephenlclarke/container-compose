@@ -31,7 +31,7 @@ ISOLATION_REPETITIONS="${ISOLATION_REPETITIONS:-6}"
 ISOLATION_TIMEOUT_SECONDS="${ISOLATION_TIMEOUT_SECONDS:-300}"
 ISOLATION_TIMING_MAX_RATIO="${ISOLATION_TIMING_MAX_RATIO:-10}"
 ISOLATION_COMPARABLE_NOISE_PCT="${ISOLATION_COMPARABLE_NOISE_PCT:-5}"
-readonly FIXTURE_IMAGE="alpine:3.20"
+readonly FIXTURE_IMAGE="${ISOLATION_FIXTURE_IMAGE:-alpine:3.20}"
 readonly TIMING_TSV="$ISOLATION_EVIDENCE_DIR/timings.tsv"
 readonly ASSERTION_TSV="$ISOLATION_EVIDENCE_DIR/assertions.tsv"
 readonly SCHEDULE_TSV="$ISOLATION_EVIDENCE_DIR/schedule.tsv"
@@ -78,6 +78,8 @@ ENVIRONMENT:
   ISOLATION_EVIDENCE_DIR        Persistent, resumable evidence directory.
   ISOLATION_WORK_ROOT           Internal-storage fixture directory.
   ISOLATION_REPETITIONS         Timed repetitions per lane (default: 6).
+  ISOLATION_FIXTURE_IMAGE       Warm image reference shared by both runtimes
+                                (default: alpine:3.20).
   ISOLATION_TIMEOUT_SECONDS     Per-operation timeout (default: 300).
   ISOLATION_TIMING_MAX_RATIO    Candidate regression guard (default: 10).
   ISOLATION_COMPARABLE_NOISE_PCT

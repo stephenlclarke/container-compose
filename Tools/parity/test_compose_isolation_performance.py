@@ -359,12 +359,18 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
                 'PROJECT_NAMESPACE=fixture-namespace; '
                 'ISOLATION_WORK_ROOT_CANONICAL=/private/tmp/fixture-work; '
                 'ISOLATION_WORK_ROOT_DEVICE=/dev/disk-fixture; '
-                f'write_fingerprint_candidate "{candidate}"'
+                f'write_fingerprint_candidate "{candidate}"',
+                environment={
+                    "ISOLATION_FIXTURE_IMAGE": "isolation-fixture/alpine:3.20"
+                },
             )
             payload = json.loads(candidate.read_text(encoding="utf-8"))
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(payload["fixtureImage"]["reference"], "alpine:3.20")
+        self.assertEqual(
+            payload["fixtureImage"]["reference"],
+            "isolation-fixture/alpine:3.20",
+        )
         self.assertEqual(payload["fixtureImage"]["commonDigests"], [digest])
         self.assertEqual(payload["dockerReference"]["context"], "fixture-context")
         self.assertEqual(
