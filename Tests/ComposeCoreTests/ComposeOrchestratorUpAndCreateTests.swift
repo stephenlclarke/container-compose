@@ -1091,6 +1091,33 @@ extension ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("up maps shared VM isolation to the built-in runtime network")
+    func upMapsSharedVMIsolationToBuiltinRuntimeNetwork() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.isolation = "shared-vm"
+                    $0.networkMode = "bridge"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "default"]))
+        #expect(command.containsSequence(["--isolation", "shared-vm"]))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("up maps pid host to container pid argument")
     func upMapsPIDHostToContainerPIDArgument() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -7905,33 +7932,25 @@ extension ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported namespace and cgroup fields before creating resources")
-    func upRejectsUnsupportedNamespaceAndCgroupFieldsBeforeCreatingResources() async throws {
-        for testCase in unsupportedRuntimeStringFieldCases() {
-            let runner = RecordingRunner()
-            let project = composeProject(
-                name: "demo",
-                services: [
-                    "api": composeService(name: "api", image: "example/api") {
-                        testCase.configure(&$0)
-                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
-                    },
-                ]
-            ) {
-                $0.volumes = ["cache": ComposeVolume(name: "cache")]
-            }
+    @Test("up rejects unsupported isolation before creating resources")
+    func upRejectsUnsupportedIsolationBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.isolation = "process"
+                },
+            ]
+        )
 
-            do {
-                try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-                Issue.record("Expected unsupported \(testCase.composeName) error")
-            } catch let error as ComposeError {
-                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "api")))
-            } catch {
-                Issue.record("Unexpected error: \(error)")
-            }
-
-            #expect(runner.commands.isEmpty)
+        await #expect(throws: ComposeError.unsupported(
+            "service 'api' uses isolation 'process'; supported values are default, dedicated-vm, and shared-vm"
+        )) {
+            try await ComposeOrchestrator(runner: runner)
+                .up(project: project, options: ComposeUpOptions())
         }
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("up rejects unsupported pid mode before creating resources")
