@@ -371,6 +371,86 @@ class ReleaseNotesTests(unittest.TestCase):
             )
             self.assertNotIn("- Accept local start-first updates.", notes)
 
+    def test_merge_bookkeeping_body_falls_back_to_conventional_subject(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "perf: adopt optimized Container stack",
+                body="""
+                * chore(deps): pin optimized container stack
+
+                * docs(upstream): record optimized stack integration
+                """,
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn("- Adopt optimized Container stack.", notes)
+            self.assertNotIn("chore(deps)", notes.split("## Full changelog", maxsplit=1)[0])
+
+    def test_issue_bookkeeping_body_falls_back_to_conventional_subject(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "fix(filesystem): preserve ext4 journal state",
+                body="Advances #114",
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn("- Preserve ext4 journal state.", notes)
+            self.assertNotIn("Advances #114", notes)
+
+    def test_benchmark_and_parity_scopes_are_not_user_highlights(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(repo, "fix(benchmark): reap timed command descendants")
+            self.commit(repo, "test(parity): add isolation performance matrix")
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn("No user-facing highlights were declared", notes)
+            self.assertNotIn("Reap timed command descendants", notes)
+            self.assertNotIn("Add isolation performance matrix", notes)
+
     def test_internal_release_trailers_do_not_become_user_highlights(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:

@@ -2,15 +2,15 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Integrated design complete; implementation underway. The current 0.13.0 stack ships the neutral Engine API/gateway, selected enhanced provider, versioned capabilities, durable logging/provider work, and several network/image/lifecycle subsets. The common multi-workload Engine Linux sandbox, singular-authority devcontainer cutover, remaining resource planes, migration, security, and comparable-performance gates are incomplete. |
+| Status | Integrated design complete; implementation underway. The current 0.14.0 stack ships the neutral Engine API/gateway, selected enhanced provider, versioned capabilities, durable logging/provider work, explicit dedicated/shared VM isolation, live memory targeting, adaptive reclamation, and several network/image/lifecycle subsets. Docker-compatible namespace joins, singular-authority devcontainer cutover, remaining resource planes, migration, security, and comparable-performance gates are incomplete. |
 | Family | `container-engine-api`, `container-engine`, `container`, `containerization`, `container-compose`, `container-builder-shim`, `devcontainer`, and supporting matched-stack projects |
 | Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
-| Stable 0.13.0 Container revision | `94bb6c4bd1ad00deffb68fc40e931ee143c43c65` |
-| Stable 0.13.0 Containerization revision | `fefced145304666076d646609f21397f32909fcf` |
+| Stable 0.14.0 Container revision | `1cce75b91428cf4390961ea1962d23f9e21ec502` |
+| Stable 0.14.0 Containerization revision | `4d07c76bafabc0adbb1b394f454d5c957023a213` |
 | Original devcontainer design evidence | `b31e80b2b9c09ecc73bb3badf9cd5cf16550a538` on `origin/main`; extraction head must be reselected from a clean reviewed revision |
 | Socktainer comparison | 1.1.1 at `6cc7a32cc37d4ad0c07e9c88a7bbf2abdaceeea0`; conformance input only |
 | Design date | 31 July 2026 |
-| Last documentation review | 25 August 2026 against the 0.13.0 release and current programme STATUS |
+| Last documentation review | 28 August 2026 against the 0.14.0 release and current programme STATUS |
 
 ## Outcome
 

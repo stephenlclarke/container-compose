@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-08-22",
+  "generatedAt": "2026-08-28",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -7135,6 +7135,29 @@
         }
       ],
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/327"
+    },
+    {
+      "id": "container-compose-333",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Prepare Container Compose 0.14.0",
+      "state": "active-draft",
+      "lastVerified": "2026-08-28",
+      "commits": [
+        "c28475a3b553f016c12049d46df997ce6cdd7481",
+        "32e1a4f73fd2d5c7f05ffc2b4a9fb27670d17768",
+        "d82f81a7a4f26b148038357202aa0bfbb92a2a6d"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-332.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-333.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/333"
     },
     {
       "id": "container-compose-307",

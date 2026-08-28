@@ -59,11 +59,13 @@ The following contracts block that release.
 Tracking issue: [[Parity] Shared namespaces and Docker-complete privileged
 isolation](https://github.com/stephenlclarke/container-compose/issues/267).
 
-The current one-VM-per-container runtime cannot provide Docker-compatible PID,
-IPC, or network namespace joins while retaining private workload isolation.
-`exec --privileged` grants capabilities, but the stack does not yet provide the
-complete device, cgroup, profile, and isolation behavior expected from Docker
-privileged containers.
+The current release offers private `dedicated-vm` isolation and an explicit
+experimental `shared-vm` sandbox for eligible host, none, or built-in bridge
+workloads. It does not yet provide Docker-compatible PID, IPC, or network
+namespace joins between services or containers, and shared mode does not yet
+carry Compose-created custom network data planes. `exec --privileged` grants
+capabilities, but the stack does not yet provide the complete device, cgroup,
+profile, and isolation behavior expected from Docker privileged containers.
 
 The work introduces a durable multi-workload Linux sandbox, per-workload
 namespaces and resource lifecycle, donor resolution and leases, DeviceBroker
@@ -133,7 +135,7 @@ grant, security, recovery, and external-client contracts are proved.
 Tracking issue: [[Parity] Complete Docker logging-provider and history
 semantics](https://github.com/stephenlclarke/container-compose/issues/271).
 
-The current 0.13.0 stable release retains durable `json-file` and `local`
+The current 0.14.0 stable release retains durable `json-file` and `local`
 histories, `none`, Syslog, Journald, Fluentd, GELF, Splunk HEC, AWS Logs,
 Google Cloud Logs, installed Docker logging plugins, dual cache, bounded live
 readers, recovery, rotation, compression, and exact-process foreground
@@ -166,10 +168,11 @@ metadata-only success.
 Tracking issue: [[Parity] Remaining resource and security
 controls](https://github.com/stephenlclarke/container-compose/issues/273).
 
-The current release supplies the common CPU, memory, PID, capability, sysctl,
-and selected security controls documented in STATUS. It does not yet complete
-realtime CPU, swappiness, OOM-kill control, arbitrary user-namespace maps,
-cgroup policy, immutable security profiles, or rootfs storage options.
+The current release supplies the common CPU, live hard-memory target and
+adaptive reclamation, PID, capability, sysctl, and selected security controls
+documented in STATUS. It does not yet complete realtime CPU, swappiness,
+OOM-kill control, arbitrary user-namespace maps, cgroup policy, immutable
+security profiles, or rootfs storage options.
 
 The remaining contract covers requested, effective, and discarded policy;
 capability negotiation; live guest effects; ID maps; profile storage and

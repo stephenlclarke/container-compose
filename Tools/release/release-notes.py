@@ -437,10 +437,18 @@ def release_summary_from_body(body: str) -> str | None:
 
         summary = " ".join(lines)
         match = re.match(r"^(?P<verb>[A-Za-z]+)(?P<remainder>\b.*)$", summary)
-        if match is not None:
-            verb = USER_FACING_LEADING_VERBS.get(match.group("verb").lower())
-            if verb is not None:
-                summary = f"{verb}{match.group('remainder')}"
+        if match is None:
+            continue
+
+        verb = USER_FACING_LEADING_VERBS.get(match.group("verb").lower())
+        if verb is None:
+            # Squash-merge bodies frequently start with issue bookkeeping,
+            # contributor notes, or copied Markdown bullets.  Those are useful
+            # history, but not release-note prose.  A conventional subject is a
+            # safer automatic fallback; unusual wording can still opt in with
+            # an explicit Release-Note/Release-Highlight trailer.
+            continue
+        summary = f"{verb}{match.group('remainder')}"
         return ensure_sentence(summary)
     return None
 
@@ -477,11 +485,13 @@ CONVENTIONAL_SUBJECT_PATTERN = re.compile(
 )
 HIGHLIGHT_TYPES = {"feat", "fix", "perf"}
 INTERNAL_HIGHLIGHT_SCOPES = {
+    "benchmark",
     "build",
     "ci",
     "deps",
     "docs",
     "integration",
+    "parity",
     "quality",
     "release",
     "runtime",

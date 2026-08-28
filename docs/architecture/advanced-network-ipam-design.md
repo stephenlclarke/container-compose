@@ -2,14 +2,14 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Implementation underway. The current 0.13.0 stable stack ships lossless IPAM modelling, network-scoped DNS/aliases, bridge mapping, IPv6-only networking, allocation ranges, gateway and auxiliary reservations, runtime DNS, and persisted endpoint behavior for the supported vmnet lane. Custom network/IPAM providers, IPv6 range/auxiliary behavior, durable multiple-pool/provider reconciliation, namespace joins, and comparable-performance evidence remain. |
+| Status | Implementation underway. The current 0.14.0 stable stack ships lossless IPAM modelling, network-scoped DNS/aliases, bridge mapping, IPv6-only networking, allocation ranges, gateway and auxiliary reservations, runtime DNS, persisted endpoint behavior for the supported vmnet lane, and an explicit shared-VM built-in bridge lane. Custom network/IPAM providers, IPv6 range/auxiliary behavior, durable multiple-pool/provider reconciliation, namespace joins, shared-VM custom Compose networks, and comparable-performance evidence remain. |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, the shared Engine API, devcontainer, and the common Engine Linux sandbox |
 | Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
-| Stable 0.13.0 Container revision | `94bb6c4bd1ad00deffb68fc40e931ee143c43c65` |
-| Stable 0.13.0 Containerization revision | `fefced145304666076d646609f21397f32909fcf` |
+| Stable 0.14.0 Container revision | `1cce75b91428cf4390961ea1962d23f9e21ec502` |
+| Stable 0.14.0 Containerization revision | `4d07c76bafabc0adbb1b394f454d5c957023a213` |
 | Design date | 31 July 2026 |
-| Last documentation review | 25 August 2026 against the 0.13.0 release and current STATUS evidence |
+| Last documentation review | 28 August 2026 against the 0.14.0 release and current STATUS evidence |
 
 ## Goal
 
