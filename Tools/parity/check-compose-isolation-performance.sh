@@ -210,8 +210,8 @@ check_tools() {
     command -v "$CONTAINER_BINARY" >/dev/null 2>&1 || skip_or_fail "container runtime is unavailable: $CONTAINER_BINARY"
     CONTAINER_BINARY="$(command -v "$CONTAINER_BINARY")"
     [[ -x "$NORMALIZER_BINARY" ]] || skip_or_fail "compose-normalizer is not executable: $NORMALIZER_BINARY"
-    NORMALIZER_BINARY="$(canonical_path "$NORMALIZER_BINARY")"
     command -v python3 >/dev/null 2>&1 || skip_or_fail 'python3 is unavailable'
+    NORMALIZER_BINARY="$(canonical_path "$NORMALIZER_BINARY")"
     command -v diskutil >/dev/null 2>&1 || skip_or_fail 'diskutil is unavailable'
     validate_repetitions
     [[ "$ISOLATION_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] || { error "ISOLATION_TIMEOUT_SECONDS must be a positive integer"; return 2; }

@@ -186,6 +186,28 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("skipping Compose isolation performance matrix", result.stderr)
 
+    def test_missing_python_skips_before_normalizer_canonicalization(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
+            tools = Path(directory)
+            for name in ("compose", "container", "docker", "normalizer"):
+                tool = tools / name
+                tool.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                tool.chmod(0o755)
+            result = self.source(
+                f'PATH="{tools}"; '
+                "detect_docker_compose() { DOCKER_BINARY=\"$PATH/docker\"; "
+                "DOCKER_COMPOSE_COMMAND=(\"$DOCKER_BINARY\" compose); }; "
+                "require_local_docker_context() { :; }; "
+                "CONTAINER_COMPOSE=\"$PATH/compose\"; "
+                "CONTAINER_BINARY=container; "
+                "NORMALIZER_BINARY=\"$PATH/normalizer\"; "
+                "STRICT=0; check_tools"
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("python3 is unavailable", result.stderr)
+        self.assertNotIn("command not found", result.stderr)
+
     def test_namespace_is_stable_per_evidence_directory(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
             first = Path(directory) / "first"
