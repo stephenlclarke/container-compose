@@ -33,6 +33,7 @@ ISOLATION_TIMEOUT_SECONDS="${ISOLATION_TIMEOUT_SECONDS:-300}"
 ISOLATION_TIMING_MAX_RATIO="${ISOLATION_TIMING_MAX_RATIO:-10}"
 ISOLATION_COMPARABLE_NOISE_PCT="${ISOLATION_COMPARABLE_NOISE_PCT:-5}"
 readonly FIXTURE_IMAGE="${ISOLATION_FIXTURE_IMAGE:-alpine:3.20}"
+readonly FIXTURE_PLATFORM="linux/arm64"
 readonly TIMING_TSV="$ISOLATION_EVIDENCE_DIR/timings.tsv"
 readonly ASSERTION_TSV="$ISOLATION_EVIDENCE_DIR/assertions.tsv"
 readonly SCHEDULE_TSV="$ISOLATION_EVIDENCE_DIR/schedule.tsv"
@@ -279,7 +280,7 @@ select_lane_order() {
 select_lane() {
     case "$1" in
         docker)
-            ACTIVE_COMPOSE=("${DOCKER_COMPOSE_COMMAND[@]}" --ansi never --progress quiet)
+            ACTIVE_COMPOSE=(env "DOCKER_DEFAULT_PLATFORM=" "${DOCKER_COMPOSE_COMMAND[@]}" --ansi never --progress quiet)
             LANE_PREFIX=d
             ;;
         dedicated-vm)
@@ -289,6 +290,7 @@ select_lane() {
                 "CONTAINER_COMPOSE_CONTAINER=$CONTAINER_BINARY"
                 "CONTAINER_COMPOSE_INIT_IMAGE="
                 "CONTAINER_COMPOSE_NORMALIZER=$NORMALIZER_BINARY"
+                "CONTAINER_DEFAULT_PLATFORM="
                 "$CONTAINER_COMPOSE" --ansi never --progress quiet
             )
             LANE_PREFIX=dv
@@ -300,6 +302,7 @@ select_lane() {
                 "CONTAINER_COMPOSE_CONTAINER=$CONTAINER_BINARY"
                 "CONTAINER_COMPOSE_INIT_IMAGE="
                 "CONTAINER_COMPOSE_NORMALIZER=$NORMALIZER_BINARY"
+                "CONTAINER_DEFAULT_PLATFORM="
                 "$CONTAINER_COMPOSE" --ansi never --progress quiet
             )
             LANE_PREFIX=sv
@@ -321,6 +324,7 @@ create_fixtures() {
                 for ((index = 1; index <= count; index++)); do
                     printf '  worker%02d:\n' "$index"
                     printf '    image: %s\n' "$FIXTURE_IMAGE"
+                    printf '    platform: %s\n' "$FIXTURE_PLATFORM"
                     printf '    network_mode: bridge\n'
                     [[ -z "$isolation_line" ]] || printf '%s\n' "$isolation_line"
                     printf '    command: ["sh", "-c", "trap '\''exit 0'\'' TERM INT; while :; do sleep 0.1; done"]\n'
@@ -351,7 +355,7 @@ write_fingerprint_candidate() {
     python3 - "$candidate" "$SELF_PATH" "$CONTAINER_COMPOSE" "$CONTAINER_BINARY" "$NORMALIZER_BINARY" \
         "$ISOLATION_REPETITIONS" "$ISOLATION_TIMEOUT_SECONDS" \
         "$ISOLATION_COMPARABLE_NOISE_PCT" "$ISOLATION_TIMING_MAX_RATIO" \
-        "$FIXTURE_IMAGE" "$docker_compose_version" "$DOCKER_BINARY" \
+        "$FIXTURE_IMAGE" "$FIXTURE_PLATFORM" "$docker_compose_version" "$DOCKER_BINARY" \
         "$DOCKER_CONTEXT_NAME" "$DOCKER_ENDPOINT" "$PROJECT_NAMESPACE" \
         "$ISOLATION_WORK_ROOT_CANONICAL" "$ISOLATION_WORK_ROOT_DEVICE" \
         "${COMPOSE_PARALLEL_LIMIT-<unset>}" <<'PY'
@@ -359,7 +363,7 @@ import hashlib, json, platform, subprocess, sys
 from pathlib import Path
 (
     output, harness, compose, container, normalizer, repetitions, timeout, noise,
-    maximum_ratio, fixture_image, docker_compose_version, docker_binary,
+    maximum_ratio, fixture_image, fixture_platform, docker_compose_version, docker_binary,
     docker_context, docker_endpoint, project_namespace, work_root, work_device,
     compose_parallel_limit,
 ) = sys.argv[1:]
@@ -435,6 +439,7 @@ payload = {
     },
     "fixtureImage": {
         "reference": fixture_image,
+        "platform": fixture_platform,
         "commonDigests": common_image_digests,
         "docker": {
             "id": docker_image.get("Id", ""),

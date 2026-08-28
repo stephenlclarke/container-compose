@@ -285,7 +285,7 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
             compose = Path(directory) / "compose"
             compose.write_text(
                 "#!/bin/sh\n"
-                "printf '%s\\n%s\\n%s\\n' \"$CONTAINER_BIN\" \"$CONTAINER_COMPOSE_CONTAINER\" \"$CONTAINER_COMPOSE_NORMALIZER\"\n",
+                "printf '%s\\n%s\\n%s\\n%s\\n' \"$CONTAINER_BIN\" \"$CONTAINER_COMPOSE_CONTAINER\" \"$CONTAINER_COMPOSE_NORMALIZER\" \"${CONTAINER_DEFAULT_PLATFORM-unset}\"\n",
                 encoding="utf-8",
             )
             compose.chmod(0o755)
@@ -304,8 +304,36 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(
             result.stdout.splitlines(),
-            [str(selected), str(selected), str(normalizer)],
+            [str(selected), str(selected), str(normalizer), ""],
         )
+
+    def test_docker_lane_clears_an_inherited_default_platform(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
+            docker = Path(directory) / "docker"
+            docker.write_text(
+                "#!/bin/sh\nprintf '%s\\n' \"${DOCKER_DEFAULT_PLATFORM-unset}\"\n",
+                encoding="utf-8",
+            )
+            docker.chmod(0o755)
+            result = self.source(
+                f'DOCKER_COMPOSE_COMMAND=("{docker}" compose); '
+                'select_lane docker; "${ACTIVE_COMPOSE[@]}"',
+                environment={"DOCKER_DEFAULT_PLATFORM": "linux/amd64"},
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_every_fixture_pins_the_arm64_platform(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
+            result = self.source(
+                f'ISOLATION_WORK_ROOT="{directory}"; create_fixtures; '
+                'for file in "$FIXTURE_DIR"/*.yml; do '
+                'grep -q "platform: linux/arm64" "$file" || exit 1; done'
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
 
     def test_candidate_lanes_do_not_project_the_runtime_bootstrap_init_image(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
@@ -451,6 +479,7 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
             payload["fixtureImage"]["reference"],
             "isolation-fixture/alpine:3.20",
         )
+        self.assertEqual(payload["fixtureImage"]["platform"], "linux/arm64")
         self.assertEqual(payload["fixtureImage"]["commonDigests"], [digest])
         self.assertEqual(payload["dockerReference"]["context"], "fixture-context")
         self.assertEqual(
