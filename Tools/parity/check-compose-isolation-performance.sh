@@ -84,6 +84,8 @@ ENVIRONMENT:
   ISOLATION_TIMING_MAX_RATIO    Candidate regression guard (default: 10).
   ISOLATION_COMPARABLE_NOISE_PCT
                                 Same-host comparison noise band (default: 5).
+  COMPOSE_PARALLEL_LIMIT        Compose engine-operation concurrency setting;
+                                its exact value is fingerprinted for resumption.
 
 Both writable directories must be on internal storage. The harness never
 pulls images: alpine:3.20 must already be warm in Docker and apple/container.
@@ -345,13 +347,15 @@ write_fingerprint_candidate() {
         "$ISOLATION_COMPARABLE_NOISE_PCT" "$ISOLATION_TIMING_MAX_RATIO" \
         "$FIXTURE_IMAGE" "$docker_compose_version" "$DOCKER_BINARY" \
         "$DOCKER_CONTEXT_NAME" "$DOCKER_ENDPOINT" "$PROJECT_NAMESPACE" \
-        "$ISOLATION_WORK_ROOT_CANONICAL" "$ISOLATION_WORK_ROOT_DEVICE" <<'PY'
+        "$ISOLATION_WORK_ROOT_CANONICAL" "$ISOLATION_WORK_ROOT_DEVICE" \
+        "${COMPOSE_PARALLEL_LIMIT-<unset>}" <<'PY'
 import hashlib, json, platform, subprocess, sys
 from pathlib import Path
 (
     output, harness, compose, container, repetitions, timeout, noise,
     maximum_ratio, fixture_image, docker_compose_version, docker_binary,
     docker_context, docker_endpoint, project_namespace, work_root, work_device,
+    compose_parallel_limit,
 ) = sys.argv[1:]
 def sha256(path):
     digest = hashlib.sha256()
@@ -442,6 +446,7 @@ payload = {
         "timeoutSeconds": int(timeout),
         "comparableNoisePercent": float(noise),
         "maximumRatio": float(maximum_ratio),
+        "composeParallelLimit": compose_parallel_limit,
         "projectNamespace": project_namespace,
         "workRoot": {"path": work_root, "device": work_device},
     },

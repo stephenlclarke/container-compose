@@ -409,7 +409,8 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
                 'ISOLATION_WORK_ROOT_DEVICE=/dev/disk-fixture; '
                 f'write_fingerprint_candidate "{candidate}"',
                 environment={
-                    "ISOLATION_FIXTURE_IMAGE": "isolation-fixture/alpine:3.20"
+                    "COMPOSE_PARALLEL_LIMIT": "4",
+                    "ISOLATION_FIXTURE_IMAGE": "isolation-fixture/alpine:3.20",
                 },
             )
             payload = json.loads(candidate.read_text(encoding="utf-8"))
@@ -425,6 +426,7 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
             payload["dockerReference"]["endpoint"], "unix:///fixture/docker.sock"
         )
         self.assertEqual(payload["settings"]["projectNamespace"], "fixture-namespace")
+        self.assertEqual(payload["settings"]["composeParallelLimit"], "4")
         self.assertEqual(payload["dockerAuthority"]["NCPU"], 8)
         self.assertEqual(payload["containerAuthority"]["status"]["status"], "running")
         self.assertEqual(
