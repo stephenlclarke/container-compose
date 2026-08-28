@@ -587,6 +587,7 @@ record_assertion() {
 
 assert_running_services() {
     local fixture="$1" lane="$2" repetition="$3" project="$4" file="$5" expected="$6" output observed container_id inspection network_summary effective_isolation ipv4_address
+    local expected_network="${project}_default"
     local invalid_isolation=0 missing_ipv4=0 failed=0
     output="$("${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" ps -q)"
     observed="$(printf '%s\n' "$output" | awk 'NF { count += 1 } END { print count + 0 }')"
@@ -602,7 +603,7 @@ assert_running_services() {
             ipv4_address="$("$DOCKER_BINARY" inspect "$container_id" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')"
         else
             inspection="$("$CONTAINER_BINARY" inspect "$container_id")"
-            network_summary="$(printf '%s' "$inspection" | python3 -c 'import json,sys; item=json.load(sys.stdin)[0]; networks=item["status"].get("networks", []); ipv4=next((entry.get("ipv4Address", "") for entry in networks if entry.get("network") == "default"), ""); print(item["configuration"].get("effectiveIsolation", "") + "\t" + ipv4)')"
+            network_summary="$(printf '%s' "$inspection" | python3 -c 'import json,sys; expected=sys.argv[1]; item=json.load(sys.stdin)[0]; networks=item["status"].get("networks", []); ipv4=next((entry.get("ipv4Address", "") for entry in networks if entry.get("network") == expected), ""); print(item["configuration"].get("effectiveIsolation", "") + "\t" + ipv4)' "$expected_network")"
             IFS=$'\t' read -r effective_isolation ipv4_address <<<"$network_summary"
             if [[ "$effective_isolation" != "$lane" ]]; then
                 ((invalid_isolation += 1))

@@ -295,7 +295,7 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
             container.write_text(
                 "#!/bin/sh\n"
                 "if [ \"$2\" = service-one ]; then\n"
-                "  printf '%s\\n' '[{\"configuration\":{\"effectiveIsolation\":\"shared-vm\"},\"status\":{\"networks\":[{\"network\":\"default\",\"ipv4Address\":\"192.0.2.1\"}]}}]'\n"
+                "  printf '%s\\n' '[{\"configuration\":{\"effectiveIsolation\":\"shared-vm\"},\"status\":{\"networks\":[{\"network\":\"project_default\",\"ipv4Address\":\"192.0.2.1\"}]}}]'\n"
                 "else\n"
                 "  printf '%s\\n' '[{\"configuration\":{\"effectiveIsolation\":\"dedicated-vm\"},\"status\":{\"networks\":[]}}]'\n"
                 "fi\n",
