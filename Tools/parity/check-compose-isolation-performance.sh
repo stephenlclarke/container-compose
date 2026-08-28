@@ -574,7 +574,7 @@ log_directory.mkdir(parents=True, exist_ok=True)
 log_path = log_directory / f"{fixture}--{lane}--r{repetition}.log"
 started = time.monotonic(); outcome = "success"; diagnostic = ""; process = None
 def stop_process_group(signum):
-    if process is None or process.poll() is not None:
+    if process is None:
         return
     try:
         os.killpg(process.pid, signum)
@@ -586,7 +586,9 @@ def forward_signal(signum, _frame):
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            stop_process_group(signal.SIGKILL)
+            pass
+        stop_process_group(signal.SIGKILL)
+        if process.poll() is None:
             process.wait()
     raise SystemExit(128 + signum)
 for forwarded_signal in (signal.SIGHUP, signal.SIGINT, signal.SIGQUIT, signal.SIGTERM):
@@ -603,7 +605,9 @@ except subprocess.TimeoutExpired as error:
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
-        stop_process_group(signal.SIGKILL)
+        pass
+    stop_process_group(signal.SIGKILL)
+    if process.poll() is None:
         process.wait()
     outcome = "timeout"; diagnostic = str(error)
 duration = time.monotonic() - started

@@ -424,7 +424,7 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
             child.write_text(
                 "#!/bin/sh\n"
                 "trap 'exit 143' TERM\n"
-                "sleep 30 &\n"
+                "sh -c 'trap \"\" TERM; while :; do sleep 1; done' &\n"
                 f"printf '%s %s' \"$$\" \"$!\" > {pid_file}\n"
                 "wait\n",
                 encoding="utf-8",
