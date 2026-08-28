@@ -598,6 +598,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("update-homebrew-container-formula.py", renderer)
         self.assertNotIn("${CONTAINER_SOURCE_DIR}/scripts/update-homebrew-formula.py", renderer)
         self.assertIn("compose/bin/compose", renderer)
+        self.assertIn('if [[ "${RELEASE_TAG}" != "current" ]]', renderer)
+        self.assertEqual(renderer.count('"${version_policy_args[@]}"'), 2)
 
     def test_homebrew_tap_pushes_authenticate_with_the_tap_token(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")

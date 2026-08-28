@@ -53,33 +53,43 @@ end
 class UpdateHomebrewContainerFormulaTests(unittest.TestCase):
     """The runtime formula must link the matching Compose lane."""
 
-    def render(self, directory: Path, compose_formula: str, formula_class: str) -> Path:
+    def render(
+        self,
+        directory: Path,
+        compose_formula: str,
+        formula_class: str,
+        *,
+        omit_version: bool = False,
+    ) -> Path:
         template = directory / "container.rb.in"
         formula = directory / "container.rb"
         template.write_text(TEMPLATE, encoding="utf-8")
+        command = [
+            sys.executable,
+            str(UPDATER),
+            "--formula",
+            str(formula),
+            "--template",
+            str(template),
+            "--formula-class",
+            formula_class,
+            "--compose-formula",
+            compose_formula,
+            "--url",
+            "https://github.com/stephenlclarke/container-compose/releases/download/0.6.70/container-release-arm64.tar.gz",
+            "--sha256",
+            "b" * 64,
+            "--version",
+            "0.6.70",
+            "--label",
+            "stable release",
+            "--asset",
+            "container-release-arm64.tar.gz",
+        ]
+        if omit_version:
+            command.append("--omit-version")
         completed = subprocess.run(
-            [
-                sys.executable,
-                str(UPDATER),
-                "--formula",
-                str(formula),
-                "--template",
-                str(template),
-                "--formula-class",
-                formula_class,
-                "--compose-formula",
-                compose_formula,
-                "--url",
-                "https://github.com/stephenlclarke/container-compose/releases/download/0.6.70/container-release-arm64.tar.gz",
-                "--sha256",
-                "b" * 64,
-                "--version",
-                "0.6.70",
-                "--label",
-                "stable release",
-                "--asset",
-                "container-release-arm64.tar.gz",
-            ],
+            command,
             capture_output=True,
             text=True,
             check=False,
@@ -89,7 +99,12 @@ class UpdateHomebrewContainerFormulaTests(unittest.TestCase):
 
     def test_stable_formula_uses_the_stable_compose_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            formula = self.render(Path(directory), "container-compose", "Container")
+            formula = self.render(
+                Path(directory),
+                "container-compose",
+                "Container",
+                omit_version=True,
+            )
             rendered = formula.read_text(encoding="utf-8")
 
             subprocess.run(["ruby", "-c", str(formula)], check=True)
@@ -98,7 +113,7 @@ class UpdateHomebrewContainerFormulaTests(unittest.TestCase):
                 "releases/download/0.6.70/container-release-arm64.tar.gz",
                 rendered,
             )
-            self.assertIn('version "0.6.70"', rendered)
+            self.assertNotIn('  version "', rendered)
             self.assertIn('sha256 "' + "b" * 64 + '"', rendered)
             self.assertIn("stephenlclarke/tap/container-compose", rendered)
             self.assertIn("opt/container-compose/libexec/container-plugins/compose", rendered)
@@ -120,6 +135,7 @@ class UpdateHomebrewContainerFormulaTests(unittest.TestCase):
                 "opt/container-compose-current/libexec/container-plugins/compose",
                 rendered,
             )
+            self.assertIn('version "0.6.70"', rendered)
 
     def test_unknown_compose_formula_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
