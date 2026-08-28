@@ -588,7 +588,8 @@ record_assertion() {
 
 assert_running_services() {
     local fixture="$1" lane="$2" repetition="$3" project="$4" file="$5" expected="$6" output observed container_id inspection network_summary effective_isolation ipv4_address
-    local expected_network="${project}_default"
+    # Every fixture requests network_mode: bridge, which Container projects onto its built-in default network.
+    local expected_network="default"
     local invalid_isolation=0 missing_ipv4=0 failed=0
     output="$("${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" ps -q)"
     observed="$(printf '%s\n' "$output" | awk 'NF { count += 1 } END { print count + 0 }')"
