@@ -53,7 +53,7 @@ DOCKER_CONTEXT_NAME=""
 DOCKER_ENDPOINT=""
 PROJECT_NAMESPACE=""
 RUN_LOCK_DIR=""
-RUN_LOCK_START=""
+RUN_LOCK_FD=""
 ISOLATION_WORK_ROOT_CANONICAL=""
 ISOLATION_WORK_ROOT_DEVICE=""
 
@@ -230,71 +230,36 @@ initialize_run_namespace() {
     RUN_LOCK_DIR="$ISOLATION_EVIDENCE_DIR/.run-lock"
 }
 
-# Returns a stable identity for a process instead of trusting a recyclable PID.
-process_start_identity() {
-    ps -o lstart= -p "$1" 2>/dev/null | awk '{$1=$1; print}'
-}
-
-write_run_lock_identity() {
-    if [[ -z "$RUN_LOCK_START" ]]; then
-        RUN_LOCK_START="$(process_start_identity "$$" || true)"
-    fi
-    if [[ -z "$RUN_LOCK_START" ]]; then
-        rm -f "$RUN_LOCK_DIR/pid" "$RUN_LOCK_DIR/start"
-        rmdir "$RUN_LOCK_DIR" 2>/dev/null || true
-        error "could not determine the isolation benchmark process identity"
-        return 1
-    fi
-    printf '%s\n' "$$" >"$RUN_LOCK_DIR/pid"
-    printf '%s\n' "$RUN_LOCK_START" >"$RUN_LOCK_DIR/start"
-}
-
-# Claims the namespace or recovers a lock left by a dead process.
+# Hold an operating-system advisory lock for this shell's lifetime. The empty
+# lock file is deliberately retained: ownership is the live file-description
+# lock, so crashes, incomplete publication, and PID reuse cannot leave stale
+# ownership behind or create a recovery race.
 acquire_run_lock() {
-    RUN_LOCK_START="$(process_start_identity "$$" || true)"
-    if [[ -z "$RUN_LOCK_START" ]]; then
-        error "could not determine the isolation benchmark process identity"
-        return 1
-    fi
-    if mkdir "$RUN_LOCK_DIR" 2>/dev/null; then
-        write_run_lock_identity
-        return
-    fi
+    [[ -z "$RUN_LOCK_FD" ]] || return 0
+    exec {RUN_LOCK_FD}>"$RUN_LOCK_DIR"
+    if ! python3 - "$RUN_LOCK_FD" <<'PY'
+import fcntl
+import sys
 
-    local owner="" owner_start="" current_start=""
-    if [[ ! -f "$RUN_LOCK_DIR/pid" || ! -f "$RUN_LOCK_DIR/start" ]]; then
-        error "isolation benchmark lock is still being initialized: $RUN_LOCK_DIR"
+try:
+    fcntl.flock(int(sys.argv[1]), fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    raise SystemExit(1)
+PY
+    then
+        exec {RUN_LOCK_FD}>&-
+        RUN_LOCK_FD=""
+        error "another isolation benchmark owns namespace $PROJECT_NAMESPACE"
         return 1
     fi
-    [[ -f "$RUN_LOCK_DIR/pid" ]] && owner="$(<"$RUN_LOCK_DIR/pid")"
-    [[ -f "$RUN_LOCK_DIR/start" ]] && owner_start="$(<"$RUN_LOCK_DIR/start")"
-    if [[ "$owner" =~ ^[1-9][0-9]*$ ]] && kill -0 "$owner" 2>/dev/null; then
-        current_start="$(process_start_identity "$owner" || true)"
-    fi
-    if [[ -n "$owner_start" && "$current_start" == "$owner_start" ]]; then
-        error "another isolation benchmark owns namespace $PROJECT_NAMESPACE (pid $owner)"
-        return 1
-    fi
-
-    rm -f "$RUN_LOCK_DIR/pid" "$RUN_LOCK_DIR/start"
-    rmdir "$RUN_LOCK_DIR" 2>/dev/null || {
-        error "isolation benchmark lock is not recoverable: $RUN_LOCK_DIR"
-        return 1
-    }
-    mkdir "$RUN_LOCK_DIR"
-    write_run_lock_identity
 }
 
-# Releases only the lock owned by this harness process.
+# Closing the owning descriptor releases the lock even after an interrupted
+# run. Keep the inode so concurrent contenders never race an unlink/recreate.
 release_run_lock() {
-    [[ -n "$RUN_LOCK_DIR" && -d "$RUN_LOCK_DIR" ]] || return
-    local owner="" owner_start="" current_start=""
-    [[ -f "$RUN_LOCK_DIR/pid" ]] && owner="$(<"$RUN_LOCK_DIR/pid")"
-    [[ -f "$RUN_LOCK_DIR/start" ]] && owner_start="$(<"$RUN_LOCK_DIR/start")"
-    current_start="$(process_start_identity "$$" || true)"
-    [[ "$owner" == "$$" && -n "$RUN_LOCK_START" && "$owner_start" == "$RUN_LOCK_START" && "$current_start" == "$RUN_LOCK_START" ]] || return
-    rm -f "$RUN_LOCK_DIR/pid" "$RUN_LOCK_DIR/start"
-    rmdir "$RUN_LOCK_DIR"
+    [[ -n "$RUN_LOCK_FD" ]] || return
+    exec {RUN_LOCK_FD}>&-
+    RUN_LOCK_FD=""
 }
 
 select_lane_order() {
@@ -316,6 +281,7 @@ select_lane() {
                 env
                 "CONTAINER_BIN=$CONTAINER_BINARY"
                 "CONTAINER_COMPOSE_CONTAINER=$CONTAINER_BINARY"
+                "CONTAINER_COMPOSE_INIT_IMAGE="
                 "$CONTAINER_COMPOSE" --ansi never --progress quiet
             )
             LANE_PREFIX=dv
@@ -775,7 +741,11 @@ main() {
     check_tools
     initialize_run_namespace
     acquire_run_lock
-    trap cleanup EXIT INT TERM
+    trap cleanup EXIT
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 131' QUIT
+    trap 'exit 143' TERM
     create_fixtures
     run_matrix
 }

@@ -116,13 +116,17 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
         self.assertIn("is not local", result.stderr)
 
     def test_remote_docker_host_override_is_rejected(self) -> None:
-        result = self.source(
-            "require_local_docker_context",
-            environment={
-                "DOCKER_CONTEXT": "",
-                "DOCKER_HOST": "ssh://benchmark.example",
-            },
-        )
+        with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
+            docker = Path(directory) / "docker"
+            docker.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            docker.chmod(0o755)
+            result = self.source(
+                f'PATH="{directory}:$PATH"; require_local_docker_context',
+                environment={
+                    "DOCKER_CONTEXT": "",
+                    "DOCKER_HOST": "ssh://benchmark.example",
+                },
+            )
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("DOCKER_HOST", result.stderr)
@@ -202,31 +206,41 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
 
     def test_live_namespace_owner_blocks_a_second_run(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
-            lock = Path(directory) / ".run-lock"
-            lock.mkdir()
-            (lock / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-            process_start = " ".join(
-                subprocess.run(
-                    ["ps", "-o", "lstart=", "-p", str(os.getpid())],
-                    capture_output=True,
-                    check=True,
-                    text=True,
-                ).stdout.split()
+            owner = subprocess.Popen(
+                [
+                    "bash",
+                    "-c",
+                    f'source "{HARNESS}"; '
+                    f'ISOLATION_EVIDENCE_DIR="{directory}"; '
+                    "initialize_run_namespace; acquire_run_lock; "
+                    "printf 'acquired\\n'; sleep 30",
+                ],
+                cwd=REPOSITORY,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
             )
-            (lock / "start").write_text(f"{process_start}\n", encoding="utf-8")
-            result = self.source(
-                f'ISOLATION_EVIDENCE_DIR="{directory}"; initialize_run_namespace; acquire_run_lock'
-            )
+            try:
+                self.assertIsNotNone(owner.stdout)
+                self.assertEqual(owner.stdout.readline().strip(), "acquired")
+                result = self.source(
+                    f'ISOLATION_EVIDENCE_DIR="{directory}"; '
+                    "initialize_run_namespace; acquire_run_lock"
+                )
+            finally:
+                owner.terminate()
+                owner.communicate(timeout=5)
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("another isolation benchmark owns namespace", result.stderr)
 
-    def test_recycled_live_pid_lock_is_recovered(self) -> None:
+    def test_retained_lock_file_is_recoverable_after_owner_exit(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
-            lock = Path(directory) / ".run-lock"
-            lock.mkdir()
-            (lock / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-            (lock / "start").write_text("stale process identity\n", encoding="utf-8")
+            owner = self.source(
+                f'ISOLATION_EVIDENCE_DIR="{directory}"; '
+                "initialize_run_namespace; acquire_run_lock"
+            )
+            self.assertEqual(owner.returncode, 0, owner.stderr)
             result = self.source(
                 f'ISOLATION_EVIDENCE_DIR="{directory}"; initialize_run_namespace; '
                 "acquire_run_lock; release_run_lock"
@@ -234,16 +248,15 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_initializing_namespace_lock_is_not_recovered(self) -> None:
+    def test_empty_lock_file_does_not_create_stale_ownership(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
-            (Path(directory) / ".run-lock").mkdir()
+            (Path(directory) / ".run-lock").touch()
             result = self.source(
                 f'ISOLATION_EVIDENCE_DIR="{directory}"; initialize_run_namespace; '
-                "acquire_run_lock"
+                "acquire_run_lock; release_run_lock"
             )
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("lock is still being initialized", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_candidate_lane_pins_the_fingerprinted_container_client(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
@@ -264,7 +277,7 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), [str(selected), str(selected)])
 
-    def test_shared_vm_lane_does_not_project_the_runtime_bootstrap_init_image(self) -> None:
+    def test_candidate_lanes_do_not_project_the_runtime_bootstrap_init_image(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
             compose = Path(directory) / "compose"
             compose.write_text(
@@ -273,14 +286,30 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
                 encoding="utf-8",
             )
             compose.chmod(0o755)
-            result = self.source(
-                f'CONTAINER_COMPOSE="{compose}"; '
-                'select_lane shared-vm; "${ACTIVE_COMPOSE[@]}"',
-                environment={"CONTAINER_COMPOSE_INIT_IMAGE": "vminit:runtime-bootstrap"},
-            )
+            for lane in ("dedicated-vm", "shared-vm"):
+                with self.subTest(lane=lane):
+                    result = self.source(
+                        f'CONTAINER_COMPOSE="{compose}"; '
+                        f'select_lane {lane}; "${{ACTIVE_COMPOSE[@]}}"',
+                        environment={"CONTAINER_COMPOSE_INIT_IMAGE": "vminit:runtime-bootstrap"},
+                    )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), "")
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.strip(), "")
+
+    def test_termination_signal_exits_after_one_cleanup(self) -> None:
+        result = self.source(
+            "cleanup() { printf 'cleanup\\n'; }; "
+            "check_tools() { :; }; "
+            "initialize_run_namespace() { :; }; "
+            "acquire_run_lock() { :; }; "
+            "create_fixtures() { :; }; "
+            'run_matrix() { kill -TERM "$$"; printf "continued\\n"; }; '
+            "main"
+        )
+
+        self.assertEqual(result.returncode, 143)
+        self.assertEqual(result.stdout.splitlines(), ["cleanup"])
 
     def test_teardown_counts_stopped_containers(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
