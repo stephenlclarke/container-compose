@@ -1608,6 +1608,58 @@ extension ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("run maps shared VM isolation with built-in bridge networking")
+    func runMapsSharedVMIsolationWithBuiltinBridgeNetworking() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.isolation = "shared-vm"
+                    $0.networkMode = "bridge"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "default"]))
+        #expect(command.containsSequence(["--isolation", "shared-vm"]))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("run maps dedicated VM isolation and accepts the default value")
+    func runMapsDedicatedVMIsolationAndAcceptsDefault() async throws {
+        let cases: [(value: String, expectedArgument: String?)] = [
+            (value: "dedicated-vm", expectedArgument: "dedicated-vm"),
+            (value: "default", expectedArgument: nil),
+        ]
+        for testCase in cases {
+            let runner = RecordingRunner(responses: [.success])
+            let project = ComposeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        $0.isolation = testCase.value
+                    },
+                ]
+            )
+
+            try await ComposeOrchestrator(runner: runner)
+                .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+            let command = try #require(runner.commands.first?.arguments)
+            if let expectedArgument = testCase.expectedArgument {
+                #expect(command.containsSequence(["--isolation", expectedArgument]))
+            } else {
+                #expect(!command.contains("--isolation"))
+            }
+        }
+    }
+
     @Test("run maps pid host to container pid argument")
     func runMapsPIDHostToContainerPIDArgument() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -1633,33 +1685,51 @@ extension ComposeOrchestratorTests {
         #expect(await resourceManager.requests.map(\.name) == ["demo_default"])
     }
 
-    @Test("run rejects unsupported namespace and cgroup fields before creating resources")
-    func runRejectsUnsupportedNamespaceAndCgroupFieldsBeforeCreatingResources() async throws {
-        for testCase in unsupportedRuntimeStringFieldCases() {
-            let runner = RecordingRunner()
-            let project = composeProject(
-                name: "demo",
-                services: [
-                    "job": composeService(name: "job", image: "alpine") {
-                        testCase.configure(&$0)
-                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
-                    },
-                ]
-            ) {
-                $0.volumes = ["cache": ComposeVolume(name: "cache")]
-            }
+    @Test("run rejects unsupported isolation before creating resources")
+    func runRejectsUnsupportedIsolationBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.isolation = "hyperv"
+                },
+            ]
+        )
 
-            do {
-                try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-                Issue.record("Expected unsupported \(testCase.composeName) error")
-            } catch let error as ComposeError {
-                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "job")))
-            } catch {
-                Issue.record("Unexpected error: \(error)")
-            }
-
-            #expect(runner.commands.isEmpty)
+        await #expect(throws: ComposeError.unsupported(
+            "service 'job' uses isolation 'hyperv'; supported values are default, dedicated-vm, and shared-vm"
+        )) {
+            try await ComposeOrchestrator(runner: runner)
+                .run(project: project, serviceName: "job", command: ["true"], remove: true)
         }
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects shared VM isolation with Compose-created networks")
+    func runRejectsSharedVMIsolationWithComposeCreatedNetworks() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.isolation = "shared-vm"
+                    $0.networks = ["default"]
+                },
+            ]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+        }
+
+        await #expect(throws: ComposeError.unsupported(
+            "service 'job' uses isolation 'shared-vm' with Compose-created networks; shared-vm currently requires network_mode host, none, or bridge"
+        )) {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .run(project: project, serviceName: "job", command: ["true"], remove: true)
+        }
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
     }
 
     @Test("run rejects an unsupported cgroup namespace mode before creating resources")

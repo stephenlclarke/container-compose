@@ -77,9 +77,7 @@ extension ComposeOrchestrator {
         _ = try runtimeIPCNamespaceArgument(service: service)
         _ = try runtimeUTSNamespaceArgument(service: service)
         _ = try runtimeUserNamespaceArgument(service: service)
-        if let gap = unsupportedRuntimeStringFields(service: service).first {
-            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
-        }
+        _ = try runtimeIsolationArgument(service: service)
         if let gap = unsupportedCPUResourceFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }

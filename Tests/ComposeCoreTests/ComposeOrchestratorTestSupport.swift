@@ -900,28 +900,6 @@ let composeProjectLabel = "com.apple.container.compose.project"
 let composeServiceLabel = "com.apple.container.compose.service"
 let composeProjectConfigFilesLabel = "com.apple.container.compose.project.config-files"
 
-struct UnsupportedRuntimeStringFieldCase: Sendable {
-    let composeName: String
-    let value: String
-    let reason: String
-    let configure: @Sendable (inout ComposeService) -> Void
-
-    func expectedMessage(serviceName: String) -> String {
-        "service '\(serviceName)' uses \(composeName) '\(value)'; \(reason)"
-    }
-}
-
-func unsupportedRuntimeStringFieldCases() -> [UnsupportedRuntimeStringFieldCase] {
-    [
-        UnsupportedRuntimeStringFieldCase(
-            composeName: "isolation",
-            value: "default",
-            reason: "isolation support needs an apple/container runtime gap PR",
-            configure: { $0.isolation = "default" }
-        ),
-    ]
-}
-
 struct UnsupportedCPUResourceFieldCase: Sendable {
     let composeName: String
     let value: String

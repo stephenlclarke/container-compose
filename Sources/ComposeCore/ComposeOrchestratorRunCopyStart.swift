@@ -181,6 +181,9 @@ extension ComposeOrchestrator {
                 args.append(contentsOf: ["--network", networkArgument])
             }
         }
+        if let isolation = try runtimeIsolationArgument(service: service) {
+            args.append(contentsOf: ["--isolation", isolation])
+        }
         if let pid = try runtimePIDArgument(service: service) {
             args.append(contentsOf: ["--pid", pid])
         }

@@ -27,12 +27,6 @@ struct ComposeRuntimeUnsupportedField {
     let reason: String
 }
 
-private struct ComposeRuntimeUnsupportedOptionalValue {
-    let composeName: String
-    let value: String?
-    let reason: String
-}
-
 extension ComposeOrchestrator {
     /// Validates all selected services before any runtime side effects occur.
     func validateRuntimeSupport(
@@ -45,22 +39,33 @@ extension ComposeOrchestrator {
         }
     }
 
-    /// Returns unsupported string-valued fields that need missing runtime primitives.
-    func unsupportedRuntimeStringFields(service: ComposeService) -> [ComposeRuntimeUnsupportedValue] {
-        [
-            ComposeRuntimeUnsupportedOptionalValue(
-                composeName: "isolation",
-                value: service.isolation,
-                reason: "isolation support needs an apple/container runtime gap PR",
-            ),
-        ].compactMap { candidate in
-            guard let value = candidate.value, !value.isEmpty else {
-                return nil
+    /// Returns the apple/container isolation argument for a Compose service.
+    ///
+    /// A shared sandbox currently has one sealed VMNet uplink. It can therefore
+    /// carry host, disabled, or built-in bridge networking, but it cannot
+    /// faithfully represent Compose-created custom network data planes yet.
+    func runtimeIsolationArgument(service: ComposeService) throws -> String? {
+        guard let isolation = service.isolation, !isolation.isEmpty else {
+            return nil
+        }
+        switch isolation {
+        case "default":
+            return nil
+        case "dedicated-vm":
+            return "dedicated-vm"
+        case "shared-vm":
+            let usesBuiltInNetworkMode = isNoNetworkMode(service.networkMode)
+                || isHostNetworkMode(service.networkMode)
+                || isBridgeNetworkMode(service.networkMode)
+            guard service.networks?.isEmpty != false || usesBuiltInNetworkMode else {
+                throw ComposeError.unsupported(
+                    "service '\(service.name)' uses isolation 'shared-vm' with Compose-created networks; shared-vm currently requires network_mode host, none, or bridge",
+                )
             }
-            return ComposeRuntimeUnsupportedValue(
-                composeName: candidate.composeName,
-                value: value,
-                reason: candidate.reason,
+            return "shared-vm"
+        default:
+            throw ComposeError.unsupported(
+                "service '\(service.name)' uses isolation '\(isolation)'; supported values are default, dedicated-vm, and shared-vm",
             )
         }
     }
