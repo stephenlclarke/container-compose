@@ -325,6 +325,7 @@ select_lane() {
                 env
                 "CONTAINER_BIN=$CONTAINER_BINARY"
                 "CONTAINER_COMPOSE_CONTAINER=$CONTAINER_BINARY"
+                "CONTAINER_COMPOSE_INIT_IMAGE="
                 "$CONTAINER_COMPOSE" --ansi never --progress quiet
             )
             LANE_PREFIX=sv

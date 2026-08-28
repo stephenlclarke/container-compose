@@ -264,6 +264,24 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), [str(selected), str(selected)])
 
+    def test_shared_vm_lane_does_not_project_the_runtime_bootstrap_init_image(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
+            compose = Path(directory) / "compose"
+            compose.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"${CONTAINER_COMPOSE_INIT_IMAGE-unset}\"\n",
+                encoding="utf-8",
+            )
+            compose.chmod(0o755)
+            result = self.source(
+                f'CONTAINER_COMPOSE="{compose}"; '
+                'select_lane shared-vm; "${ACTIVE_COMPOSE[@]}"',
+                environment={"CONTAINER_COMPOSE_INIT_IMAGE": "vminit:runtime-bootstrap"},
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "")
+
     def test_teardown_counts_stopped_containers(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
             compose = Path(directory) / "compose"
