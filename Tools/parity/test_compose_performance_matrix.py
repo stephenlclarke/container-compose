@@ -132,6 +132,46 @@ class PerformanceMatrixInventoryTests(unittest.TestCase):
 
         self.assertEqual(result.stdout.splitlines(), FIXTURES)
 
+    def test_unattended_inventory_excludes_cross_vm_remote_sinks(self) -> None:
+        environment = dict(os.environ)
+        environment["PARITY_INCLUDE_REMOTE_LOGGING"] = "0"
+        result = subprocess.run(
+            [HARNESS, "--list-fixtures"],
+            cwd=REPOSITORY,
+            env=environment,
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+
+        fixtures = result.stdout.splitlines()
+        self.assertIn("startup-50-services", fixtures)
+        self.assertIn("logging-follow-rotation", fixtures)
+        self.assertNotIn("logging-blocking-slow-sink", fixtures)
+        self.assertNotIn("logging-dual-cache-delivery", fixtures)
+
+    def test_fixture_root_can_be_kept_on_internal_storage(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-work-") as directory:
+            work_root = Path(directory) / "fixtures"
+            environment = dict(os.environ)
+            environment["PARITY_WORK_ROOT"] = str(work_root)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; create_fixtures; printf "%s\\n" "$FIXTURE_DIR"',
+                    "_",
+                    HARNESS,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=True,
+                text=True,
+            )
+            fixture_root = Path(result.stdout.strip())
+            self.assertEqual(fixture_root.parent, work_root)
+
 
 class PerformanceMatrixSinkSafetyTests(unittest.TestCase):
     def test_non_loopback_sink_requires_explicit_opt_in(self) -> None:
@@ -145,14 +185,24 @@ class PerformanceMatrixSinkSafetyTests(unittest.TestCase):
         )
         self.assertEqual(explicit_result.returncode, 0, explicit_result.stderr)
 
+    def test_unattended_mode_does_not_require_local_network_access(self) -> None:
+        result = self.run_tool_check(include_remote_logging=False)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def run_tool_check(
-        self, bind_address: str | None = None
+        self,
+        bind_address: str | None = None,
+        include_remote_logging: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         environment = dict(os.environ)
         environment.update(
             {
                 "CONTAINER_COMPOSE": "/usr/bin/true",
                 "CONTAINER_COMPOSE_CONTAINER": "/usr/bin/true",
+                "PARITY_INCLUDE_REMOTE_LOGGING": (
+                    "1" if include_remote_logging else "0"
+                ),
             }
         )
         if bind_address is not None:
@@ -271,6 +321,23 @@ class PerformanceMatrixEvidenceTests(unittest.TestCase):
         self.assertIn("| logging-follow-rotation |", matrix)
         self.assertIn("| NOT MET | FAIL |", matrix)
 
+    def test_finalizer_records_published_regression_without_gating(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-test-") as directory:
+            evidence = Path(directory)
+            self.write_samples(
+                evidence,
+                override={
+                    ("logging-follow-rotation", "container-compose", 2): 11.0,
+                },
+            )
+
+            result = self.finalize(evidence, timing_policy="record")
+            matrix = (evidence / "timing-matrix.md").read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("recorded but not enforced", matrix)
+        self.assertIn("| NOT MET | RECORDED |", matrix)
+
     def test_finalizer_rejects_missing_declared_fixture_samples(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-performance-test-") as directory:
             evidence = Path(directory)
@@ -351,13 +418,16 @@ class PerformanceMatrixEvidenceTests(unittest.TestCase):
                             ]
                         )
 
-    def finalize(self, evidence: Path) -> subprocess.CompletedProcess[str]:
+    def finalize(
+        self, evidence: Path, timing_policy: str = "enforce"
+    ) -> subprocess.CompletedProcess[str]:
         environment = dict(os.environ)
         environment.update(
             {
                 "PARITY_COMPARABLE_NOISE_PCT": "5",
                 "PARITY_EVIDENCE_DIR": str(evidence),
                 "PARITY_REPETITIONS": "2",
+                "PARITY_TIMING_POLICY": timing_policy,
                 "PARITY_TIMING_MAX_RATIO": "10",
             }
         )

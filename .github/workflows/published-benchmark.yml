@@ -1,0 +1,291 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Published Release Benchmark
+run-name: Benchmark ${{ inputs.version }} vs ${{ inputs.compare_to || 'previous stable' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Published stable version to benchmark"
+        required: true
+        type: string
+      compare_to:
+        description: "Optional published stable comparison version; defaults to the previous version"
+        required: false
+        type: string
+      repetitions:
+        description: "Timed repetitions per fixture and lane"
+        required: true
+        default: "5"
+        type: choice
+        options:
+          - "3"
+          - "5"
+          - "7"
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: published-release-benchmark
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve Published Versions
+    if: github.repository == 'stephenlclarke/container-compose'
+    runs-on: ubuntu-latest
+    outputs:
+      target: ${{ steps.versions.outputs.target }}
+      baseline: ${{ steps.versions.outputs.baseline }}
+    steps:
+      - name: Checkout benchmark controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+
+      - name: Resolve target and comparison releases
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_VERSION: ${{ inputs.version }}
+          COMPARISON_VERSION: ${{ inputs.compare_to }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --limit 100 \
+            --json tagName,isDraft,isPrerelease,publishedAt \
+            > "${RUNNER_TEMP}/published-releases.json"
+          arguments=(
+            resolve
+            --releases "${RUNNER_TEMP}/published-releases.json"
+            --target "${TARGET_VERSION}"
+          )
+          if [[ -n "${COMPARISON_VERSION}" ]]; then
+            arguments+=(--baseline "${COMPARISON_VERSION}")
+          fi
+          python3 Tools/parity/published_release_benchmark.py "${arguments[@]}" \
+            > "${RUNNER_TEMP}/comparison.json"
+          target="$(jq -r '.target' "${RUNNER_TEMP}/comparison.json")"
+          baseline="$(jq -r '.baseline' "${RUNNER_TEMP}/comparison.json")"
+          printf 'target=%s\n' "${target}" >> "${GITHUB_OUTPUT}"
+          printf 'baseline=%s\n' "${baseline}" >> "${GITHUB_OUTPUT}"
+          printf 'Benchmarking %s against %s.\n' "${target}" "${baseline}" \
+            >> "${GITHUB_STEP_SUMMARY}"
+
+  benchmark:
+    name: Compare Published Artifacts
+    needs: resolve
+    runs-on: [self-hosted, macOS, ARM64, container-compose-release]
+    timeout-minutes: 240
+    env:
+      BENCHMARK_ROOT: /private/tmp/container-compose-published-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+      TARGET_VERSION: ${{ needs.resolve.outputs.target }}
+      BASELINE_VERSION: ${{ needs.resolve.outputs.baseline }}
+      REPETITIONS: ${{ inputs.repetitions }}
+      RUNTIME_ROOT_PREFIX: /private/tmp/ccpb-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout documentation and benchmark controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Checkout complete Homebrew distribution history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: stephenlclarke/homebrew-tap
+          path: homebrew-tap
+          fetch-depth: 0
+
+      - name: Verify unattended documentation signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git config --global --get gpg.format)" == "ssh" ]]
+          [[ "$(git config --global --get commit.gpgsign)" == "true" ]]
+          signing_key="$(git config --global --get user.signingkey)"
+          [[ -n "${signing_key}" && -r "${signing_key}" ]]
+          signing_private_key="${signing_key%.pub}"
+          [[ -r "${signing_private_key}" ]]
+          ssh-keygen -y -P '' -f "${signing_private_key}" >/dev/null 2>&1
+          git config gpg.format ssh
+          git config commit.gpgsign true
+          git config user.signingkey "${signing_key}"
+
+      - name: Create marker-protected local benchmark root
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -e "${BENCHMARK_ROOT}" ]]; then
+            printf 'benchmark root already exists: %s\n' "${BENCHMARK_ROOT}" >&2
+            exit 1
+          fi
+          install -d -m 0700 "${BENCHMARK_ROOT}"
+          printf 'container-compose published benchmark v1\n' \
+            > "${BENCHMARK_ROOT}/.published-benchmark-root"
+          install -d -m 0700 \
+            "${BENCHMARK_ROOT}/downloads/${TARGET_VERSION}" \
+            "${BENCHMARK_ROOT}/downloads/${BASELINE_VERSION}" \
+            "${BENCHMARK_ROOT}/prepared" \
+            "${BENCHMARK_ROOT}/evidence" \
+            "${BENCHMARK_ROOT}/work"
+
+      - name: Download immutable release and Homebrew inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No source products are built. Both complete runtime/plugin pairs
+          # come from published GitHub assets and must match a historical
+          # Homebrew formula URL and SHA-256 before execution.
+          for version in "${BASELINE_VERSION}" "${TARGET_VERSION}"; do
+            gh release download "${version}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --dir "${BENCHMARK_ROOT}/downloads/${version}" \
+              --pattern 'container-release-arm64.tar.gz' \
+              --pattern 'container-release-arm64.tar.gz.sha256' \
+              --pattern 'container-compose-plugin-release-arm64.tar.gz' \
+              --pattern 'container-compose-plugin-release-arm64.tar.gz.sha256'
+            Tools/release/verify-developer-id-archive.sh \
+              "${BENCHMARK_ROOT}/downloads/${version}/container-release-arm64.tar.gz"
+            Tools/release/verify-developer-id-archive.sh \
+              "${BENCHMARK_ROOT}/downloads/${version}/container-compose-plugin-release-arm64.tar.gz"
+            python3 Tools/parity/published_release_benchmark.py prepare \
+              --version "${version}" \
+              --distribution "${BENCHMARK_ROOT}/downloads/${version}" \
+              --tap-repository homebrew-tap \
+              --output "${BENCHMARK_ROOT}/prepared/${version}"
+          done
+
+      - name: Run same-host published comparisons
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_version() {
+            local version="$1"
+            local prepared="${BENCHMARK_ROOT}/prepared/${version}"
+            local runtime="${prepared}/runtime/bin/container"
+            local compose="${prepared}/compose/compose/bin/compose"
+            local run_root="${BENCHMARK_ROOT}/work/${version}"
+            local runtime_root="${RUNTIME_ROOT_PREFIX}-${version}"
+            install -d -m 0700 "${run_root}/fixtures"
+            CONTAINER_RUNTIME_APP_ROOT="${runtime_root}" \
+              CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS=ghcr.io,docker.io,registry-1.docker.io,index.docker.io \
+              CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT=/private/tmp \
+              CONTAINER_RUNTIME_LOCALIZE_APP_ROOT=never \
+              CONTAINER_COMPOSE="${compose}" \
+              CONTAINER_COMPOSE_CONTAINER="${runtime}" \
+              PARITY_WORK_ROOT="${run_root}/fixtures" \
+              PARITY_EVIDENCE_DIR="${BENCHMARK_ROOT}/evidence/${version}" \
+              PARITY_REPETITIONS="${REPETITIONS}" \
+              PARITY_INCLUDE_REMOTE_LOGGING=0 \
+              PARITY_TIMING_POLICY=record \
+              scripts/run-with-container-runtime.sh "${runtime}" \
+                Tools/parity/check-compose-performance-matrix.sh --strict
+          }
+          run_version "${BASELINE_VERSION}"
+          run_version "${TARGET_VERSION}"
+
+      - name: Render repository evidence report
+        env:
+          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="docs/benchmarks/${TARGET_VERSION}-vs-${BASELINE_VERSION}.md"
+          python3 Tools/parity/published_release_benchmark.py render \
+            --target-evidence "${BENCHMARK_ROOT}/evidence/${TARGET_VERSION}" \
+            --baseline-evidence "${BENCHMARK_ROOT}/evidence/${BASELINE_VERSION}" \
+            --target-distribution "${BENCHMARK_ROOT}/prepared/${TARGET_VERSION}/published-distribution.json" \
+            --baseline-distribution "${BENCHMARK_ROOT}/prepared/${BASELINE_VERSION}/published-distribution.json" \
+            --output "${report}" \
+            --workflow-url "${WORKFLOW_URL}"
+          printf 'REPORT_PATH=%s\n' "${report}" >> "${GITHUB_ENV}"
+
+      - name: Retain raw benchmark evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: published-benchmark-${{ needs.resolve.outputs.target }}-vs-${{ needs.resolve.outputs.baseline }}
+          path: |
+            ${{ env.BENCHMARK_ROOT }}/evidence
+            ${{ env.BENCHMARK_ROOT }}/prepared/*/published-distribution.json
+            ${{ env.BENCHMARK_ROOT }}/downloads/*/*.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Open documentation pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="docs/benchmark-${TARGET_VERSION}-vs-${BASELINE_VERSION}-${GITHUB_RUN_ID}"
+          git switch -c "${branch}"
+          git add -- "${REPORT_PATH}"
+          git diff --cached --check
+          git commit -S -m \
+            "docs(benchmarks): compare ${TARGET_VERSION} with ${BASELINE_VERSION}"
+          git push --set-upstream origin "${branch}"
+          pr_url="$(gh pr create \
+            --base main \
+            --head "${branch}" \
+            --title "docs(benchmarks): compare ${TARGET_VERSION} with ${BASELINE_VERSION}" \
+            --body "Published-artifact benchmark report for ${TARGET_VERSION} versus ${BASELINE_VERSION}. No source product was built. Raw evidence is retained by workflow run ${GITHUB_RUN_ID}.")"
+          pr_number="${pr_url##*/}"
+          gh workflow run ci.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref "${branch}" \
+            -f documentation_pr="${pr_number}"
+          gh workflow run codeql.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref "${branch}" \
+            -f documentation_pr="${pr_number}"
+          printf 'Documentation report pull request: %s\n' "${pr_url}" \
+            >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Clean marker-protected benchmark root
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker="${BENCHMARK_ROOT}/.published-benchmark-root"
+          if [[ -f "${marker}" ]] && \
+            [[ "$(<"${marker}")" == 'container-compose published benchmark v1' ]]; then
+            find "${BENCHMARK_ROOT}" -depth -delete
+          elif [[ -e "${BENCHMARK_ROOT}" ]]; then
+            printf 'refusing to clean unmarked benchmark root: %s\n' \
+              "${BENCHMARK_ROOT}" >&2
+            exit 1
+          fi
+          for version in "${BASELINE_VERSION}" "${TARGET_VERSION}"; do
+            runtime_root="${RUNTIME_ROOT_PREFIX}-${version}"
+            runtime_marker="${runtime_root}/.container-compose-runtime-root"
+            if [[ -f "${runtime_marker}" ]] && \
+              [[ "$(<"${runtime_marker}")" == 'container-compose isolated runtime state v1' ]]; then
+              find "${runtime_root}" -depth -delete
+            elif [[ -e "${runtime_root}" ]]; then
+              printf 'refusing to clean unmarked runtime root: %s\n' \
+                "${runtime_root}" >&2
+              exit 1
+            fi
+          done
