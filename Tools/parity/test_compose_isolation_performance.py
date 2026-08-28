@@ -258,24 +258,32 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_candidate_lane_pins_the_fingerprinted_container_client(self) -> None:
+    def test_candidate_lane_pins_the_fingerprinted_executables(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
             compose = Path(directory) / "compose"
             compose.write_text(
                 "#!/bin/sh\n"
-                "printf '%s\\n%s\\n' \"$CONTAINER_BIN\" \"$CONTAINER_COMPOSE_CONTAINER\"\n",
+                "printf '%s\\n%s\\n%s\\n' \"$CONTAINER_BIN\" \"$CONTAINER_COMPOSE_CONTAINER\" \"$CONTAINER_COMPOSE_NORMALIZER\"\n",
                 encoding="utf-8",
             )
             compose.chmod(0o755)
             selected = Path(directory) / "selected-container"
+            normalizer = Path(directory) / "selected-normalizer"
             result = self.source(
                 f'CONTAINER_COMPOSE="{compose}"; CONTAINER_BINARY="{selected}"; '
+                f'NORMALIZER_BINARY="{normalizer}"; '
                 'select_lane shared-vm; "${ACTIVE_COMPOSE[@]}"',
-                environment={"CONTAINER_BIN": "/tmp/unfingerprinted-container"},
+                environment={
+                    "CONTAINER_BIN": "/tmp/unfingerprinted-container",
+                    "CONTAINER_COMPOSE_NORMALIZER": "/tmp/unfingerprinted-normalizer",
+                },
             )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.splitlines(), [str(selected), str(selected)])
+        self.assertEqual(
+            result.stdout.splitlines(),
+            [str(selected), str(selected), str(normalizer)],
+        )
 
     def test_candidate_lanes_do_not_project_the_runtime_bootstrap_init_image(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
@@ -399,6 +407,7 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
             result = self.source(
                 'CONTAINER_COMPOSE=/usr/bin/true; '
                 f'CONTAINER_BINARY="{container}"; '
+                'NORMALIZER_BINARY=/usr/bin/true; '
                 f'PATH="{binary_directory}:$PATH"; '
                 'DOCKER_COMPOSE_COMMAND=(true); '
                 f'DOCKER_BINARY="{docker}"; '
@@ -427,6 +436,11 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
         )
         self.assertEqual(payload["settings"]["projectNamespace"], "fixture-namespace")
         self.assertEqual(payload["settings"]["composeParallelLimit"], "4")
+        self.assertEqual(payload["normalizer"]["path"], "/usr/bin/true")
+        self.assertEqual(
+            payload["normalizer"]["sha256"],
+            hashlib.sha256(Path("/usr/bin/true").read_bytes()).hexdigest(),
+        )
         self.assertEqual(payload["dockerAuthority"]["NCPU"], 8)
         self.assertEqual(payload["containerAuthority"]["status"]["status"], "running")
         self.assertEqual(

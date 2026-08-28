@@ -25,6 +25,7 @@ LIST_FIXTURES=0
 FIXTURE_DIR=""
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/release/compose}"
 CONTAINER_BINARY="${CONTAINER_COMPOSE_CONTAINER:-container}"
+NORMALIZER_BINARY="${CONTAINER_COMPOSE_NORMALIZER:-$REPO_ROOT/Tools/compose-normalizer/compose-normalizer}"
 ISOLATION_EVIDENCE_DIR="${ISOLATION_EVIDENCE_DIR:-${TMPDIR:-/private/tmp}/container-compose-isolation-evidence}"
 ISOLATION_WORK_ROOT="${ISOLATION_WORK_ROOT:-${TMPDIR:-/private/tmp}/container-compose-isolation-work}"
 ISOLATION_REPETITIONS="${ISOLATION_REPETITIONS:-6}"
@@ -73,6 +74,7 @@ OPTIONS:
 ENVIRONMENT:
   CONTAINER_COMPOSE             Exact container-compose binary.
   CONTAINER_COMPOSE_CONTAINER   Exact apple/container binary.
+  CONTAINER_COMPOSE_NORMALIZER  Exact compose-normalizer binary.
   DOCKER_COMPOSE                Optional `docker compose` selector; wrappers
                                 and alternate clients are rejected.
   ISOLATION_EVIDENCE_DIR        Persistent, resumable evidence directory.
@@ -207,6 +209,8 @@ check_tools() {
     [[ -x "$CONTAINER_COMPOSE" ]] || skip_or_fail "container-compose binary is not executable: $CONTAINER_COMPOSE"
     command -v "$CONTAINER_BINARY" >/dev/null 2>&1 || skip_or_fail "container runtime is unavailable: $CONTAINER_BINARY"
     CONTAINER_BINARY="$(command -v "$CONTAINER_BINARY")"
+    [[ -x "$NORMALIZER_BINARY" ]] || skip_or_fail "compose-normalizer is not executable: $NORMALIZER_BINARY"
+    NORMALIZER_BINARY="$(canonical_path "$NORMALIZER_BINARY")"
     command -v python3 >/dev/null 2>&1 || skip_or_fail 'python3 is unavailable'
     command -v diskutil >/dev/null 2>&1 || skip_or_fail 'diskutil is unavailable'
     validate_repetitions
@@ -284,6 +288,7 @@ select_lane() {
                 "CONTAINER_BIN=$CONTAINER_BINARY"
                 "CONTAINER_COMPOSE_CONTAINER=$CONTAINER_BINARY"
                 "CONTAINER_COMPOSE_INIT_IMAGE="
+                "CONTAINER_COMPOSE_NORMALIZER=$NORMALIZER_BINARY"
                 "$CONTAINER_COMPOSE" --ansi never --progress quiet
             )
             LANE_PREFIX=dv
@@ -294,6 +299,7 @@ select_lane() {
                 "CONTAINER_BIN=$CONTAINER_BINARY"
                 "CONTAINER_COMPOSE_CONTAINER=$CONTAINER_BINARY"
                 "CONTAINER_COMPOSE_INIT_IMAGE="
+                "CONTAINER_COMPOSE_NORMALIZER=$NORMALIZER_BINARY"
                 "$CONTAINER_COMPOSE" --ansi never --progress quiet
             )
             LANE_PREFIX=sv
@@ -342,7 +348,7 @@ cleanup() {
 write_fingerprint_candidate() {
     local candidate="$1" docker_compose_version
     docker_compose_version="$("${DOCKER_COMPOSE_COMMAND[@]}" version)"
-    python3 - "$candidate" "$SELF_PATH" "$CONTAINER_COMPOSE" "$CONTAINER_BINARY" \
+    python3 - "$candidate" "$SELF_PATH" "$CONTAINER_COMPOSE" "$CONTAINER_BINARY" "$NORMALIZER_BINARY" \
         "$ISOLATION_REPETITIONS" "$ISOLATION_TIMEOUT_SECONDS" \
         "$ISOLATION_COMPARABLE_NOISE_PCT" "$ISOLATION_TIMING_MAX_RATIO" \
         "$FIXTURE_IMAGE" "$docker_compose_version" "$DOCKER_BINARY" \
@@ -352,7 +358,7 @@ write_fingerprint_candidate() {
 import hashlib, json, platform, subprocess, sys
 from pathlib import Path
 (
-    output, harness, compose, container, repetitions, timeout, noise,
+    output, harness, compose, container, normalizer, repetitions, timeout, noise,
     maximum_ratio, fixture_image, docker_compose_version, docker_binary,
     docker_context, docker_endpoint, project_namespace, work_root, work_device,
     compose_parallel_limit,
@@ -402,10 +408,11 @@ if not common_image_digests:
         "Docker and apple/container fixture images do not share a resolved digest"
     )
 payload = {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "harness": {"path": str(Path(harness).resolve()), "sha256": sha256(harness)},
     "compose": {"path": str(Path(compose).resolve()), "sha256": sha256(compose), "version": command(compose, "version")},
     "container": {"path": str(Path(container).resolve()), "sha256": sha256(container), "version": command(container, "--version")},
+    "normalizer": {"path": str(Path(normalizer).resolve()), "sha256": sha256(normalizer)},
     "dockerCLI": {"path": str(Path(docker_binary).resolve()), "sha256": sha256(docker_binary)},
     "dockerCompose": docker_compose_version,
     "dockerEngine": command(docker_binary, "version", "--format", "{{.Server.Version}}"),
