@@ -62,6 +62,25 @@ Compose also reuses one control-plane Container client per invocation while
 keeping attach and exec on independently owned sessions. This reduces repeated
 XPC setup without allowing session teardown to interrupt unrelated work.
 
+### Optimization pull-request provenance
+
+The 0.14.0 runtime and benchmark claims are backed by these merged support-fork
+pull requests:
+
+- the initial matched optimization stack: [Containerization #37](https://github.com/stephenlclarke/containerization/pull/37), [builder-shim #12](https://github.com/stephenlclarke/container-builder-shim/pull/12), and [Container #142](https://github.com/stephenlclarke/container/pull/142);
+- concurrent and bounded dedicated-VM bootstrap: [Container #143](https://github.com/stephenlclarke/container/pull/143) and [Container #145](https://github.com/stephenlclarke/container/pull/145);
+- dedicated prewarming and live memory control: [Containerization #41](https://github.com/stephenlclarke/containerization/pull/41), [Container #150](https://github.com/stephenlclarke/container/pull/150), [Container #154](https://github.com/stephenlclarke/container/pull/154), and [Container #158](https://github.com/stephenlclarke/container/pull/158);
+- shared-VM execution and bounded workload starts: [Containerization #42](https://github.com/stephenlclarke/containerization/pull/42), [Containerization #46](https://github.com/stephenlclarke/containerization/pull/46), [Container #146](https://github.com/stephenlclarke/container/pull/146), [Container #159](https://github.com/stephenlclarke/container/pull/159), and [Container #165](https://github.com/stephenlclarke/container/pull/165); and
+- Compose integration, client reuse, isolation projection, and the isolation performance matrix: [container-compose #325](https://github.com/stephenlclarke/container-compose/pull/325), [#327](https://github.com/stephenlclarke/container-compose/pull/327), [#330](https://github.com/stephenlclarke/container-compose/pull/330), and [#331](https://github.com/stephenlclarke/container-compose/pull/331).
+
+As of 28 August 2026, **none of the benchmarked Container, Containerization,
+builder-shim, or Compose optimization commits has a live pull request in an
+Apple repository**. The stock-Apple `upstream/pr-*` branches are local
+submission candidates, not submitted pull requests, and are deliberately not
+presented as upstream links. The complete distinction between merged fork PRs,
+Apple submissions, and unsubmitted candidates is recorded in the
+[Apple upstream review](docs/upstream/APPLE-UPSTREAM-REVIEW.md#0140-optimization-pull-request-provenance).
+
 The supported release line includes:
 
 - durable `json-file` logging plus Syslog, Journald, Fluentd, GELF, Splunk HEC,
