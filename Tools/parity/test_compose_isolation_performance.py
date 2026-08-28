@@ -446,10 +446,16 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
                 alive = [
                     pid
                     for pid in pids
-                    if subprocess.run(
-                        ["ps", "-p", str(pid)], capture_output=True, check=False
-                    ).returncode
-                    == 0
+                    if (
+                        (status := subprocess.run(
+                            ["ps", "-o", "stat=", "-p", str(pid)],
+                            capture_output=True,
+                            check=False,
+                            text=True,
+                        )).returncode
+                        == 0
+                        and not status.stdout.lstrip().startswith("Z")
+                    )
                 ]
                 if not alive:
                     break
