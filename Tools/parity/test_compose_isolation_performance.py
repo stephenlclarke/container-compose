@@ -23,8 +23,10 @@ import csv
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import tempfile
+import time
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -369,6 +371,95 @@ class IsolationPerformanceInventoryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 143)
         self.assertEqual(result.stdout.splitlines(), ["cleanup"])
 
+    def test_termination_reaches_the_active_timed_command(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
+            root = Path(directory)
+            ready = root / "ready"
+            terminated = root / "terminated"
+            child = root / "child"
+            child.write_text(
+                "#!/bin/sh\n"
+                f"trap 'printf terminated > {terminated}; exit 143' TERM\n"
+                f"printf ready > {ready}\n"
+                "while :; do sleep 1; done\n",
+                encoding="utf-8",
+            )
+            child.chmod(0o755)
+            owner = subprocess.Popen(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; trap "terminate TERM 143" TERM; '
+                    'run_timed startup-1-services shared-vm 1 1 "$2"',
+                    "_",
+                    HARNESS,
+                    child,
+                ],
+                cwd=REPOSITORY,
+                env={
+                    **os.environ,
+                    "ISOLATION_EVIDENCE_DIR": directory,
+                    "ISOLATION_TIMEOUT_SECONDS": "30",
+                },
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            deadline = time.monotonic() + 5
+            while not ready.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.assertTrue(ready.exists(), "timed child did not start")
+            owner.send_signal(signal.SIGTERM)
+            stdout, stderr = owner.communicate(timeout=8)
+            was_terminated = terminated.exists()
+
+        self.assertEqual(owner.returncode, 143, stderr)
+        self.assertTrue(was_terminated, stdout + stderr)
+
+    def test_timeout_terminates_the_active_command_group(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
+            root = Path(directory)
+            pid_file = root / "pids"
+            child = root / "child"
+            child.write_text(
+                "#!/bin/sh\n"
+                "trap 'exit 143' TERM\n"
+                "sleep 30 &\n"
+                f"printf '%s %s' \"$$\" \"$!\" > {pid_file}\n"
+                "wait\n",
+                encoding="utf-8",
+            )
+            child.chmod(0o755)
+            started = time.monotonic()
+            result = self.source(
+                f'run_timed startup-1-services shared-vm 1 1 "{child}"',
+                environment={
+                    "ISOLATION_EVIDENCE_DIR": directory,
+                    "ISOLATION_TIMEOUT_SECONDS": "1",
+                },
+            )
+            duration = time.monotonic() - started
+            outcome = (root / "timings.tsv").read_text(encoding="utf-8").split("\t")[6]
+            pids = [int(value) for value in pid_file.read_text(encoding="utf-8").split()]
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                alive = [
+                    pid
+                    for pid in pids
+                    if subprocess.run(
+                        ["ps", "-p", str(pid)], capture_output=True, check=False
+                    ).returncode
+                    == 0
+                ]
+                if not alive:
+                    break
+                time.sleep(0.05)
+
+        self.assertEqual(result.returncode, 124, result.stderr)
+        self.assertLess(duration, 4)
+        self.assertEqual(outcome, "timeout")
+        self.assertEqual(alive, [])
+
     def test_teardown_counts_stopped_containers(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
             compose = Path(directory) / "compose"
@@ -592,6 +683,52 @@ class IsolationPerformanceEvidenceTests(unittest.TestCase):
             )
 
         self.assertNotEqual(result.returncode, 0)
+
+    def test_partial_rotation_is_discarded_before_resume(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-isolation-test-") as directory:
+            evidence = Path(directory)
+            self.write_samples(
+                evidence,
+                omitted=("teardown-1-services", "shared-vm", 1),
+            )
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; prepare_counterbalance_block 1 1',
+                    "_",
+                    HARNESS,
+                ],
+                cwd=REPOSITORY,
+                env=self.environment(evidence),
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            with (evidence / "timings.tsv").open(
+                encoding="utf-8", newline=""
+            ) as handle:
+                timings = list(csv.DictReader(handle, delimiter="\t"))
+            with (evidence / "assertions.tsv").open(
+                encoding="utf-8", newline=""
+            ) as handle:
+                assertions = list(csv.DictReader(handle, delimiter="\t"))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(
+            any(
+                row["repetition"] == "1"
+                and row["fixture"].endswith("-1-services")
+                for row in timings
+            )
+        )
+        self.assertFalse(
+            any(
+                row["repetition"] == "1"
+                and row["fixture"].endswith("-1-services")
+                for row in assertions
+            )
+        )
 
     def write_samples(
         self,

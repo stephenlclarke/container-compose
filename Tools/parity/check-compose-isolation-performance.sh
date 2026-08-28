@@ -58,6 +58,7 @@ RUN_LOCK_DIR=""
 RUN_LOCK_FD=""
 ISOLATION_WORK_ROOT_CANONICAL=""
 ISOLATION_WORK_ROOT_DEVICE=""
+ACTIVE_CHILD_PID=""
 
 error() { printf 'error: %s\n' "$*" >&2; }
 warning() { printf 'warning: %s\n' "$*" >&2; }
@@ -267,6 +268,16 @@ release_run_lock() {
     [[ -n "$RUN_LOCK_FD" ]] || return
     exec {RUN_LOCK_FD}>&-
     RUN_LOCK_FD=""
+}
+
+# Forwards termination to the active timing supervisor before exiting.
+terminate() {
+    local signal="$1" status="$2"
+    if [[ -n "$ACTIVE_CHILD_PID" ]]; then
+        kill -"$signal" "$ACTIVE_CHILD_PID" 2>/dev/null || true
+        wait "$ACTIVE_CHILD_PID" 2>/dev/null || true
+    fi
+    exit "$status"
 }
 
 select_lane_order() {
@@ -536,24 +547,64 @@ rewrite(assertions, lambda row: row["lane"] == lane and row["repetition"] == rep
 PY
 }
 
+# Discards a partially completed lane rotation so resumed timings preserve the
+# actual counterbalanced execution order.
+prepare_counterbalance_block() {
+    local repetition="$1" count="$2" lane complete_count=0
+    for lane in "${ISOLATION_LANES[@]}"; do
+        sample_is_complete "$lane" "$repetition" "$count" && ((complete_count += 1))
+    done
+    if ((complete_count == 0 || complete_count == ${#ISOLATION_LANES[@]})); then
+        return
+    fi
+    for lane in "${ISOLATION_LANES[@]}"; do
+        remove_incomplete_sample "$lane" "$repetition" "$count"
+    done
+}
+
 run_timed() {
-    local fixture="$1" lane="$2" repetition="$3" schedule_position="$4"
+    local fixture="$1" lane="$2" repetition="$3" schedule_position="$4" child_status
     shift 4
     python3 - "$TIMING_TSV" "$fixture" "$lane" "$repetition" "$schedule_position" \
-        "$ISOLATION_TIMEOUT_SECONDS" "$@" <<'PY'
-import csv, pathlib, shlex, subprocess, sys, time
+        "$ISOLATION_TIMEOUT_SECONDS" "$@" <<'PY' &
+import csv, os, pathlib, shlex, signal, subprocess, sys, time
 timing, fixture, lane, repetition, position, timeout, *command = sys.argv[1:]
 log_directory = pathlib.Path(timing).parent / "logs"
 log_directory.mkdir(parents=True, exist_ok=True)
 log_path = log_directory / f"{fixture}--{lane}--r{repetition}.log"
-started = time.monotonic(); outcome = "success"; diagnostic = ""
+started = time.monotonic(); outcome = "success"; diagnostic = ""; process = None
+def stop_process_group(signum):
+    if process is None or process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signum)
+    except ProcessLookupError:
+        return
+def forward_signal(signum, _frame):
+    if process is not None:
+        stop_process_group(signum)
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            stop_process_group(signal.SIGKILL)
+            process.wait()
+    raise SystemExit(128 + signum)
+for forwarded_signal in (signal.SIGHUP, signal.SIGINT, signal.SIGQUIT, signal.SIGTERM):
+    signal.signal(forwarded_signal, forward_signal)
 try:
     with log_path.open("wb") as log:
-        completed = subprocess.run(command, timeout=float(timeout), check=False, stdout=log, stderr=subprocess.STDOUT)
-    if completed.returncode != 0:
-        outcome = f"exit-{completed.returncode}"
+        process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        returncode = process.wait(timeout=float(timeout))
+    if returncode != 0:
+        outcome = f"exit-{returncode}"
         diagnostic = log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
 except subprocess.TimeoutExpired as error:
+    stop_process_group(signal.SIGTERM)
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        stop_process_group(signal.SIGKILL)
+        process.wait()
     outcome = "timeout"; diagnostic = str(error)
 duration = time.monotonic() - started
 with open(timing, "a", encoding="utf-8", newline="") as handle:
@@ -563,6 +614,10 @@ if outcome != "success":
     if diagnostic: print(diagnostic, file=sys.stderr)
     raise SystemExit(124 if outcome == "timeout" else 1)
 PY
+    ACTIVE_CHILD_PID=$!
+    if wait "$ACTIVE_CHILD_PID"; then child_status=0; else child_status=$?; fi
+    ACTIVE_CHILD_PID=""
+    return "$child_status"
 }
 
 record_assertion() {
@@ -739,6 +794,7 @@ run_matrix() {
     for ((repetition = 1; repetition <= ISOLATION_REPETITIONS; repetition++)); do
         select_lane_order "$repetition"
         for count in 1 10 50; do
+            prepare_counterbalance_block "$repetition" "$count"
             position=0
             for lane in "${LANE_ORDER[@]}"; do
                 ((position += 1))
@@ -759,10 +815,10 @@ main() {
     initialize_run_namespace
     acquire_run_lock
     trap cleanup EXIT
-    trap 'exit 129' HUP
-    trap 'exit 130' INT
-    trap 'exit 131' QUIT
-    trap 'exit 143' TERM
+    trap 'terminate HUP 129' HUP
+    trap 'terminate INT 130' INT
+    trap 'terminate QUIT 131' QUIT
+    trap 'terminate TERM 143' TERM
     create_fixtures
     run_matrix
 }
