@@ -191,7 +191,7 @@ jobs:
         env:
           CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
           DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
-          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 27761bf109808075f8ffec8c89e9137c6586a21caad40aabb49c3f6a384cad29
+          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 2db57c055840d04574d81a51817c16b5c3880b958c9264a451ef95a99970f8db
         shell: bash
         run: |
           set -euo pipefail
@@ -225,7 +225,7 @@ jobs:
         env:
           DEMO_ASSET: container-compose-demo-current.gif
           DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
-          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 27761bf109808075f8ffec8c89e9137c6586a21caad40aabb49c3f6a384cad29
+          DEMO_INIT_IMAGE_ARCHIVE_SHA256: 2db57c055840d04574d81a51817c16b5c3880b958c9264a451ef95a99970f8db
         shell: bash
         run: |
           set -euo pipefail
