@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `d65874da36551f4c948711fae164820a3175bc5d` | `ba9566840b087ac6d61ebb8be52b90ca03ba07cc` | 0 | 720 | 618 |
+| `container` | `d65874da36551f4c948711fae164820a3175bc5d` | `b19e8205fc91be8f92e0790c69f230eb5ee1f56f` | 0 | 722 | 619 |
 | `containerization` | `2faaf9b4aff48a4745ef3d26c3f1450c1228fdf0` | `e5a92e86bf03eb2cc244b3b47b0413b3935abfe4` | 0 | 269 | 220 |
 | `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `db3e99cc3d19b9a328eb51be3a023a178f80ee81` | 0 | 46 | 39 |
-| **Total** | | | **0** | **1035** | **877** |
+| **Total** | | | **0** | **1037** | **878** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,7 +32,7 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 624 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `support-maintenance` | 625 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
 | `generic-runtime-primitive` | 228 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
@@ -217,3 +217,9 @@ legacy blob migration, filesystem confinement, malicious digest regression,
 CI convergence, and final dependency pins are support maintenance. No generic
 primitive, temporary port, or rejected-policy disposition changed in this
 refresh.
+
+The final 29 August 2026 correction advances Container through
+`b19e8205fc91`. Export now validates persisted root-filesystem metadata before
+using a prewarmed block device, preserving corrupt-metadata rejection after
+dedicated prewarming. This is support maintenance; no generic primitive,
+temporary port, or rejected-policy disposition changed.
