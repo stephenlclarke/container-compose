@@ -76,7 +76,27 @@ class HomebrewAuthorityTests(unittest.TestCase):
             self.git(repository, "config", "user.email", "test@example.com")
             self.git(repository, "config", "user.name", "Test")
             (repository / "README.md").write_text("release\n", encoding="utf-8")
-            self.git(repository, "add", "README.md")
+            stack_manifest = repository / "Tools" / "release" / "stack-refs.json"
+            stack_manifest.parent.mkdir(parents=True)
+            stack_manifest.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "components": {
+                            "container": {
+                                "repository": "stephenlclarke/container",
+                                "ref": "1" * 40,
+                            },
+                            "containerization": {
+                                "repository": "stephenlclarke/containerization",
+                                "ref": "2" * 40,
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.git(repository, "add", "README.md", str(stack_manifest))
             self.git(repository, "commit", "-m", "chore: initialize release")
             self.git(repository, "tag", "-a", "0.14.0", "-m", "0.14.0")
 
@@ -89,6 +109,19 @@ class HomebrewAuthorityTests(unittest.TestCase):
 
             self.assertEqual(
                 MODULE.release_tag_commit(repository, "0.14.0"), expected
+            )
+            self.assertEqual(
+                MODULE.release_tag_stack(repository, expected),
+                {
+                    "container": {
+                        "repository": "stephenlclarke/container",
+                        "ref": "1" * 40,
+                    },
+                    "containerization": {
+                        "repository": "stephenlclarke/containerization",
+                        "ref": "2" * 40,
+                    },
+                },
             )
 
     def test_side_branch_cannot_authorize_unpublished_formula(self) -> None:
@@ -315,6 +348,37 @@ class PublishedReportTests(unittest.TestCase):
                     "https://github.example/actions/runs/1",
                 )
 
+    def test_report_rejects_matched_runtime_outside_tagged_stack(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
+            root = Path(directory)
+            baseline = root / "baseline"
+            target = root / "target"
+            baseline.mkdir()
+            target.mkdir()
+            self.write_evidence(baseline, 1.0, 1.0, "0.13.0")
+            self.write_evidence(target, 0.8, 1.0, "0.14.0")
+            fingerprints = json.loads(
+                (target / "fingerprints.json").read_text(encoding="utf-8")
+            )
+            fingerprints["containerCompose"]["version"]["containerRef"] = "f" * 40
+            for component in fingerprints["containerRuntime"]["version"]:
+                component["commit"] = "f" * 40
+            (target / "fingerprints.json").write_text(
+                json.dumps(fingerprints), encoding="utf-8"
+            )
+
+            with self.assertRaisesRegex(
+                MODULE.BenchmarkInputError, "target Compose containerRef"
+            ):
+                MODULE.render_report(
+                    target,
+                    baseline,
+                    self.write_manifest(root, "0.14.0"),
+                    self.write_manifest(root, "0.13.0"),
+                    root / "report.md",
+                    "https://github.example/actions/runs/1",
+                )
+
     def test_report_uses_docker_control_for_verdicts_and_headline(self) -> None:
         with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
             root = Path(directory)
@@ -426,6 +490,8 @@ class PublishedReportTests(unittest.TestCase):
     @staticmethod
     def write_manifest(root: Path, version: str) -> Path:
         path = root / f"{version}.json"
+        container_ref = ("1" if version == "0.13.0" else "2") * 40
+        containerization_ref = ("3" if version == "0.13.0" else "4") * 40
         path.write_text(
             json.dumps(
                 {
@@ -433,6 +499,16 @@ class PublishedReportTests(unittest.TestCase):
                     "sourceCommit": (
                         "5" if version == "0.13.0" else "6"
                     ) * 40,
+                    "stack": {
+                        "container": {
+                            "repository": "stephenlclarke/container",
+                            "ref": container_ref,
+                        },
+                        "containerization": {
+                            "repository": "stephenlclarke/containerization",
+                            "ref": containerization_ref,
+                        },
+                    },
                     "release": f"https://github.example/{version}",
                     "assets": {
                         "runtime": {

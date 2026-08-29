@@ -210,6 +210,54 @@ def release_tag_commit(source_repository: Path, version: str) -> str:
     return commit
 
 
+def release_tag_stack(
+    source_repository: Path, source_commit: str
+) -> dict[str, dict[str, str]]:
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(source_repository),
+            "show",
+            f"{source_commit}:Tools/release/stack-refs.json",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        manifest = json.loads(result.stdout) if result.returncode == 0 else None
+    except json.JSONDecodeError as error:
+        raise BenchmarkInputError(
+            "release tag stack manifest is not valid JSON"
+        ) from error
+    if not isinstance(manifest, dict) or manifest.get("schemaVersion") != 1:
+        raise BenchmarkInputError("release tag stack manifest is missing or unsupported")
+    components = manifest.get("components")
+    if not isinstance(components, dict):
+        raise BenchmarkInputError("release tag stack manifest has no components")
+
+    authority: dict[str, dict[str, str]] = {}
+    for name in ("container", "containerization"):
+        component = components.get(name)
+        if not isinstance(component, dict):
+            raise BenchmarkInputError(
+                f"release tag stack manifest has no {name} component"
+            )
+        repository = component.get("repository")
+        revision = component.get("ref")
+        if not isinstance(repository, str) or not repository:
+            raise BenchmarkInputError(
+                f"release tag stack manifest has no {name} repository"
+            )
+        if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+            raise BenchmarkInputError(
+                f"release tag stack manifest has no exact {name} revision"
+            )
+        authority[name] = {"repository": repository, "ref": revision}
+    return authority
+
+
 def validate_archive_members(archive: tarfile.TarFile) -> None:
     for member in archive.getmembers():
         normalized = posixpath.normpath(member.name)
@@ -235,6 +283,7 @@ def prepare_distribution(
 ) -> dict[str, object]:
     version_tuple(version)
     source_commit = release_tag_commit(source_repository, version)
+    source_stack = release_tag_stack(source_repository, source_commit)
     output.mkdir(parents=True, exist_ok=False)
     output.chmod(0o700)
     asset_manifest: dict[str, object] = {}
@@ -275,6 +324,7 @@ def prepare_distribution(
     manifest: dict[str, object] = {
         "version": version,
         "sourceCommit": source_commit,
+        "stack": source_stack,
         "release": f"https://github.com/{REPOSITORY}/releases/tag/{version}",
         "assets": asset_manifest,
     }
@@ -328,12 +378,14 @@ def validate_release_identity(
 ) -> None:
     version = manifest.get("version")
     source_commit = manifest.get("sourceCommit")
+    source_stack = manifest.get("stack")
     compose_record = fingerprints.get("containerCompose")
     runtime_record = fingerprints.get("containerRuntime")
     if (
         not isinstance(version, str)
         or not isinstance(source_commit, str)
         or re.fullmatch(r"[0-9a-f]{40}", source_commit) is None
+        or not isinstance(source_stack, dict)
         or not isinstance(compose_record, dict)
     ):
         raise BenchmarkInputError(f"{label} release identity is incomplete")
@@ -347,11 +399,37 @@ def validate_release_identity(
     if not isinstance(runtime_components, list):
         raise BenchmarkInputError(f"{label} runtime identity is not structured JSON")
 
+    stack_components: dict[str, dict[str, str]] = {}
+    for name in ("container", "containerization"):
+        component = source_stack.get(name)
+        if not isinstance(component, dict):
+            raise BenchmarkInputError(f"{label} release stack has no {name} authority")
+        repository = component.get("repository")
+        revision = component.get("ref")
+        if not isinstance(repository, str) or not repository:
+            raise BenchmarkInputError(
+                f"{label} release stack has no {name} repository"
+            )
+        if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+            raise BenchmarkInputError(
+                f"{label} release stack has no exact {name} revision"
+            )
+        stack_components[name] = {"repository": repository, "ref": revision}
+
+    container_source = stack_components["container"]["repository"]
+    container_ref = stack_components["container"]["ref"]
+    containerization_source = stack_components["containerization"]["repository"]
+    containerization_ref = stack_components["containerization"]["ref"]
+
     expected_compose = {
         "version": version,
         "source": REPOSITORY,
         "lane": "stable",
         "buildType": "release",
+        "containerSource": container_source,
+        "containerRef": container_ref,
+        "containerizationSource": containerization_source,
+        "containerizationRef": containerization_ref,
     }
     for field, expected in expected_compose.items():
         if compose.get(field) != expected:
@@ -367,23 +445,6 @@ def validate_release_identity(
             f"{label} Compose commit {compose_ref!r} does not match "
             f"release tag commit {source_commit!r}"
         )
-
-    container_source = compose.get("containerSource")
-    container_ref = compose.get("containerRef")
-    containerization_source = compose.get("containerizationSource")
-    containerization_ref = compose.get("containerizationRef")
-    for field, value in (
-        ("containerSource", container_source),
-        ("containerizationSource", containerization_source),
-    ):
-        if not isinstance(value, str) or not value:
-            raise BenchmarkInputError(f"{label} Compose {field} is missing")
-    for field, value in (
-        ("containerRef", container_ref),
-        ("containerizationRef", containerization_ref),
-    ):
-        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None:
-            raise BenchmarkInputError(f"{label} Compose {field} is not an exact revision")
 
     container_components = [
         component
@@ -548,6 +609,8 @@ def render_report(
                 "",
                 f"Release: [{manifest['release']}]({manifest['release']})",
                 f"Release tag commit: `{manifest['sourceCommit']}`.",
+                f"Container: `{manifest['stack']['container']['repository']}@{manifest['stack']['container']['ref']}`.",
+                f"Containerization: `{manifest['stack']['containerization']['repository']}@{manifest['stack']['containerization']['ref']}`.",
                 "",
             ]
         )
