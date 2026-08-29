@@ -312,6 +312,24 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
         self.assertIn("ssh-keygen -y -P ''", workflow)
         self.assertIn("git config commit.gpgsign true", workflow)
 
+    def test_workflow_exposes_the_signing_runner_only_from_protected_main(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        resolve = workflow[workflow.index("  resolve:") : workflow.index("  benchmark:")]
+        benchmark = workflow[workflow.index("  benchmark:") :]
+
+        for job in (resolve, benchmark):
+            self.assertIn("github.repository == 'stephenlclarke/container-compose'", job)
+            self.assertIn("github.ref == 'refs/heads/main'", job)
+            self.assertIn("ref: main", job)
+
+    def test_workflow_reruns_use_a_fresh_publication_branch(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}",
+            workflow,
+        )
+
     def test_benchmark_report_only_change_skips_docc_builds(self) -> None:
         workflow = DOCUMENTATION_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("Keep benchmark-only reports out of the DocC build path", workflow)

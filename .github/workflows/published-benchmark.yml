@@ -50,7 +50,9 @@ concurrency:
 jobs:
   resolve:
     name: Resolve Published Versions
-    if: github.repository == 'stephenlclarke/container-compose'
+    if: >
+      github.repository == 'stephenlclarke/container-compose' &&
+      github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       target: ${{ steps.versions.outputs.target }}
@@ -60,6 +62,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 1
+          ref: main
 
       - name: Resolve target and comparison releases
         id: versions
@@ -95,6 +98,9 @@ jobs:
   benchmark:
     name: Compare Published Artifacts
     needs: resolve
+    if: >
+      github.repository == 'stephenlclarke/container-compose' &&
+      github.ref == 'refs/heads/main'
     runs-on: [self-hosted, macOS, ARM64, container-compose-release]
     timeout-minutes: 240
     env:
@@ -108,6 +114,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          ref: main
 
       - name: Checkout complete Homebrew distribution history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -239,7 +246,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          branch="docs/benchmark-${TARGET_VERSION}-vs-${BASELINE_VERSION}-${GITHUB_RUN_ID}"
+          branch="docs/benchmark-${TARGET_VERSION}-vs-${BASELINE_VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           git switch -c "${branch}"
           git add -- "${REPORT_PATH}"
           git diff --cached --check
