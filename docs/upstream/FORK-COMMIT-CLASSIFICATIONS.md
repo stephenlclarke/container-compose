@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `d65874da36551f4c948711fae164820a3175bc5d` | `e4349d93442e19ca80c0a21356f41c6edacee392` | 0 | 718 | 617 |
-| `containerization` | `2faaf9b4aff48a4745ef3d26c3f1450c1228fdf0` | `59ce8dafa11841f47287e3c29d1e8fe6d976236c` | 0 | 267 | 219 |
+| `container` | `d65874da36551f4c948711fae164820a3175bc5d` | `ba9566840b087ac6d61ebb8be52b90ca03ba07cc` | 0 | 720 | 618 |
+| `containerization` | `2faaf9b4aff48a4745ef3d26c3f1450c1228fdf0` | `e5a92e86bf03eb2cc244b3b47b0413b3935abfe4` | 0 | 269 | 220 |
 | `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `db3e99cc3d19b9a328eb51be3a023a178f80ee81` | 0 | 46 | 39 |
-| **Total** | | | **0** | **1031** | **875** |
+| **Total** | | | **0** | **1035** | **877** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,8 +32,8 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 623 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
-| `generic-runtime-primitive` | 227 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
+| `support-maintenance` | 624 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `generic-runtime-primitive` | 228 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
 
@@ -210,8 +210,8 @@ and release convergence commits are support maintenance. No temporary port or
 rejected-policy disposition changed in this refresh.
 
 The 29 August 2026 release refresh advances Apple Container through
-`d65874da3655`, Container through `e4349d93442e`, Apple Containerization
-through `2faaf9b4aff4`, and Containerization through `59ce8dafa118`; the
+`d65874da3655`, Container through `ba9566840b08`, Apple Containerization
+through `2faaf9b4aff4`, and Containerization through `e5a92e86bf03`; the
 builder shim remains `db3e99cc3d19`. Registry deadline/cancellation repairs,
 legacy blob migration, filesystem confinement, malicious digest regression,
 CI convergence, and final dependency pins are support maintenance. No generic

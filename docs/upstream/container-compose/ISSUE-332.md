@@ -77,4 +77,12 @@ This issue owns release readiness, evidence, documentation, packaging, and
 publication for 0.14.0. It does not add unrelated functional parity work or
 weaken signing, review, quality, parity, performance, or release authorities.
 
+## Final runtime correction
+
+The first matched release gate exposed three VZ pod lifecycle regressions in
+the prepared lower graph. Containerization issue 59 and pull request 60 repair
+those contracts; Container issue 173 and pull request 174 pin the signed
+repair. Pull request 334 records those final authorities in Compose before the
+stable tag is created.
+
 Refs [#332](https://github.com/stephenlclarke/container-compose/issues/332).
