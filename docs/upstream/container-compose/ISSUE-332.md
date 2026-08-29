@@ -85,4 +85,11 @@ those contracts; Container issue 173 and pull request 174 pin the signed
 repair. Pull request 334 records those final authorities in Compose before the
 stable tag is created.
 
+The resumed gate then exposed a narrower export regression: dedicated
+prewarming materialized a block device before first start, allowing export to
+bypass corrupt persisted root-filesystem metadata. Container issue 175 and
+pull request 176 restore metadata-first validation at signed merge
+`b19e8205fc91`; Compose pull request 335 advances the release graph to that
+reviewed correction.
+
 Refs [#332](https://github.com/stephenlclarke/container-compose/issues/332).
