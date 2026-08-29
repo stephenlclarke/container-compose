@@ -296,6 +296,91 @@ def percentage(ratio: float) -> str:
     return f"{(ratio - 1) * 100:+.1f}%"
 
 
+def validate_release_identity(
+    label: str,
+    manifest: dict[str, object],
+    fingerprints: dict[str, object],
+) -> None:
+    version = manifest.get("version")
+    compose_record = fingerprints.get("containerCompose")
+    runtime_record = fingerprints.get("containerRuntime")
+    if not isinstance(version, str) or not isinstance(compose_record, dict):
+        raise BenchmarkInputError(f"{label} release identity is incomplete")
+    if not isinstance(runtime_record, dict):
+        raise BenchmarkInputError(f"{label} runtime identity is incomplete")
+
+    compose = compose_record.get("version")
+    runtime_components = runtime_record.get("version")
+    if not isinstance(compose, dict):
+        raise BenchmarkInputError(f"{label} Compose identity is not structured JSON")
+    if not isinstance(runtime_components, list):
+        raise BenchmarkInputError(f"{label} runtime identity is not structured JSON")
+
+    expected_compose = {
+        "version": version,
+        "source": REPOSITORY,
+        "lane": "stable",
+        "buildType": "release",
+    }
+    for field, expected in expected_compose.items():
+        if compose.get(field) != expected:
+            raise BenchmarkInputError(
+                f"{label} Compose {field} is {compose.get(field)!r}; expected {expected!r}"
+            )
+
+    compose_ref = compose.get("commit")
+    if not isinstance(compose_ref, str) or re.fullmatch(r"[0-9a-f]{40}", compose_ref) is None:
+        raise BenchmarkInputError(f"{label} Compose commit is not an exact revision")
+
+    container_source = compose.get("containerSource")
+    container_ref = compose.get("containerRef")
+    containerization_source = compose.get("containerizationSource")
+    containerization_ref = compose.get("containerizationRef")
+    for field, value in (
+        ("containerSource", container_source),
+        ("containerizationSource", containerization_source),
+    ):
+        if not isinstance(value, str) or not value:
+            raise BenchmarkInputError(f"{label} Compose {field} is missing")
+    for field, value in (
+        ("containerRef", container_ref),
+        ("containerizationRef", containerization_ref),
+    ):
+        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None:
+            raise BenchmarkInputError(f"{label} Compose {field} is not an exact revision")
+
+    container_components = [
+        component
+        for component in runtime_components
+        if isinstance(component, dict) and component.get("appName") == "container"
+    ]
+    if len(container_components) != 1:
+        raise BenchmarkInputError(
+            f"{label} runtime reports {len(container_components)} container identities"
+        )
+    container = container_components[0]
+    expected_runtime = {
+        "buildType": "release",
+        "commit": container_ref,
+        "source": container_source,
+        "containerization": f"{containerization_source}@{containerization_ref}",
+    }
+    for field, expected in expected_runtime.items():
+        if container.get(field) != expected:
+            raise BenchmarkInputError(
+                f"{label} runtime {field} is {container.get(field)!r}; expected {expected!r}"
+            )
+
+    for component in runtime_components:
+        if not isinstance(component, dict) or component.get("appName") == "container":
+            continue
+        if component.get("commit") != container_ref:
+            raise BenchmarkInputError(
+                f"{label} runtime component {component.get('appName')!r} does not match "
+                f"Container revision {container_ref}"
+            )
+
+
 def render_report(
     target_evidence: Path,
     baseline_evidence: Path,
@@ -319,6 +404,8 @@ def render_report(
     baseline_fingerprints = json.loads(
         (baseline_evidence / "fingerprints.json").read_text(encoding="utf-8")
     )
+    validate_release_identity("target", target_manifest, target_fingerprints)
+    validate_release_identity("comparison", baseline_manifest, baseline_fingerprints)
     for key in ("host", "docker"):
         if target_fingerprints[key] != baseline_fingerprints[key]:
             raise BenchmarkInputError(

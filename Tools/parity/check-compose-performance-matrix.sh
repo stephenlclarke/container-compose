@@ -427,7 +427,7 @@ initialize_evidence() {
     mkdir -p "$PARITY_EVIDENCE_DIR"
     PARITY_REPETITIONS="$PARITY_REPETITIONS" python3 - "$TIMING_TSV" "$FINGERPRINT_JSON" \
         "$("${DOCKER_COMPOSE_COMMAND[@]}" version --short)" "$(docker version --format '{{json .Server}}')" \
-        "$("$CONTAINER_COMPOSE" version)" "$("$CONTAINER_BINARY" system version --format json)" \
+        "$("$CONTAINER_COMPOSE" version --format json)" "$("$CONTAINER_BINARY" system version --format json)" \
         "$(git -C "$REPO_ROOT" rev-parse HEAD)" "$(sysctl -n hw.model)" "$(sysctl -n hw.memsize)" \
         "$(sw_vers -productVersion)" "$(uname -m)" "$(shasum -a 256 "$CONTAINER_COMPOSE" | awk '{print $1}')" \
         "$(shasum -a 256 "$(command -v "$CONTAINER_BINARY")" | awk '{print $1}')" \

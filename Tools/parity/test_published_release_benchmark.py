@@ -34,6 +34,7 @@ WORKFLOW = REPOSITORY / ".github" / "workflows" / "published-benchmark.yml"
 DOCUMENTATION_WORKFLOW = REPOSITORY / ".github" / "workflows" / "docs.yml"
 CI_WORKFLOW = REPOSITORY / ".github" / "workflows" / "ci.yml"
 CODEQL_WORKFLOW = REPOSITORY / ".github" / "workflows" / "codeql.yml"
+PERFORMANCE_MATRIX = REPOSITORY / "Tools" / "parity" / "check-compose-performance-matrix.sh"
 SPEC = importlib.util.spec_from_file_location("published_release_benchmark", TOOL)
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -214,8 +215,65 @@ class PublishedReportTests(unittest.TestCase):
                     "https://github.example/actions/runs/1",
                 )
 
+    def test_report_rejects_compose_version_from_another_release(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
+            root = Path(directory)
+            baseline = root / "baseline"
+            target = root / "target"
+            baseline.mkdir()
+            target.mkdir()
+            self.write_evidence(baseline, 1.0, 1.0, "0.13.0")
+            self.write_evidence(target, 0.8, 1.0, "0.13.0")
+
+            with self.assertRaisesRegex(
+                MODULE.BenchmarkInputError,
+                "target Compose version is '0.13.0'; expected '0.14.0'",
+            ):
+                MODULE.render_report(
+                    target,
+                    baseline,
+                    self.write_manifest(root, "0.14.0"),
+                    self.write_manifest(root, "0.13.0"),
+                    root / "report.md",
+                    "https://github.example/actions/runs/1",
+                )
+
+    def test_report_rejects_runtime_from_another_matched_stack(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
+            root = Path(directory)
+            baseline = root / "baseline"
+            target = root / "target"
+            baseline.mkdir()
+            target.mkdir()
+            self.write_evidence(baseline, 1.0, 1.0, "0.13.0")
+            self.write_evidence(target, 0.8, 1.0, "0.14.0")
+            fingerprints = json.loads(
+                (target / "fingerprints.json").read_text(encoding="utf-8")
+            )
+            fingerprints["containerRuntime"]["version"][0]["commit"] = "f" * 40
+            (target / "fingerprints.json").write_text(
+                json.dumps(fingerprints), encoding="utf-8"
+            )
+
+            with self.assertRaisesRegex(
+                MODULE.BenchmarkInputError, "target runtime commit"
+            ):
+                MODULE.render_report(
+                    target,
+                    baseline,
+                    self.write_manifest(root, "0.14.0"),
+                    self.write_manifest(root, "0.13.0"),
+                    root / "report.md",
+                    "https://github.example/actions/runs/1",
+                )
+
     @staticmethod
-    def write_evidence(root: Path, candidate: float, docker: float) -> None:
+    def write_evidence(
+        root: Path,
+        candidate: float,
+        docker: float,
+        version: str | None = None,
+    ) -> None:
         with (root / "timings.tsv").open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
             writer.writerow(
@@ -237,6 +295,9 @@ class PublishedReportTests(unittest.TestCase):
                 writer.writerow(
                     ["startup-1-services", "container-compose", repetition, 2, "lower-is-better", candidate, "success", "compose"]
                 )
+        release_version = version or ("0.13.0" if "baseline" in root.name else "0.14.0")
+        container_ref = ("1" if release_version == "0.13.0" else "2") * 40
+        containerization_ref = ("3" if release_version == "0.13.0" else "4") * 40
         fingerprints = {
             "conditions": {
                 "comparableNoisePercent": 5,
@@ -244,6 +305,40 @@ class PublishedReportTests(unittest.TestCase):
                 "repetitions": 2,
             },
             "docker": {"composeVersion": "5.4.0", "engine": {"Version": "29.2.1"}},
+            "containerCompose": {
+                "sha256": "a" * 64,
+                "version": {
+                    "version": release_version,
+                    "source": MODULE.REPOSITORY,
+                    "lane": "stable",
+                    "commit": ("5" if release_version == "0.13.0" else "6") * 40,
+                    "buildType": "release",
+                    "containerSource": "stephenlclarke/container",
+                    "containerRef": container_ref,
+                    "containerizationSource": "stephenlclarke/containerization",
+                    "containerizationRef": containerization_ref,
+                },
+            },
+            "containerRuntime": {
+                "sha256": "b" * 64,
+                "version": [
+                    {
+                        "appName": "container",
+                        "buildType": "release",
+                        "commit": container_ref,
+                        "source": "stephenlclarke/container",
+                        "containerization": (
+                            "stephenlclarke/containerization@"
+                            + containerization_ref
+                        ),
+                    },
+                    {
+                        "appName": "container-apiserver",
+                        "buildType": "release",
+                        "commit": container_ref,
+                    },
+                ],
+            },
             "host": {
                 "architecture": "arm64",
                 "hardwareMemoryBytes": 16,
@@ -283,6 +378,12 @@ class PublishedReportTests(unittest.TestCase):
 
 
 class PublishedBenchmarkWorkflowTests(unittest.TestCase):
+    def test_performance_matrix_records_structured_release_identities(self) -> None:
+        matrix = PERFORMANCE_MATRIX.read_text(encoding="utf-8")
+
+        self.assertIn('"$CONTAINER_COMPOSE" version --format json', matrix)
+        self.assertIn('"$CONTAINER_BINARY" system version --format json', matrix)
+
     def test_workflow_accepts_target_and_optional_comparison_versions(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("version:", workflow)
