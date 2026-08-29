@@ -457,7 +457,7 @@ pathlib.Path(fingerprints).write_text(json.dumps({
         "sinkStallSeconds": float(sink_stall),
         "timingDirection": "lower-is-better fixed-work duration",
     },
-    "containerCompose": {"commit": commit, "sha256": compose_sha, "version": compose_version},
+    "containerCompose": {"commit": commit, "sha256": compose_sha, "version": decode(compose_version)},
     "containerRuntime": {"sha256": runtime_sha, "version": decode(runtime_version)},
     "docker": {"composeVersion": docker_compose, "engine": decode(docker_engine)},
     "host": {"architecture": architecture, "hardwareMemoryBytes": int(memory), "hardwareModel": model, "macOSVersion": macos},

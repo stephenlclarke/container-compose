@@ -535,6 +535,7 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
 
         self.assertIn('"$CONTAINER_COMPOSE" version --format json', matrix)
         self.assertIn('"$CONTAINER_BINARY" system version --format json', matrix)
+        self.assertIn('"version": decode(compose_version)', matrix)
 
     def test_workflow_accepts_target_and_optional_comparison_versions(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
