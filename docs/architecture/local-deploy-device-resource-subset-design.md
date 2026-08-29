@@ -10,7 +10,7 @@
 | Matched compose-go revision | `v2.14.0` |
 | Docker Compose embedded compose-go | `v2.14.0`, aligned with the matched normalizer dependency. The original Docker Compose 5.3.1 / compose-go 2.13.0 checkpoint remains regression evidence. |
 | Design date | 31 July 2026 |
-| Last documentation review | 28 August 2026 against the 0.14.0 release and current STATUS evidence |
+| Last documentation review | 29 August 2026 against the 0.14.0 release and current STATUS evidence |
 
 ## Goal
 

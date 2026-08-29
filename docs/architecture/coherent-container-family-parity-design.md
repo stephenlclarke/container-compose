@@ -10,7 +10,7 @@
 | Original devcontainer design evidence | `b31e80b2b9c09ecc73bb3badf9cd5cf16550a538` on `origin/main`; extraction head must be reselected from a clean reviewed revision |
 | Socktainer comparison | 1.1.1 at `6cc7a32cc37d4ad0c07e9c88a7bbf2abdaceeea0`; conformance input only |
 | Design date | 31 July 2026 |
-| Last documentation review | 28 August 2026 against the 0.14.0 release and current programme STATUS |
+| Last documentation review | 29 August 2026 against the 0.14.0 release and current programme STATUS |
 
 ## Outcome
 

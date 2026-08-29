@@ -33,7 +33,7 @@ orchestration and maps supported Compose behavior to the matched runtime stack.
 ## 0.14.0 Stable
 
 [`0.14.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.0)
-is the current stable macOS arm64 release, published on 28 August 2026. It ships
+is the current stable macOS arm64 release, published on 29 August 2026. It ships
 the plugin with an immutable matched Container stack and passed the hosted
 Stable Release Gate, including the supported Docker Compose parity suite.
 

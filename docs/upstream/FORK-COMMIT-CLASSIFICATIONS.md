@@ -208,3 +208,12 @@ targets, root-filesystem hotplug, and cached builder-context uploads are
 generic runtime primitives. Their tests, documentation, dependency pins, CI,
 and release convergence commits are support maintenance. No temporary port or
 rejected-policy disposition changed in this refresh.
+
+The 29 August 2026 release refresh advances Apple Container through
+`d65874da3655`, Container through `e4349d93442e`, Apple Containerization
+through `2faaf9b4aff4`, and Containerization through `59ce8dafa118`; the
+builder shim remains `db3e99cc3d19`. Registry deadline/cancellation repairs,
+legacy blob migration, filesystem confinement, malicious digest regression,
+CI convergence, and final dependency pins are support maintenance. No generic
+primitive, temporary port, or rejected-policy disposition changed in this
+refresh.

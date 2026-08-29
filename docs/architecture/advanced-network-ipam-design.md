@@ -9,7 +9,7 @@
 | Stable 0.14.0 Container revision | `e4349d93442e19ca80c0a21356f41c6edacee392` |
 | Stable 0.14.0 Containerization revision | `59ce8dafa11841f47287e3c29d1e8fe6d976236c` |
 | Design date | 31 July 2026 |
-| Last documentation review | 28 August 2026 against the 0.14.0 release and current STATUS evidence |
+| Last documentation review | 29 August 2026 against the 0.14.0 release and current STATUS evidence |
 
 ## Goal
 
