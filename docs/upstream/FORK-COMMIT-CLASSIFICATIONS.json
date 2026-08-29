@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-08-28",
+  "reviewedAt": "2026-08-29",
   "repositories": {
     "container": {
-      "upstreamHead": "388d964f382456c6b906f3c67e6daf6ec05b752a",
-      "forkHead": "9a7a6eff882e40d8204d8a1cdb5c935fa6755450",
+      "upstreamHead": "d65874da36551f4c948711fae164820a3175bc5d",
+      "forkHead": "e4349d93442e19ca80c0a21356f41c6edacee392",
       "slices": [
         {
           "id": "container-support-maintenance",
@@ -453,7 +453,9 @@
             "60ffeab66af4429c566c42e290e96fa7e84d057c",
             "4e2791dcd8e3a1c69752af8cb703e3fe5d740ac0",
             "e33814906fdb2d5e55ee4cb9a93151b4f1c721bb",
-            "39d68474c86cbda67c991232e89ca42d64581681"
+            "39d68474c86cbda67c991232e89ca42d64581681",
+            "97a8492c9213aff7801fad017a0ddd0908f95c32",
+            "fffd0aa4bb27085a09b581e1a012f691d148cfcb"
           ]
         },
         {
@@ -696,8 +698,8 @@
       ]
     },
     "containerization": {
-      "upstreamHead": "4294c0f37a01ddd7162d813fd7199c207d4e4908",
-      "forkHead": "4d07c76bafabc0adbb1b394f454d5c957023a213",
+      "upstreamHead": "2faaf9b4aff48a4745ef3d26c3f1450c1228fdf0",
+      "forkHead": "59ce8dafa11841f47287e3c29d1e8fe6d976236c",
       "slices": [
         {
           "id": "containerization-support-maintenance",
@@ -814,7 +816,49 @@
             "644a73cea4838222efafba7babc5c8a0eadf348f",
             "09cf958bfa4b79d0384dacfbb31eaee86837f58b",
             "f2474b6338d367434a273d495f664c3e1138c5e3",
-            "662c4c02aa793040f2d624634f507fc7c97f1a7d"
+            "662c4c02aa793040f2d624634f507fc7c97f1a7d",
+            "459f782094ef4fd3453345fd836045a5c664cb4b",
+            "7ffbf528ff1a1df9c65b550bc612e9b1e1862a76",
+            "b904ab34dc1aa8f38e92cd2768ac13fab19d5c39",
+            "da16be3c7610705aa65b7c2ecaf04469c24a74ce",
+            "461bf4b4c6eb7e13a3bcb23d890fc29dbd9e665e",
+            "a6b95dd7820837e8709c93fef539f8c5aa8c3b3a",
+            "e7fd4c453ba7ed6a02cfd85d6a4cd7514b5289c0",
+            "5d3f8279f9e72ad900de780033ba7fc8dfdc8dec",
+            "640da492d198c6db2171ad7f9f9e3c87b6f11a53",
+            "7f937ac7df2830e4041a44cde76362fe1d0acf85",
+            "9eceee2304251389b3b1a095f0992fbcd7966643",
+            "88b8b3c08370cec7b46cca65d04707bf8097d52c",
+            "db1b5f4d8abe3db9cc57d98104e223e7b12228ab",
+            "53cca8c283bd91707f19c135f18b2800a7a25ca1",
+            "2804f0c15dcde7bd953bb673145bc7be357091f7",
+            "1ff395539d142755e9451c353fe785967fb2fdc4",
+            "4649f2e16b0f621a506ad68bdead9ed3832ebd20",
+            "d009bda36bd7752c4d955800a453d7d124a0f6e6",
+            "ecae007419c7fe3321c38a85a3f4343e6d647700",
+            "d6c3586fe88a9303a94eeacfa0435dc3dc160672",
+            "685a7291ce08ad58ccd6fe17d1160342cf074258",
+            "60b7272e07079717a21b2f39b30d49cdd686b889",
+            "81cf630ea375d24d5762a7f122e357aa11a68e3e",
+            "2fb1d0abb40ed776617dad3e452f2874ebd1aab7",
+            "811cca8b2241617e7a5e861a63239e005e984e4d",
+            "6fc0e811fb48ca1577b643c8dc139bd21b5c7d3d",
+            "9091df431284985c709256990cff55c9ce03d98a",
+            "9fedce95343ffc66032ff376e9988e5444c0c216",
+            "ccae5b20774aceace16e6911ad3f9072eed23773",
+            "ac65d19414f34e75b348cea7f085c4ba8c7c2217",
+            "b165cb4db69b9ede4cd27a211facc28203f2411c",
+            "958e444fe4ddf0e015390ea1c8c7ab0cc095029c",
+            "d94ba9fb422a15c2d0d3ff07c94a378b66b57040",
+            "0c7f05d793881d6861e28983a131e649ef3d4dc1",
+            "0e5c9cfb2a512cab86cd9ab4e280d34c842f81b7",
+            "a0a7150aa92fc07792c1f280a5650983df98944e",
+            "462a6cbe8614d6fcf5fd719e141f84a70c75b403",
+            "42bb38212d256a00cfe1ecb10833e28a63e28036",
+            "d5e8813c11cbc3321ad8b1af6a863852d38b9949",
+            "8f01ca8003ec84d9417b5ee2c2730f7bd94e115f",
+            "0691a4dd4701227ddd6c42c062495cade4c858b3",
+            "5c70fb4a5301e11ea8d6fb1d19797258165fe512"
           ]
         },
         {

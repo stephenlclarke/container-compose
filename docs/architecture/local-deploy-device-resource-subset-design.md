@@ -5,8 +5,8 @@
 | Status | Implementation underway. The stable stack maps local CPU/memory/PID limits, memory reservation, GPU reservation metadata, and ordinary `replicated-job`/`global-job` restart, detached-start, and readiness behavior. CPU/generic reservation preservation and the common DeviceBroker path for every valid non-GPU device request remain. |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, the shared Engine API and `devcontainer` runtime providers |
 | Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
-| Stable 0.14.0 Container revision | `9a7a6eff882e40d8204d8a1cdb5c935fa6755450` |
-| Stable 0.14.0 Containerization revision | `4d07c76bafabc0adbb1b394f454d5c957023a213` |
+| Stable 0.14.0 Container revision | `e4349d93442e19ca80c0a21356f41c6edacee392` |
+| Stable 0.14.0 Containerization revision | `59ce8dafa11841f47287e3c29d1e8fe6d976236c` |
 | Matched compose-go revision | `v2.14.0` |
 | Docker Compose embedded compose-go | `v2.14.0`, aligned with the matched normalizer dependency. The original Docker Compose 5.3.1 / compose-go 2.13.0 checkpoint remains regression evidence. |
 | Design date | 31 July 2026 |

@@ -1,5 +1,5 @@
 {
-  "originHash" : "42027e0bb1b5d4704580e50acf8adbe547375337ded76082103868e2842e45fe",
+  "originHash" : "8499dfc2142d024d517d4e3e15b636a864d51eeca6d882000d702a4e1571a7f0",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephenlclarke/container.git",
       "state" : {
-        "revision" : "9a7a6eff882e40d8204d8a1cdb5c935fa6755450"
+        "revision" : "e4349d93442e19ca80c0a21356f41c6edacee392"
       }
     },
     {
@@ -31,7 +31,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephenlclarke/containerization.git",
       "state" : {
-        "revision" : "4d07c76bafabc0adbb1b394f454d5c957023a213"
+        "revision" : "59ce8dafa11841f47287e3c29d1e8fe6d976236c"
       }
     },
     {
@@ -59,6 +59,15 @@
       "state" : {
         "revision" : "176c5a434fd76f6f479848d1a8f7d44967534168",
         "version" : "2.4.1"
+      }
+    },
+    {
+      "identity" : "punycodeswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/futamura/PunycodeSwift.git",
+      "state" : {
+        "revision" : "de703481cf48b859a04bac8ef1d98217b9c97aa9",
+        "version" : "4.0.3"
       }
     },
     {
@@ -310,6 +319,15 @@
       "state" : {
         "revision" : "827506c90475e82d5a7f191f950fb3025cbdc0d6",
         "version" : "2.0.0"
+      }
+    },
+    {
+      "identity" : "tldextractswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/futamura/TLDExtractSwift.git",
+      "state" : {
+        "revision" : "5fb29b13f99b24401cd93c6c0c83faf7c23e9918",
+        "version" : "4.0.3"
       }
     },
     {

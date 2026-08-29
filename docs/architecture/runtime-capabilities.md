@@ -73,9 +73,9 @@ attachment in the
 It is present in the coordinated release manifest and shipped by
 [`container-compose` 0.14.0](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.0).
 The immutable release manifest uses Container
-`9a7a6eff882e40d8204d8a1cdb5c935fa6755450`, Engine API
+`e4349d93442e19ca80c0a21356f41c6edacee392`, Engine API
 `386a40c726ecd25d67a3e5933582aebbfbe4fa2f`, Containerization
-`4d07c76bafabc0adbb1b394f454d5c957023a213`, and SwiftNIO SSL
+`59ce8dafa11841f47287e3c29d1e8fe6d976236c`, and SwiftNIO SSL
 `09c5c9adcdd2a459187e45fe0143eb01063f244a`. The hosted Stable Release Gate
 passed for this graph. Compose preflight still negotiates the identifier before
 using advanced logging; advertising the requirement does not make every remote
