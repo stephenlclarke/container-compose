@@ -1706,7 +1706,7 @@ extension ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects shared VM isolation with Compose-created networks")
+    @Test("run rejects shared VM isolation with Compose-created networks even when a built-in mode is also set")
     func runRejectsSharedVMIsolationWithComposeCreatedNetworks() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
@@ -1715,6 +1715,7 @@ extension ComposeOrchestratorTests {
             services: [
                 "job": composeService(name: "job", image: "alpine") {
                     $0.isolation = "shared-vm"
+                    $0.networkMode = "bridge"
                     $0.networks = ["default"]
                 },
             ]
@@ -1723,7 +1724,7 @@ extension ComposeOrchestratorTests {
         }
 
         await #expect(throws: ComposeError.unsupported(
-            "service 'job' uses isolation 'shared-vm' with Compose-created networks; shared-vm currently requires network_mode host, none, or bridge"
+            "service 'job' uses isolation 'shared-vm' with Compose-created networks; remove the networks attachment and use network_mode host, none, or bridge"
         )) {
             try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
                 .run(project: project, serviceName: "job", command: ["true"], remove: true)

@@ -21,12 +21,20 @@ and library users must likewise supply runtime collaborators. Unconfigured
 defaults report an explicit unsupported-runtime error instead of constructing
 an Apple client.
 
-The current 0.13.0 matched stack publishes a schema-versioned capability manifest.
+The current 0.14.0 matched stack publishes a schema-versioned capability manifest.
 Runtime-backed commands negotiate the required version-1 contracts before
 side effects, including lifecycle, observation, networking, archive, build,
 image-filesystem, create-configuration, and logging-driver behavior. Unknown
 additional identifiers are accepted, while missing, duplicate, or incompatible
 requirements fail closed with an actionable compatibility error.
+
+The matched provider projects the Compose service `isolation` field to the
+runtime's explicit `dedicated-vm` and experimental `shared-vm` modes. Dedicated
+VMs remain the default security boundary; shared workloads are accepted only
+for the host, none, or built-in bridge network surfaces supported by this
+release. The provider also reuses one Container client for an invocation's
+ordinary control-plane work while attach and exec retain independently owned
+sessions.
 
 `ComposeCore` depends only on `ComposeRuntimeSPI` and imports no Apple modules.
 Its public create-plan values use Compose-owned process, logging, health,

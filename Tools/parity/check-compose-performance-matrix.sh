@@ -26,12 +26,20 @@
 #   CONTAINER_COMPOSE_CONTAINER  Matching Apple container CLI.
 #   DOCKER_COMPOSE               Docker Compose command to compare with.
 #   PARITY_EVIDENCE_DIR          Raw samples, JUnit, fingerprints, and matrix.
+#   PARITY_WORK_ROOT             Local fixture root (default: .build/parity).
 #   PARITY_REPETITIONS           Timed repetitions per lane (default: 5).
 #   PARITY_TIMEOUT_SECONDS       Per-operation timeout (default: 300).
 #   PARITY_TIMING_MAX_RATIO      Candidate median/P95 limit (default: 10).
+#   PARITY_TIMING_POLICY         `enforce` fails the ratio guard; `record`
+#                                records regressions without making a
+#                                published-version comparison a release gate.
+#                                Default: enforce.
 #   PARITY_COMPARABLE_NOISE_PCT  Comparable-performance noise band (default: 5).
 #   PARITY_SINK_STALL_SECONDS    Host slow-sink pause (default: 2).
 #   PARITY_PRESSURE_RECORDS      Records in pressure workloads (default: 65536).
+#   PARITY_INCLUDE_REMOTE_LOGGING
+#                                Include cross-VM remote-sink lanes (default: 1).
+#                                Set to 0 for unattended, approval-free runs.
 #   PARITY_SINK_BIND_ADDRESS     Host address for the remote logging sink
 #                                (default: 127.0.0.1). Cross-VM Docker probes
 #                                must explicitly opt into a reachable address.
@@ -44,9 +52,10 @@
 # This local-only comparator records warm-image same-host evidence for the
 # representative lifecycle and logging lanes. It covers detached 1/10/50-
 # service startup/teardown, startup to first log, fixed stdout/stderr/mixed
-# throughput, 16 KiB and 1 MiB records, blocking and non-blocking remote sinks,
-# local/compressed rotation, tail/since/until/follow, dual-cache delivery/read,
-# and 1/10/50-service foreground aggregation. It reports median/P95, keeps the
+# throughput, 16 KiB and 1 MiB records, local/compressed rotation,
+# tail/since/until/follow, and 1/10/50-service foreground aggregation. When
+# PARITY_INCLUDE_REMOTE_LOGGING=1, it also covers blocking and non-blocking
+# remote sinks and dual-cache delivery/read. It reports median/P95, keeps the
 # established 10x regression guard, and separately records whether both
 # candidate statistics are comparable to or better than Docker outside the
 # configured noise band. Cold runtime resets, resource collectors, develop
@@ -65,12 +74,15 @@ FIXTURE_DIR=""
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 CONTAINER_BINARY="${CONTAINER_COMPOSE_CONTAINER:-container}"
 PARITY_EVIDENCE_DIR="${PARITY_EVIDENCE_DIR:-$REPO_ROOT/.build/parity/performance-matrix}"
+PARITY_WORK_ROOT="${PARITY_WORK_ROOT:-$REPO_ROOT/.build/parity}"
 PARITY_REPETITIONS="${PARITY_REPETITIONS:-5}"
 PARITY_TIMEOUT_SECONDS="${PARITY_TIMEOUT_SECONDS:-300}"
 PARITY_TIMING_MAX_RATIO="${PARITY_TIMING_MAX_RATIO:-10}"
+PARITY_TIMING_POLICY="${PARITY_TIMING_POLICY:-enforce}"
 PARITY_COMPARABLE_NOISE_PCT="${PARITY_COMPARABLE_NOISE_PCT:-5}"
 PARITY_SINK_STALL_SECONDS="${PARITY_SINK_STALL_SECONDS:-2}"
 PARITY_PRESSURE_RECORDS="${PARITY_PRESSURE_RECORDS:-65536}"
+PARITY_INCLUDE_REMOTE_LOGGING="${PARITY_INCLUDE_REMOTE_LOGGING:-1}"
 PARITY_SINK_BIND_ADDRESS="${PARITY_SINK_BIND_ADDRESS:-127.0.0.1}"
 PARITY_DOCKER_HOST_ADDRESS="${PARITY_DOCKER_HOST_ADDRESS:-host.docker.internal}"
 PARITY_CONTAINER_HOST_ADDRESS="${PARITY_CONTAINER_HOST_ADDRESS:-127.0.0.1}"
@@ -97,17 +109,23 @@ readonly LOGGING_WORKLOADS=(
     logging-throughput-stdout-1m
 )
 readonly LOGGING_NONBLOCKING_BUFFERS=(64k 1m 4m)
-readonly PERFORMANCE_FIXTURES=(
+PERFORMANCE_FIXTURES=(
     startup-1-services teardown-1-services
     startup-10-services teardown-10-services
     startup-50-services teardown-50-services
     logging-startup-first-output
     logging-startup-first-output-attached
     "${LOGGING_WORKLOADS[@]}"
-    logging-blocking-slow-sink
-    logging-nonblocking-64k
-    logging-nonblocking-1m
-    logging-nonblocking-4m
+)
+if [[ "$PARITY_INCLUDE_REMOTE_LOGGING" == 1 ]]; then
+    PERFORMANCE_FIXTURES+=(
+        logging-blocking-slow-sink
+        logging-nonblocking-64k
+        logging-nonblocking-1m
+        logging-nonblocking-4m
+    )
+fi
+PERFORMANCE_FIXTURES+=(
     logging-write-json-compression
     logging-write-local-rotation
     logging-read-tail-10
@@ -115,12 +133,19 @@ readonly PERFORMANCE_FIXTURES=(
     logging-read-all
     logging-read-since-until
     logging-follow-rotation
-    logging-dual-cache-delivery
-    logging-dual-cache-read
+)
+if [[ "$PARITY_INCLUDE_REMOTE_LOGGING" == 1 ]]; then
+    PERFORMANCE_FIXTURES+=(
+        logging-dual-cache-delivery
+        logging-dual-cache-read
+    )
+fi
+PERFORMANCE_FIXTURES+=(
     logging-aggregate-1-services
     logging-aggregate-10-services
     logging-aggregate-50-services
 )
+readonly PERFORMANCE_FIXTURES
 
 # Print a diagnostic error.
 error() { printf 'error: %s\n' "$*" >&2; }
@@ -183,10 +208,13 @@ check_tools() {
     [[ "$PARITY_REPETITIONS" =~ ^[1-9][0-9]*$ ]] || { error "PARITY_REPETITIONS must be a positive integer"; return 2; }
     [[ "$PARITY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] || { error "PARITY_TIMEOUT_SECONDS must be a positive integer"; return 2; }
     [[ "$PARITY_TIMING_MAX_RATIO" =~ ^[1-9][0-9]*(\.[0-9]+)?$ ]] || { error "PARITY_TIMING_MAX_RATIO must be positive"; return 2; }
+    [[ "$PARITY_TIMING_POLICY" == enforce || "$PARITY_TIMING_POLICY" == record ]] || { error "PARITY_TIMING_POLICY must be enforce or record"; return 2; }
     [[ "$PARITY_COMPARABLE_NOISE_PCT" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { error "PARITY_COMPARABLE_NOISE_PCT must be zero or positive"; return 2; }
     [[ "$PARITY_SINK_STALL_SECONDS" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { error "PARITY_SINK_STALL_SECONDS must be zero or positive"; return 2; }
     [[ "$PARITY_PRESSURE_RECORDS" =~ ^[1-9][0-9]*$ ]] || { error "PARITY_PRESSURE_RECORDS must be a positive integer"; return 2; }
-    if [[ "$PARITY_SINK_BIND_ADDRESS" == "127.0.0.1" && "$PARITY_DOCKER_HOST_ADDRESS" != "127.0.0.1" ]]; then
+    [[ "$PARITY_INCLUDE_REMOTE_LOGGING" == 0 || "$PARITY_INCLUDE_REMOTE_LOGGING" == 1 ]] || { error "PARITY_INCLUDE_REMOTE_LOGGING must be 0 or 1"; return 2; }
+    [[ "$PARITY_WORK_ROOT" == /* && "$PARITY_WORK_ROOT" != / ]] || { error "PARITY_WORK_ROOT must be an absolute non-root path"; return 2; }
+    if [[ "$PARITY_INCLUDE_REMOTE_LOGGING" == 1 && "$PARITY_SINK_BIND_ADDRESS" == "127.0.0.1" && "$PARITY_DOCKER_HOST_ADDRESS" != "127.0.0.1" ]]; then
         skip_or_fail 'Docker remote-logging probes require an explicit host-reachable PARITY_SINK_BIND_ADDRESS (for example 0.0.0.0); refusing to request local-network access implicitly'
     fi
 }
@@ -212,8 +240,8 @@ cleanup() {
 # shellcheck disable=SC2016
 create_fixtures() {
     local count index
-    mkdir -p "$REPO_ROOT/.build/parity"
-    FIXTURE_DIR="$(mktemp -d "$REPO_ROOT/.build/parity/performance-matrix.XXXXXX")"
+    mkdir -p "$PARITY_WORK_ROOT"
+    FIXTURE_DIR="$(mktemp -d "$PARITY_WORK_ROOT/performance-matrix.XXXXXX")"
     for count in 1 10 50; do
         {
             printf 'services:\n'
@@ -399,16 +427,17 @@ initialize_evidence() {
     mkdir -p "$PARITY_EVIDENCE_DIR"
     PARITY_REPETITIONS="$PARITY_REPETITIONS" python3 - "$TIMING_TSV" "$FINGERPRINT_JSON" \
         "$("${DOCKER_COMPOSE_COMMAND[@]}" version --short)" "$(docker version --format '{{json .Server}}')" \
-        "$("$CONTAINER_COMPOSE" version)" "$("$CONTAINER_BINARY" system version --format json)" \
+        "$("$CONTAINER_COMPOSE" version --format json)" "$("$CONTAINER_BINARY" system version --format json)" \
         "$(git -C "$REPO_ROOT" rev-parse HEAD)" "$(sysctl -n hw.model)" "$(sysctl -n hw.memsize)" \
         "$(sw_vers -productVersion)" "$(uname -m)" "$(shasum -a 256 "$CONTAINER_COMPOSE" | awk '{print $1}')" \
         "$(shasum -a 256 "$(command -v "$CONTAINER_BINARY")" | awk '{print $1}')" \
         "$PARITY_COMPARABLE_NOISE_PCT" "$PARITY_PRESSURE_RECORDS" \
-        "$PARITY_SINK_STALL_SECONDS" "$PARITY_SINK_BIND_ADDRESS" "$PARITY_DOCKER_HOST_ADDRESS" \
+        "$PARITY_SINK_STALL_SECONDS" "$PARITY_INCLUDE_REMOTE_LOGGING" \
+        "$PARITY_SINK_BIND_ADDRESS" "$PARITY_DOCKER_HOST_ADDRESS" \
         "$PARITY_CONTAINER_HOST_ADDRESS" <<'PY'
 import json, os, pathlib, sys
 from datetime import datetime, timezone
-(timing, fingerprints, docker_compose, docker_engine, compose_version, runtime_version, commit, model, memory, macos, architecture, compose_sha, runtime_sha, noise, pressure_records, sink_stall, sink_bind, docker_host, container_host) = sys.argv[1:]
+(timing, fingerprints, docker_compose, docker_engine, compose_version, runtime_version, commit, model, memory, macos, architecture, compose_sha, runtime_sha, noise, pressure_records, sink_stall, include_remote_logging, sink_bind, docker_host, container_host) = sys.argv[1:]
 def decode(value):
     try: return json.loads(value)
     except json.JSONDecodeError: return value
@@ -420,6 +449,7 @@ pathlib.Path(fingerprints).write_text(json.dumps({
         "image": "alpine:3.20",
         "mode": "warm",
         "pressureRecords": int(pressure_records),
+        "remoteLogging": include_remote_logging == "1",
         "repetitions": int(os.environ["PARITY_REPETITIONS"]),
         "schedule": "Docker-first on odd repetitions; candidate-first on even repetitions",
         "sinkBindAddress": sink_bind,
@@ -427,7 +457,7 @@ pathlib.Path(fingerprints).write_text(json.dumps({
         "sinkStallSeconds": float(sink_stall),
         "timingDirection": "lower-is-better fixed-work duration",
     },
-    "containerCompose": {"commit": commit, "sha256": compose_sha, "version": compose_version},
+    "containerCompose": {"commit": commit, "sha256": compose_sha, "version": decode(compose_version)},
     "containerRuntime": {"sha256": runtime_sha, "version": decode(runtime_version)},
     "docker": {"composeVersion": docker_compose, "engine": decode(docker_engine)},
     "host": {"architecture": architecture, "hardwareMemoryBytes": int(memory), "hardwareModel": model, "macOSVersion": macos},
@@ -1006,14 +1036,16 @@ run_logging_aggregate_lane() {
 # Render JUnit and Markdown evidence and enforce the 10x regression guard.
 finalize_evidence() {
     python3 - "$TIMING_TSV" "$TIMING_JUNIT" "$TIMING_MATRIX" "$PARITY_TIMING_MAX_RATIO" \
-        "$PARITY_COMPARABLE_NOISE_PCT" "$PARITY_REPETITIONS" "${PERFORMANCE_FIXTURES[@]}" <<'PY'
+        "$PARITY_COMPARABLE_NOISE_PCT" "$PARITY_REPETITIONS" "$PARITY_TIMING_POLICY" \
+        "${PERFORMANCE_FIXTURES[@]}" <<'PY'
 import csv, math, pathlib, statistics, sys, xml.etree.ElementTree as ET
 from collections import defaultdict
 timing, junit, matrix = map(pathlib.Path, sys.argv[1:4])
 threshold = float(sys.argv[4])
 noise_ratio = 1 + float(sys.argv[5]) / 100
 repetitions = int(sys.argv[6])
-expected = sys.argv[7:]
+policy = sys.argv[7]
+expected = sys.argv[8:]
 rows = list(csv.DictReader(timing.open(encoding="utf-8"), delimiter="\t")); grouped = defaultdict(lambda: defaultdict(list))
 for row in rows: grouped[row["fixture"]][row["lane"]].append(row)
 def p95(samples): return sorted(samples)[math.ceil(len(samples) * .95) - 1]
@@ -1042,10 +1074,18 @@ for fixture in expected:
     comparable = "MET" if median_ratio <= noise_ratio and p95_ratio <= noise_ratio else "NOT MET"
     if median_ratio >= threshold or p95_ratio >= threshold:
         reason = f"candidate median/P95 ratios are {median_ratio:.2f}x/{p95_ratio:.2f}x; threshold is <{threshold:g}x"
-        ET.SubElement(testcase, "failure", message=reason).text = reason; failures.append(f"{fixture}: {reason}"); result = "FAIL"
+        if policy == "enforce":
+            ET.SubElement(testcase, "failure", message=reason).text = reason; failures.append(f"{fixture}: {reason}"); result = "FAIL"
+        else:
+            result = "RECORDED"
     testcase.set("time", f"{cm:.9f}"); table.append((fixture, f"{dm:.3f}", f"{dp:.3f}", f"{cm:.3f}", f"{cp:.3f}", f"{median_ratio:.2f}x", f"{p95_ratio:.2f}x", comparable, result))
 suite.set("failures", str(len(failures))); ET.ElementTree(suite).write(junit, encoding="utf-8", xml_declaration=True)
-lines = ["# Compose Performance Matrix", "", f"Warm-image same-host fixed-work samples. Timeout, incomplete execution, or a candidate median/P95 at least {threshold:g}x Docker fails the regression guard. Comparable-or-better requires both candidate statistics to be within {(noise_ratio - 1) * 100:g}% of Docker.", "", "| Fixture | Docker median (s) | Docker P95 (s) | container-compose median (s) | container-compose P95 (s) | Median ratio | P95 ratio | Comparable or better | Guard |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |"]
+policy_text = (
+    f"Timeout, incomplete execution, or a candidate median/P95 at least {threshold:g}x Docker fails the regression guard."
+    if policy == "enforce"
+    else f"Timeout or incomplete execution fails; the {threshold:g}x timing threshold is recorded but not enforced for this published-version comparison."
+)
+lines = ["# Compose Performance Matrix", "", f"Warm-image same-host fixed-work samples. {policy_text} Comparable-or-better requires both candidate statistics to be within {(noise_ratio - 1) * 100:g}% of Docker.", "", "| Fixture | Docker median (s) | Docker P95 (s) | container-compose median (s) | container-compose P95 (s) | Median ratio | P95 ratio | Comparable or better | Guard |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |"]
 lines += [f"| {' | '.join(row)} |" for row in table]; lines += ["", "Raw repetitions are in `timings.tsv`; exact host and runtime fingerprints are in `fingerprints.json`.", ""]
 matrix.write_text("\n".join(lines), encoding="utf-8"); print("\n".join(lines))
 if failures: raise SystemExit("\n".join(failures))
@@ -1093,24 +1133,26 @@ run_matrix() {
                     "$fixture" "$workload" "$FIXTURE_DIR/logging.yml"
             done
         done
-        position=0
-        for lane in "${LANE_ORDER[@]}"; do
-            ((position += 1))
-            run_remote_sink_lane "$lane" "$repetition" "$position" \
-                logging-blocking-slow-sink \
-                "$FIXTURE_DIR/logging-remote-blocking.yml" \
-                "$PARITY_SINK_STALL_SECONDS" exact unused
-        done
-        for buffer_size in "${LOGGING_NONBLOCKING_BUFFERS[@]}"; do
+        if [[ "$PARITY_INCLUDE_REMOTE_LOGGING" == 1 ]]; then
             position=0
             for lane in "${LANE_ORDER[@]}"; do
                 ((position += 1))
                 run_remote_sink_lane "$lane" "$repetition" "$position" \
-                    "logging-nonblocking-$buffer_size" \
-                    "$FIXTURE_DIR/logging-remote-nonblocking.yml" \
-                    "$PARITY_SINK_STALL_SECONDS" dropped "$buffer_size"
+                    logging-blocking-slow-sink \
+                    "$FIXTURE_DIR/logging-remote-blocking.yml" \
+                    "$PARITY_SINK_STALL_SECONDS" exact unused
             done
-        done
+            for buffer_size in "${LOGGING_NONBLOCKING_BUFFERS[@]}"; do
+                position=0
+                for lane in "${LANE_ORDER[@]}"; do
+                    ((position += 1))
+                    run_remote_sink_lane "$lane" "$repetition" "$position" \
+                        "logging-nonblocking-$buffer_size" \
+                        "$FIXTURE_DIR/logging-remote-nonblocking.yml" \
+                        "$PARITY_SINK_STALL_SECONDS" dropped "$buffer_size"
+                done
+            done
+        fi
         for fixture in logging-write-json-compression logging-write-local-rotation; do
             if [[ "$fixture" == logging-write-json-compression ]]; then
                 file="$FIXTURE_DIR/logging-json-compress.yml"
@@ -1152,12 +1194,14 @@ run_matrix() {
             ((position += 1))
             run_logging_follow_lane "$lane" "$repetition" "$position" "$FIXTURE_DIR/logging.yml"
         done
-        position=0
-        for lane in "${LANE_ORDER[@]}"; do
-            ((position += 1))
-            run_dual_cache_lane \
-                "$lane" "$repetition" "$position" "$FIXTURE_DIR/logging-remote-cache.yml"
-        done
+        if [[ "$PARITY_INCLUDE_REMOTE_LOGGING" == 1 ]]; then
+            position=0
+            for lane in "${LANE_ORDER[@]}"; do
+                ((position += 1))
+                run_dual_cache_lane \
+                    "$lane" "$repetition" "$position" "$FIXTURE_DIR/logging-remote-cache.yml"
+            done
+        fi
         for count in 1 10 50; do
             position=0
             for lane in "${LANE_ORDER[@]}"; do

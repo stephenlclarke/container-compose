@@ -556,25 +556,69 @@ The latest controlled run on 30 July 2026 completed all 62 maintained targets wi
 This functional suite is part of the project's macOS Docker Compose parity and
 performance goal, not a substitute for performance evidence. The remaining
 performance contract is in [BACKLOG.md](../project/BACKLOG.md#comparable-or-better-performance).
-Changes on a measured execution path must also retain same-host Docker Compose
-benchmark evidence for its representative workloads.
+Stable promotion requires the complete functional suite, but benchmark
+recording is intentionally not part of the release transaction.
 
-### Lifecycle Performance Matrix
+### Published Release Performance Matrix
 
-Run the standalone local comparator when changing lifecycle performance:
+After a stable release is published, dispatch the artifact-only comparator:
+
+```sh
+gh workflow run published-benchmark.yml -f version=0.14.0
+```
+
+The required `version` is compared with its immediately preceding published
+stable version. Select any other published stable pair explicitly when needed:
+
+```sh
+gh workflow run published-benchmark.yml \
+  -f version=0.14.0 \
+  -f compare_to=0.12.0 \
+  -f repetitions=5
+```
+
+The workflow builds no source product. It downloads both immutable runtime and
+Compose archive pairs from their GitHub releases, verifies their Developer ID
+signatures and checksums, and requires the same URL/SHA pair in the Homebrew tap
+history. It runs each matched published stack from marker-protected internal
+storage against the same Docker installation, retains raw TSV, JUnit, matrices,
+and exact fingerprints as a workflow artifact, and opens a Markdown-only report
+pull request under `docs/benchmarks/`.
+
+Because GitHub suppresses ordinary pull-request workflow events created by its
+built-in automation token, the benchmark workflow explicitly dispatches the
+protected `Validate` and `CodeQL` contexts for the report commit. The former
+runs Markdown validation; the latter records the existing no-Go-change path and
+does not invoke CodeQL or build a product.
+
+The unattended workflow excludes the cross-VM remote-sink logging lanes so it
+cannot stop behind a macOS Local Network approval dialog. Lifecycle, local log
+write/read/rotation/follow, and foreground aggregation lanes remain enabled.
+Before downloading or running either distribution, it also proves that the
+runner's SSH commit-signing key is readable and passphrase-free so the final
+documentation commit cannot stop behind an approval prompt.
+Developers can opt into the remote-sink lanes during an attended local run with
+`PARITY_INCLUDE_REMOTE_LOGGING=1` and an explicit host-reachable
+`PARITY_SINK_BIND_ADDRESS`.
+
+The report compares median and P95 fixed-work durations and includes a
+Docker-normalized change to expose host drift. A benchmark-only report change
+is classified out of the DocC build matrix, so the documentation stream does
+not compile a product or delay a release. The report is evidence only for its
+listed warm-image lifecycle and logging fixtures; `develop.watch` sync,
+build-context transfer, and other missing lanes remain in the
+[performance backlog](../project/BACKLOG.md#comparable-or-better-performance).
+
+The standalone local comparator remains available for focused performance
+development:
 
 ```sh
 make docker-compose-performance-matrix
 ```
 
-It serializes ownership of the local runtime and compares warm-image detached
-`up` and `down --volumes --remove-orphans` for 1, 10, and 50 independent
-services. It writes raw monotonic TSV, JUnit XML, exact runtime fingerprints,
-and a median/P95 Markdown matrix under `PARITY_EVIDENCE_DIR` (or its default
-performance-matrix path). `PARITY_REPETITIONS` defaults to five; do not use a
-debug candidate or fewer samples as release-grade performance evidence. Logs,
-`develop.watch` sync, and build-context transfer still require their own
-matrix lanes; see the [performance backlog](../project/BACKLOG.md#comparable-or-better-performance).
+It writes to `PARITY_EVIDENCE_DIR`; set `PARITY_WORK_ROOT` to an absolute local
+path when the source checkout is on removable storage. Do not describe a debug
+candidate or reduced-sample local run as a published release comparison.
 
 The performance sink binds to `127.0.0.1` by default, which avoids a macOS
 Local Network approval for ordinary local checks. Cross-VM remote logging

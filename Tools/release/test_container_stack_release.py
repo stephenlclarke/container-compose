@@ -598,6 +598,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("update-homebrew-container-formula.py", renderer)
         self.assertNotIn("${CONTAINER_SOURCE_DIR}/scripts/update-homebrew-formula.py", renderer)
         self.assertIn("compose/bin/compose", renderer)
+        self.assertIn('if [[ "${RELEASE_TAG}" != "current" ]]', renderer)
+        self.assertEqual(renderer.count('"${version_policy_args[@]}"'), 2)
 
     def test_homebrew_tap_pushes_authenticate_with_the_tap_token(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
@@ -1029,24 +1031,26 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def test_codeql_defers_drafts_without_weakening_main_or_ready_prs(self) -> None:
         codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
         ci = CI_WORKFLOW.read_text(encoding="utf-8")
+        analyze = codeql[
+            codeql.index("  analyze:") : codeql.index("  analyze-skipped:")
+        ]
+        analyze_skipped = codeql[
+            codeql.index("  analyze-skipped:") : codeql.index("  verify:")
+        ]
         self.assertIn("- converted_to_draft", codeql)
         self.assertIn("- ready_for_review", codeql)
         self.assertIn(
             "if: github.event_name != 'pull_request' || github.event.pull_request.draft == false",
             codeql,
         )
-        self.assertIn(
-            "if: github.event_name != 'pull_request' || "
-            "(github.event.pull_request.draft == false && "
-            "needs.changes.outputs.go == 'true')",
-            codeql,
-        )
-        self.assertIn(
-            "if: github.event_name == 'pull_request' && "
-            "github.event.pull_request.draft == false && "
-            "needs.changes.outputs.go != 'true'",
-            codeql,
-        )
+        self.assertIn("github.event_name != 'pull_request'", analyze)
+        self.assertIn("inputs.documentation_pr == ''", analyze)
+        self.assertIn("github.event.pull_request.draft == false", analyze)
+        self.assertIn("needs.changes.outputs.go == 'true'", analyze)
+        self.assertIn("github.event_name == 'pull_request'", analyze_skipped)
+        self.assertIn("github.event.pull_request.draft == false", analyze_skipped)
+        self.assertIn("inputs.documentation_pr != ''", analyze_skipped)
+        self.assertIn("needs.changes.outputs.go != 'true'", analyze_skipped)
         self.assertIn("DRAFT_PULL_REQUEST:", codeql)
         self.assertIn("CodeQL analysis deferred while the pull request is a draft", codeql)
         self.assertNotIn("name: Validate Lightweight", ci)

@@ -11,17 +11,17 @@ guidance remains in [INSTALL.md](../guides/INSTALL.md).
 
 ## Current Stable Release
 
-[`0.13.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.13.0)
-was published for macOS arm64 on 24 August 2026 from Compose commit
-`52805d9539834ab375163d941bada6c4677a187a`.
+[`0.14.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.0)
+was published for macOS arm64 on 29 August 2026.
 
 The immutable release manifest selects:
 
-- Container `94bb6c4bd1ad00deffb68fc40e931ee143c43c65`.
-- Containerization `fefced145304666076d646609f21397f32909fcf`.
-- Container builder shim `e4829be2203b7baa33cae75ca58be967e4b81280`.
+- Container `e4349d93442e19ca80c0a21356f41c6edacee392`.
+- Containerization `59ce8dafa11841f47287e3c29d1e8fe6d976236c`.
+- Container builder shim `db3e99cc3d19b9a328eb51be3a023a178f80ee81`.
 - Builder image digest
-  `sha256:c29628471db683a53f4a75bcb759bb9147a65e097ede37c7dde05442afa7518c`.
+  `sha256:d81d12e1dca1133ede535483a809803e6b256555a73d17f207003279539454a4`.
+- SwiftNIO SSL `09c5c9adcdd2a459187e45fe0143eb01063f244a`.
 
 The hosted stable-release gate passed for that immutable package. Current and
 Homebrew release artifacts are Developer ID signed, checksummed, attested, and
@@ -55,6 +55,15 @@ guidance instead of continuing with an incompatible API graph.
 ComposeCore remains runtime neutral. It imports no Apple package types and
 communicates through `ComposeRuntimeSPI`. The Apple-backed provider owns OCI,
 archive, DTO, and live-runtime translation.
+
+Dedicated-VM isolation remains the default and gives each container a private
+VM kernel. Users can select it explicitly with `container run --isolation
+dedicated-vm` or Compose service `isolation: dedicated-vm`. Eligible built-in
+Linux workloads can instead opt into `shared-vm`; they then share one Linux VM
+kernel and security boundary while retaining private root filesystems and
+workload lifecycle. Compose currently accepts shared isolation only with host,
+none, or the built-in bridge network rather than Compose-created custom
+networks.
 
 ## Project Loading and Configuration
 
@@ -121,6 +130,10 @@ Build secrets support files, environment values, and external Keychain-backed
 values. Invocation-private files are removed after the build. Docker Compose
 local behavior for secret `uid`, `gid`, and `mode` remains unchanged.
 
+The matched builder verifies and caches file-synchronization inputs. Repeated
+builds skip uploading an unchanged context while changed or unavailable inputs
+still fail closed instead of reusing an unverified result.
+
 `pull`, `push`, `images`, and image discovery use the matched runtime image
 catalog. `publish` pushes service images and writes OCI project artifacts,
 digest override layers, and optional application image indexes after the
@@ -137,6 +150,14 @@ Create, pull, build, start, stop, kill, pause, unpause, restart, remove, scale,
 wait, down, and orphan handling are implemented. Dependency-sensitive work
 remains ordered while independent pull, push, build, and lifecycle operations
 can run in parallel under the configured limit.
+
+Distinct Container VM boots can progress concurrently. The expensive
+Virtualization.framework bootstrap phase uses bounded FIFO admission so large
+projects do not overload the host. Eligible never-started dedicated containers
+prewarm asynchronously after their durable create completes; init still starts
+only on an explicit start or attach, and a failed or unreachable prewarm is
+discarded so the foreground operation can retry cold. SSH-agent forwarding and
+custom runtime handlers retain cold foreground bootstrap.
 
 `up` supports build and pull policy, recreate controls, scaling, selected
 attachment, dependency attachment, health-aware wait, wait timeout, exit-code
@@ -183,7 +204,8 @@ The current runtime supports local ext4 named and anonymous volumes, bind
 mounts, tmpfs and image masks, Dockerfile `VOLUME` discovery, deterministic
 anonymous volumes, image-subtree copy-up, `volume.nocopy`, subpath validation,
 volume retention, `down --volumes`, `rm --volumes`, and anonymous-volume
-renewal.
+renewal. Tmpfs mount sources are preserved through runtime projection, and
+ext4 recovery locates configured external journals before mounting a volume.
 
 Local volume `size` and `journal` options have runtime behavior. Arbitrary
 driver names and options can be represented, but they do not provide non-local
@@ -216,6 +238,8 @@ unreadable, and `none` drivers.
 Interactive terminal sessions support pre-start attachment, WebSocket attach,
 TTY resize, Docker-compatible detach keys, detach without stopping, reattach,
 signal forwarding, client-disconnect isolation, terminal exit, and cleanup.
+Exec joins the selected container IPC namespace, including the shared-sandbox
+lane, instead of leaking the runtime service namespace.
 
 Complete Testcontainers and devcontainer certification, the remaining provider
 failure and migration matrix, and comparable release performance are still
@@ -228,9 +252,17 @@ and quota, CPU sets, CPU shares, hard memory limits, memory reservation, memory
 swap, PID limits, shared-memory size, capabilities, selected sysctls,
 `cgroup_parent`, and supported no-new-privileges and unconfined profile forms.
 
+Running dedicated-VM containers accept live hard-memory target changes without
+restart. An opt-in controller samples memory usage, lowers the target after
+sustained low usage within its configured floor, and restores the boot-time
+maximum under sustained pressure. Inspection and statistics continue to report
+the effective runtime state.
+
 Host and private cgroup, PID, IPC, UTS, and user namespace selections are
-projected where the current one-container sandbox can represent them. Service
-or container PID and IPC sharing requires the future shared sandbox.
+projected where the selected sandbox can represent them. The experimental
+shared-VM mode does not yet provide Docker-compatible service or container PID,
+IPC, or network namespace joins; those remain part of the multi-workload
+namespace contract.
 
 Realtime CPU, swappiness, OOM-kill disable, arbitrary user ID maps, complete
 security profiles, rootfs storage options, generic devices, CDI, and
@@ -329,7 +361,7 @@ Normal repository validation uses `make ci`, targeted tests while iterating,
 the complete Docker Compose parity target when Compose or runtime behavior
 changes, and `make release-gate` before stable publication.
 
-The 0.13.0 immutable package passed the hosted Stable Release Gate, including
+The 0.14.0 immutable package passed the hosted Stable Release Gate, including
 the supported parity suite. Its exact release commit also completed CI,
 Quality, CodeQL, Documentation, and Prebuilt Binaries successfully.
 

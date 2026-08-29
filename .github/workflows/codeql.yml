@@ -32,6 +32,11 @@ on:
   schedule:
     - cron: "41 4 * * 1"
   workflow_dispatch:
+    inputs:
+      documentation_pr:
+        description: "Optional documentation-only pull request number to classify"
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -60,6 +65,7 @@ jobs:
       - name: Classify changed files
         id: filter
         env:
+          DOCUMENTATION_PR: ${{ inputs.documentation_pr }}
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
@@ -79,6 +85,24 @@ jobs:
                 git diff-tree --no-commit-id --name-only -r "$after" > "$changed_files"
               else
                 git diff --name-only "$before" "$after" > "$changed_files"
+              fi
+              ;;
+            workflow_dispatch)
+              if [[ -n "${DOCUMENTATION_PR}" ]]; then
+                pr_metadata="$(
+                  gh api "repos/${GITHUB_REPOSITORY}/pulls/${DOCUMENTATION_PR}"
+                )"
+                [[ "$(jq -r '.head.repo.full_name' <<<"${pr_metadata}")" == \
+                  "${GITHUB_REPOSITORY}" ]]
+                [[ "$(jq -r '.head.sha' <<<"${pr_metadata}")" == \
+                  "${GITHUB_SHA}" ]]
+                [[ "$(jq -r '.base.ref' <<<"${pr_metadata}")" == "main" ]]
+                gh api "repos/${GITHUB_REPOSITORY}/pulls/${DOCUMENTATION_PR}/files" \
+                  --paginate \
+                  --jq '.[].filename' > "$changed_files"
+              else
+                printf 'go=true\n' >> "$GITHUB_OUTPUT"
+                exit 0
               fi
               ;;
             *)
@@ -105,7 +129,12 @@ jobs:
     # snapshots can be tied to the exact package commit. Keep the cheaper
     # no-op path only for ready pull requests that cannot affect Go analysis.
     # Draft pull requests defer both paths until ready-for-review.
-    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.go == 'true')
+    if: >
+      (github.event_name != 'pull_request' &&
+        (github.event_name != 'workflow_dispatch' || inputs.documentation_pr == '')) ||
+      (github.event_name == 'pull_request' &&
+        github.event.pull_request.draft == false &&
+        needs.changes.outputs.go == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -164,7 +193,12 @@ jobs:
   analyze-skipped:
     name: Analyze Go (No Go changes)
     needs: changes
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.changes.outputs.go != 'true'
+    if: >
+      ((github.event_name == 'pull_request' &&
+        github.event.pull_request.draft == false) ||
+        (github.event_name == 'workflow_dispatch' &&
+          inputs.documentation_pr != '')) &&
+      needs.changes.outputs.go != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Report skipped analysis

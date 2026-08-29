@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-08-22",
+  "reviewedAt": "2026-08-29",
   "repositories": {
     "container": {
-      "upstreamHead": "d6de5694200468d99a61662bfb9bb3aba763e3e5",
-      "forkHead": "94bb6c4bd1ad00deffb68fc40e931ee143c43c65",
+      "upstreamHead": "d65874da36551f4c948711fae164820a3175bc5d",
+      "forkHead": "e4349d93442e19ca80c0a21356f41c6edacee392",
       "slices": [
         {
           "id": "container-support-maintenance",
@@ -13,6 +13,22 @@
           "reason": "Independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections keep the support fork buildable and diagnosable.",
           "upstreamDisposition": "Retain as reviewed fork maintenance; split generic fixes for Apple when FORK-105 identifies an independently useful upstream slice.",
           "commits": [
+            "d807288b8e4e6e73cef4d2c17fa09f95282c5eaa",
+            "318549e6e54f570cc1aa081f8cfd4185ef946169",
+            "a511438a390d9faf9815eea337a7160283dcbc6f",
+            "b1ce69ff01b61b75d83a72c2884ca28c341165a3",
+            "c7a75bae4ae4bf4b38c96380bf7b7ac3baaa36a3",
+            "c742282338971f603e18305ae1fdc6280b69d3fd",
+            "0171bacdd179b316f67c8cb638478b0cf8883616",
+            "8e7505feaeaf6aabf45e5e94381c2b648912b931",
+            "72beca217bd6aa9098847e056a4e20433a70a31d",
+            "e8eab4edbee5b5b94ccd5b1e43f635d8288d491b",
+            "bfbb72a1eeee7a69cade85ee75f007c22fb8c99d",
+            "4a509b4c1847303082dae245cefbc12e326b4f2f",
+            "a1a889a1ff1629b96bd4d2032735cb1f1503267b",
+            "ccfe072afef98ff8c15c4c003e0af6c84228ffa7",
+            "483f9120ac11a2811047677687b6fce656fe6d43",
+            "59969effd0bc9a760c649620ccb65a0ca766635b",
             "70a8969f8fe4098ab382de2ef195a59fe33b60f1",
             "6bc145c9a8c0a4982be474b454993bfca55548c9",
             "4f4a1b36400c594a12f1f4c49c8bc5cc330f099f",
@@ -437,7 +453,9 @@
             "60ffeab66af4429c566c42e290e96fa7e84d057c",
             "4e2791dcd8e3a1c69752af8cb703e3fe5d740ac0",
             "e33814906fdb2d5e55ee4cb9a93151b4f1c721bb",
-            "39d68474c86cbda67c991232e89ca42d64581681"
+            "39d68474c86cbda67c991232e89ca42d64581681",
+            "97a8492c9213aff7801fad017a0ddd0908f95c32",
+            "fffd0aa4bb27085a09b581e1a012f691d148cfcb"
           ]
         },
         {
@@ -447,6 +465,20 @@
           "reason": "Typed runtime or builder capabilities are implemented below Compose because they require VM, guest, archive, network, process, storage, or BuildKit behaviour.",
           "upstreamDisposition": "Retain while Compose consumes the capability; keep Apple-shaped handoffs and upstream independently reviewable slices under FORK-105.",
           "commits": [
+            "bdf56d5e08ed575bcc992cb5af6569e159dd3fe4",
+            "bc201900a60502fb14d6545b459a924b61b9dfd8",
+            "e2f2080bef7dcdfcc02c51ed41e6ffe9135fe011",
+            "7fa1a558ace9ef5f8af581d771c52c74f3362e73",
+            "dbf76117ad006e18b5a5f7617ce8683e6f2c1c91",
+            "0c7cb3bf034539bba1551847b02a4c9edd39550d",
+            "0e5f0159f8998bb9ccb5fb29c83eeece531d2995",
+            "eb2b99d5fba319b80305e0aad846011e50fedfa0",
+            "3c7c48f64c6120c6f962b31f008b699c77232ff6",
+            "75670c1833efea5a4c68f329fc680169299ec53f",
+            "7d927d2f8cffff36117f5a5261e4d6fb490572d9",
+            "a1772d573f7442bdf905b981e517c303b6fc7145",
+            "47f81e0c4f57839569856f11b2239bb7f94f85f7",
+            "788377c876469dc42f333e9a6003319640fb57d3",
             "39a2ce4ccb6c474d41a6146a6148d445b7fa0554",
             "2bf9dfbd95b797998279c48988cbf2cc99542a15",
             "cc544281668b2ce86f3ced6d8a7a143c01a36627",
@@ -666,8 +698,8 @@
       ]
     },
     "containerization": {
-      "upstreamHead": "5427fd21ded4b84034126caef5b3182900b4776d",
-      "forkHead": "fefced145304666076d646609f21397f32909fcf",
+      "upstreamHead": "2faaf9b4aff48a4745ef3d26c3f1450c1228fdf0",
+      "forkHead": "59ce8dafa11841f47287e3c29d1e8fe6d976236c",
       "slices": [
         {
           "id": "containerization-support-maintenance",
@@ -676,6 +708,10 @@
           "reason": "Independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections keep the support fork buildable and diagnosable.",
           "upstreamDisposition": "Retain as reviewed fork maintenance; split generic fixes for Apple when FORK-105 identifies an independently useful upstream slice.",
           "commits": [
+            "32c9bfc625e1f9257ad189edf278ae85dd4ce4bd",
+            "3974f54490c21258b6b385a0aa9150375846850c",
+            "227697fa6082804f6c466007cb0ed45b4958c57a",
+            "fda88d0dfce4e8696b529e608f7308bc49233abd",
             "dffb9142178428c9226e85450284744f8bf4462d",
             "d281ff51257165921ed9c08b4ef47d742a238aef",
             "aaa143b15f426912342cb4f29dc6a55065ba0651",
@@ -780,7 +816,49 @@
             "644a73cea4838222efafba7babc5c8a0eadf348f",
             "09cf958bfa4b79d0384dacfbb31eaee86837f58b",
             "f2474b6338d367434a273d495f664c3e1138c5e3",
-            "662c4c02aa793040f2d624634f507fc7c97f1a7d"
+            "662c4c02aa793040f2d624634f507fc7c97f1a7d",
+            "459f782094ef4fd3453345fd836045a5c664cb4b",
+            "7ffbf528ff1a1df9c65b550bc612e9b1e1862a76",
+            "b904ab34dc1aa8f38e92cd2768ac13fab19d5c39",
+            "da16be3c7610705aa65b7c2ecaf04469c24a74ce",
+            "461bf4b4c6eb7e13a3bcb23d890fc29dbd9e665e",
+            "a6b95dd7820837e8709c93fef539f8c5aa8c3b3a",
+            "e7fd4c453ba7ed6a02cfd85d6a4cd7514b5289c0",
+            "5d3f8279f9e72ad900de780033ba7fc8dfdc8dec",
+            "640da492d198c6db2171ad7f9f9e3c87b6f11a53",
+            "7f937ac7df2830e4041a44cde76362fe1d0acf85",
+            "9eceee2304251389b3b1a095f0992fbcd7966643",
+            "88b8b3c08370cec7b46cca65d04707bf8097d52c",
+            "db1b5f4d8abe3db9cc57d98104e223e7b12228ab",
+            "53cca8c283bd91707f19c135f18b2800a7a25ca1",
+            "2804f0c15dcde7bd953bb673145bc7be357091f7",
+            "1ff395539d142755e9451c353fe785967fb2fdc4",
+            "4649f2e16b0f621a506ad68bdead9ed3832ebd20",
+            "d009bda36bd7752c4d955800a453d7d124a0f6e6",
+            "ecae007419c7fe3321c38a85a3f4343e6d647700",
+            "d6c3586fe88a9303a94eeacfa0435dc3dc160672",
+            "685a7291ce08ad58ccd6fe17d1160342cf074258",
+            "60b7272e07079717a21b2f39b30d49cdd686b889",
+            "81cf630ea375d24d5762a7f122e357aa11a68e3e",
+            "2fb1d0abb40ed776617dad3e452f2874ebd1aab7",
+            "811cca8b2241617e7a5e861a63239e005e984e4d",
+            "6fc0e811fb48ca1577b643c8dc139bd21b5c7d3d",
+            "9091df431284985c709256990cff55c9ce03d98a",
+            "9fedce95343ffc66032ff376e9988e5444c0c216",
+            "ccae5b20774aceace16e6911ad3f9072eed23773",
+            "ac65d19414f34e75b348cea7f085c4ba8c7c2217",
+            "b165cb4db69b9ede4cd27a211facc28203f2411c",
+            "958e444fe4ddf0e015390ea1c8c7ab0cc095029c",
+            "d94ba9fb422a15c2d0d3ff07c94a378b66b57040",
+            "0c7f05d793881d6861e28983a131e649ef3d4dc1",
+            "0e5c9cfb2a512cab86cd9ab4e280d34c842f81b7",
+            "a0a7150aa92fc07792c1f280a5650983df98944e",
+            "462a6cbe8614d6fcf5fd719e141f84a70c75b403",
+            "42bb38212d256a00cfe1ecb10833e28a63e28036",
+            "d5e8813c11cbc3321ad8b1af6a863852d38b9949",
+            "8f01ca8003ec84d9417b5ee2c2730f7bd94e115f",
+            "0691a4dd4701227ddd6c42c062495cade4c858b3",
+            "5c70fb4a5301e11ea8d6fb1d19797258165fe512"
           ]
         },
         {
@@ -790,6 +868,15 @@
           "reason": "Typed runtime or builder capabilities are implemented below Compose because they require VM, guest, archive, network, process, storage, or BuildKit behaviour.",
           "upstreamDisposition": "Retain while Compose consumes the capability; keep Apple-shaped handoffs and upstream independently reviewable slices under FORK-105.",
           "commits": [
+            "1f6c0d667b8d8daa1c557924ce4f510e5d59521e",
+            "8a23f221fff952b43d2332fd516ca8c4cb6c6bf1",
+            "befcf6a8b9abc58dd30d01af9f4b38714a6fe021",
+            "6b6a6c2477ea1de32526e12cb5175c984aa2265d",
+            "d6b484e319dd2e50e554db293c270c7a80062285",
+            "6e738134f6bd9e5678fd9c17d3895adfb3a6c720",
+            "dadad2a73f3581d651842162def7dff6774d4027",
+            "c60ba717b990bd9086fd0dd6d073b57004a6dcf8",
+            "050cf2484a50fcc0931ee53f544e027bf4012e05",
             "35b4acbc10cf63202f4838115b3f5a74c21faa65",
             "f361c3499672bd1df04f45142fe73b281097f938",
             "e172174b71d5fa6dd0c4accfc3ad89d1210fe3a0",
@@ -945,7 +1032,7 @@
     },
     "container-builder-shim": {
       "upstreamHead": "e18d2182fd060dbf1c68113a74e7564d563dde27",
-      "forkHead": "e4829be2203b7baa33cae75ca58be967e4b81280",
+      "forkHead": "db3e99cc3d19b9a328eb51be3a023a178f80ee81",
       "slices": [
         {
           "id": "container-builder-shim-support-maintenance",
@@ -954,6 +1041,8 @@
           "reason": "Independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections keep the support fork buildable and diagnosable.",
           "upstreamDisposition": "Retain as reviewed fork maintenance; split generic fixes for Apple when FORK-105 identifies an independently useful upstream slice.",
           "commits": [
+            "e9595c786a090996a48f7986f6adfc906526d0fc",
+            "cf036120229501840605155f8164676b3b074194",
             "3136e2f5652b2944c9c0dd633bb8daabd22dbbde",
             "fb896047b59ff766593ab5bc14dc1d96f6475605",
             "8f9bb35338ea6ed6bc13c943694dc18ad3639e9d",
@@ -990,6 +1079,7 @@
           "reason": "Typed runtime or builder capabilities are implemented below Compose because they require VM, guest, archive, network, process, storage, or BuildKit behaviour.",
           "upstreamDisposition": "Retain while Compose consumes the capability; keep Apple-shaped handoffs and upstream independently reviewable slices under FORK-105.",
           "commits": [
+            "2df7b287e5306693567435383841fcc4b6012cbf",
             "3856a00c69a4b045c17c7cf0cc7803b5c68030da",
             "db59b64513200c4ec247ce54c3a911a9b9a25104",
             "af599a5c9cae51d7625da57d2220bd913f60d4a1",

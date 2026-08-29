@@ -131,6 +131,7 @@ end
                     "https://github.com/stephenlclarke/container-compose/releases/download/0.6.68/container-compose-plugin-release-arm64.tar.gz",
                     "--version",
                     "0.6.68",
+                    "--omit-version",
                     "--plugin-version",
                     "0.6.68",
                     "--asset",
@@ -145,9 +146,80 @@ end
             subprocess.run(["ruby", "-c", str(formula)], check=True)
 
             rendered = formula.read_text(encoding="utf-8")
-            self.assertIn('version "0.6.68"', rendered)
+            self.assertNotIn('  version "', rendered)
             self.assertIn('assert_match "0.6.68"', rendered)
             self.assertNotIn('version "0.0.0"', rendered)
+
+    def test_current_formula_retains_an_explicit_version(self) -> None:
+        """Mutable current assets need an explicit version that is not in their URL."""
+        with tempfile.TemporaryDirectory() as directory:
+            formula = Path(directory) / "container-compose-current.rb"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(UPDATER),
+                    "--formula",
+                    str(formula),
+                    "--template",
+                    str(TEMPLATE),
+                    "--formula-class",
+                    "ContainerComposeCurrent",
+                    "--runtime-formula",
+                    "container-current",
+                    "--url",
+                    "https://example.invalid/current.tar.gz",
+                    "--version",
+                    "current.42.abcdef123456",
+                    "--asset",
+                    "current.tar.gz",
+                    "--label",
+                    "current branch",
+                    "--sha256",
+                    "a" * 64,
+                ],
+                check=True,
+            )
+
+            self.assertIn(
+                'version "current.42.abcdef123456"',
+                formula.read_text(encoding="utf-8"),
+            )
+
+    def test_stable_formula_update_remains_idempotent_without_version(self) -> None:
+        """A later stable release must update an already compliant formula."""
+        with tempfile.TemporaryDirectory() as directory:
+            formula = Path(directory) / "container-compose.rb"
+            formula.write_text(
+                TEMPLATE.read_text(encoding="utf-8").replace(
+                    '  version "0.0.0"\n',
+                    "",
+                ),
+                encoding="utf-8",
+            )
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(UPDATER),
+                    "--formula",
+                    str(formula),
+                    "--url",
+                    "https://example.invalid/0.14.0/stable.tar.gz",
+                    "--version",
+                    "0.14.0",
+                    "--omit-version",
+                    "--asset",
+                    "stable.tar.gz",
+                    "--label",
+                    "stable release",
+                    "--sha256",
+                    "b" * 64,
+                ],
+                check=True,
+            )
+
+            rendered = formula.read_text(encoding="utf-8")
+            self.assertNotIn('  version "', rendered)
+            self.assertIn("/0.14.0/stable.tar.gz", rendered)
 
     def test_update_rejects_an_unknown_runtime_formula(self) -> None:
         """A lane cannot silently depend on an unrelated runtime formula."""

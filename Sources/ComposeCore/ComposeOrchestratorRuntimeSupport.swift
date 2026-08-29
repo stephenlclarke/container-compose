@@ -54,12 +54,9 @@ extension ComposeOrchestrator {
         case "dedicated-vm":
             return "dedicated-vm"
         case "shared-vm":
-            let usesBuiltInNetworkMode = isNoNetworkMode(service.networkMode)
-                || isHostNetworkMode(service.networkMode)
-                || isBridgeNetworkMode(service.networkMode)
-            guard service.networks?.isEmpty != false || usesBuiltInNetworkMode else {
+            guard service.networks?.isEmpty != false else {
                 throw ComposeError.unsupported(
-                    "service '\(service.name)' uses isolation 'shared-vm' with Compose-created networks; shared-vm currently requires network_mode host, none, or bridge",
+                    "service '\(service.name)' uses isolation 'shared-vm' with Compose-created networks; remove the networks attachment and use network_mode host, none, or bridge",
                 )
             }
             return "shared-vm"

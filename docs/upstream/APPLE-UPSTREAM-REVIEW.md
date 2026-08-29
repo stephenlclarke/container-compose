@@ -7,6 +7,30 @@ All submitted and tracked Apple pull-request states were queried 3 August
 last refreshed 30 July 2026; the tables below keep that baseline date explicit
 instead of presenting it as a fresh fetch.
 
+## 0.14.0 Optimization Pull-Request Provenance
+
+A live GitHub query on 28 August 2026 found no Stephen-authored Apple pull
+request containing any Container, Containerization, builder-shim, or Compose
+optimization measured by the 0.14.0 evidence. The Apple-upstream submission
+list for those benchmarked changes is therefore empty. This is materially
+different from having Apple-shaped local branches ready for submission.
+
+The measured and optimization-enabling work is present in these merged
+support-fork pull requests:
+
+- initial matched stack: [stephenlclarke/containerization#37](https://github.com/stephenlclarke/containerization/pull/37), [stephenlclarke/container-builder-shim#12](https://github.com/stephenlclarke/container-builder-shim/pull/12), and [stephenlclarke/container#142](https://github.com/stephenlclarke/container/pull/142);
+- dedicated-VM bootstrap concurrency and admission control: [stephenlclarke/container#143](https://github.com/stephenlclarke/container/pull/143) and [stephenlclarke/container#145](https://github.com/stephenlclarke/container/pull/145);
+- prewarming and live memory control: [stephenlclarke/containerization#41](https://github.com/stephenlclarke/containerization/pull/41), [stephenlclarke/container#150](https://github.com/stephenlclarke/container/pull/150), [stephenlclarke/container#154](https://github.com/stephenlclarke/container/pull/154), and [stephenlclarke/container#158](https://github.com/stephenlclarke/container/pull/158);
+- shared-VM execution and bounded workload starts: [stephenlclarke/containerization#42](https://github.com/stephenlclarke/containerization/pull/42), [stephenlclarke/containerization#46](https://github.com/stephenlclarke/containerization/pull/46), [stephenlclarke/container#146](https://github.com/stephenlclarke/container/pull/146), [stephenlclarke/container#159](https://github.com/stephenlclarke/container/pull/159), and [stephenlclarke/container#165](https://github.com/stephenlclarke/container/pull/165); and
+- Compose integration and evidence: [stephenlclarke/container-compose#325](https://github.com/stephenlclarke/container-compose/pull/325), [stephenlclarke/container-compose#327](https://github.com/stephenlclarke/container-compose/pull/327), [stephenlclarke/container-compose#330](https://github.com/stephenlclarke/container-compose/pull/330), and [stephenlclarke/container-compose#331](https://github.com/stephenlclarke/container-compose/pull/331).
+
+The stock Apple repositories contain reviewed `upstream/pr-*` candidate
+branches for portions of this work, but a branch is not an upstream PR and no
+GitHub URL is invented for it. [apple/swift-nio-ssl#598](https://github.com/apple/swift-nio-ssl/pull/598)
+is a genuine open performance submission, but its head is not an ancestor of
+the exact SwiftNIO SSL revision used by the 0.14.0 stack, so it is not evidence
+for this release and is excluded from the list above.
+
 ## Scope
 
 - `apple/container`

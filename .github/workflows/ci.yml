@@ -30,6 +30,11 @@ on:
       - synchronize
       - reopened
   workflow_dispatch:
+    inputs:
+      documentation_pr:
+        description: "Optional documentation-only pull request number to validate"
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -56,6 +61,7 @@ jobs:
       - name: Classify changed files
         id: filter
         env:
+          DOCUMENTATION_PR: ${{ inputs.documentation_pr }}
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
@@ -75,6 +81,24 @@ jobs:
                 git diff-tree --no-commit-id --name-only -r "$after" > "$changed_files"
               else
                 git diff --name-only "$before" "$after" > "$changed_files"
+              fi
+              ;;
+            workflow_dispatch)
+              if [[ -n "${DOCUMENTATION_PR}" ]]; then
+                pr_metadata="$(
+                  gh api "repos/${GITHUB_REPOSITORY}/pulls/${DOCUMENTATION_PR}"
+                )"
+                [[ "$(jq -r '.head.repo.full_name' <<<"${pr_metadata}")" == \
+                  "${GITHUB_REPOSITORY}" ]]
+                [[ "$(jq -r '.head.sha' <<<"${pr_metadata}")" == \
+                  "${GITHUB_SHA}" ]]
+                [[ "$(jq -r '.base.ref' <<<"${pr_metadata}")" == "main" ]]
+                gh api "repos/${GITHUB_REPOSITORY}/pulls/${DOCUMENTATION_PR}/files" \
+                  --paginate \
+                  --jq '.[].filename' > "$changed_files"
+              else
+                printf 'heavy=true\n' >> "$GITHUB_OUTPUT"
+                exit 0
               fi
               ;;
             *)

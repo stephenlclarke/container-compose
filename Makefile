@@ -188,7 +188,7 @@ DOCS_OUTPUT_DIR ?= _site
 DOCS_SERVER_DIR ?= _serve
 DOCS_HOSTING_BASE_PATH ?= container-compose
 DOCS_SCRATCH_PATH ?= .build/docc
-COMPOSE_VERSION ?= 0.13.0
+COMPOSE_VERSION ?= 0.14.0
 CONTAINER_COMPOSE_SOURCE ?= $(shell $(PYTHON) -c 'import subprocess; result = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True); url = result.stdout.strip() if result.returncode == 0 else ""; url = url[len("git@github.com:"):] if url.startswith("git@github.com:") else url; url = url[len("https://github.com/"):] if url.startswith("https://github.com/") else url; url = url[:-4] if url.endswith(".git") else url; print(url)')
 CONTAINER_COMPOSE_BRANCH ?= $(shell git branch --show-current 2>/dev/null || git rev-parse --short HEAD)
 CONTAINER_COMPOSE_LANE ?= $(shell $(PYTHON) -c 'branch = "$(CONTAINER_COMPOSE_BRANCH)"; print("main" if branch == "main" else "release" if branch == "release" or branch.startswith("release-") else "detached" if branch in ("", "HEAD") else "development")')
@@ -455,12 +455,15 @@ RELEASE_GATE_PARITY_INPUT_FINGERPRINT = $(shell { printf '%s\n' \
 	'timeout=$(PARITY_TIMEOUT_SECONDS)' \
 	'timing-max-ratio=$(PARITY_TIMING_MAX_RATIO)' \
 	'timing-min-delta-seconds=$(PARITY_TIMING_MIN_DELTA_SECONDS)' \
+	'timing-policy=$(PARITY_TIMING_POLICY)' \
 	'comparable-noise-pct=$(PARITY_COMPARABLE_NOISE_PCT)' \
+	'include-remote-logging=$(PARITY_INCLUDE_REMOTE_LOGGING)' \
 	'sink-stall-seconds=$(PARITY_SINK_STALL_SECONDS)' \
 	'sink-bind-address='$(call PIPELINE_SHELL_QUOTE,$(PARITY_SINK_BIND_ADDRESS)) \
 	'pressure-records=$(PARITY_PRESSURE_RECORDS)' \
 	'docker-host-address=$(PARITY_DOCKER_HOST_ADDRESS)' \
-	'container-host-address=$(PARITY_CONTAINER_HOST_ADDRESS)'; \
+	'container-host-address=$(PARITY_CONTAINER_HOST_ADDRESS)' \
+	'work-root='$(call PIPELINE_SHELL_QUOTE,$(PARITY_WORK_ROOT)); \
 	} | shasum -a 256 | awk '{print $$1}')
 override RELEASE_GATE_STATIC_FINGERPRINT = compose=$(shell /usr/bin/git rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):builder=$(shell /usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):containerization=$(shell /usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):container=$(shell /usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):homebrew=$(shell if [[ -f "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" ]]; then shasum -a 256 "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" | awk '{print $$1}'; else printf missing; fi):candidate=$(CONTAINER_RUNTIME_CANDIDATE_SHA256):init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT):compose-test=$(RELEASE_GATE_COMPOSE_TEST_BINARY_FINGERPRINT):tools=$(RELEASE_GATE_TOOL_FINGERPRINT):engine=$(PARITY_CONTAINER_ENGINE_API_REF):container-source=$(CONTAINER_SOURCE):container-ref=$(PARITY_CONTAINER_REF):containerization-source=$(CONTAINERIZATION_SOURCE):containerization-ref=$(PARITY_CONTAINERIZATION_REF):swift=$(shell $(SWIFT) --version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):swift-resolved-flags=$(SWIFT_RESOLVED_FLAGS):swift-test-flags=$(SWIFT_TEST_FLAGS):swift-test-run-flags=$(SWIFT_TEST_RUN_FLAGS):swift-test-attempts=$(SWIFT_TEST_ATTEMPTS):swift-coverage-attempts=$(SWIFT_COVERAGE_TEST_ATTEMPTS):swift-runtime-filter=$(SWIFT_RUNTIME_TEST_FILTER):go=$(shell $(GO) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):go-release-env=$(GO_RELEASE_ENV):go-release-build-flags=$(GO_RELEASE_BUILD_FLAGS):go-release-ldflags=$(GO_RELEASE_LDFLAGS):docker=$(shell $(DOCKER_COMPOSE_REFERENCE) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):reference=$(DOCKER_COMPOSE_REFERENCE_VERSION):fixtures=$(DOCKER_COMPOSE_E2E_REF):parity-inputs=$(RELEASE_GATE_PARITY_INPUT_FINGERPRINT):release-stack-timeout=$(RELEASE_GATE_STACK_TIMEOUT_SECONDS):release-parity-timeout=$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS):parity-stage-timeout=$(PARITY_STAGE_TIMEOUT_SECONDS):runtime-start-deadline=$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS):parity-live=1:build-check-live=1:swift-core-min=$(SWIFT_CORE_COVERAGE_MIN):swift-runtime-spi-min=$(SWIFT_RUNTIME_SPI_COVERAGE_MIN):swift-provider-min=$(SWIFT_PROVIDER_COVERAGE_MIN):swift-plugin-min=$(SWIFT_PLUGIN_COVERAGE_MIN):swift-aggregate-min=$(SWIFT_AGGREGATE_COVERAGE_MIN):go-min=$(GO_COVERAGE_MIN)
 PARITY_ENV = \
@@ -1287,16 +1290,16 @@ cli-smoke-built:
 	.build/debug/compose --ansi never version >/dev/null
 	.build/debug/compose version --dry-run >/dev/null
 	version_short_output="$$(".build/debug/compose" version --short)"; \
-	[[ "$$version_short_output" == "0.13.0" ]]; \
+	[[ "$$version_short_output" == "0.14.0" ]]; \
 	version_pretty_output="$$(".build/debug/compose" version)"; \
-	[[ "$$version_pretty_output" == *"container-compose 0.13.0"* ]]; \
+	[[ "$$version_pretty_output" == *"container-compose 0.14.0"* ]]; \
 	[[ "$$version_pretty_output" == *"container:"*" (custom)"* ]]; \
 	[[ "$$version_pretty_output" == *"containerization:"*" (custom)"* ]]; \
 	[[ "$$version_pretty_output" == *"compose-go: $(COMPOSE_GO_VERSION)"* ]]; \
 	[[ "$$version_pretty_output" == *"runtime-capability-schema: 1"* ]]; \
 	[[ "$$version_pretty_output" == *"runtime-capability: io.github.stephenlclarke.container.compose.archive-copy.v1"* ]]; \
 	version_json_output="$$(".build/debug/compose" version --format json)"; \
-	[[ "$$version_json_output" == *'"version":"0.13.0"'* ]]; \
+	[[ "$$version_json_output" == *'"version":"0.14.0"'* ]]; \
 	[[ "$$version_json_output" == *'"containerSource":"stephenlclarke/container"'* ]]; \
 	[[ "$$version_json_output" == *'"containerRef":"$(CONTAINER_REF)"'* ]]; \
 	[[ "$$version_json_output" == *'"containerDistribution":"custom"'* ]]; \
@@ -1306,16 +1309,16 @@ cli-smoke-built:
 	[[ "$$version_json_output" == *'"runtimeCapabilitySchemaVersion":1'* ]]; \
 	[[ "$$version_json_output" == *'"runtimeCapabilities":["io.github.stephenlclarke.container.compose.archive-copy.v1"'* ]]; \
 	version_short_format_output="$$(".build/debug/compose" version -f json)"; \
-	[[ "$$version_short_format_output" == *'"version":"0.13.0"'* ]]; \
+	[[ "$$version_short_format_output" == *'"version":"0.14.0"'* ]]; \
 	version_compact_format_output="$$(".build/debug/compose" version -fjson)"; \
-	[[ "$$version_compact_format_output" == *'"version":"0.13.0"'* ]]; \
+	[[ "$$version_compact_format_output" == *'"version":"0.14.0"'* ]]; \
 	package_tmp="$$(mktemp -d)"; \
 	trap 'rm -rf "$$package_tmp"' EXIT; \
 	mkdir -p "$$package_tmp/compose/bin" "$$package_tmp/compose/resources" "$$package_tmp/bin"; \
 	cp .build/debug/compose "$$package_tmp/compose/bin/compose"; \
 	cp "$(PLUGIN_ICON)" "$$package_tmp/compose/resources/container-compose-icon.png"; \
 	test -f "$$package_tmp/compose/resources/container-compose-icon.png"; \
-	printf '%s\n' '{"version":"0.13.0","source":"stephenlclarke/container-compose","branch":"symlink-smoke","lane":"stable","commit":"packaged-smoke","buildType":"release","containerSource":"stephenlclarke/container","containerRef":"container-smoke","containerizationSource":"stephenlclarke/containerization","containerizationRef":"containerization-smoke","composeGoVersion":"$(COMPOSE_GO_VERSION)"}' > "$$package_tmp/compose/resources/build-info.json"; \
+	printf '%s\n' '{"version":"0.14.0","source":"stephenlclarke/container-compose","branch":"symlink-smoke","lane":"stable","commit":"packaged-smoke","buildType":"release","containerSource":"stephenlclarke/container","containerRef":"container-smoke","containerizationSource":"stephenlclarke/containerization","containerizationRef":"containerization-smoke","composeGoVersion":"$(COMPOSE_GO_VERSION)"}' > "$$package_tmp/compose/resources/build-info.json"; \
 	ln -s ../compose/bin/compose "$$package_tmp/bin/container-compose"; \
 	packaged_version_output="$$(cd /tmp && "$$package_tmp/bin/container-compose" version --format json)"; \
 	[[ "$$packaged_version_output" == *'"branch":"symlink-smoke"'* ]]; \
@@ -1339,7 +1342,7 @@ cli-smoke-built:
 	[[ "$$compat_output" == *"https://github.com/stephenlclarke/container-compose/blob/main/docs/guides/INSTALL.md"* ]]; \
 	service_tmp="$$(mktemp -d)"; \
 	trap 'rm -rf "$$service_tmp"' EXIT; \
-	printf '%s\n' '{"version":"0.13.0","source":"stephenlclarke/container-compose","branch":"service-smoke","lane":"stable","commit":"service-smoke","buildType":"release","containerSource":"stephenlclarke/container","containerRef":"matched-container","containerizationSource":"stephenlclarke/containerization","containerizationRef":"matched-containerization","composeGoVersion":"$(COMPOSE_GO_VERSION)"}' > "$$service_tmp/build-info.json"; \
+	printf '%s\n' '{"version":"0.14.0","source":"stephenlclarke/container-compose","branch":"service-smoke","lane":"stable","commit":"service-smoke","buildType":"release","containerSource":"stephenlclarke/container","containerRef":"matched-container","containerizationSource":"stephenlclarke/containerization","containerizationRef":"matched-containerization","composeGoVersion":"$(COMPOSE_GO_VERSION)"}' > "$$service_tmp/build-info.json"; \
 	printf '%s\n' '#!/usr/bin/env bash' 'if [[ "$$*" == "system version --format json" ]]; then' '  printf '\''[{"appName":"container","buildType":"release","commit":"matched-container","containerization":"stephenlclarke/containerization@matched-containerization","distribution":"custom","runtimeCapabilitySchemaVersion":1,"runtimeCapabilities":["io.github.stephenlclarke.container.compose.archive-copy.v1","io.github.stephenlclarke.container.compose.build-extensions.v1","io.github.stephenlclarke.container.compose.create-configuration.v1","io.github.stephenlclarke.container.compose.image-filesystem.v1","io.github.stephenlclarke.container.compose.lifecycle.v1","io.github.stephenlclarke.container.compose.observation.v1"],"source":"stephenlclarke/container","version":"homebrew-main"}]\n'\''' '  exit 0' 'fi' 'if [[ "$$*" == "system status" ]]; then' '  printf '\''apiserver is not running and not registered with launchd\n'\'' >&2' '  exit 1' 'fi' 'exit 2' > "$$service_tmp/container"; \
 	chmod +x "$$service_tmp/container"; \
 	set +e; \
@@ -1574,7 +1577,7 @@ cli-smoke-built:
 	printf 'services:\n  api:\n    image: alpine\n    build:\n      context: ./api\n    volumes:\n      - ./src:/src\n' > "$$tmpdir/relative-paths.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - missing\n' > "$$tmpdir/missing-dependency.yml"; \
 	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
-	[[ "$$version_compact_global_output" == "0.13.0" ]]; \
+	[[ "$$version_compact_global_output" == "0.14.0" ]]; \
 	config_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config)"; \
 	[[ "$$config_output" == *"name: \"demo\""* ]]; \
 	[[ "$$config_output" == *"services:"* ]]; \
@@ -2630,6 +2633,7 @@ coverage-tools-test:
 
 performance-matrix-harness-test:
 	$(PYTHON) Tools/parity/test_compose_performance_matrix.py
+	$(PYTHON) Tools/parity/test_published_release_benchmark.py
 
 isolation-performance-harness-test:
 	$(PYTHON) Tools/parity/test_compose_isolation_performance.py

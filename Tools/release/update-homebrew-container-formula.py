@@ -37,6 +37,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--url", required=True)
     parser.add_argument("--sha256", required=True)
     parser.add_argument("--version", required=True)
+    parser.add_argument(
+        "--omit-version",
+        action="store_true",
+        help="Let Homebrew derive a stable semantic version from the release URL.",
+    )
     parser.add_argument("--label", required=True)
     parser.add_argument("--asset", required=True)
     return parser.parse_args()
@@ -60,7 +65,12 @@ def main() -> None:
     text = replace_once(r"^class \w+ < Formula$", f"class {args.formula_class} < Formula", text)
     text = replace_once(r'^  url ".+"$', f'  url "{args.url}"', text)
     text = replace_once(r"^  sha256 .+$", f'  sha256 "{args.sha256}"', text)
-    text = replace_once(r'^  version ".+"$', f'  version "{args.version}"', text)
+    if args.omit_version:
+        text, count = re.subn(r'^  version ".+"\n?', "", text, flags=re.MULTILINE)
+        if count > 1:
+            raise SystemExit("expected at most one version stanza")
+    else:
+        text = replace_once(r'^  version ".+"$', f'  version "{args.version}"', text)
     text = re.sub(
         r"stephenlclarke/tap/container-compose(?:-current)?",
         f"stephenlclarke/tap/{args.compose_formula}",

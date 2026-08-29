@@ -177,6 +177,7 @@ verify_archive_entry() {
 # Render both tap-owned formulae from the verified immutable release assets.
 main() {
   local compose_sha runtime_sha compose_url runtime_url
+  local -a version_policy_args=()
 
   require_release_inputs
   need_command gh
@@ -207,6 +208,9 @@ main() {
 
   compose_url="https://github.com/${RELEASE_REPOSITORY}/releases/download/${RELEASE_TAG}/${ASSET}"
   runtime_url="https://github.com/${RELEASE_REPOSITORY}/releases/download/${RELEASE_TAG}/${RUNTIME_ASSET}"
+  if [[ "${RELEASE_TAG}" != "current" ]]; then
+    version_policy_args+=(--omit-version)
+  fi
 
   python3 "${COMPOSE_SOURCE_DIR}/Tools/release/update-homebrew-formula.py" \
     --formula "${TAP_DIR}/Formula/${FORMULA}" \
@@ -215,6 +219,7 @@ main() {
     --runtime-formula "${RUNTIME_FORMULA}" \
     --url "${compose_url}" \
     --version "${FORMULA_VERSION}" \
+    "${version_policy_args[@]}" \
     --plugin-version "${PLUGIN_VERSION}" \
     --asset "${ASSET}" \
     --label "${RELEASE_LABEL}" \
@@ -228,6 +233,7 @@ main() {
     --url "${runtime_url}" \
     --sha256 "${runtime_sha}" \
     --version "${RUNTIME_VERSION}" \
+    "${version_policy_args[@]}" \
     --label "${RELEASE_LABEL}" \
     --asset "${RUNTIME_ASSET}"
 

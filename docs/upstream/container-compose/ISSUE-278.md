@@ -43,3 +43,9 @@ other performance lanes in its public completion contract.
 ## Related work
 
 This handoff records [issue 278](https://github.com/stephenlclarke/container-compose/issues/278). Its implementation dependencies are [Containerization pull request 37](https://github.com/stephenlclarke/containerization/pull/37), [builder-shim pull request 12](https://github.com/stephenlclarke/container-builder-shim/pull/12), and [Container pull request 142](https://github.com/stephenlclarke/container/pull/142). The Compose-owned client reuse is [pull request 327](https://github.com/stephenlclarke/container-compose/pull/327).
+
+The later 0.14.0 optimization chain is listed in the
+[Apple upstream review](../APPLE-UPSTREAM-REVIEW.md#0140-optimization-pull-request-provenance).
+Its live 28 August 2026 audit found no submitted Apple upstream PR containing a
+benchmarked Container, Containerization, builder-shim, or Compose optimization;
+the stock-Apple `upstream/pr-*` branches remain unsubmitted candidates.
