@@ -322,6 +322,36 @@ class PublishedReportTests(unittest.TestCase):
                     "https://github.example/actions/runs/1",
                 )
 
+    def test_report_rejects_debug_runtime_helper(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
+            root = Path(directory)
+            baseline = root / "baseline"
+            target = root / "target"
+            baseline.mkdir()
+            target.mkdir()
+            self.write_evidence(baseline, 1.0, 1.0, "0.13.0")
+            self.write_evidence(target, 0.8, 1.0, "0.14.0")
+            fingerprints = json.loads(
+                (target / "fingerprints.json").read_text(encoding="utf-8")
+            )
+            fingerprints["containerRuntime"]["version"][1]["buildType"] = "debug"
+            (target / "fingerprints.json").write_text(
+                json.dumps(fingerprints), encoding="utf-8"
+            )
+
+            with self.assertRaisesRegex(
+                MODULE.BenchmarkInputError,
+                "runtime component 'container-apiserver' is not a release build",
+            ):
+                MODULE.render_report(
+                    target,
+                    baseline,
+                    self.write_manifest(root, "0.14.0"),
+                    self.write_manifest(root, "0.13.0"),
+                    root / "report.md",
+                    "https://github.example/actions/runs/1",
+                )
+
     def test_report_rejects_compose_commit_outside_release_tag(self) -> None:
         with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
             root = Path(directory)

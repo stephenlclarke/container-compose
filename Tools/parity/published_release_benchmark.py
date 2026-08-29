@@ -469,11 +469,18 @@ def validate_release_identity(
             )
 
     for component in runtime_components:
-        if not isinstance(component, dict) or component.get("appName") == "container":
-            continue
+        if not isinstance(component, dict):
+            raise BenchmarkInputError(f"{label} runtime component is not structured JSON")
+        app_name = component.get("appName")
+        if not isinstance(app_name, str) or not app_name:
+            raise BenchmarkInputError(f"{label} runtime component has no appName")
+        if component.get("buildType") != "release":
+            raise BenchmarkInputError(
+                f"{label} runtime component {app_name!r} is not a release build"
+            )
         if component.get("commit") != container_ref:
             raise BenchmarkInputError(
-                f"{label} runtime component {component.get('appName')!r} does not match "
+                f"{label} runtime component {app_name!r} does not match "
                 f"Container revision {container_ref}"
             )
 
