@@ -188,6 +188,28 @@ def formula_authority(
     )
 
 
+def release_tag_commit(source_repository: Path, version: str) -> str:
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(source_repository),
+            "rev-parse",
+            "--verify",
+            f"refs/tags/{version}^{{commit}}",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    commit = result.stdout.strip()
+    if result.returncode != 0 or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        raise BenchmarkInputError(
+            f"source checkout has no exact commit for release tag {version}"
+        )
+    return commit
+
+
 def validate_archive_members(archive: tarfile.TarFile) -> None:
     for member in archive.getmembers():
         normalized = posixpath.normpath(member.name)
@@ -208,9 +230,11 @@ def prepare_distribution(
     version: str,
     distribution: Path,
     tap_repository: Path,
+    source_repository: Path,
     output: Path,
 ) -> dict[str, object]:
     version_tuple(version)
+    source_commit = release_tag_commit(source_repository, version)
     output.mkdir(parents=True, exist_ok=False)
     output.chmod(0o700)
     asset_manifest: dict[str, object] = {}
@@ -250,6 +274,7 @@ def prepare_distribution(
         }
     manifest: dict[str, object] = {
         "version": version,
+        "sourceCommit": source_commit,
         "release": f"https://github.com/{REPOSITORY}/releases/tag/{version}",
         "assets": asset_manifest,
     }
@@ -302,9 +327,15 @@ def validate_release_identity(
     fingerprints: dict[str, object],
 ) -> None:
     version = manifest.get("version")
+    source_commit = manifest.get("sourceCommit")
     compose_record = fingerprints.get("containerCompose")
     runtime_record = fingerprints.get("containerRuntime")
-    if not isinstance(version, str) or not isinstance(compose_record, dict):
+    if (
+        not isinstance(version, str)
+        or not isinstance(source_commit, str)
+        or re.fullmatch(r"[0-9a-f]{40}", source_commit) is None
+        or not isinstance(compose_record, dict)
+    ):
         raise BenchmarkInputError(f"{label} release identity is incomplete")
     if not isinstance(runtime_record, dict):
         raise BenchmarkInputError(f"{label} runtime identity is incomplete")
@@ -331,6 +362,11 @@ def validate_release_identity(
     compose_ref = compose.get("commit")
     if not isinstance(compose_ref, str) or re.fullmatch(r"[0-9a-f]{40}", compose_ref) is None:
         raise BenchmarkInputError(f"{label} Compose commit is not an exact revision")
+    if compose_ref != source_commit:
+        raise BenchmarkInputError(
+            f"{label} Compose commit {compose_ref!r} does not match "
+            f"release tag commit {source_commit!r}"
+        )
 
     container_source = compose.get("containerSource")
     container_ref = compose.get("containerRef")
@@ -511,6 +547,7 @@ def render_report(
                 f"### {label} {manifest['version']}",
                 "",
                 f"Release: [{manifest['release']}]({manifest['release']})",
+                f"Release tag commit: `{manifest['sourceCommit']}`.",
                 "",
             ]
         )
@@ -572,6 +609,7 @@ def main() -> None:
     prepare.add_argument("--version", required=True)
     prepare.add_argument("--distribution", type=Path, required=True)
     prepare.add_argument("--tap-repository", type=Path, required=True)
+    prepare.add_argument("--source-repository", type=Path, required=True)
     prepare.add_argument("--output", type=Path, required=True)
 
     render = subparsers.add_parser("render")
@@ -595,6 +633,7 @@ def main() -> None:
                 arguments.version,
                 arguments.distribution,
                 arguments.tap_repository,
+                arguments.source_repository,
                 arguments.output,
             )
             print(json.dumps(result, sort_keys=True))

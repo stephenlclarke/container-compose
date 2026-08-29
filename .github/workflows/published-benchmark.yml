@@ -181,6 +181,7 @@ jobs:
               --version "${version}" \
               --distribution "${BENCHMARK_ROOT}/downloads/${version}" \
               --tap-repository homebrew-tap \
+              --source-repository . \
               --output "${BENCHMARK_ROOT}/prepared/${version}"
           done
 

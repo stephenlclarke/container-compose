@@ -69,6 +69,28 @@ class ResolvePublishedVersionsTests(unittest.TestCase):
 
 
 class HomebrewAuthorityTests(unittest.TestCase):
+    def test_release_tag_resolves_to_peeled_commit(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="published-source-") as directory:
+            repository = Path(directory)
+            self.git(repository, "init", "-b", "main")
+            self.git(repository, "config", "user.email", "test@example.com")
+            self.git(repository, "config", "user.name", "Test")
+            (repository / "README.md").write_text("release\n", encoding="utf-8")
+            self.git(repository, "add", "README.md")
+            self.git(repository, "commit", "-m", "chore: initialize release")
+            self.git(repository, "tag", "-a", "0.14.0", "-m", "0.14.0")
+
+            expected = subprocess.run(
+                ["git", "-C", str(repository), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+
+            self.assertEqual(
+                MODULE.release_tag_commit(repository, "0.14.0"), expected
+            )
+
     def test_side_branch_cannot_authorize_unpublished_formula(self) -> None:
         with tempfile.TemporaryDirectory(prefix="published-tap-") as directory:
             repository = Path(directory)
@@ -267,6 +289,32 @@ class PublishedReportTests(unittest.TestCase):
                     "https://github.example/actions/runs/1",
                 )
 
+    def test_report_rejects_compose_commit_outside_release_tag(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
+            root = Path(directory)
+            baseline = root / "baseline"
+            target = root / "target"
+            baseline.mkdir()
+            target.mkdir()
+            self.write_evidence(baseline, 1.0, 1.0, "0.13.0")
+            self.write_evidence(target, 0.8, 1.0, "0.14.0")
+            target_manifest = self.write_manifest(root, "0.14.0")
+            manifest = json.loads(target_manifest.read_text(encoding="utf-8"))
+            manifest["sourceCommit"] = "f" * 40
+            target_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                MODULE.BenchmarkInputError, "does not match release tag commit"
+            ):
+                MODULE.render_report(
+                    target,
+                    baseline,
+                    target_manifest,
+                    self.write_manifest(root, "0.13.0"),
+                    root / "report.md",
+                    "https://github.example/actions/runs/1",
+                )
+
     def test_report_uses_docker_control_for_verdicts_and_headline(self) -> None:
         with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
             root = Path(directory)
@@ -382,6 +430,9 @@ class PublishedReportTests(unittest.TestCase):
             json.dumps(
                 {
                     "version": version,
+                    "sourceCommit": (
+                        "5" if version == "0.13.0" else "6"
+                    ) * 40,
                     "release": f"https://github.example/{version}",
                     "assets": {
                         "runtime": {
@@ -415,6 +466,7 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
         self.assertIn("compare_to:", workflow)
         self.assertIn("published_release_benchmark.py", workflow)
         self.assertIn("            resolve\n", workflow)
+        self.assertIn("--source-repository .", workflow)
 
     def test_workflow_downloads_published_assets_without_building_products(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
