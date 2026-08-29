@@ -267,6 +267,31 @@ class PublishedReportTests(unittest.TestCase):
                     "https://github.example/actions/runs/1",
                 )
 
+    def test_report_uses_docker_control_for_verdicts_and_headline(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
+            root = Path(directory)
+            baseline = root / "baseline"
+            target = root / "target"
+            baseline.mkdir()
+            target.mkdir()
+            self.write_evidence(baseline, 1.0, 1.0, "0.13.0")
+            self.write_evidence(target, 2.0, 2.0, "0.14.0")
+            output = root / "report.md"
+
+            MODULE.render_report(
+                target,
+                baseline,
+                self.write_manifest(root, "0.14.0"),
+                self.write_manifest(root, "0.13.0"),
+                output,
+                "https://github.example/actions/runs/1",
+            )
+            report = output.read_text(encoding="utf-8")
+
+        self.assertIn("Docker-normalized geometric-mean median changed +0.0%", report)
+        self.assertIn("| +100.0% |", report)
+        self.assertIn("| +0.0% | +0.0% | Within noise |", report)
+
     @staticmethod
     def write_evidence(
         root: Path,

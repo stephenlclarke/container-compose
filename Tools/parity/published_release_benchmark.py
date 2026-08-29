@@ -433,8 +433,8 @@ def render_report(
     lower = 1 - noise / 100
     upper = 1 + noise / 100
     rows: list[tuple[object, ...]] = []
-    median_ratios: list[float] = []
-    p95_ratios: list[float] = []
+    normalized_median_ratios: list[float] = []
+    normalized_p95_ratios: list[float] = []
     improved = unchanged = regressed = 0
     for fixture in sorted(target_samples):
         target = target_samples[fixture]
@@ -445,17 +445,22 @@ def render_report(
         baseline_p95 = nearest_rank_p95(baseline["container-compose"])
         target_docker_median = statistics.median(target["docker"])
         baseline_docker_median = statistics.median(baseline["docker"])
+        target_docker_p95 = nearest_rank_p95(target["docker"])
+        baseline_docker_p95 = nearest_rank_p95(baseline["docker"])
         median_ratio = target_median / baseline_median
         p95_ratio = target_p95 / baseline_p95
-        normalized_ratio = (
+        normalized_median_ratio = (
             target_median / target_docker_median
         ) / (baseline_median / baseline_docker_median)
-        median_ratios.append(median_ratio)
-        p95_ratios.append(p95_ratio)
-        if median_ratio < lower:
+        normalized_p95_ratio = (
+            target_p95 / target_docker_p95
+        ) / (baseline_p95 / baseline_docker_p95)
+        normalized_median_ratios.append(normalized_median_ratio)
+        normalized_p95_ratios.append(normalized_p95_ratio)
+        if normalized_median_ratio < lower:
             verdict = "Improved"
             improved += 1
-        elif median_ratio > upper:
+        elif normalized_median_ratio > upper:
             verdict = "Regressed"
             regressed += 1
         else:
@@ -470,13 +475,20 @@ def render_report(
                 baseline_p95,
                 target_p95,
                 p95_ratio,
-                normalized_ratio,
+                normalized_median_ratio,
+                normalized_p95_ratio,
                 verdict,
             )
         )
 
-    geometric_median = math.exp(sum(math.log(value) for value in median_ratios) / len(median_ratios))
-    geometric_p95 = math.exp(sum(math.log(value) for value in p95_ratios) / len(p95_ratios))
+    geometric_median = math.exp(
+        sum(math.log(value) for value in normalized_median_ratios)
+        / len(normalized_median_ratios)
+    )
+    geometric_p95 = math.exp(
+        sum(math.log(value) for value in normalized_p95_ratios)
+        / len(normalized_p95_ratios)
+    )
     host = target_fingerprints["host"]
     docker = target_fingerprints["docker"]
     lines = [
@@ -486,7 +498,7 @@ def render_report(
         "",
         "## Result",
         "",
-        f"Across {len(rows)} fixed-work fixtures, the geometric-mean median changed {percentage(geometric_median)} and the geometric-mean P95 changed {percentage(geometric_p95)}. With a ±{noise:g}% noise band, {improved} fixtures improved, {unchanged} stayed within noise, and {regressed} regressed.",
+        f"Across {len(rows)} fixed-work fixtures, the Docker-normalized geometric-mean median changed {percentage(geometric_median)} and the Docker-normalized geometric-mean P95 changed {percentage(geometric_p95)}. With a ±{noise:g}% noise band applied to the normalized median, {improved} fixtures improved, {unchanged} stayed within noise, and {regressed} regressed.",
         "",
         "Lower durations and negative changes are better.",
         "",
@@ -521,14 +533,14 @@ def render_report(
             "",
             "## Fixture evidence",
             "",
-            "| Fixture | Comparison median (s) | Target median (s) | Median change | Comparison P95 (s) | Target P95 (s) | P95 change | Docker-normalized median change | Verdict |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+            "| Fixture | Comparison median (s) | Target median (s) | Raw median change | Comparison P95 (s) | Target P95 (s) | Raw P95 change | Docker-normalized median change | Docker-normalized P95 change | Verdict |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
         ]
     )
     for row in rows:
-        fixture, baseline_median, target_median, median_ratio, baseline_p95, target_p95, p95_ratio, normalized_ratio, verdict = row
+        fixture, baseline_median, target_median, median_ratio, baseline_p95, target_p95, p95_ratio, normalized_median_ratio, normalized_p95_ratio, verdict = row
         lines.append(
-            f"| {fixture} | {baseline_median:.3f} | {target_median:.3f} | {percentage(median_ratio)} | {baseline_p95:.3f} | {target_p95:.3f} | {percentage(p95_ratio)} | {percentage(normalized_ratio)} | {verdict} |"
+            f"| {fixture} | {baseline_median:.3f} | {target_median:.3f} | {percentage(median_ratio)} | {baseline_p95:.3f} | {target_p95:.3f} | {percentage(p95_ratio)} | {percentage(normalized_median_ratio)} | {percentage(normalized_p95_ratio)} | {verdict} |"
         )
     lines.extend(
         [
