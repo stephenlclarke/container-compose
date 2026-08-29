@@ -455,12 +455,15 @@ RELEASE_GATE_PARITY_INPUT_FINGERPRINT = $(shell { printf '%s\n' \
 	'timeout=$(PARITY_TIMEOUT_SECONDS)' \
 	'timing-max-ratio=$(PARITY_TIMING_MAX_RATIO)' \
 	'timing-min-delta-seconds=$(PARITY_TIMING_MIN_DELTA_SECONDS)' \
+	'timing-policy=$(PARITY_TIMING_POLICY)' \
 	'comparable-noise-pct=$(PARITY_COMPARABLE_NOISE_PCT)' \
+	'include-remote-logging=$(PARITY_INCLUDE_REMOTE_LOGGING)' \
 	'sink-stall-seconds=$(PARITY_SINK_STALL_SECONDS)' \
 	'sink-bind-address='$(call PIPELINE_SHELL_QUOTE,$(PARITY_SINK_BIND_ADDRESS)) \
 	'pressure-records=$(PARITY_PRESSURE_RECORDS)' \
 	'docker-host-address=$(PARITY_DOCKER_HOST_ADDRESS)' \
-	'container-host-address=$(PARITY_CONTAINER_HOST_ADDRESS)'; \
+	'container-host-address=$(PARITY_CONTAINER_HOST_ADDRESS)' \
+	'work-root='$(call PIPELINE_SHELL_QUOTE,$(PARITY_WORK_ROOT)); \
 	} | shasum -a 256 | awk '{print $$1}')
 override RELEASE_GATE_STATIC_FINGERPRINT = compose=$(shell /usr/bin/git rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):builder=$(shell /usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):containerization=$(shell /usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):container=$(shell /usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):homebrew=$(shell if [[ -f "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" ]]; then shasum -a 256 "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" | awk '{print $$1}'; else printf missing; fi):candidate=$(CONTAINER_RUNTIME_CANDIDATE_SHA256):init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT):compose-test=$(RELEASE_GATE_COMPOSE_TEST_BINARY_FINGERPRINT):tools=$(RELEASE_GATE_TOOL_FINGERPRINT):engine=$(PARITY_CONTAINER_ENGINE_API_REF):container-source=$(CONTAINER_SOURCE):container-ref=$(PARITY_CONTAINER_REF):containerization-source=$(CONTAINERIZATION_SOURCE):containerization-ref=$(PARITY_CONTAINERIZATION_REF):swift=$(shell $(SWIFT) --version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):swift-resolved-flags=$(SWIFT_RESOLVED_FLAGS):swift-test-flags=$(SWIFT_TEST_FLAGS):swift-test-run-flags=$(SWIFT_TEST_RUN_FLAGS):swift-test-attempts=$(SWIFT_TEST_ATTEMPTS):swift-coverage-attempts=$(SWIFT_COVERAGE_TEST_ATTEMPTS):swift-runtime-filter=$(SWIFT_RUNTIME_TEST_FILTER):go=$(shell $(GO) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):go-release-env=$(GO_RELEASE_ENV):go-release-build-flags=$(GO_RELEASE_BUILD_FLAGS):go-release-ldflags=$(GO_RELEASE_LDFLAGS):docker=$(shell $(DOCKER_COMPOSE_REFERENCE) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):reference=$(DOCKER_COMPOSE_REFERENCE_VERSION):fixtures=$(DOCKER_COMPOSE_E2E_REF):parity-inputs=$(RELEASE_GATE_PARITY_INPUT_FINGERPRINT):release-stack-timeout=$(RELEASE_GATE_STACK_TIMEOUT_SECONDS):release-parity-timeout=$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS):parity-stage-timeout=$(PARITY_STAGE_TIMEOUT_SECONDS):runtime-start-deadline=$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS):parity-live=1:build-check-live=1:swift-core-min=$(SWIFT_CORE_COVERAGE_MIN):swift-runtime-spi-min=$(SWIFT_RUNTIME_SPI_COVERAGE_MIN):swift-provider-min=$(SWIFT_PROVIDER_COVERAGE_MIN):swift-plugin-min=$(SWIFT_PLUGIN_COVERAGE_MIN):swift-aggregate-min=$(SWIFT_AGGREGATE_COVERAGE_MIN):go-min=$(GO_COVERAGE_MIN)
 PARITY_ENV = \
