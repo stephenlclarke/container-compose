@@ -33,7 +33,7 @@ orchestration and maps supported Compose behavior to the matched runtime stack.
 ## 0.14.0 Stable
 
 [`0.14.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.0)
-is the current stable macOS arm64 release, published on 29 August 2026. It ships
+is the current stable macOS arm64 release, published on 30 August 2026. It ships
 the plugin with an immutable matched Container stack and passed the hosted
 Stable Release Gate, including the supported Docker Compose parity suite.
 
@@ -71,7 +71,7 @@ pull requests:
 - concurrent and bounded dedicated-VM bootstrap: [Container #143](https://github.com/stephenlclarke/container/pull/143) and [Container #145](https://github.com/stephenlclarke/container/pull/145);
 - dedicated prewarming and live memory control: [Containerization #41](https://github.com/stephenlclarke/containerization/pull/41), [Container #150](https://github.com/stephenlclarke/container/pull/150), [Container #154](https://github.com/stephenlclarke/container/pull/154), and [Container #158](https://github.com/stephenlclarke/container/pull/158);
 - shared-VM execution and bounded workload starts: [Containerization #42](https://github.com/stephenlclarke/containerization/pull/42), [Containerization #46](https://github.com/stephenlclarke/containerization/pull/46), [Container #146](https://github.com/stephenlclarke/container/pull/146), [Container #159](https://github.com/stephenlclarke/container/pull/159), and [Container #165](https://github.com/stephenlclarke/container/pull/165); and
-- Compose integration, client reuse, isolation projection, and the isolation performance matrix: [container-compose #325](https://github.com/stephenlclarke/container-compose/pull/325), [#327](https://github.com/stephenlclarke/container-compose/pull/327), [#330](https://github.com/stephenlclarke/container-compose/pull/330), and [#331](https://github.com/stephenlclarke/container-compose/pull/331).
+- Compose integration, client reuse, isolation projection, the isolation performance matrix, and invocation-scoped launch context reuse: [container-compose #325](https://github.com/stephenlclarke/container-compose/pull/325), [#327](https://github.com/stephenlclarke/container-compose/pull/327), [#330](https://github.com/stephenlclarke/container-compose/pull/330), [#331](https://github.com/stephenlclarke/container-compose/pull/331), and [#342](https://github.com/stephenlclarke/container-compose/pull/342), backed by [Container #177](https://github.com/stephenlclarke/container/pull/177).
 
 As of 28 August 2026, **none of the benchmarked Container, Containerization,
 builder-shim, or Compose optimization commits has a live pull request in an
@@ -106,10 +106,10 @@ in this stable baseline. Planned compatibility work is kept separately in
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
 > <!-- upstream-metrics:start -->
-> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 29 August 2026 snapshot, the three support forks are **1037 commits ahead of Apple upstream**:
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 30 August 2026 snapshot, the three support forks are **1039 commits ahead of Apple upstream**:
 >
 > - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 269 ahead** at [`e5a92e86bf03`](https://github.com/stephenlclarke/containerization/commit/e5a92e86bf03eb2cc244b3b47b0413b3935abfe4).
-> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 722 ahead** at [`b19e8205fc91`](https://github.com/stephenlclarke/container/commit/b19e8205fc91be8f92e0790c69f230eb5ee1f56f).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 724 ahead** at [`6a094cd6acb5`](https://github.com/stephenlclarke/container/commit/6a094cd6acb53ac6d5695e7348cad7c74d8f99e2).
 > - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 46 ahead** at [`db3e99cc3d19`](https://github.com/stephenlclarke/container-builder-shim/commit/db3e99cc3d19b9a328eb51be3a023a178f80ee81).
 > - [`container-compose`](https://github.com/stephenlclarke/container-compose): the integration repository's current `main` branch, with no Apple repository to compare against.
 >

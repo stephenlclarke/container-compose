@@ -73,7 +73,7 @@ attachment in the
 It is present in the coordinated release manifest and shipped by
 [`container-compose` 0.14.0](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.0).
 The immutable release manifest uses Container
-`b19e8205fc91be8f92e0790c69f230eb5ee1f56f`, Engine API
+`6a094cd6acb53ac6d5695e7348cad7c74d8f99e2`, Engine API
 `386a40c726ecd25d67a3e5933582aebbfbe4fa2f`, Containerization
 `e5a92e86bf03eb2cc244b3b47b0413b3935abfe4`, and SwiftNIO SSL
 `09c5c9adcdd2a459187e45fe0143eb01063f244a`. The hosted Stable Release Gate

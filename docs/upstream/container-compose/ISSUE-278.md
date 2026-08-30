@@ -38,9 +38,10 @@ Compose has functional parity evidence, but runtime lifecycle work still pays av
 - The exact matched-stack client-reuse benchmark retains functional parity and
   the diagnostic 10x guard without claiming a latency improvement from mixed
   timing results.
-- A quiet-host exact-release rerun records Docker/container-compose bridge-up
-  medians of 0.137s/1.299s (9.46x, pass) and bridge-down medians of
-  10.146s/5.803s (0.57x, pass), with raw TSV, JUnit, and fingerprints retained.
+- A quiet-host exact-release rerun after command-context reuse records
+  Docker/container-compose bridge-up medians of 0.133s/1.293s (9.69x, pass)
+  and bridge-down medians of 10.076s/5.718s (0.57x, pass), with raw TSV,
+  JUnit, and fingerprints retained.
 - Focused release-policy and runtime-lock tests plus a live launchd exercise
   prove that every installed cooperating worker is absent during the complete
   locked window and is restored before the next gate acquires the lock; Colima
@@ -95,7 +96,7 @@ remains retained and the 10x threshold remains unchanged.
 
 ## Related work
 
-This handoff records [issue 278](https://github.com/stephenlclarke/container-compose/issues/278). Its implementation dependencies are [Containerization pull request 37](https://github.com/stephenlclarke/containerization/pull/37), [builder-shim pull request 12](https://github.com/stephenlclarke/container-builder-shim/pull/12), and [Container pull request 142](https://github.com/stephenlclarke/container/pull/142). The Compose-owned client reuse is [pull request 327](https://github.com/stephenlclarke/container-compose/pull/327).
+This handoff records [issue 278](https://github.com/stephenlclarke/container-compose/issues/278). Its implementation dependencies are [Containerization pull request 37](https://github.com/stephenlclarke/containerization/pull/37), [builder-shim pull request 12](https://github.com/stephenlclarke/container-builder-shim/pull/12), and [Container pull request 142](https://github.com/stephenlclarke/container/pull/142). The Compose-owned client reuse is [pull request 327](https://github.com/stephenlclarke/container-compose/pull/327). Invocation-scoped launch context reuse is the paired [Container pull request 177](https://github.com/stephenlclarke/container/pull/177) and [Compose pull request 342](https://github.com/stephenlclarke/container-compose/pull/342).
 
 The later 0.14.0 optimization chain is listed in the
 [Apple upstream review](../APPLE-UPSTREAM-REVIEW.md#0140-optimization-pull-request-provenance).
