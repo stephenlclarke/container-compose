@@ -28,6 +28,7 @@ import textwrap
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT = Path(__file__).parents[2] / "scripts" / "CONTAINER_STACK_RELEASE.sh"
@@ -4077,10 +4078,32 @@ gh() {
         )
 
     def non_interactive_environment(self) -> dict[str, str]:
-        """Prevent Git fixtures from launching an editor during automated tests."""
+        """Return an environment isolated from interactive and recursive tools."""
         environment = os.environ.copy()
         environment["GIT_EDITOR"] = ":"
+        for variable in (
+            "GNUMAKEFLAGS",
+            "MAKEFLAGS",
+            "MAKELEVEL",
+            "MAKEOVERRIDES",
+            "MFLAGS",
+        ):
+            environment.pop(variable, None)
         return environment
+
+    def test_non_interactive_environment_removes_recursive_make_state(self) -> None:
+        recursive_make_environment = {
+            "GNUMAKEFLAGS": "--warn-undefined-variables",
+            "MAKEFLAGS": "w -- CONTAINER_COMPOSE_CONTAINER=/tmp/candidate/container",
+            "MAKELEVEL": "2",
+            "MAKEOVERRIDES": "CONTAINER_COMPOSE_CONTAINER",
+            "MFLAGS": "-w",
+        }
+        with mock.patch.dict(os.environ, recursive_make_environment):
+            environment = self.non_interactive_environment()
+
+        for variable in recursive_make_environment:
+            self.assertNotIn(variable, environment)
 
 
 if __name__ == "__main__":
