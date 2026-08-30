@@ -238,8 +238,8 @@ jobs:
             if [[ ! -d "${demo_session_root}" || -L "${demo_session_root}" ||
                   ! -f "${marker}" || -L "${marker}" ||
                   "$(cat "${marker}")" != "container-compose-current-demo-v1" ||
-                  "$(stat -f %u "${demo_session_root}")" != "$(id -u)" ||
-                  "$(stat -f %Lp "${demo_session_root}")" != "700" ]]; then
+                  "$(/usr/bin/stat -f %u "${demo_session_root}")" != "$(id -u)" ||
+                  "$(/usr/bin/stat -f %Lp "${demo_session_root}")" != "700" ]]; then
               printf 'refusing unsafe stable Current demo root: %s\n' \
                 "${demo_session_root}" >&2
               exit 1
