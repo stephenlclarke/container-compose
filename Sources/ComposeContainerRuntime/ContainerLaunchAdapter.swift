@@ -17,7 +17,10 @@
 import ArgumentParser
 import ComposeRuntimeSPI
 import ContainerCommands
+import ContainerPersistence
 import ContainerResource
+
+typealias ContainerSystemConfigProvider = @Sendable () async throws -> ContainerSystemConfig
 
 /// Runs Container's typed create path in-process after Compose negotiation.
 ///
@@ -39,6 +42,33 @@ public struct ContainerCommandLaunchManager: ComposeRuntimeContainerLaunching {
         run = { arguments, loggingRequest in
             let command = try Application.ContainerRun.parse(arguments)
             try await command.run(loggingRequest: loggingRequest, emitsCLIOutput: false)
+            return 0
+        }
+    }
+
+    init(
+        containerSystemConfig: @escaping ContainerSystemConfigProvider,
+        controlClient: @escaping ContainerClientProvider,
+        makeSessionClient: @escaping ContainerClientProvider,
+    ) {
+        create = { arguments, loggingRequest in
+            let command = try Application.ContainerCreate.parse(arguments)
+            try await command.run(
+                loggingRequest: loggingRequest,
+                emitsCLIOutput: false,
+                containerSystemConfig: containerSystemConfig(),
+                client: controlClient(),
+            )
+            return 0
+        }
+        run = { arguments, loggingRequest in
+            let command = try Application.ContainerRun.parse(arguments)
+            try await command.run(
+                loggingRequest: loggingRequest,
+                emitsCLIOutput: false,
+                containerSystemConfig: containerSystemConfig(),
+                client: makeSessionClient(),
+            )
             return 0
         }
     }

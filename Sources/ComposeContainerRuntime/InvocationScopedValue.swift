@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 import ContainerAPIClient
+import Foundation
 import Synchronization
 
 typealias ContainerClientProvider = @Sendable () -> ContainerClient
@@ -66,5 +67,55 @@ final class InvocationScopedClientPool<Value: Sendable>: Sendable {
 
     func session() -> Value {
         create()
+    }
+}
+
+/// Lazily resolves one asynchronous value for a single Compose invocation.
+///
+/// The shared task keeps concurrent service creation from repeating daemon
+/// health and configuration reads. A failed resolution is not cached, so a
+/// later operation can recover after the runtime becomes healthy.
+actor InvocationScopedAsyncValue<Value: Sendable> {
+    private enum State {
+        case empty
+        case loading(UUID, Task<Value, any Error>)
+        case ready(Value)
+    }
+
+    private var state = State.empty
+    private let create: @Sendable () async throws -> Value
+
+    init(create: @escaping @Sendable () async throws -> Value) {
+        self.create = create
+    }
+
+    func get() async throws -> Value {
+        let token: UUID
+        let task: Task<Value, any Error>
+        switch state {
+        case let .ready(value):
+            return value
+        case let .loading(existingToken, existingTask):
+            token = existingToken
+            task = existingTask
+        case .empty:
+            token = UUID()
+            let create = create
+            task = Task { try await create() }
+            state = .loading(token, task)
+        }
+
+        do {
+            let value = try await task.value
+            if case let .loading(currentToken, _) = state, currentToken == token {
+                state = .ready(value)
+            }
+            return value
+        } catch {
+            if case let .loading(currentToken, _) = state, currentToken == token {
+                state = .empty
+            }
+            throw error
+        }
     }
 }

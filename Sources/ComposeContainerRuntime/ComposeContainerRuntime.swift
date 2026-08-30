@@ -16,6 +16,7 @@
 
 import ComposeCore
 import ContainerAPIClient
+import ContainerCommands
 
 /// Wires Compose policy to the matched Apple container runtime stack.
 ///
@@ -57,8 +58,14 @@ public enum ComposeContainerRuntime {
         makeContainerClient: @escaping @Sendable () -> ContainerClient,
     ) -> ComposeOrchestratorDependencies {
         let invocationClients = InvocationScopedClientPool(create: makeContainerClient)
+        let containerSystemConfig = InvocationScopedAsyncValue {
+            try await Application.loadContainerSystemConfig()
+        }
         let provideClient: ContainerClientProvider = { invocationClients.control() }
         let makeSessionClient: ContainerClientProvider = { invocationClients.session() }
+        let provideContainerSystemConfig: ContainerSystemConfigProvider = {
+            try await containerSystemConfig.get()
+        }
         let resolvedDiscoveryClient = discoveryClient
             ?? ContainerDiscoveryAPIClient(containerClient: provideClient)
 
@@ -70,6 +77,7 @@ public enum ComposeContainerRuntime {
                 discoveryClient: resolvedDiscoveryClient,
                 controlClient: provideClient,
                 makeSessionClient: makeSessionClient,
+                containerSystemConfig: provideContainerSystemConfig,
             ),
             runtime: runtimeDependencies(
                 discoveryClient: resolvedDiscoveryClient,
@@ -84,6 +92,7 @@ public enum ComposeContainerRuntime {
         discoveryClient: ContainerDiscoveryAPIClienting,
         controlClient: @escaping ContainerClientProvider,
         makeSessionClient: @escaping ContainerClientProvider,
+        containerSystemConfig: @escaping ContainerSystemConfigProvider,
     ) -> ComposeOrchestratorCommandDependencies {
         ComposeOrchestratorCommandDependencies(
             archiveManager: ContainerArchiveManager(),
@@ -104,7 +113,11 @@ public enum ComposeContainerRuntime {
                 temporaryDirectory: options.temporaryDirectory,
                 containerClient: controlClient,
             ),
-            launchManager: ContainerCommandLaunchManager(),
+            launchManager: ContainerCommandLaunchManager(
+                containerSystemConfig: containerSystemConfig,
+                controlClient: controlClient,
+                makeSessionClient: makeSessionClient,
+            ),
             logManager: ContainerClientLogManager(
                 client: ContainerLogAPIClient(containerClient: controlClient),
                 followStateProvider: ContainerClientLogFollowStateProvider(

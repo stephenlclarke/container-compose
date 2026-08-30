@@ -55,6 +55,53 @@ struct InvocationScopedClientPoolTests {
     }
 
     @Test
+    func `concurrent asynchronous requests resolve one shared value`() async throws {
+        let constructions = Mutex(0)
+        let value = InvocationScopedAsyncValue {
+            constructions.withLock { $0 += 1 }
+            await Task.yield()
+            return UUID()
+        }
+
+        let values = try await withThrowingTaskGroup(of: UUID.self, returning: [UUID].self) { group in
+            for _ in 0 ..< 100 {
+                group.addTask { try await value.get() }
+            }
+            var values = [UUID]()
+            for try await resolved in group {
+                values.append(resolved)
+            }
+            return values
+        }
+
+        #expect(Set(values).count == 1)
+        #expect(constructions.withLock { $0 } == 1)
+    }
+
+    @Test
+    func `failed asynchronous resolution remains recoverable`() async throws {
+        struct ExpectedFailure: Error {}
+
+        let attempts = Mutex(0)
+        let value = InvocationScopedAsyncValue {
+            let attempt = attempts.withLock { value -> Int in
+                value += 1
+                return value
+            }
+            if attempt == 1 {
+                throw ExpectedFailure()
+            }
+            return 17
+        }
+
+        await #expect(throws: ExpectedFailure.self) {
+            try await value.get()
+        }
+        #expect(try await value.get() == 17)
+        #expect(attempts.withLock { $0 } == 2)
+    }
+
+    @Test
     func `dependency construction does not activate an XPC client`() {
         let constructions = Mutex(0)
 
