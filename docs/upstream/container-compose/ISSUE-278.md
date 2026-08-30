@@ -18,6 +18,11 @@ Compose has functional parity evidence, but runtime lifecycle work still pays av
 - Reject a loaded production Container launch agent before isolated timing so a
   crash loop cannot invoke Keychain, consume host resources, or contaminate the
   candidate/reference comparison.
+- Hold the host-wide runtime lock while quiescing and restoring cooperating
+  Compose and devcontainer release workers around the authoritative local
+  gate, while preserving the runner that owns a hosted job.
+- Atomically drain idle competing Actions runners before removal; leave active
+  runners untouched and fail closed when activity cannot be established.
 
 ## Acceptance evidence
 
@@ -36,6 +41,27 @@ Compose has functional parity evidence, but runtime lifecycle work still pays av
 - A quiet-host exact-release rerun records Docker/container-compose bridge-up
   medians of 0.137s/1.299s (9.46x, pass) and bridge-down medians of
   10.146s/5.803s (0.57x, pass), with raw TSV, JUnit, and fingerprints retained.
+- Focused release-policy and runtime-lock tests plus a live launchd exercise
+  prove that every installed cooperating worker is absent during the complete
+  locked window and is restored before the next gate acquires the lock; Colima
+  remains available as the Docker reference.
+- Focused assignment-race evidence proves GitHub activity is rechecked while
+  every visible member of the idle listener process group is observably
+  stopped, active work is never booted out, a failed local process snapshot is
+  treated as indeterminate, and every suspended runner is resumed on failure
+  or EXIT cleanup.
+- Focused launchd failure and recovery evidence proves an inspection error is
+  never treated as absence, crash-looping services do not satisfy restoration,
+  Actions recovery requires the exact registration to be online, and the
+  devcontainer engine must answer its public socket health endpoint.
+- Recovery enforces a configurable elapsed readiness deadline, bounds every
+  external probe and action by its remaining time, and performs at most one
+  restart of a live but definitively unready service after a bounded grace
+  period. A
+  replacement with no PID yet is allowed to start without repeated restart,
+  the original deadline and issued-action state are retained across an EXIT
+  retry, and follow-up termination signals cannot interrupt candidate cleanup
+  or host restoration once EXIT recovery begins.
 
 ## Remaining scope
 
@@ -56,6 +82,17 @@ the unchanged release artifacts on a quiet host produced the passing 9.46x
 result above. This is a measurement-integrity correction, not a timing waiver
 or a claim that dedicated-VM cold start is now comparable to Docker.
 
+A later complete 0.14.0 gate correctly stopped at 11.63x (1.511s candidate,
+0.130s Docker) with the same immutable release artifacts that passed at 9.46x.
+The local Compose and devcontainer self-hosted runner services plus the
+devcontainer engine were still loaded because the preflight covered only
+production Container agents. Pull request 339 closes that executable contract
+gap: a direct release owns the host-wide runtime lock while it temporarily
+atomically drains, unloads, and recoverably restores all three cooperating
+services; a hosted release preserves only its own runner. Active competing
+jobs are left untouched and make the gate fail closed. The failed raw sample
+remains retained and the 10x threshold remains unchanged.
+
 ## Related work
 
 This handoff records [issue 278](https://github.com/stephenlclarke/container-compose/issues/278). Its implementation dependencies are [Containerization pull request 37](https://github.com/stephenlclarke/containerization/pull/37), [builder-shim pull request 12](https://github.com/stephenlclarke/container-builder-shim/pull/12), and [Container pull request 142](https://github.com/stephenlclarke/container/pull/142). The Compose-owned client reuse is [pull request 327](https://github.com/stephenlclarke/container-compose/pull/327).
@@ -65,3 +102,6 @@ The later 0.14.0 optimization chain is listed in the
 Its live 28 August 2026 audit found no submitted Apple upstream PR containing a
 benchmarked Container, Containerization, builder-shim, or Compose optimization;
 the stock-Apple `upstream/pr-*` branches remain unsubmitted candidates.
+
+Release-host measurement integrity is continued by
+[pull request 339](https://github.com/stephenlclarke/container-compose/pull/339).

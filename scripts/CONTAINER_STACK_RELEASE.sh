@@ -23,6 +23,8 @@ readonly SELF_DIRECTORY
 readonly COMPOSE_PROMOTION_REVIEW_TOOL="${SELF_DIRECTORY}/../Tools/release/compose_promotion_review.py"
 readonly OCI_IMAGE_LAYOUT_VALIDATOR="${SELF_DIRECTORY}/../Tools/release/validate-oci-image-layout.py"
 readonly RELEASE_COMMAND_DEADLINE_RUNNER="${SELF_DIRECTORY}/../Tools/ci/run-command-with-deadline.py"
+# shellcheck disable=SC1091
+source "${SELF_DIRECTORY}/../Tools/ci/container-runtime-lock.sh"
 SCRIPT_NAME="$(basename "${SELF_PATH}")"
 readonly SCRIPT_NAME
 readonly SCRIPT_USAGE="scripts/${SCRIPT_NAME}"
@@ -144,6 +146,37 @@ Environment:
       Override the default 30-second bound for stopping the exact candidate
       runtime namespace during local release-gate cleanup.
 
+  CONTAINER_STACK_RELEASE_LAUNCHCTL
+      Override the system launchctl executable used by focused release
+      quiescence tests. Production releases use /bin/launchctl.
+
+  CONTAINER_STACK_RELEASE_PS
+  CONTAINER_STACK_RELEASE_KILL
+      Override the system process inspection and signalling executables used
+      by focused atomic runner-drain tests. Production releases use /bin/ps
+      and /bin/kill.
+
+  CONTAINER_STACK_RELEASE_QUIESCE_WAIT_ATTEMPTS
+  CONTAINER_STACK_RELEASE_QUIESCE_POLL_SECONDS
+      Override the default 30 one-second observations used while stopped
+      workers leave the performance host.
+
+  CONTAINER_STACK_RELEASE_RESTORE_WAIT_ATTEMPTS
+  CONTAINER_STACK_RELEASE_RESTORE_TIMEOUT_SECONDS
+  CONTAINER_STACK_RELEASE_RESTORE_POLL_SECONDS
+  CONTAINER_STACK_RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS
+      Override the default 60-observation, 60-second elapsed restoration
+      deadline and the default 10-observation grace before one restart of a
+      live but definitively unready service.
+
+  CONTAINER_STACK_RELEASE_DEVCONTAINER_CLI
+  CONTAINER_STACK_RELEASE_CURL
+  CONTAINER_STACK_RELEASE_GITHUB_CLI
+      Override the installed devcontainer and curl executables used to verify
+      the restored compatibility socket, or the GitHub CLI used to verify an
+      Actions runner registration. Production defaults are the first
+      devcontainer and gh on PATH plus /usr/bin/curl.
+
   CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE
       Absolute path to the retained OCI init-image archive used by the local
       release gate. Execute mode requires this hermetic bootstrap input so
@@ -212,6 +245,22 @@ STABLE_RELEASE_GATE_WAIT_SECONDS="${CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS:-10
 PROMOTION_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS:-3600}"
 PROMOTION_POLL_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS:-30}"
 CANDIDATE_STOP_TIMEOUT_SECONDS="${CONTAINER_STACK_RELEASE_CANDIDATE_STOP_TIMEOUT_SECONDS:-30}"
+RELEASE_LAUNCHCTL="${CONTAINER_STACK_RELEASE_LAUNCHCTL:-/bin/launchctl}"
+RELEASE_PS="${CONTAINER_STACK_RELEASE_PS:-/bin/ps}"
+RELEASE_KILL="${CONTAINER_STACK_RELEASE_KILL:-/bin/kill}"
+RELEASE_SUSPENDED_RUNNER_PGIDS=()
+RELEASE_QUIESCED_ACTION_STARTED=()
+RELEASE_QUIESCED_DEADLINES=()
+RELEASE_QUIESCED_RESTARTED_UNREADY=()
+RELEASE_QUIESCE_WAIT_ATTEMPTS="${CONTAINER_STACK_RELEASE_QUIESCE_WAIT_ATTEMPTS:-30}"
+RELEASE_QUIESCE_POLL_SECONDS="${CONTAINER_STACK_RELEASE_QUIESCE_POLL_SECONDS:-1}"
+RELEASE_RESTORE_WAIT_ATTEMPTS="${CONTAINER_STACK_RELEASE_RESTORE_WAIT_ATTEMPTS:-60}"
+RELEASE_RESTORE_TIMEOUT_SECONDS="${CONTAINER_STACK_RELEASE_RESTORE_TIMEOUT_SECONDS:-60}"
+RELEASE_RESTORE_POLL_SECONDS="${CONTAINER_STACK_RELEASE_RESTORE_POLL_SECONDS:-1}"
+RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS="${CONTAINER_STACK_RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS:-10}"
+RELEASE_DEVCONTAINER_CLI="${CONTAINER_STACK_RELEASE_DEVCONTAINER_CLI:-$(command -v devcontainer || true)}"
+RELEASE_CURL="${CONTAINER_STACK_RELEASE_CURL:-/usr/bin/curl}"
+RELEASE_GITHUB_CLI="${CONTAINER_STACK_RELEASE_GITHUB_CLI:-$(command -v gh || true)}"
 COMPOSE_MAIN_PROMOTION_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE:-pr}"
 COMPOSE_MAIN_MERGE_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE:-checked-admin}"
 RELEASE_INTENT="${CONTAINER_STACK_RELEASE_INTENT:-}"
@@ -979,6 +1028,799 @@ run_local_release_gate_command() {
   return "${child_status}"
 }
 
+# Identify the launch agent that owns the current hosted release job. Its
+# listener must remain alive long enough to report the job result; every other
+# cooperating Container-family worker is temporarily quiesced.
+current_release_runner_launch_agent_label() {
+  if [[ "${GITHUB_ACTIONS:-}" != "true" || -z "${GITHUB_REPOSITORY:-}" ||
+    -z "${RUNNER_NAME:-}" ]]; then
+    return 1
+  fi
+
+  printf 'actions.runner.%s.%s\n' \
+    "${GITHUB_REPOSITORY//\//-}" "${RUNNER_NAME}"
+}
+
+# Print loaded launch agents that can replace shared Container services or
+# start competing Container-family validation while timings are recorded.
+list_competing_release_launch_agents() {
+  local current_runner_label=""
+  local label=""
+  local services=""
+
+  if [[ ! -x "${RELEASE_LAUNCHCTL}" ]]; then
+    printf 'release launch-agent manager is not executable: %s\n' \
+      "${RELEASE_LAUNCHCTL}" >&2
+    return 2
+  fi
+  if ! services="$("${RELEASE_LAUNCHCTL}" list)"; then
+    printf 'failed to list launch agents with %s\n' "${RELEASE_LAUNCHCTL}" >&2
+    return 1
+  fi
+  current_runner_label="$(current_release_runner_launch_agent_label || true)"
+
+  while read -r _ _ label; do
+    case "${label}" in
+      homebrew.mxcl.devcontainer | \
+        actions.runner.*-devcontainer.* | \
+        actions.runner.*-container-compose.*)
+        if [[ "${label}" != "${current_runner_label}" ]]; then
+          printf '%s\n' "${label}"
+        fi
+        ;;
+    esac
+  done <<<"${services}"
+}
+
+# Return success when a competing Actions runner is already executing a job,
+# return one when it is idle, and fail closed for missing or ambiguous runner
+# registration. The release gate owns the runtime lock at this point, so
+# aborting for a busy runner lets that job finish without booting out its
+# launch agent; a second release gate waiting on the lock can then proceed.
+competing_release_runner_is_busy() {
+  local label="$1"
+  local owner=""
+  local repository=""
+  local repository_key=""
+  local runner_name=""
+  local runner_state=""
+
+  repository_key="${label#actions.runner.}"
+  runner_name="${repository_key#*.}"
+  repository_key="${repository_key%%.*}"
+  case "${repository_key}" in
+    *-container-compose)
+      owner="${repository_key%-container-compose}"
+      repository="container-compose"
+      ;;
+    *-devcontainer)
+      owner="${repository_key%-devcontainer}"
+      repository="devcontainer"
+      ;;
+    *)
+      printf 'cannot resolve competing release runner registration from launch-agent label: %s\n' \
+        "${label}" >&2
+      return 2
+      ;;
+  esac
+  if [[ -z "${owner}" || -z "${runner_name}" ||
+    ! "${owner}" =~ ^[A-Za-z0-9._-]+$ ||
+    ! "${runner_name}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    printf 'cannot resolve competing release runner identity from launch-agent label: %s\n' \
+      "${label}" >&2
+    return 2
+  fi
+
+  runner_state="$(github_cli api \
+    "repos/${owner}/${repository}/actions/runners?per_page=100" \
+    --jq "[.runners[] | select(.name == \"${runner_name}\")] | if length == 1 then .[0].busy elif length == 0 then \"missing\" else \"ambiguous\" end" \
+    2>/dev/null || true)"
+  case "${runner_state}" in
+    true)
+      return 0
+      ;;
+    false)
+      return 1
+      ;;
+    *)
+      printf 'cannot safely establish idle state for competing release runner %s: %s\n' \
+        "${label}" "${runner_state:-query failed}" >&2
+      return 2
+      ;;
+  esac
+}
+
+# Return success only when the exact Actions runner registration is online.
+# A loaded launchd job is not sufficient recovery evidence: a crash-looping or
+# disconnected listener can remain registered locally while being unusable.
+competing_release_runner_is_online() {
+  local label="$1"
+  local deadline="${2:-}"
+  local owner=""
+  local query_status=0
+  local repository=""
+  local repository_key=""
+  local runner_name=""
+  local runner_state=""
+
+  repository_key="${label#actions.runner.}"
+  runner_name="${repository_key#*.}"
+  repository_key="${repository_key%%.*}"
+  case "${repository_key}" in
+    *-container-compose)
+      owner="${repository_key%-container-compose}"
+      repository="container-compose"
+      ;;
+    *-devcontainer)
+      owner="${repository_key%-devcontainer}"
+      repository="devcontainer"
+      ;;
+    *)
+      printf 'cannot resolve release runner registration from launch-agent label: %s\n' \
+        "${label}" >&2
+      return 2
+      ;;
+  esac
+  if [[ -z "${owner}" || -z "${runner_name}" ||
+    ! "${owner}" =~ ^[A-Za-z0-9._-]+$ ||
+    ! "${runner_name}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    printf 'cannot resolve release runner identity from launch-agent label: %s\n' \
+      "${label}" >&2
+    return 2
+  fi
+
+  if [[ -n "${deadline}" ]]; then
+    if [[ -z "${RELEASE_GITHUB_CLI}" || ! -x "${RELEASE_GITHUB_CLI}" ]]; then
+      printf 'release GitHub CLI is not executable: %s\n' \
+        "${RELEASE_GITHUB_CLI:-missing}" >&2
+      return 2
+    fi
+    runner_state="$(release_command_with_restore_deadline "${deadline}" \
+      "${RELEASE_GITHUB_CLI}" api \
+      "repos/${owner}/${repository}/actions/runners?per_page=100" \
+      --jq "[.runners[] | select(.name == \"${runner_name}\")] | if length == 1 then .[0].status elif length == 0 then \"missing\" else \"ambiguous\" end" \
+      2>/dev/null)" || query_status=$?
+  else
+    runner_state="$(github_cli api \
+      "repos/${owner}/${repository}/actions/runners?per_page=100" \
+      --jq "[.runners[] | select(.name == \"${runner_name}\")] | if length == 1 then .[0].status elif length == 0 then \"missing\" else \"ambiguous\" end" \
+      2>/dev/null)" || query_status=$?
+  fi
+  if ((query_status != 0)); then
+    runner_state=""
+  fi
+  case "${runner_state}" in
+    online)
+      return 0
+      ;;
+    offline)
+      return 1
+      ;;
+    *)
+      printf 'cannot safely establish online state for restored release runner %s: %s\n' \
+        "${label}" "${runner_state:-query failed}" >&2
+      return 2
+      ;;
+  esac
+}
+
+# Print the process group that launchd owns for one runner service. Keeping the
+# complete group together lets the gate suspend the listener and any
+# just-spawned worker across the second activity observation.
+release_runner_service_process_group() {
+  local label="$1"
+  local launch_state=""
+  local pid=""
+  local process_group=""
+  local process_uid=""
+
+  if [[ ! -x "${RELEASE_PS}" || ! -x "${RELEASE_KILL}" ]]; then
+    printf 'release runner process tools are not executable: %s %s\n' \
+      "${RELEASE_PS}" "${RELEASE_KILL}" >&2
+    return 2
+  fi
+  launch_state="$("${RELEASE_LAUNCHCTL}" print "gui/$(id -u)/${label}" \
+    2>/dev/null || true)"
+  pid="$(awk '$1 == "pid" && $2 == "=" { print $3; exit }' \
+    <<<"${launch_state}")"
+  if ! [[ "${pid}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'cannot resolve launchd process for competing release runner: %s\n' \
+      "${label}" >&2
+    return 2
+  fi
+  process_uid="$("${RELEASE_PS}" -o uid= -p "${pid}" \
+    | awk '{$1=$1; print; exit}')"
+  process_group="$("${RELEASE_PS}" -o pgid= -p "${pid}" \
+    | awk '{$1=$1; print; exit}')"
+  if [[ "${process_uid}" != "$(id -u)" ||
+    ! "${process_group}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'cannot safely own competing release runner process group: %s pid=%s uid=%s pgid=%s\n' \
+      "${label}" "${pid}" "${process_uid:-missing}" \
+      "${process_group:-missing}" >&2
+    return 2
+  fi
+  printf '%s\n' "${process_group}"
+}
+
+# Return success when a Runner.Worker exists in the selected service process
+# group. This closes the local observation side of an assignment racing the
+# remote busy-state query.
+release_runner_process_group_has_worker() {
+  local process_group="$1"
+  local process_snapshot=""
+
+  if ! process_snapshot="$("${RELEASE_PS}" -axo pgid=,command=)"; then
+    printf 'cannot inspect competing release runner process group: %s\n' \
+      "${process_group}" >&2
+    return 2
+  fi
+  awk -v expected="${process_group}" '
+    $1 == expected && $2 ~ /\/bin\/Runner[.]Worker$/ { found = 1 }
+    END { exit(found ? 0 : 1) }
+  ' <<<"${process_snapshot}"
+}
+
+# Require every visible member of the selected runner process group to have
+# entered a stopped state. Sending SIGSTOP is asynchronous across CPUs; the
+# second remote/local activity observations are atomic only after this proof.
+# Return one while any member is still running and two when the snapshot is
+# unavailable or the process group has disappeared.
+release_runner_process_group_is_stopped() {
+  local process_group="$1"
+  local process_snapshot=""
+
+  if ! process_snapshot="$("${RELEASE_PS}" -axo pgid=,state=,command=)"; then
+    printf 'cannot inspect stopped competing release runner process group: %s\n' \
+      "${process_group}" >&2
+    return 2
+  fi
+  awk -v expected="${process_group}" '
+    $1 == expected {
+      found = 1
+      if ($2 !~ /^T/) running = 1
+    }
+    END {
+      if (!found) exit 2
+      exit(running ? 1 : 0)
+    }
+  ' <<<"${process_snapshot}"
+}
+
+# Print the whole seconds remaining before one restoration deadline. Each
+# external readiness probe is separately supervised with this remaining wall
+# clock so a stalled CLI cannot strand quiesced workers behind the runtime
+# lock. Return one after the deadline has elapsed.
+release_restore_remaining_seconds() {
+  local deadline="$1"
+  local remaining=$((deadline - SECONDS))
+
+  if ((remaining <= 0)); then
+    return 1
+  fi
+  printf '%s\n' "${remaining}"
+}
+
+# Run one external restoration probe under the process-group deadline helper.
+# Its detached cleanup also remains immune to repeated parent termination.
+release_command_with_restore_deadline() {
+  local deadline="$1"
+  local remaining=""
+  shift
+
+  remaining="$(release_restore_remaining_seconds "${deadline}")" || return 124
+  "${RELEASE_COMMAND_DEADLINE_RUNNER}" \
+    --seconds "${remaining}" --grace-seconds 0 --ignore-parent-signals -- "$@"
+}
+
+# Print one launch-agent row from a separately successful launchd snapshot.
+# Return one only when that successful snapshot proves absence, and two when
+# launchd state itself could not be inspected.
+release_launch_agent_snapshot_line() {
+  local label="$1"
+  local deadline="${2:-}"
+  local services=""
+  local service_line=""
+
+  if [[ -n "${deadline}" ]]; then
+    if ! services="$(release_command_with_restore_deadline "${deadline}" \
+      "${RELEASE_LAUNCHCTL}" list)"; then
+      printf 'cannot inspect release launch-agent state: %s\n' "${label}" >&2
+      return 2
+    fi
+  elif ! services="$("${RELEASE_LAUNCHCTL}" list)"; then
+    printf 'cannot inspect release launch-agent state: %s\n' "${label}" >&2
+    return 2
+  fi
+  service_line="$(awk -v expected="${label}" '$3 == expected { print; exit }' \
+    <<<"${services}")"
+  if [[ -z "${service_line}" ]]; then
+    return 1
+  fi
+  printf '%s\n' "${service_line}"
+}
+
+# Return success when a separately successful snapshot contains the service.
+release_launch_agent_is_loaded() {
+  release_launch_agent_snapshot_line "$1" "${2:-}" >/dev/null
+}
+
+# Require a live process from a successful launchd snapshot.
+release_launch_agent_has_live_process() {
+  local label="$1"
+  local deadline="${2:-}"
+  local service_line=""
+  local service_status=0
+  local service_pid=""
+
+  service_line="$(release_launch_agent_snapshot_line "${label}" "${deadline}")" || \
+    service_status=$?
+  if ((service_status != 0)); then
+    return "${service_status}"
+  fi
+  service_pid="$(awk '{ print $1; exit }' <<<"${service_line}")"
+  if ! [[ "${service_pid}" =~ ^[1-9][0-9]*$ ]]; then
+    return 1
+  fi
+  return 0
+}
+
+# Verify that the restored devcontainer engine serves its public Docker API.
+# The CLI owns configuration resolution and returns the exact endpoint without
+# requiring this release helper to parse user configuration or evaluate shell.
+release_devcontainer_engine_is_ready() {
+  local deadline="${1:-$((SECONDS + RELEASE_RESTORE_TIMEOUT_SECONDS))}"
+  local endpoint=""
+  local probe_status=0
+  local remaining=""
+  local response=""
+  local response_body=""
+  local response_status=""
+  local socket_path=""
+
+  if [[ -z "${RELEASE_DEVCONTAINER_CLI}" ||
+    ! -x "${RELEASE_DEVCONTAINER_CLI}" || ! -x "${RELEASE_CURL}" ]]; then
+    printf 'devcontainer readiness tools are not executable: %s %s\n' \
+      "${RELEASE_DEVCONTAINER_CLI:-missing}" "${RELEASE_CURL}" >&2
+    return 2
+  fi
+  endpoint="$(release_command_with_restore_deadline "${deadline}" \
+    "${RELEASE_DEVCONTAINER_CLI}" context --format value \
+    2>/dev/null)" || probe_status=$?
+  if ((probe_status != 0)); then
+    printf 'cannot resolve restored devcontainer endpoint\n' >&2
+    return 2
+  fi
+  socket_path="${endpoint#unix://}"
+  if [[ "${socket_path}" == "${endpoint}" || "${socket_path}" != /* ||
+    "${socket_path}" == *$'\n'* ]]; then
+    printf 'invalid restored devcontainer Unix endpoint: %s\n' \
+      "${endpoint}" >&2
+    return 2
+  fi
+  remaining="$(release_restore_remaining_seconds "${deadline}")" || return 2
+  probe_status=0
+  response="$(release_command_with_restore_deadline "${deadline}" \
+    "${RELEASE_CURL}" --unix-socket "${socket_path}" \
+    --max-time "${remaining}" --silent --show-error \
+    --write-out $'\n%{http_code}' http://localhost/_ping \
+    2>/dev/null)" || probe_status=$?
+  if ((probe_status == 124 || probe_status == 125)); then
+    return 2
+  fi
+  if ((probe_status != 0)); then
+    return 1
+  fi
+  response_status="${response##*$'\n'}"
+  response_body="${response%$'\n'*}"
+  [[ "${response_status}" == "200" && "${response_body}" == "OK" ]]
+}
+
+# Require a live launchd process and, for Actions services, an online exact
+# runner registration before restoration authority can be discarded.
+release_launch_agent_is_healthy() {
+  local label="$1"
+  local deadline="${2:-}"
+  local process_status=0
+
+  release_launch_agent_has_live_process "${label}" "${deadline}" || \
+    process_status=$?
+  if ((process_status != 0)); then
+    return "${process_status}"
+  fi
+  case "${label}" in
+    actions.runner.*)
+      competing_release_runner_is_online "${label}" "${deadline}"
+      ;;
+    homebrew.mxcl.devcontainer)
+      release_devcontainer_engine_is_ready "${deadline}"
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+# Resume runner groups recorded before SIGSTOP. A signal or failed activity
+# recheck must never strand an otherwise healthy listener in the stopped state.
+resume_suspended_release_runner_groups() {
+  local index=""
+  local process_group=""
+  local resume_status=0
+  local -a failed_groups=()
+
+  for ((index = ${#RELEASE_SUSPENDED_RUNNER_PGIDS[@]} - 1; index >= 0; index--)); do
+    process_group="${RELEASE_SUSPENDED_RUNNER_PGIDS[index]}"
+    if ! "${RELEASE_KILL}" -CONT "-${process_group}" 2>/dev/null; then
+      if "${RELEASE_KILL}" -0 "-${process_group}" 2>/dev/null; then
+        printf 'failed to resume competing release runner process group: %s\n' \
+          "${process_group}" >&2
+        failed_groups+=("${process_group}")
+        resume_status=1
+      fi
+    fi
+  done
+  RELEASE_SUSPENDED_RUNNER_PGIDS=("${failed_groups[@]}")
+  return "${resume_status}"
+}
+
+# Atomically drain an idle runner before launchctl removal. The first query
+# avoids suspending known active work. SIGSTOP then prevents the listener from
+# accepting a new assignment while both GitHub state and the local process
+# group are checked again. Return three for observed activity and two for an
+# indeterminate state.
+prepare_competing_release_runner_for_bootout() {
+  local attempt=0
+  local label="$1"
+  local process_group=""
+  local runner_status=0
+  local stopped_status=1
+  local worker_status=0
+
+  competing_release_runner_is_busy "${label}" || runner_status=$?
+  case "${runner_status}" in
+    0)
+      return 3
+      ;;
+    1)
+      ;;
+    *)
+      return 2
+      ;;
+  esac
+
+  process_group="$(release_runner_service_process_group "${label}")" || return 2
+  RELEASE_SUSPENDED_RUNNER_PGIDS+=("${process_group}")
+  if ! "${RELEASE_KILL}" -STOP "-${process_group}"; then
+    printf 'failed to suspend competing release runner process group: %s\n' \
+      "${process_group}" >&2
+    resume_suspended_release_runner_groups || true
+    return 2
+  fi
+
+  for ((attempt = 1; attempt <= RELEASE_QUIESCE_WAIT_ATTEMPTS; attempt++)); do
+    stopped_status=0
+    release_runner_process_group_is_stopped "${process_group}" || \
+      stopped_status=$?
+    if ((stopped_status == 0)); then
+      break
+    fi
+    if ((stopped_status == 2)); then
+      break
+    fi
+    if ((attempt < RELEASE_QUIESCE_WAIT_ATTEMPTS)); then
+      sleep "${RELEASE_QUIESCE_POLL_SECONDS}"
+    fi
+  done
+  if ((stopped_status != 0)); then
+    printf 'competing release runner process group did not stop: %s\n' \
+      "${process_group}" >&2
+    resume_suspended_release_runner_groups || true
+    return 2
+  fi
+
+  runner_status=0
+  competing_release_runner_is_busy "${label}" || runner_status=$?
+  worker_status=0
+  release_runner_process_group_has_worker "${process_group}" || worker_status=$?
+  if ((runner_status == 0 || worker_status == 0)); then
+    resume_suspended_release_runner_groups || true
+    return 3
+  fi
+  if ((runner_status != 1 || worker_status != 1)); then
+    resume_suspended_release_runner_groups || true
+    return 2
+  fi
+  return 0
+}
+
+# Restore only the launch agents this release invocation successfully stopped.
+restore_quiesced_release_launch_agents() {
+  local attempt=0
+  local deadline=0
+  local index=""
+  local label=""
+  local plist=""
+  local restore_status=0
+  local health_status=0
+  local loaded_status=0
+  local process_status=0
+  local restore_action_started=0
+  local restored=0
+  local restarted_unready_service=0
+  local sleep_seconds=0
+  local unready_live_attempts=0
+  local user_domain=""
+  local -a failed_action_started=()
+  local -a failed_deadlines=()
+  local -a failed_labels=()
+  local -a failed_plists=()
+  local -a failed_restarted_unready=()
+  user_domain="gui/$(id -u)"
+
+  if ! resume_suspended_release_runner_groups; then
+    restore_status=1
+  fi
+
+  for ((index = ${#RELEASE_QUIESCED_LABELS[@]} - 1; index >= 0; index--)); do
+    label="${RELEASE_QUIESCED_LABELS[index]}"
+    plist="${RELEASE_QUIESCED_PLISTS[index]}"
+    deadline="${RELEASE_QUIESCED_DEADLINES[index]:-}"
+    if ! [[ "${deadline}" =~ ^[1-9][0-9]*$ ]]; then
+      deadline=$((SECONDS + RELEASE_RESTORE_TIMEOUT_SECONDS))
+      RELEASE_QUIESCED_DEADLINES[index]="${deadline}"
+    fi
+    restore_action_started="${RELEASE_QUIESCED_ACTION_STARTED[index]:-0}"
+    if [[ "${restore_action_started}" != 0 && \
+      "${restore_action_started}" != 1 ]]; then
+      restore_action_started=0
+    fi
+    restored=0
+    restarted_unready_service="${RELEASE_QUIESCED_RESTARTED_UNREADY[index]:-0}"
+    if [[ "${restarted_unready_service}" != 0 && \
+      "${restarted_unready_service}" != 1 ]]; then
+      restarted_unready_service=0
+    fi
+    unready_live_attempts=0
+    for ((attempt = 1; attempt <= RELEASE_RESTORE_WAIT_ATTEMPTS; attempt++)); do
+      health_status=0
+      release_launch_agent_is_healthy "${label}" "${deadline}" || \
+        health_status=$?
+      if ((health_status == 0)); then
+        restored=1
+        break
+      fi
+      if ((health_status == 1)); then
+        process_status=0
+        release_launch_agent_has_live_process "${label}" "${deadline}" || \
+          process_status=$?
+        if ((process_status == 1 && restore_action_started == 0)); then
+          loaded_status=0
+          release_launch_agent_is_loaded "${label}" "${deadline}" || \
+            loaded_status=$?
+          case "${loaded_status}" in
+            0)
+              restore_action_started=1
+              RELEASE_QUIESCED_ACTION_STARTED[index]=1
+              release_command_with_restore_deadline "${deadline}" \
+                "${RELEASE_LAUNCHCTL}" kickstart -k \
+                "${user_domain}/${label}" >/dev/null 2>&1 || true
+              ;;
+            1)
+              restore_action_started=1
+              RELEASE_QUIESCED_ACTION_STARTED[index]=1
+              release_command_with_restore_deadline "${deadline}" \
+                "${RELEASE_LAUNCHCTL}" bootstrap "${user_domain}" "${plist}" \
+                >/dev/null 2>&1 || true
+              ;;
+            *)
+              ;;
+          esac
+        elif ((process_status == 0)); then
+          ((unready_live_attempts += 1))
+          if ((unready_live_attempts >= RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS &&
+            restarted_unready_service == 0)); then
+            restore_action_started=1
+            restarted_unready_service=1
+            RELEASE_QUIESCED_ACTION_STARTED[index]=1
+            RELEASE_QUIESCED_RESTARTED_UNREADY[index]=1
+            release_command_with_restore_deadline "${deadline}" \
+              "${RELEASE_LAUNCHCTL}" kickstart -k "${user_domain}/${label}" \
+              >/dev/null 2>&1 || true
+          fi
+        fi
+      fi
+      if ((attempt < RELEASE_RESTORE_WAIT_ATTEMPTS)); then
+        sleep_seconds="$(release_restore_remaining_seconds "${deadline}")" || \
+          break
+        if ((sleep_seconds > RELEASE_RESTORE_POLL_SECONDS)); then
+          sleep_seconds="${RELEASE_RESTORE_POLL_SECONDS}"
+        fi
+        sleep "${sleep_seconds}"
+      fi
+    done
+    if ((restored == 0)); then
+      printf 'failed to restore release launch agent %s from %s\n' \
+        "${label}" "${plist}" >&2
+      failed_labels+=("${label}")
+      failed_plists+=("${plist}")
+      failed_action_started+=("${restore_action_started}")
+      failed_deadlines+=("${deadline}")
+      failed_restarted_unready+=("${restarted_unready_service}")
+      restore_status=1
+    fi
+  done
+
+  RELEASE_QUIESCED_LABELS=("${failed_labels[@]}")
+  RELEASE_QUIESCED_PLISTS=("${failed_plists[@]}")
+  RELEASE_QUIESCED_ACTION_STARTED=("${failed_action_started[@]}")
+  RELEASE_QUIESCED_DEADLINES=("${failed_deadlines[@]}")
+  RELEASE_QUIESCED_RESTARTED_UNREADY=("${failed_restarted_unready[@]}")
+  return "${restore_status}"
+}
+
+# Restore the workers before releasing the host-wide runtime lock. A waiting
+# release gate must acquire the lock first and then quiesce the freshly restored
+# set for its own complete validation window.
+release_local_release_gate_host_state() {
+  # Cleanup owns the recovery authority and host-wide lock. Follow-up signals
+  # must not interrupt restoration and strand workers after that lock closes.
+  trap '' HUP INT QUIT TERM
+  if ! restore_quiesced_release_launch_agents; then
+    # Keep the lock while the EXIT trap retains restoration authority. A
+    # waiting gate must not enter its validation window between a failed
+    # explicit restore and the trap's final retry.
+    return 1
+  fi
+  release_container_runtime_lock
+}
+
+# Stop cooperating Container-family workers before an authoritative runtime or
+# parity gate. A hosted job retains only its own runner listener. The original
+# loaded set is restored by the caller's EXIT path even when validation fails.
+quiesce_local_release_workers() {
+  local attempt=0
+  local label=""
+  local listed_labels=""
+  local plist=""
+  local runner_status=0
+  local loaded_status=0
+  local user_domain=""
+  local -a labels=()
+  user_domain="gui/$(id -u)"
+
+  if ! [[ "${RELEASE_QUIESCE_WAIT_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'release quiescence wait attempts must be a positive integer: %s\n' \
+      "${RELEASE_QUIESCE_WAIT_ATTEMPTS}" >&2
+    return 2
+  fi
+  if ! [[ "${RELEASE_QUIESCE_POLL_SECONDS}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    printf 'release quiescence poll seconds must be non-negative: %s\n' \
+      "${RELEASE_QUIESCE_POLL_SECONDS}" >&2
+    return 2
+  fi
+  if ! [[ "${RELEASE_RESTORE_WAIT_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'release restoration wait attempts must be a positive integer: %s\n' \
+      "${RELEASE_RESTORE_WAIT_ATTEMPTS}" >&2
+    return 2
+  fi
+  if ! [[ "${RELEASE_RESTORE_TIMEOUT_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'release restoration timeout seconds must be a positive integer: %s\n' \
+      "${RELEASE_RESTORE_TIMEOUT_SECONDS}" >&2
+    return 2
+  fi
+  if ! [[ "${RELEASE_RESTORE_POLL_SECONDS}" =~ ^[0-9]+$ ]]; then
+    printf 'release restoration poll seconds must be a non-negative integer: %s\n' \
+      "${RELEASE_RESTORE_POLL_SECONDS}" >&2
+    return 2
+  fi
+  if ! [[ "${RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]] ||
+    ((RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS > RELEASE_RESTORE_WAIT_ATTEMPTS)); then
+    printf 'release restoration restart grace must be a positive integer no greater than the wait attempts: %s\n' \
+      "${RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS}" >&2
+    return 2
+  fi
+  if ! listed_labels="$(list_competing_release_launch_agents)"; then
+    return 1
+  fi
+  while IFS= read -r label; do
+    [[ -n "${label}" ]] && labels+=("${label}")
+  done <<<"${listed_labels}"
+
+  for label in "${labels[@]}"; do
+    if ! [[ "${label}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+      printf 'refusing unsafe release launch-agent label: %s\n' "${label}" >&2
+      restore_quiesced_release_launch_agents || true
+      return 1
+    fi
+    plist="${HOME}/Library/LaunchAgents/${label}.plist"
+    if [[ ! -f "${plist}" || -L "${plist}" || ! -O "${plist}" ]]; then
+      printf 'cannot recoverably quiesce %s; launch-agent plist is not a user-owned regular file: %s\n' \
+        "${label}" "${plist}" >&2
+      restore_quiesced_release_launch_agents || true
+      return 1
+    fi
+    case "${label}" in
+      actions.runner.*)
+        runner_status=0
+        prepare_competing_release_runner_for_bootout "${label}" || runner_status=$?
+        case "${runner_status}" in
+          0)
+            ;;
+          3)
+            printf 'refusing to interrupt active competing release runner: %s\n' \
+              "${label}" >&2
+            restore_quiesced_release_launch_agents || true
+            return 1
+            ;;
+          *)
+            restore_quiesced_release_launch_agents || true
+            return 1
+            ;;
+        esac
+        ;;
+    esac
+    # Record recovery authority before mutation so an asynchronous exit cannot
+    # strand a successfully booted-out worker in the instruction boundary.
+    RELEASE_QUIESCED_LABELS+=("${label}")
+    RELEASE_QUIESCED_PLISTS+=("${plist}")
+    RELEASE_QUIESCED_ACTION_STARTED+=(0)
+    RELEASE_QUIESCED_DEADLINES+=("")
+    RELEASE_QUIESCED_RESTARTED_UNREADY+=(0)
+    if ! "${RELEASE_LAUNCHCTL}" bootout "${user_domain}/${label}"; then
+      resume_suspended_release_runner_groups || true
+      loaded_status=0
+      release_launch_agent_is_loaded "${label}" || loaded_status=$?
+      if ((loaded_status != 1)); then
+        printf 'failed to quiesce or prove absence of competing release launch agent: %s\n' \
+          "${label}" >&2
+        restore_quiesced_release_launch_agents || true
+        return 1
+      fi
+    fi
+    if ! resume_suspended_release_runner_groups; then
+      restore_quiesced_release_launch_agents || true
+      return 1
+    fi
+  done
+
+  for ((attempt = 1; attempt <= RELEASE_QUIESCE_WAIT_ATTEMPTS; attempt++)); do
+    local workers_stopped=1
+    for label in "${RELEASE_QUIESCED_LABELS[@]}"; do
+      loaded_status=0
+      release_launch_agent_is_loaded "${label}" || loaded_status=$?
+      case "${loaded_status}" in
+        0)
+          workers_stopped=0
+          break
+          ;;
+        1)
+          ;;
+        *)
+          printf 'cannot safely verify release worker quiescence: %s\n' \
+            "${label}" >&2
+          restore_quiesced_release_launch_agents || true
+          return 1
+          ;;
+      esac
+    done
+    if ((workers_stopped)); then
+      if ((${#RELEASE_QUIESCED_LABELS[@]})); then
+        printf 'quiesced competing release workers: %s\n' \
+          "${RELEASE_QUIESCED_LABELS[*]}"
+      fi
+      return 0
+    fi
+    if ((attempt < RELEASE_QUIESCE_WAIT_ATTEMPTS)); then
+      sleep "${RELEASE_QUIESCE_POLL_SECONDS}"
+    fi
+  done
+
+  printf '%s\n' \
+    'competing Container-family workers did not quiesce' >&2
+  restore_quiesced_release_launch_agents || true
+  return 1
+}
+
 # Resolve retained evidence before it is also used as an absolute build/log
 # scratch root. Relative values are Compose-checkout-relative, matching the
 # documented .build/... form, and symlinks cannot smuggle the root directory
@@ -1004,6 +1846,12 @@ run_local_release_gate() {
   (
   local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive
   local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest
+  local -a RELEASE_QUIESCED_LABELS=()
+  local -a RELEASE_QUIESCED_PLISTS=()
+  local -a RELEASE_QUIESCED_ACTION_STARTED=()
+  local -a RELEASE_QUIESCED_DEADLINES=()
+  local -a RELEASE_QUIESCED_RESTARTED_UNREADY=()
+  local -a RELEASE_SUSPENDED_RUNNER_PGIDS=()
   path="$(repo_path "${COMPOSE_REPO}")"
   container_path="$(repo_path "${CONTAINER_REPO}")"
   containerization_path="$(repo_path "containerization")"
@@ -1014,6 +1862,14 @@ run_local_release_gate() {
 
   print_header "run local release gate"
   require_local_virtualization
+  if [[ "${EXECUTE}" == "1" ]]; then
+    trap release_local_release_gate_host_state EXIT
+    acquire_container_runtime_lock
+    quiesce_local_release_workers
+  else
+    printf '%s\n' \
+      'would quiesce and restore competing Container-family release workers'
+  fi
   for repository in "${path}" \
     "$(repo_path "container-builder-shim")" \
     "$(repo_path "containerization")" \
@@ -1066,12 +1922,20 @@ PY
   # shellcheck disable=SC2329
   cleanup_local_release_gate_roots() {
     local trapped_status=$?
+    # This EXIT handler owns candidate cleanup, worker restoration, and the
+    # host lock. Follow-up signals must not split that recovery sequence before
+    # worker restoration begins.
+    trap '' HUP INT QUIT TERM
+    local cleanup_status="${trapped_status}"
     if ! cleanup_local_release_gate_resources "${container_binary:-}" \
       "${runtime_parent:-}" "${runtime_app_root:-}" \
       "${runtime_service_namespace:-}"; then
-      return 1
+      cleanup_status=1
     fi
-    return "${trapped_status}"
+    if ! release_local_release_gate_host_state; then
+      cleanup_status=1
+    fi
+    return "${cleanup_status}"
   }
   trap cleanup_local_release_gate_roots EXIT
   container_binary="${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container"
@@ -1136,7 +2000,11 @@ PY
   runtime_app_root=""
   runtime_service_namespace=""
   CONTAINER_RUNTIME_CANDIDATE_ROOT=""
-  trap - EXIT
+  if release_local_release_gate_host_state; then
+    trap - EXIT
+  else
+    status=1
+  fi
   return "${status}"
   )
 }

@@ -2266,6 +2266,1093 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("sysctl -n kern.hv_support", self.script)
         self.assertIn("kern.hv_support=1", self.script)
 
+    def test_local_release_gate_holds_runtime_lock_across_quiescence(self) -> None:
+        local_gate = self.script[
+            self.script.index("run_local_release_gate() {") : self.script.index(
+                "# Verify that Apple remotes cannot be pushed"
+            )
+        ]
+        host_release = self.script[
+            self.script.index("release_local_release_gate_host_state() {") : self.script.index(
+                "# Stop cooperating Container-family workers"
+            )
+        ]
+
+        self.assertLess(
+            local_gate.index("acquire_container_runtime_lock"),
+            local_gate.index("quiesce_local_release_workers"),
+        )
+        self.assertLess(
+            local_gate.index("quiesce_local_release_workers"),
+            local_gate.index('run_local_release_gate_command env'),
+        )
+        self.assertIn("release_local_release_gate_host_state", local_gate)
+        self.assertLess(
+            host_release.index("restore_quiesced_release_launch_agents"),
+            host_release.index("release_container_runtime_lock"),
+        )
+        cleanup = local_gate[
+            local_gate.index("cleanup_local_release_gate_roots() {") : local_gate.index(
+                "trap cleanup_local_release_gate_roots EXIT"
+            )
+        ]
+        self.assertLess(
+            cleanup.index("trap '' HUP INT QUIT TERM"),
+            cleanup.index("cleanup_local_release_gate_resources"),
+        )
+
+    def test_local_release_gate_retains_runtime_lock_until_restore_retry_succeeds(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            label = "homebrew.mxcl.devcontainer"
+            plist = root / f"{label}.plist"
+            plist.write_text("fixture\n", encoding="utf-8")
+            state = root / "loaded"
+            attempts = root / "attempts"
+            attempts.write_text("0\n", encoding="utf-8")
+            list_attempts = root / "list-attempts"
+            list_attempts.write_text("0\n", encoding="utf-8")
+            log = root / "launchctl.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  list)
+    list_attempt="$(( $(cat "${FAKE_LAUNCHCTL_LIST_ATTEMPTS:?}") + 1 ))"
+    printf '%s\n' "${list_attempt}" > "${FAKE_LAUNCHCTL_LIST_ATTEMPTS}"
+    if [[ -s "${FAKE_LAUNCHCTL_STATE:?}" ]] && ((list_attempt >= 4)); then
+      awk '{ print "123 0 " $0 }' "${FAKE_LAUNCHCTL_STATE}"
+    fi
+    ;;
+  bootstrap)
+    label="$(basename "${3}" .plist)"
+    attempt="$(( $(cat "${FAKE_LAUNCHCTL_ATTEMPTS:?}") + 1 ))"
+    printf '%s\n' "${attempt}" > "${FAKE_LAUNCHCTL_ATTEMPTS}"
+    printf 'bootstrap %s %s\n' "${label}" "${attempt}" >> "${FAKE_LAUNCHCTL_LOG:?}"
+    printf '%s\n' "${label}" > "${FAKE_LAUNCHCTL_STATE}"
+    ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "if release_local_release_gate_host_state; then exit 99; fi\n"
+                "if grep -q '^release$' \"${FAKE_LAUNCHCTL_LOG}\"; then exit 98; fi\n"
+                "release_local_release_gate_host_state",
+                shell_setup=(
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    f"RELEASE_QUIESCED_LABELS=({shlex.quote(label)})\n"
+                    f"RELEASE_QUIESCED_PLISTS=({shlex.quote(str(plist))})\n"
+                    "RELEASE_RESTORE_WAIT_ATTEMPTS=1\n"
+                    "RELEASE_RESTORE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS=2\n"
+                    "sleep() { :; }\n"
+                    "release_devcontainer_engine_is_ready() { return 0; }\n"
+                    "release_container_runtime_lock() { "
+                    "printf 'release\\n' >> \"${FAKE_LAUNCHCTL_LOG}\"; }\n"
+                    f"export FAKE_LAUNCHCTL_STATE={shlex.quote(str(state))}\n"
+                    f"export FAKE_LAUNCHCTL_ATTEMPTS={shlex.quote(str(attempts))}\n"
+                    f"export FAKE_LAUNCHCTL_LIST_ATTEMPTS={shlex.quote(str(list_attempts))}\n"
+                    f"export FAKE_LAUNCHCTL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(),
+                [
+                    f"bootstrap {label} 1",
+                    "release",
+                ],
+            )
+
+    def test_restore_retry_reuses_the_original_elapsed_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            label = "homebrew.mxcl.devcontainer"
+            plist = root / f"{label}.plist"
+            plist.write_text("fixture\n", encoding="utf-8")
+            log = root / "launchctl.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf 'list\n' >> "${FAKE_LAUNCHCTL_LOG:?}"
+sleep 5
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            started = time.monotonic()
+            result = self.run_release_function(
+                root,
+                "if release_local_release_gate_host_state; then exit 99; fi\n"
+                "first_count=\"$(wc -l < \"${FAKE_LAUNCHCTL_LOG}\")\"\n"
+                "if release_local_release_gate_host_state; then exit 98; fi\n"
+                "second_count=\"$(wc -l < \"${FAKE_LAUNCHCTL_LOG}\")\"\n"
+                "test \"$second_count\" -eq \"$first_count\"\n"
+                "test ${#RELEASE_QUIESCED_DEADLINES[@]} -eq 1\n"
+                "test ${RELEASE_QUIESCED_DEADLINES[0]} -le $SECONDS",
+                shell_setup=(
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    f"RELEASE_QUIESCED_LABELS=({shlex.quote(label)})\n"
+                    f"RELEASE_QUIESCED_PLISTS=({shlex.quote(str(plist))})\n"
+                    "RELEASE_QUIESCED_DEADLINES=()\n"
+                    "RELEASE_SUSPENDED_RUNNER_PGIDS=()\n"
+                    "RELEASE_RESTORE_WAIT_ATTEMPTS=2\n"
+                    "RELEASE_RESTORE_TIMEOUT_SECONDS=1\n"
+                    "RELEASE_RESTORE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS=1\n"
+                    "release_container_runtime_lock() {\n"
+                    "  printf 'released\\n' >> \"${FAKE_LAUNCHCTL_LOG:?}\"\n"
+                    "}\n"
+                    f"export FAKE_LAUNCHCTL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+            elapsed = time.monotonic() - started
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(log.read_text(encoding="utf-8"), "list\n")
+            self.assertLess(elapsed, 4.0)
+
+    def test_local_release_gate_fails_closed_when_bootout_inspection_fails(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            launch_agents = home / "Library" / "LaunchAgents"
+            launch_agents.mkdir(parents=True)
+            label = "homebrew.mxcl.devcontainer"
+            (launch_agents / f"{label}.plist").write_text(
+                "fixture\n", encoding="utf-8"
+            )
+            list_attempts = root / "list-attempts"
+            list_attempts.write_text("0\n", encoding="utf-8")
+            log = root / "launchctl.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  list)
+    attempt="$(( $(cat "${FAKE_LIST_ATTEMPTS:?}") + 1 ))"
+    printf '%s\n' "${attempt}" > "${FAKE_LIST_ATTEMPTS}"
+    if ((attempt == 1)); then
+      printf '123 0 %s\n' "${FAKE_LABEL:?}"
+    else
+      exit 2
+    fi
+    ;;
+  bootout)
+    printf 'bootout %s\n' "${2##*/}" >> "${FAKE_LAUNCHCTL_LOG:?}"
+    exit 2
+    ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "if quiesce_local_release_workers; then exit 99; fi",
+                shell_setup=(
+                    f"HOME={shlex.quote(str(home))}\n"
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    "RELEASE_QUIESCED_LABELS=()\n"
+                    "RELEASE_QUIESCED_PLISTS=()\n"
+                    "RELEASE_SUSPENDED_RUNNER_PGIDS=()\n"
+                    "RELEASE_QUIESCE_WAIT_ATTEMPTS=1\n"
+                    "RELEASE_QUIESCE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_WAIT_ATTEMPTS=1\n"
+                    "RELEASE_RESTORE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS=1\n"
+                    f"export FAKE_LABEL={shlex.quote(label)}\n"
+                    f"export FAKE_LIST_ATTEMPTS={shlex.quote(str(list_attempts))}\n"
+                    f"export FAKE_LAUNCHCTL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(
+                "failed to quiesce or prove absence",
+                result.stderr,
+            )
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(),
+                [f"bootout {label}"],
+            )
+
+    def test_restore_requires_a_live_launch_agent_process(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            label = "homebrew.mxcl.devcontainer"
+            plist = root / f"{label}.plist"
+            plist.write_text("fixture\n", encoding="utf-8")
+            log = root / "launchctl.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  list) printf -- '- 0 %s\n' "${FAKE_LABEL:?}" ;;
+  kickstart) printf 'kickstart %s\n' "${3##*/}" >> "${FAKE_LAUNCHCTL_LOG:?}" ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "for attempt in 1 2; do "
+                "restore_status=0; restore_quiesced_release_launch_agents "
+                "|| restore_status=$?; "
+                "test $restore_status -eq 1; done; "
+                "test ${#RELEASE_QUIESCED_LABELS[@]} -eq 1",
+                shell_setup=(
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    f"RELEASE_QUIESCED_LABELS=({shlex.quote(label)})\n"
+                    f"RELEASE_QUIESCED_PLISTS=({shlex.quote(str(plist))})\n"
+                    "RELEASE_QUIESCED_ACTION_STARTED=()\n"
+                    "RELEASE_QUIESCED_RESTARTED_UNREADY=()\n"
+                    "RELEASE_SUSPENDED_RUNNER_PGIDS=()\n"
+                    "RELEASE_RESTORE_WAIT_ATTEMPTS=3\n"
+                    "RELEASE_RESTORE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS=1\n"
+                    "sleep() { :; }\n"
+                    f"export FAKE_LABEL={shlex.quote(label)}\n"
+                    f"export FAKE_LAUNCHCTL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("failed to restore release launch agent", result.stderr)
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(),
+                [f"kickstart {label}"],
+            )
+
+    def test_runner_restore_requires_online_registration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            label = "actions.runner.owner-container-compose.release-host"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == list ]]; then
+  printf '123 0 %s\n' "${FAKE_LABEL:?}"
+  exit 0
+fi
+exit 2
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                f"if release_launch_agent_is_healthy {shlex.quote(label)}; "
+                "then exit 99; fi",
+                shell_setup=(
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    "competing_release_runner_is_online() { return 1; }\n"
+                    f"export FAKE_LABEL={shlex.quote(label)}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_runner_restore_does_not_restart_live_process_on_query_failure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            label = "actions.runner.owner-container-compose.release-host"
+            plist = root / f"{label}.plist"
+            plist.write_text("fixture\n", encoding="utf-8")
+            log = root / "launchctl.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  list) printf '123 0 %s\n' "${FAKE_LABEL:?}" ;;
+  kickstart) printf 'kickstart\n' >> "${FAKE_LAUNCHCTL_LOG:?}" ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "restore_status=0; restore_quiesced_release_launch_agents "
+                "|| restore_status=$?; test $restore_status -eq 1; "
+                "test ${#RELEASE_QUIESCED_LABELS[@]} -eq 1",
+                shell_setup=(
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    f"RELEASE_QUIESCED_LABELS=({shlex.quote(label)})\n"
+                    f"RELEASE_QUIESCED_PLISTS=({shlex.quote(str(plist))})\n"
+                    "RELEASE_SUSPENDED_RUNNER_PGIDS=()\n"
+                    "RELEASE_RESTORE_WAIT_ATTEMPTS=3\n"
+                    "RELEASE_RESTORE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS=2\n"
+                    "sleep() { :; }\n"
+                    "competing_release_runner_is_online() { return 2; }\n"
+                    f"export FAKE_LABEL={shlex.quote(label)}\n"
+                    f"export FAKE_LAUNCHCTL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse(
+                log.exists(),
+                "indeterminate state must not restart a live runner",
+            )
+
+    def test_devcontainer_restore_requires_a_responsive_public_socket(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            calls = root / "curl.log"
+            response = root / "curl.response"
+            response.write_text("OK\n200", encoding="utf-8")
+            devcontainer = root / "devcontainer"
+            devcontainer.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+[[ "$*" == 'context --format value' ]]
+printf 'unix:///tmp/devcontainer-test/docker.sock\n'
+""",
+                encoding="utf-8",
+            )
+            devcontainer.chmod(0o755)
+            curl = root / "curl"
+            curl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" > "${FAKE_CURL_LOG:?}"
+cat "${FAKE_CURL_RESPONSE:?}"
+""",
+                encoding="utf-8",
+            )
+            curl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "release_devcontainer_engine_is_ready",
+                shell_setup=(
+                    f"RELEASE_DEVCONTAINER_CLI={shlex.quote(str(devcontainer))}\n"
+                    f"RELEASE_CURL={shlex.quote(str(curl))}\n"
+                    f"export FAKE_CURL_LOG={shlex.quote(str(calls))}\n"
+                    f"export FAKE_CURL_RESPONSE={shlex.quote(str(response))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            curl_call = calls.read_text(encoding="utf-8")
+            self.assertIn("--unix-socket /tmp/devcontainer-test/docker.sock", curl_call)
+            self.assertIn("http://localhost/_ping", curl_call)
+
+            response.write_text("Unavailable\n503", encoding="utf-8")
+            failed = self.run_release_function(
+                root,
+                "release_devcontainer_engine_is_ready",
+                shell_setup=(
+                    f"RELEASE_DEVCONTAINER_CLI={shlex.quote(str(devcontainer))}\n"
+                    f"RELEASE_CURL={shlex.quote(str(curl))}\n"
+                    f"export FAKE_CURL_LOG={shlex.quote(str(calls))}\n"
+                    f"export FAKE_CURL_RESPONSE={shlex.quote(str(response))}"
+                ),
+            )
+            self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+
+    def test_runner_restore_restarts_once_after_offline_grace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            label = "actions.runner.owner-container-compose.release-host"
+            plist = root / f"{label}.plist"
+            plist.write_text("fixture\n", encoding="utf-8")
+            log = root / "launchctl.log"
+            observations = root / "observations"
+            observations.write_text("0\n", encoding="utf-8")
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  list)
+    if [[ -s "${FAKE_LAUNCHCTL_LOG:?}" ]]; then
+      printf '%s\n' "- 0 ${FAKE_LABEL:?}"
+    else
+      printf '123 0 %s\n' "${FAKE_LABEL:?}"
+    fi
+    ;;
+  kickstart) printf 'kickstart %s\n' "${3##*/}" >> "${FAKE_LAUNCHCTL_LOG:?}" ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "restore_status=0; restore_quiesced_release_launch_agents "
+                "|| restore_status=$?; test $restore_status -eq 1; "
+                "test ${#RELEASE_QUIESCED_LABELS[@]} -eq 1",
+                shell_setup=(
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    f"RELEASE_QUIESCED_LABELS=({shlex.quote(label)})\n"
+                    f"RELEASE_QUIESCED_PLISTS=({shlex.quote(str(plist))})\n"
+                    "RELEASE_SUSPENDED_RUNNER_PGIDS=()\n"
+                    "RELEASE_RESTORE_WAIT_ATTEMPTS=4\n"
+                    "RELEASE_RESTORE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS=2\n"
+                    "sleep() { :; }\n"
+                    "competing_release_runner_is_online() {\n"
+                    "  count=$(( $(cat \"${FAKE_OBSERVATIONS:?}\") + 1 ))\n"
+                    "  printf '%s\\n' \"$count\" > \"${FAKE_OBSERVATIONS}\"\n"
+                    "  return 1\n"
+                    "}\n"
+                    f"export FAKE_LABEL={shlex.quote(label)}\n"
+                    f"export FAKE_LAUNCHCTL_LOG={shlex.quote(str(log))}\n"
+                    f"export FAKE_OBSERVATIONS={shlex.quote(str(observations))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(),
+                [f"kickstart {label}"],
+            )
+            self.assertEqual(observations.read_text(encoding="utf-8"), "2\n")
+
+    def test_runner_restore_retry_retains_the_used_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            label = "actions.runner.owner-container-compose.release-host"
+            plist = root / f"{label}.plist"
+            plist.write_text("fixture\n", encoding="utf-8")
+            log = root / "launchctl.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  list) printf '123 0 %s\n' "${FAKE_LABEL:?}" ;;
+  kickstart) printf 'kickstart %s\n' "${3##*/}" >> "${FAKE_LAUNCHCTL_LOG:?}" ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "for attempt in 1 2; do "
+                "restore_status=0; restore_quiesced_release_launch_agents "
+                "|| restore_status=$?; test $restore_status -eq 1; done; "
+                "test ${RELEASE_QUIESCED_ACTION_STARTED[0]} -eq 1; "
+                "test ${RELEASE_QUIESCED_RESTARTED_UNREADY[0]} -eq 1",
+                shell_setup=(
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    f"RELEASE_QUIESCED_LABELS=({shlex.quote(label)})\n"
+                    f"RELEASE_QUIESCED_PLISTS=({shlex.quote(str(plist))})\n"
+                    "RELEASE_QUIESCED_ACTION_STARTED=()\n"
+                    "RELEASE_QUIESCED_DEADLINES=()\n"
+                    "RELEASE_QUIESCED_RESTARTED_UNREADY=()\n"
+                    "RELEASE_SUSPENDED_RUNNER_PGIDS=()\n"
+                    "RELEASE_RESTORE_WAIT_ATTEMPTS=1\n"
+                    "RELEASE_RESTORE_TIMEOUT_SECONDS=60\n"
+                    "RELEASE_RESTORE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS=1\n"
+                    "competing_release_runner_is_online() { return 1; }\n"
+                    f"export FAKE_LABEL={shlex.quote(label)}\n"
+                    f"export FAKE_LAUNCHCTL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(),
+                [f"kickstart {label}"],
+            )
+
+    def test_devcontainer_restore_probe_has_an_elapsed_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            devcontainer = root / "devcontainer"
+            devcontainer.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+sleep 5
+printf 'unix:///tmp/late/docker.sock\n'
+""",
+                encoding="utf-8",
+            )
+            devcontainer.chmod(0o755)
+
+            started = time.monotonic()
+            result = self.run_release_function(
+                root,
+                "probe_status=0; "
+                "release_devcontainer_engine_is_ready $((SECONDS + 1)) "
+                "|| probe_status=$?; test $probe_status -eq 2",
+                shell_setup=(
+                    f"RELEASE_DEVCONTAINER_CLI={shlex.quote(str(devcontainer))}\n"
+                    "RELEASE_CURL=/usr/bin/curl"
+                ),
+            )
+            elapsed = time.monotonic() - started
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertLess(elapsed, 4.0)
+            self.assertIn(
+                "cannot resolve restored devcontainer endpoint",
+                result.stderr,
+            )
+
+    def test_runner_restore_query_has_an_elapsed_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            calls = root / "gh.log"
+            github = root / "gh"
+            github.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" > "${FAKE_GH_LOG:?}"
+if [[ "${FAKE_GH_SLOW:-0}" == 1 ]]; then
+  sleep 5
+fi
+printf 'online\n'
+""",
+                encoding="utf-8",
+            )
+            github.chmod(0o755)
+            label = "actions.runner.owner-container-compose.release-host"
+
+            healthy = self.run_release_function(
+                root,
+                f"competing_release_runner_is_online {shlex.quote(label)} "
+                "$((SECONDS + 5))",
+                shell_setup=(
+                    f"RELEASE_GITHUB_CLI={shlex.quote(str(github))}\n"
+                    f"export FAKE_GH_LOG={shlex.quote(str(calls))}"
+                ),
+            )
+            self.assertEqual(healthy.returncode, 0, healthy.stdout + healthy.stderr)
+            self.assertIn(
+                "repos/owner/container-compose/actions/runners?per_page=100",
+                calls.read_text(encoding="utf-8"),
+            )
+
+            started = time.monotonic()
+            expired = self.run_release_function(
+                root,
+                "probe_status=0; "
+                f"competing_release_runner_is_online {shlex.quote(label)} "
+                "$((SECONDS + 1)) || probe_status=$?; test $probe_status -eq 2",
+                shell_setup=(
+                    f"RELEASE_GITHUB_CLI={shlex.quote(str(github))}\n"
+                    "export FAKE_GH_SLOW=1\n"
+                    f"export FAKE_GH_LOG={shlex.quote(str(calls))}"
+                ),
+            )
+            elapsed = time.monotonic() - started
+            self.assertEqual(expired.returncode, 0, expired.stdout + expired.stderr)
+            self.assertLess(elapsed, 4.0)
+
+    def test_host_state_restoration_ignores_follow_up_termination(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "cleanup.log"
+
+            result = self.run_release_function(
+                root,
+                "release_local_release_gate_host_state; printf 'survived\\n'",
+                shell_setup=(
+                    "restore_quiesced_release_launch_agents() {\n"
+                    "  kill -TERM $$\n"
+                    "  printf 'restored\\n' >> \"${FAKE_CLEANUP_LOG:?}\"\n"
+                    "}\n"
+                    "release_container_runtime_lock() {\n"
+                    "  printf 'released\\n' >> \"${FAKE_CLEANUP_LOG:?}\"\n"
+                    "}\n"
+                    f"export FAKE_CLEANUP_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("survived", result.stdout)
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(),
+                ["restored", "released"],
+            )
+
+    def test_local_release_gate_quiesces_and_restores_competing_workers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            launch_agents = home / "Library" / "LaunchAgents"
+            launch_agents.mkdir(parents=True)
+            labels = (
+                "homebrew.mxcl.devcontainer",
+                "actions.runner.owner-devcontainer.release-host",
+                "actions.runner.owner-container-compose.release-host",
+            )
+            for label in labels:
+                (launch_agents / f"{label}.plist").write_text(
+                    "fixture\n", encoding="utf-8"
+                )
+
+            state = root / "loaded"
+            state.write_text(
+                "\n".join((*labels, "com.example.unrelated")) + "\n",
+                encoding="utf-8",
+            )
+            log = root / "launchctl.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+state="${FAKE_LAUNCHCTL_STATE:?}"
+log="${FAKE_LAUNCHCTL_LOG:?}"
+case "${1:-}" in
+  list)
+    awk '{ print "123 0 " $0 }' "${state}"
+    ;;
+  print)
+    label="${2##*/}"
+    grep -Fxq "${label}" "${state}"
+    ;;
+  bootout)
+    label="${2##*/}"
+    printf 'bootout %s\n' "${label}" >> "${log}"
+    awk -v label="${label}" '$0 != label' "${state}" > "${state}.next"
+    mv "${state}.next" "${state}"
+    ;;
+  bootstrap)
+    label="$(basename "${3}" .plist)"
+    printf 'bootstrap %s\n' "${label}" >> "${log}"
+    printf '%s\n' "${label}" >> "${state}"
+    ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "quiesce_local_release_workers; "
+                "restore_quiesced_release_launch_agents",
+                shell_setup=(
+                    f"HOME={shlex.quote(str(home))}\n"
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    "RELEASE_QUIESCED_LABELS=()\n"
+                    "RELEASE_QUIESCED_PLISTS=()\n"
+                    "RELEASE_SUSPENDED_RUNNER_PGIDS=()\n"
+                    "RELEASE_QUIESCE_WAIT_ATTEMPTS=1\n"
+                    "RELEASE_QUIESCE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_WAIT_ATTEMPTS=3\n"
+                    "RELEASE_RESTORE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS=2\n"
+                    "prepare_competing_release_runner_for_bootout() { return 0; }\n"
+                    "competing_release_runner_is_online() { return 0; }\n"
+                    "release_devcontainer_engine_is_ready() { return 0; }\n"
+                    f"export FAKE_LAUNCHCTL_STATE={shlex.quote(str(state))}\n"
+                    f"export FAKE_LAUNCHCTL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            operations = log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(
+                operations,
+                [
+                    *(f"bootout {label}" for label in labels),
+                    *(f"bootstrap {label}" for label in reversed(labels)),
+                ],
+            )
+            self.assertEqual(
+                set(state.read_text(encoding="utf-8").splitlines()),
+                {*labels, "com.example.unrelated"},
+            )
+
+    def test_local_release_gate_keeps_its_current_hosted_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            launch_agents = home / "Library" / "LaunchAgents"
+            launch_agents.mkdir(parents=True)
+            current = "actions.runner.owner-container-compose.release-host"
+            competitor = "homebrew.mxcl.devcontainer"
+            (launch_agents / f"{competitor}.plist").write_text(
+                "fixture\n", encoding="utf-8"
+            )
+            state = root / "loaded"
+            state.write_text(f"{current}\n{competitor}\n", encoding="utf-8")
+            log = root / "launchctl.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  list) awk '{ print "123 0 " $0 }' "${FAKE_LAUNCHCTL_STATE:?}" ;;
+  print) grep -Fxq "${2##*/}" "${FAKE_LAUNCHCTL_STATE:?}" ;;
+  bootout)
+    label="${2##*/}"
+    printf 'bootout %s\n' "${label}" >> "${FAKE_LAUNCHCTL_LOG:?}"
+    awk -v label="${label}" '$0 != label' "${FAKE_LAUNCHCTL_STATE}" > "${FAKE_LAUNCHCTL_STATE}.next"
+    mv "${FAKE_LAUNCHCTL_STATE}.next" "${FAKE_LAUNCHCTL_STATE}"
+    ;;
+  bootstrap)
+    label="$(basename "${3}" .plist)"
+    printf 'bootstrap %s\n' "${label}" >> "${FAKE_LAUNCHCTL_LOG:?}"
+    printf '%s\n' "${label}" >> "${FAKE_LAUNCHCTL_STATE}"
+    ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "quiesce_local_release_workers; "
+                "restore_quiesced_release_launch_agents",
+                shell_setup=(
+                    f"HOME={shlex.quote(str(home))}\n"
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    "RELEASE_QUIESCE_WAIT_ATTEMPTS=1\n"
+                    "RELEASE_QUIESCE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_WAIT_ATTEMPTS=3\n"
+                    "RELEASE_RESTORE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS=2\n"
+                    "release_devcontainer_engine_is_ready() { return 0; }\n"
+                    "export GITHUB_ACTIONS=true\n"
+                    "export GITHUB_REPOSITORY=owner/container-compose\n"
+                    "export RUNNER_NAME=release-host\n"
+                    f"export FAKE_LAUNCHCTL_STATE={shlex.quote(str(state))}\n"
+                    f"export FAKE_LAUNCHCTL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            operations = log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(
+                operations,
+                [f"bootout {competitor}", f"bootstrap {competitor}"],
+            )
+            self.assertIn(current, state.read_text(encoding="utf-8").splitlines())
+
+    def test_local_release_gate_refuses_to_bootout_an_active_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            launch_agents = home / "Library" / "LaunchAgents"
+            launch_agents.mkdir(parents=True)
+            label = "actions.runner.owner-container-compose.release-host"
+            (launch_agents / f"{label}.plist").write_text(
+                "fixture\n", encoding="utf-8"
+            )
+            state = root / "loaded"
+            state.write_text(f"{label}\n", encoding="utf-8")
+            log = root / "launchctl.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  list) awk '{ print "123 0 " $0 }' "${FAKE_LAUNCHCTL_STATE:?}" ;;
+  print) grep -Fxq "${2##*/}" "${FAKE_LAUNCHCTL_STATE:?}" ;;
+  bootout) printf 'bootout %s\n' "${2##*/}" >> "${FAKE_LAUNCHCTL_LOG:?}" ;;
+  bootstrap) printf 'bootstrap %s\n' "$(basename "${3}" .plist)" >> "${FAKE_LAUNCHCTL_LOG:?}" ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "if quiesce_local_release_workers; then exit 99; fi",
+                shell_setup=(
+                    f"HOME={shlex.quote(str(home))}\n"
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    "RELEASE_QUIESCE_WAIT_ATTEMPTS=1\n"
+                    "RELEASE_QUIESCE_POLL_SECONDS=0\n"
+                    "prepare_competing_release_runner_for_bootout() { return 3; }\n"
+                    "RELEASE_QUIESCED_LABELS=()\n"
+                    "RELEASE_QUIESCED_PLISTS=()\n"
+                    "RELEASE_SUSPENDED_RUNNER_PGIDS=()\n"
+                    f"export FAKE_LAUNCHCTL_STATE={shlex.quote(str(state))}\n"
+                    f"export FAKE_LAUNCHCTL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("refusing to interrupt active", result.stderr)
+            self.assertFalse(log.exists(), "active runner must not be mutated")
+            self.assertEqual(state.read_text(encoding="utf-8"), f"{label}\n")
+
+    def test_competing_release_runner_activity_uses_exact_registration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            calls = root / "github-api.log"
+            label = "actions.runner.owner-container-compose.release-host"
+
+            result = self.run_release_function(
+                root,
+                f"competing_release_runner_is_busy {shlex.quote(label)}",
+                shell_setup=(
+                    "github_cli() {\n"
+                    "  printf '%s\\n' \"$*\" >> \"${FAKE_GITHUB_API_LOG:?}\"\n"
+                    "  printf 'true\\n'\n"
+                    "}\n"
+                    f"export FAKE_GITHUB_API_LOG={shlex.quote(str(calls))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(
+                "repos/owner/container-compose/actions/runners?per_page=100",
+                calls.read_text(encoding="utf-8"),
+            )
+
+    def test_runner_drain_rechecks_activity_while_listener_is_suspended(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "signals.log"
+            activity = root / "activity"
+            activity.write_text("0\n", encoding="utf-8")
+            stop_observations = root / "stop-observations"
+            stop_observations.write_text("0\n", encoding="utf-8")
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == print ]]; then
+  printf 'pid = 4242\n'
+  exit 0
+fi
+exit 2
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+            process_inspector = root / "ps"
+            process_inspector.write_text(
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  '-o uid= -p 4242') printf '%s\\n' '{os.getuid()}' ;;
+  '-o pgid= -p 4242') printf '4242\\n' ;;
+  '-axo pgid=,state=,command=')
+    count="$(( $(cat "${{FAKE_STOP_OBSERVATIONS:?}}") + 1 ))"
+    printf '%s\\n' "$count" > "${{FAKE_STOP_OBSERVATIONS}}"
+    if ((count == 1)); then
+      printf '4242 R /runner/bin/Runner.Listener run\\n'
+    else
+      printf '4242 T /runner/bin/Runner.Listener run\\n'
+    fi
+    ;;
+  '-axo pgid=,command=') printf '4242 /runner/bin/Runner.Listener run\\n' ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            process_inspector.chmod(0o755)
+            signaler = root / "kill"
+            signaler.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${FAKE_SIGNAL_LOG:?}"
+""",
+                encoding="utf-8",
+            )
+            signaler.chmod(0o755)
+            label = "actions.runner.owner-container-compose.release-host"
+
+            result = self.run_release_function(
+                root,
+                f"if prepare_competing_release_runner_for_bootout {shlex.quote(label)}; then exit 99; fi",
+                shell_setup=(
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    f"RELEASE_PS={shlex.quote(str(process_inspector))}\n"
+                    f"RELEASE_KILL={shlex.quote(str(signaler))}\n"
+                    "RELEASE_SUSPENDED_RUNNER_PGIDS=()\n"
+                    "RELEASE_QUIESCE_WAIT_ATTEMPTS=2\n"
+                    "RELEASE_QUIESCE_POLL_SECONDS=0\n"
+                    "competing_release_runner_is_busy() {\n"
+                    "  value=\"$(cat \"${FAKE_RUNNER_ACTIVITY:?}\")\"\n"
+                    "  printf '%s\\n' \"$((value + 1))\" > \"${FAKE_RUNNER_ACTIVITY}\"\n"
+                    "  ((value > 0))\n"
+                    "}\n"
+                    f"export FAKE_RUNNER_ACTIVITY={shlex.quote(str(activity))}\n"
+                    f"export FAKE_STOP_OBSERVATIONS={shlex.quote(str(stop_observations))}\n"
+                    f"export FAKE_SIGNAL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(),
+                ["-STOP -4242", "-CONT -4242"],
+            )
+            self.assertEqual(
+                stop_observations.read_text(encoding="utf-8"),
+                "2\n",
+            )
+
+    def test_runner_drain_fails_closed_when_process_inspection_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "signals.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == print ]]; then
+  printf 'pid = 4242\n'
+  exit 0
+fi
+exit 2
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+            process_inspector = root / "ps"
+            process_inspector.write_text(
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  '-o uid= -p 4242') printf '%s\n' '{os.getuid()}' ;;
+  '-o pgid= -p 4242') printf '4242\n' ;;
+  '-axo pgid=,state=,command=') printf '4242 T /runner/bin/Runner.Listener run\n' ;;
+  '-axo pgid=,command=') exit 2 ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            process_inspector.chmod(0o755)
+            signaler = root / "kill"
+            signaler.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${FAKE_SIGNAL_LOG:?}"
+""",
+                encoding="utf-8",
+            )
+            signaler.chmod(0o755)
+            label = "actions.runner.owner-container-compose.release-host"
+
+            result = self.run_release_function(
+                root,
+                "runner_status=0; "
+                f"prepare_competing_release_runner_for_bootout {shlex.quote(label)} "
+                "|| runner_status=$?; test $runner_status -eq 2",
+                shell_setup=(
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    f"RELEASE_PS={shlex.quote(str(process_inspector))}\n"
+                    f"RELEASE_KILL={shlex.quote(str(signaler))}\n"
+                    "RELEASE_SUSPENDED_RUNNER_PGIDS=()\n"
+                    "competing_release_runner_is_busy() { return 1; }\n"
+                    f"export FAKE_SIGNAL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(
+                "cannot inspect competing release runner process group: 4242",
+                result.stderr,
+            )
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(),
+                ["-STOP -4242", "-CONT -4242"],
+            )
+
+    def test_local_release_gate_rejects_a_worker_that_does_not_stop(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            launch_agents = home / "Library" / "LaunchAgents"
+            launch_agents.mkdir(parents=True)
+            label = "homebrew.mxcl.devcontainer"
+            (launch_agents / f"{label}.plist").write_text(
+                "fixture\n", encoding="utf-8"
+            )
+            state = root / "loaded"
+            state.write_text(f"{label}\n", encoding="utf-8")
+            log = root / "launchctl.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  list) awk '{ print "123 0 " $0 }' "${FAKE_LAUNCHCTL_STATE:?}" ;;
+  print) grep -Fxq "${2##*/}" "${FAKE_LAUNCHCTL_STATE:?}" ;;
+  bootout)
+    label="${2##*/}"
+    printf 'bootout %s\n' "${label}" >> "${FAKE_LAUNCHCTL_LOG:?}"
+    ;;
+  bootstrap)
+    label="$(basename "${3}" .plist)"
+    printf 'bootstrap %s\n' "${label}" >> "${FAKE_LAUNCHCTL_LOG:?}"
+    printf '%s\n' "${label}" >> "${FAKE_LAUNCHCTL_STATE:?}"
+    ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "if quiesce_local_release_workers; then exit 99; fi",
+                shell_setup=(
+                    f"HOME={shlex.quote(str(home))}\n"
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    "RELEASE_QUIESCE_WAIT_ATTEMPTS=1\n"
+                    "RELEASE_QUIESCE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_WAIT_ATTEMPTS=3\n"
+                    "RELEASE_RESTORE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS=2\n"
+                    "release_devcontainer_engine_is_ready() { return 0; }\n"
+                    f"export FAKE_LAUNCHCTL_STATE={shlex.quote(str(state))}\n"
+                    f"export FAKE_LAUNCHCTL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("did not quiesce", result.stderr)
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(),
+                [f"bootout {label}"],
+            )
+            self.assertEqual(state.read_text(encoding="utf-8"), f"{label}\n")
+
     def test_local_release_gate_keeps_llvm_profiles_out_of_source_checkouts(self) -> None:
         local_gate = self.script[
             self.script.index("run_local_release_gate() {") : self.script.index(
