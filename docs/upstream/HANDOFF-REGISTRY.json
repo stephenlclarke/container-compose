@@ -7169,6 +7169,23 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/335"
     },
     {
+      "id": "container-compose-338",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Validate parity with uncontended release artifacts",
+      "state": "active-draft",
+      "lastVerified": "2026-08-30",
+      "commits": [
+        "9f98055aa8d9c6e6d597b1ead65c855e1cd67266"
+      ],
+      "documents": [
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-278-release-runtime-candidate.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/338"
+    },
+    {
       "id": "container-compose-307",
       "owner": "stephenlclarke/container-compose",
       "title": "Accept redacted create logging options",

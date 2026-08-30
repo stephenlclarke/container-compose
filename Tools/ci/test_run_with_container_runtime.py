@@ -82,6 +82,7 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
             "CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS",
             "CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT",
             "CONTAINER_RUNTIME_LOCALIZE_APP_ROOT",
+            "CONTAINER_RUNTIME_LAUNCHCTL",
             "CONTAINER_RUNTIME_STAGE_CANDIDATE",
             "CONTAINER_RUNTIME_STAGED_CANDIDATE_ROOT",
             "CONTAINER_RUNTIME_PACKAGE_SHA256",
@@ -90,7 +91,71 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
         ):
             environment.pop(variable, None)
         environment["CONTAINER_RUNTIME_ALLOW_NON_MACHO_TEST_FIXTURES"] = "1"
+        environment["CONTAINER_RUNTIME_LAUNCHCTL"] = "/usr/bin/false"
         return environment
+
+    def test_rejects_loaded_production_container_launch_agent(self) -> None:
+        for loaded_label in (
+            "homebrew.mxcl.container",
+            "homebrew.mxcl.container-current",
+            "com.apple.container.apiserver",
+        ):
+            with (
+                self.subTest(loaded_label=loaded_label),
+                tempfile.TemporaryDirectory() as temporary_directory,
+            ):
+                temporary_root = Path(temporary_directory)
+                command_marker = temporary_root / "command-ran"
+                container_log = temporary_root / "container.log"
+                fake_container = temporary_root / "container-cli"
+                fake_launchctl = temporary_root / "launchctl"
+                self.write_fake_container(fake_container)
+                fake_launchctl.write_text(
+                    f"""#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == "print gui/{os.getuid()}/${{LOADED_LABEL:?}}" ]]; then
+  exit 0
+fi
+exit 113
+""",
+                    encoding="utf-8",
+                )
+                fake_launchctl.chmod(0o755)
+                environment = self.runtime_environment()
+                environment.update(
+                    {
+                        "CONTAINER_RUNTIME_APP_ROOT": str(
+                            temporary_root / "app-root"
+                        ),
+                        "CONTAINER_RUNTIME_LAUNCHCTL": str(fake_launchctl),
+                        "CONTAINER_TEST_LOG": str(container_log),
+                        "LOADED_LABEL": loaded_label,
+                    }
+                )
+
+                result = subprocess.run(
+                    [
+                        str(SCRIPT),
+                        str(fake_container),
+                        "/usr/bin/touch",
+                        str(command_marker),
+                    ],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                )
+
+                self.assertEqual(
+                    result.returncode, 2, result.stdout + result.stderr
+                )
+                self.assertIn(
+                    "competing production Container launch agent is loaded: "
+                    f"{loaded_label}",
+                    result.stderr,
+                )
+                self.assertFalse(container_log.exists())
+                self.assertFalse(command_marker.exists())
 
     def test_rejects_a_candidate_cli_that_does_not_match_its_pinned_digest(
         self,
