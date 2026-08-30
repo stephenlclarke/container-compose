@@ -702,8 +702,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('demo_session_root="/private/tmp/container-compose-current-demo"', workflow)
         self.assertIn(".container-compose-current-demo-root", workflow)
         self.assertIn("container-compose-current-demo-v1", workflow)
-        self.assertIn('"$(stat -f %u "${demo_session_root}")" != "$(id -u)"', workflow)
-        self.assertIn('"$(stat -f %Lp "${demo_session_root}")" != "700"', workflow)
+        self.assertIn(
+            '"$(/usr/bin/stat -f %u "${demo_session_root}")" != "$(id -u)"',
+            workflow,
+        )
+        self.assertIn(
+            '"$(/usr/bin/stat -f %Lp "${demo_session_root}")" != "700"',
+            workflow,
+        )
         self.assertNotIn("/tmp/cc-current-${GITHUB_RUN_ID}", workflow)
         self.assertIn(
             "python3 Tools/ci/run-command-with-deadline.py \\\n"
