@@ -13,6 +13,11 @@ Compose has functional parity evidence, but runtime lifecycle work still pays av
 - Continue tracking the separate Compose scaling gap where 10- and 50-service startup exceed the current Docker parity guard.
 - Reuse a bounded invocation lifetime for ordinary Container API control calls
   without coupling attach or exec session disconnects to that control lifetime.
+- Exercise both Compose and Container from signed release builds in the stable
+  parity gate instead of allowing either binary to fall back to a debug build.
+- Reject a loaded production Container launch agent before isolated timing so a
+  crash loop cannot invoke Keychain, consume host resources, or contaminate the
+  candidate/reference comparison.
 
 ## Acceptance evidence
 
@@ -28,6 +33,9 @@ Compose has functional parity evidence, but runtime lifecycle work still pays av
 - The exact matched-stack client-reuse benchmark retains functional parity and
   the diagnostic 10x guard without claiming a latency improvement from mixed
   timing results.
+- A quiet-host exact-release rerun records Docker/container-compose bridge-up
+  medians of 0.137s/1.299s (9.46x, pass) and bridge-down medians of
+  10.146s/5.803s (0.57x, pass), with raw TSV, JUnit, and fingerprints retained.
 
 ## Remaining scope
 
@@ -39,6 +47,14 @@ the 10- and 50-service startup medians regress by 10.0% and 13.2%. The change
 therefore makes no latency claim. Issue 278 remains open for Compose-owned
 profiling, explicit shared or dedicated VM isolation, pre-warming, and the
 other performance lanes in its public completion contract.
+
+The 0.14.0 release gate initially recorded a 10.62x bridge-up result while a
+loaded `container-current` apiserver was crash-looping every approximately ten
+seconds. Its launchd record showed 9,592 runs, and the loop repeatedly invoked
+Keychain authentication. Stopping those exact production agents and rerunning
+the unchanged release artifacts on a quiet host produced the passing 9.46x
+result above. This is a measurement-integrity correction, not a timing waiver
+or a claim that dedicated-VM cold start is now comparable to Docker.
 
 ## Related work
 

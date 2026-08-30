@@ -625,10 +625,10 @@ stage_container_runtime_candidate() {
 
   container_head="$(git -C "${container_path}" rev-parse --verify 'HEAD^{commit}')"
   artifact_parent="${evidence_root}/runtime-candidates"
-  artifact_root="${artifact_parent}/${container_head}-${signing_identity}"
-  archive="${artifact_root}/container-homebrew-debug-arm64.tar.gz"
+  artifact_root="${artifact_parent}/${container_head}-${signing_identity}-release"
+  archive="${artifact_root}/container-homebrew-release-arm64.tar.gz"
   marker="${artifact_root}/.container-compose-runtime-candidate-artifact"
-  expected_marker="container-compose runtime candidate artifact v2 ${container_head} ${signing_identity}"
+  expected_marker="container-compose runtime candidate artifact v3 release ${container_head} ${signing_identity}"
 
   mkdir -p "${artifact_parent}"
   if [[ -e "${artifact_root}" ]]; then
@@ -677,8 +677,9 @@ stage_container_runtime_candidate() {
     trap 'exit 131' QUIT
     trap 'exit 143' TERM
     trap 'cleanup_unpublished_runtime_candidate_build $?' EXIT
-    archive="${build_root}/container-homebrew-debug-arm64.tar.gz"
+    archive="${build_root}/container-homebrew-release-arm64.tar.gz"
     if ! make -C "${container_path}" homebrew-package \
+      "BUILD_CONFIGURATION=release" \
       "HOMEBREW_ARCHIVE=${archive}" \
       "CODESIGN_OPTS=--force --sign ${signing_identity} --timestamp=none"; then
       printf 'failed to build the packaged Container runtime candidate in: %s\n' \
@@ -697,7 +698,7 @@ stage_container_runtime_candidate() {
     mv "${build_root}" "${artifact_root}"
     build_root=""
     trap - EXIT HUP INT QUIT TERM
-    archive="${artifact_root}/container-homebrew-debug-arm64.tar.gz"
+    archive="${artifact_root}/container-homebrew-release-arm64.tar.gz"
   fi
 
   archive_digest="$(shasum -a 256 "${archive}" | awk '{print $1}')"

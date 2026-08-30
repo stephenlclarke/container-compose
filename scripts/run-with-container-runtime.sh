@@ -78,6 +78,7 @@ runtime_managed_candidate_root=${CONTAINER_RUNTIME_STAGED_CANDIDATE_ROOT:-}
 runtime_managed_package_sha256=${CONTAINER_RUNTIME_PACKAGE_SHA256:-}
 runtime_app_root_localized=false
 runtime_anonymous_registry_hosts=${CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS-ghcr.io}
+runtime_launchctl=${CONTAINER_RUNTIME_LAUNCHCTL:-/bin/launchctl}
 
 if [[ -z "$runtime_local_execution_root" ]]; then
     runtime_local_execution_root=/private/tmp
@@ -361,6 +362,37 @@ has_matched_init_image_source() {
     [[ -n "$runtime_init_block_repo" ||
         -n "$matched_init_image_tar" ||
         -n "$runtime_init_image_archive" ]]
+}
+
+# Reject production launch agents that can relaunch while an isolated runtime is measured.
+assert_no_competing_container_launch_agents() {
+    local label
+    local loaded_labels=
+    local user_domain
+    user_domain="gui/$(id -u)"
+
+    if [[ ! -x "$runtime_launchctl" ]]; then
+        printf 'Container runtime launch-agent inspector is not executable: %s\n' \
+            "$runtime_launchctl" >&2
+        return 2
+    fi
+
+    for label in \
+        homebrew.mxcl.container \
+        homebrew.mxcl.container-current \
+        com.apple.container.apiserver; do
+        if "$runtime_launchctl" print "$user_domain/$label" >/dev/null 2>&1; then
+            loaded_labels="${loaded_labels}${loaded_labels:+, }${label}"
+        fi
+    done
+
+    if [[ -n "$loaded_labels" ]]; then
+        printf 'competing production Container launch agent is loaded: %s\n' \
+            "$loaded_labels" >&2
+        printf '%s\n' \
+            'stop or unload it before starting isolated release validation' >&2
+        return 2
+    fi
 }
 
 stop_runtime() {
@@ -1879,6 +1911,7 @@ install_matched_init_image() {
 
 validate_runtime_start_deadline_seconds
 validate_runtime_localization_modes
+assert_no_competing_container_launch_agents
 runtime_local_user_root="$runtime_local_execution_root/container-compose-runtime-$(id -u)"
 select_managed_runtime_candidate
 runtime_start_sequence_deadline=$(runtime_start_deadline)

@@ -233,6 +233,7 @@ SWIFT_TEST_RUN_FLAGS ?= --no-parallel
 SWIFT_RUNTIME_TEST_FILTER ?= ComposeRuntimeTests
 DEFAULT_COMPOSE_TEST_BINARY := $(abspath .build/debug/compose)
 COMPOSE_TEST_BINARY ?= $(DEFAULT_COMPOSE_TEST_BINARY)
+RELEASE_PARITY_COMPOSE_BINARY := $(abspath .build/release/compose)
 CONTAINER_STACK_REPO ?= $(abspath ../container)
 CONTAINERIZATION_STACK_REPO ?= $(abspath ../containerization)
 CONTAINER_ENGINE_API_STACK_REPO ?= $(abspath ../container-engine-api)
@@ -2256,13 +2257,14 @@ docker-compose-reference:
 docker-compose-e2e-fixtures:
 	DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)" ./Tools/parity/sync-docker-compose-e2e-fixtures.sh --strict
 
-docker-compose-parity: build container-stack-build-if-needed docker-compose-reference
+docker-compose-parity: build-release container-stack-build-if-needed docker-compose-reference
 	container_binary="$(CONTAINER_COMPOSE_CONTAINER)"; \
 	if [[ "$$container_binary" == "container" ]]; then \
 		for candidate in "$(LOCAL_CONTAINER_BINARY)" "$(LOCAL_CONTAINER_PACKAGE_BINARY)"; do \
 			if [[ -x "$$candidate" ]]; then container_binary="$$candidate"; break; fi; \
 		done; \
 	fi; \
+	CONTAINER_COMPOSE="$(RELEASE_PARITY_COMPOSE_BINARY)" \
 	CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \

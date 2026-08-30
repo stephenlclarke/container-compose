@@ -1254,7 +1254,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(f"--stage {stage}", makefile)
         self.assertIn("docker-compose-parity-stages:", makefile)
         self.assertIn(
-            "docker-compose-parity: build container-stack-build-if-needed "
+            "docker-compose-parity: build-release container-stack-build-if-needed "
             "docker-compose-reference",
             makefile,
         )
@@ -2829,15 +2829,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             stack_validation,
         )
         self.assertIn("homebrew-package", staging)
+        self.assertIn('"BUILD_CONFIGURATION=release"', staging)
         self.assertIn('"HOMEBREW_ARCHIVE=${archive}"', staging)
         self.assertIn(
             '"CODESIGN_OPTS=--force --sign ${signing_identity} --timestamp=none"',
             staging,
         )
         self.assertIn(
-            'artifact_root="${artifact_parent}/${container_head}-${signing_identity}"',
+            'artifact_root="${artifact_parent}/${container_head}-${signing_identity}-release"',
             staging,
         )
+        self.assertIn("container-homebrew-release-arm64.tar.gz", staging)
+        self.assertNotIn("container-homebrew-debug-arm64.tar.gz", staging)
         self.assertIn("shasum -a 256 -c", staging)
         self.assertIn("tar -xzf \"${archive}\"", staging)
         self.assertIn("chmod -R a-w", staging)
@@ -2965,6 +2968,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertEqual(len(artifacts), 1)
             self.assertTrue(
                 (artifacts[0] / ".container-compose-runtime-candidate-artifact").is_file()
+            )
+            self.assertIn(
+                "BUILD_CONFIGURATION=release",
+                make_arguments.read_text(encoding="utf-8").splitlines(),
             )
             self.assertIn(
                 "CODESIGN_OPTS=--force --sign "

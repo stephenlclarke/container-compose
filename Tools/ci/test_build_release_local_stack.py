@@ -97,6 +97,25 @@ class BuildReleaseLocalStackTests(unittest.TestCase):
             result.stdout,
         )
 
+    def test_full_parity_uses_the_release_compose_binary(self) -> None:
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        parity = makefile[
+            makefile.index("docker-compose-parity:") : makefile.index(
+                "docker-compose-parity-stages:"
+            )
+        ]
+
+        self.assertTrue(
+            parity.startswith(
+                "docker-compose-parity: build-release "
+                "container-stack-build-if-needed docker-compose-reference"
+            ),
+            parity,
+        )
+        self.assertIn(
+            'CONTAINER_COMPOSE="$(RELEASE_PARITY_COMPOSE_BINARY)"', parity
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
