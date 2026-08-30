@@ -1271,8 +1271,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertIn(f"--stage {stage}", makefile)
         self.assertIn("docker-compose-parity-stages:", makefile)
         self.assertIn(
-            "docker-compose-parity: build-release container-stack-build-if-needed "
-            "docker-compose-reference",
+            "docker-compose-parity: build-release release-parity-build-info "
+            "container-stack-build-if-needed docker-compose-reference",
             makefile,
         )
         self.assertIn(
