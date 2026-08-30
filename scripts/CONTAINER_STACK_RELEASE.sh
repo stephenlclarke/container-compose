@@ -3561,8 +3561,9 @@ verify_compose_stable_package() {
     printf 'Homebrew formula URL mismatch: expected %s, got %s\n' "${expected_url}" "${formula_url}" >&2
     exit 1
   fi
-  if [[ "${formula_version}" != "${version}" ]]; then
-    printf 'Homebrew formula version mismatch: expected %s, got %s\n' "${version}" "${formula_version}" >&2
+  if [[ -n "${formula_version}" ]]; then
+    printf 'stable Homebrew formula must derive version %s from its release URL; found explicit version %s\n' \
+      "${version}" "${formula_version}" >&2
     exit 1
   fi
   if [[ "${formula_sha}" != "${asset_sha}" ]]; then
