@@ -92,16 +92,16 @@ window, restored all three as healthy idle/online services, verified the
 devcontainer `/_ping` endpoint, and left Docker 29.2.1 available through
 Colima.
 
-The exact signed release candidate reports Container `b19e8205fc91`, Containerization `e5a92e86bf03`, and `build: release`. Its archive SHA-256 is `a2a7eb7e487689a24a25948fd433b166f3b6e9ee16a8ce103833d530a86a80c1`.
+The exact signed release candidate reports Container `6a094cd6acb5`, Containerization `e5a92e86bf03`, and `build: release`. Its archive SHA-256 is `312eb81da6db336f0bbcef53c618b71bf599b97a503d5b1066e8ad213849a35f`.
 
 With the competing production agents absent, three unchanged-artifact repetitions record:
 
 | Operation | Docker Compose median | Container Compose median | Candidate/reference | Result |
 | --- | ---: | ---: | ---: | --- |
-| `network_mode: bridge` up | 0.137s | 1.299s | 9.46x | Pass |
-| `network_mode: bridge` down | 10.146s | 5.803s | 0.57x | Pass |
+| `network_mode: bridge` up | 0.133s | 1.293s | 9.69x | Pass |
+| `network_mode: bridge` down | 10.076s | 5.718s | 0.57x | Pass |
 
-Raw timing TSV, JUnit XML, the human matrix, and exact runtime fingerprints are retained in `.build/release-evidence/release-candidate-host-namespaces-quiet/`.
+Raw timing TSV, JUnit XML, the human matrix, and exact runtime fingerprints are retained in `.build/release-evidence/post-context-reuse-host-namespaces/`.
 
 ## Compatibility and remaining risk
 

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-08-28",
+  "generatedAt": "2026-08-30",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -7135,6 +7135,23 @@
         }
       ],
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/327"
+    },
+    {
+      "id": "container-compose-342",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Reuse Container command context",
+      "state": "submitted",
+      "lastVerified": "2026-08-30",
+      "commits": [
+        "0200d2759ee81484bd6fb27fda5d2229fe14e740"
+      ],
+      "documents": [
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-342.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/342"
     },
     {
       "id": "container-compose-333",

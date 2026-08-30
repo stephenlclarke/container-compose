@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-08-29",
+  "reviewedAt": "2026-08-30",
   "repositories": {
     "container": {
       "upstreamHead": "d65874da36551f4c948711fae164820a3175bc5d",
-      "forkHead": "b19e8205fc91be8f92e0790c69f230eb5ee1f56f",
+      "forkHead": "6a094cd6acb53ac6d5695e7348cad7c74d8f99e2",
       "slices": [
         {
           "id": "container-support-maintenance",
@@ -630,7 +630,8 @@
             "8683b9fde9caf3e4c341ddb0ec20fae9ec391b0e",
             "23cf93c4d74e862a37992afcfec2b306a7fb4f7a",
             "f31dc1a14f8f76baac87509ec4c3f6c27262998c",
-            "1f830f601deb1ebfebab70a4b448b5156ce62a07"
+            "1f830f601deb1ebfebab70a4b448b5156ce62a07",
+            "727f872cc87fc75e9272d9de9269807b948d8e44"
           ]
         },
         {

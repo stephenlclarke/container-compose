@@ -12,11 +12,11 @@ guidance remains in [INSTALL.md](../guides/INSTALL.md).
 ## Current Stable Release
 
 [`0.14.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.0)
-was published for macOS arm64 on 29 August 2026.
+was published for macOS arm64 on 30 August 2026.
 
 The immutable release manifest selects:
 
-- Container `b19e8205fc91be8f92e0790c69f230eb5ee1f56f`.
+- Container `6a094cd6acb53ac6d5695e7348cad7c74d8f99e2`.
 - Containerization `e5a92e86bf03eb2cc244b3b47b0413b3935abfe4`.
 - Container builder shim `db3e99cc3d19b9a328eb51be3a023a178f80ee81`.
 - Builder image digest
