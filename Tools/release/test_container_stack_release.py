@@ -602,6 +602,17 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('if [[ "${RELEASE_TAG}" != "current" ]]', renderer)
         self.assertEqual(renderer.count('"${version_policy_args[@]}"'), 2)
 
+    def test_stable_package_verifier_requires_homebrew_derived_version(self) -> None:
+        verifier = self.script[
+            self.script.index("verify_compose_stable_package() {") : self.script.index(
+                "# Dispatch and verify one stable package workflow mode"
+            )
+        ]
+
+        self.assertIn('if [[ -n "${formula_version}" ]]', verifier)
+        self.assertIn("stable Homebrew formula must derive version", verifier)
+        self.assertNotIn('if [[ "${formula_version}" != "${version}" ]]', verifier)
+
     def test_homebrew_tap_pushes_authenticate_with_the_tap_token(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         self.assertEqual(
