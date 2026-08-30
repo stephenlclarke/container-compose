@@ -7154,6 +7154,21 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/342"
     },
     {
+      "id": "container-compose-348",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Pin the block-safe Container runtime",
+      "state": "active-draft",
+      "lastVerified": "2026-08-30",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-348.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/348"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",
