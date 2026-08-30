@@ -234,6 +234,7 @@ SWIFT_RUNTIME_TEST_FILTER ?= ComposeRuntimeTests
 DEFAULT_COMPOSE_TEST_BINARY := $(abspath .build/debug/compose)
 COMPOSE_TEST_BINARY ?= $(DEFAULT_COMPOSE_TEST_BINARY)
 RELEASE_PARITY_COMPOSE_BINARY := $(abspath .build/release/compose)
+RELEASE_PARITY_BUILD_INFO := $(abspath .build/release-parity-build-info.json)
 CONTAINER_STACK_REPO ?= $(abspath ../container)
 CONTAINERIZATION_STACK_REPO ?= $(abspath ../containerization)
 CONTAINER_ENGINE_API_STACK_REPO ?= $(abspath ../container-engine-api)
@@ -455,7 +456,6 @@ RELEASE_GATE_PARITY_INPUT_FINGERPRINT = $(shell { printf '%s\n' \
 	'repetitions=$(PARITY_REPETITIONS)' \
 	'timeout=$(PARITY_TIMEOUT_SECONDS)' \
 	'timing-max-ratio=$(PARITY_TIMING_MAX_RATIO)' \
-	'timing-min-delta-seconds=$(PARITY_TIMING_MIN_DELTA_SECONDS)' \
 	'timing-policy=$(PARITY_TIMING_POLICY)' \
 	'comparable-noise-pct=$(PARITY_COMPARABLE_NOISE_PCT)' \
 	'include-remote-logging=$(PARITY_INCLUDE_REMOTE_LOGGING)' \
@@ -1122,6 +1122,22 @@ build-release:
 	else \
 		$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose $(SWIFT_RELEASE_FLAGS); \
 	fi
+
+.PHONY: release-parity-build-info
+release-parity-build-info:
+	$(PYTHON) Tools/release/write-build-info.py \
+		--output "$(RELEASE_PARITY_BUILD_INFO)" \
+		--version "$(COMPOSE_VERSION)" \
+		--source "$(CONTAINER_COMPOSE_SOURCE)" \
+		--branch "$(CONTAINER_COMPOSE_BRANCH)" \
+		--lane "$(CONTAINER_COMPOSE_LANE)" \
+		--commit "$(CONTAINER_COMPOSE_COMMIT)" \
+		--build-type release \
+		--container-source "$(CONTAINER_SOURCE)" \
+		--container-ref "$(PARITY_CONTAINER_REF)" \
+		--containerization-source "$(CONTAINERIZATION_SOURCE)" \
+		--containerization-ref "$(PARITY_CONTAINERIZATION_REF)" \
+		--compose-go-version "$(COMPOSE_GO_VERSION)"
 
 run:
 	$(SWIFT) run $(SWIFT_RESOLVED_FLAGS) compose version
@@ -2257,7 +2273,7 @@ docker-compose-reference:
 docker-compose-e2e-fixtures:
 	DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)" ./Tools/parity/sync-docker-compose-e2e-fixtures.sh --strict
 
-docker-compose-parity: build-release container-stack-build-if-needed docker-compose-reference
+docker-compose-parity: build-release release-parity-build-info container-stack-build-if-needed docker-compose-reference
 	container_binary="$(CONTAINER_COMPOSE_CONTAINER)"; \
 	if [[ "$$container_binary" == "container" ]]; then \
 		for candidate in "$(LOCAL_CONTAINER_BINARY)" "$(LOCAL_CONTAINER_PACKAGE_BINARY)"; do \
@@ -2265,6 +2281,7 @@ docker-compose-parity: build-release container-stack-build-if-needed docker-comp
 		done; \
 	fi; \
 	CONTAINER_COMPOSE="$(RELEASE_PARITY_COMPOSE_BINARY)" \
+	CONTAINER_COMPOSE_BUILD_INFO="$(RELEASE_PARITY_BUILD_INFO)" \
 	CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \

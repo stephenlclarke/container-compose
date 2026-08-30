@@ -38,10 +38,7 @@
 #   PARITY_TIMING_OUTPUT
 #                      Timing report path. Defaults below .build/parity.
 #   PARITY_TIMING_MAX_RATIO
-#                      Material slowdown ratio. Defaults to 30.
-#   PARITY_TIMING_MIN_DELTA_SECONDS
-#                      Minimum absolute slowdown before ratio enforcement.
-#                      Defaults to 60 seconds.
+#                      Material slowdown ratio. Defaults to 10.
 #
 # This local-only check records Docker and container-compose timings while
 # validating source-scoped link aliases, scaled targets, dynamic external
@@ -63,8 +60,7 @@ CONTAINER_COMPOSE_LIVE="${CONTAINER_COMPOSE_LIVE:-0}"
 PARITY_REPETITIONS="${PARITY_REPETITIONS:-3}"
 PARITY_TIMEOUT_SECONDS="${PARITY_TIMEOUT_SECONDS:-300}"
 PARITY_TIMING_OUTPUT="${PARITY_TIMING_OUTPUT:-$REPO_ROOT/.build/parity/compose-links-timings.tsv}"
-PARITY_TIMING_MAX_RATIO="${PARITY_TIMING_MAX_RATIO:-30}"
-PARITY_TIMING_MIN_DELTA_SECONDS="${PARITY_TIMING_MIN_DELTA_SECONDS:-60}"
+PARITY_TIMING_MAX_RATIO="${PARITY_TIMING_MAX_RATIO:-10}"
 DOCKER_COMPOSE_COMMAND=()
 ACTIVE_COMPOSE=()
 FIXTURE_DIR=""
@@ -243,8 +239,7 @@ create_fixtures() {
         printf '# repetitions=%s\n' "$PARITY_REPETITIONS"
         printf '# comparison=median elapsed monotonic seconds by matching operation\n'
         printf '# timeout_seconds=%s\n' "$PARITY_TIMEOUT_SECONDS"
-        printf '# material_slowdown=max_ratio:%s,min_delta_seconds:%s\n' \
-            "$PARITY_TIMING_MAX_RATIO" "$PARITY_TIMING_MIN_DELTA_SECONDS"
+        printf '# material_slowdown=max_ratio:%s\n' "$PARITY_TIMING_MAX_RATIO"
         printf '# fixture_image=%s\n' "$FIXTURE_IMAGE"
         printf '# image_preparation=pulled outside the timed startup workload\n'
         printf 'implementation\toperation\trepetition\tseconds\n'
@@ -682,14 +677,17 @@ prepare_fixture_images() {
 report_timings() {
     mkdir -p "$(dirname "$PARITY_TIMING_OUTPUT")"
     cp "$TIMING_FILE" "$PARITY_TIMING_OUTPUT"
-    python3 - "$TIMING_FILE" "$PARITY_TIMING_MAX_RATIO" "$PARITY_TIMING_MIN_DELTA_SECONDS" <<'PY'
+    python3 - "$TIMING_FILE" "$PARITY_TIMING_MAX_RATIO" "$REPO_ROOT" <<'PY'
 import pathlib
 import statistics
 import sys
 
+sys.path.insert(0, sys.argv[3])
+
+from Tools.parity.timing_policy import exceeds_slowdown_boundary, slowdown_ratio
+
 path = pathlib.Path(sys.argv[1])
 max_ratio = float(sys.argv[2])
-min_delta = float(sys.argv[3])
 measurements = {}
 for line in path.read_text(encoding="utf-8").splitlines():
     if not line or line.startswith("#") or line.startswith("implementation\t"):
@@ -708,13 +706,13 @@ for operation in sorted(measurements):
     if "docker" in medians and "container-compose" in medians:
         reference = medians["docker"]
         implementation = medians["container-compose"]
-        ratio = implementation / reference if reference > 0 else float("inf")
+        ratio = slowdown_ratio(reference, implementation)
         delta = implementation - reference
         line += f" ratio={ratio:.2f}x delta={delta:+.6f}"
-        if ratio > max_ratio and delta > min_delta:
+        if exceeds_slowdown_boundary(reference, implementation, max_ratio):
             print(
                 f"error: {operation} exceeds the material slowdown boundary: "
-                f"{ratio:.2f}x and {delta:.3f}s slower",
+                f"{ratio:.2f}x (threshold is <{max_ratio:g}x)",
                 file=sys.stderr,
             )
             failed = True

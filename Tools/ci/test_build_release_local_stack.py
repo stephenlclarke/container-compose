@@ -107,13 +107,27 @@ class BuildReleaseLocalStackTests(unittest.TestCase):
 
         self.assertTrue(
             parity.startswith(
-                "docker-compose-parity: build-release "
+                "docker-compose-parity: build-release release-parity-build-info "
                 "container-stack-build-if-needed docker-compose-reference"
             ),
             parity,
         )
         self.assertIn(
             'CONTAINER_COMPOSE="$(RELEASE_PARITY_COMPOSE_BINARY)"', parity
+        )
+        self.assertIn(
+            'CONTAINER_COMPOSE_BUILD_INFO="$(RELEASE_PARITY_BUILD_INFO)"', parity
+        )
+
+        build_info = makefile[
+            makefile.index("release-parity-build-info:") : makefile.index(
+                "\nrun:", makefile.index("release-parity-build-info:")
+            )
+        ]
+        self.assertIn('--commit "$(CONTAINER_COMPOSE_COMMIT)"', build_info)
+        self.assertIn('--container-ref "$(PARITY_CONTAINER_REF)"', build_info)
+        self.assertIn(
+            '--containerization-ref "$(PARITY_CONTAINERIZATION_REF)"', build_info
         )
 
 
