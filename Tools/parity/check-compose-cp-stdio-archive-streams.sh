@@ -39,9 +39,6 @@
 #                      Per-copy hang timeout. Defaults to 120 seconds.
 #   PARITY_TIMING_MAX_RATIO
 #                      Material slowdown ratio. Defaults to 10.
-#   PARITY_TIMING_MIN_DELTA_SECONDS
-#                      Minimum absolute slowdown before ratio enforcement.
-#                      Defaults to 5 seconds.
 #
 # This script is intentionally local-only and is not part of CI. It verifies
 # Docker Compose V2 and container-compose `cp -` archive stream behavior for
@@ -63,7 +60,6 @@ TAR_BINARY="${TAR:-tar}"
 PARITY_TIMING_OUTPUT="${PARITY_TIMING_OUTPUT:-}"
 PARITY_TIMEOUT_SECONDS="${PARITY_TIMEOUT_SECONDS:-120}"
 PARITY_TIMING_MAX_RATIO="${PARITY_TIMING_MAX_RATIO:-10}"
-PARITY_TIMING_MIN_DELTA_SECONDS="${PARITY_TIMING_MIN_DELTA_SECONDS:-5}"
 DOCKER_COMPOSE_COMMAND=()
 FIXTURE_DIR=""
 LONG_ARCHIVE_PATH=""
@@ -258,13 +254,16 @@ print(f"{sys.argv[1]}\t{sys.argv[2]}\t{(int(sys.argv[4]) - int(sys.argv[3])) / 1
 }
 
 report_timing_metrics() {
-    python3 - "$TIMING_FILE" "$PARITY_TIMING_MAX_RATIO" "$PARITY_TIMING_MIN_DELTA_SECONDS" <<'PY'
+    python3 - "$TIMING_FILE" "$PARITY_TIMING_MAX_RATIO" "$REPO_ROOT" <<'PY'
 import pathlib
 import sys
 
+sys.path.insert(0, sys.argv[3])
+
+from Tools.parity.timing_policy import exceeds_slowdown_boundary, slowdown_ratio
+
 path = pathlib.Path(sys.argv[1])
 max_ratio = float(sys.argv[2])
-min_delta = float(sys.argv[3])
 measurements = {}
 for line in path.read_text(encoding="utf-8").splitlines():
     implementation, operation, raw_seconds = line.split("\t")
@@ -276,16 +275,16 @@ for operation in sorted(measurements):
     values = measurements[operation]
     docker = values["docker"]
     container = values["container-compose"]
-    ratio = container / docker if docker > 0 else float("inf")
+    ratio = slowdown_ratio(docker, container)
     delta = container - docker
     print(
         f"  {operation}: docker={docker:.6f} "
         f"container-compose={container:.6f} ratio={ratio:.2f}x delta={delta:+.6f}"
     )
-    if ratio > max_ratio and delta > min_delta:
+    if exceeds_slowdown_boundary(docker, container, max_ratio):
         print(
             f"error: {operation} exceeds the material slowdown boundary: "
-            f"{ratio:.2f}x and {delta:.3f}s slower",
+            f"{ratio:.2f}x (threshold is <{max_ratio:g}x)",
             file=sys.stderr,
         )
         failed = True

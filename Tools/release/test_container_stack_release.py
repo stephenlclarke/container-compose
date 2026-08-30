@@ -1444,7 +1444,6 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             for name, value in {
                 "DOCKER_COMPOSE_PARITY_TARGETS": "docker-compose-links-parity",
                 "PARITY_TIMING_MAX_RATIO": "9",
-                "PARITY_TIMING_MIN_DELTA_SECONDS": "4",
                 "PARITY_COMPARABLE_NOISE_PCT": "4",
                 "PARITY_SINK_STALL_SECONDS": "3",
                 "PARITY_PRESSURE_RECORDS": "32768",
