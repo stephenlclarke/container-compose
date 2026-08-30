@@ -6,11 +6,11 @@ This registry replaces the retired issue and pull-request handoff pairs.
 Current supporting records remain as ordinary Markdown files; every retired document
 links to an immutable Git snapshot.
 
-Last verified: 2026-08-30
+Last verified: 2026-08-31
 
-Entries: 389. Document snapshots: 679. Current supporting documents: 73.
+Entries: 390. Document snapshots: 680. Current supporting documents: 74.
 
-States: `active-draft` 4, `archived` 304, `closed` 17, `merged` 10, `submitted` 12, `tracked-upstream` 15, `unsubmitted` 27.
+States: `active-draft` 5, `archived` 304, `closed` 17, `merged` 10, `submitted` 12, `tracked-upstream` 15, `unsubmitted` 27.
 
 | Owner | Capability or pull request | State | Referenced commits | Documents |
 | --- | --- | --- | --- | --- |
@@ -219,6 +219,7 @@ States: `active-draft` 4, `archived` 304, `closed` 17, `merged` 10, `submitted` 
 | `stephenlclarke/container-compose` | [Prepare and repair Container Compose 0.14.0](https://github.com/stephenlclarke/container-compose/pull/335) | `active-draft` | `c28475a3b553`, `32e1a4f73fd2`, `d82f81a7a4f2`, `4fd2522765ce` | [Issue details](container-compose/ISSUE-332.md); [PR details](container-compose/PR-333.md); [PR details](container-compose/PR-334.md); [PR details](container-compose/PR-335.md) |
 | `stephenlclarke/container-compose` | [Validate parity with uncontended release artifacts](https://github.com/stephenlclarke/container-compose/pull/338) | `active-draft` | `9f98055aa8d9` | [PR details](container-compose/PR-278-release-runtime-candidate.md) |
 | `stephenlclarke/container-compose` | [Reuse Container command context](https://github.com/stephenlclarke/container-compose/pull/342) | `submitted` | `0200d2759ee8` | [PR details](container-compose/PR-342.md) |
+| `stephenlclarke/container-compose` | [Pin the final 0.14.0 Container runtime](https://github.com/stephenlclarke/container-compose/pull/348) | `active-draft` | None recorded | [PR details](container-compose/PR-348.md) |
 | `stephenlclarke/container-compose` | Isolate deterministic anonymous volume identities | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-anonymous-volume-identity.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-anonymous-volume-identity.md) |
 | `stephenlclarke/container-compose` | Support bind create_host_path policy | `archived` | `12c6ed0b8a1e` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-create-host-path.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-create-host-path.md) |
 | `stephenlclarke/container-compose` | Support bind propagation mount options | `archived` | `5fbe9f0937d8` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-propagation.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-propagation.md) |
