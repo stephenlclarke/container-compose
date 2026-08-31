@@ -339,6 +339,11 @@ class PublishedReportTests(unittest.TestCase):
                     "artifactDigest": "sha256:" + "d" * 64,
                     "artifactId": 123,
                     "cctlArtifactSha256": "e" * 64,
+                    "cctlBuildCommandSha256": "1" * 64,
+                    "cctlBuildSourceMetadataSha256": "2" * 64,
+                    "cctlBuildSourceSha256": "3" * 64,
+                    "cctlBuildToolsSha256": "4" * 64,
+                    "cctlReceiptSha256": "5" * 64,
                     "cctlSha256": "f" * 64,
                     "containerizationRef": manifest["stack"]["containerization"][
                         "ref"

@@ -243,6 +243,8 @@ jobs:
               extract-cctl \
               --archive "${pipeline_evidence}/receipts/containerization-benchmark-cctl.artifacts.tar" \
               --manifest "${pipeline_evidence}/receipts/containerization-benchmark-cctl.artifacts.tsv" \
+              --receipt "${pipeline_evidence}/receipts/containerization-benchmark-cctl.receipt.tsv" \
+              --summary "${pipeline_evidence}/pipeline-summary.tsv" \
               --output "${version_root}/cctl" > "${cctl_result}"
 
             cctl_home="${version_root}/cctl-home"

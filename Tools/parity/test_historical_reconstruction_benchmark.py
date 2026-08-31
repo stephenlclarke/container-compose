@@ -147,10 +147,42 @@ class HistoricalReconstructionTests(unittest.TestCase):
                 f"archive-sha256\t{archive_digest}\n",
                 encoding="utf-8",
             )
+            manifest_digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+            receipt = root / "containerization-benchmark-cctl.receipt.tsv"
+            receipt.write_text(
+                "schema\t3\n"
+                "stage\tcontainerization-benchmark-cctl\n"
+                "repository\tcontainerization\n"
+                f"source-payload-sha256\t{'1' * 64}\n"
+                f"source-metadata-sha256\t{'2' * 64}\n"
+                f"command-sha256\t{'3' * 64}\n"
+                f"stage-tools-sha256\t{'4' * 64}\n"
+                f"artifact-archive-sha256\t{archive_digest}\n"
+                f"artifact-manifest-sha256\t{manifest_digest}\n"
+                "artifact-count\t1\n"
+                "exit\t0\n",
+                encoding="utf-8",
+            )
+            receipt_digest = hashlib.sha256(receipt.read_bytes()).hexdigest()
+            summary = root / "pipeline-summary.tsv"
+            summary.write_text(
+                "schema\t1\n"
+                "stage-receipt\t"
+                f"{receipt.name}\t{receipt_digest}\n"
+                "stage-artifact\t"
+                f"{archive.name}\t{archive_digest}\n"
+                "stage-artifact\t"
+                f"{manifest.name}\t{manifest_digest}\n"
+                "complete\ttrue\n",
+                encoding="utf-8",
+            )
             output = root / "prepared/cctl"
-            result = MODULE.extract_cctl(archive, manifest, output)
+            result = MODULE.extract_cctl(
+                archive, manifest, receipt, summary, output
+            )
             self.assertEqual(output.read_bytes(), payload)
             self.assertEqual(result["cctlArtifactSha256"], archive_digest)
+            self.assertEqual(result["cctlReceiptSha256"], receipt_digest)
 
     def test_prepare_reconstruction_requires_complete_provenance(self) -> None:
         with tempfile.TemporaryDirectory(prefix="historical-provenance-") as directory:

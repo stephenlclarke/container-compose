@@ -185,10 +185,32 @@ def read_tsv(path: Path) -> list[list[str]]:
         return list(csv.reader(handle, delimiter="\t"))
 
 
-def extract_cctl(archive: Path, manifest: Path, output: Path) -> dict[str, object]:
+def extract_cctl(
+    archive: Path,
+    manifest: Path,
+    receipt: Path,
+    summary: Path,
+    output: Path,
+) -> dict[str, object]:
     rows = read_tsv(manifest)
     records = {row[0]: row[1:] for row in rows if len(row) >= 2}
     artifact_rows = [row for row in rows if row[:2] == ["artifact", "bin/cctl"]]
+    receipt_rows = read_tsv(receipt)
+    receipt_records = {
+        row[0]: row[1:] for row in receipt_rows if len(row) >= 2
+    }
+    summary_rows = read_tsv(summary)
+    archive_digest = file_sha256(archive)
+    manifest_digest = file_sha256(manifest)
+    receipt_digest = file_sha256(receipt)
+    expected_summary_rows = {
+        ("stage-receipt", receipt.name, receipt_digest),
+        ("stage-artifact", archive.name, archive_digest),
+        ("stage-artifact", manifest.name, manifest_digest),
+    }
+    observed_summary_rows = {
+        tuple(row) for row in summary_rows if row and row[0].startswith("stage-")
+    }
     if (
         records.get("schema") != ["1"]
         or records.get("stage") != ["containerization-benchmark-cctl"]
@@ -197,9 +219,33 @@ def extract_cctl(archive: Path, manifest: Path, output: Path) -> dict[str, objec
         or len(artifact_rows) != 1
         or len(artifact_rows[0]) != 4
         or SHA256.fullmatch(artifact_rows[0][2]) is None
-        or records.get("archive-sha256") != [file_sha256(archive)]
+        or records.get("archive-sha256") != [archive_digest]
+        or receipt_records.get("schema") != ["3"]
+        or receipt_records.get("stage") != ["containerization-benchmark-cctl"]
+        or receipt_records.get("repository") != ["containerization"]
+        or receipt_records.get("artifact-archive-sha256") != [archive_digest]
+        or receipt_records.get("artifact-manifest-sha256") != [manifest_digest]
+        or receipt_records.get("artifact-count") != ["1"]
+        or receipt_records.get("exit") != ["0"]
+        or not expected_summary_rows.issubset(observed_summary_rows)
     ):
-        raise ReconstructionInputError("recoverable cctl artifact manifest is invalid")
+        raise ReconstructionInputError(
+            "recoverable cctl artifact evidence is invalid"
+        )
+    evidence_keys = (
+        "source-payload-sha256",
+        "source-metadata-sha256",
+        "command-sha256",
+        "stage-tools-sha256",
+    )
+    if any(
+        len(receipt_records.get(key, [])) != 1
+        or SHA256.fullmatch(receipt_records[key][0]) is None
+        for key in evidence_keys
+    ):
+        raise ReconstructionInputError(
+            "recoverable cctl build identity is incomplete"
+        )
     with tarfile.open(archive) as bundle:
         members = bundle.getmembers()
         if len(members) != 1 or members[0].name != "bin/cctl":
@@ -217,7 +263,14 @@ def extract_cctl(archive: Path, manifest: Path, output: Path) -> dict[str, objec
         raise ReconstructionInputError("extracted cctl digest mismatch")
     output.chmod(0o500)
     return {
-        "cctlArtifactSha256": file_sha256(archive),
+        "cctlArtifactSha256": archive_digest,
+        "cctlBuildCommandSha256": receipt_records["command-sha256"][0],
+        "cctlBuildSourceMetadataSha256": receipt_records[
+            "source-metadata-sha256"
+        ][0],
+        "cctlBuildSourceSha256": receipt_records["source-payload-sha256"][0],
+        "cctlBuildToolsSha256": receipt_records["stage-tools-sha256"][0],
+        "cctlReceiptSha256": receipt_digest,
         "cctlSha256": artifact_rows[0][2],
     }
 
@@ -237,6 +290,11 @@ def prepare_reconstruction(
         "artifactDigest",
         "artifactId",
         "cctlArtifactSha256",
+        "cctlBuildCommandSha256",
+        "cctlBuildSourceMetadataSha256",
+        "cctlBuildSourceSha256",
+        "cctlBuildToolsSha256",
+        "cctlReceiptSha256",
         "cctlSha256",
         "containerizationRef",
         "runUrl",
@@ -246,7 +304,11 @@ def prepare_reconstruction(
     if (
         COMMIT.fullmatch(str(provenance["containerizationRef"])) is None
         or SHA256.fullmatch(str(provenance["cctlArtifactSha256"])) is None
-        or SHA256.fullmatch(str(provenance["cctlSha256"])) is None
+        or any(
+            SHA256.fullmatch(str(provenance[key])) is None
+            for key in required
+            if key.endswith("Sha256")
+        )
         or re.fullmatch(r"sha256:[0-9a-f]{64}", str(provenance["artifactDigest"]))
         is None
         or not isinstance(provenance["artifactId"], int)
@@ -304,6 +366,8 @@ def main() -> None:
     cctl = subparsers.add_parser("extract-cctl")
     cctl.add_argument("--archive", type=Path, required=True)
     cctl.add_argument("--manifest", type=Path, required=True)
+    cctl.add_argument("--receipt", type=Path, required=True)
+    cctl.add_argument("--summary", type=Path, required=True)
     cctl.add_argument("--output", type=Path, required=True)
 
     prepare = subparsers.add_parser("prepare")
@@ -339,7 +403,13 @@ def main() -> None:
         elif arguments.command == "extract-cctl":
             print(
                 json.dumps(
-                    extract_cctl(arguments.archive, arguments.manifest, arguments.output),
+                    extract_cctl(
+                        arguments.archive,
+                        arguments.manifest,
+                        arguments.receipt,
+                        arguments.summary,
+                        arguments.output,
+                    ),
                     sort_keys=True,
                 )
             )

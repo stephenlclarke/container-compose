@@ -810,7 +810,8 @@ def render_report(
             lines.extend(
                 [
                     f"- Guest initfs authority: [{reconstruction['runUrl']}]({reconstruction['runUrl']}); artifact `{reconstruction['artifactId']}` at `{reconstruction['artifactDigest']}`.",
-                    f"- Guest packager: `containerization@{reconstruction['containerizationRef']}`; recoverable stage artifact `{reconstruction['cctlArtifactSha256']}`; extracted `cctl` `{reconstruction['cctlSha256']}`.",
+                    f"- Guest packager: `containerization@{reconstruction['containerizationRef']}`; recoverable receipt `{reconstruction['cctlReceiptSha256']}`; stage artifact `{reconstruction['cctlArtifactSha256']}`; extracted `cctl` `{reconstruction['cctlSha256']}`.",
+                    f"- Guest packager inputs: source `{reconstruction['cctlBuildSourceSha256']}`; source metadata `{reconstruction['cctlBuildSourceMetadataSha256']}`; command `{reconstruction['cctlBuildCommandSha256']}`; tools `{reconstruction['cctlBuildToolsSha256']}`.",
                 ]
             )
         for component in ("runtime", "compose"):
