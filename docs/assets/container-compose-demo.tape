@@ -18,9 +18,9 @@ Type "cd $CONTAINER_COMPOSE_DEMO_ROOT || exit 1"
 Enter
 Sleep 2s
 
-Type "(container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --init-image-archive $CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE --enable-kernel-install --timeout 60 || { sleep 5; container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --init-image-archive $CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE --enable-kernel-install --timeout 60; }) && container system status && printf '\ncontainer-compose-system-%s\n' ready"
+Type "(container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --init-image-archive $CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE --enable-kernel-install --timeout 60 || { sleep 5; container system start --app-root $CONTAINER_APP_ROOT --install-root $CONTAINER_INSTALL_ROOT --init-image-archive $CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE --enable-kernel-install --timeout 60; }) && engine_status= && for attempt in {1..6}; do engine_status=$(python3 $CONTAINER_COMPOSE_DEMO_DEADLINE_RUNNER --seconds 10 --grace-seconds 2 -- container system status --format json 2>/dev/null | /usr/bin/plutil -extract engineStatus raw -o - - 2>/dev/null) || true; [[ $engine_status == running ]] && break; sleep 2; done; [[ $engine_status == running ]] && python3 $CONTAINER_COMPOSE_DEMO_DEADLINE_RUNNER --seconds 30 --grace-seconds 5 -- container system status && printf '\ncontainer-compose-system-%s\n' ready || { printf '\ncontainer-compose-system-%s\n' failed; exit 1; }"
 Enter
-Wait+Screen@180s /container-compose-system-ready/
+Wait+Screen@300s /container-compose-system-(ready|failed)/
 Sleep 2s
 Ctrl+L
 Sleep 1s

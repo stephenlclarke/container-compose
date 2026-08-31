@@ -883,6 +883,22 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 f"screen wait can match its typed command: {line}",
             )
         self.assertEqual(tape.count("container system start"), 2)
+        self.assertIn("for attempt in {1..6}", tape)
+        self.assertIn("CONTAINER_COMPOSE_DEMO_DEADLINE_RUNNER", workflow)
+        self.assertIn("--seconds 10 --grace-seconds 2", tape)
+        self.assertIn("container system status --format json", tape)
+        self.assertIn(
+            "/usr/bin/plutil -extract engineStatus raw -o - -",
+            tape,
+        )
+        self.assertIn("[[ $engine_status == running ]]", tape)
+        self.assertIn("--seconds 30 --grace-seconds 5", tape)
+        self.assertIn("container-compose-system-%s\\n' failed", tape)
+        self.assertIn("exit 1", tape)
+        self.assertIn(
+            "Wait+Screen@300s /container-compose-system-(ready|failed)/",
+            tape,
+        )
         up_commands = [
             shlex.split(line)[1]
             for line in tape.splitlines()
