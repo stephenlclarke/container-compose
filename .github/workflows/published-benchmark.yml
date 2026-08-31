@@ -150,8 +150,10 @@ jobs:
           printf 'container-compose published benchmark v1\n' \
             > "${BENCHMARK_ROOT}/.published-benchmark-root"
           install -d -m 0700 \
-            "${BENCHMARK_ROOT}/downloads/${TARGET_VERSION}" \
-            "${BENCHMARK_ROOT}/downloads/${BASELINE_VERSION}" \
+            "${BENCHMARK_ROOT}/downloads/${TARGET_VERSION}/release" \
+            "${BENCHMARK_ROOT}/downloads/${TARGET_VERSION}/actions" \
+            "${BENCHMARK_ROOT}/downloads/${BASELINE_VERSION}/release" \
+            "${BENCHMARK_ROOT}/downloads/${BASELINE_VERSION}/actions" \
             "${BENCHMARK_ROOT}/prepared" \
             "${BENCHMARK_ROOT}/evidence" \
             "${BENCHMARK_ROOT}/work"
@@ -163,25 +165,78 @@ jobs:
         run: |
           set -euo pipefail
           # No source products are built. Both complete runtime/plugin pairs
-          # come from published GitHub assets and must match a historical
-          # Homebrew formula URL and SHA-256 before execution.
+          # come from immutable published GitHub assets and must match a
+          # historical Homebrew formula URL and SHA-256 before execution.
+          # A successful retained package run is the recovery authority when
+          # an older stable release omitted its attached release assets.
           for version in "${BASELINE_VERSION}" "${TARGET_VERSION}"; do
-            gh release download "${version}" \
+            release_dir="${BENCHMARK_ROOT}/downloads/${version}/release"
+            actions_dir="${BENCHMARK_ROOT}/downloads/${version}/actions"
+            distribution="${release_dir}"
+            artifact_source="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${version}"
+            release_complete=true
+            if ! gh release download "${version}" \
               --repo "${GITHUB_REPOSITORY}" \
-              --dir "${BENCHMARK_ROOT}/downloads/${version}" \
+              --dir "${release_dir}" \
               --pattern 'container-release-arm64.tar.gz' \
               --pattern 'container-release-arm64.tar.gz.sha256' \
               --pattern 'container-compose-plugin-release-arm64.tar.gz' \
-              --pattern 'container-compose-plugin-release-arm64.tar.gz.sha256'
+              --pattern 'container-compose-plugin-release-arm64.tar.gz.sha256'; then
+              release_complete=false
+            fi
+            for asset in \
+              container-release-arm64.tar.gz \
+              container-release-arm64.tar.gz.sha256 \
+              container-compose-plugin-release-arm64.tar.gz \
+              container-compose-plugin-release-arm64.tar.gz.sha256; do
+              if [[ ! -f "${release_dir}/${asset}" ]]; then
+                release_complete=false
+              fi
+            done
+            if [[ "${release_complete}" != true ]]; then
+              runs="${BENCHMARK_ROOT}/downloads/${version}/package-runs.json"
+              resolved="${BENCHMARK_ROOT}/downloads/${version}/package-run.json"
+              artifacts="${BENCHMARK_ROOT}/downloads/${version}/package-artifacts.json"
+              gh run list \
+                --repo "${GITHUB_REPOSITORY}" \
+                --workflow prebuilt-binaries.yml \
+                --limit 500 \
+                --json databaseId,displayTitle,status,conclusion,event,createdAt,url \
+                > "${runs}"
+              python3 Tools/parity/published_release_benchmark.py \
+                resolve-package-run \
+                --runs "${runs}" \
+                --version "${version}" \
+                > "${resolved}"
+              package_run_id="$(jq -r '.runId' "${resolved}")"
+              artifact_source="$(jq -r '.url' "${resolved}")"
+              gh api \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${package_run_id}/artifacts" \
+                > "${artifacts}"
+              python3 Tools/parity/published_release_benchmark.py \
+                validate-package-artifacts \
+                --artifacts "${artifacts}" \
+                > "${BENCHMARK_ROOT}/downloads/${version}/validated-artifacts.json"
+              gh run download "${package_run_id}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --dir "${actions_dir}" \
+                --name 'container-release-arm64.tar.gz'
+              gh run download "${package_run_id}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --dir "${actions_dir}" \
+                --name 'container-compose-plugin-release-arm64.tar.gz'
+              distribution="${actions_dir}"
+            fi
             Tools/release/verify-developer-id-archive.sh \
-              "${BENCHMARK_ROOT}/downloads/${version}/container-release-arm64.tar.gz"
+              "${distribution}/container-release-arm64.tar.gz"
             Tools/release/verify-developer-id-archive.sh \
-              "${BENCHMARK_ROOT}/downloads/${version}/container-compose-plugin-release-arm64.tar.gz"
+              "${distribution}/container-compose-plugin-release-arm64.tar.gz"
             python3 Tools/parity/published_release_benchmark.py prepare \
               --version "${version}" \
-              --distribution "${BENCHMARK_ROOT}/downloads/${version}" \
+              --distribution "${distribution}" \
               --tap-repository homebrew-tap \
               --source-repository . \
+              --artifact-source "${artifact_source}" \
               --output "${BENCHMARK_ROOT}/prepared/${version}"
           done
 
@@ -237,7 +292,7 @@ jobs:
           path: |
             ${{ env.BENCHMARK_ROOT }}/evidence
             ${{ env.BENCHMARK_ROOT }}/prepared/*/published-distribution.json
-            ${{ env.BENCHMARK_ROOT }}/downloads/*/*.sha256
+            ${{ env.BENCHMARK_ROOT }}/downloads/*/*/*.sha256
           if-no-files-found: error
           retention-days: 90
 

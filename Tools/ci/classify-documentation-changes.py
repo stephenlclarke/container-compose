@@ -39,12 +39,9 @@ DOCUMENTATION_INPUTS = (
     ".swift-version",
     "Package.resolved",
     "Package.swift",
-    "README.md",
-    "Tools/ci/classify-documentation-changes.py",
     "scripts/make-docs.sh",
 )
-DOCUMENTATION_PREFIXES = ("docs/",)
-BENCHMARK_REPORT = re.compile(r"^docs/benchmarks/[^/]+[.]md$")
+REPOSITORY_DOCUMENTATION = re.compile(r"^docs/")
 SWIFT_SOURCE = re.compile(r"^Sources/.+[.]swift$")
 NON_SWIFT_API_SOURCE = re.compile(r"^Sources/.+[.](?:h|hpp|modulemap)$")
 ATTRIBUTE_PREFIX = r"(?:(?:@\w+(?:\([^\n]*\))?)\s+)*"
@@ -279,12 +276,11 @@ def classify(repository: Path, base: str, head: str) -> Classification:
     changes = changed_files(repository, base, head)
     if not changes:
         return Classification(False, "no changed files", changes)
-    if all(BENCHMARK_REPORT.match(path) for path in changes):
-        return Classification(False, "published benchmark report only", changes)
-    if any(
-        path in DOCUMENTATION_INPUTS or path.startswith(DOCUMENTATION_PREFIXES)
-        for path in changes
-    ):
+    if all(REPOSITORY_DOCUMENTATION.match(path) for path in changes):
+        return Classification(
+            False, "repository documentation does not feed DocC", changes
+        )
+    if any(path in DOCUMENTATION_INPUTS for path in changes):
         return Classification(True, "documentation input changed", changes)
     if any(NON_SWIFT_API_SOURCE.match(path) for path in changes):
         return Classification(True, "non-Swift API source changed", changes)
