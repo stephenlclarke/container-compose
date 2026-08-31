@@ -21,7 +21,7 @@
 override SHELL := /bin/bash -p -euo pipefail
 override .SHELLFLAGS := -c
 .DEFAULT_GOAL := all
-.PHONY: fork-classifications-check upstream-divergence-report upstream-divergence-check upstream-divergence-release-check upstream-handoff-registry-update upstream-handoff-registry-check readme-upstream-metrics-update readme-upstream-metrics-check docs serve-docs
+.PHONY: fork-classifications-check upstream-divergence-report upstream-divergence-check upstream-divergence-release-check upstream-handoff-registry-update upstream-handoff-registry-check readme-upstream-metrics-update readme-upstream-metrics-check source-preflight lint-static docs serve-docs
 
 # Never let inherited shell hooks, JVM option injection, or loader overrides
 # reach a Make recipe before the clean Nextflow environment is established.
@@ -2708,9 +2708,13 @@ worktree-audit:
 worktree-audit-strict:
 	$(PYTHON) Tools/ci/worktree-audit.py --repository "$(CURDIR)" --main main --strict
 
-check: lint core-runtime-neutrality stack-consistency upstream-handoff-registry-check check-licenses
+source-preflight: upstream-handoff-registry-check stack-consistency core-runtime-neutrality check-licenses
 
-lint: coverage-tools-test performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test
+check: source-preflight lint
+
+lint: lint-static coverage-tools-test performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test
+
+lint-static:
 	@while IFS= read -r -d '' script; do \
 		bash -n "$$script"; \
 	done < <(find scripts Tools/parity Tools/release -type f \( -name '*.sh' -o -name 'pre-commit.fmt' \) -print0)

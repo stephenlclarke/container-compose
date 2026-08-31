@@ -23,6 +23,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/docs.yml
+      - Tools/ci/classify-documentation-changes.py
       - docs/**
       - Package.resolved
       - Package.swift
@@ -33,6 +34,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/docs.yml
+      - Tools/ci/classify-documentation-changes.py
       - docs/**
       - Package.resolved
       - Package.swift
@@ -60,7 +62,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Keep benchmark-only reports out of the DocC build path
+      - name: Classify documented API and site inputs
         id: classify
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -89,15 +91,17 @@ jobs:
               exit 0
               ;;
           esac
-          changed="$(git diff --name-only "${base}" "${head}")"
-          if [[ -n "${changed}" ]] && \
-            ! grep -Ev '^docs/benchmarks/[^/]+[.]md$' <<<"${changed}" | grep -q .; then
-            printf 'build_docc=false\n' >> "${GITHUB_OUTPUT}"
-            printf 'Published benchmark report only; no DocC product build is required.\n' \
-              >> "${GITHUB_STEP_SUMMARY}"
-          else
-            printf 'build_docc=true\n' >> "${GITHUB_OUTPUT}"
-          fi
+          classification="$(
+            python3 Tools/ci/classify-documentation-changes.py \
+              --repository . \
+              --base "${base}" \
+              --head "${head}" \
+              --github-output "${GITHUB_OUTPUT}"
+          )"
+          reason="$(jq -r .reason <<<"${classification}")"
+          build_docc="$(jq -r .build_docc <<<"${classification}")"
+          printf "DocC build: \`%s\` — %s.\n" "${build_docc}" "${reason}" \
+            >> "${GITHUB_STEP_SUMMARY}"
 
   build-sites:
     name: Build ${{ matrix.site }} DocC Site
@@ -106,7 +110,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - site: compose

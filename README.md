@@ -4,7 +4,6 @@
 <p>
   <img align="left" hspace="20" src="docs/images/container-compose-icon-octopus.png" width="147" alt="container-compose icon: an octopus overlapping the standard three-row container service panel" />
   <a href="https://github.com/stephenlclarke/container-compose/actions/workflows/ci.yml?query=branch%3Amain"><img alt="CI" src="https://github.com/stephenlclarke/container-compose/actions/workflows/ci.yml/badge.svg?branch=main" /></a>
-  <a href="https://github.com/stephenlclarke/container-compose/actions/workflows/codeql.yml?query=branch%3Amain"><img alt="CodeQL" src="https://github.com/stephenlclarke/container-compose/actions/workflows/codeql.yml/badge.svg?branch=main" /></a>
   <a href="https://github.com/stephenlclarke/container-compose/actions/workflows/docs.yml?query=branch%3Amain"><img alt="Documentation" src="https://github.com/stephenlclarke/container-compose/actions/workflows/docs.yml/badge.svg?branch=main" /></a>
   <a href="https://github.com/stephenlclarke/container-compose/actions/workflows/homebrew.yml?query=branch%3Amain"><img alt="Homebrew" src="https://github.com/stephenlclarke/container-compose/actions/workflows/homebrew.yml/badge.svg?branch=main" /></a>
   <a href="https://github.com/stephenlclarke/container-compose/actions/workflows/prebuilt-binaries.yml?query=branch%3Amain"><img alt="Releases" src="https://github.com/stephenlclarke/container-compose/actions/workflows/prebuilt-binaries.yml/badge.svg?branch=main" /></a>
@@ -170,12 +169,11 @@ become implicit exceptions.
 <!-- Separate GitHub callouts. -->
 
 > [!NOTE]
-> The CodeQL workflow is active and required on `main`. Every main push,
-> scheduled run, and manual dispatch analyzes the Go normalizer. Ready pull
-> requests analyze relevant Go or CodeQL changes and use an explicit no-op gate
-> for unrelated changes; draft pull requests defer analysis. This does not
-> claim Swift CodeQL coverage, and a missing or failed required check is not a
-> pass.
+> CodeQL is release-only. Current and stable package publication analyzes the
+> exact Go normalizer source after the fail-fast Homebrew preflight and before
+> native package construction. The standalone workflow recovers an already
+> published release only. This does not claim Swift CodeQL coverage, and a
+> missing or failed release analysis is not a pass.
 
 On macOS, `container-compose` honors the active pull policy, prepares missing default-pull images when needed, then reads image metadata before `up`, `create`, and one-off `run`. It creates deterministic implicit Dockerfile-declared volumes and seeds an empty local volume from the selected image path for both declared and ordinary local volume mounts (including inherited external volumes), preserving the selected directory's ownership and mode on the volume root. `volume.nocopy: true`, a pre-existing `volume.subpath`, and a mount at a missing image path remain empty; populated volumes are preserved across `down`/`up`, matching Docker. Service `pre_start` helpers inherit service runtime context and gate startup, while `post_start` and `pre_stop` cover detached, foreground, and interactive one-off lifecycle paths with Docker-compatible detach and exit-status behavior. Foreground `up --exit-code-from SERVICE` returns the selected service's terminal status even when teardown closes attached log streams. The matched runtime encodes foreground attach signals by Linux-resolvable name, returns complete long records at backward-read tail boundaries, and keeps persistent log capture alive after an attached client disconnects; the committed signal/log reliability fixture verifies all three behaviors against Docker Compose V2.
 

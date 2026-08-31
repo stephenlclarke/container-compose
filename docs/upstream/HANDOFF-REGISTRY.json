@@ -7169,6 +7169,25 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/348"
     },
     {
+      "id": "container-compose-352",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Fail fast before expensive release jobs",
+      "state": "active-draft",
+      "lastVerified": "2026-08-31",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-351.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-352.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/352"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",

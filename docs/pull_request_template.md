@@ -29,6 +29,6 @@
 - [ ] I used Conventional Commits in commit messages and the pull request title.
 - [ ] I added a user-facing `Release-Note:` / `Release-Highlight:` trailer for visible Compose functionality, or `Release-Note: none` for internal-only work.
 - [ ] I included original upstream issue or pull request references for upstream-driven changes.
-- [ ] I kept active or iterative work in draft and marked it ready only when the full CodeQL path should run.
+- [ ] I kept active or iterative work in draft and did not run release-only CodeQL for ordinary review work.
 - [ ] I signed my commits with a GitHub-supported signature method.
 - [ ] I removed credentials, tokens, private keys, personal data, and private registry details from code, tests, logs, and screenshots.

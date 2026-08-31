@@ -505,7 +505,7 @@ jobs:
             printf '::warning title=SonarQube unavailable::SonarQube TCP or API preflight failed within five seconds; skipping scanner installation and analysis.\n'
             {
               printf '## SonarQube scan deferred\n\n'
-              printf 'The SonarQube TCP or API preflight failed within five seconds, so this external quality scan did not delay or fail CI. Local source checks, tests, coverage gates, and CodeQL remain required.\n'
+              printf 'The SonarQube TCP or API preflight failed within five seconds, so this external quality scan did not delay or fail CI. Local source checks, tests, and coverage gates remain required; CodeQL is enforced by release publication.\n'
             } >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
@@ -521,7 +521,7 @@ jobs:
           printf '::warning title=SonarQube unavailable::Scanner installation or analysis failed while the SonarQube API was unavailable; local checks and coverage gates remain enforced.\n'
           {
             printf '## SonarQube scan deferred\n\n'
-            printf 'The SonarQube API was unavailable after retries, so this external quality scan did not fail CI. Local source checks, tests, coverage gates, and CodeQL remain required.\n'
+            printf 'The SonarQube API was unavailable after retries, so this external quality scan did not fail CI. Local source checks, tests, and coverage gates remain required; CodeQL is enforced by release publication.\n'
           } >> "${GITHUB_STEP_SUMMARY}"
 
   validate:

@@ -43,7 +43,7 @@ permissions:
   checks: read
   contents: write
   id-token: write
-  security-events: read
+  security-events: write
 
 concurrency:
   # Both formulae in a lane are committed together. One global queue prevents a
@@ -405,9 +405,147 @@ jobs:
             printf 'repair_tap=%s\n' "${repair_tap}"
           } >> "$GITHUB_OUTPUT"
 
+  release-preflight:
+    name: Fail-Fast Release Configuration
+    needs: resolve-publish-context
+    if: >
+      needs.resolve-publish-context.outputs.publish == 'true' &&
+      needs.resolve-publish-context.outputs.repair_tap != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact container-compose source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: container-compose
+          fetch-depth: 1
+          ref: ${{ needs.resolve-publish-context.outputs.checkout_ref }}
+
+      - name: Require a writable Homebrew promotion token
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN}" ]]; then
+            printf 'HOMEBREW_TAP_TOKEN is required for release publication.\n' >&2
+            exit 1
+          fi
+          if [[ "$(gh api repos/stephenlclarke/homebrew-tap --jq '.permissions.push')" != "true" ]]; then
+            printf 'HOMEBREW_TAP_TOKEN cannot push to stephenlclarke/homebrew-tap.\n' >&2
+            exit 1
+          fi
+
+      - name: Resolve the pinned Container formula source
+        id: container-source
+        working-directory: container-compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="$(jq -r '.components.container.ref // ""' Tools/release/stack-refs.json)"
+          repository="$(jq -r '.components.container.repository // ""' Tools/release/stack-refs.json)"
+          if [[ ! "${ref}" =~ ^[0-9a-f]{40}$ ||
+                "${repository}" != "stephenlclarke/container" ]]; then
+            printf 'Pinned Container Homebrew source is invalid: %s at %s\n' \
+              "${repository:-<unset>}" "${ref:-<unset>}" >&2
+            exit 1
+          fi
+          printf 'ref=%s\n' "${ref}" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout pinned Container formula source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: stephenlclarke/container
+          path: container
+          fetch-depth: 1
+          ref: ${{ steps.container-source.outputs.ref }}
+
+      - name: Checkout Homebrew distribution controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: stephenlclarke/homebrew-tap
+          path: homebrew-tap
+          fetch-depth: 1
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Validate Homebrew configuration before builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 container-compose/Tools/release/homebrew-preflight.py \
+            --tap homebrew-tap \
+            --compose-repository container-compose \
+            --container-repository container
+
+  codeql-release:
+    name: CodeQL
+    needs:
+      - resolve-publish-context
+      - release-preflight
+    if: >
+      needs.resolve-publish-context.outputs.publish == 'true' &&
+      needs.resolve-publish-context.outputs.repair_tap != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.resolve-publish-context.outputs.checkout_ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: Tools/compose-normalizer/go.mod
+          cache: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+        with:
+          languages: go
+          build-mode: manual
+          config-file: .github/codeql/codeql-config.yml
+          tools: https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.26.2/codeql-bundle-linux64.tar.gz
+
+      - name: Build Go normalizer for CodeQL
+        timeout-minutes: 10
+        env:
+          CGO_ENABLED: "0"
+          GOARCH: amd64
+          GOCACHE: ${{ runner.temp }}/codeql-go-build-cache
+          GOENV: "off"
+          GOFLAGS: -mod=readonly
+          GOMODCACHE: ${{ runner.temp }}/codeql-go-module-cache
+          GONOPROXY: ""
+          GONOSUMDB: ""
+          GOOS: linux
+          GOPRIVATE: ""
+          GOPROXY: https://proxy.golang.org
+          GOSUMDB: sum.golang.org
+          GOTOOLCHAIN: local
+          GOVCS: "*:off"
+          GOWORK: "off"
+        run: |
+          rm -rf "$GOCACHE" "$GOMODCACHE"
+          mkdir -p "$GOCACHE" "$GOMODCACHE"
+          make go-build
+
+      - name: Analyze CodeQL release source
+        uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+        with:
+          category: "/language:swift-go"
+
   package:
     name: Package
-    needs: resolve-publish-context
+    needs:
+      - resolve-publish-context
+      - release-preflight
+      - codeql-release
     if: >
       needs.resolve-publish-context.outputs.publish == 'true' &&
       needs.resolve-publish-context.outputs.repair_tap != 'true'
@@ -518,18 +656,6 @@ jobs:
             printf 'formula_version=%s\n' "${formula_version}"
             printf 'package_lane=%s\n' "${package_lane}"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Require Homebrew tap token for formula promotion
-        if: steps.lane.outputs.update_tap == 'true'
-        env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z "${HOMEBREW_TAP_TOKEN}" ]]; then
-            printf 'HOMEBREW_TAP_TOKEN is required for a stack formula promotion.\n' >&2
-            exit 1
-          fi
 
       - name: Resolve stack refs
         id: stack-refs
