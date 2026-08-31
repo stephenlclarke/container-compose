@@ -257,17 +257,66 @@ public protocol Feature {
         self.assertTrue(result.build_docc)
         self.assertIn("ambiguous Swift API", result.reason)
 
-    def test_benchmark_report_only_skips_docc(self) -> None:
+    def test_repository_documentation_only_skips_docc(self) -> None:
         base = self.commit({"README.md": "root\n"}, "base")
         head = self.commit(
-            {"docs/benchmarks/0.14.0-vs-0.13.0.md": "evidence\n"},
-            "benchmark",
+            {
+                "docs/benchmarks/0.14.0-vs-0.13.0.md": "evidence\n",
+                "docs/upstream/container-compose/ISSUE-353.md": "handoff\n",
+            },
+            "documentation",
         )
 
         result = CLASSIFIER.classify(self.repository, base, head)
 
         self.assertFalse(result.build_docc)
-        self.assertEqual(result.reason, "published benchmark report only")
+        self.assertEqual(
+            result.reason, "repository documentation does not feed DocC"
+        )
+
+    def test_repository_documentation_does_not_hide_api_change(self) -> None:
+        base = self.commit(
+            {
+                "Sources/App/Feature.swift": "public func value() -> Int { 1 }\n",
+                "docs/STATUS.md": "old\n",
+            },
+            "base",
+        )
+        head = self.commit(
+            {
+                "Sources/App/Feature.swift": (
+                    "public func value(options: Int) -> Int { options }\n"
+                ),
+                "docs/STATUS.md": "new\n",
+            },
+            "api",
+        )
+
+        result = CLASSIFIER.classify(self.repository, base, head)
+
+        self.assertTrue(result.build_docc)
+        self.assertEqual(result.reason, "documented Swift API changed")
+
+    def test_readme_and_classifier_changes_skip_docc(self) -> None:
+        base = self.commit(
+            {
+                "README.md": "old\n",
+                "Tools/ci/classify-documentation-changes.py": "old\n",
+            },
+            "base",
+        )
+        head = self.commit(
+            {
+                "README.md": "new\n",
+                "Tools/ci/classify-documentation-changes.py": "new\n",
+            },
+            "controls",
+        )
+
+        result = CLASSIFIER.classify(self.repository, base, head)
+
+        self.assertFalse(result.build_docc)
+        self.assertEqual(result.reason, "no documentation or source input changed")
 
     def test_package_or_documentation_control_change_builds_docc(self) -> None:
         base = self.commit({"Package.swift": "// old\n"}, "base")

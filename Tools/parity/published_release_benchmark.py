@@ -103,6 +103,86 @@ def resolve_versions(
     return {"target": target, "baseline": baseline}
 
 
+def canonical_artifact_source(version: str, source: str) -> str:
+    version_tuple(version)
+    release = f"https://github.com/{REPOSITORY}/releases/tag/{version}"
+    run_pattern = re.compile(
+        rf"https://github[.]com/{re.escape(REPOSITORY)}/actions/runs/[1-9][0-9]*"
+    )
+    if source != release and run_pattern.fullmatch(source) is None:
+        raise BenchmarkInputError(
+            f"artifact source is not a canonical release or package run: {source}"
+        )
+    return source
+
+
+def resolve_packaging_run(
+    runs: Iterable[dict[str, object]], version: str
+) -> dict[str, object]:
+    version_tuple(version)
+    title = f"Prebuilt Binaries · {version}"
+    candidates: list[tuple[str, int, str]] = []
+    for run in runs:
+        if (
+            run.get("displayTitle") != title
+            or run.get("event") != "workflow_dispatch"
+            or run.get("status") != "completed"
+            or run.get("conclusion") != "success"
+        ):
+            continue
+        run_id = run.get("databaseId")
+        created_at = run.get("createdAt")
+        url = run.get("url")
+        if (
+            not isinstance(run_id, int)
+            or run_id <= 0
+            or not isinstance(created_at, str)
+            or not created_at
+            or not isinstance(url, str)
+            or url
+            != f"https://github.com/{REPOSITORY}/actions/runs/{run_id}"
+        ):
+            continue
+        candidates.append((created_at, run_id, url))
+    if not candidates:
+        raise BenchmarkInputError(
+            f"no successful immutable package run retained for {version}"
+        )
+    created_at, run_id, url = max(candidates)
+    return {"runId": run_id, "url": url, "createdAt": created_at}
+
+
+def validate_packaging_artifacts(payload: dict[str, object]) -> dict[str, int]:
+    artifacts = payload.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise BenchmarkInputError("package run artifact metadata is not an array")
+    required = {asset_name for asset_name, _ in ASSETS.values()}
+    matches: dict[str, list[dict[str, object]]] = {
+        name: [] for name in required
+    }
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        name = artifact.get("name")
+        if isinstance(name, str) and name in matches:
+            matches[name].append(artifact)
+    validated: dict[str, int] = {}
+    for name in sorted(required):
+        candidates = matches[name]
+        if len(candidates) != 1:
+            raise BenchmarkInputError(
+                f"package run must retain exactly one {name} artifact"
+            )
+        artifact = candidates[0]
+        artifact_id = artifact.get("id")
+        if not isinstance(artifact_id, int) or artifact_id <= 0:
+            raise BenchmarkInputError(f"package run artifact has no valid id: {name}")
+        if artifact.get("expired") is not False:
+            raise BenchmarkInputError(f"package run artifact has expired: {name}")
+        validated[name] = artifact_id
+    return validated
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -279,9 +359,11 @@ def prepare_distribution(
     distribution: Path,
     tap_repository: Path,
     source_repository: Path,
+    artifact_source: str,
     output: Path,
 ) -> dict[str, object]:
     version_tuple(version)
+    artifact_source = canonical_artifact_source(version, artifact_source)
     source_commit = release_tag_commit(source_repository, version)
     source_stack = release_tag_stack(source_repository, source_commit)
     output.mkdir(parents=True, exist_ok=False)
@@ -326,6 +408,7 @@ def prepare_distribution(
         "sourceCommit": source_commit,
         "stack": source_stack,
         "release": f"https://github.com/{REPOSITORY}/releases/tag/{version}",
+        "artifactSource": artifact_source,
         "assets": asset_manifest,
     }
     (output / "published-distribution.json").write_text(
@@ -379,6 +462,7 @@ def validate_release_identity(
     version = manifest.get("version")
     source_commit = manifest.get("sourceCommit")
     source_stack = manifest.get("stack")
+    artifact_source = manifest.get("artifactSource")
     compose_record = fingerprints.get("containerCompose")
     runtime_record = fingerprints.get("containerRuntime")
     if (
@@ -386,9 +470,11 @@ def validate_release_identity(
         or not isinstance(source_commit, str)
         or re.fullmatch(r"[0-9a-f]{40}", source_commit) is None
         or not isinstance(source_stack, dict)
+        or not isinstance(artifact_source, str)
         or not isinstance(compose_record, dict)
     ):
         raise BenchmarkInputError(f"{label} release identity is incomplete")
+    canonical_artifact_source(version, artifact_source)
     if not isinstance(runtime_record, dict):
         raise BenchmarkInputError(f"{label} runtime identity is incomplete")
 
@@ -615,6 +701,7 @@ def render_report(
                 f"### {label} {manifest['version']}",
                 "",
                 f"Release: [{manifest['release']}]({manifest['release']})",
+                f"Artifact source: [{manifest['artifactSource']}]({manifest['artifactSource']}).",
                 f"Release tag commit: `{manifest['sourceCommit']}`.",
                 f"Container: `{manifest['stack']['container']['repository']}@{manifest['stack']['container']['ref']}`.",
                 f"Containerization: `{manifest['stack']['containerization']['repository']}@{manifest['stack']['containerization']['ref']}`.",
@@ -675,11 +762,19 @@ def main() -> None:
     resolve.add_argument("--target", required=True)
     resolve.add_argument("--baseline")
 
+    package_run = subparsers.add_parser("resolve-package-run")
+    package_run.add_argument("--runs", type=Path, required=True)
+    package_run.add_argument("--version", required=True)
+
+    package_artifacts = subparsers.add_parser("validate-package-artifacts")
+    package_artifacts.add_argument("--artifacts", type=Path, required=True)
+
     prepare = subparsers.add_parser("prepare")
     prepare.add_argument("--version", required=True)
     prepare.add_argument("--distribution", type=Path, required=True)
     prepare.add_argument("--tap-repository", type=Path, required=True)
     prepare.add_argument("--source-repository", type=Path, required=True)
+    prepare.add_argument("--artifact-source", required=True)
     prepare.add_argument("--output", type=Path, required=True)
 
     render = subparsers.add_parser("render")
@@ -698,12 +793,27 @@ def main() -> None:
                 raise BenchmarkInputError("release metadata must be a JSON array")
             result = resolve_versions(releases, arguments.target, arguments.baseline)
             print(json.dumps(result, sort_keys=True))
+        elif arguments.command == "resolve-package-run":
+            runs = load_json(arguments.runs)
+            if not isinstance(runs, list):
+                raise BenchmarkInputError("package run metadata must be a JSON array")
+            result = resolve_packaging_run(runs, arguments.version)
+            print(json.dumps(result, sort_keys=True))
+        elif arguments.command == "validate-package-artifacts":
+            artifacts = load_json(arguments.artifacts)
+            if not isinstance(artifacts, dict):
+                raise BenchmarkInputError(
+                    "package run artifact metadata must be a JSON object"
+                )
+            result = validate_packaging_artifacts(artifacts)
+            print(json.dumps(result, sort_keys=True))
         elif arguments.command == "prepare":
             result = prepare_distribution(
                 arguments.version,
                 arguments.distribution,
                 arguments.tap_repository,
                 arguments.source_repository,
+                arguments.artifact_source,
                 arguments.output,
             )
             print(json.dumps(result, sort_keys=True))

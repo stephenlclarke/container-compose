@@ -68,6 +68,113 @@ class ResolvePublishedVersionsTests(unittest.TestCase):
             MODULE.resolve_versions(self.releases, "0.15.0", None)
 
 
+class ResolvePublishedArtifactsTests(unittest.TestCase):
+    def test_newest_successful_immutable_package_run_is_selected(self) -> None:
+        repository = "https://github.com/stephenlclarke/container-compose"
+        runs = [
+            {
+                "databaseId": 10,
+                "displayTitle": "Prebuilt Binaries · 0.13.0",
+                "event": "workflow_dispatch",
+                "status": "completed",
+                "conclusion": "success",
+                "createdAt": "2026-08-23T10:00:00Z",
+                "url": f"{repository}/actions/runs/10",
+            },
+            {
+                "databaseId": 11,
+                "displayTitle": "Prebuilt Binaries · 0.13.0",
+                "event": "workflow_dispatch",
+                "status": "completed",
+                "conclusion": "failure",
+                "createdAt": "2026-08-24T10:00:00Z",
+                "url": f"{repository}/actions/runs/11",
+            },
+            {
+                "databaseId": 12,
+                "displayTitle": "Prebuilt Binaries · 0.13.0",
+                "event": "workflow_dispatch",
+                "status": "completed",
+                "conclusion": "success",
+                "createdAt": "2026-08-24T11:00:00Z",
+                "url": f"{repository}/actions/runs/12",
+            },
+            {
+                "databaseId": 13,
+                "displayTitle": "Prebuilt Binaries · 0.13.0",
+                "event": "push",
+                "status": "completed",
+                "conclusion": "success",
+                "createdAt": "2026-08-25T10:00:00Z",
+                "url": f"{repository}/actions/runs/13",
+            },
+        ]
+
+        self.assertEqual(
+            MODULE.resolve_packaging_run(runs, "0.13.0"),
+            {
+                "runId": 12,
+                "url": f"{repository}/actions/runs/12",
+                "createdAt": "2026-08-24T11:00:00Z",
+            },
+        )
+
+    def test_missing_successful_package_run_is_rejected(self) -> None:
+        with self.assertRaisesRegex(
+            MODULE.BenchmarkInputError, "no successful immutable package run"
+        ):
+            MODULE.resolve_packaging_run([], "0.13.0")
+
+    def test_required_unexpired_package_artifacts_are_validated(self) -> None:
+        payload = {
+            "artifacts": [
+                {
+                    "id": 1,
+                    "name": "container-release-arm64.tar.gz",
+                    "expired": False,
+                },
+                {
+                    "id": 2,
+                    "name": "container-compose-plugin-release-arm64.tar.gz",
+                    "expired": False,
+                },
+                {"id": 3, "name": "unrelated", "expired": False},
+            ]
+        }
+
+        self.assertEqual(
+            MODULE.validate_packaging_artifacts(payload),
+            {
+                "container-compose-plugin-release-arm64.tar.gz": 2,
+                "container-release-arm64.tar.gz": 1,
+            },
+        )
+
+    def test_expired_or_duplicate_package_artifact_is_rejected(self) -> None:
+        payload = {
+            "artifacts": [
+                {
+                    "id": 1,
+                    "name": "container-release-arm64.tar.gz",
+                    "expired": False,
+                },
+                {
+                    "id": 2,
+                    "name": "container-release-arm64.tar.gz",
+                    "expired": False,
+                },
+                {
+                    "id": 3,
+                    "name": "container-compose-plugin-release-arm64.tar.gz",
+                    "expired": True,
+                },
+            ]
+        }
+
+        with self.assertRaises(MODULE.BenchmarkInputError):
+            MODULE.validate_packaging_artifacts(payload)
+
+
 class HomebrewAuthorityTests(unittest.TestCase):
     def test_release_tag_resolves_to_peeled_commit(self) -> None:
         with tempfile.TemporaryDirectory(prefix="published-source-") as directory:
@@ -210,6 +317,7 @@ class PublishedReportTests(unittest.TestCase):
         self.assertIn("Improved", report)
         self.assertIn("No source product was built", report)
         self.assertIn("excluded to keep the unattended run free", report)
+        self.assertIn("Artifact source:", report)
 
     def test_report_rejects_mismatched_benchmark_conditions(self) -> None:
         with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
@@ -540,6 +648,10 @@ class PublishedReportTests(unittest.TestCase):
                         },
                     },
                     "release": f"https://github.example/{version}",
+                    "artifactSource": (
+                        "https://github.com/stephenlclarke/container-compose/"
+                        f"releases/tag/{version}"
+                    ),
                     "assets": {
                         "runtime": {
                             "asset": "container-release-arm64.tar.gz",
@@ -578,6 +690,10 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
     def test_workflow_downloads_published_assets_without_building_products(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("gh release download", workflow)
+        self.assertIn("resolve-package-run", workflow)
+        self.assertIn("validate-package-artifacts", workflow)
+        self.assertIn("gh run download", workflow)
+        self.assertIn("--artifact-source", workflow)
         self.assertIn("No source products are built", workflow)
         self.assertIn("PARITY_INCLUDE_REMOTE_LOGGING=0", workflow)
         self.assertNotIn("PARITY_SINK_BIND_ADDRESS=0.0.0.0", workflow)
