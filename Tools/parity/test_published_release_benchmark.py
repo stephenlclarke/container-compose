@@ -596,6 +596,16 @@ class PublishedReportTests(unittest.TestCase):
             },
             "containerRuntime": {
                 "sha256": "b" * 64,
+                "initImage": {
+                    "archiveSha256": "e" * 64,
+                    "references": [
+                        "vminit:container-compose",
+                        (
+                            "ghcr.io/stephenlclarke/containerization/vminit:"
+                            + containerization_ref
+                        ),
+                    ],
+                },
                 "version": [
                     {
                         "appName": "container",
@@ -663,6 +673,17 @@ class PublishedReportTests(unittest.TestCase):
                             "sha256": "c" * 64,
                             "homebrewCommit": "d" * 40,
                         },
+                        "guest": {
+                            "asset": MODULE.INIT_ASSET,
+                            "sha256": "e" * 64,
+                            "references": [
+                                "vminit:container-compose",
+                                (
+                                    "ghcr.io/stephenlclarke/containerization/vminit:"
+                                    + containerization_ref
+                                ),
+                            ],
+                        },
                     },
                 }
             ),
@@ -694,6 +715,12 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
         self.assertIn("validate-package-artifacts", workflow)
         self.assertIn("gh run download", workflow)
         self.assertIn("--artifact-source", workflow)
+        self.assertIn("--init-distribution", workflow)
+        self.assertIn("container-vminit-arm64.oci.tar", workflow)
+        self.assertIn("validate-oci-image-layout.py", workflow)
+        self.assertIn("CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE", workflow)
+        self.assertIn("PARITY_INIT_IMAGE_ARCHIVE", workflow)
+        self.assertIn("PARITY_INIT_IMAGE_REFERENCES", workflow)
         self.assertIn("No source products are built", workflow)
         self.assertIn("PARITY_INCLUDE_REMOTE_LOGGING=0", workflow)
         self.assertNotIn("PARITY_SINK_BIND_ADDRESS=0.0.0.0", workflow)
@@ -703,6 +730,26 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
         )
         for forbidden in ("swift build", "swift test", "make build", "make package"):
             self.assertNotIn(forbidden, workflow)
+
+    def test_candidate_preflight_runs_before_any_benchmark_timing(self) -> None:
+        matrix = PERFORMANCE_MATRIX.read_text(encoding="utf-8")
+        run_matrix = matrix[matrix.index("run_matrix() {") :]
+
+        self.assertLess(
+            run_matrix.index("preflight_candidate_lifecycle"),
+            run_matrix.index('for ((repetition = 1;'),
+        )
+        self.assertLess(
+            run_matrix.index("preflight_candidate_lifecycle"),
+            run_matrix.index("run_lifecycle_lane"),
+        )
+
+    def test_failed_benchmark_retains_partial_evidence(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        retain = workflow[workflow.index("Retain raw benchmark evidence") :]
+
+        self.assertIn("if: always()", retain)
+        self.assertIn("if-no-files-found: warn", retain)
 
     def test_workflow_rejects_interactive_documentation_signing(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")

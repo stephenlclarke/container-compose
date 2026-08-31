@@ -28,6 +28,7 @@ import math
 import os
 import posixpath
 import re
+import shutil
 import statistics
 import subprocess
 import tarfile
@@ -48,6 +49,7 @@ ASSETS = {
         "Formula/container.rb",
     ),
 }
+INIT_ASSET = "container-vminit-arm64.oci.tar"
 
 
 class BenchmarkInputError(ValueError):
@@ -357,6 +359,7 @@ def validate_archive_members(archive: tarfile.TarFile) -> None:
 def prepare_distribution(
     version: str,
     distribution: Path,
+    init_distribution: Path,
     tap_repository: Path,
     source_repository: Path,
     artifact_source: str,
@@ -366,6 +369,27 @@ def prepare_distribution(
     artifact_source = canonical_artifact_source(version, artifact_source)
     source_commit = release_tag_commit(source_repository, version)
     source_stack = release_tag_stack(source_repository, source_commit)
+    release = f"https://github.com/{REPOSITORY}/releases/tag/{version}"
+    init_asset = init_distribution / INIT_ASSET
+    init_sidecar = init_distribution / f"{INIT_ASSET}.sha256"
+    if not init_asset.is_file() or not init_sidecar.is_file():
+        raise BenchmarkInputError(
+            f"published release {version} is missing {INIT_ASSET} or its checksum"
+        )
+    expected_init_digest = sidecar_digest(init_sidecar, INIT_ASSET)
+    actual_init_digest = sha256(init_asset)
+    if actual_init_digest != expected_init_digest:
+        raise BenchmarkInputError(
+            f"published release checksum mismatch for {INIT_ASSET}"
+        )
+    containerization = source_stack["containerization"]
+    init_references = [
+        "vminit:container-compose",
+        (
+            f"ghcr.io/{containerization['repository']}/vminit:"
+            f"{containerization['ref']}"
+        ),
+    ]
     output.mkdir(parents=True, exist_ok=False)
     output.chmod(0o700)
     asset_manifest: dict[str, object] = {}
@@ -403,11 +427,22 @@ def prepare_distribution(
             "homebrewFormula": formula_path,
             "homebrewCommit": tap_commit,
         }
+    init_output = output / "init"
+    init_output.mkdir(mode=0o700)
+    staged_init_asset = init_output / INIT_ASSET
+    shutil.copyfile(init_asset, staged_init_asset)
+    staged_init_asset.chmod(0o444)
+    asset_manifest["guest"] = {
+        "asset": INIT_ASSET,
+        "sha256": actual_init_digest,
+        "source": release,
+        "references": init_references,
+    }
     manifest: dict[str, object] = {
         "version": version,
         "sourceCommit": source_commit,
         "stack": source_stack,
-        "release": f"https://github.com/{REPOSITORY}/releases/tag/{version}",
+        "release": release,
         "artifactSource": artifact_source,
         "assets": asset_manifest,
     }
@@ -462,6 +497,7 @@ def validate_release_identity(
     version = manifest.get("version")
     source_commit = manifest.get("sourceCommit")
     source_stack = manifest.get("stack")
+    assets = manifest.get("assets")
     artifact_source = manifest.get("artifactSource")
     compose_record = fingerprints.get("containerCompose")
     runtime_record = fingerprints.get("containerRuntime")
@@ -470,6 +506,7 @@ def validate_release_identity(
         or not isinstance(source_commit, str)
         or re.fullmatch(r"[0-9a-f]{40}", source_commit) is None
         or not isinstance(source_stack, dict)
+        or not isinstance(assets, dict)
         or not isinstance(artifact_source, str)
         or not isinstance(compose_record, dict)
     ):
@@ -506,7 +543,6 @@ def validate_release_identity(
     container_ref = stack_components["container"]["ref"]
     containerization_source = stack_components["containerization"]["repository"]
     containerization_ref = stack_components["containerization"]["ref"]
-
     expected_compose = {
         "version": version,
         "source": REPOSITORY,
@@ -569,6 +605,32 @@ def validate_release_identity(
                 f"{label} runtime component {app_name!r} does not match "
                 f"Container revision {container_ref}"
             )
+
+    guest = assets.get("guest")
+    runtime_init = runtime_record.get("initImage")
+    expected_init_references = [
+        "vminit:container-compose",
+        f"ghcr.io/{containerization_source}/vminit:{containerization_ref}",
+    ]
+    if not isinstance(guest, dict):
+        raise BenchmarkInputError(f"{label} release has no guest init-image authority")
+    init_digest = guest.get("sha256")
+    if (
+        guest.get("asset") != INIT_ASSET
+        or not isinstance(init_digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", init_digest) is None
+        or guest.get("references") != expected_init_references
+    ):
+        raise BenchmarkInputError(f"{label} release guest init-image identity is invalid")
+    if not isinstance(runtime_init, dict):
+        raise BenchmarkInputError(f"{label} runtime did not record its guest init image")
+    if (
+        runtime_init.get("archiveSha256") != init_digest
+        or runtime_init.get("references") != expected_init_references
+    ):
+        raise BenchmarkInputError(
+            f"{label} runtime guest init image does not match the published release"
+        )
 
 
 def render_report(
@@ -705,6 +767,7 @@ def render_report(
                 f"Release tag commit: `{manifest['sourceCommit']}`.",
                 f"Container: `{manifest['stack']['container']['repository']}@{manifest['stack']['container']['ref']}`.",
                 f"Containerization: `{manifest['stack']['containerization']['repository']}@{manifest['stack']['containerization']['ref']}`.",
+                f"Guest init image: `{manifest['assets']['guest']['asset']}` at `{manifest['assets']['guest']['sha256']}`.",
                 "",
             ]
         )
@@ -772,6 +835,7 @@ def main() -> None:
     prepare = subparsers.add_parser("prepare")
     prepare.add_argument("--version", required=True)
     prepare.add_argument("--distribution", type=Path, required=True)
+    prepare.add_argument("--init-distribution", type=Path, required=True)
     prepare.add_argument("--tap-repository", type=Path, required=True)
     prepare.add_argument("--source-repository", type=Path, required=True)
     prepare.add_argument("--artifact-source", required=True)
@@ -811,6 +875,7 @@ def main() -> None:
             result = prepare_distribution(
                 arguments.version,
                 arguments.distribution,
+                arguments.init_distribution,
                 arguments.tap_repository,
                 arguments.source_repository,
                 arguments.artifact_source,

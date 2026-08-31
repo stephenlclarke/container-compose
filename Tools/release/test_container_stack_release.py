@@ -613,6 +613,35 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("stable Homebrew formula must derive version", verifier)
         self.assertNotIn('if [[ "${formula_version}" != "${version}" ]]', verifier)
 
+    def test_stable_release_publishes_and_verifies_guest_closure(self) -> None:
+        publisher = self.script[
+            self.script.index("publish_stable_init_image_asset() {") : self.script.index(
+                "# Verify the stable release assets and Homebrew formula agree."
+            )
+        ]
+        dispatcher = self.script[
+            self.script.index("dispatch_compose_stable_workflow() {") : self.script.index(
+                "# Dispatch and wait for a new stable package publication."
+            )
+        ]
+        verifier = self.script[
+            self.script.index("verify_compose_stable_package() {") : self.script.index(
+                "# Dispatch and verify one stable package workflow mode"
+            )
+        ]
+
+        self.assertIn('asset="container-vminit-arm64.oci.tar"', publisher)
+        self.assertIn("CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE", publisher)
+        self.assertIn("stable_containerization_authority", publisher)
+        self.assertIn("OCI_IMAGE_LAYOUT_VALIDATOR", publisher)
+        self.assertIn('github_cli release upload "${version}"', publisher)
+        self.assertLess(
+            dispatcher.index('publish_stable_init_image_asset "${version}"'),
+            dispatcher.index('verify_compose_stable_package "${version}"'),
+        )
+        self.assertIn('init_asset="container-vminit-arm64.oci.tar"', verifier)
+        self.assertIn('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${tmp}/${init_asset}"', verifier)
+
     def test_homebrew_tap_pushes_authenticate_with_the_tap_token(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         self.assertGreaterEqual(

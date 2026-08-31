@@ -27,6 +27,8 @@
 #   DOCKER_COMPOSE               Docker Compose command to compare with.
 #   PARITY_EVIDENCE_DIR          Raw samples, JUnit, fingerprints, and matrix.
 #   PARITY_WORK_ROOT             Local fixture root (default: .build/parity).
+#   PARITY_INIT_IMAGE_ARCHIVE    Exact guest OCI archive used by the runtime.
+#   PARITY_INIT_IMAGE_REFERENCES Space-separated immutable guest references.
 #   PARITY_REPETITIONS           Timed repetitions per lane (default: 5).
 #   PARITY_TIMEOUT_SECONDS       Per-operation timeout (default: 300).
 #   PARITY_TIMING_MAX_RATIO      Candidate median/P95 limit (default: 10).
@@ -75,6 +77,8 @@ CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 CONTAINER_BINARY="${CONTAINER_COMPOSE_CONTAINER:-container}"
 PARITY_EVIDENCE_DIR="${PARITY_EVIDENCE_DIR:-$REPO_ROOT/.build/parity/performance-matrix}"
 PARITY_WORK_ROOT="${PARITY_WORK_ROOT:-$REPO_ROOT/.build/parity}"
+PARITY_INIT_IMAGE_ARCHIVE="${PARITY_INIT_IMAGE_ARCHIVE:-}"
+PARITY_INIT_IMAGE_REFERENCES="${PARITY_INIT_IMAGE_REFERENCES:-}"
 PARITY_REPETITIONS="${PARITY_REPETITIONS:-5}"
 PARITY_TIMEOUT_SECONDS="${PARITY_TIMEOUT_SECONDS:-300}"
 PARITY_TIMING_MAX_RATIO="${PARITY_TIMING_MAX_RATIO:-10}"
@@ -214,6 +218,15 @@ check_tools() {
     [[ "$PARITY_PRESSURE_RECORDS" =~ ^[1-9][0-9]*$ ]] || { error "PARITY_PRESSURE_RECORDS must be a positive integer"; return 2; }
     [[ "$PARITY_INCLUDE_REMOTE_LOGGING" == 0 || "$PARITY_INCLUDE_REMOTE_LOGGING" == 1 ]] || { error "PARITY_INCLUDE_REMOTE_LOGGING must be 0 or 1"; return 2; }
     [[ "$PARITY_WORK_ROOT" == /* && "$PARITY_WORK_ROOT" != / ]] || { error "PARITY_WORK_ROOT must be an absolute non-root path"; return 2; }
+    if { [[ -n "$PARITY_INIT_IMAGE_ARCHIVE" ]] && [[ -z "$PARITY_INIT_IMAGE_REFERENCES" ]]; } || \
+        { [[ -z "$PARITY_INIT_IMAGE_ARCHIVE" ]] && [[ -n "$PARITY_INIT_IMAGE_REFERENCES" ]]; }; then
+        error "PARITY_INIT_IMAGE_ARCHIVE and PARITY_INIT_IMAGE_REFERENCES must be set together"
+        return 2
+    fi
+    if [[ -n "$PARITY_INIT_IMAGE_ARCHIVE" && ! -f "$PARITY_INIT_IMAGE_ARCHIVE" ]]; then
+        error "PARITY_INIT_IMAGE_ARCHIVE does not exist: $PARITY_INIT_IMAGE_ARCHIVE"
+        return 2
+    fi
     if [[ "$PARITY_INCLUDE_REMOTE_LOGGING" == 1 && "$PARITY_SINK_BIND_ADDRESS" == "127.0.0.1" && "$PARITY_DOCKER_HOST_ADDRESS" != "127.0.0.1" ]]; then
         skip_or_fail 'Docker remote-logging probes require an explicit host-reachable PARITY_SINK_BIND_ADDRESS (for example 0.0.0.0); refusing to request local-network access implicitly'
     fi
@@ -424,6 +437,10 @@ create_fixtures() {
 
 # Initialize raw samples and exact run fingerprints.
 initialize_evidence() {
+    local init_image_sha=
+    if [[ -n "$PARITY_INIT_IMAGE_ARCHIVE" ]]; then
+        init_image_sha="$(shasum -a 256 "$PARITY_INIT_IMAGE_ARCHIVE" | awk '{print $1}')"
+    fi
     mkdir -p "$PARITY_EVIDENCE_DIR"
     PARITY_REPETITIONS="$PARITY_REPETITIONS" python3 - "$TIMING_TSV" "$FINGERPRINT_JSON" \
         "$("${DOCKER_COMPOSE_COMMAND[@]}" version --short)" "$(docker version --format '{{json .Server}}')" \
@@ -434,13 +451,20 @@ initialize_evidence() {
         "$PARITY_COMPARABLE_NOISE_PCT" "$PARITY_PRESSURE_RECORDS" \
         "$PARITY_SINK_STALL_SECONDS" "$PARITY_INCLUDE_REMOTE_LOGGING" \
         "$PARITY_SINK_BIND_ADDRESS" "$PARITY_DOCKER_HOST_ADDRESS" \
-        "$PARITY_CONTAINER_HOST_ADDRESS" <<'PY'
+        "$PARITY_CONTAINER_HOST_ADDRESS" "$init_image_sha" \
+        "$PARITY_INIT_IMAGE_REFERENCES" <<'PY'
 import json, os, pathlib, sys
 from datetime import datetime, timezone
-(timing, fingerprints, docker_compose, docker_engine, compose_version, runtime_version, commit, model, memory, macos, architecture, compose_sha, runtime_sha, noise, pressure_records, sink_stall, include_remote_logging, sink_bind, docker_host, container_host) = sys.argv[1:]
+(timing, fingerprints, docker_compose, docker_engine, compose_version, runtime_version, commit, model, memory, macos, architecture, compose_sha, runtime_sha, noise, pressure_records, sink_stall, include_remote_logging, sink_bind, docker_host, container_host, init_sha, init_references) = sys.argv[1:]
 def decode(value):
     try: return json.loads(value)
     except json.JSONDecodeError: return value
+runtime = {"sha256": runtime_sha, "version": decode(runtime_version)}
+if init_sha:
+    runtime["initImage"] = {
+        "archiveSha256": init_sha,
+        "references": init_references.split(),
+    }
 pathlib.Path(timing).write_text("fixture\tlane\trepetition\tschedule_position\tdirection\tduration_seconds\toutcome\tcommand\n", encoding="utf-8")
 pathlib.Path(fingerprints).write_text(json.dumps({
     "capturedAt": datetime.now(timezone.utc).isoformat(),
@@ -458,11 +482,28 @@ pathlib.Path(fingerprints).write_text(json.dumps({
         "timingDirection": "lower-is-better fixed-work duration",
     },
     "containerCompose": {"commit": commit, "sha256": compose_sha, "version": decode(compose_version)},
-    "containerRuntime": {"sha256": runtime_sha, "version": decode(runtime_version)},
+    "containerRuntime": runtime,
     "docker": {"composeVersion": docker_compose, "engine": decode(docker_engine)},
     "host": {"architecture": architecture, "hardwareMemoryBytes": int(memory), "hardwareModel": model, "macOSVersion": macos},
 }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
+}
+
+# Prove the candidate can complete one lifecycle before recording any timings.
+preflight_candidate_lifecycle() {
+    local file="$FIXTURE_DIR/services-1.yml"
+    local project=cc-perf-c-preflight
+    local status=0
+
+    down_project container-compose "$project" "$file"
+    "$CONTAINER_COMPOSE" --ansi never -p "$project" -f "$file" \
+        up -d --pull never || status=$?
+    "$CONTAINER_COMPOSE" --ansi never -p "$project" -f "$file" \
+        down --volumes --remove-orphans >/dev/null 2>&1 || true
+    if ((status != 0)); then
+        error "candidate lifecycle preflight failed before benchmark timing"
+        return "$status"
+    fi
 }
 
 # Run one command under a monotonic timeout and append the raw outcome.
@@ -1095,14 +1136,19 @@ PY
 # Warm each image and run counterbalanced lifecycle and logging samples.
 run_matrix() {
     local count repetition file lane position fixture workload tail buffer_size
+    file="$FIXTURE_DIR/services-1.yml"
+    "$CONTAINER_COMPOSE" --ansi never -p cc-perf-c-1 -f "$file" pull --quiet >/dev/null
+    initialize_evidence
+    preflight_candidate_lifecycle
     for count in 1 10 50; do
         file="$FIXTURE_DIR/services-$count.yml"
         "${DOCKER_COMPOSE_COMMAND[@]}" -p "cc-perf-d-$count" -f "$file" pull --quiet >/dev/null
-        "$CONTAINER_COMPOSE" --ansi never -p "cc-perf-c-$count" -f "$file" pull --quiet >/dev/null
+        if ((count != 1)); then
+            "$CONTAINER_COMPOSE" --ansi never -p "cc-perf-c-$count" -f "$file" pull --quiet >/dev/null
+        fi
     done
     "${DOCKER_COMPOSE_COMMAND[@]}" -p cc-perf-d-logging -f "$FIXTURE_DIR/logging.yml" pull --quiet >/dev/null
     "$CONTAINER_COMPOSE" --ansi never -p cc-perf-c-logging -f "$FIXTURE_DIR/logging.yml" pull --quiet >/dev/null
-    initialize_evidence
     for ((repetition = 1; repetition <= PARITY_REPETITIONS; repetition++)); do
         select_lane_order "$repetition"
         for count in 1 10 50; do

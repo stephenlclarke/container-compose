@@ -1868,6 +1868,67 @@ exit 113
                 inherited_policy_log.read_text(encoding="utf-8"), "unset\n"
             )
 
+    def test_isolates_runtime_config_without_a_matched_init_image(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            app_root = temporary_root / "app-root"
+            inherited_config_home = temporary_root / "inherited-config"
+            inherited_container_config = inherited_config_home / "container"
+            inherited_container_config.mkdir(parents=True)
+            inherited_config = inherited_container_config / "config.toml"
+            inherited_config.write_text(
+                '[vminit]\nimage = "ghcr.io/apple/containerization/vminit:0.40.0"\n',
+                encoding="utf-8",
+            )
+            observed_config_home = temporary_root / "observed-config-home"
+            container_log = temporary_root / "container.log"
+            fake_container = temporary_root / "container-cli"
+            self.write_fake_container(fake_container)
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(
+                        temporary_root / "runtime.lock"
+                    ),
+                    "CONTAINER_TEST_LOG": str(container_log),
+                    "OBSERVED_CONFIG_HOME": str(observed_config_home),
+                    "XDG_CONFIG_HOME": str(inherited_config_home),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    str(fake_container),
+                    "/bin/sh",
+                    "-c",
+                    'printf "%s\\n" "$XDG_CONFIG_HOME" >"$OBSERVED_CONFIG_HOME"',
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                observed_config_home.read_text(encoding="utf-8").strip(),
+                str(app_root / "xdg-config"),
+            )
+            self.assertEqual(
+                inherited_config.read_text(encoding="utf-8"),
+                '[vminit]\nimage = "ghcr.io/apple/containerization/vminit:0.40.0"\n',
+            )
+            self.assertFalse(
+                (app_root / "xdg-config" / "container" / "config.toml").exists()
+            )
+            invocations = container_log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(
+                sum("--debug system start" in invocation for invocation in invocations),
+                1,
+            )
+
     @unittest.skipUnless(
         os.uname().sysname == "Darwin", "requires macOS codesign"
     )

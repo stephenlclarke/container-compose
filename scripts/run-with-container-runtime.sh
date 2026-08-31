@@ -1759,7 +1759,6 @@ resolve_initial_start_init_image_archive() {
 prepare_runtime_config_home() {
     local deadline="$1"
 
-    has_matched_init_image_source || return 0
     [[ -n "$runtime_app_root" ]] || return 0
 
     runtime_config_home="$runtime_app_root/xdg-config"
@@ -1962,7 +1961,7 @@ stage_containerization_init_source "$runtime_start_sequence_deadline"
 resolve_initial_start_init_image_archive
 prepare_runtime_config_home "$runtime_start_sequence_deadline"
 configure_runtime_builder_image "$runtime_start_sequence_deadline"
-if [[ -n "$initial_start_init_image_archive" ]]; then
+if has_matched_init_image_source && [[ -n "$initial_start_init_image_archive" ]]; then
     configure_matched_init_image "$runtime_start_sequence_deadline"
 fi
 
@@ -1988,10 +1987,10 @@ start_runtime "$runtime_start_sequence_deadline"
 install_runtime_builder_image "$runtime_start_sequence_deadline"
 install_runtime_bootstrap_image "$runtime_start_sequence_deadline"
 install_matched_init_image "$runtime_start_sequence_deadline"
-if [[ -z "$initial_start_init_image_archive" ]]; then
+if has_matched_init_image_source && [[ -z "$initial_start_init_image_archive" ]]; then
     configure_matched_init_image "$runtime_start_sequence_deadline"
 fi
-if [[ -n "$runtime_config_home" ]]; then
+if has_matched_init_image_source && [[ -n "$runtime_config_home" ]]; then
     printf 'Restarting matched container runtime with the installed init image...\n'
     prepare_runtime_restart "$runtime_start_sequence_deadline"
     start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
