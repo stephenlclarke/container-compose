@@ -63,11 +63,29 @@ class HistoricalReconstructionTests(unittest.TestCase):
         return record
 
     def test_resolves_only_an_exact_successful_source_run(self) -> None:
+        older = self.run_record(
+            databaseId=self.run_id - 1,
+            createdAt="2026-08-23T14:32:14Z",
+            url=(
+                "https://github.com/stephenlclarke/containerization/"
+                f"actions/runs/{self.run_id - 1}"
+            ),
+        )
         resolved = MODULE.resolve_containerization_run(
-            [self.run_record(), self.run_record(headSha="b" * 40)], self.revision
+            [older, self.run_record(), self.run_record(headSha="b" * 40)],
+            self.revision,
         )
         self.assertEqual(resolved["runId"], self.run_id)
         self.assertEqual(resolved["containerizationRef"], self.revision)
+        self.assertEqual(
+            [
+                candidate["runId"]
+                for candidate in MODULE.containerization_run_candidates(
+                    [older, self.run_record()], self.revision
+                )
+            ],
+            [self.run_id, self.run_id - 1],
+        )
 
         with self.assertRaisesRegex(
             MODULE.ReconstructionInputError, "no successful"
@@ -215,6 +233,8 @@ class HistoricalWorkflowTests(unittest.TestCase):
         self.assertNotIn("--limit ", workflow)
         self.assertIn("verify-developer-id-archive.sh", workflow)
         self.assertIn("validate-initfs", workflow)
+        self.assertIn("run-candidates", workflow)
+        self.assertIn("no retained initfs run exists", workflow)
         self.assertIn("artifactDigest", workflow)
         self.assertIn("PIPELINE_PROFILE=benchmark-reconstruction", workflow)
         self.assertIn("containerization-benchmark-cctl", workflow)

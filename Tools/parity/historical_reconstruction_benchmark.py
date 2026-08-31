@@ -51,9 +51,9 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def resolve_containerization_run(
+def containerization_run_candidates(
     runs: Iterable[dict[str, object]], revision: str
-) -> dict[str, object]:
+) -> list[dict[str, object]]:
     if COMMIT.fullmatch(revision) is None:
         raise ReconstructionInputError(
             f"Containerization revision must be an exact commit: {revision}"
@@ -85,13 +85,21 @@ def resolve_containerization_run(
         raise ReconstructionInputError(
             f"no successful Containerization build run exists at {revision}"
         )
-    created_at, run_id, url = max(candidates)
-    return {
-        "containerizationRef": revision,
-        "createdAt": created_at,
-        "runId": run_id,
-        "runUrl": url,
-    }
+    return [
+        {
+            "containerizationRef": revision,
+            "createdAt": created_at,
+            "runId": run_id,
+            "runUrl": url,
+        }
+        for created_at, run_id, url in sorted(candidates, reverse=True)
+    ]
+
+
+def resolve_containerization_run(
+    runs: Iterable[dict[str, object]], revision: str
+) -> dict[str, object]:
+    return containerization_run_candidates(runs, revision)[0]
 
 
 def validate_initfs_artifact(
@@ -354,6 +362,10 @@ def main() -> None:
     resolve.add_argument("--runs", type=Path, required=True)
     resolve.add_argument("--revision", required=True)
 
+    candidates = subparsers.add_parser("run-candidates")
+    candidates.add_argument("--runs", type=Path, required=True)
+    candidates.add_argument("--revision", required=True)
+
     validate = subparsers.add_parser("validate-initfs")
     validate.add_argument("--run", type=Path, required=True)
     validate.add_argument("--artifacts", type=Path, required=True)
@@ -382,15 +394,17 @@ def main() -> None:
 
     arguments = parser.parse_args()
     try:
-        if arguments.command == "resolve-run":
+        if arguments.command in {"resolve-run", "run-candidates"}:
             runs = load_json(arguments.runs)
             if not isinstance(runs, list):
                 raise ReconstructionInputError("run metadata has an invalid shape")
+            result = (
+                containerization_run_candidates(runs, arguments.revision)
+                if arguments.command == "run-candidates"
+                else resolve_containerization_run(runs, arguments.revision)
+            )
             print(
-                json.dumps(
-                    resolve_containerization_run(runs, arguments.revision),
-                    sort_keys=True,
-                )
+                json.dumps(result, sort_keys=True)
             )
         elif arguments.command == "validate-initfs":
             run = load_json(arguments.run)

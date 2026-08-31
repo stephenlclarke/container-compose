@@ -248,20 +248,41 @@ jobs:
               }]' "${version_root}/containerization-run-pages.json" \
               > "${version_root}/containerization-runs.json"
             /usr/bin/python3 Tools/parity/historical_reconstruction_benchmark.py \
-              resolve-run \
+              run-candidates \
               --runs "${version_root}/containerization-runs.json" \
               --revision "${containerization_ref}" \
-              > "${version_root}/containerization-run.json"
-            containerization_run_id="$(jq -r \
-              '.runId' "${version_root}/containerization-run.json")"
-            gh api \
-              "repos/stephenlclarke/containerization/actions/runs/${containerization_run_id}/artifacts" \
-              > "${version_root}/containerization-artifacts.json"
-            /usr/bin/python3 Tools/parity/historical_reconstruction_benchmark.py \
-              validate-initfs \
-              --run "${version_root}/containerization-run.json" \
-              --artifacts "${version_root}/containerization-artifacts.json" \
-              > "${version_root}/guest-provenance.json"
+              > "${version_root}/containerization-run-candidates.json"
+            containerization_run_id=
+            while IFS= read -r candidate_id; do
+              [[ "${candidate_id}" =~ ^[1-9][0-9]*$ ]]
+              candidate_run="${version_root}/containerization-run-${candidate_id}.json"
+              candidate_artifacts="${version_root}/containerization-artifacts-${candidate_id}.json"
+              candidate_provenance="${version_root}/guest-provenance-${candidate_id}.json"
+              jq --argjson id "${candidate_id}" \
+                '.[] | select(.runId == $id)' \
+                "${version_root}/containerization-run-candidates.json" \
+                > "${candidate_run}"
+              gh api \
+                "repos/stephenlclarke/containerization/actions/runs/${candidate_id}/artifacts" \
+                > "${candidate_artifacts}"
+              if /usr/bin/python3 \
+                Tools/parity/historical_reconstruction_benchmark.py \
+                validate-initfs --run "${candidate_run}" \
+                --artifacts "${candidate_artifacts}" \
+                > "${candidate_provenance}" 2> \
+                "${version_root}/containerization-artifacts-${candidate_id}.error.log"; then
+                containerization_run_id="${candidate_id}"
+                /bin/cp "${candidate_provenance}" \
+                  "${version_root}/guest-provenance.json"
+                break
+              fi
+            done < <(jq -r '.[].runId' \
+              "${version_root}/containerization-run-candidates.json")
+            if [[ -z "${containerization_run_id}" ]]; then
+              printf 'no retained initfs run exists for containerization@%s\n' \
+                "${containerization_ref}" >&2
+              exit 1
+            fi
             initfs_artifact_id="$(jq -r \
               '.artifactId' "${version_root}/guest-provenance.json")"
             initfs_artifact_digest="$(jq -r \
