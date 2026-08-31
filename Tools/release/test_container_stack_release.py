@@ -924,6 +924,15 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def test_documentation_sites_build_in_parallel_before_pages_assembly(self) -> None:
         workflow = DOCS_WORKFLOW.read_text(encoding="utf-8")
 
+        concurrency = workflow[
+            workflow.index("concurrency:") : workflow.index("\njobs:")
+        ]
+        self.assertIn(
+            "group: documentation-${{ github.workflow }}-${{ github.ref }}-"
+            "${{ github.event_name }}",
+            concurrency,
+        )
+        self.assertIn("cancel-in-progress: true", concurrency)
         self.assertIn("strategy:", workflow)
         self.assertIn("fail-fast: true", workflow)
         self.assertEqual(workflow.count("- site:"), 4)
