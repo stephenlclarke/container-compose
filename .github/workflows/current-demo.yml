@@ -319,6 +319,7 @@ jobs:
           export CONTAINER_APP_ROOT="${demo_app_root}"
           export CONTAINER_COMPOSE_DEMO_INIT_IMAGE_ARCHIVE="${demo_init_image_archive}"
           export CONTAINER_COMPOSE_DEMO_ROOT="${demo_source_root}"
+          export CONTAINER_COMPOSE_DEMO_DEADLINE_RUNNER="${GITHUB_WORKSPACE}/Tools/ci/run-command-with-deadline.py"
           export XDG_CONFIG_HOME="${demo_config_home}"
           export PATH="${demo_root}/bin:${PATH}"
           sed "1s#^Output .*#Output \"${demo_output}\"#" \

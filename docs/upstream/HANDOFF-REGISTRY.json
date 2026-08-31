@@ -7228,6 +7228,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/356"
     },
     {
+      "id": "container-compose-358",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Bound Current Demo engine readiness",
+      "state": "active-draft",
+      "lastVerified": "2026-08-31",
+      "commits": [
+        "dec369f5d3f04096950eb432e637cf2f00303e7a"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-357.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-358.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/358"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",
