@@ -1,0 +1,421 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Historical Reconstruction Benchmark
+run-name: Reconstruct and benchmark ${{ inputs.version }} vs ${{ inputs.compare_to || 'previous stable' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Stable version to benchmark"
+        required: true
+        type: string
+      compare_to:
+        description: "Optional comparison version; defaults to the previous stable"
+        required: false
+        type: string
+      repetitions:
+        description: "Timed repetitions per fixture and lane"
+        required: true
+        default: "5"
+        type: choice
+        options:
+          - "3"
+          - "5"
+          - "7"
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: container-compose-performance-benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Reconstruct Missing Guest Closure And Compare
+    if: >
+      github.repository == 'stephenlclarke/container-compose' &&
+      github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, macOS, ARM64, container-compose-release]
+    timeout-minutes: 240
+    env:
+      BENCHMARK_ROOT: /private/tmp/container-compose-historical-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+      PIPELINE_STATE_ROOT: /Volumes/SSD/github/.container-compose-pipeline
+      REPETITIONS: ${{ inputs.repetitions }}
+      RUNTIME_ROOT_PREFIX: /private/tmp/cchr-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout benchmark controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Checkout complete Homebrew distribution history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: stephenlclarke/homebrew-tap
+          path: homebrew-tap
+          fetch-depth: 0
+
+      - name: Checkout Containerization source authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: stephenlclarke/containerization
+          path: containerization-source
+          fetch-depth: 0
+
+      - name: Verify unattended documentation signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git config --global --get gpg.format)" == "ssh" ]]
+          [[ "$(git config --global --get commit.gpgsign)" == "true" ]]
+          signing_key="$(git config --global --get user.signingkey)"
+          [[ -n "${signing_key}" && -r "${signing_key}" ]]
+          signing_private_key="${signing_key%.pub}"
+          [[ -r "${signing_private_key}" ]]
+          ssh-keygen -y -P '' -f "${signing_private_key}" >/dev/null 2>&1
+          git config gpg.format ssh
+          git config commit.gpgsign true
+          git config user.signingkey "${signing_key}"
+
+      - name: Resolve exact stable versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_INPUT: ${{ inputs.version }}
+          BASELINE_INPUT: ${{ inputs.compare_to }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 \
+            --json tagName,isDraft,isPrerelease,publishedAt \
+            > "${RUNNER_TEMP}/published-releases.json"
+          arguments=(
+            resolve
+            --releases "${RUNNER_TEMP}/published-releases.json"
+            --target "${TARGET_INPUT}"
+          )
+          if [[ -n "${BASELINE_INPUT}" ]]; then
+            arguments+=(--baseline "${BASELINE_INPUT}")
+          fi
+          /usr/bin/python3 Tools/parity/published_release_benchmark.py \
+            "${arguments[@]}" \
+            > "${RUNNER_TEMP}/comparison.json"
+          target="$(jq -r '.target' "${RUNNER_TEMP}/comparison.json")"
+          baseline="$(jq -r '.baseline' "${RUNNER_TEMP}/comparison.json")"
+          printf 'TARGET_VERSION=%s\nBASELINE_VERSION=%s\n' \
+            "${target}" "${baseline}" >> "${GITHUB_ENV}"
+          printf 'Reconstructing %s and %s from exact retained authorities.\n' \
+            "${target}" "${baseline}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Require unattended local build authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -d /Volumes/SSD/github ]]
+          [[ -d "${PIPELINE_STATE_ROOT}" ]]
+          [[ -f "${PIPELINE_STATE_ROOT}/.container-compose-pipeline-root" ]]
+          [[ "$(<"${PIPELINE_STATE_ROOT}/.container-compose-pipeline-root")" == \
+            'container-compose recoverable pipeline v1' ]]
+          [[ -x "${PIPELINE_STATE_ROOT}/tools/nextflow/26.04.6/nextflow" ]]
+          if [[ -e "${BENCHMARK_ROOT}" ]]; then
+            printf 'benchmark root already exists: %s\n' "${BENCHMARK_ROOT}" >&2
+            exit 1
+          fi
+          install -d -m 0700 "${BENCHMARK_ROOT}"
+          printf 'container-compose historical benchmark v1\n' \
+            > "${BENCHMARK_ROOT}/.historical-benchmark-root"
+          install -d -m 0700 \
+            "${BENCHMARK_ROOT}/downloads" \
+            "${BENCHMARK_ROOT}/prepared" \
+            "${BENCHMARK_ROOT}/evidence" \
+            "${BENCHMARK_ROOT}/work"
+
+      - name: Recover host packages and exact historical guest closure
+        env:
+          # The workflow token is scoped to this repository. This existing
+          # cross-repository token is required only to read retained Actions
+          # artifacts from the sibling Containerization repository.
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${GH_TOKEN}" ]]
+          gh run list --repo "${GITHUB_REPOSITORY}" \
+            --workflow prebuilt-binaries.yml --limit 100 \
+            --json databaseId,displayTitle,status,conclusion,event,createdAt,url \
+            > "${BENCHMARK_ROOT}/downloads/package-runs.json"
+
+          for version in "${BASELINE_VERSION}" "${TARGET_VERSION}"; do
+            version_root="${BENCHMARK_ROOT}/downloads/${version}"
+            distribution="${version_root}/distribution"
+            initfs_root="${version_root}/initfs"
+            guest_root="${version_root}/guest"
+            install -d -m 0700 "${distribution}" "${guest_root}"
+
+            /usr/bin/python3 Tools/parity/published_release_benchmark.py \
+              resolve-package-run \
+              --runs "${BENCHMARK_ROOT}/downloads/package-runs.json" \
+              --version "${version}" > "${version_root}/package-run.json"
+            package_run_id="$(jq -r '.runId' "${version_root}/package-run.json")"
+            package_run_url="$(jq -r '.url' "${version_root}/package-run.json")"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${package_run_id}/artifacts" \
+              > "${version_root}/package-artifacts.json"
+            /usr/bin/python3 Tools/parity/published_release_benchmark.py \
+              validate-package-artifacts \
+              --artifacts "${version_root}/package-artifacts.json" \
+              > "${version_root}/validated-package-artifacts.json"
+            gh run download "${package_run_id}" --repo "${GITHUB_REPOSITORY}" \
+              --dir "${distribution}" --name 'container-release-arm64.tar.gz'
+            gh run download "${package_run_id}" --repo "${GITHUB_REPOSITORY}" \
+              --dir "${distribution}" \
+              --name 'container-compose-plugin-release-arm64.tar.gz'
+            Tools/release/verify-developer-id-archive.sh \
+              "${distribution}/container-release-arm64.tar.gz"
+            Tools/release/verify-developer-id-archive.sh \
+              "${distribution}/container-compose-plugin-release-arm64.tar.gz"
+
+            source_commit="$(git rev-parse --verify "refs/tags/${version}^{commit}")"
+            git show "${source_commit}:Tools/release/stack-refs.json" \
+              > "${version_root}/stack-refs.json"
+            containerization_ref="$(jq -r \
+              '.components.containerization.ref' "${version_root}/stack-refs.json")"
+            [[ "${containerization_ref}" =~ ^[0-9a-f]{40}$ ]]
+
+            gh run list --repo stephenlclarke/containerization \
+              --commit "${containerization_ref}" --limit 30 \
+              --json databaseId,workflowName,headSha,status,conclusion,event,createdAt,url \
+              > "${version_root}/containerization-runs.json"
+            /usr/bin/python3 Tools/parity/historical_reconstruction_benchmark.py \
+              resolve-run \
+              --runs "${version_root}/containerization-runs.json" \
+              --revision "${containerization_ref}" \
+              > "${version_root}/containerization-run.json"
+            containerization_run_id="$(jq -r \
+              '.runId' "${version_root}/containerization-run.json")"
+            gh api \
+              "repos/stephenlclarke/containerization/actions/runs/${containerization_run_id}/artifacts" \
+              > "${version_root}/containerization-artifacts.json"
+            /usr/bin/python3 Tools/parity/historical_reconstruction_benchmark.py \
+              validate-initfs \
+              --run "${version_root}/containerization-run.json" \
+              --artifacts "${version_root}/containerization-artifacts.json" \
+              > "${version_root}/guest-provenance.json"
+            initfs_artifact_id="$(jq -r \
+              '.artifactId' "${version_root}/guest-provenance.json")"
+            initfs_artifact_digest="$(jq -r \
+              '.artifactDigest' "${version_root}/guest-provenance.json")"
+            gh api -H 'Accept: application/vnd.github+json' \
+              "repos/stephenlclarke/containerization/actions/artifacts/${initfs_artifact_id}/zip" \
+              > "${version_root}/initfs.zip"
+            /usr/bin/python3 Tools/parity/historical_reconstruction_benchmark.py \
+              extract-initfs --archive "${version_root}/initfs.zip" \
+              --digest "${initfs_artifact_digest}" --output "${initfs_root}"
+
+            attempt_id="historical-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${version//./-}"
+            PIPELINE_PROFILE=benchmark-reconstruction \
+              PIPELINE_STAGE_SELECTOR=containerization-benchmark-cctl \
+              PIPELINE_ATTEMPT_ID="${attempt_id}" \
+              PIPELINE_CONTAINERIZATION_REPO="${GITHUB_WORKSPACE}/containerization-source" \
+              PIPELINE_CONTAINERIZATION_REF="${containerization_ref}" \
+              /opt/homebrew/opt/make/libexec/gnubin/make \
+                --no-print-directory pipeline
+            pipeline_evidence="${PIPELINE_STATE_ROOT}/evidence/${attempt_id}"
+            cctl_result="${version_root}/cctl-result.json"
+            /usr/bin/python3 Tools/parity/historical_reconstruction_benchmark.py \
+              extract-cctl \
+              --archive "${pipeline_evidence}/receipts/containerization-benchmark-cctl.artifacts.tar" \
+              --manifest "${pipeline_evidence}/receipts/containerization-benchmark-cctl.artifacts.tsv" \
+              --output "${version_root}/cctl" > "${cctl_result}"
+
+            cctl_home="${version_root}/cctl-home"
+            install -d -m 0700 "${cctl_home}/Library/Application Support" \
+              "${version_root}/tmp"
+            cctl_environment=(env -i \
+              PATH=/usr/bin:/bin HOME="${cctl_home}" \
+              TMPDIR="${version_root}/tmp" LC_ALL=C LANG=C TERM=dumb TZ=UTC)
+            "${cctl_environment[@]}" "${version_root}/cctl" rootfs create \
+              --image vminit:latest \
+              --label org.opencontainers.image.source=https://github.com/stephenlclarke/containerization \
+              "${initfs_root}/init.rootfs.tar.gz"
+            exact_reference="ghcr.io/stephenlclarke/containerization/vminit:${containerization_ref}"
+            "${cctl_environment[@]}" "${version_root}/cctl" images tag \
+              vminit:latest vminit:container-compose
+            "${cctl_environment[@]}" "${version_root}/cctl" images tag \
+              vminit:latest "${exact_reference}"
+            guest_archive="${guest_root}/container-vminit-arm64.oci.tar"
+            "${cctl_environment[@]}" "${version_root}/cctl" images save \
+              --output "${guest_archive}" \
+              vminit:container-compose "${exact_reference}"
+            guest_digest="$(shasum -a 256 "${guest_archive}" | awk '{print $1}')"
+            printf '%s  %s\n' "${guest_digest}" \
+              container-vminit-arm64.oci.tar \
+              > "${guest_archive}.sha256"
+            jq -s '.[0] + .[1]' \
+              "${version_root}/guest-provenance.json" "${cctl_result}" \
+              > "${version_root}/guest-provenance.complete.json"
+
+            /usr/bin/python3 Tools/parity/historical_reconstruction_benchmark.py prepare \
+              --version "${version}" --distribution "${distribution}" \
+              --init-distribution "${guest_root}" \
+              --tap-repository homebrew-tap --source-repository . \
+              --artifact-source "${package_run_url}" \
+              --guest-provenance "${version_root}/guest-provenance.complete.json" \
+              --output "${BENCHMARK_ROOT}/prepared/${version}"
+            /usr/bin/python3 Tools/release/validate-oci-image-layout.py \
+              "${BENCHMARK_ROOT}/prepared/${version}/init/container-vminit-arm64.oci.tar" \
+              vminit:container-compose "${exact_reference}"
+          done
+
+      - name: Require a quiet benchmark host
+        shell: bash
+        run: |
+          set -euo pipefail
+          competing=0
+          for process_name in swift-frontend swiftc clang xcodebuild nextflow; do
+            if pgrep -x "${process_name}" > \
+              "${BENCHMARK_ROOT}/work/competing-${process_name}.txt" 2>/dev/null; then
+              printf 'competing build process is still active: %s\n' \
+                "${process_name}" >&2
+              competing=1
+            fi
+          done
+          pmset -g therm > "${BENCHMARK_ROOT}/evidence/thermal-before.txt"
+          sysctl -n vm.loadavg > "${BENCHMARK_ROOT}/evidence/load-before.txt"
+          ps -Ao pid,ppid,%cpu,comm -r \
+            > "${BENCHMARK_ROOT}/evidence/processes-before.txt"
+          load_one="$(awk '{ print $2 }' \
+            "${BENCHMARK_ROOT}/evidence/load-before.txt")"
+          cpu_count="$(sysctl -n hw.ncpu)"
+          awk -v load="${load_one}" -v cpus="${cpu_count}" \
+            'BEGIN { exit !(load <= cpus / 2) }'
+          ((competing == 0))
+
+      - name: Run same-host reconstructed comparisons
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_version() {
+            local version="$1"
+            local prepared="${BENCHMARK_ROOT}/prepared/${version}"
+            local runtime="${prepared}/runtime/bin/container"
+            local compose="${prepared}/compose/compose/bin/compose"
+            local init_archive="${prepared}/init/container-vminit-arm64.oci.tar"
+            local init_references
+            init_references="$(jq -r '.assets.guest.references | join(" ")' \
+              "${prepared}/published-distribution.json")"
+            local run_root="${BENCHMARK_ROOT}/work/${version}"
+            local runtime_root="${RUNTIME_ROOT_PREFIX}-${version}"
+            install -d -m 0700 "${run_root}/fixtures"
+            CONTAINER_RUNTIME_APP_ROOT="${runtime_root}" \
+              CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS=ghcr.io,docker.io,registry-1.docker.io,index.docker.io \
+              CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT=/private/tmp \
+              CONTAINER_RUNTIME_LOCALIZE_APP_ROOT=never \
+              CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="${init_archive}" \
+              CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES="${init_references}" \
+              CONTAINER_COMPOSE_INIT_IMAGE=vminit:container-compose \
+              CONTAINER_COMPOSE="${compose}" \
+              CONTAINER_COMPOSE_CONTAINER="${runtime}" \
+              PARITY_INIT_IMAGE_ARCHIVE="${init_archive}" \
+              PARITY_INIT_IMAGE_REFERENCES="${init_references}" \
+              PARITY_WORK_ROOT="${run_root}/fixtures" \
+              PARITY_EVIDENCE_DIR="${BENCHMARK_ROOT}/evidence/${version}" \
+              PARITY_REPETITIONS="${REPETITIONS}" \
+              PARITY_INCLUDE_REMOTE_LOGGING=0 \
+              PARITY_TIMING_POLICY=record \
+              scripts/run-with-container-runtime.sh "${runtime}" \
+                Tools/parity/check-compose-performance-matrix.sh --strict
+          }
+          run_version "${BASELINE_VERSION}"
+          run_version "${TARGET_VERSION}"
+          pmset -g therm > "${BENCHMARK_ROOT}/evidence/thermal-after.txt"
+          sysctl -n vm.loadavg > "${BENCHMARK_ROOT}/evidence/load-after.txt"
+
+      - name: Render reconstruction evidence report
+        env:
+          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="docs/benchmarks/${TARGET_VERSION}-vs-${BASELINE_VERSION}.md"
+          /usr/bin/python3 Tools/parity/published_release_benchmark.py render \
+            --target-evidence "${BENCHMARK_ROOT}/evidence/${TARGET_VERSION}" \
+            --baseline-evidence "${BENCHMARK_ROOT}/evidence/${BASELINE_VERSION}" \
+            --target-distribution "${BENCHMARK_ROOT}/prepared/${TARGET_VERSION}/published-distribution.json" \
+            --baseline-distribution "${BENCHMARK_ROOT}/prepared/${BASELINE_VERSION}/published-distribution.json" \
+            --output "${report}" --workflow-url "${WORKFLOW_URL}"
+          printf 'REPORT_PATH=%s\n' "${report}" >> "${GITHUB_ENV}"
+
+      - name: Retain raw reconstruction evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: historical-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.BENCHMARK_ROOT }}/evidence
+            ${{ env.BENCHMARK_ROOT }}/prepared/*/published-distribution.json
+            ${{ env.BENCHMARK_ROOT }}/downloads/*/guest-provenance.complete.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Open documentation pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="docs/historical-benchmark-${TARGET_VERSION}-vs-${BASELINE_VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "${branch}"
+          git add -- "${REPORT_PATH}"
+          git diff --cached --check
+          git commit -S -m \
+            "docs(benchmarks): compare ${TARGET_VERSION} with ${BASELINE_VERSION}"
+          git push --set-upstream origin "${branch}"
+          gh pr create --base main --head "${branch}" \
+            --title "docs(benchmarks): compare ${TARGET_VERSION} with ${BASELINE_VERSION}" \
+            --body "Historical reconstruction benchmark for ${TARGET_VERSION} versus ${BASELINE_VERSION}. Host executables are the immutable signed release packages; each missing guest archive is reconstructed from its exact retained CI initfs and Containerization source revision. Raw evidence is retained by workflow run ${GITHUB_RUN_ID}."
+
+      - name: Clean marker-protected benchmark root
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker="${BENCHMARK_ROOT}/.historical-benchmark-root"
+          if [[ -f "${marker}" ]] && \
+            [[ "$(<"${marker}")" == 'container-compose historical benchmark v1' ]]; then
+            find "${BENCHMARK_ROOT}" -depth -delete
+          elif [[ -e "${BENCHMARK_ROOT}" ]]; then
+            printf 'refusing to clean unmarked benchmark root: %s\n' \
+              "${BENCHMARK_ROOT}" >&2
+            exit 1
+          fi
+          for version in "${BASELINE_VERSION:-}" "${TARGET_VERSION:-}"; do
+            [[ -n "${version}" ]] || continue
+            runtime_root="${RUNTIME_ROOT_PREFIX}-${version}"
+            runtime_marker="${runtime_root}/.container-compose-runtime-root"
+            if [[ -f "${runtime_marker}" ]] && \
+              [[ "$(<"${runtime_marker}")" == 'container-compose isolated runtime state v1' ]]; then
+              find "${runtime_root}" -depth -delete
+            elif [[ -e "${runtime_root}" ]]; then
+              printf 'refusing to clean unmarked runtime root: %s\n' \
+                "${runtime_root}" >&2
+              exit 1
+            fi
+          done

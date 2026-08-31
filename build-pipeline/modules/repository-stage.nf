@@ -8,9 +8,9 @@ process RUN_REPOSITORY_STAGE {
 
     input:
     tuple val(stageName), val(repositoryName), val(failureClass),
-        val(deadlineSeconds), val(stageCommandBase64), val(sourcePaths),
-        path(sourcePayload), path(sourceMetadata), path(stageTools),
-        val(gateReady)
+        val(deadlineSeconds), val(stageCommandBase64), val(artifactPaths),
+        val(sourcePaths), path(sourcePayload), path(sourceMetadata),
+        path(stageTools), val(gateReady)
     path deadlineRunner
     val stateRootBase64
     val sessionIdentifier
@@ -18,7 +18,9 @@ process RUN_REPOSITORY_STAGE {
     output:
     tuple val(repositoryName), val(stageName),
         path("${stageName}.receipt.tsv"), path("${stageName}.stdout.log"),
-        path("${stageName}.stderr.log"), emit: receipt
+        path("${stageName}.stderr.log"),
+        path("${stageName}.artifacts.tar"),
+        path("${stageName}.artifacts.tsv"), emit: receipt
 
     shell:
     '''
@@ -38,6 +40,7 @@ process RUN_REPOSITORY_STAGE {
     repository_name="!{repositoryName}"
     failure_class="!{failureClass}"
     deadline_seconds="!{deadlineSeconds}"
+    artifact_paths="!{artifactPaths}"
     source_paths="!{sourcePaths}"
     source_payload="$task_root/!{sourcePayload}"
     source_metadata="$task_root/!{sourceMetadata}"
@@ -49,6 +52,8 @@ process RUN_REPOSITORY_STAGE {
     failure_receipt="$task_root/!{stageName}.failure.tsv"
     stdout_log="$task_root/!{stageName}.stdout.log"
     stderr_log="$task_root/!{stageName}.stderr.log"
+    artifact_archive="$task_root/!{stageName}.artifacts.tar"
+    artifact_manifest="$task_root/!{stageName}.artifacts.tsv"
     execution_root=
     stage_command=
     failure_session_root=
@@ -150,7 +155,8 @@ process RUN_REPOSITORY_STAGE {
     esac
     if ! [[ "$stage_name" =~ ^[a-z0-9][a-z0-9-]*$ ]] ||
         ! [[ "$failure_class" =~ ^(source|test|build)$ ]] ||
-        ! [[ "$deadline_seconds" =~ ^[1-9][0-9]*$ ]]; then
+        ! [[ "$deadline_seconds" =~ ^[1-9][0-9]*$ ]] ||
+        ! [[ "$artifact_paths" =~ ^(none|[A-Za-z0-9._/+ -]+)$ ]]; then
         printf 'invalid stage declaration: %s/%s/%s\n' \
             "$stage_name" "$failure_class" "$deadline_seconds" >&2
         exit 2
@@ -618,6 +624,56 @@ process RUN_REPOSITORY_STAGE {
     fi
     verify_tool_closure
 
+    artifact_count=0
+    artifact_arguments=()
+    {
+        printf 'schema\t1\n'
+        printf 'stage\t%s\n' "$stage_name"
+        printf 'repository\t%s\n' "$repository_name"
+    } >"$artifact_manifest"
+    if [[ "$artifact_paths" != none ]]; then
+        read -r -a requested_artifacts <<<"$artifact_paths"
+        for requested_artifact in "${requested_artifacts[@]}"; do
+            if [[ "$requested_artifact" == /* ]] ||
+                [[ "$requested_artifact" == -* ]] ||
+                [[ "$requested_artifact" == '..' ]] ||
+                [[ "$requested_artifact" == ../* ]] ||
+                [[ "$requested_artifact" == */../* ]] ||
+                [[ "$requested_artifact" == */.. ]]; then
+                printf 'unsafe stage artifact path: %s\n' \
+                    "$requested_artifact" >&2
+                exit 2
+            fi
+            artifact_source="$execution_root/source/$requested_artifact"
+            if [[ -L "$artifact_source" ]] || [[ ! -f "$artifact_source" ]]; then
+                printf 'declared stage artifact is not a regular file: %s\n' \
+                    "$requested_artifact" >&2
+                exit 2
+            fi
+            artifact_sha256="$(/usr/bin/shasum -a 256 "$artifact_source" | \
+                /usr/bin/awk '{ print $1 }')"
+            artifact_size="$(/usr/bin/stat -f '%z' "$artifact_source")"
+            printf 'artifact\t%s\t%s\t%s\n' "$requested_artifact" \
+                "$artifact_sha256" "$artifact_size" >>"$artifact_manifest"
+            artifact_arguments+=("$requested_artifact")
+            ((artifact_count += 1))
+        done
+        (
+            cd "$execution_root/source"
+            COPYFILE_DISABLE=1 /usr/bin/tar -cf "$artifact_archive" \
+                "${artifact_arguments[@]}"
+        )
+    else
+        COPYFILE_DISABLE=1 /usr/bin/tar -cf "$artifact_archive" \
+            --files-from /dev/null
+    fi
+    test -s "$artifact_archive"
+    artifact_archive_sha256="$(/usr/bin/shasum -a 256 "$artifact_archive" | \
+        /usr/bin/awk '{ print $1 }')"
+    printf 'artifact-count\t%s\n' "$artifact_count" >>"$artifact_manifest"
+    printf 'archive-sha256\t%s\n' "$artifact_archive_sha256" \
+        >>"$artifact_manifest"
+
     command_sha256="$(/usr/bin/shasum -a 256 "$stage_command" | \
         /usr/bin/awk '{ print $1 }')"
     tools_sha256="$(/usr/bin/shasum -a 256 "$stage_tools" | \
@@ -628,8 +684,10 @@ process RUN_REPOSITORY_STAGE {
         /usr/bin/awk '{ print $1 }')"
     stderr_sha256="$(/usr/bin/shasum -a 256 "$stderr_log" | \
         /usr/bin/awk '{ print $1 }')"
+    artifact_manifest_sha256="$(/usr/bin/shasum -a 256 \
+        "$artifact_manifest" | /usr/bin/awk '{ print $1 }')"
     {
-        printf 'schema\t2\n'
+        printf 'schema\t3\n'
         printf 'stage\t%s\n' "$stage_name"
         printf 'repository\t%s\n' "$repository_name"
         printf 'source-format\t%s\n' "$source_format"
@@ -641,6 +699,11 @@ process RUN_REPOSITORY_STAGE {
         printf 'stage-tools-sha256\t%s\n' "$tools_sha256"
         printf 'stdout-sha256\t%s\n' "$stdout_sha256"
         printf 'stderr-sha256\t%s\n' "$stderr_sha256"
+        printf 'artifact-archive-sha256\t%s\n' \
+            "$artifact_archive_sha256"
+        printf 'artifact-manifest-sha256\t%s\n' \
+            "$artifact_manifest_sha256"
+        printf 'artifact-count\t%s\n' "$artifact_count"
         printf 'stdin-closed\ttrue\n'
         printf 'environment\tallowlisted\n'
         printf 'timezone\tUTC\n'

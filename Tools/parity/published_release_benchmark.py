@@ -643,6 +643,15 @@ def render_report(
 ) -> None:
     target_manifest = json.loads(target_distribution.read_text(encoding="utf-8"))
     baseline_manifest = json.loads(baseline_distribution.read_text(encoding="utf-8"))
+    target_mode = target_manifest.get("comparisonMode", "published-artifacts")
+    baseline_mode = baseline_manifest.get("comparisonMode", "published-artifacts")
+    if target_mode != baseline_mode:
+        raise BenchmarkInputError("target and comparison authority modes differ")
+    if target_mode not in {
+        "published-artifacts",
+        "historical-source-reconstruction",
+    }:
+        raise BenchmarkInputError(f"unsupported benchmark authority mode: {target_mode}")
     target_version = target_manifest["version"]
     baseline_version = baseline_manifest["version"]
     target_samples = load_samples(target_evidence)
@@ -743,10 +752,35 @@ def render_report(
     )
     host = target_fingerprints["host"]
     docker = target_fingerprints["docker"]
+    if target_mode == "historical-source-reconstruction":
+        report_title = (
+            f"# Historical reconstruction benchmark: {target_version} "
+            f"versus {baseline_version}"
+        )
+        authority_summary = (
+            "This report compares the immutable, Developer ID-signed host archives "
+            "from each release. Each missing guest OCI archive was reconstructed from "
+            "the exact retained Containerization CI initfs artifact with a release-mode "
+            "`cctl` built from the release's exact Containerization revision. Both "
+            "releases ran on the same host against the same Docker installation; "
+            "Docker-normalized change is included to expose host drift."
+        )
+        inputs_heading = "## Reconstructed historical inputs"
+    else:
+        report_title = (
+            f"# Published release benchmark: {target_version} versus {baseline_version}"
+        )
+        authority_summary = (
+            "This report compares immutable, Developer ID-signed release archives. "
+            "No source product was built by the benchmark workflow. Both releases ran "
+            "on the same host against the same Docker installation; Docker-normalized "
+            "change is included to expose host drift."
+        )
+        inputs_heading = "## Published inputs"
     lines = [
-        f"# Published release benchmark: {target_version} versus {baseline_version}",
+        report_title,
         "",
-        "This report compares immutable, Developer ID-signed release archives. No source product was built by the benchmark workflow. Both releases ran on the same host against the same Docker installation; Docker-normalized change is included to expose host drift.",
+        authority_summary,
         "",
         "## Result",
         "",
@@ -754,7 +788,7 @@ def render_report(
         "",
         "Lower durations and negative changes are better.",
         "",
-        "## Published inputs",
+        inputs_heading,
         "",
     ]
     for label, manifest in (("Target", target_manifest), ("Comparison", baseline_manifest)):
@@ -771,6 +805,14 @@ def render_report(
                 "",
             ]
         )
+        reconstruction = manifest["assets"]["guest"].get("reconstruction")
+        if reconstruction:
+            lines.extend(
+                [
+                    f"- Guest initfs authority: [{reconstruction['runUrl']}]({reconstruction['runUrl']}); artifact `{reconstruction['artifactId']}` at `{reconstruction['artifactDigest']}`.",
+                    f"- Guest packager: `containerization@{reconstruction['containerizationRef']}`; recoverable stage artifact `{reconstruction['cctlArtifactSha256']}`; extracted `cctl` `{reconstruction['cctlSha256']}`.",
+                ]
+            )
         for component in ("runtime", "compose"):
             asset = manifest["assets"][component]
             lines.append(
