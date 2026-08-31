@@ -48,7 +48,7 @@ concurrency:
 jobs:
   changes:
     name: Detect Relevant Changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       heavy: ${{ steps.filter.outputs.heavy }}
     steps:
@@ -129,7 +129,7 @@ jobs:
     name: Source Checks
     needs: changes
     if: needs.changes.outputs.heavy == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -531,7 +531,7 @@ jobs:
       - source_checks
       - validate_runtime
     if: always() && needs.changes.outputs.heavy == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check parallel validation jobs
         env:
@@ -555,7 +555,7 @@ jobs:
     name: Validate
     needs: changes
     if: needs.changes.outputs.heavy != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

@@ -2,8 +2,10 @@ nextflow.enable.dsl = 2
 
 params.upstream_fingerprint = 'upstream-v1'
 params.downstream_fingerprint = 'planned-failure-v1'
+params.evidence_dir = ''
 
 process VERIFY_STDIN_CLOSED {
+    publishDir params.evidence_dir, mode: 'copy', overwrite: true
     output:
     path 'stdin-closed.txt'
 
@@ -15,6 +17,7 @@ process VERIFY_STDIN_CLOSED {
 }
 
 process BUILD_UPSTREAM {
+    publishDir params.evidence_dir, mode: 'copy', overwrite: true
     input:
     path stdin_marker
     val upstream_fingerprint
@@ -30,6 +33,7 @@ process BUILD_UPSTREAM {
 }
 
 process RUN_DOWNSTREAM {
+    publishDir params.evidence_dir, mode: 'copy', overwrite: true
     input:
     path upstream_marker
     val downstream_fingerprint

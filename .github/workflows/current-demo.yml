@@ -49,7 +49,7 @@ jobs:
     if: >
       github.repository == 'stephenlclarke/container-compose' &&
       (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       publish: ${{ steps.resolve.outputs.publish }}
       sha: ${{ steps.resolve.outputs.sha }}

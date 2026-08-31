@@ -47,6 +47,7 @@ CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 STACK_RELEASE_VALIDATION = ROOT / "Tools" / "ci" / "run-stack-release-validation.sh"
 FORMULA_RENDERER = ROOT / "Tools" / "release" / "render-homebrew-stack-formulae.sh"
 RUNNER_INSTALLER = ROOT / "scripts" / "install-scheduled-release-runner.sh"
+HAWKEYE_INSTALLER = ROOT / "scripts" / "install-hawkeye.sh"
 
 
 class ContainerStackReleasePolicyTests(unittest.TestCase):
@@ -100,7 +101,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_release_helper_retains_only_its_unpublished_candidate_before_readiness(self) -> None:
         recovery = self.script[
-            self.script.index("recover_unpublished_release_candidate() {") : self.script.index(
+            self.script.index("validate_unpublished_release_commit() {") : self.script.index(
                 "# Print and optionally execute a command."
             )
         ]
@@ -109,10 +110,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("retaining unpublished release candidate", recovery)
         self.assertIn("RECOVERED_UNPUBLISHED_RELEASE_BASE", recovery)
         self.assertNotIn("reset --hard", recovery)
+        self.assertIn('git -C "${path}" verify-commit "${commit}"', recovery)
         self.assertIn('"chore(release): prepare ${version}"', recovery)
-        self.assertIn('"chore(deps): pin containerization "[0-9a-f]*', recovery)
-        self.assertIn('"chore(deps): pin container "[0-9a-f]*', recovery)
-        self.assertIn('"chore(deps): pin container stack "[0-9a-f]*" "[0-9a-f]*', recovery)
+        self.assertIn("Package.resolved,Package.swift", recovery)
+        self.assertIn("release preparation commit changes an unexpected file", recovery)
+        self.assertIn("dependency pin commit changes an unexpected file set", recovery)
         self.assertIn("dirty worktree blocks recovery", recovery)
         self.assertLess(
             release.index('recover_unpublished_release_candidate "${version}"'),
@@ -1274,7 +1276,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             ci_workflow,
         )
         self.assertIn("run-stack-release-validation.sh full", makefile)
-        self.assertIn("run-stack-release-validation.sh hosted", makefile)
+        self.assertIn("PIPELINE_PROFILE=release-hosted", makefile)
         direct_full_gate = subprocess.run(
             [
                 "make",
@@ -1302,9 +1304,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             validation,
         )
         self.assertIn("release-gate-hosted:", makefile)
-        self.assertIn("--stage sibling-stack-hosted", makefile)
-        self.assertIn("container-stack-hosted-release-validation", makefile)
-        self.assertIn("--stage compose-ci-hosted", makefile)
+        self.assertIn("release-gate-hosted: pipeline-bootstrap", makefile)
+        self.assertNotIn("--stage sibling-stack-hosted", makefile)
+        self.assertNotIn("--stage compose-ci-hosted", makefile)
         self.assertIn(
             "containerization_targets=(check containerization examples docs coverage)",
             validation,
@@ -2165,6 +2167,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("stable tag %s is not GitHub-verified", workflow)
+        self.assertIn(
+            "stable release control must run from the exact current main revision",
+            workflow,
+        )
         self.assertIn("stable tag %s is not the latest semantic source tag", workflow)
         self.assertIn("stable release %s already exists and is immutable", workflow)
         self.assertIn(
@@ -2186,39 +2192,30 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("git -C homebrew-tap rev-parse HEAD", workflow)
-        self.assertIn("Provision pinned stack tools", workflow)
-        self.assertIn("Select supported Bash 5 runtime", workflow)
-        self.assertIn("HOMEBREW_NO_AUTO_UPDATE=1 brew install bash", workflow)
-        self.assertIn("(( BASH_VERSINFO[0] >= 5 ))", workflow)
-        self.assertIn("cd container-compose", workflow)
-        self.assertIn("HAWKEYE_AUTO_INSTALL=1 ./scripts/install-hawkeye.sh", workflow)
-        self.assertIn(
-            "for repository in container-builder-shim containerization container; do",
-            workflow,
-        )
+        self.assertIn("Provision checksum-pinned release tools", workflow)
+        self.assertNotIn("Select supported Bash 5 runtime", workflow)
+        self.assertNotIn("brew install bash", workflow)
+        self.assertIn("working-directory: container-compose", workflow)
         self.assertIn("./scripts/install-hawkeye.sh", workflow)
         self.assertIn("name: Run Hosted Release Gate", workflow)
         self.assertIn("Checkout immutable stable-gate tools", workflow)
         self.assertIn("path: release-tools", workflow)
         self.assertIn("ref: ${{ github.sha }}", workflow)
         self.assertIn("git -C release-tools rev-parse HEAD", workflow)
-        self.assertIn("run-stack-release-validation.sh hosted", workflow)
-        self.assertIn("Run Compose application CI from immutable source lockfile", workflow)
-        self.assertIn("make -C container-compose", workflow)
-        self.assertIn("complete main CI, including the 390 tool-policy tests", workflow)
-        for target in (
-            "format",
-            "core-runtime-neutrality",
-            "stack-consistency",
-            "upstream-handoff-registry-check",
-            "check-licenses",
-            "performance-matrix-harness-test",
-            "signal-log-reliability-harness-test",
-            "coverage-check",
-            "go-build",
-            "cli-smoke-built",
-        ):
-            self.assertIn(target, workflow)
+        self.assertNotIn("run-stack-release-validation.sh hosted", workflow)
+        self.assertNotIn(
+            "Run Compose application CI from immutable source lockfile", workflow
+        )
+        self.assertIn("Run recoverable hosted release graph", workflow)
+        self.assertIn("PIPELINE_PROFILE=release-hosted", workflow)
+        self.assertIn("make -C release-tools pipeline", workflow)
+        self.assertIn("make -C ../release-tools pipeline-bootstrap", workflow)
+        self.assertIn(
+            "RELEASE_PIPELINE_STATE_ROOT: /Volumes/SSD/github/.container-compose-release-pipeline",
+            workflow,
+        )
+        self.assertIn("make -C release-tools pipeline-resume", workflow)
+        self.assertIn('PIPELINE_SESSION="${resume_session}"', workflow)
         self.assertNotIn("make -C container-compose ci", workflow)
         self.assertNotIn("Use pinned container dependency", workflow)
         self.assertNotIn("Use pinned containerization dependency", workflow)
@@ -2235,20 +2232,89 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertNotIn("run: make release-gate\n", workflow)
         self.assertLess(
             workflow.index("Checkout immutable Homebrew tap snapshot"),
-            workflow.index("Run hosted release gate"),
+            workflow.index("Run recoverable hosted release graph"),
         )
         self.assertLess(
-            workflow.index("Select supported Bash 5 runtime"),
-            workflow.index("Provision pinned stack tools"),
+            workflow.index("Provision checksum-pinned release tools"),
+            workflow.index("Run recoverable hosted release graph"),
         )
-        self.assertLess(
-            workflow.index("Provision pinned stack tools"),
-            workflow.index("Run hosted release gate"),
-        )
-        self.assertLess(
-            workflow.index("Run Compose application CI from immutable source lockfile"),
-            workflow.index("Run hosted release gate"),
-        )
+
+    def test_hawkeye_installer_rejects_symlinked_cache_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache_parent = root / ".local" / "cache"
+            cache_parent.mkdir(parents=True)
+            cache_target = root / "cache-target"
+            cache_target.mkdir()
+            (cache_parent / "hawkeye").symlink_to(
+                cache_target,
+                target_is_directory=True,
+            )
+
+            symlinked_directory = subprocess.run(
+                ["/bin/bash", str(HAWKEYE_INSTALLER)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=self.non_interactive_environment(),
+            )
+
+            self.assertNotEqual(symlinked_directory.returncode, 0)
+            self.assertIn(
+                "refusing symlinked Hawkeye directory",
+                symlinked_directory.stderr,
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            local_target = root / "local-target"
+            local_target.mkdir()
+            (root / ".local").symlink_to(local_target, target_is_directory=True)
+
+            indirect_parent = subprocess.run(
+                ["/bin/bash", str(HAWKEYE_INSTALLER)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=self.non_interactive_environment(),
+            )
+
+            self.assertNotEqual(indirect_parent.returncode, 0)
+            self.assertIn(
+                "refusing indirect Hawkeye directory",
+                indirect_parent.stderr,
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / ".local" / "cache" / "hawkeye"
+            cache.mkdir(parents=True)
+            archive_target = root / "archive-target"
+            archive_target.write_text("untrusted\n", encoding="utf-8")
+            for artifact in (
+                "hawkeye-aarch64-apple-darwin.tar.xz",
+                "hawkeye-x86_64-apple-darwin.tar.xz",
+                "hawkeye-x86_64-unknown-linux-gnu.tar.xz",
+                "hawkeye-aarch64-unknown-linux-gnu.tar.xz",
+            ):
+                (cache / artifact).symlink_to(archive_target)
+
+            symlinked_archive = subprocess.run(
+                ["/bin/bash", str(HAWKEYE_INSTALLER)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=self.non_interactive_environment(),
+            )
+
+            self.assertNotEqual(symlinked_archive.returncode, 0)
+            self.assertIn(
+                "refusing symlinked Hawkeye cache archive",
+                symlinked_archive.stderr,
+            )
 
     def test_release_helper_waits_longer_than_the_hosted_stable_gate_timeout(self) -> None:
         dispatch = self.script[
@@ -4391,10 +4457,10 @@ esac
             self.run_command(
                 "git", "-C", str(local), "tag", "--no-sign", "current", remote_head
             )
-            self.commit_file(
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
                 local,
-                "VERSION",
-                "0.6.71\n",
+                {"Makefile": "COMPOSE_VERSION ?= 0.6.71\n"},
                 "chore(release): prepare 0.6.71",
             )
             candidate_head = self.git(local, "rev-parse", "main")
@@ -4417,10 +4483,13 @@ esac
             root = Path(directory)
             _remote, local = self.create_compose_checkout(root)
             remote_head = self.git(local, "rev-parse", "origin/main")
-            self.commit_file(
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
                 local,
-                "Package.swift",
-                "pinned stack\n",
+                {
+                    "Package.resolved": "pinned stack lock\n",
+                    "Package.swift": "pinned stack manifest\n",
+                },
                 "chore(deps): pin container stack 123456789abc abcdef123456",
             )
             candidate_head = self.git(local, "rev-parse", "main")
@@ -4440,10 +4509,10 @@ esac
             root = Path(directory)
             _remote, local = self.create_compose_checkout(root)
             remote_head = self.git(local, "rev-parse", "origin/main")
-            self.commit_file(
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
                 local,
-                "Makefile",
-                "swift-coverage:\n\tfind -L .build\n",
+                {"Makefile": "swift-coverage:\n\tfind -L .build\n"},
                 "fix(coverage): follow symlinked build cache",
             )
             candidate_head = self.git(local, "rev-parse", "main")
@@ -4470,10 +4539,10 @@ esac
                 "git", "-C", str(local), "tag", "--no-sign", "current"
             )
             self.run_command("git", "-C", str(local), "reset", "--hard", remote_head)
-            self.commit_file(
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
                 local,
-                "VERSION",
-                "0.6.71\n",
+                {"Makefile": "COMPOSE_VERSION ?= 0.6.71\n"},
                 "chore(release): prepare 0.6.71",
             )
 
@@ -4490,7 +4559,12 @@ esac
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _remote, local = self.create_compose_checkout(root)
-            self.commit_file(local, "candidate.yml", "candidate\n", "feat: unrelated candidate")
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {"candidate.yml": "candidate\n"},
+                "feat: unrelated candidate",
+            )
             candidate_head = self.git(local, "rev-parse", "main")
 
             result = self.run_release_function(
@@ -4501,6 +4575,25 @@ esac
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("unpublished non-release commit", result.stderr)
             self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
+
+    def test_release_helper_rejects_an_unsigned_release_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _remote, local = self.create_compose_checkout(root)
+            self.commit_file(
+                local,
+                "Makefile",
+                "COMPOSE_VERSION ?= 0.6.71\n",
+                "chore(release): prepare 0.6.71",
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unverified commit", result.stderr)
 
     def test_release_helper_uses_the_active_github_cli_credential(self) -> None:
         self.assertIn("github_cli() {", self.script)
@@ -5138,8 +5231,54 @@ exit 64
         self.run_command("git", "-C", str(repo), "config", "commit.gpgSign", "false")
         self.run_command("git", "-C", str(repo), "config", "tag.gpgSign", "false")
 
+    def enable_ssh_signing(self, root: Path, repo: Path) -> None:
+        signing_key = root / "release-signing-key"
+        allowed_signers = root / "allowed-signers"
+        self.run_command(
+            "ssh-keygen",
+            "-q",
+            "-t",
+            "ed25519",
+            "-N",
+            "",
+            "-f",
+            str(signing_key),
+        )
+        public_key = signing_key.with_suffix(".pub").read_text(encoding="utf-8").strip()
+        allowed_signers.write_text(
+            f'test@example.com namespaces="git" {public_key}\n',
+            encoding="utf-8",
+        )
+        self.run_command("git", "-C", str(repo), "config", "gpg.format", "ssh")
+        self.run_command(
+            "git", "-C", str(repo), "config", "user.signingkey", str(signing_key)
+        )
+        self.run_command(
+            "git",
+            "-C",
+            str(repo),
+            "config",
+            "gpg.ssh.allowedSignersFile",
+            str(allowed_signers),
+        )
+
+    def commit_signed_files(
+        self,
+        repo: Path,
+        files: dict[str, str],
+        subject: str,
+    ) -> None:
+        for name, contents in files.items():
+            path = repo / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(contents, encoding="utf-8")
+            self.run_command("git", "-C", str(repo), "add", name)
+        self.run_command("git", "-C", str(repo), "commit", "-S", "-m", subject)
+
     def commit_file(self, repo: Path, name: str, contents: str, subject: str) -> None:
-        (repo / name).write_text(contents, encoding="utf-8")
+        path = repo / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents, encoding="utf-8")
         self.run_command("git", "-C", str(repo), "add", name)
         self.run_command("git", "-C", str(repo), "commit", "-m", subject)
 

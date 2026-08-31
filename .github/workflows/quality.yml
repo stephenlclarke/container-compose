@@ -58,7 +58,7 @@ concurrency:
 jobs:
   changes:
     name: Detect Relevant Changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       heavy: ${{ steps.filter.outputs.heavy }}
       swift: ${{ steps.filter.outputs.swift }}

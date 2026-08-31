@@ -53,7 +53,7 @@ concurrency:
 jobs:
   classify-changes:
     name: Classify Documentation Changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       build_docc: ${{ steps.classify.outputs.build_docc }}
     steps:
@@ -207,7 +207,7 @@ jobs:
     name: Assemble and Upload GitHub Pages Artifact
     needs: build-sites
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       pages: write
     steps:
@@ -240,7 +240,7 @@ jobs:
     name: Deploy GitHub Pages
     needs: upload-pages-artifact
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       pages: write

@@ -19,7 +19,8 @@
 #   @SCRIPT_NAME@ [--nextflow PATH] [--proof-root PATH]
 #
 # Verify that the build pipeline can resume one explicit failed Nextflow
-# session without rerunning successful upstream work.
+# session without rerunning successful upstream work, then restore corrupted
+# published evidence from the same content-addressed cache.
 #
 # Environment:
 #   NEXTFLOW_BIN                 Pinned Nextflow executable (alternative to
@@ -194,6 +195,7 @@ run_nextflow() {
                 -ansi-log false \
                 -work-dir "${PROOF_ROOT}/work" \
                 -with-trace "${trace_path}" \
+                --evidence_dir "${PROOF_ROOT}/published" \
                 "$@"
     ) </dev/null
 }
@@ -274,6 +276,12 @@ run_proof() {
     local resume_output="${PROOF_ROOT}/resume-run.output"
     local resume_log="${PROOF_ROOT}/resume-run.log"
     local resume_trace="${PROOF_ROOT}/resume-run.trace.tsv"
+    local missing_output="${PROOF_ROOT}/missing-run.output"
+    local missing_log="${PROOF_ROOT}/missing-run.log"
+    local missing_trace="${PROOF_ROOT}/missing-run.trace.tsv"
+    local repair_output="${PROOF_ROOT}/repair-run.output"
+    local repair_log="${PROOF_ROOT}/repair-run.log"
+    local repair_trace="${PROOF_ROOT}/repair-run.trace.tsv"
     local first_status=0
     local session_uuid
     local resumed_session_uuid
@@ -351,11 +359,41 @@ run_proof() {
         exit 1
     }
 
+    rm "${PROOF_ROOT}/published/upstream.txt"
+    run_nextflow "${missing_log}" "${missing_trace}" \
+        -resume "${session_uuid}" \
+        --upstream_fingerprint upstream-v1 \
+        --downstream_fingerprint corrected-v1 \
+        >"${missing_output}" 2>&1
+    assert_trace_value "${missing_trace}" VERIFY_STDIN_CLOSED status CACHED
+    assert_trace_value "${missing_trace}" BUILD_UPSTREAM status CACHED
+    assert_trace_value "${missing_trace}" RUN_DOWNSTREAM status CACHED
+    grep -qx 'upstream complete' "${PROOF_ROOT}/published/upstream.txt" || {
+        error 'the cached upstream stage did not restore missing published evidence'
+        exit 1
+    }
+
+    printf '%s\n' 'corrupted published evidence' >"${PROOF_ROOT}/published/upstream.txt"
+    run_nextflow "${repair_log}" "${repair_trace}" \
+        -resume "${session_uuid}" \
+        --upstream_fingerprint upstream-v1 \
+        --downstream_fingerprint corrected-v1 \
+        >"${repair_output}" 2>&1
+    assert_trace_value "${repair_trace}" VERIFY_STDIN_CLOSED status CACHED
+    assert_trace_value "${repair_trace}" BUILD_UPSTREAM status CACHED
+    assert_trace_value "${repair_trace}" RUN_DOWNSTREAM status CACHED
+    grep -qx 'upstream complete' "${PROOF_ROOT}/published/upstream.txt" || {
+        error 'the cached upstream stage did not restore corrupted published evidence'
+        exit 1
+    }
+
     printf 'NEXTFLOW_RECOVERY_PROOF=passed\n'
     printf 'SESSION_UUID=%s\n' "${session_uuid}"
     printf 'VERIFY_STDIN_CLOSED=CACHED:%s\n' "${stdin_hash_after}"
     printf 'BUILD_UPSTREAM=CACHED:%s\n' "${upstream_hash_after}"
     printf 'RUN_DOWNSTREAM=COMPLETED:%s\n' "${downstream_hash_after}"
+    printf 'MISSING_PUBLISHED_EVIDENCE=RESTORED\n'
+    printf 'CORRUPTED_PUBLISHED_EVIDENCE=RESTORED\n'
     if is_truthy "${KEEP_PROOF_ROOT}"; then
         printf 'EVIDENCE_ROOT=%s\n' "${PROOF_ROOT}"
     fi

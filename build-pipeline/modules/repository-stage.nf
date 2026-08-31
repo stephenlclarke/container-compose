@@ -17,7 +17,8 @@ process RUN_REPOSITORY_STAGE {
 
     output:
     tuple val(repositoryName), val(stageName),
-        path("${stageName}.receipt.tsv"), emit: receipt
+        path("${stageName}.receipt.tsv"), path("${stageName}.stdout.log"),
+        path("${stageName}.stderr.log"), emit: receipt
 
     shell:
     '''
@@ -623,6 +624,10 @@ process RUN_REPOSITORY_STAGE {
         /usr/bin/awk '{ print $1 }')"
     source_metadata_sha256="$(/usr/bin/shasum -a 256 "$source_metadata" | \
         /usr/bin/awk '{ print $1 }')"
+    stdout_sha256="$(/usr/bin/shasum -a 256 "$stdout_log" | \
+        /usr/bin/awk '{ print $1 }')"
+    stderr_sha256="$(/usr/bin/shasum -a 256 "$stderr_log" | \
+        /usr/bin/awk '{ print $1 }')"
     {
         printf 'schema\t2\n'
         printf 'stage\t%s\n' "$stage_name"
@@ -634,6 +639,8 @@ process RUN_REPOSITORY_STAGE {
         printf 'deadline-seconds\t%s\n' "$deadline_seconds"
         printf 'command-sha256\t%s\n' "$command_sha256"
         printf 'stage-tools-sha256\t%s\n' "$tools_sha256"
+        printf 'stdout-sha256\t%s\n' "$stdout_sha256"
+        printf 'stderr-sha256\t%s\n' "$stderr_sha256"
         printf 'stdin-closed\ttrue\n'
         printf 'environment\tallowlisted\n'
         printf 'timezone\tUTC\n'
