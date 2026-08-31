@@ -39,7 +39,7 @@ on:
           - "7"
 
 permissions:
-  actions: read
+  actions: write
   contents: write
   pull-requests: write
 
@@ -390,9 +390,14 @@ jobs:
           git commit -S -m \
             "docs(benchmarks): compare ${TARGET_VERSION} with ${BASELINE_VERSION}"
           git push --set-upstream origin "${branch}"
-          gh pr create --base main --head "${branch}" \
+          pr_url="$(gh pr create --base main --head "${branch}" \
             --title "docs(benchmarks): compare ${TARGET_VERSION} with ${BASELINE_VERSION}" \
-            --body "Historical reconstruction benchmark for ${TARGET_VERSION} versus ${BASELINE_VERSION}. Host executables are the immutable signed release packages; each missing guest archive is reconstructed from its exact retained CI initfs and Containerization source revision. Raw evidence is retained by workflow run ${GITHUB_RUN_ID}."
+            --body "Historical reconstruction benchmark for ${TARGET_VERSION} versus ${BASELINE_VERSION}. Host executables are the immutable signed release packages; each missing guest archive is reconstructed from its exact retained CI initfs and Containerization source revision. Raw evidence is retained by workflow run ${GITHUB_RUN_ID}.")"
+          pr_number="${pr_url##*/}"
+          gh workflow run ci.yml --repo "${GITHUB_REPOSITORY}" \
+            --ref "${branch}" -f documentation_pr="${pr_number}"
+          printf 'Documentation report pull request: %s\n' "${pr_url}" \
+            >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Clean marker-protected benchmark root
         if: always()

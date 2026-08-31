@@ -214,6 +214,8 @@ class HistoricalWorkflowTests(unittest.TestCase):
         self.assertIn("PIPELINE_PROFILE=benchmark-reconstruction", workflow)
         self.assertIn("containerization-benchmark-cctl", workflow)
         self.assertIn("validate-oci-image-layout.py", workflow)
+        self.assertIn("actions: write", workflow)
+        self.assertIn('-f documentation_pr="${pr_number}"', workflow)
 
     def test_workflow_keeps_runtime_inputs_local_and_noninteractive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
