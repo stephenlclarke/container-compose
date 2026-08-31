@@ -56,11 +56,18 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, container-compose-release]
     timeout-minutes: 240
     env:
-      BENCHMARK_ROOT: /private/tmp/container-compose-historical-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
       PIPELINE_STATE_ROOT: /Volumes/SSD/github/.container-compose-pipeline
       REPETITIONS: ${{ inputs.repetitions }}
       RUNTIME_ROOT_PREFIX: /private/tmp/cchr-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Select local benchmark root
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'BENCHMARK_ROOT=%s/container-compose-historical-benchmark-%s-%s\n' \
+            "${RUNNER_TEMP}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
+            >> "${GITHUB_ENV}"
+
       - name: Checkout benchmark controls
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

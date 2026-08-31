@@ -320,6 +320,7 @@ create_fixtures() {
             '          pressure)' \
             '            index=0; while [ "$$index" -lt "$${LOG_RECORD_COUNT}" ]; do printf '\''perf-record-%06d %s\n'\'' "$$index" "$$small_payload"; index=$$((index + 1)); done' \
             '            if [ -n "$${LOG_COMPLETION_FILE:-}" ]; then printf complete >"/completion/$${LOG_COMPLETION_FILE}"; fi' \
+            '            if [ "$${LOG_RETAIN_AFTER_COMPLETION:-0}" = 1 ]; then sleep 600; fi' \
             '            ;;' \
             '          history-window)' \
             '            printf '\''history-before\n'\''' \
@@ -354,6 +355,14 @@ create_fixtures() {
             '    extends:' \
             '      file: logging-workload.yml' \
             '      service: logger' \
+            '    environment:' \
+            '      LOG_COMPLETION_FILE: ${LOG_COMPLETION_FILE:?LOG_COMPLETION_FILE is required}' \
+            '      LOG_RETAIN_AFTER_COMPLETION: "${LOG_RETAIN_AFTER_COMPLETION:-0}"' \
+            '    volumes:' \
+            '      - type: bind' \
+            '        source: ${PERF_COMPLETION_DIR:?PERF_COMPLETION_DIR is required}' \
+            '        target: /completion' \
+            '    stop_grace_period: 1s' \
             '    logging:' \
             '      driver: json-file' \
             '      options:' \
@@ -368,6 +377,14 @@ create_fixtures() {
             '    extends:' \
             '      file: logging-workload.yml' \
             '      service: logger' \
+            '    environment:' \
+            '      LOG_COMPLETION_FILE: ${LOG_COMPLETION_FILE:?LOG_COMPLETION_FILE is required}' \
+            '      LOG_RETAIN_AFTER_COMPLETION: "${LOG_RETAIN_AFTER_COMPLETION:-0}"' \
+            '    volumes:' \
+            '      - type: bind' \
+            '        source: ${PERF_COMPLETION_DIR:?PERF_COMPLETION_DIR is required}' \
+            '        target: /completion' \
+            '    stop_grace_period: 1s' \
             '    logging:' \
             '      driver: local' \
             '      options:' \
@@ -960,15 +977,26 @@ run_remote_sink_lane() {
 
 # Time one retained built-in rotation/compression writer and prove exact reads.
 run_file_logging_lane() {
-    local lane="$1" repetition="$2" schedule_position="$3" fixture="$4" file="$5" project
+    local lane="$1" repetition="$2" schedule_position="$3" fixture="$4" file="$5"
+    local project completion_dir completion_file completion_path
     select_lane "$lane"
     project="cc-perf-$LANE_PREFIX-logging"
+    completion_dir="$FIXTURE_DIR/completions"
+    completion_file="$fixture-$lane-$repetition.done"
+    completion_path="$completion_dir/$completion_file"
+    mkdir -p "$completion_dir"
     down_project "$lane" "$project" "$FIXTURE_DIR/logging.yml"
-    run_timed "$fixture" "$lane" "$repetition" "$schedule_position" \
+    run_to_completion_marker "$fixture" "$lane" "$repetition" \
+        "$schedule_position" "$completion_path" \
         env LOG_WORKLOAD=pressure LOG_RECORD_COUNT="$PARITY_PRESSURE_RECORDS" \
+        LOG_COMPLETION_FILE="$completion_file" \
+        LOG_RETAIN_AFTER_COMPLETION=1 PERF_COMPLETION_DIR="$completion_dir" \
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" up \
-        --abort-on-container-exit --exit-code-from logger --pull never
-    LOG_RECORD_COUNT="$PARITY_PRESSURE_RECORDS" assert_logging_record_count \
+        -d --pull never
+    LOG_RECORD_COUNT="$PARITY_PRESSURE_RECORDS" \
+        LOG_COMPLETION_FILE="$completion_file" \
+        LOG_RETAIN_AFTER_COMPLETION=1 PERF_COMPLETION_DIR="$completion_dir" \
+        assert_logging_record_count \
         "$fixture-$lane-$repetition" "$PARITY_PRESSURE_RECORDS" \
         "$project" "$file" "${ACTIVE_COMPOSE[@]}"
     down_project "$lane" "$project" "$FIXTURE_DIR/logging.yml"

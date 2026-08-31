@@ -244,7 +244,7 @@ class HistoricalWorkflowTests(unittest.TestCase):
 
     def test_workflow_keeps_runtime_inputs_local_and_noninteractive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("BENCHMARK_ROOT: /private/tmp/", workflow)
+        self.assertIn('"${RUNNER_TEMP}" "${GITHUB_RUN_ID}"', workflow)
         self.assertIn("PIPELINE_STATE_ROOT: /Volumes/SSD/github/", workflow)
         self.assertIn("PARITY_INCLUDE_REMOTE_LOGGING=0", workflow)
         self.assertIn("CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT=/private/tmp", workflow)

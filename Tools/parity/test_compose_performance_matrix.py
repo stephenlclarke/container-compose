@@ -172,6 +172,46 @@ class PerformanceMatrixInventoryTests(unittest.TestCase):
             fixture_root = Path(result.stdout.strip())
             self.assertEqual(fixture_root.parent, work_root)
 
+    def test_file_logging_fixtures_retain_completed_writer_for_assertion(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-work-") as directory:
+            work_root = Path(directory) / "fixtures"
+            environment = dict(os.environ)
+            environment["PARITY_WORK_ROOT"] = str(work_root)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; create_fixtures; printf "%s\\n" "$FIXTURE_DIR"',
+                    "_",
+                    HARNESS,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=True,
+                text=True,
+            )
+            fixture_root = Path(result.stdout.strip())
+            workload = (fixture_root / "logging-workload.yml").read_text(
+                encoding="utf-8"
+            )
+            regular = (fixture_root / "logging.yml").read_text(encoding="utf-8")
+            retained = [
+                (fixture_root / filename).read_text(encoding="utf-8")
+                for filename in (
+                    "logging-json-compress.yml",
+                    "logging-local.yml",
+                )
+            ]
+
+        self.assertIn("LOG_RETAIN_AFTER_COMPLETION", workload)
+        self.assertNotIn("LOG_COMPLETION_FILE", regular)
+        for fixture in retained:
+            self.assertIn("LOG_COMPLETION_FILE", fixture)
+            self.assertIn("LOG_RETAIN_AFTER_COMPLETION", fixture)
+            self.assertIn("target: /completion", fixture)
+            self.assertIn("stop_grace_period: 1s", fixture)
+
 
 class PerformanceMatrixSinkSafetyTests(unittest.TestCase):
     def test_non_loopback_sink_requires_explicit_opt_in(self) -> None:
@@ -287,6 +327,83 @@ class PerformanceMatrixCompletionMarkerTests(unittest.TestCase):
         self.assertEqual(rows[0]["outcome"], "success")
         self.assertGreaterEqual(float(rows[0]["duration_seconds"]), 0.04)
         self.assertIn(f"until-file:{marker}", rows[0]["command"])
+
+    def test_file_logging_keeps_container_available_for_log_assertion(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-file-logging-test-") as directory:
+            root = Path(directory)
+            evidence = root / "evidence"
+            fixtures = root / "fixtures"
+            invocations = root / "invocations.tsv"
+            fake_compose = root / "compose"
+            fake_compose.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\t%s\\t%s\\n' "$LOG_WORKLOAD" "$LOG_RETAIN_AFTER_COMPLETION" "$*" >>"$INVOCATIONS"
+mkdir -p "$PERF_COMPLETION_DIR"
+touch "$PERF_COMPLETION_DIR/$LOG_COMPLETION_FILE"
+""",
+                encoding="utf-8",
+            )
+            fake_compose.chmod(0o755)
+            environment = dict(os.environ)
+            environment.update(
+                {
+                    "FAKE_COMPOSE": str(fake_compose),
+                    "INVOCATIONS": str(invocations),
+                    "PARITY_EVIDENCE_DIR": str(evidence),
+                    "PARITY_PRESSURE_RECORDS": "3",
+                    "PARITY_TIMEOUT_SECONDS": "2",
+                    "PARITY_WORK_ROOT": str(root),
+                }
+            )
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    """
+source "$1"
+mkdir -p "$PARITY_EVIDENCE_DIR" "$PARITY_WORK_ROOT/fixtures"
+FIXTURE_DIR="$PARITY_WORK_ROOT/fixtures"
+printf 'fixture\\tlane\\trepetition\\tschedule_position\\tdirection\\tduration_seconds\\toutcome\\tcommand\\n' >"$TIMING_TSV"
+touch "$FIXTURE_DIR/logging.yml" "$FIXTURE_DIR/logging-json-compress.yml"
+select_lane() { LANE_PREFIX=c; ACTIVE_COMPOSE=("$FAKE_COMPOSE"); }
+down_project() { :; }
+assert_logging_record_count() {
+    printf 'asserted\\t%s\\t%s\\t%s\\n' \
+        "$LOG_COMPLETION_FILE" "$LOG_RETAIN_AFTER_COMPLETION" \
+        "$PERF_COMPLETION_DIR" >>"$INVOCATIONS"
+}
+run_file_logging_lane container-compose 1 2 logging-write-json-compression "$FIXTURE_DIR/logging-json-compress.yml"
+""",
+                    "_",
+                    HARNESS,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            with (evidence / "timings.tsv").open(
+                encoding="utf-8", newline=""
+            ) as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+            invocation_lines = invocations.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["outcome"], "success")
+        self.assertIn("until-file:", rows[0]["command"])
+        self.assertIn("pressure\t1\t", invocation_lines[0])
+        self.assertIn(" up -d --pull never", invocation_lines[0])
+        assertion = invocation_lines[1].split("\t")
+        self.assertEqual(assertion[0], "asserted")
+        self.assertEqual(
+            assertion[1],
+            "logging-write-json-compression-container-compose-1.done",
+        )
+        self.assertEqual(assertion[2], "1")
+        self.assertEqual(Path(assertion[3]), fixtures / "completions")
 
 
 class PerformanceMatrixEvidenceTests(unittest.TestCase):
