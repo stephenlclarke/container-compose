@@ -892,7 +892,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             tape,
         )
         self.assertIn("[[ $engine_status == running ]]", tape)
-        self.assertIn("--seconds 30 --grace-seconds 5", tape)
+        self.assertEqual(tape.count("container system status"), 2)
+        self.assertNotIn("-- container system status && printf", tape)
+        self.assertIn("Container Engine %s", tape)
         self.assertIn("container-compose-system-%s\\n' failed", tape)
         self.assertIn("exit 1", tape)
         self.assertIn(
