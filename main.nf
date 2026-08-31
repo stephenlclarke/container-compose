@@ -42,7 +42,8 @@ params.stateMarkerValue = 'container-compose recoverable pipeline v1'
 params.executionPath = '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'
 
 def supportedProfiles() {
-    ['focused', 'repository', 'stack', 'hosted-safe', 'release-hosted']
+    ['focused', 'repository', 'stack', 'hosted-safe', 'release-hosted',
+        'benchmark-reconstruction']
 }
 
 def encodeParameter(value) {
@@ -216,15 +217,46 @@ def releaseHostedFunctionalStageSpecs() {
     ]
 }
 
+def benchmarkReconstructionSourceStageSpecs() {
+    [
+        ['containerization', 'containerization-benchmark-source', 'source',
+            params.sourceTimeoutSeconds as Integer,
+            'test -f Makefile && test -f Package.resolved && test -f vminitd/Makefile',
+            'make,apple-swift', '.', 'commit'],
+    ]
+}
+
+def benchmarkReconstructionFunctionalStageSpecs() {
+    [
+        ['containerization', 'containerization-benchmark-cctl', 'build',
+            params.functionalTimeoutSeconds as Integer,
+            'CI=1 make --no-print-directory ROOT_DIR="$PWD" SWIFT=/usr/bin/swift BUILD_CONFIGURATION=release containerization',
+            'make,apple-swift,codesign',
+            'Package.swift Package.resolved Sources Tests vminitd/Sources vminitd/Makefile Makefile Protobuf.Makefile .swift-version signing',
+            'commit'],
+    ]
+}
+
+def stageArtifactPaths(stageName) {
+    [
+        'containerization-benchmark-cctl': 'bin/cctl',
+    ].get(stageName.toString(), 'none')
+}
+
 def pipelineSelection() {
     def repositories = allRepositorySpecs()
     def sourceStages = params.pipelineProfile == 'release-hosted' ?
-        releaseHostedSourceStageSpecs() : sourceStageSpecs()
+        releaseHostedSourceStageSpecs() :
+        params.pipelineProfile == 'benchmark-reconstruction' ?
+            benchmarkReconstructionSourceStageSpecs() : sourceStageSpecs()
     def functionalStages = params.pipelineProfile == 'release-hosted' ?
-        releaseHostedFunctionalStageSpecs() : functionalStageSpecs()
-    def profileRepositoryNames = params.pipelineProfile in
-        ['stack', 'hosted-safe', 'release-hosted'] ?
-        repositories.collect { repository -> repository[0] } : ['container-compose']
+        releaseHostedFunctionalStageSpecs() :
+        params.pipelineProfile == 'benchmark-reconstruction' ?
+            benchmarkReconstructionFunctionalStageSpecs() : functionalStageSpecs()
+    def profileRepositoryNames = params.pipelineProfile ==
+        'benchmark-reconstruction' ? ['containerization'] :
+        params.pipelineProfile in ['stack', 'hosted-safe', 'release-hosted'] ?
+            repositories.collect { repository -> repository[0] } : ['container-compose']
     def selectedSources = sourceStages.findAll { stage ->
         profileRepositoryNames.contains(stage[0])
     }
@@ -297,7 +329,7 @@ def encodedStageInputSpecs(selection) {
         [
             stage[0], stage[1], stage[2], stage[3],
             encodeParameter(stage[4]),
-            stage[5], stage[6], stage[7],
+            stage[5], stage[6], stage[7], stageArtifactPaths(stage[1]),
         ]
     }
 }
@@ -741,15 +773,15 @@ process CAPTURE_STAGE_SOURCE {
     input:
     tuple val(repositoryName), val(stageName), val(failureClass),
         val(deadlineSeconds), val(stageCommandBase64), val(requiredTools),
-        val(sourcePaths), val(metadataRequirements), path(repositoryIdentity),
-        path(repositoryProvenance)
+        val(sourcePaths), val(metadataRequirements), val(artifactPaths),
+        path(repositoryIdentity), path(repositoryProvenance)
     path deadlineRunner
 
     output:
     tuple val(stageName), val(repositoryName), val(failureClass),
-        val(deadlineSeconds), val(stageCommandBase64), val(sourcePaths),
-        path("${stageName}.payload.*"), path("${stageName}.source.tsv"),
-        emit: prepared
+        val(deadlineSeconds), val(stageCommandBase64), val(artifactPaths),
+        val(sourcePaths), path("${stageName}.payload.*"),
+        path("${stageName}.source.tsv"), emit: prepared
 
     shell:
     '''
@@ -972,7 +1004,8 @@ process PREFLIGHT_STAGE_TOOLS {
     input:
     tuple val(repositoryName), val(stageName), val(failureClass),
         val(deadlineSeconds), val(stageCommandBase64), val(requiredTools),
-        val(sourcePaths), val(metadataRequirements), path(hostReady)
+        val(sourcePaths), val(metadataRequirements), val(artifactPaths),
+        path(hostReady)
     val executionPathBase64
     path deadlineRunner
 
@@ -1033,6 +1066,7 @@ process PREFLIGHT_STAGE_TOOLS {
         system-ln:/bin/ln \
         system-base64:/usr/bin/base64 system-head:/usr/bin/head \
         system-file:/usr/bin/file system-tr:/usr/bin/tr \
+        system-stat:/usr/bin/stat \
         system-ps:/bin/ps system-readlink:/usr/bin/readlink \
         system-xcode-select:/usr/bin/xcode-select system-xcrun:/usr/bin/xcrun)
     IFS=',' read -r -a requested_tools <<<"$required_tools"
@@ -1367,7 +1401,9 @@ process PIPELINE_SUMMARY {
         evidence_name="$(/usr/bin/basename "$evidence")"
         case "$evidence_name" in
             *.receipt.tsv) ;;
-            *.stdout.log|*.stderr.log) test -f "$evidence" ;;
+            *.stdout.log|*.stderr.log|*.artifacts.tar|*.artifacts.tsv)
+                test -f "$evidence"
+                ;;
             *) exit 2 ;;
         esac
     done
@@ -1386,18 +1422,36 @@ process PIPELINE_SUMMARY {
         ((observed_stage_count += 1))
         stdout_log="${receipt_stage}.stdout.log"
         stderr_log="${receipt_stage}.stderr.log"
+        artifact_archive="${receipt_stage}.artifacts.tar"
+        artifact_manifest="${receipt_stage}.artifacts.tsv"
         test -f "$stdout_log"
         test -f "$stderr_log"
+        test -s "$artifact_archive"
+        test -s "$artifact_manifest"
         expected_stdout_sha256="$(/usr/bin/awk -F '\t' \
             '$1 == "stdout-sha256" { print $2 }' "$receipt")"
         expected_stderr_sha256="$(/usr/bin/awk -F '\t' \
             '$1 == "stderr-sha256" { print $2 }' "$receipt")"
+        expected_artifact_archive_sha256="$(/usr/bin/awk -F '\t' \
+            '$1 == "artifact-archive-sha256" { print $2 }' "$receipt")"
+        expected_artifact_manifest_sha256="$(/usr/bin/awk -F '\t' \
+            '$1 == "artifact-manifest-sha256" { print $2 }' "$receipt")"
         [[ "$expected_stdout_sha256" =~ ^[0-9a-f]{64}$ ]]
         [[ "$expected_stderr_sha256" =~ ^[0-9a-f]{64}$ ]]
+        [[ "$expected_artifact_archive_sha256" =~ ^[0-9a-f]{64}$ ]]
+        [[ "$expected_artifact_manifest_sha256" =~ ^[0-9a-f]{64}$ ]]
         [[ "$(/usr/bin/shasum -a 256 "$stdout_log" | \
             /usr/bin/awk '{ print $1 }')" == "$expected_stdout_sha256" ]]
         [[ "$(/usr/bin/shasum -a 256 "$stderr_log" | \
             /usr/bin/awk '{ print $1 }')" == "$expected_stderr_sha256" ]]
+        [[ "$(/usr/bin/shasum -a 256 "$artifact_archive" | \
+            /usr/bin/awk '{ print $1 }')" == \
+            "$expected_artifact_archive_sha256" ]]
+        [[ "$(/usr/bin/shasum -a 256 "$artifact_manifest" | \
+            /usr/bin/awk '{ print $1 }')" == \
+            "$expected_artifact_manifest_sha256" ]]
+        [[ "$(/usr/bin/awk -F '\t' '$1 == "archive-sha256" { print $2 }' \
+            "$artifact_manifest")" == "$expected_artifact_archive_sha256" ]]
         printf 'stage-receipt\t%s\t%s\n' "$(/usr/bin/basename "$receipt")" \
             "$(/usr/bin/shasum -a 256 "$receipt" | /usr/bin/awk '{ print $1 }')" \
             >>pipeline-summary.tsv
@@ -1405,6 +1459,10 @@ process PIPELINE_SUMMARY {
             "$expected_stdout_sha256" >>pipeline-summary.tsv
         printf 'stage-output\t%s\t%s\n' "$stderr_log" \
             "$expected_stderr_sha256" >>pipeline-summary.tsv
+        printf 'stage-artifact\t%s\t%s\n' "$artifact_archive" \
+            "$expected_artifact_archive_sha256" >>pipeline-summary.tsv
+        printf 'stage-artifact\t%s\t%s\n' "$artifact_manifest" \
+            "$expected_artifact_manifest_sha256" >>pipeline-summary.tsv
     done
     IFS=',' read -r -a expected_stages <<<"$expected_stage_names"
     [[ "$observed_stage_count" -eq "${#expected_stages[@]}" ]]
@@ -1494,7 +1552,7 @@ workflow PREFLIGHT_ONLY {
         "repository preflight passed: ${item[0]} (${item[1]})"
     }
     PREPARE_STAGE_GRAPH.out.prepared.view { item ->
-        "stage preflight passed: ${item[0]} (${item[8]})"
+        "stage preflight passed: ${item[0]} (${item[9]})"
     }
 }
 
@@ -1535,10 +1593,10 @@ workflow PIPELINE {
     functionalInputs = PREPARE_STAGE_GRAPH.out.prepared
         .filter { item -> functionalStageNames.contains(item[0]) }
         .map { item -> tuple(item[1], item[0], item[2], item[3], item[4],
-            item[5], item[6], item[7], item[8]) }
+            item[5], item[6], item[7], item[8], item[9]) }
         .combine(repositorySourceGates, by: 0)
         .map { item -> tuple(item[1], item[0], item[2], item[3], item[4],
-            item[5], item[6], item[7], item[8], item[9]) }
+            item[5], item[6], item[7], item[8], item[9], item[10]) }
     swiftRepositoryNames = [
         'container-compose', 'containerization', 'container',
         'container-engine-api', 'devcontainer', 'container-k8s',
@@ -1563,11 +1621,11 @@ workflow PIPELINE {
     )
 
     allStageEvidence = RUN_SOURCE_STAGE.out.receipt
-        .flatMap { item -> [item[2], item[3], item[4]] }
+        .flatMap { item -> [item[2], item[3], item[4], item[5], item[6]] }
         .concat(RUN_SWIFT_STAGE.out.receipt
-            .flatMap { item -> [item[2], item[3], item[4]] })
+            .flatMap { item -> [item[2], item[3], item[4], item[5], item[6]] })
         .concat(RUN_LIGHTWEIGHT_STAGE.out.receipt
-            .flatMap { item -> [item[2], item[3], item[4]] })
+            .flatMap { item -> [item[2], item[3], item[4], item[5], item[6]] })
         .collect()
     allRepositoryReceipts = repositoryReceipts
         .flatMap { item -> [item[1], item[2]] }

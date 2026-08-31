@@ -78,6 +78,9 @@ endif
 ifneq ($(origin PIPELINE_STAGE_SELECTOR),undefined)
 override PIPELINE_STAGE_SELECTOR := $(value PIPELINE_STAGE_SELECTOR)
 endif
+ifneq ($(origin PIPELINE_ATTEMPT_ID),undefined)
+override PIPELINE_ATTEMPT_ID := $(value PIPELINE_ATTEMPT_ID)
+endif
 ifneq ($(origin PIPELINE_SESSION),undefined)
 override PIPELINE_SESSION := $(value PIPELINE_SESSION)
 endif
@@ -321,6 +324,11 @@ PIPELINE_STAGE_SELECTOR :=
 else
 override PIPELINE_STAGE_SELECTOR := $(value PIPELINE_STAGE_SELECTOR)
 endif
+ifeq ($(origin PIPELINE_ATTEMPT_ID),undefined)
+PIPELINE_ATTEMPT_ID :=
+else
+override PIPELINE_ATTEMPT_ID := $(value PIPELINE_ATTEMPT_ID)
+endif
 ifeq ($(origin PIPELINE_SESSION),undefined)
 PIPELINE_SESSION :=
 else
@@ -432,7 +440,8 @@ export NEXTFLOW_JAVA_SHA256 NEXTFLOW_JAVA_MODULES_SHA256
 export NEXTFLOW_JAVA_LIBJVM_SHA256 NEXTFLOW_JAVA_RELEASE_SHA256
 export CONTAINER_FAMILY_SOURCE_ROOT
 export PIPELINE_STATE_ROOT PIPELINE_MARKER_VALUE PIPELINE_EXECUTION_PATH
-export PIPELINE_PROFILE PIPELINE_ACTION PIPELINE_STAGE_SELECTOR PIPELINE_SESSION
+export PIPELINE_PROFILE PIPELINE_ACTION PIPELINE_STAGE_SELECTOR PIPELINE_ATTEMPT_ID
+export PIPELINE_SESSION
 export PIPELINE_RESUME_SESSION PIPELINE_ORCHESTRATOR_TIMEOUT_SECONDS
 export PIPELINE_SOURCE_TIMEOUT_SECONDS PIPELINE_FUNCTIONAL_TIMEOUT_SECONDS
 export PIPELINE_COMPOSE_REPO PIPELINE_COMPOSE_REF PIPELINE_BUILDER_REPO
@@ -590,8 +599,9 @@ pipeline-help:
 		'  pipeline-self-test  Prove exact-session recovery without rerunning upstream work.' \
 		'' \
 		'Important selectors:' \
-		'  PIPELINE_PROFILE=focused|repository|stack|hosted-safe|release-hosted' \
+		'  PIPELINE_PROFILE=focused|repository|stack|hosted-safe|release-hosted|benchmark-reconstruction' \
 		'  PIPELINE_STAGE_SELECTOR=compose-source,compose-swift-test,compose-go-test,compose-cli-smoke' \
+		'  PIPELINE_ATTEMPT_ID=<safe-unique-id-for-a-known-evidence-directory>' \
 		'  PIPELINE_SESSION=<failed-session-uuid>' \
 		'  CONTAINER_FAMILY_SOURCE_ROOT=<directory-containing-sibling-repositories>' \
 		'  PIPELINE_STATE_ROOT=<absolute-durable-state-directory>'
@@ -909,7 +919,11 @@ pipeline-execute: pipeline-runtime-check
 		JAVA_CMD="$${NEXTFLOW_JAVA_BIN}" NXF_JAVA_HOME="$${NEXTFLOW_JAVA_HOME}" \
 		NXF_HOME="$$state_root/nextflow-home" NXF_TEMP="$$state_root/tmp" \
 		NXF_ANSI_LOG=false NXF_DISABLE_CHECK_LATEST=true); \
-	attempt_id="$$(/bin/date -u +%Y%m%dT%H%M%SZ)-$$$$"; \
+	attempt_id="$${PIPELINE_ATTEMPT_ID:-$$(/bin/date -u +%Y%m%dT%H%M%SZ)-$$$$}"; \
+	if ! [[ "$$attempt_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$$ ]]; then \
+		printf 'PIPELINE_ATTEMPT_ID is unsafe: %s\n' "$$attempt_id" >&2; \
+		exit 2; \
+	fi; \
 	attempt_dir="$$state_root/evidence/$$attempt_id"; \
 	/bin/mkdir "$$attempt_dir"; \
 	printf 'schema\t1\naction\t%s\nprofile\t%s\nstage-selector\t%s\nresume-session\t%s\nsource\t%s\njava-home\t%s\njava-version\t%s\njava-sha256\t%s\njava-modules-sha256\t%s\njava-libjvm-sha256\t%s\njava-release-sha256\t%s\nstarted-utc\t%s\n' \
@@ -940,7 +954,7 @@ pipeline-execute: pipeline-runtime-check
 				"$$@" \
 				--pipelineAction "$$action" \
 				--pipelineProfile "$${PIPELINE_PROFILE}" \
-				--stageSelector "$${PIPELINE_STAGE_SELECTOR}" \
+				"--stageSelector=$${PIPELINE_STAGE_SELECTOR}" \
 				--stateRoot "$$state_root" \
 				--evidenceDir "$$attempt_dir" \
 				--stateMarkerValue "$${PIPELINE_MARKER_VALUE}" \

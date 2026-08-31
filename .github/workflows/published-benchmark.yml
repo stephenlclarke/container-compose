@@ -44,7 +44,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: published-release-benchmark
+  group: container-compose-performance-benchmark
   cancel-in-progress: false
 
 jobs:

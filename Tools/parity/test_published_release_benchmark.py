@@ -118,6 +118,12 @@ class ResolvePublishedArtifactsTests(unittest.TestCase):
                 "createdAt": "2026-08-24T11:00:00Z",
             },
         )
+        self.assertEqual(
+            [candidate["runId"] for candidate in MODULE.packaging_run_candidates(
+                runs, "0.13.0"
+            )],
+            [12, 10],
+        )
 
     def test_missing_successful_package_run_is_rejected(self) -> None:
         with self.assertRaisesRegex(
@@ -318,6 +324,59 @@ class PublishedReportTests(unittest.TestCase):
         self.assertIn("No source product was built", report)
         self.assertIn("excluded to keep the unattended run free", report)
         self.assertIn("Artifact source:", report)
+
+    def test_report_labels_historical_guest_reconstruction(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
+            root = Path(directory)
+            baseline = root / "baseline"
+            target = root / "target"
+            baseline.mkdir()
+            target.mkdir()
+            self.write_evidence(baseline, 1.0, 1.0, "0.13.0")
+            self.write_evidence(target, 0.8, 1.0, "0.14.0")
+            manifests = [
+                self.write_manifest(root, "0.13.0"),
+                self.write_manifest(root, "0.14.0"),
+            ]
+            for manifest_path in manifests:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest["comparisonMode"] = "historical-source-reconstruction"
+                manifest["assets"]["guest"]["reconstruction"] = {
+                    "artifactDigest": "sha256:" + "d" * 64,
+                    "artifactId": 123,
+                    "cctlArtifactSha256": "e" * 64,
+                    "cctlBuildCommandSha256": "1" * 64,
+                    "cctlBuildSourceMetadataSha256": "2" * 64,
+                    "cctlBuildSourceSha256": "3" * 64,
+                    "cctlBuildToolsSha256": "4" * 64,
+                    "cctlReceiptSha256": "5" * 64,
+                    "cctlSha256": "f" * 64,
+                    "containerizationRef": manifest["stack"]["containerization"][
+                        "ref"
+                    ],
+                    "runId": 456,
+                    "runUrl": (
+                        "https://github.com/stephenlclarke/containerization/"
+                        "actions/runs/456"
+                    ),
+                }
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            output = root / "report.md"
+
+            MODULE.render_report(
+                target,
+                baseline,
+                manifests[1],
+                manifests[0],
+                output,
+                "https://github.example/actions/runs/1",
+            )
+            report = output.read_text(encoding="utf-8")
+
+        self.assertIn("# Historical reconstruction benchmark", report)
+        self.assertIn("exact retained Containerization CI initfs artifact", report)
+        self.assertIn("Guest initfs authority:", report)
+        self.assertNotIn("No source product was built", report)
 
     def test_report_rejects_mismatched_benchmark_conditions(self) -> None:
         with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
