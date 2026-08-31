@@ -14,134 +14,75 @@
 # limitations under the License.
 #===----------------------------------------------------------------------===#
 
-name: CodeQL
+name: CodeQL Release Recovery
 
+# Normal CodeQL analysis is a prerequisite job in prebuilt-binaries.yml and
+# therefore runs only while publishing Current or a stable release. This
+# workflow exists solely to recover analysis for an already published release;
+# ordinary pushes, pull requests, documentation, and schedules must not run it.
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - converted_to_draft
-      - ready_for_review
-  schedule:
-    - cron: "41 4 * * 1"
   workflow_dispatch:
     inputs:
-      documentation_pr:
-        description: "Optional documentation-only pull request number to classify"
-        required: false
+      release_ref:
+        description: "Published stable tag or current release to recover"
+        required: true
         type: string
 
 permissions:
   actions: read
   contents: read
-  pull-requests: read
   security-events: write
 
 concurrency:
-  group: codeql-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  group: codeql-release-recovery-${{ inputs.release_ref }}
+  cancel-in-progress: false
 
 jobs:
-  changes:
-    name: Detect Relevant Changes
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+  resolve-release:
+    name: Resolve Published Release
+    if: github.repository == 'stephenlclarke/container-compose'
     runs-on: ubuntu-latest
     outputs:
-      go: ${{ steps.filter.outputs.go }}
+      checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
     steps:
-      - name: Checkout for push diff
-        if: github.event_name == 'push'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-
-      - name: Classify changed files
-        id: filter
+      - name: Require an immutable published release
+        id: resolve
         env:
-          DOCUMENTATION_PR: ${{ inputs.documentation_pr }}
           GH_TOKEN: ${{ github.token }}
+          RELEASE_REF: ${{ inputs.release_ref }}
         shell: bash
         run: |
           set -euo pipefail
-          changed_files="${RUNNER_TEMP}/changed-files.txt"
-
-          case "${GITHUB_EVENT_NAME}" in
-            pull_request)
-              gh api "repos/${GITHUB_REPOSITORY}/pulls/${{ github.event.pull_request.number }}/files" \
-                --paginate \
-                --jq '.[].filename' > "$changed_files"
-              ;;
-            push)
-              before="${{ github.event.before }}"
-              after="${GITHUB_SHA}"
-              if [[ "$before" =~ ^0+$ ]] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
-                git diff-tree --no-commit-id --name-only -r "$after" > "$changed_files"
-              else
-                git diff --name-only "$before" "$after" > "$changed_files"
-              fi
-              ;;
-            workflow_dispatch)
-              if [[ -n "${DOCUMENTATION_PR}" ]]; then
-                pr_metadata="$(
-                  gh api "repos/${GITHUB_REPOSITORY}/pulls/${DOCUMENTATION_PR}"
-                )"
-                [[ "$(jq -r '.head.repo.full_name' <<<"${pr_metadata}")" == \
-                  "${GITHUB_REPOSITORY}" ]]
-                [[ "$(jq -r '.head.sha' <<<"${pr_metadata}")" == \
-                  "${GITHUB_SHA}" ]]
-                [[ "$(jq -r '.base.ref' <<<"${pr_metadata}")" == "main" ]]
-                gh api "repos/${GITHUB_REPOSITORY}/pulls/${DOCUMENTATION_PR}/files" \
-                  --paginate \
-                  --jq '.[].filename' > "$changed_files"
-              else
-                printf 'go=true\n' >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-              ;;
-            *)
-              printf 'go=true\n' >> "$GITHUB_OUTPUT"
-              exit 0
-              ;;
-          esac
-
-          go=false
-          while IFS= read -r path; do
-            case "$path" in
-              Tools/compose-normalizer/**|.github/workflows/codeql.yml|.github/codeql/**|Makefile)
-                go=true
-                ;;
-            esac
-          done < "$changed_files"
-
-          printf 'go=%s\n' "$go" >> "$GITHUB_OUTPUT"
+          if [[ "${RELEASE_REF}" != "current" &&
+                ! "${RELEASE_REF}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            printf 'CodeQL recovery requires current or a stable semantic tag: %s\n' \
+              "${RELEASE_REF}" >&2
+            exit 1
+          fi
+          release="$(
+            gh release view "${RELEASE_REF}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --json isDraft,tagName
+          )"
+          if [[ "$(jq -r .isDraft <<<"${release}")" != "false" ||
+                "$(jq -r .tagName <<<"${release}")" != "${RELEASE_REF}" ]]; then
+            printf 'CodeQL recovery release is not published and immutable: %s\n' \
+              "${RELEASE_REF}" >&2
+            exit 1
+          fi
+          printf 'checkout_ref=%s\n' "${RELEASE_REF}" >> "${GITHUB_OUTPUT}"
 
   analyze:
-    name: Analyze Go
-    needs: changes
-    # Every main commit needs a real CodeQL analysis so release quality
-    # snapshots can be tied to the exact package commit. Keep the cheaper
-    # no-op path only for ready pull requests that cannot affect Go analysis.
-    # Draft pull requests defer both paths until ready-for-review.
-    if: >
-      (github.event_name != 'pull_request' &&
-        (github.event_name != 'workflow_dispatch' || inputs.documentation_pr == '')) ||
-      (github.event_name == 'pull_request' &&
-        github.event.pull_request.draft == false &&
-        needs.changes.outputs.go == 'true')
+    name: Analyze Go Release
+    needs: resolve-release
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout container-compose
+      - name: Checkout exact release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          ref: ${{ needs.resolve-release.outputs.checkout_ref }}
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -155,7 +96,6 @@ jobs:
           languages: go
           build-mode: manual
           config-file: .github/codeql/codeql-config.yml
-          # Keep hosted and local analysis on the same reviewed CLI/query bundle.
           tools: https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.26.2/codeql-bundle-linux64.tar.gz
 
       - name: Build Go normalizer for CodeQL
@@ -184,49 +124,22 @@ jobs:
       - name: Analyze
         uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
         with:
-          # Keep the historical configuration identity stable. CodeQL uses this
-          # category to find the main-branch baseline for pull-request alert
-          # comparisons; changing it to /language:go orphaned the prior
-          # /language:swift-go baseline and produced neutral PR results.
           category: "/language:swift-go"
-
-  analyze-skipped:
-    name: Analyze Go (No Go changes)
-    needs: changes
-    if: >
-      ((github.event_name == 'pull_request' &&
-        github.event.pull_request.draft == false) ||
-        (github.event_name == 'workflow_dispatch' &&
-          inputs.documentation_pr != '')) &&
-      needs.changes.outputs.go != 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Report skipped analysis
-        run: printf 'CodeQL Go analysis skipped because this change did not touch Go normalizer or CodeQL configuration paths.\n'
 
   verify:
     name: CodeQL
-    needs:
-      - analyze
-      - analyze-skipped
+    needs: analyze
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Require a successful analysis path
+      - name: Require successful release analysis
         env:
           ANALYSIS_RESULT: ${{ needs.analyze.result }}
-          DRAFT_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
-          SKIPPED_RESULT: ${{ needs.analyze-skipped.result }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${DRAFT_PULL_REQUEST}" == "true" ]]; then
-            printf 'CodeQL analysis deferred while the pull request is a draft; mark it ready for review to run the analyzer.\n'
-            exit 0
+          if [[ "${ANALYSIS_RESULT}" != "success" ]]; then
+            printf 'CodeQL release analysis did not complete successfully: %s\n' \
+              "${ANALYSIS_RESULT}" >&2
+            exit 1
           fi
-          if [[ "${ANALYSIS_RESULT}" == "success" || "${SKIPPED_RESULT}" == "success" ]]; then
-            exit 0
-          fi
-          printf 'CodeQL analysis did not complete successfully (analysis=%s, skipped=%s).\n' \
-            "${ANALYSIS_RESULT}" "${SKIPPED_RESULT}" >&2
-          exit 1

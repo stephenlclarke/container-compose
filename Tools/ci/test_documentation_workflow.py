@@ -36,6 +36,19 @@ class DocumentationWorkflowTests(unittest.TestCase):
         self.assertIn("    timeout-minutes: 60\n", build_job)
         self.assertNotIn("    timeout-minutes: 45\n", build_job)
 
+    def test_documentation_classification_is_api_aware_and_fail_fast(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        classify_job = workflow[
+            workflow.index("  classify-changes:\n") : workflow.index("  build-sites:\n")
+        ]
+        build_job = workflow[
+            workflow.index("  build-sites:\n") : workflow.index("  upload-pages-artifact:\n")
+        ]
+
+        self.assertIn("classify-documentation-changes.py", classify_job)
+        self.assertIn("--github-output \"${GITHUB_OUTPUT}\"", classify_job)
+        self.assertIn("      fail-fast: true\n", build_job)
+
 
 if __name__ == "__main__":
     unittest.main()

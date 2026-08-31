@@ -617,8 +617,8 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
 
     def test_benchmark_report_only_change_skips_docc_builds(self) -> None:
         workflow = DOCUMENTATION_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Keep benchmark-only reports out of the DocC build path", workflow)
-        self.assertIn("^docs/benchmarks/[^/]+[.]md$", workflow)
+        self.assertIn("Classify documented API and site inputs", workflow)
+        self.assertIn("classify-documentation-changes.py", workflow)
         self.assertIn("needs.classify-changes.outputs.build_docc == 'true'", workflow)
 
     def test_documentation_pr_dispatches_only_lightweight_protected_checks(self) -> None:
@@ -627,16 +627,15 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
         codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("gh workflow run ci.yml", benchmark)
-        self.assertIn("gh workflow run codeql.yml", benchmark)
+        self.assertNotIn("gh workflow run codeql.yml", benchmark)
         self.assertIn("documentation_pr:", ci)
-        self.assertIn("documentation_pr:", codeql)
-        self.assertIn('inputs.documentation_pr != \'\'', codeql)
-        self.assertIn("Analyze Go (No Go changes)", codeql)
-        for workflow in (ci, codeql):
-            self.assertIn(".head.repo.full_name", workflow)
-            self.assertIn(".head.sha", workflow)
-            self.assertIn("${GITHUB_SHA}", workflow)
-            self.assertIn(".base.ref", workflow)
+        self.assertNotIn("documentation_pr:", codeql)
+        self.assertIn("release_ref:", codeql)
+        self.assertIn("CodeQL Release Recovery", codeql)
+        self.assertIn(".head.repo.full_name", ci)
+        self.assertIn(".head.sha", ci)
+        self.assertIn("${GITHUB_SHA}", ci)
+        self.assertIn(".base.ref", ci)
 
 
 if __name__ == "__main__":

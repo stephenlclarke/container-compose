@@ -429,9 +429,37 @@ that independence explicit and Nextflow finds it naturally.
 
 Failed and interrupted tasks are not successful cache entries. A subsequent
 exact-session resume reruns them while independently successful content-matched
-tasks can be reused. Explicit missing-output and corrupt-output recovery tests
-have not yet been implemented, so those cases are future acceptance criteria
-rather than phase-one claims.
+tasks can be reused. Release checkpoints, formula preflight, and published
+artifact verification now fail before expensive successors; explicit
+missing-output and corrupt-output recovery tests remain future acceptance
+criteria for the broader Nextflow graph.
+
+## Release fail-fast graph
+
+The release graph orders checks by cost and by how much downstream work they
+can invalidate:
+
+1. Resolve immutable source and stack references, repository cleanliness,
+   release intent, host capability, retained OCI inputs, signing identity, and
+   available disk.
+2. Validate the Homebrew tap origin, clean state, Ruby syntax, exact release
+   URLs, SHA-256 values, stable/current lane pairing, source formula templates,
+   and promotion-token push permission.
+3. Run release-only CodeQL for the exact package source.
+4. Build one immutable runtime and Compose package candidate, then fan it out
+   to tests, signing, parity, and publication rather than rebuilding it.
+5. Publish only after every authority is green. A Current demo is a deferred,
+   non-authoritative consumer and stable package runs never dispatch it.
+6. Classify documentation inputs. Benchmark-only, unrelated, and proven
+   implementation-only Swift changes skip DocC. Public declarations, API
+   comments, docs, package resolution, toolchain selectors, and workflow inputs
+   rebuild it; ambiguous Swift syntax fails safe by rebuilding.
+
+Independent DocC sites fan out in parallel with matrix fail-fast enabled, then
+Pages assembly runs only if every site succeeds. CodeQL and DocC are not part
+of ordinary development or benchmark-report validation. Published benchmarks
+consume signed GitHub/Homebrew artifacts and dispatch only the documentation
+CI path.
 
 ## Durable SSD State And Internal Runtime State
 

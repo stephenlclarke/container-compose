@@ -264,10 +264,6 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --ref "${branch}" \
             -f documentation_pr="${pr_number}"
-          gh workflow run codeql.yml \
-            --repo "${GITHUB_REPOSITORY}" \
-            --ref "${branch}" \
-            -f documentation_pr="${pr_number}"
           printf 'Documentation report pull request: %s\n' "${pr_url}" \
             >> "${GITHUB_STEP_SUMMARY}"
 

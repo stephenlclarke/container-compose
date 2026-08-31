@@ -615,13 +615,34 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_homebrew_tap_pushes_authenticate_with_the_tap_token(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
-        self.assertEqual(
-            workflow.count(
-                "GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}"
-            ),
-            2,
+        self.assertGreaterEqual(
+            workflow.count("GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}"),
+            3,
         )
         self.assertEqual(workflow.count("gh auth setup-git"), 2)
+
+    def test_homebrew_configuration_fails_before_codeql_and_product_builds(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("name: Fail-Fast Release Configuration", workflow)
+        self.assertIn("homebrew-preflight.py", workflow)
+        self.assertIn(".permissions.push", workflow)
+        self.assertIn("name: Checkout pinned Container formula source", workflow)
+        self.assertIn("--container-repository container", workflow)
+        self.assertLess(
+            workflow.index("name: Fail-Fast Release Configuration"),
+            workflow.index("name: CodeQL"),
+        )
+        self.assertLess(workflow.index("name: CodeQL"), workflow.index("name: Package"))
+        local_gate = self.script[
+            self.script.index("run_local_release_gate() {") : self.script.index(
+                "sync_containerization_package_pins() {"
+            )
+        ]
+        self.assertLess(
+            local_gate.index("homebrew-preflight.py"),
+            local_gate.index("require_local_virtualization"),
+        )
 
     def test_published_stable_tap_repair_does_not_repackage_or_replace_assets(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
@@ -702,6 +723,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
 
         self.assertIn("- Prebuilt Binaries", workflow)
+        self.assertIn('"${WORKFLOW_RUN_DISPLAY_TITLE}" != "Prebuilt Binaries · main"', workflow)
+        self.assertIn("Skipping non-Current package workflow", workflow)
         self.assertIn("group: container-compose-current-demo", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn(
@@ -857,7 +880,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         workflow = DOCS_WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("strategy:", workflow)
-        self.assertIn("fail-fast: false", workflow)
+        self.assertIn("fail-fast: true", workflow)
         self.assertEqual(workflow.count("- site:"), 4)
         for site in ("compose", "container", "containerization", "k8s"):
             self.assertIn(f"- site: {site}", workflow)
@@ -1046,36 +1069,25 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('(.event == "push" or .event == "workflow_dispatch")', current_authority)
         self.assertNotIn("--event push", current_authority)
 
-    def test_codeql_defers_drafts_without_weakening_main_or_ready_prs(self) -> None:
+    def test_codeql_runs_only_for_release_publication_or_recovery(self) -> None:
         codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
-        ci = CI_WORKFLOW.read_text(encoding="utf-8")
-        analyze = codeql[
-            codeql.index("  analyze:") : codeql.index("  analyze-skipped:")
-        ]
-        analyze_skipped = codeql[
-            codeql.index("  analyze-skipped:") : codeql.index("  verify:")
-        ]
-        self.assertIn("- converted_to_draft", codeql)
-        self.assertIn("- ready_for_review", codeql)
-        self.assertIn(
-            "if: github.event_name != 'pull_request' || github.event.pull_request.draft == false",
-            codeql,
+        package = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        benchmark = (ROOT / ".github" / "workflows" / "published-benchmark.yml").read_text(
+            encoding="utf-8"
         )
-        self.assertIn("github.event_name != 'pull_request'", analyze)
-        self.assertIn("inputs.documentation_pr == ''", analyze)
-        self.assertIn("github.event.pull_request.draft == false", analyze)
-        self.assertIn("needs.changes.outputs.go == 'true'", analyze)
-        self.assertIn("github.event_name == 'pull_request'", analyze_skipped)
-        self.assertIn("github.event.pull_request.draft == false", analyze_skipped)
-        self.assertIn("inputs.documentation_pr != ''", analyze_skipped)
-        self.assertIn("needs.changes.outputs.go != 'true'", analyze_skipped)
-        self.assertIn("DRAFT_PULL_REQUEST:", codeql)
-        self.assertIn("CodeQL analysis deferred while the pull request is a draft", codeql)
-        self.assertNotIn("name: Validate Lightweight", ci)
-        self.assertEqual(len(re.findall(r"^    name: Validate$", ci, re.MULTILINE)), 2)
+
+        self.assertIn("name: CodeQL Release Recovery", codeql)
+        self.assertIn("workflow_dispatch:", codeql)
+        self.assertNotIn("pull_request:", codeql)
+        self.assertNotIn("schedule:", codeql)
+        self.assertNotIn("branches:\n      - main", codeql)
+        self.assertIn("release_ref:", codeql)
+        self.assertIn("Require an immutable published release", codeql)
         self.assertIn("name: CodeQL", codeql)
         self.assertIn("needs.analyze.result", codeql)
-        self.assertIn("needs.analyze-skipped.result", codeql)
+        self.assertIn("codeql-release:", package)
+        self.assertIn("needs:\n      - resolve-publish-context\n      - release-preflight", package)
+        self.assertNotIn("workflow run codeql.yml", benchmark)
 
     def test_main_sonar_step_preserves_the_complete_retry_budget(self) -> None:
         ci = CI_WORKFLOW.read_text(encoding="utf-8")

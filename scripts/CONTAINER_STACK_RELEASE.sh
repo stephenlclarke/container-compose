@@ -1861,6 +1861,14 @@ run_local_release_gate() {
   fi
 
   print_header "run local release gate"
+  # Formula syntax, lane pairing, immutable URLs, checksums, repository
+  # identity, and source templates are all knowable before any product build.
+  # Keep this ahead of virtualization, signing, and candidate packaging so a
+  # broken tap cannot waste the expensive release gate.
+  run python3 "${path}/Tools/release/homebrew-preflight.py" \
+    --tap "${HOMEBREW_TAP_REPO}" \
+    --compose-repository "${path}" \
+    --container-repository "${container_path}"
   require_local_virtualization
   if [[ "${EXECUTE}" == "1" ]]; then
     trap release_local_release_gate_host_state EXIT

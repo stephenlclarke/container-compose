@@ -296,13 +296,15 @@ Set `PARITY_EVIDENCE_DIR` to retain raw timing TSV, JUnit, runtime fingerprints,
 
 ### CodeQL Analysis
 
-GitHub reports `.github/workflows/codeql.yml` as active, and branch protection
-requires its aggregate `CodeQL` check. Every `main` push, weekly schedule,
-and manual dispatch performs the Go analysis. Ready pull requests analyze when
-their changes can affect the Go normalizer or CodeQL configuration; unrelated
-ready pull requests take an explicit no-op gate, and draft pull requests defer.
-The hosted workflow covers the Go normalizer only, not Swift. A missing or
-unsuccessful required check is not a successful security result.
+CodeQL is a release-only authority. `.github/workflows/prebuilt-binaries.yml`
+runs the exact Go normalizer analysis on a hosted Linux runner after the
+Homebrew configuration preflight and before native package construction.
+Pull requests, ordinary `main` pushes, schedules, documentation-only changes,
+and published benchmark reports do not run it. The standalone
+`.github/workflows/codeql.yml` accepts only manual recovery for an already
+published `current` or semantic release. The analysis covers the Go normalizer
+only, not Swift. A missing or unsuccessful release analysis is not a
+successful security result.
 
 The supported local analysis is checksum-pinned to CodeQL bundle `2.26.2` and its bundled `codeql/go-queries@1.6.7` query pack, matching the explicit immutable `2.26.2` release-asset URL in the workflow's `tools` input. The matching official Go `1.26.3` archives are pinned for Darwin ARM64, Darwin x86-64, and Linux x86-64. GitHub CLI `2.96.0` is pinned independently to the official macOS ARM64, macOS x86-64, and Linux x86-64 archives used for credential lookup and authenticated API reads; package-manager paths and custom executable overrides are unsupported. Only downloaded archive bytes persist under ignored `.local/share/codeql/`. Before each local operation, the tooling opens the selected cache entry without following a leaf symlink, copies and hashes those bytes once into a randomized private directory, rejects any digest other than the reviewed platform SHA-256, extracts there, and retains that private installation until analysis or upload-receipt confirmation finishes. It then deletes the private installation, so no verified executable is reopened from the mutable shared cache. The sole supported entry is to source `Tools/ci/codeql-entry.sh` from a Bash or Zsh process containing neither the `GITHUB_TOKEN` nor `GH_TOKEN` shell variable, then invoke `container_compose_codeql <goal>`; do not run `codeql-make.py` or the underlying Make goals directly. A shell can expand an inherited tracing prompt before any function body can disable it, so the supported caller is credential-free and has tracing disabled. The entry records the incoming shell flags, disables tracing, and rejects an already-traced caller before it can start Python or acquire a credential; it separately rejects any credential variable. Before the first caller-shadowable command or new executable inside the function, it removes every enabled shell function in its subshell (using POSIX-priority builtins in Bash and Zsh's enabled-function table), disables tracing, uses explicit builtins to unexport the complete inherited environment, re-exports only reviewed goal-specific data, and directly execs isolated absolute Python. Native-loader controls and inherited command functions therefore cannot execute in an intermediate helper. For real upload, the privately extracted pinned GitHub CLI reads its authenticated keyring only after that clean boundary; the resulting token remains in memory/environment only for the one upload and receipt-confirmation process group and never appears in an argument. The Python launcher requires that clean-process boundary, rejects any surviving `LD_*`, `DYLD_*`, or `__XPC_DYLD_*` control, allowlists its Make inputs, and then execs absolute GNU Make with built-ins disabled and an explicit repository Makefile. The Make recipes invoke the inner `/usr/bin/python3 -I` directly, defer unrelated Markdown discovery to absolute system Git, capture every configurable CodeQL value as literal data, and export those values instead of interpolating them into shell source. Caller `PYTHONPATH`, `sitecustomize`, `PATH`, shell metacharacters, or Make-function/eval text therefore cannot execute before the evidence workflow establishes its controls. Git, the archive extractor, and the downloader are likewise selected only from reviewed absolute system locations, run with the allowlisted environment, and recorded by resolved path, version, and executable hash. Caller proxy and custom certificate variables may support unauthenticated archive and module retrieval, but exact `git ls-remote` ref verification and the credential path are independently narrowed before token selection: canonical remote identity, credential-bearing CodeQL, and GitHub CLI processes receive no caller proxy, `SSL_CERT_FILE`, or `SSL_CERT_DIR` and use direct system trust. Downloading the CodeQL bundle is subject to the [GitHub CodeQL Terms and Conditions](https://securitylab.github.com/tools/codeql/license/). Update the CodeQL CLI, query pack, Action tool input, Go and GitHub CLI versions, release URLs, checksums, tests, and reviewed empty-or-dispositioned baseline together.
 
@@ -587,9 +589,8 @@ pull request under `docs/benchmarks/`.
 
 Because GitHub suppresses ordinary pull-request workflow events created by its
 built-in automation token, the benchmark workflow explicitly dispatches the
-protected `Validate` and `CodeQL` contexts for the report commit. The former
-runs Markdown validation; the latter records the existing no-Go-change path and
-does not invoke CodeQL or build a product.
+protected `Validate` context for the report commit. That path runs Markdown and
+formula-source validation without invoking CodeQL, DocC, or a product build.
 
 The unattended workflow excludes the cross-VM remote-sink logging lanes so it
 cannot stop behind a macOS Local Network approval dialog. Lifecycle, local log

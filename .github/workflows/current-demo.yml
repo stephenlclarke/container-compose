@@ -59,10 +59,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_REF: ${{ inputs.ref }}
+          WORKFLOW_RUN_DISPLAY_TITLE: ${{ github.event.workflow_run.display_title }}
           WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" &&
+                "${WORKFLOW_RUN_DISPLAY_TITLE}" != "Prebuilt Binaries · main" ]]; then
+            printf 'Skipping non-Current package workflow: %s\n' \
+              "${WORKFLOW_RUN_DISPLAY_TITLE:-<unset>}"
+            {
+              printf 'publish=false\n'
+              printf 'sha=%s\n' "${WORKFLOW_HEAD_SHA}"
+            } >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
           remote="https://github.com/${GITHUB_REPOSITORY}.git"
           main_sha="$(
             git ls-remote --heads "${remote}" refs/heads/main \
