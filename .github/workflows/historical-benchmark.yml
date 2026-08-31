@@ -104,8 +104,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 \
-            --json tagName,isDraft,isPrerelease,publishedAt \
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            > "${RUNNER_TEMP}/published-release-pages.json"
+          jq '[.[][] | {
+              tagName: .tag_name,
+              isDraft: .draft,
+              isPrerelease: .prerelease,
+              publishedAt: .published_at
+            }]' "${RUNNER_TEMP}/published-release-pages.json" \
             > "${RUNNER_TEMP}/published-releases.json"
           arguments=(
             resolve
@@ -208,9 +215,19 @@ jobs:
               '.components.containerization.ref' "${version_root}/stack-refs.json")"
             [[ "${containerization_ref}" =~ ^[0-9a-f]{40}$ ]]
 
-            gh run list --repo stephenlclarke/containerization \
-              --commit "${containerization_ref}" --limit 30 \
-              --json databaseId,workflowName,headSha,status,conclusion,event,createdAt,url \
+            gh api --paginate --slurp \
+              "repos/stephenlclarke/containerization/actions/workflows/containerization-build.yml/runs?head_sha=${containerization_ref}&per_page=100" \
+              > "${version_root}/containerization-run-pages.json"
+            jq '[.[].workflow_runs[] | {
+                databaseId: .id,
+                workflowName: .name,
+                headSha: .head_sha,
+                status,
+                conclusion,
+                event,
+                createdAt: .created_at,
+                url: .html_url
+              }]' "${version_root}/containerization-run-pages.json" \
               > "${version_root}/containerization-runs.json"
             /usr/bin/python3 Tools/parity/historical_reconstruction_benchmark.py \
               resolve-run \

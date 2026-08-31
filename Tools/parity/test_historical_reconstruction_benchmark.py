@@ -210,6 +210,7 @@ class HistoricalWorkflowTests(unittest.TestCase):
         self.assertIn("validate-package-artifacts", workflow)
         self.assertIn("gh api --paginate --slurp", workflow)
         self.assertNotIn("--workflow prebuilt-binaries.yml --limit", workflow)
+        self.assertNotIn("--limit ", workflow)
         self.assertIn("verify-developer-id-archive.sh", workflow)
         self.assertIn("validate-initfs", workflow)
         self.assertIn("artifactDigest", workflow)
