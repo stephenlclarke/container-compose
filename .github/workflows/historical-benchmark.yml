@@ -158,9 +158,18 @@ jobs:
         run: |
           set -euo pipefail
           [[ -n "${GH_TOKEN}" ]]
-          gh run list --repo "${GITHUB_REPOSITORY}" \
-            --workflow prebuilt-binaries.yml --limit 100 \
-            --json databaseId,displayTitle,status,conclusion,event,createdAt,url \
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/prebuilt-binaries.yml/runs?event=workflow_dispatch&per_page=100" \
+            > "${BENCHMARK_ROOT}/downloads/package-run-pages.json"
+          jq '[.[].workflow_runs[] | {
+              databaseId: .id,
+              displayTitle: .display_title,
+              status,
+              conclusion,
+              event,
+              createdAt: .created_at,
+              url: .html_url
+            }]' "${BENCHMARK_ROOT}/downloads/package-run-pages.json" \
             > "${BENCHMARK_ROOT}/downloads/package-runs.json"
 
           for version in "${BASELINE_VERSION}" "${TARGET_VERSION}"; do

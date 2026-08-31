@@ -208,6 +208,8 @@ class HistoricalWorkflowTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("runs-on: [self-hosted, macOS, ARM64", workflow)
         self.assertIn("validate-package-artifacts", workflow)
+        self.assertIn("gh api --paginate --slurp", workflow)
+        self.assertNotIn("--workflow prebuilt-binaries.yml --limit", workflow)
         self.assertIn("verify-developer-id-archive.sh", workflow)
         self.assertIn("validate-initfs", workflow)
         self.assertIn("artifactDigest", workflow)
