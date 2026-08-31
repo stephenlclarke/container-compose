@@ -723,6 +723,56 @@ run_file_logging_lane container-compose 1 2 logging-write-json-compression "$FIX
         self.assertEqual(assertion[2], "1")
         self.assertEqual(Path(assertion[3]), fixtures / "completions")
 
+    def test_logging_read_corpus_retains_stopped_container(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-read-corpus-test-") as directory:
+            root = Path(directory)
+            invocations = root / "invocations.txt"
+            fake_compose = root / "compose"
+            fixture = root / "logging.yml"
+            fixture.touch()
+            fake_compose.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"$INVOCATIONS"
+""",
+                encoding="utf-8",
+            )
+            fake_compose.chmod(0o755)
+            environment = dict(os.environ)
+            environment.update(
+                {
+                    "FAKE_COMPOSE": str(fake_compose),
+                    "INVOCATIONS": str(invocations),
+                }
+            )
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    """
+source "$1"
+select_lane() { LANE_PREFIX=c; ACTIVE_COMPOSE=("$FAKE_COMPOSE"); }
+down_project() { :; }
+prepare_logging_history container-compose "$2"
+""",
+                    "_",
+                    HARNESS,
+                    fixture,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            invocation_lines = invocations.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(invocation_lines), 2)
+        self.assertIn(" up -d --pull never", invocation_lines[0])
+        self.assertNotIn("--abort-on-container-exit", invocation_lines[0])
+        self.assertTrue(invocation_lines[1].endswith(" wait logger"))
+
 
 class PerformanceMatrixEvidenceTests(unittest.TestCase):
     def test_finalizer_reports_comparable_median_and_p95(self) -> None:

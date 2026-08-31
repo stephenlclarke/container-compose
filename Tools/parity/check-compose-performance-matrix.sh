@@ -1100,7 +1100,10 @@ prepare_logging_history() {
     down_project "$lane" "$project" "$file"
     env LOG_WORKLOAD=history LOG_MAX_SIZE=64m \
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" up \
-        --abort-on-container-exit --exit-code-from logger --pull never >/dev/null
+        -d --pull never >/dev/null
+    env LOG_WORKLOAD=history LOG_MAX_SIZE=64m \
+        "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" \
+        wait logger >/dev/null
 }
 
 # Time one canonical historical logging query against a prepared corpus.
