@@ -106,7 +106,9 @@ jobs:
   build-sites:
     name: Build ${{ matrix.site }} DocC Site
     needs: classify-changes
-    if: needs.classify-changes.outputs.build_docc == 'true'
+    # Pull requests validate documentation classification and workflow syntax,
+    # but product documentation is generated only by the post-merge authority.
+    if: github.event_name != 'pull_request' && needs.classify-changes.outputs.build_docc == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     strategy:

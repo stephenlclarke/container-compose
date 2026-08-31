@@ -946,6 +946,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("downloads/compose.tgz", workflow)
         self.assertIn('downloads/${site}.tgz', workflow)
         self.assertIn("name: Build ${{ matrix.site }} DocC Site", workflow)
+        self.assertIn(
+            "if: github.event_name != 'pull_request' && "
+            "needs.classify-changes.outputs.build_docc == 'true'",
+            workflow,
+        )
         self.assertIn("runs-on: macos-26", workflow)
         self.assertIn("needs: build-sites", workflow)
         self.assertIn("merge-multiple: true", workflow)
