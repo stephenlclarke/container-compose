@@ -167,6 +167,8 @@ jobs:
           # No source products are built. Both complete runtime/plugin pairs
           # come from immutable published GitHub assets and must match a
           # historical Homebrew formula URL and SHA-256 before execution.
+          # The exact guest init image is a required release asset: it cannot
+          # be recovered from Homebrew, rebuilt, or inherited from the host.
           # A successful retained package run is the recovery authority when
           # an older stable release omitted its attached release assets.
           for version in "${BASELINE_VERSION}" "${TARGET_VERSION}"; do
@@ -174,6 +176,24 @@ jobs:
             actions_dir="${BENCHMARK_ROOT}/downloads/${version}/actions"
             distribution="${release_dir}"
             artifact_source="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${version}"
+            if ! gh release download "${version}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --dir "${release_dir}" \
+              --pattern 'container-vminit-arm64.oci.tar' \
+              --pattern 'container-vminit-arm64.oci.tar.sha256'; then
+              printf 'published release %s has no exact guest init-image closure; refusing to rebuild or inherit one\n' \
+                "${version}" >&2
+              exit 1
+            fi
+            for guest_asset in \
+              container-vminit-arm64.oci.tar \
+              container-vminit-arm64.oci.tar.sha256; do
+              if [[ ! -f "${release_dir}/${guest_asset}" ]]; then
+                printf 'published release %s has no exact guest asset %s; refusing to rebuild or inherit one\n' \
+                  "${version}" "${guest_asset}" >&2
+                exit 1
+              fi
+            done
             release_complete=true
             if ! gh release download "${version}" \
               --repo "${GITHUB_REPOSITORY}" \
@@ -234,10 +254,21 @@ jobs:
             python3 Tools/parity/published_release_benchmark.py prepare \
               --version "${version}" \
               --distribution "${distribution}" \
+              --init-distribution "${release_dir}" \
               --tap-repository homebrew-tap \
               --source-repository . \
               --artifact-source "${artifact_source}" \
               --output "${BENCHMARK_ROOT}/prepared/${version}"
+            init_archive="${BENCHMARK_ROOT}/prepared/${version}/init/container-vminit-arm64.oci.tar"
+            init_references=()
+            while IFS= read -r reference; do
+              init_references+=("${reference}")
+            done < <(
+              jq -r '.assets.guest.references[]' \
+                "${BENCHMARK_ROOT}/prepared/${version}/published-distribution.json"
+            )
+            python3 Tools/release/validate-oci-image-layout.py \
+              "${init_archive}" "${init_references[@]}"
           done
 
       - name: Run same-host published comparisons
@@ -249,6 +280,12 @@ jobs:
             local prepared="${BENCHMARK_ROOT}/prepared/${version}"
             local runtime="${prepared}/runtime/bin/container"
             local compose="${prepared}/compose/compose/bin/compose"
+            local init_archive="${prepared}/init/container-vminit-arm64.oci.tar"
+            local init_references
+            init_references="$(
+              jq -r '.assets.guest.references | join(" ")' \
+                "${prepared}/published-distribution.json"
+            )"
             local run_root="${BENCHMARK_ROOT}/work/${version}"
             local runtime_root="${RUNTIME_ROOT_PREFIX}-${version}"
             install -d -m 0700 "${run_root}/fixtures"
@@ -256,8 +293,13 @@ jobs:
               CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS=ghcr.io,docker.io,registry-1.docker.io,index.docker.io \
               CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT=/private/tmp \
               CONTAINER_RUNTIME_LOCALIZE_APP_ROOT=never \
+              CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="${init_archive}" \
+              CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES="${init_references}" \
+              CONTAINER_COMPOSE_INIT_IMAGE=vminit:container-compose \
               CONTAINER_COMPOSE="${compose}" \
               CONTAINER_COMPOSE_CONTAINER="${runtime}" \
+              PARITY_INIT_IMAGE_ARCHIVE="${init_archive}" \
+              PARITY_INIT_IMAGE_REFERENCES="${init_references}" \
               PARITY_WORK_ROOT="${run_root}/fixtures" \
               PARITY_EVIDENCE_DIR="${BENCHMARK_ROOT}/evidence/${version}" \
               PARITY_REPETITIONS="${REPETITIONS}" \
@@ -286,6 +328,7 @@ jobs:
           printf 'REPORT_PATH=%s\n' "${report}" >> "${GITHUB_ENV}"
 
       - name: Retain raw benchmark evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: published-benchmark-${{ needs.resolve.outputs.target }}-vs-${{ needs.resolve.outputs.baseline }}
@@ -293,7 +336,7 @@ jobs:
             ${{ env.BENCHMARK_ROOT }}/evidence
             ${{ env.BENCHMARK_ROOT }}/prepared/*/published-distribution.json
             ${{ env.BENCHMARK_ROOT }}/downloads/*/*/*.sha256
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 90
 
       - name: Open documentation pull request

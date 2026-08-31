@@ -3484,9 +3484,104 @@ wait_for_github_run_success() {
   done
 }
 
+# Print the Containerization repository and revision recorded by one stable tag.
+stable_containerization_authority() {
+  local version="$1" path
+  path="$(repo_path "${COMPOSE_REPO}")"
+  python3 - "${path}" "${version}" <<'PY'
+import json
+import subprocess
+import sys
+
+repository, version = sys.argv[1:]
+result = subprocess.run(
+    [
+        "git",
+        "-C",
+        repository,
+        "show",
+        f"{version}:Tools/release/stack-refs.json",
+    ],
+    check=True,
+    capture_output=True,
+    text=True,
+)
+manifest = json.loads(result.stdout)
+component = manifest["components"]["containerization"]
+print(component["repository"])
+print(component["ref"])
+PY
+}
+
+# Publish the exact guest archive that passed the local stable release gate.
+publish_stable_init_image_asset() {
+  local version="$1" repo archive asset tmp digest asset_names remote_digest
+  local authority=() containerization_repository containerization_reference status=0
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
+  asset="container-vminit-arm64.oci.tar"
+  if [[ "${archive}" != /* || ! -f "${archive}" ]]; then
+    printf 'stable guest publication requires the absolute retained release-gate archive via CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE: %s\n' \
+      "${archive:-unset}" >&2
+    return 2
+  fi
+  while IFS= read -r value; do
+    authority+=("${value}")
+  done < <(stable_containerization_authority "${version}")
+  if ((${#authority[@]} != 2)); then
+    printf 'stable tag %s has no exact Containerization authority\n' "${version}" >&2
+    return 2
+  fi
+  containerization_repository="${authority[0]}"
+  containerization_reference="${authority[1]}"
+  "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${archive}" \
+    vminit:container-compose \
+    "ghcr.io/${containerization_repository}/vminit:${containerization_reference}"
+
+  tmp="$(mktemp -d)"
+  cp "${archive}" "${tmp}/${asset}"
+  digest="$(shasum -a 256 "${tmp}/${asset}" | awk '{print $1}')"
+  printf '%s  %s\n' "${digest}" "${asset}" >"${tmp}/${asset}.sha256"
+  asset_names="$(
+    github_cli release view "${version}" --repo "${repo}" --json assets \
+      --jq '.assets[].name'
+  )"
+  if grep -Fxq "${asset}" <<<"${asset_names}" || \
+    grep -Fxq "${asset}.sha256" <<<"${asset_names}"; then
+    if ! grep -Fxq "${asset}" <<<"${asset_names}" || \
+      ! grep -Fxq "${asset}.sha256" <<<"${asset_names}"; then
+      printf 'stable release %s has an incomplete guest asset pair\n' "${version}" >&2
+      find "${tmp}" -depth -delete
+      return 1
+    fi
+    install -d -m 0700 "${tmp}/remote"
+    github_cli release download "${version}" --repo "${repo}" \
+      --pattern "${asset}" --pattern "${asset}.sha256" --dir "${tmp}/remote"
+    remote_digest="$(shasum -a 256 "${tmp}/remote/${asset}" | awk '{print $1}')"
+    if [[ "${remote_digest}" != "${digest}" ]] || \
+      [[ "$(awk '{print $1}' "${tmp}/remote/${asset}.sha256")" != "${digest}" ]]; then
+      printf 'stable release %s guest asset differs from the retained release-gate archive\n' \
+        "${version}" >&2
+      status=1
+    else
+      printf 'stable guest asset already published: %s at %s\n' "${asset}" "${digest}"
+    fi
+  else
+    if github_cli release upload "${version}" --repo "${repo}" \
+      "${tmp}/${asset}" "${tmp}/${asset}.sha256"; then
+      printf 'published stable guest asset: %s at %s\n' "${asset}" "${digest}"
+    else
+      status=$?
+    fi
+  fi
+  find "${tmp}" -depth -delete
+  return "${status}"
+}
+
 # Verify the stable release assets and Homebrew formula agree.
 verify_compose_stable_package() {
-  local version="$1" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha signature_verifier
+  local version="$1" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha signature_verifier init_asset init_asset_sha init_checksum_sha
+  local authority=() containerization_repository containerization_reference
   repo="$(github_repo "${COMPOSE_REPO}")"
   asset="container-compose-plugin-release-arm64.tar.gz"
   expected_url="https://github.com/${repo}/releases/download/${version}/${asset}"
@@ -3523,12 +3618,24 @@ verify_compose_stable_package() {
     exit 1
   fi
 
+  init_asset="container-vminit-arm64.oci.tar"
+  if ! grep -Fxq "${init_asset}" <<<"${asset_names}"; then
+    printf 'release %s is missing asset %s\n' "${version}" "${init_asset}" >&2
+    exit 1
+  fi
+  if ! grep -Fxq "${init_asset}.sha256" <<<"${asset_names}"; then
+    printf 'release %s is missing asset %s.sha256\n' "${version}" "${init_asset}" >&2
+    exit 1
+  fi
+
   github_cli release download "${version}" \
     --repo "${repo}" \
     --pattern "${asset}" \
     --pattern "${asset}.sha256" \
     --pattern "${runtime_asset}" \
     --pattern "${runtime_asset}.sha256" \
+    --pattern "${init_asset}" \
+    --pattern "${init_asset}.sha256" \
     --dir "${tmp}"
   asset_sha="$(shasum -a 256 "${tmp}/${asset}" | awk '{print $1}')"
   checksum_sha="$(awk '{print $1}' "${tmp}/${asset}.sha256")"
@@ -3544,6 +3651,25 @@ verify_compose_stable_package() {
       "${version}" "${runtime_asset_sha}" "${runtime_checksum_sha}" >&2
     exit 1
   fi
+  init_asset_sha="$(shasum -a 256 "${tmp}/${init_asset}" | awk '{print $1}')"
+  init_checksum_sha="$(awk '{print $1}' "${tmp}/${init_asset}.sha256")"
+  if [[ "${init_asset_sha}" != "${init_checksum_sha}" ]]; then
+    printf 'release %s guest checksum mismatch: asset %s, checksum file %s\n' \
+      "${version}" "${init_asset_sha}" "${init_checksum_sha}" >&2
+    exit 1
+  fi
+  while IFS= read -r value; do
+    authority+=("${value}")
+  done < <(stable_containerization_authority "${version}")
+  if ((${#authority[@]} != 2)); then
+    printf 'stable tag %s has no exact Containerization authority\n' "${version}" >&2
+    exit 1
+  fi
+  containerization_repository="${authority[0]}"
+  containerization_reference="${authority[1]}"
+  "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${tmp}/${init_asset}" \
+    vminit:container-compose \
+    "ghcr.io/${containerization_repository}/vminit:${containerization_reference}"
   signature_verifier="$(
     repo_path "${COMPOSE_REPO}"
   )/Tools/release/verify-developer-id-archive.sh"
@@ -3607,7 +3733,8 @@ verify_compose_stable_package() {
     exit 1
   fi
 
-  printf 'stable stack %s package pair verified: %s + %s\n' "${version}" "${asset_sha}" "${runtime_asset_sha}"
+  printf 'stable stack %s package closure verified: %s + %s + %s\n' \
+    "${version}" "${asset_sha}" "${runtime_asset_sha}" "${init_asset_sha}"
 }
 
 # Dispatch and verify one stable package workflow mode for a semantic tag.
@@ -3654,6 +3781,7 @@ dispatch_compose_stable_workflow() {
     if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
       printf '%s started: %s\n' "${label}" "${run_id}"
       wait_for_github_run_success "${run_id}" "${label}"
+      publish_stable_init_image_asset "${version}"
       verify_compose_stable_package "${version}"
       return 0
     fi
