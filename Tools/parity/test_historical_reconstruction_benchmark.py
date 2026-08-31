@@ -253,6 +253,21 @@ class HistoricalWorkflowTests(unittest.TestCase):
         self.assertNotIn("security import", workflow)
         self.assertNotIn("crane auth", workflow)
 
+    def test_workflow_checkpoints_fixture_groups_before_finalizing(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('"lifecycle,logging-stream"', workflow)
+        self.assertIn('"logging-file"', workflow)
+        self.assertIn('"logging-read,logging-aggregate"', workflow)
+        self.assertIn('PARITY_EVIDENCE_MODE="${evidence_mode}"', workflow)
+        self.assertIn("PARITY_FINALIZE_EVIDENCE=0", workflow)
+        self.assertIn("--finalize-only", workflow)
+        self.assertIn("if: inputs.fixture_groups == 'all'", workflow)
+        self.assertIn(
+            'runtime_root="${RUNTIME_ROOT_PREFIX}-${version}-p${phase_index}"',
+            workflow,
+        )
+        self.assertNotIn('${version}-${phase//,/-}', workflow)
+
     def test_workflow_does_not_create_a_patch_release_or_run_release_only_work(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("gh release create", workflow)

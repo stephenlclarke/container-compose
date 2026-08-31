@@ -65,6 +65,30 @@ FIXTURES = [
     "logging-aggregate-10-services",
     "logging-aggregate-50-services",
 ]
+INITIALIZE_EVIDENCE_SCRIPT = r'''
+source "$1"
+
+# Return a deterministic Docker engine fingerprint without a live daemon.
+docker() { printf '{}\n'; }
+
+# Return deterministic macOS hardware properties on every test host.
+sysctl() {
+    case "$*" in
+        *hw.memsize*) printf '17179869184\n' ;;
+        *) printf 'TestMac1,1\n' ;;
+    esac
+}
+
+# Return a deterministic macOS version on every test host.
+sw_vers() { printf '15.0\n'; }
+
+DOCKER_COMPOSE_COMMAND=(/usr/bin/true)
+CONTAINER_COMPOSE=/usr/bin/true
+CONTAINER_BINARY=/usr/bin/true
+PARITY_EVIDENCE_MODE=reset
+initialize_evidence
+printf 'existing\tdocker\t1\t1\tlower-is-better\t1.0\tsuccess\ttrue\n' >>"$TIMING_TSV"
+'''
 
 
 class LoggingPerformanceSinkTests(unittest.TestCase):
@@ -149,6 +173,300 @@ class PerformanceMatrixInventoryTests(unittest.TestCase):
         self.assertIn("logging-follow-rotation", fixtures)
         self.assertNotIn("logging-blocking-slow-sink", fixtures)
         self.assertNotIn("logging-dual-cache-delivery", fixtures)
+
+    def test_file_logging_group_has_only_its_checkpoint_fixtures(self) -> None:
+        environment = dict(os.environ)
+        environment.update(
+            {
+                "PARITY_FIXTURE_GROUPS": "logging-file",
+                "PARITY_INCLUDE_REMOTE_LOGGING": "0",
+            }
+        )
+        result = subprocess.run(
+            [HARNESS, "--list-fixtures"],
+            cwd=REPOSITORY,
+            env=environment,
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+
+        self.assertEqual(
+            result.stdout.splitlines(),
+            ["logging-write-json-compression", "logging-write-local-rotation"],
+        )
+
+    def test_unknown_fixture_group_is_rejected(self) -> None:
+        environment = dict(os.environ)
+        environment["PARITY_FIXTURE_GROUPS"] = "logging-file,unknown"
+        result = subprocess.run(
+            [HARNESS, "--list-fixtures"],
+            cwd=REPOSITORY,
+            env=environment,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unknown PARITY_FIXTURE_GROUPS entry", result.stderr)
+
+    def test_empty_fixture_group_is_rejected(self) -> None:
+        environment = dict(os.environ)
+        environment["PARITY_FIXTURE_GROUPS"] = ""
+        result = subprocess.run(
+            [HARNESS, "--list-fixtures"],
+            cwd=REPOSITORY,
+            env=environment,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("PARITY_FIXTURE_GROUPS must not be empty", result.stderr)
+
+    def test_append_mode_preserves_existing_samples(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-append-") as directory:
+            evidence = Path(directory)
+            timing = evidence / "timings.tsv"
+            environment = dict(os.environ)
+            environment["PARITY_EVIDENCE_DIR"] = str(evidence)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    INITIALIZE_EVIDENCE_SCRIPT
+                    + "printf 'stale junit\\n' >\"$TIMING_JUNIT\"\n"
+                    + "printf 'stale matrix\\n' >\"$TIMING_MATRIX\"\n"
+                    + "PARITY_EVIDENCE_MODE=append\ninitialize_evidence\n",
+                    "_",
+                    HARNESS,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            retained_timing = timing.read_text(encoding="utf-8")
+            junit_exists = (evidence / "timings.junit.xml").exists()
+            matrix_exists = (evidence / "timing-matrix.md").exists()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("existing\tdocker", retained_timing)
+        self.assertFalse(junit_exists)
+        self.assertFalse(matrix_exists)
+
+    def test_append_mode_rejects_changed_fingerprint(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-append-") as directory:
+            evidence = Path(directory)
+            timing = evidence / "timings.tsv"
+            environment = dict(os.environ)
+            environment["PARITY_EVIDENCE_DIR"] = str(evidence)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    INITIALIZE_EVIDENCE_SCRIPT
+                    + "PARITY_TIMEOUT_SECONDS=123\n"
+                    + "PARITY_EVIDENCE_MODE=append\n"
+                    + "initialize_evidence\n",
+                    "_",
+                    HARNESS,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            retained_timing = timing.read_text(encoding="utf-8")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fingerprint does not match", result.stderr)
+        self.assertIn("conditions", result.stderr)
+        self.assertIn("existing\tdocker", retained_timing)
+
+    def test_reset_mode_removes_rendered_outputs(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-reset-") as directory:
+            evidence = Path(directory)
+            timing_junit = evidence / "timings.junit.xml"
+            timing_matrix = evidence / "timing-matrix.md"
+            timing_junit.write_text("stale junit\n", encoding="utf-8")
+            timing_matrix.write_text("stale matrix\n", encoding="utf-8")
+            environment = dict(os.environ)
+            environment["PARITY_EVIDENCE_DIR"] = str(evidence)
+            result = subprocess.run(
+                ["bash", "-c", INITIALIZE_EVIDENCE_SCRIPT, "_", HARNESS],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            junit_exists = timing_junit.exists()
+            matrix_exists = timing_matrix.exists()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(junit_exists)
+        self.assertFalse(matrix_exists)
+
+    def test_finalize_rejects_changed_render_controls(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-finalize-") as directory:
+            evidence = Path(directory)
+            environment = dict(os.environ)
+            environment["PARITY_EVIDENCE_DIR"] = str(evidence)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    INITIALIZE_EVIDENCE_SCRIPT
+                    + "PARITY_COMPARABLE_NOISE_PCT=7\n"
+                    + "validate_finalize_fingerprint\n",
+                    "_",
+                    HARNESS,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("finalize controls do not match", result.stderr)
+        self.assertIn("comparableNoisePercent", result.stderr)
+
+    def test_finalize_rejects_changed_remote_logging_mode(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-finalize-") as directory:
+            evidence = Path(directory)
+            environment = dict(os.environ)
+            environment["PARITY_EVIDENCE_DIR"] = str(evidence)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    INITIALIZE_EVIDENCE_SCRIPT
+                    + "PARITY_INCLUDE_REMOTE_LOGGING=0\n"
+                    + "validate_finalize_fingerprint\n",
+                    "_",
+                    HARNESS,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("finalize controls do not match", result.stderr)
+        self.assertIn("remoteLogging", result.stderr)
+
+    def test_finalize_rejects_fixture_inventory_before_rendering(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-finalize-") as directory:
+            evidence = Path(directory)
+            environment = dict(os.environ)
+            environment["PARITY_EVIDENCE_DIR"] = str(evidence)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    INITIALIZE_EVIDENCE_SCRIPT + "validate_finalize_fingerprint\n",
+                    "_",
+                    HARNESS,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            junit_exists = (evidence / "timings.junit.xml").exists()
+            matrix_exists = (evidence / "timing-matrix.md").exists()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fixture inventory does not match", result.stderr)
+        self.assertFalse(junit_exists)
+        self.assertFalse(matrix_exists)
+
+    def test_finalize_rejects_sample_counts_before_rendering(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-finalize-") as directory:
+            evidence = Path(directory)
+            environment = dict(os.environ)
+            environment["PARITY_EVIDENCE_DIR"] = str(evidence)
+            initialized = subprocess.run(
+                ["bash", "-c", INITIALIZE_EVIDENCE_SCRIPT, "_", HARNESS],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            self.assertEqual(initialized.returncode, 0, initialized.stderr)
+            with (evidence / "timings.tsv").open(
+                "w", encoding="utf-8", newline=""
+            ) as handle:
+                writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+                writer.writerow(
+                    [
+                        "fixture",
+                        "lane",
+                        "repetition",
+                        "schedule_position",
+                        "direction",
+                        "duration_seconds",
+                        "outcome",
+                        "command",
+                    ]
+                )
+                for fixture in FIXTURES:
+                    writer.writerow(
+                        [
+                            fixture,
+                            "docker",
+                            1,
+                            1,
+                            "lower-is-better",
+                            1,
+                            "success",
+                            "true",
+                        ]
+                    )
+                    writer.writerow(
+                        [
+                            fixture,
+                            "container-compose",
+                            1,
+                            2,
+                            "lower-is-better",
+                            1,
+                            "success",
+                            "true",
+                        ]
+                    )
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; validate_finalize_fingerprint',
+                    "_",
+                    HARNESS,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            junit_exists = (evidence / "timings.junit.xml").exists()
+            matrix_exists = (evidence / "timing-matrix.md").exists()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("sample counts do not match", result.stderr)
+        self.assertFalse(junit_exists)
+        self.assertFalse(matrix_exists)
 
     def test_fixture_root_can_be_kept_on_internal_storage(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-performance-work-") as directory:
