@@ -37,6 +37,11 @@ on:
           - "3"
           - "5"
           - "7"
+      fixture_groups:
+        description: "Fixture groups to run; use all for a publishable comparison"
+        required: true
+        default: "all"
+        type: string
 
 permissions:
   actions: write
@@ -58,6 +63,7 @@ jobs:
     env:
       PIPELINE_STATE_ROOT: /Volumes/SSD/github/.container-compose-pipeline
       REPETITIONS: ${{ inputs.repetitions }}
+      FIXTURE_GROUPS: ${{ inputs.fixture_groups }}
       RUNTIME_ROOT_PREFIX: /private/tmp/cchr-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Select local benchmark root
@@ -386,6 +392,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          PARITY_FIXTURE_GROUPS="${FIXTURE_GROUPS}" \
+            PARITY_INCLUDE_REMOTE_LOGGING=0 \
+            Tools/parity/check-compose-performance-matrix.sh \
+              --list-fixtures >/dev/null
           run_version() {
             local version="$1"
             local prepared="${BENCHMARK_ROOT}/prepared/${version}"
@@ -396,26 +406,52 @@ jobs:
             init_references="$(jq -r '.assets.guest.references | join(" ")' \
               "${prepared}/published-distribution.json")"
             local run_root="${BENCHMARK_ROOT}/work/${version}"
-            local runtime_root="${RUNTIME_ROOT_PREFIX}-${version}"
+            local phase phase_index evidence_mode runtime_root
+            local -a phases
+            if [[ "${FIXTURE_GROUPS}" == all ]]; then
+              phases=(
+                "lifecycle,logging-stream"
+                "logging-file"
+                "logging-read,logging-aggregate"
+              )
+            else
+              phases=("${FIXTURE_GROUPS}")
+            fi
             install -d -m 0700 "${run_root}/fixtures"
-            CONTAINER_RUNTIME_APP_ROOT="${runtime_root}" \
-              CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS=ghcr.io,docker.io,registry-1.docker.io,index.docker.io \
-              CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT=/private/tmp \
-              CONTAINER_RUNTIME_LOCALIZE_APP_ROOT=never \
-              CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="${init_archive}" \
-              CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES="${init_references}" \
-              CONTAINER_COMPOSE_INIT_IMAGE=vminit:container-compose \
-              CONTAINER_COMPOSE="${compose}" \
-              CONTAINER_COMPOSE_CONTAINER="${runtime}" \
-              PARITY_INIT_IMAGE_ARCHIVE="${init_archive}" \
-              PARITY_INIT_IMAGE_REFERENCES="${init_references}" \
-              PARITY_WORK_ROOT="${run_root}/fixtures" \
-              PARITY_EVIDENCE_DIR="${BENCHMARK_ROOT}/evidence/${version}" \
+            evidence_mode=reset
+            phase_index=0
+            for phase in "${phases[@]}"; do
+              ((phase_index += 1))
+              runtime_root="${RUNTIME_ROOT_PREFIX}-${version}-p${phase_index}"
+              CONTAINER_RUNTIME_APP_ROOT="${runtime_root}" \
+                CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS=ghcr.io,docker.io,registry-1.docker.io,index.docker.io \
+                CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT=/private/tmp \
+                CONTAINER_RUNTIME_LOCALIZE_APP_ROOT=never \
+                CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="${init_archive}" \
+                CONTAINER_RUNTIME_REQUIRED_INIT_IMAGE_REFERENCES="${init_references}" \
+                CONTAINER_COMPOSE_INIT_IMAGE=vminit:container-compose \
+                CONTAINER_COMPOSE="${compose}" \
+                CONTAINER_COMPOSE_CONTAINER="${runtime}" \
+                PARITY_INIT_IMAGE_ARCHIVE="${init_archive}" \
+                PARITY_INIT_IMAGE_REFERENCES="${init_references}" \
+                PARITY_WORK_ROOT="${run_root}/fixtures" \
+                PARITY_EVIDENCE_DIR="${BENCHMARK_ROOT}/evidence/${version}" \
+                PARITY_EVIDENCE_MODE="${evidence_mode}" \
+                PARITY_FINALIZE_EVIDENCE=0 \
+                PARITY_FIXTURE_GROUPS="${phase}" \
+                PARITY_REPETITIONS="${REPETITIONS}" \
+                PARITY_INCLUDE_REMOTE_LOGGING=0 \
+                PARITY_TIMING_POLICY=record \
+                scripts/run-with-container-runtime.sh "${runtime}" \
+                  Tools/parity/check-compose-performance-matrix.sh --strict
+              evidence_mode=append
+            done
+            PARITY_EVIDENCE_DIR="${BENCHMARK_ROOT}/evidence/${version}" \
+              PARITY_FIXTURE_GROUPS="${FIXTURE_GROUPS}" \
               PARITY_REPETITIONS="${REPETITIONS}" \
               PARITY_INCLUDE_REMOTE_LOGGING=0 \
               PARITY_TIMING_POLICY=record \
-              scripts/run-with-container-runtime.sh "${runtime}" \
-                Tools/parity/check-compose-performance-matrix.sh --strict
+              Tools/parity/check-compose-performance-matrix.sh --finalize-only
           }
           run_version "${BASELINE_VERSION}"
           run_version "${TARGET_VERSION}"
@@ -423,6 +459,7 @@ jobs:
           sysctl -n vm.loadavg > "${BENCHMARK_ROOT}/evidence/load-after.txt"
 
       - name: Render reconstruction evidence report
+        if: inputs.fixture_groups == 'all'
         env:
           WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: bash
@@ -450,6 +487,7 @@ jobs:
           retention-days: 90
 
       - name: Open documentation pull request
+        if: inputs.fixture_groups == 'all'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -485,16 +523,20 @@ jobs:
               "${BENCHMARK_ROOT}" >&2
             exit 1
           fi
+          cleanup_phase_count=1
+          [[ "${FIXTURE_GROUPS}" == all ]] && cleanup_phase_count=3
           for version in "${BASELINE_VERSION:-}" "${TARGET_VERSION:-}"; do
             [[ -n "${version}" ]] || continue
-            runtime_root="${RUNTIME_ROOT_PREFIX}-${version}"
-            runtime_marker="${runtime_root}/.container-compose-runtime-root"
-            if [[ -f "${runtime_marker}" ]] && \
-              [[ "$(<"${runtime_marker}")" == 'container-compose isolated runtime state v1' ]]; then
-              find "${runtime_root}" -depth -delete
-            elif [[ -e "${runtime_root}" ]]; then
-              printf 'refusing to clean unmarked runtime root: %s\n' \
-                "${runtime_root}" >&2
-              exit 1
-            fi
+            for ((phase_index = 1; phase_index <= cleanup_phase_count; phase_index += 1)); do
+              runtime_root="${RUNTIME_ROOT_PREFIX}-${version}-p${phase_index}"
+              runtime_marker="${runtime_root}/.container-compose-runtime-root"
+              if [[ -f "${runtime_marker}" ]] && \
+                [[ "$(<"${runtime_marker}")" == 'container-compose isolated runtime state v1' ]]; then
+                find "${runtime_root}" -depth -delete
+              elif [[ -e "${runtime_root}" ]]; then
+                printf 'refusing to clean unmarked runtime root: %s\n' \
+                  "${runtime_root}" >&2
+                exit 1
+              fi
+            done
           done
