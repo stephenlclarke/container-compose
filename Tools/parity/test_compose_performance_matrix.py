@@ -773,6 +773,57 @@ prepare_logging_history container-compose "$2"
         self.assertNotIn("--abort-on-container-exit", invocation_lines[0])
         self.assertTrue(invocation_lines[1].endswith(" wait logger"))
 
+    def test_logging_window_uses_quiet_gap_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-read-window-test-") as directory:
+            root = Path(directory)
+            invocations = root / "invocations.txt"
+            fixture = root / "logging.yml"
+            fixture.touch()
+            environment = dict(os.environ)
+            environment["INVOCATIONS"] = str(invocations)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    """
+source "$1"
+select_lane() { LANE_PREFIX=c; ACTIVE_COMPOSE=(/usr/bin/true); }
+down_project() { :; }
+wait_for_log_text() { :; }
+wait_for_log_timestamp() {
+    case "$1" in
+        history-before) printf '2026-08-31T12:00:00.000000Z\n' ;;
+        history-window-000) printf '2026-08-31T12:00:01.000000Z\n' ;;
+        history-window-099) printf '2026-08-31T12:00:02.000000Z\n' ;;
+        history-after) printf '2026-08-31T12:00:03.000000Z\n' ;;
+    esac
+}
+run_timed() { printf 'timed %s\n' "$*" >>"$INVOCATIONS"; }
+assert_since_until_window() {
+    printf 'asserted %s %s\n' "$2" "$3" >>"$INVOCATIONS"
+}
+run_logging_since_until_lane container-compose 2 1 "$2"
+""",
+                    "_",
+                    HARNESS,
+                    fixture,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            invocation_lines = invocations.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--since 2026-08-31T12:00:00.500000Z", invocation_lines[0])
+        self.assertIn("--until 2026-08-31T12:00:02.500000Z", invocation_lines[0])
+        self.assertEqual(
+            invocation_lines[1],
+            "asserted 2026-08-31T12:00:00.500000Z 2026-08-31T12:00:02.500000Z",
+        )
+
 
 class PerformanceMatrixEvidenceTests(unittest.TestCase):
     def test_finalizer_reports_comparable_median_and_p95(self) -> None:

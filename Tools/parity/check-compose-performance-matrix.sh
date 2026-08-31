@@ -828,6 +828,24 @@ raise SystemExit(f"timed out waiting for timestamped log marker {expected!r}")
 PY
 }
 
+# Return an RFC 3339 timestamp strictly between two persisted log records.
+midpoint_log_timestamp() {
+    python3 - "$1" "$2" <<'PY'
+from datetime import datetime, timezone
+import sys
+
+start_text, end_text = sys.argv[1:]
+start = datetime.fromisoformat(start_text.replace("Z", "+00:00"))
+end = datetime.fromisoformat(end_text.replace("Z", "+00:00"))
+if end <= start:
+    raise SystemExit(
+        f"log timestamp gap is not positive: {start_text!r} .. {end_text!r}"
+    )
+midpoint = start + (end - start) / 2
+print(midpoint.astimezone(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z"))
+PY
+}
+
 # Assert that one since/until query returns exactly the bounded history window.
 assert_since_until_window() {
     local label="$1" since="$2" until="$3" project="$4" file="$5"
@@ -1118,7 +1136,8 @@ run_logging_read_lane() {
 
 # Time and prove one absolute since/until query around a deterministic window.
 run_logging_since_until_lane() {
-    local lane="$1" repetition="$2" schedule_position="$3" file="$4" project since until
+    local lane="$1" repetition="$2" schedule_position="$3" file="$4"
+    local project before first last after since until
     select_lane "$lane"
     project="cc-perf-$LANE_PREFIX-logging"
     down_project "$lane" "$project" "$file"
@@ -1126,10 +1145,16 @@ run_logging_since_until_lane() {
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" up -d --pull never >/dev/null
     LOG_WORKLOAD=history-window wait_for_log_text \
         history-before "$project" "$file" "${ACTIVE_COMPOSE[@]}"
-    since="$(LOG_WORKLOAD=history-window wait_for_log_timestamp \
+    before="$(LOG_WORKLOAD=history-window wait_for_log_timestamp \
+        history-before "$project" "$file" "${ACTIVE_COMPOSE[@]}")"
+    first="$(LOG_WORKLOAD=history-window wait_for_log_timestamp \
         history-window-000 "$project" "$file" "${ACTIVE_COMPOSE[@]}")"
-    until="$(LOG_WORKLOAD=history-window wait_for_log_timestamp \
+    last="$(LOG_WORKLOAD=history-window wait_for_log_timestamp \
         history-window-099 "$project" "$file" "${ACTIVE_COMPOSE[@]}")"
+    after="$(LOG_WORKLOAD=history-window wait_for_log_timestamp \
+        history-after "$project" "$file" "${ACTIVE_COMPOSE[@]}")"
+    since="$(midpoint_log_timestamp "$before" "$first")"
+    until="$(midpoint_log_timestamp "$last" "$after")"
     env LOG_WORKLOAD=history-window LOG_MAX_SIZE=64m \
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" wait logger >/dev/null
     run_timed logging-read-since-until "$lane" "$repetition" "$schedule_position" \
