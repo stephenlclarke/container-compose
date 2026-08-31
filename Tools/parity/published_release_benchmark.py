@@ -118,9 +118,9 @@ def canonical_artifact_source(version: str, source: str) -> str:
     return source
 
 
-def resolve_packaging_run(
+def packaging_run_candidates(
     runs: Iterable[dict[str, object]], version: str
-) -> dict[str, object]:
+) -> list[dict[str, object]]:
     version_tuple(version)
     title = f"Prebuilt Binaries · {version}"
     candidates: list[tuple[str, int, str]] = []
@@ -150,8 +150,16 @@ def resolve_packaging_run(
         raise BenchmarkInputError(
             f"no successful immutable package run retained for {version}"
         )
-    created_at, run_id, url = max(candidates)
-    return {"runId": run_id, "url": url, "createdAt": created_at}
+    return [
+        {"runId": run_id, "url": url, "createdAt": created_at}
+        for created_at, run_id, url in sorted(candidates, reverse=True)
+    ]
+
+
+def resolve_packaging_run(
+    runs: Iterable[dict[str, object]], version: str
+) -> dict[str, object]:
+    return packaging_run_candidates(runs, version)[0]
 
 
 def validate_packaging_artifacts(payload: dict[str, object]) -> dict[str, int]:
@@ -872,6 +880,10 @@ def main() -> None:
     package_run.add_argument("--runs", type=Path, required=True)
     package_run.add_argument("--version", required=True)
 
+    package_candidates = subparsers.add_parser("package-run-candidates")
+    package_candidates.add_argument("--runs", type=Path, required=True)
+    package_candidates.add_argument("--version", required=True)
+
     package_artifacts = subparsers.add_parser("validate-package-artifacts")
     package_artifacts.add_argument("--artifacts", type=Path, required=True)
 
@@ -900,11 +912,17 @@ def main() -> None:
                 raise BenchmarkInputError("release metadata must be a JSON array")
             result = resolve_versions(releases, arguments.target, arguments.baseline)
             print(json.dumps(result, sort_keys=True))
-        elif arguments.command == "resolve-package-run":
+        elif arguments.command in {
+            "resolve-package-run",
+            "package-run-candidates",
+        }:
             runs = load_json(arguments.runs)
             if not isinstance(runs, list):
                 raise BenchmarkInputError("package run metadata must be a JSON array")
-            result = resolve_packaging_run(runs, arguments.version)
+            if arguments.command == "package-run-candidates":
+                result = packaging_run_candidates(runs, arguments.version)
+            else:
+                result = resolve_packaging_run(runs, arguments.version)
             print(json.dumps(result, sort_keys=True))
         elif arguments.command == "validate-package-artifacts":
             artifacts = load_json(arguments.artifacts)

@@ -187,17 +187,35 @@ jobs:
             install -d -m 0700 "${distribution}" "${guest_root}"
 
             /usr/bin/python3 Tools/parity/published_release_benchmark.py \
-              resolve-package-run \
+              package-run-candidates \
               --runs "${BENCHMARK_ROOT}/downloads/package-runs.json" \
-              --version "${version}" > "${version_root}/package-run.json"
-            package_run_id="$(jq -r '.runId' "${version_root}/package-run.json")"
-            package_run_url="$(jq -r '.url' "${version_root}/package-run.json")"
-            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${package_run_id}/artifacts" \
-              > "${version_root}/package-artifacts.json"
-            /usr/bin/python3 Tools/parity/published_release_benchmark.py \
-              validate-package-artifacts \
-              --artifacts "${version_root}/package-artifacts.json" \
-              > "${version_root}/validated-package-artifacts.json"
+              --version "${version}" \
+              > "${version_root}/package-run-candidates.json"
+            package_run_id=
+            package_run_url=
+            while IFS=$'\t' read -r candidate_id candidate_url; do
+              candidate_artifacts="${version_root}/package-artifacts-${candidate_id}.json"
+              candidate_validation="${version_root}/validated-package-artifacts-${candidate_id}.json"
+              gh api \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${candidate_id}/artifacts" \
+                > "${candidate_artifacts}"
+              if /usr/bin/python3 \
+                Tools/parity/published_release_benchmark.py \
+                validate-package-artifacts \
+                --artifacts "${candidate_artifacts}" \
+                > "${candidate_validation}" 2> \
+                "${version_root}/package-artifacts-${candidate_id}.error.log"; then
+                package_run_id="${candidate_id}"
+                package_run_url="${candidate_url}"
+                break
+              fi
+            done < <(jq -r '.[] | [.runId, .url] | @tsv' \
+              "${version_root}/package-run-candidates.json")
+            if [[ -z "${package_run_id}" || -z "${package_run_url}" ]]; then
+              printf 'no retained complete package run exists for %s\n' \
+                "${version}" >&2
+              exit 1
+            fi
             gh run download "${package_run_id}" --repo "${GITHUB_REPOSITORY}" \
               --dir "${distribution}" --name 'container-release-arm64.tar.gz'
             gh run download "${package_run_id}" --repo "${GITHUB_REPOSITORY}" \

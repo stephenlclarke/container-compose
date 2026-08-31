@@ -208,6 +208,8 @@ class HistoricalWorkflowTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("runs-on: [self-hosted, macOS, ARM64", workflow)
         self.assertIn("validate-package-artifacts", workflow)
+        self.assertIn("package-run-candidates", workflow)
+        self.assertIn("no retained complete package run exists", workflow)
         self.assertIn("gh api --paginate --slurp", workflow)
         self.assertNotIn("--workflow prebuilt-binaries.yml --limit", workflow)
         self.assertNotIn("--limit ", workflow)

@@ -118,6 +118,12 @@ class ResolvePublishedArtifactsTests(unittest.TestCase):
                 "createdAt": "2026-08-24T11:00:00Z",
             },
         )
+        self.assertEqual(
+            [candidate["runId"] for candidate in MODULE.packaging_run_candidates(
+                runs, "0.13.0"
+            )],
+            [12, 10],
+        )
 
     def test_missing_successful_package_run_is_rejected(self) -> None:
         with self.assertRaisesRegex(
