@@ -41,7 +41,8 @@ The checked-in pipeline currently provides:
 - stage-specific command and tool manifests instead of one global fingerprint,
   including a recorded Bash 5 executable, the selected Apple developer
   directory and resolved front-door tools, the complete Go installation tree,
-  and the installed `markdownlint-cli` package tree where applicable;
+  and the installed `markdownlint-cli` package tree where applicable; Bash
+  versions below 5 fail during preflight before any source command runs;
 - source, build-only, and non-runtime functional stages that invoke existing
   repository commands through a sealed private tool directory plus the fixed
   system path, with the recorded developer directory pinned for every stage;
@@ -53,23 +54,18 @@ The checked-in pipeline currently provides:
   single state-root lock;
 - exact-session resume by UUID, with no bare or manually edited resume mode;
 - durable failed-stage receipts, commands, standard output, and standard error;
-  and
+  authenticated successful-stage output streams, and a pipeline summary that
+  verifies those output digests; and
 - a fault-injection proof that a corrected downstream task completes while its
-  successful upstream task is recovered from the content cache.
+  successful upstream task is recovered from the content cache, followed by a
+  deliberately corrupted published output that is restored from the valid
+  cached task.
 
-The current `stack` and `hosted-safe` profiles are independent family-health
-graphs. They do not yet assemble or claim a matched runtime stack.
+The current `stack` and `hosted-safe` profiles are independent family-health graphs. They do not yet assemble or claim a matched runtime stack. The `release-hosted` profile is the post-tag non-runtime sibling authority: it validates immutable builder-shim, containerization, Container, and Homebrew inputs while reusing exact green Compose main CI.
 
 ### Not Yet Migrated
 
-The existing release gate remains the release authority. Phase one does not
-yet replace its live runtime, parity, sanitizer, package, demonstration,
-external-authority, or publication stages. It also does not yet capture dirty
-development patches, export or verify reusable compiler products between
-tasks, enforce coverage floors, or provision signing keychains and macOS
-privacy grants. Missing-output and corrupt-output cache recovery also remain
-future acceptance tests. Those boundaries must not be inferred from a
-successful phase-one summary.
+The existing release workflow remains the release authority. The recoverable graph now owns the post-tag non-runtime sibling gate, but it does not yet replace live runtime, parity, sanitizer, package, demonstration, external-authority, or publication stages. It also does not yet capture dirty development patches, export or verify reusable compiler products between tasks, enforce coverage floors itself, or provision signing keychains and macOS privacy grants. The recovery proof covers published validation outputs; reusable compiler and package artifact recovery remains part of their future migration. Those boundaries must not be inferred from a successful phase-one summary.
 
 ## Required Outcome
 
@@ -427,12 +423,7 @@ must never be passed to every process. Cache metadata must never be edited to
 force reuse. When independent proof is legitimately reusable, the graph makes
 that independence explicit and Nextflow finds it naturally.
 
-Failed and interrupted tasks are not successful cache entries. A subsequent
-exact-session resume reruns them while independently successful content-matched
-tasks can be reused. Release checkpoints, formula preflight, and published
-artifact verification now fail before expensive successors; explicit
-missing-output and corrupt-output recovery tests remain future acceptance
-criteria for the broader Nextflow graph.
+Failed and interrupted tasks are not successful cache entries. A subsequent exact-session resume reruns them while independently successful content-matched tasks can be reused. Release checkpoints, formula preflight, and published artifact verification now fail before expensive successors. The synthetic recovery test removes and corrupts published validation outputs and proves that a valid cached task restores them; equivalent proof for future compiler and package artifacts remains required when those outputs migrate.
 
 ## Release fail-fast graph
 
@@ -583,16 +574,13 @@ new evidence become a structured blocker rather than an endless rebuild loop.
 
 ## Evidence Contract
 
-Phase one durably publishes the attempt manifest, console, Nextflow log, trace,
-report, timeline, DAG, repository preflight receipts, and successful stage
-receipts; a successful graph also publishes its pipeline summary. A failed
+Phase one durably publishes the attempt manifest, console, Nextflow log, trace, report, timeline, DAG, repository preflight receipts, successful stage receipts, and the complete stdout/stderr logs authenticated by those receipts; a successful graph also publishes and verifies its pipeline summary. A failed
 stage atomically persists its failure receipt, stage command, standard output,
 standard error,
 `.command.sh`, and `.command.run` below
 `$PIPELINE_STATE_ROOT/failures/<session-uuid>/<stage>`. The Make wrapper copies
 that session's failure tree into the attempt evidence directory as
-`failures/`. Phase one does not emit an output-artifact manifest, JUnit export,
-coverage report, or coverage-floor decision of its own. The fuller contract
+`failures/`. Phase one does not emit a reusable compiler-product manifest, JUnit export, coverage report, or coverage-floor decision of its own. The fuller contract
 below is required before runtime, package, and release migration.
 
 In the target state, every task retains outside the disposable work directory:
@@ -620,7 +608,7 @@ object identifiers and digests, not credentials.
 
 ## Profiles
 
-Four profiles exist in phase one:
+Five profiles exist in phase one:
 
 - `focused` runs explicitly selected source, functional, or build stages and
   automatically adds the same-repository source stage for every selected
@@ -630,7 +618,10 @@ Four profiles exist in phase one:
 - `stack` runs the declared source and functional/build stages independently
   across Compose and the related repositories; and
 - `hosted-safe` currently selects the same non-runtime family-health graph as
-  `stack`.
+  `stack`; and
+- `release-hosted` runs release-specific builder-shim, containerization,
+  Container, and Homebrew validation with one Swift-heavy lane and one
+  independent Go/Homebrew lane.
 
 Neither `stack` nor `hosted-safe` is matched-stack, runtime, parity, package, or
 release proof. The remaining profile descriptions in this section define the
@@ -700,11 +691,7 @@ same session. Once external-authority stages are migrated, the equivalent flow
 will wait for or repair the authority before resuming. No source snapshot is
 changed and independent functional tasks remain reusable.
 
-After interruption, the operator resumes the exact recorded session. Nextflow
-applies its normal cache validation while the wrapper reacquires the single
-state-root lock. The operator never repairs cache metadata by hand. Explicit
-missing-output and corrupt-output recovery tests remain future acceptance
-work, so phase one does not claim those cases as proved.
+After interruption, the operator resumes the exact recorded session. Nextflow applies its normal cache validation while the wrapper reacquires the single state-root lock. The operator never repairs cache metadata by hand. Missing and corrupted published validation outputs are covered by the recovery self-test; future compiler and package artifacts require the same proof when they are added.
 
 Future publication recovery must first read the external transaction journal,
 verify the immutable package digest, and query actual GitHub and Homebrew state.
@@ -713,8 +700,7 @@ state.
 
 ## GitHub Actions Integration
 
-This section is the future remote-integration design. Phase one changes no
-GitHub Actions workflow.
+The Stable Release Gate is the first GitHub Actions dispatcher migrated to the checked-in graph. It resolves immutable stack inputs, provisions checksum-pinned tools, reuses a durable state root, and resumes the last valid content-addressed session automatically. The remaining text describes the target for other workflows.
 
 Each workflow becomes a thin profile dispatcher around the same pinned
 Nextflow entry point used locally. GitHub selects source authority, runner
@@ -744,9 +730,7 @@ build, and non-runtime functional commands. That phase is implemented here;
 comparison with the existing repository gate remains the closeout proof. Do not
 change test semantics during this step.
 
-Third, make build products explicit immutable artifacts and have test stages
-consume them without rebuilding. Add kill-and-resume, missing-output,
-corrupt-output, concurrent-resume, dirty-source, and scoped-invalidation tests.
+Third, make build products explicit immutable artifacts and have test stages consume them without rebuilding. Published validation-output corruption is covered; add equivalent compiler/package artifact recovery plus kill-and-resume, concurrent-resume, dirty-source, and scoped-invalidation tests.
 
 Fourth, move sibling target stamps and the 65 parity target loop into mapped
 Nextflow tasks. Keep the existing Make and shell targets as adapters until the

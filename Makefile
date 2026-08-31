@@ -590,7 +590,7 @@ pipeline-help:
 		'  pipeline-self-test  Prove exact-session recovery without rerunning upstream work.' \
 		'' \
 		'Important selectors:' \
-		'  PIPELINE_PROFILE=focused|repository|stack|hosted-safe' \
+		'  PIPELINE_PROFILE=focused|repository|stack|hosted-safe|release-hosted' \
 		'  PIPELINE_STAGE_SELECTOR=compose-source,compose-swift-test,compose-go-test,compose-cli-smoke' \
 		'  PIPELINE_SESSION=<failed-session-uuid>' \
 		'  CONTAINER_FAMILY_SOURCE_ROOT=<directory-containing-sibling-repositories>' \
@@ -1083,9 +1083,15 @@ release-gate:
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage swift-runtime --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory swift-runtime-test
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-parity --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory docker-compose-parity
 
-release-gate-hosted:
-	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage sibling-stack-hosted --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory container-stack-hosted-release-validation
-	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-ci-hosted --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory ci
+release-gate-hosted: pipeline-bootstrap
+	PIPELINE_PROFILE=release-hosted \
+		PIPELINE_EXECUTION_PATH="$(CURDIR)/.local/bin:$(PIPELINE_EXECUTION_PATH)" \
+		PIPELINE_COMPOSE_REPO="$(CURDIR)" \
+		PIPELINE_BUILDER_REPO="$(CONTAINER_BUILDER_SHIM_STACK_REPO)" \
+		PIPELINE_CONTAINERIZATION_REPO="$(CONTAINERIZATION_STACK_REPO)" \
+		PIPELINE_CONTAINER_REPO="$(CONTAINER_STACK_REPO)" \
+		PIPELINE_HOMEBREW_REPO="$(HOMEBREW_TAP_REPO)" \
+		$(MAKE) --no-print-directory pipeline
 
 ci-release: release-gate package-release
 

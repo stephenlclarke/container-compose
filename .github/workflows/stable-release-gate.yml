@@ -36,7 +36,7 @@ jobs:
   resolve-candidate:
     name: Resolve Stable Candidate
     if: github.repository == 'stephenlclarke/container-compose'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       sha: ${{ steps.candidate.outputs.sha }}
       homebrew_tap_ref: ${{ steps.candidate.outputs.homebrew_tap_ref }}
@@ -70,6 +70,12 @@ jobs:
           main_sha="$(git ls-remote --heads "${remote}" refs/heads/main | awk '{ print $1 }' | tail -n 1)"
           if [[ ! "${tag_sha}" =~ ^[0-9a-f]{40}$ ]] || [[ -z "${main_sha}" ]]; then
             printf 'could not resolve stable tag %s or main\n' "${RELEASE_TAG}" >&2
+            exit 1
+          fi
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]] ||
+            [[ "${GITHUB_SHA}" != "${main_sha}" ]]; then
+            printf 'stable release control must run from the exact current main revision (%s, got %s at %s)\n' \
+              "${main_sha}" "${GITHUB_SHA}" "${GITHUB_REF}" >&2
             exit 1
           fi
           tag_object="$(
@@ -160,6 +166,8 @@ jobs:
     needs: resolve-candidate
     runs-on: [self-hosted, macOS, ARM64, container-compose-release]
     timeout-minutes: 120
+    env:
+      RELEASE_PIPELINE_STATE_ROOT: /Volumes/SSD/github/.container-compose-release-pipeline
     steps:
       - name: Checkout the stable candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -227,35 +235,6 @@ jobs:
           fetch-depth: 0
           ref: ${{ needs.resolve-candidate.outputs.homebrew_tap_ref }}
 
-      # The project release tooling is validated with Bash 5. GitHub's macOS
-      # image still selects Apple's Bash 3.2 for `shell: bash`, whose parser,
-      # empty-array, and signal semantics differ in release-critical paths.
-      - name: Select supported Bash 5 runtime
-        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
-        run: |
-          set -u
-          bash_prefix="$(brew --prefix bash 2>/dev/null || true)"
-          bash_path="${bash_prefix:+${bash_prefix}/bin/bash}"
-          if [[ -z "${bash_path}" || ! -x "${bash_path}" ]]; then
-            HOMEBREW_NO_AUTO_UPDATE=1 brew install bash
-            bash_prefix="$(brew --prefix bash)"
-            bash_path="${bash_prefix}/bin/bash"
-          fi
-          bash_major="$("${bash_path}" -c 'printf "%s\n" "${BASH_VERSINFO[0]}"')"
-          if ! [[ "${bash_major}" =~ ^[0-9]+$ ]] || (( bash_major < 5 )); then
-            printf 'stable release gate requires Bash 5 or newer: %s\n' \
-              "${bash_path}" >&2
-            exit 1
-          fi
-          printf '%s\n' "$(dirname "${bash_path}")" >> "${GITHUB_PATH}"
-
-      - name: Verify supported Bash is selected
-        shell: bash
-        run: |
-          set -euo pipefail
-          (( BASH_VERSINFO[0] >= 5 ))
-          [[ "$(command -v bash)" == "$(brew --prefix bash)/bin/bash" ]]
-
       - name: Verify immutable dependency checkouts
         env:
           BUILDER_REF: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
@@ -278,57 +257,22 @@ jobs:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
 
-      - name: Install Markdown lint
-        run: npm install --global markdownlint-cli@0.48.0
-
       - name: Cache local repo tools
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: container-compose/.local/bin
+          path: |
+            container-compose/.local/bin
+            container-compose/.local/cache/hawkeye
           key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
 
-      # Each pinned repository checks its own .local/bin rather than PATH.
-      # Bootstrap those verified per-repository tools before invoking the
-      # immutable control-plane release gate.
-      - name: Provision pinned stack tools
-        shell: bash
+      - name: Provision checksum-pinned release tools
+        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+        working-directory: container-compose
         run: |
           set -euo pipefail
-          (
-            cd container-compose
-            HAWKEYE_AUTO_INSTALL=1 ./scripts/install-hawkeye.sh
-          )
-          for repository in container-builder-shim containerization container; do
-            (
-              cd "${repository}"
-              ./scripts/install-hawkeye.sh
-            )
-          done
-
-      # `swift package edit` rewrites the workspace lock state for local
-      # checkouts. Validate the Compose application against the candidate's
-      # immutable remote pins before any such edit can hide the checked-in
-      # release provenance. The resolver already requires the candidate's
-      # complete main CI, including the 390 tool-policy tests. Do not rerun its
-      # wall-clock deadline harnesses on a variably loaded macOS host; keep this
-      # lane focused on the macOS application build, coverage, and CLI proof.
-      - name: Run Compose application CI from immutable source lockfile
-        shell: bash
-        run: |
-          set -euo pipefail
-          make -C container-compose \
-            format \
-            core-runtime-neutrality \
-            stack-consistency \
-            upstream-handoff-registry-check \
-            check-licenses \
-            performance-matrix-harness-test \
-            signal-log-reliability-harness-test \
-            coverage-check \
-            go-build \
-            cli-smoke-built
-        env:
-          HAWKEYE_AUTO_INSTALL: "1"
+          ./scripts/install-hawkeye.sh
+          PIPELINE_STATE_ROOT="${RELEASE_PIPELINE_STATE_ROOT}" \
+            make -C ../release-tools pipeline-bootstrap
 
       # GitHub-hosted macOS runners are VMs and cannot launch nested
       # Virtualization.framework guests. Hosted stack validation therefore uses
@@ -336,14 +280,47 @@ jobs:
       # than the installer-staging target that builds Linux service workloads
       # with Colima. The release helper runs the full packaging/live gate on a
       # supported local Mac before it creates the signed source tag.
-      - name: Run hosted release gate
-        shell: bash
+      # Main CI is already green at the exact candidate SHA. This graph runs
+      # only release-specific sibling proofs, with one Swift-heavy lane and one
+      # independent Go/Homebrew lane. Nextflow retains content-addressed stage
+      # state so a corrected rerun resumes from the last valid output.
+      - name: Run recoverable hosted release graph
+        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+        env:
+          BUILDER_REF: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
+          CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
+          CONTAINER_REF: ${{ steps.stack-refs.outputs.container_ref }}
+          HOMEBREW_TAP_REF: ${{ needs.resolve-candidate.outputs.homebrew_tap_ref }}
+          CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.sha }}
         run: |
           set -euo pipefail
-          release-tools/Tools/ci/run-stack-release-validation.sh hosted \
-            container-compose container-builder-shim containerization container homebrew-tap
-        env:
-          HAWKEYE_AUTO_INSTALL: "1"
+          pipeline_environment=(
+            "PIPELINE_PROFILE=release-hosted"
+            "PIPELINE_STATE_ROOT=${RELEASE_PIPELINE_STATE_ROOT}"
+            "PIPELINE_EXECUTION_PATH=${GITHUB_WORKSPACE}/container-compose/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+            "PIPELINE_COMPOSE_REPO=${GITHUB_WORKSPACE}/container-compose"
+            "PIPELINE_COMPOSE_REF=${CANDIDATE_SHA}"
+            "PIPELINE_BUILDER_REPO=${GITHUB_WORKSPACE}/container-builder-shim"
+            "PIPELINE_BUILDER_REF=${BUILDER_REF}"
+            "PIPELINE_CONTAINERIZATION_REPO=${GITHUB_WORKSPACE}/containerization"
+            "PIPELINE_CONTAINERIZATION_REF=${CONTAINERIZATION_REF}"
+            "PIPELINE_CONTAINER_REPO=${GITHUB_WORKSPACE}/container"
+            "PIPELINE_CONTAINER_REF=${CONTAINER_REF}"
+            "PIPELINE_HOMEBREW_REPO=${GITHUB_WORKSPACE}/homebrew-tap"
+            "PIPELINE_HOMEBREW_REF=${HOMEBREW_TAP_REF}"
+          )
+          resume_session=""
+          history="${RELEASE_PIPELINE_STATE_ROOT}/.nextflow/history"
+          if [[ -s "${history}" ]]; then
+            resume_session="$(awk -F $'\t' 'NF >= 6 { value = $6 } END { print value }' "${history}")"
+          fi
+          if [[ "${resume_session}" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]]; then
+            printf 'resuming content-addressed release graph session %s\n' "${resume_session}"
+            env "${pipeline_environment[@]}" PIPELINE_SESSION="${resume_session}" \
+              make -C release-tools pipeline-resume
+          else
+            env "${pipeline_environment[@]}" make -C release-tools pipeline
+          fi
 
   record-release-authority:
     name: Record Stable Release Authority
@@ -351,7 +328,7 @@ jobs:
     if: >-
       github.repository == 'stephenlclarke/container-compose' &&
       needs.release-gate.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       checks: write
       contents: read

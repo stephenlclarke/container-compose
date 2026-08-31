@@ -41,7 +41,7 @@ jobs:
   resolve-release:
     name: Resolve Published Release
     if: github.repository == 'stephenlclarke/container-compose'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
     steps:
@@ -75,7 +75,7 @@ jobs:
   analyze:
     name: Analyze Go Release
     needs: resolve-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout exact release source
@@ -130,7 +130,7 @@ jobs:
     name: CodeQL
     needs: analyze
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Require successful release analysis
         env:

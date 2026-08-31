@@ -43,7 +43,7 @@ jobs:
   preflight:
     name: Decide Stable Promotion
     if: github.repository == 'stephenlclarke/container-compose' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       should_release: ${{ steps.decision.outputs.should_release }}
       selector: ${{ steps.selector.outputs.selector }}

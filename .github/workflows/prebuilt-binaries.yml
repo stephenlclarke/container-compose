@@ -57,7 +57,7 @@ jobs:
     if: >
       github.repository == 'stephenlclarke/container-compose' &&
       (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       publish: ${{ steps.publish.outputs.publish }}
       ref_type: ${{ steps.publish.outputs.ref_type }}
@@ -411,7 +411,7 @@ jobs:
     if: >
       needs.resolve-publish-context.outputs.publish == 'true' &&
       needs.resolve-publish-context.outputs.repair_tap != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -486,7 +486,7 @@ jobs:
     if: >
       needs.resolve-publish-context.outputs.publish == 'true' &&
       needs.resolve-publish-context.outputs.repair_tap != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read

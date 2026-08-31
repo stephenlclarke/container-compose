@@ -4,7 +4,10 @@ include {
     RUN_REPOSITORY_STAGE as RUN_SOURCE_STAGE
 } from './build-pipeline/modules/repository-stage'
 include {
-    RUN_REPOSITORY_STAGE as RUN_FUNCTIONAL_STAGE
+    RUN_REPOSITORY_STAGE as RUN_SWIFT_STAGE
+} from './build-pipeline/modules/repository-stage'
+include {
+    RUN_REPOSITORY_STAGE as RUN_LIGHTWEIGHT_STAGE
 } from './build-pipeline/modules/repository-stage'
 
 params.pipelineProfile = 'repository'
@@ -39,7 +42,7 @@ params.stateMarkerValue = 'container-compose recoverable pipeline v1'
 params.executionPath = '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'
 
 def supportedProfiles() {
-    ['focused', 'repository', 'stack', 'hosted-safe']
+    ['focused', 'repository', 'stack', 'hosted-safe', 'release-hosted']
 }
 
 def encodeParameter(value) {
@@ -171,11 +174,56 @@ def functionalStageSpecs() {
     ]
 }
 
+def releaseHostedSourceStageSpecs() {
+    [
+        ['container-builder-shim', 'builder-release-source', 'source',
+            params.sourceTimeoutSeconds as Integer,
+            'test -f Makefile && test -f go.sum',
+            'make,go', '.', 'commit,describe'],
+        ['containerization', 'containerization-release-source', 'source',
+            params.sourceTimeoutSeconds as Integer,
+            'test -f Makefile && test -f Package.resolved',
+            'make,apple-swift', '.', 'commit'],
+        ['container', 'container-release-source', 'source',
+            params.sourceTimeoutSeconds as Integer,
+            'test -f Makefile && test -f Package.resolved',
+            'make,apple-swift', '.', 'commit,describe'],
+        ['homebrew-tap', 'homebrew-release-source', 'source',
+            params.sourceTimeoutSeconds as Integer,
+            'test -f Formula/container-compose.rb',
+            'ruby', '.', 'commit'],
+    ]
+}
+
+def releaseHostedFunctionalStageSpecs() {
+    [
+        ['container-builder-shim', 'builder-release-validation', 'test',
+            params.functionalTimeoutSeconds as Integer,
+            'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && GOTOOLCHAIN=local GIT_TAG="$PIPELINE_ORIGINAL_DESCRIBE" make --no-print-directory GO=go check-licenses vet lint coverage build',
+            'make,go,hawkeye', '.', 'describe'],
+        ['containerization', 'containerization-release-validation', 'test',
+            params.functionalTimeoutSeconds as Integer,
+            'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && CI=1 HAWKEYE_AUTO_INSTALL=0 make --no-print-directory ROOT_DIR="$PWD" SWIFT=/usr/bin/swift check containerization examples docs coverage',
+            'make,apple-swift,hawkeye,codesign', '.', 'none'],
+        ['container', 'container-release-validation', 'test',
+            params.functionalTimeoutSeconds as Integer,
+            'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE CI=1 HAWKEYE_AUTO_INSTALL=0 CONTAINER_SEMANTIC_HELPER_TOOLCHAIN_CACHE="$PIPELINE_INTERNAL_CACHE_ROOT/container-semantic-helper" make --no-print-directory ROOT_DIR="$PWD" PYTHON3=python3 GIT_COMMIT="$PIPELINE_ORIGINAL_COMMIT" RELEASE_VERSION="$PIPELINE_ORIGINAL_DESCRIBE" check build dsym docs coverage-unit',
+            'make,apple-swift,python3,hawkeye,codesign', '.', 'commit,describe'],
+        ['homebrew-tap', 'homebrew-release-validation', 'test',
+            params.functionalTimeoutSeconds as Integer,
+            'ruby -c Formula/container-compose.rb',
+            'ruby', 'Formula/container-compose.rb', 'none'],
+    ]
+}
+
 def pipelineSelection() {
     def repositories = allRepositorySpecs()
-    def sourceStages = sourceStageSpecs()
-    def functionalStages = functionalStageSpecs()
-    def profileRepositoryNames = params.pipelineProfile in ['stack', 'hosted-safe'] ?
+    def sourceStages = params.pipelineProfile == 'release-hosted' ?
+        releaseHostedSourceStageSpecs() : sourceStageSpecs()
+    def functionalStages = params.pipelineProfile == 'release-hosted' ?
+        releaseHostedFunctionalStageSpecs() : functionalStageSpecs()
+    def profileRepositoryNames = params.pipelineProfile in
+        ['stack', 'hosted-safe', 'release-hosted'] ?
         repositories.collect { repository -> repository[0] } : ['container-compose']
     def selectedSources = sourceStages.findAll { stage ->
         profileRepositoryNames.contains(stage[0])
@@ -184,7 +232,8 @@ def pipelineSelection() {
         profileRepositoryNames.contains(stage[0])
     }
 
-    if (params.pipelineProfile == 'focused') {
+    if (params.pipelineProfile == 'focused' ||
+        params.stageSelector.toString().trim()) {
         def requestedStages = params.stageSelector.toString().trim() ?
             params.stageSelector.toString().split(',')
                 .collect { stageName -> stageName.trim() }
@@ -1036,6 +1085,13 @@ process PREFLIGHT_STAGE_TOOLS {
                 "$tool_name" >&2
             exit 2
         fi
+        if [[ "$tool_name" == bash ]] && ! /usr/bin/python3 "$deadline_runner" \
+            --seconds 30 -- "$tool_path" -c \
+            '(( BASH_VERSINFO[0] >= 5 ))' >/dev/null 2>&1; then
+            printf 'stable release gate requires Bash 5 or newer: %s\n' \
+                "$tool_path" >&2
+            exit 2
+        fi
         tool_version="${tool_version//$'\t'/ }"
         printf 'tool\t%s\t%s\t%s\t%s\n' "$tool_name" "$tool_path" \
             "$tool_sha256" "$tool_version" >>"$manifest"
@@ -1283,7 +1339,7 @@ process PIPELINE_SUMMARY {
     val pipelineProfile
     val expectedStageNamesBase64
     val expectedRepositoryNamesBase64
-    path stageReceipts
+    path stageEvidence
     path repositoryReceipts
     path hostTools
 
@@ -1307,7 +1363,16 @@ process PIPELINE_SUMMARY {
         >>pipeline-summary.tsv
     observed_stage_names=,
     observed_stage_count=0
-    for receipt in !{stageReceipts}; do
+    for evidence in !{stageEvidence}; do
+        evidence_name="$(/usr/bin/basename "$evidence")"
+        case "$evidence_name" in
+            *.receipt.tsv) ;;
+            *.stdout.log|*.stderr.log) test -f "$evidence" ;;
+            *) exit 2 ;;
+        esac
+    done
+    for receipt in !{stageEvidence}; do
+        [[ "$receipt" == *.receipt.tsv ]] || continue
         test -s "$receipt"
         receipt_stage="$(/usr/bin/awk -F '\t' '$1 == "stage" { print $2 }' \
             "$receipt")"
@@ -1319,9 +1384,27 @@ process PIPELINE_SUMMARY {
         esac
         observed_stage_names="${observed_stage_names}${receipt_stage},"
         ((observed_stage_count += 1))
+        stdout_log="${receipt_stage}.stdout.log"
+        stderr_log="${receipt_stage}.stderr.log"
+        test -f "$stdout_log"
+        test -f "$stderr_log"
+        expected_stdout_sha256="$(/usr/bin/awk -F '\t' \
+            '$1 == "stdout-sha256" { print $2 }' "$receipt")"
+        expected_stderr_sha256="$(/usr/bin/awk -F '\t' \
+            '$1 == "stderr-sha256" { print $2 }' "$receipt")"
+        [[ "$expected_stdout_sha256" =~ ^[0-9a-f]{64}$ ]]
+        [[ "$expected_stderr_sha256" =~ ^[0-9a-f]{64}$ ]]
+        [[ "$(/usr/bin/shasum -a 256 "$stdout_log" | \
+            /usr/bin/awk '{ print $1 }')" == "$expected_stdout_sha256" ]]
+        [[ "$(/usr/bin/shasum -a 256 "$stderr_log" | \
+            /usr/bin/awk '{ print $1 }')" == "$expected_stderr_sha256" ]]
         printf 'stage-receipt\t%s\t%s\n' "$(/usr/bin/basename "$receipt")" \
             "$(/usr/bin/shasum -a 256 "$receipt" | /usr/bin/awk '{ print $1 }')" \
             >>pipeline-summary.tsv
+        printf 'stage-output\t%s\t%s\n' "$stdout_log" \
+            "$expected_stdout_sha256" >>pipeline-summary.tsv
+        printf 'stage-output\t%s\t%s\n' "$stderr_log" \
+            "$expected_stderr_sha256" >>pipeline-summary.tsv
     done
     IFS=',' read -r -a expected_stages <<<"$expected_stage_names"
     [[ "$observed_stage_count" -eq "${#expected_stages[@]}" ]]
@@ -1456,16 +1539,35 @@ workflow PIPELINE {
         .combine(repositorySourceGates, by: 0)
         .map { item -> tuple(item[1], item[0], item[2], item[3], item[4],
             item[5], item[6], item[7], item[8], item[9]) }
-    RUN_FUNCTIONAL_STAGE(
-        functionalInputs,
+    swiftRepositoryNames = [
+        'container-compose', 'containerization', 'container',
+        'container-engine-api', 'devcontainer', 'container-k8s',
+    ]
+    swiftFunctionalInputs = functionalInputs.filter { item ->
+        swiftRepositoryNames.contains(item[1])
+    }
+    lightweightFunctionalInputs = functionalInputs.filter { item ->
+        !swiftRepositoryNames.contains(item[1])
+    }
+    RUN_SWIFT_STAGE(
+        swiftFunctionalInputs,
+        deadlineRunner,
+        stateRootBase64,
+        sessionIdentifier,
+    )
+    RUN_LIGHTWEIGHT_STAGE(
+        lightweightFunctionalInputs,
         deadlineRunner,
         stateRootBase64,
         sessionIdentifier,
     )
 
-    allStageReceipts = RUN_SOURCE_STAGE.out.receipt
-        .map { item -> item[2] }
-        .concat(RUN_FUNCTIONAL_STAGE.out.receipt.map { item -> item[2] })
+    allStageEvidence = RUN_SOURCE_STAGE.out.receipt
+        .flatMap { item -> [item[2], item[3], item[4]] }
+        .concat(RUN_SWIFT_STAGE.out.receipt
+            .flatMap { item -> [item[2], item[3], item[4]] })
+        .concat(RUN_LIGHTWEIGHT_STAGE.out.receipt
+            .flatMap { item -> [item[2], item[3], item[4]] })
         .collect()
     allRepositoryReceipts = repositoryReceipts
         .flatMap { item -> [item[1], item[2]] }
@@ -1481,7 +1583,7 @@ workflow PIPELINE {
             selection.repositories.collect { repository -> repository[0] }
                 .join(','),
         )),
-        allStageReceipts,
+        allStageEvidence,
         allRepositoryReceipts,
         PREFLIGHT_GRAPH.out.tools,
     )

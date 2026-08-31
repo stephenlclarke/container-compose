@@ -53,7 +53,7 @@ jobs:
     if: >
       github.repository == 'stephenlclarke/container-compose' &&
       github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       target: ${{ steps.versions.outputs.target }}
       baseline: ${{ steps.versions.outputs.baseline }}

@@ -444,8 +444,64 @@ PY
 # Retain a helper-created candidate after a local release gate fails before
 # promotion. Recommitting an identical tree changes the reviewed candidate
 # identity on every retry and makes evidence impossible to bind reliably.
+validate_unpublished_release_commit() {
+  local path="$1" commit="$2" version="$3" subject files file
+  subject="$(git -C "${path}" show -s --format=%s "${commit}")"
+  files="$(git -C "${path}" diff-tree --no-commit-id --name-only -r "${commit}" | sort | paste -sd, -)"
+
+  if ! git -C "${path}" verify-commit "${commit}" >/dev/null 2>&1; then
+    printf 'unpublished release candidate contains an unverified commit: %s %s\n' \
+      "${commit}" "${subject}" >&2
+    return 1
+  fi
+
+  if [[ "${subject}" == "chore(release): prepare ${version}" ]]; then
+    if [[ -z "${files}" ]]; then
+      printf 'release preparation commit has no release metadata changes: %s\n' \
+        "${commit}" >&2
+      return 1
+    fi
+    IFS=',' read -r -a release_files <<<"${files}"
+    for file in "${release_files[@]}"; do
+      case "${file}" in
+        Makefile|Sources/ComposePlugin/ComposePlugin.swift|Tools/release/stack-refs.json) ;;
+        *)
+          printf 'release preparation commit changes an unexpected file: %s %s\n' \
+            "${commit}" "${file}" >&2
+          return 1
+          ;;
+      esac
+    done
+    return 0
+  fi
+
+  if [[ "${subject}" =~ ^chore\(deps\):\ pin\ containerization\ [0-9a-f]{12}$ ]] ||
+    [[ "${subject}" =~ ^chore\(deps\):\ pin\ container\ [0-9a-f]{12}$ ]] ||
+    [[ "${subject}" =~ ^chore\(deps\):\ pin\ container\ stack\ [0-9a-f]{12}\ [0-9a-f]{12}$ ]]; then
+    if [[ "${files}" != "Package.resolved,Package.swift" ]]; then
+      printf 'dependency pin commit changes an unexpected file set: %s %s\n' \
+        "${commit}" "${files}" >&2
+      return 1
+    fi
+    return 0
+  fi
+
+  if [[ "${subject}" == "fix(coverage): follow symlinked build cache" ]]; then
+    if [[ "${files}" != "Makefile" ]]; then
+      printf 'coverage repair commit changes an unexpected file set: %s %s\n' \
+        "${commit}" "${files}" >&2
+      return 1
+    fi
+    return 0
+  fi
+
+  printf 'container-compose main contains an unpublished non-release commit; refusing recovery: %s\n' \
+    "${subject}" >&2
+  return 1
+}
+
 recover_unpublished_release_candidate() {
-  local version="$1" path remote local_head remote_head subject subjects
+  local version="$1" path remote local_head remote_head commit commits
   RECOVERED_UNPUBLISHED_RELEASE_BASE=""
   path="$(repo_path "${COMPOSE_REPO}")"
   remote="$(push_remote "${COMPOSE_REPO}")"
@@ -468,21 +524,14 @@ recover_unpublished_release_candidate() {
     exit 1
   fi
 
-  subjects="$(git -C "${path}" log --format='%s' "${remote_head}..${local_head}")"
-  if [[ -z "${subjects}" ]]; then
+  commits="$(git -C "${path}" rev-list --reverse "${remote_head}..${local_head}")"
+  if [[ -z "${commits}" ]]; then
     printf 'container-compose main differs from %s/main without an unpublished release candidate\n' "${remote}" >&2
     exit 1
   fi
-  while IFS= read -r subject; do
-    case "${subject}" in
-      "chore(release): prepare ${version}"|"chore(deps): pin containerization "[0-9a-f]*|"chore(deps): pin container "[0-9a-f]*|"chore(deps): pin container stack "[0-9a-f]*" "[0-9a-f]*|"fix(coverage): follow symlinked build cache")
-        ;;
-      *)
-        printf 'container-compose main contains an unpublished non-release commit; refusing recovery: %s\n' "${subject}" >&2
-        exit 1
-        ;;
-    esac
-  done <<<"${subjects}"
+  while IFS= read -r commit; do
+    validate_unpublished_release_commit "${path}" "${commit}" "${version}" || exit 1
+  done <<<"${commits}"
 
   RECOVERED_UNPUBLISHED_RELEASE_BASE="${remote_head}"
   printf 'retaining unpublished release candidate %s after an earlier local gate failure\n' "${local_head}"

@@ -7254,6 +7254,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/361"
     },
     {
+      "id": "container-compose-363",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Make release validation deterministic",
+      "state": "submitted",
+      "lastVerified": "2026-08-31",
+      "commits": [
+        "d4691370576e2642c42572c949e0746e8a9c3a87"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-362.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-363.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/363"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",

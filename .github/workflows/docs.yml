@@ -53,7 +53,7 @@ concurrency:
 jobs:
   classify-changes:
     name: Classify Documentation Changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       build_docc: ${{ steps.classify.outputs.build_docc }}
     steps:
@@ -106,7 +106,9 @@ jobs:
   build-sites:
     name: Build ${{ matrix.site }} DocC Site
     needs: classify-changes
-    if: needs.classify-changes.outputs.build_docc == 'true'
+    # Pull requests validate documentation classification and workflow syntax,
+    # but product documentation is generated only by the post-merge authority.
+    if: github.event_name != 'pull_request' && needs.classify-changes.outputs.build_docc == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
@@ -207,7 +209,7 @@ jobs:
     name: Assemble and Upload GitHub Pages Artifact
     needs: build-sites
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       pages: write
     steps:
@@ -240,7 +242,7 @@ jobs:
     name: Deploy GitHub Pages
     needs: upload-pages-artifact
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       pages: write
