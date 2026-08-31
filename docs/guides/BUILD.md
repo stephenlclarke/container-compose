@@ -155,7 +155,8 @@ resolved Git and Python tools. Swift stages additionally identify the SDK,
 Swift, Clang, frontend, and linker, Go stages identify and hash the complete
 `GOROOT`, and Markdown stages hash the installed `markdownlint-cli` package
 tree. Repository scripts resolve the recorded Bash 5 executable from the
-sealed directory.
+sealed directory, and preflight fails before any source stage when that
+executable reports a major version below 5.
 
 On failure, the pipeline preserves the receipt, stage command, stdout, stderr, `.command.sh`, and `.command.run` under `$PIPELINE_STATE_ROOT/failures/<session-uuid>/<stage>`. The wrapper copies that tree into the attempt evidence directory as `failures/`. Successful stages publish their receipt and complete stdout/stderr logs; the summary authenticates both logs by SHA-256. The self-test proves that an exact-session correction reuses independent successful work and that a missing or corrupted published output is restored from the valid content cache. The graph does not yet export reusable compiler products or its own coverage-floor decision.
 

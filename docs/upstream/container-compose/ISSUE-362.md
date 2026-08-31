@@ -14,6 +14,7 @@ Tracking issue: [`#362`](https://github.com/stephenlclarke/container-compose/iss
 - Persist the graph beneath one durable marked state root and resume content-addressed work after an interruption.
 - Authenticate published stage logs and prove recovery after output deletion or corruption.
 - Pin workflow actions, runner images, dependency resolution, and downloaded tools to immutable inputs.
+- Reject unsupported Bash runtimes during preflight instead of installing mutable host packages inside a release.
 - Verify signatures plus exact subject, ancestry, and changed-file allowlists before reusing any retained release-generated candidate.
 - Keep CodeQL and DocC in their release-only authorities and out of development validation.
 

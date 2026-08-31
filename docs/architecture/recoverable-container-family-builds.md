@@ -41,7 +41,8 @@ The checked-in pipeline currently provides:
 - stage-specific command and tool manifests instead of one global fingerprint,
   including a recorded Bash 5 executable, the selected Apple developer
   directory and resolved front-door tools, the complete Go installation tree,
-  and the installed `markdownlint-cli` package tree where applicable;
+  and the installed `markdownlint-cli` package tree where applicable; Bash
+  versions below 5 fail during preflight before any source command runs;
 - source, build-only, and non-runtime functional stages that invoke existing
   repository commands through a sealed private tool directory plus the fixed
   system path, with the recorded developer directory pinned for every stage;

@@ -48,6 +48,7 @@ STACK_RELEASE_VALIDATION = ROOT / "Tools" / "ci" / "run-stack-release-validation
 FORMULA_RENDERER = ROOT / "Tools" / "release" / "render-homebrew-stack-formulae.sh"
 RUNNER_INSTALLER = ROOT / "scripts" / "install-scheduled-release-runner.sh"
 HAWKEYE_INSTALLER = ROOT / "scripts" / "install-hawkeye.sh"
+PIPELINE_MAIN = ROOT / "main.nf"
 
 
 class ContainerStackReleasePolicyTests(unittest.TestCase):
@@ -2238,6 +2239,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow.index("Provision checksum-pinned release tools"),
             workflow.index("Run recoverable hosted release graph"),
         )
+
+    def test_pipeline_preflight_rejects_unsupported_bash(self) -> None:
+        pipeline = PIPELINE_MAIN.read_text(encoding="utf-8")
+        self.assertIn("'(( BASH_VERSINFO[0] >= 5 ))'", pipeline)
+        self.assertIn("stable release gate requires Bash 5 or newer", pipeline)
 
     def test_hawkeye_installer_rejects_symlinked_cache_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

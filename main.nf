@@ -1085,6 +1085,13 @@ process PREFLIGHT_STAGE_TOOLS {
                 "$tool_name" >&2
             exit 2
         fi
+        if [[ "$tool_name" == bash ]] && ! /usr/bin/python3 "$deadline_runner" \
+            --seconds 30 -- "$tool_path" -c \
+            '(( BASH_VERSINFO[0] >= 5 ))' >/dev/null 2>&1; then
+            printf 'stable release gate requires Bash 5 or newer: %s\n' \
+                "$tool_path" >&2
+            exit 2
+        fi
         tool_version="${tool_version//$'\t'/ }"
         printf 'tool\t%s\t%s\t%s\t%s\n' "$tool_name" "$tool_path" \
             "$tool_sha256" "$tool_version" >>"$manifest"
