@@ -17,18 +17,23 @@
 
 """Regression tests for stable release policy in the stack helper."""
 
+import hashlib
+import io
 import json
 import os
 import re
 import signal
 import shlex
 import subprocess
+import tarfile
 import tempfile
 import textwrap
 import time
 import unittest
 from pathlib import Path
 from unittest import mock
+
+from Tools.ci.test_run_with_container_runtime import RunWithContainerRuntimeTest
 
 
 SCRIPT = Path(__file__).parents[2] / "scripts" / "CONTAINER_STACK_RELEASE.sh"
@@ -103,6 +108,22 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertLess(self.script.index(copy), self.script.index(use))
         self.assertLess(
             self.script.index(use), self.script.index("run_local_release_gate_command env")
+        )
+        local_gate = self.script[
+            self.script.index("run_local_release_gate() {") : self.script.index(
+                "# Verify that Apple remotes cannot be pushed"
+            )
+        ]
+        self.assertIn('candidate_sha="$(git -C "${path}" rev-parse HEAD)"', local_gate)
+        self.assertIn('run python3 "${HOMEBREW_PREFLIGHT_TOOL}"', local_gate)
+        self.assertNotIn('${path}/Tools/release/homebrew-preflight.py', local_gate)
+        self.assertIn('init_image_digest_before="$(shasum -a 256', local_gate)
+        self.assertIn('init_image_digest_after="$(shasum -a 256', local_gate)
+        self.assertIn("local release gate guest snapshot changed", local_gate)
+        self.assertIn("record_stable_init_image_gate_evidence", local_gate)
+        self.assertLess(
+            local_gate.index("release_local_release_gate_host_state"),
+            local_gate.rindex("record_stable_init_image_gate_evidence"),
         )
 
     def test_release_helper_retains_only_its_unpublished_candidate_before_readiness(self) -> None:
@@ -677,8 +698,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn(
             "needs.resolve-publish-context.outputs.ref_type == 'branch'", retention
         )
-        self.assertIn('tap_sha_after="$(homebrew_tap_main_sha)"', verifier)
-        self.assertIn("maintenance backfill moved Homebrew tap main", verifier)
+        self.assertIn(
+            'stable_formula_identities_after="$(homebrew_stable_formula_identities)"',
+            verifier,
+        )
+        self.assertIn("maintenance backfill moved stable Homebrew formulae", verifier)
         self.assertLess(
             verifier.index('if [[ "${promote_default_lane}" != "true" ]]'),
             verifier.index('formula_text="$('),
@@ -687,13 +711,21 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             'promote_default_lane="$(stable_version_promotes_default_lane "${version}")"',
             dispatcher,
         )
-        self.assertIn('tap_sha_before="$(homebrew_tap_main_sha)"', dispatcher)
         self.assertIn(
-            '"${version}" "${promote_default_lane}" "${tap_sha_before}"',
+            'stable_formula_identities_before="$(homebrew_stable_formula_identities)"',
+            dispatcher,
+        )
+        self.assertIn(
+            '"${stable_formula_identities_before}" "${authority_init_digest}"',
             dispatcher,
         )
 
     def test_stable_release_publishes_and_verifies_guest_closure(self) -> None:
+        asset_pair = self.script[
+            self.script.index("publish_stable_asset_pair() {") : self.script.index(
+                "# Publish the exact guest archive"
+            )
+        ]
         publisher = self.script[
             self.script.index("publish_stable_init_image_asset() {") : self.script.index(
                 "# Verify the stable release assets and Homebrew formula agree."
@@ -712,15 +744,308 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
         self.assertIn('asset="container-vminit-arm64.oci.tar"', publisher)
         self.assertIn("CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE", publisher)
+        self.assertIn('expected_digest="$2"', publisher)
         self.assertIn("stable_containerization_authority", publisher)
         self.assertIn("OCI_IMAGE_LAYOUT_VALIDATOR", publisher)
-        self.assertIn('github_cli release upload "${version}"', publisher)
+        self.assertLess(
+            publisher.index('cp "${archive}" "${tmp}/${asset}"'),
+            publisher.index('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${tmp}/${asset}"'),
+        )
+        self.assertIn('"${digest}" != "${expected_digest}"', publisher)
+        self.assertIn('github_cli release upload "${version}"', asset_pair)
+        self.assertIn("publish_stable_asset_pair", publisher)
         self.assertLess(
             dispatcher.index('publish_stable_init_image_asset "${version}"'),
             dispatcher.index("verify_compose_stable_package"),
         )
         self.assertIn('init_asset="container-vminit-arm64.oci.tar"', verifier)
+        self.assertIn('expected_init_digest="$4"', verifier)
+        self.assertIn('"${init_asset_sha}" != "${expected_init_digest}"', verifier)
+        self.assertIn("guest archive is not authorized by the signed release gate", verifier)
+        unauthorized = verifier[
+            verifier.index('if [[ ! "${expected_init_digest}"') : verifier.index(
+                "  while IFS= read -r value"
+            )
+        ]
+        self.assertIn('find "${tmp}" -depth -delete', unauthorized)
+        self.assertLess(unauthorized.index('find "${tmp}"'), unauthorized.index("exit 1"))
         self.assertIn('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${tmp}/${init_asset}"', verifier)
+
+    def test_stable_guest_publisher_binds_the_validated_snapshot_to_gate_evidence(
+        self,
+    ) -> None:
+        asset = "container-vminit-arm64.oci.tar"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "retained.oci.tar"
+            self.create_release_guest_archive(archive)
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            upload_marker = root / "upload"
+            validator_capture = root / "validated"
+            shell_setup = "\n".join(
+                [
+                    f"export CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE={shlex.quote(str(archive))}",
+                    f"export TEST_SOURCE_ARCHIVE={shlex.quote(str(archive))}",
+                    f"export TEST_VALIDATOR_CAPTURE={shlex.quote(str(validator_capture))}",
+                    f"export TEST_UPLOAD_MARKER={shlex.quote(str(upload_marker))}",
+                    "stable_containerization_authority() { printf '%s\\n' owner/containerization ref; }",
+                    "github_repo() { printf '%s\\n' owner/container-compose; }",
+                    "cp() {",
+                    "  command cp \"$@\"",
+                    "  if [[ \"$1\" == \"${TEST_SOURCE_ARCHIVE}\" ]]; then",
+                    "    command cp \"$2\" \"${TEST_VALIDATOR_CAPTURE}\"",
+                    "    printf '%s\\n' changed-after-snapshot >\"${TEST_SOURCE_ARCHIVE}\"",
+                    "  fi",
+                    "}",
+                    "publish_stable_asset_pair() { touch \"${TEST_UPLOAD_MARKER}\"; }",
+                ]
+            )
+
+            published = self.run_release_function(
+                root,
+                f"publish_stable_init_image_asset 0.13.1 {digest}",
+                shell_setup=shell_setup,
+            )
+
+            self.assertEqual(published.returncode, 0, published.stderr)
+            self.assertEqual(hashlib.sha256(validator_capture.read_bytes()).hexdigest(), digest)
+            self.assertTrue(upload_marker.exists())
+
+            self.create_release_guest_archive(archive, config_variant="v8")
+            upload_marker.unlink()
+            rejected = self.run_release_function(
+                root,
+                f"publish_stable_init_image_asset 0.13.1 {digest}",
+                shell_setup=shell_setup,
+            )
+
+            self.assertEqual(rejected.returncode, 2, rejected.stderr)
+            self.assertIn("candidate-bound release-gate digest", rejected.stderr)
+            self.assertFalse(upload_marker.exists())
+
+    def test_stable_guest_publisher_propagates_outer_cleanup_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "retained.oci.tar"
+            self.create_release_guest_archive(archive)
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            shell_setup = "\n".join(
+                [
+                    f"export CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE={shlex.quote(str(archive))}",
+                    "stable_containerization_authority() { printf '%s\\n' owner/containerization ref; }",
+                    "github_repo() { printf '%s\\n' owner/container-compose; }",
+                    "publish_stable_asset_pair() { :; }",
+                    "find() { return 17; }",
+                ]
+            )
+
+            result = self.run_release_function(
+                root,
+                f"publish_stable_init_image_asset 0.13.1 {digest}",
+                shell_setup=shell_setup,
+            )
+
+            self.assertEqual(result.returncode, 17, result.stderr)
+
+    def test_stable_guest_asset_pair_recovers_each_missing_member(self) -> None:
+        asset = "container-vminit-arm64.oci.tar"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            local = root / "local"
+            local.mkdir()
+            local_asset = local / asset
+            local_checksum = local / f"{asset}.sha256"
+            local_asset.write_bytes(b"immutable release-gate guest archive\n")
+            digest = hashlib.sha256(local_asset.read_bytes()).hexdigest()
+            local_checksum.write_text(f"{digest}  {asset}\n", encoding="utf-8")
+
+            for label, existing, missing in (
+                ("archive-only", asset, [f"{asset}.sha256"]),
+                ("sidecar-only", f"{asset}.sha256", [asset]),
+                ("both-missing", "", [asset, f"{asset}.sha256"]),
+            ):
+                with self.subTest(existing=existing):
+                    fixture = root / label
+                    remote = fixture / "remote"
+                    remote.mkdir(parents=True)
+                    uploads = fixture / "uploads"
+                    if existing == asset:
+                        (remote / asset).write_bytes(local_asset.read_bytes())
+                    else:
+                        (remote / f"{asset}.sha256").write_text(
+                            f"{digest}  {asset}\n", encoding="utf-8"
+                        )
+
+                    shell_setup = f"""\
+export TEST_ASSET_NAMES={shlex.quote(existing)}
+export TEST_REMOTE={shlex.quote(str(remote))}
+export TEST_UPLOADS={shlex.quote(str(uploads))}
+github_cli() {{
+  case "$1:$2" in
+    release:view)
+      printf '%s\\n' "${{TEST_ASSET_NAMES}}"
+      ;;
+    release:download)
+      shift 3
+      local pattern='' destination=''
+      while (( $# > 0 )); do
+        case "$1" in
+          --pattern) pattern="$2"; shift 2 ;;
+          --dir) destination="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      cp "${{TEST_REMOTE}}/${{pattern}}" "${{destination}}/${{pattern}}"
+      ;;
+    release:upload)
+      shift 3
+      while (( $# > 0 )); do
+        if [[ "$1" == --repo ]]; then shift 2; continue; fi
+        basename "$1" >>"${{TEST_UPLOADS}}"
+        shift
+      done
+      ;;
+    *) return 2 ;;
+  esac
+}}
+"""
+                    recovered = self.run_release_function(
+                        root,
+                        "publish_stable_asset_pair "
+                        "0.13.1 owner/container-compose "
+                        f"{shlex.quote(str(local_asset))} "
+                        f"{shlex.quote(str(local_checksum))} "
+                        f"{asset} {digest}",
+                        shell_setup=shell_setup,
+                    )
+
+                    self.assertEqual(recovered.returncode, 0, recovered.stderr)
+                    self.assertEqual(
+                        uploads.read_text(encoding="utf-8").splitlines(), missing
+                    )
+
+    def test_stable_guest_asset_pair_handles_sidecar_race_and_cleanup_edges(self) -> None:
+        asset = "container-vminit-arm64.oci.tar"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            local_asset = root / asset
+            local_checksum = root / f"{asset}.sha256"
+            local_asset.write_bytes(b"immutable release-gate guest archive\n")
+            digest = hashlib.sha256(local_asset.read_bytes()).hexdigest()
+            local_checksum.write_text(f"{digest}  {asset}\n", encoding="utf-8")
+
+            for mode, expected_status in (
+                ("strict-sidecar", "failure"),
+                ("upload-race", "success"),
+                ("cleanup-failure", "cleanup-failure"),
+            ):
+                with self.subTest(mode=mode):
+                    fixture = root / mode
+                    remote = fixture / "remote"
+                    remote.mkdir(parents=True)
+                    names = fixture / "asset-names"
+                    upload_marker = fixture / "upload-called"
+                    cleanup_root = fixture / "cleanup"
+                    if mode == "strict-sidecar":
+                        names.write_text(f"{asset}.sha256\n", encoding="utf-8")
+                        (remote / f"{asset}.sha256").write_text(
+                            f"{digest}  wrong-name.tar\n", encoding="utf-8"
+                        )
+                    elif mode == "upload-race":
+                        names.write_text(f"{asset}\n", encoding="utf-8")
+                        (remote / asset).write_bytes(local_asset.read_bytes())
+                    else:
+                        names.write_text(f"{asset}\n{asset}.sha256\n", encoding="utf-8")
+                        (remote / asset).write_bytes(local_asset.read_bytes())
+                        (remote / f"{asset}.sha256").write_bytes(
+                            local_checksum.read_bytes()
+                        )
+
+                    shell_setup = f"""\
+export TEST_MODE={shlex.quote(mode)}
+export TEST_ASSET_NAMES_FILE={shlex.quote(str(names))}
+export TEST_REMOTE={shlex.quote(str(remote))}
+export TEST_LOCAL_CHECKSUM={shlex.quote(str(local_checksum))}
+export TEST_UPLOAD_MARKER={shlex.quote(str(upload_marker))}
+export TEST_CLEANUP_ROOT={shlex.quote(str(cleanup_root))}
+mktemp() {{
+  mkdir "${{TEST_CLEANUP_ROOT}}"
+  printf '%s\\n' "${{TEST_CLEANUP_ROOT}}"
+}}
+if [[ "${{TEST_MODE}}" == cleanup-failure ]]; then
+  find() {{ return 17; }}
+fi
+github_cli() {{
+  case "$1:$2" in
+    release:view)
+      command cat "${{TEST_ASSET_NAMES_FILE}}"
+      ;;
+    release:download)
+      shift 3
+      local pattern='' destination=''
+      while (( $# > 0 )); do
+        case "$1" in
+          --pattern) pattern="$2"; shift 2 ;;
+          --dir) destination="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      cp "${{TEST_REMOTE}}/${{pattern}}" "${{destination}}/${{pattern}}"
+      ;;
+    release:upload)
+      if [[ "${{TEST_MODE}}" == upload-race ]]; then
+        cp "${{TEST_LOCAL_CHECKSUM}}" "${{TEST_REMOTE}}/{asset}.sha256"
+        printf '%s\\n' {asset} {asset}.sha256 >"${{TEST_ASSET_NAMES_FILE}}"
+        return 1
+      fi
+      touch "${{TEST_UPLOAD_MARKER}}"
+      ;;
+    *) return 2 ;;
+  esac
+}}
+"""
+                    recovered = self.run_release_function(
+                        root,
+                        "publish_stable_asset_pair "
+                        "0.13.1 owner/container-compose "
+                        f"{shlex.quote(str(local_asset))} "
+                        f"{shlex.quote(str(local_checksum))} "
+                        f"{asset} {digest}",
+                        shell_setup=shell_setup,
+                    )
+
+                    if expected_status == "success":
+                        self.assertEqual(recovered.returncode, 0, recovered.stderr)
+                    elif expected_status == "cleanup-failure":
+                        self.assertEqual(recovered.returncode, 17, recovered.stderr)
+                    else:
+                        self.assertNotEqual(recovered.returncode, 0)
+                        self.assertFalse(upload_marker.exists())
+
+    def test_homebrew_backfill_identity_uses_only_stable_formula_blobs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identity = self.run_release_function(
+                root,
+                "homebrew_stable_formula_identities",
+                shell_setup="""github_cli() {
+  case "$*" in
+    *homebrew-tap/commits/main*) printf '%s\\n' tap-head ;;
+    *Formula/container-compose.rb?ref=tap-head*) printf '%s\\n' compose-blob ;;
+    *Formula/container.rb?ref=tap-head*) printf '%s\\n' container-blob ;;
+    *) return 2 ;;
+  esac
+}""",
+            )
+
+            self.assertEqual(identity.returncode, 0, identity.stderr)
+            self.assertEqual(
+                identity.stdout.splitlines(),
+                [
+                    "container-compose.rb=compose-blob",
+                    "container.rb=container-blob",
+                ],
+            )
 
     def test_homebrew_tap_pushes_authenticate_with_the_tap_token(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
@@ -749,7 +1074,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
         ]
         self.assertLess(
-            local_gate.index("homebrew-preflight.py"),
+            local_gate.index('run python3 "${HOMEBREW_PREFLIGHT_TOOL}"'),
             local_gate.index("require_local_virtualization"),
         )
 
@@ -1507,6 +1832,177 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("workflow_dispatch", tag_authority)
         self.assertNotIn('workflow="stable-release-gate.yml"', tag_authority)
         self.assertNotIn('--commit "${PUBLISH_SHA}"', tag_authority)
+
+    def test_stable_gate_records_the_candidate_bound_guest_digest(self) -> None:
+        workflow = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
+        workflow_inputs = workflow[
+            workflow.index("  workflow_dispatch:") : workflow.index("permissions:")
+        ]
+        dispatcher = self.script[
+            self.script.index("dispatch_stable_release_gate() {") : self.script.index(
+                "# Print the verified boundary for a stable release"
+            )
+        ]
+
+        self.assertNotIn("init_image_sha256:", workflow_inputs)
+        self.assertNotIn("inputs.init_image_sha256", workflow)
+        self.assertIn('init_image_authority_tag="stable-init-image-authority/${RELEASE_TAG}"', workflow)
+        self.assertIn("init_image_authority_verified", workflow)
+        self.assertIn("stable init-image authority tag %s is not GitHub-verified", workflow)
+        self.assertIn("stable init-image authority tag names %s instead of candidate %s", workflow)
+        self.assertIn(
+            "stable init-image authority tag has no unique candidate-bound digest",
+            workflow,
+        )
+        self.assertIn(
+            'summary+=" Guest init image SHA-256: ${INIT_IMAGE_SHA256}."',
+            workflow,
+        )
+        self.assertIn(
+            'init_image_digest="$(retained_stable_init_image_gate_digest "${version}")"',
+            dispatcher,
+        )
+        self.assertIn(
+            'ensure_stable_init_image_authority_tag "${version}" "${init_image_digest}"',
+            dispatcher,
+        )
+        self.assertNotIn('-f "init_image_sha256=', dispatcher)
+
+    def test_promoted_equivalent_tree_receives_immutable_gate_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compose = root / "container-compose"
+            evidence = root / "evidence"
+            self.run_command("git", "init", "-b", "main", str(compose))
+            self.configure_repo(compose)
+            self.commit_file(compose, "candidate.txt", "candidate\n", "feat: candidate")
+            source_sha = self.git(compose, "rev-parse", "HEAD")
+            source_tree = self.git(compose, "rev-parse", "HEAD^{tree}")
+            self.run_command(
+                "git",
+                "-C",
+                str(compose),
+                "commit",
+                "--allow-empty",
+                "-m",
+                "chore: promotion merge identity",
+            )
+            promoted_sha = self.git(compose, "rev-parse", "HEAD")
+            self.assertEqual(self.git(compose, "rev-parse", "HEAD^{tree}"), source_tree)
+            digest = "b" * 64
+            shell_setup = f"export PARITY_EVIDENCE_DIR={shlex.quote(str(evidence))}"
+
+            rebound = self.run_release_function(
+                root,
+                (
+                    f"record_stable_init_image_gate_evidence {source_sha} {digest} && "
+                    f"rebind_stable_init_image_gate_evidence {source_sha} {promoted_sha}"
+                ),
+                shell_setup=shell_setup,
+            )
+
+            self.assertEqual(rebound.returncode, 0, rebound.stderr)
+            promoted_evidence = evidence / "stable-init-image-authority" / f"{promoted_sha}.sha256"
+            self.assertEqual(
+                promoted_evidence.read_text(encoding="utf-8").strip(),
+                f"{digest}  {promoted_sha}",
+            )
+
+    def test_signed_companion_tag_binds_the_guest_digest_to_the_stable_source(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote, compose = self.create_compose_checkout(root)
+            self.enable_ssh_signing(root, compose)
+            self.run_command(
+                "git",
+                "-C",
+                str(compose),
+                "tag",
+                "-s",
+                "0.13.1",
+                "main",
+                "-m",
+                "owner/repo 0.13.1",
+            )
+            self.run_command("git", "-C", str(compose), "push", "origin", "0.13.1")
+            digest = "c" * 64
+            result = self.run_release_function(
+                root / "github",
+                f"ensure_stable_init_image_authority_tag 0.13.1 {digest}",
+                shell_setup="\n".join(
+                    [
+                        f"push_remote() {{ printf '%s\\n' {shlex.quote(str(remote))}; }}",
+                        "github_repo() { printf '%s\\n' owner/repo; }",
+                        "verify_github_stable_tag_signature() { :; }",
+                    ]
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            authority_tag = "stable-init-image-authority/0.13.1"
+            self.assertEqual(
+                self.git(compose, "cat-file", "-t", f"refs/tags/{authority_tag}"),
+                "tag",
+            )
+            self.assertEqual(
+                self.git(compose, "rev-list", "-n", "1", f"refs/tags/{authority_tag}"),
+                self.git(compose, "rev-list", "-n", "1", "refs/tags/0.13.1"),
+            )
+            message = self.git(
+                compose,
+                "for-each-ref",
+                "--format=%(contents)",
+                f"refs/tags/{authority_tag}",
+            )
+            self.assertIn(f"Guest init image SHA-256: {digest}.", message)
+
+    def test_stable_gate_digest_comes_from_immutable_local_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compose = root / "container-compose"
+            compose.mkdir()
+            evidence = root / "evidence"
+            archive = root / "retained.oci.tar"
+            archive.write_bytes(b"locally gated guest snapshot\n")
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            candidate_sha = "a" * 40
+            shell_setup = "\n".join(
+                [
+                    f"export TEST_COMPOSE={shlex.quote(str(compose))}",
+                    f"export PARITY_EVIDENCE_DIR={shlex.quote(str(evidence))}",
+                    f"export CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE={shlex.quote(str(archive))}",
+                    "repo_path() { printf '%s\\n' \"${TEST_COMPOSE}\"; }",
+                    f"git() {{ printf '%s\\n' {candidate_sha}; }}",
+                ]
+            )
+
+            recorded = self.run_release_function(
+                root,
+                f"record_stable_init_image_gate_evidence {candidate_sha} {digest} && "
+                "retained_stable_init_image_gate_digest 0.13.1",
+                shell_setup=shell_setup,
+            )
+            self.assertEqual(recorded.returncode, 0, recorded.stderr)
+            self.assertEqual(recorded.stdout.strip(), digest)
+
+            conflicting = self.run_release_function(
+                root,
+                f"record_stable_init_image_gate_evidence {candidate_sha} {'b' * 64}",
+                shell_setup=shell_setup,
+            )
+            self.assertNotEqual(conflicting.returncode, 0)
+            self.assertIn("refusing to replace immutable", conflicting.stderr)
+
+            archive.write_bytes(b"replaced after the local gate\n")
+            replaced = self.run_release_function(
+                root,
+                "retained_stable_init_image_gate_digest 0.13.1",
+                shell_setup=shell_setup,
+            )
+            self.assertNotEqual(replaced.returncode, 0)
+            self.assertIn("no longer matches the locally gated snapshot", replaced.stderr)
 
     def test_release_archives_require_developer_id_signatures(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
@@ -2507,6 +3003,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             "AUTHORITY_REF: ${{ needs.resolve-candidate.outputs.authority_ref }}",
             workflow,
         )
+        self.assertIn(
+            "INIT_IMAGE_AUTHORITY_OBJECT: ${{ needs.resolve-candidate.outputs.init_image_authority_object }}",
+            workflow,
+        )
+        self.assertIn("stable init-image authority tag moved after validation", workflow)
         self.assertIn("release authority %s moved after validation", workflow)
         self.assertIn("stable tag %s moved after validation", workflow)
         self.assertIn(
@@ -2680,6 +3181,16 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertLess(release.index("ensure_release_intent"), release.index("run_local_release_gate"))
         self.assertLess(release.index("require_release_upstream_alignment"), release.index("run_local_release_gate"))
         self.assertLess(release.index("run_local_release_gate"), release.index("push_all_main"))
+        promotion = self.script[
+            self.script.index("push_all_main() {") : self.script.index(
+                "# Require an executable command"
+            )
+        ]
+        self.assertIn("rebind_stable_init_image_gate_evidence", promotion)
+        self.assertLess(
+            promotion.index("promote_compose_main"),
+            promotion.index("rebind_stable_init_image_gate_evidence"),
+        )
         self.assertIn('HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"', self.script)
         self.assertIn('"$(repo_path "container-builder-shim")"', self.script)
         self.assertIn('containerization_path="$(repo_path "containerization")"', self.script)
@@ -5356,7 +5867,9 @@ esac
             self.assertEqual(unpublished.returncode, 0, unpublished.stderr)
             self.assertIn("publish 0.6.70", unpublished.stdout)
 
-    def test_resume_recovers_published_maintenance_assets_without_moving_tap(self) -> None:
+    def test_resume_recovers_published_maintenance_assets_without_moving_stable_formulae(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             recovered = self.run_release_function(
@@ -5368,21 +5881,161 @@ esac
                         "stable_release_is_published() { return 0; }",
                         "stable_version_promotes_default_lane() { printf '%s\\n' false; }",
                         "ensure_latest_stable_retry() { exit 70; }",
-                        "ensure_stable_retry_source_authority() { printf 'authority %s\\n' \"$1\"; }",
-                        "homebrew_tap_main_sha() { printf '%s\\n' tap-before; }",
+                        "ensure_stable_retry_source_authority() { exit 72; }",
+                        (
+                            "ensure_published_stable_recovery_authority() { "
+                            f"printf '%s\\t%s\\n' {'f' * 40} {'a' * 64}; }}"
+                        ),
+                        "homebrew_stable_formula_identities() { printf '%s\\n' formulae-before; }",
                         "dispatch_compose_stable_tap_repair() { exit 71; }",
-                        "publish_stable_init_image_asset() { printf 'init %s\\n' \"$1\"; }",
-                        "verify_compose_stable_package() { printf 'verify %s %s %s\\n' \"$1\" \"$2\" \"$3\"; }",
+                        "publish_stable_init_image_asset() { printf 'init %s %s\\n' \"$1\" \"$2\"; }",
+                        "verify_compose_stable_package() { printf 'verify %s %s %s %s\\n' \"$1\" \"$2\" \"$3\" \"$4\"; }",
+                        "require_stable_init_image_authority_unchanged() { printf 'authority %s %s %s\\n' \"$1\" \"$2\" \"$3\"; }",
                         "print_stable_release_point() { printf 'point %s %s\\n' \"$1\" \"$2\"; }",
                     ]
                 ),
             )
 
             self.assertEqual(recovered.returncode, 0, recovered.stderr)
-            self.assertIn("authority 0.13.1", recovered.stdout)
-            self.assertIn("init 0.13.1", recovered.stdout)
-            self.assertIn("verify 0.13.1 false tap-before", recovered.stdout)
+            self.assertIn(f"init 0.13.1 {'a' * 64}", recovered.stdout)
+            self.assertIn(
+                f"verify 0.13.1 false formulae-before {'a' * 64}",
+                recovered.stdout,
+            )
+            self.assertIn(f"authority 0.13.1 {'f' * 40} {'a' * 64}", recovered.stdout)
             self.assertIn("maintenance backfill asset recovery", recovered.stdout)
+            self.assertLess(recovered.stdout.index("init 0.13.1"), recovered.stdout.index("verify 0.13.1"))
+            self.assertLess(recovered.stdout.index("verify 0.13.1"), recovered.stdout.index("authority 0.13.1"))
+            self.assertLess(recovered.stdout.index("authority 0.13.1"), recovered.stdout.index("point 0.13.1"))
+
+    def test_published_recovery_uses_immutable_candidate_gate_authority(self) -> None:
+        recovery = self.script[
+            self.script.index("ensure_published_stable_recovery_authority() {") :
+            self.script.index("# Refuse to retry a semantic tag")
+        ]
+        self.assertIn(
+            'test("Guest init image SHA-256: [0-9a-f]{64}[.]")',
+            recovery,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tag_sha = "a" * 40
+            init_digest = "b" * 64
+            authority_object = "c" * 40
+            shell_setup = "\n".join(
+                [
+                    "repo_path() { printf '%s\\n' /tmp/container-compose-test; }",
+                    "github_repo() { printf '%s\\n' owner/repo; }",
+                    "git() {",
+                    "  if [[ \"$*\" == *'rev-list -n 1 refs/tags/0.13.1'* ]]; then",
+                    "    printf '%s\\n' \"${TEST_TAG_SHA:-" + tag_sha + "}\"",
+                    "  else",
+                    "    printf 'unexpected movable-source query: %s\\n' \"$*\" >&2",
+                    "    return 3",
+                    "  fi",
+                    "}",
+                    "github_cli() {",
+                    (
+                        '  if [[ "$1:$2" == '
+                        "api:repos/owner/repo/git/ref/tags/"
+                        "stable-init-image-authority/0.13.1 ]]; then"
+                    ),
+                    f"    printf '%s\\n' \"${{TEST_AUTHORITY_OBJECT:-{authority_object}}}\"",
+                    (
+                        f'  elif [[ "$1:$2" == api:repos/owner/repo/git/tags/'
+                        '* ]]; then'
+                    ),
+                    (
+                        "    printf '{\"verification\":{\"verified\":true},"
+                        "\"object\":{\"sha\":\"%s\"},\"message\":"
+                        "\"Guest init image SHA-256: %s.\"}\\n' "
+                        f'"${{TEST_SIGNED_SOURCE:-{tag_sha}}}" '
+                        f'"${{TEST_SIGNED_DIGEST:-{init_digest}}}"'
+                    ),
+                    "  elif [[ \"$1\" == api ]]; then",
+                    "    printf '%s\\t%s\\n' \"${TEST_AUTHORITY_RUN_ID:-29288195238}\" \"${TEST_AUTHORITY_SUMMARY:-Guest init image SHA-256: " + init_digest + ".}\"",
+                    "  elif [[ \"$1:$2\" == run:view ]]; then",
+                    "    printf '%s\\n' \"${TEST_GATE_CONCLUSION:-success}\"",
+                    "  else",
+                    "    return 2",
+                    "  fi",
+                    "}",
+                ]
+            )
+
+            accepted = self.run_release_function(
+                root,
+                "ensure_published_stable_recovery_authority 0.13.1",
+                shell_setup=shell_setup,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            self.assertEqual(
+                accepted.stdout.strip(),
+                f"{authority_object}\t{init_digest}",
+            )
+
+            missing_gate = self.run_release_function(
+                root,
+                "ensure_published_stable_recovery_authority 0.13.1",
+                shell_setup=f"export TEST_AUTHORITY_RUN_ID=missing\n{shell_setup}",
+            )
+            self.assertNotEqual(missing_gate.returncode, 0)
+            self.assertIn("candidate-bound Stable Release Authority", missing_gate.stderr)
+
+            missing_digest = self.run_release_function(
+                root,
+                "ensure_published_stable_recovery_authority 0.13.1",
+                shell_setup=f"export TEST_AUTHORITY_SUMMARY=missing\n{shell_setup}",
+            )
+            self.assertNotEqual(missing_digest.returncode, 0)
+            self.assertIn("candidate-bound guest init-image digest", missing_digest.stderr)
+
+            failed_gate = self.run_release_function(
+                root,
+                "ensure_published_stable_recovery_authority 0.13.1",
+                shell_setup=f"export TEST_GATE_CONCLUSION=failure\n{shell_setup}",
+            )
+            self.assertNotEqual(failed_gate.returncode, 0)
+            self.assertIn("successful Stable Release Gate authority", failed_gate.stderr)
+
+            replaced_authority = self.run_release_function(
+                root,
+                "ensure_published_stable_recovery_authority 0.13.1",
+                shell_setup=f"export TEST_SIGNED_DIGEST={'d' * 64}\n{shell_setup}",
+            )
+            self.assertNotEqual(replaced_authority.returncode, 0)
+            self.assertIn("instead of signed init-image digest", replaced_authority.stderr)
+
+            wrong_source = self.run_release_function(
+                root,
+                "ensure_published_stable_recovery_authority 0.13.1",
+                shell_setup=f"export TEST_SIGNED_SOURCE={'e' * 40}\n{shell_setup}",
+            )
+            self.assertNotEqual(wrong_source.returncode, 0)
+            self.assertIn("instead of source", wrong_source.stderr)
+
+            unchanged = self.run_release_function(
+                root,
+                (
+                    "require_stable_init_image_authority_unchanged "
+                    f"0.13.1 {authority_object} {init_digest}"
+                ),
+                shell_setup=shell_setup,
+            )
+            self.assertEqual(unchanged.returncode, 0, unchanged.stderr)
+
+            moved = self.run_release_function(
+                root,
+                (
+                    "require_stable_init_image_authority_unchanged "
+                    f"0.13.1 {authority_object} {init_digest}"
+                ),
+                shell_setup=(
+                    f"export TEST_AUTHORITY_OBJECT={'f' * 40}\n{shell_setup}"
+                ),
+            )
+            self.assertNotEqual(moved.returncode, 0)
+            self.assertIn("moved during recovery", moved.stderr)
 
     def test_published_retry_rejects_a_non_latest_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -5793,6 +6446,39 @@ gh() {
             check=False,
             env=environment,
         )
+
+    @staticmethod
+    def create_release_guest_archive(
+        path: Path, config_variant: str | None = None
+    ) -> None:
+        RunWithContainerRuntimeTest.create_oci_archive(
+            path,
+            "vminit:container-compose",
+            config_variant=config_variant,
+        )
+        with tarfile.open(path, "r") as archive:
+            payloads: dict[str, bytes] = {}
+            for member in archive.getmembers():
+                if not member.isfile():
+                    continue
+                stream = archive.extractfile(member)
+                if stream is None:
+                    raise AssertionError(f"fixture member is unreadable: {member.name}")
+                payloads[member.name] = stream.read()
+        index = json.loads(payloads["index.json"])
+        qualified = json.loads(json.dumps(index["manifests"][0]))
+        qualified["annotations"] = {
+            "org.opencontainers.image.ref.name": (
+                "ghcr.io/owner/containerization/vminit:ref"
+            )
+        }
+        index["manifests"].append(qualified)
+        payloads["index.json"] = json.dumps(index).encode("utf-8")
+        with tarfile.open(path, "w") as archive:
+            for name, payload in payloads.items():
+                member = tarfile.TarInfo(name)
+                member.size = len(payload)
+                archive.addfile(member, io.BytesIO(payload))
 
     def run_release_function(
         self,

@@ -21,6 +21,7 @@ readonly SELF_PATH="${BASH_SOURCE[0]:-$0}"
 SELF_DIRECTORY="$(cd "$(dirname "${SELF_PATH}")" && pwd -P)"
 readonly SELF_DIRECTORY
 readonly COMPOSE_PROMOTION_REVIEW_TOOL="${SELF_DIRECTORY}/../Tools/release/compose_promotion_review.py"
+readonly HOMEBREW_PREFLIGHT_TOOL="${SELF_DIRECTORY}/../Tools/release/homebrew-preflight.py"
 readonly OCI_IMAGE_LAYOUT_VALIDATOR="${SELF_DIRECTORY}/../Tools/release/validate-oci-image-layout.py"
 readonly RELEASE_COMMAND_DEADLINE_RUNNER="${SELF_DIRECTORY}/../Tools/ci/run-command-with-deadline.py"
 readonly STABLE_RELEASE_LANE_CLASSIFIER="${SELF_DIRECTORY}/../Tools/release/stable-release-default-lane.py"
@@ -1891,11 +1892,156 @@ resolve_release_evidence_root() {
   printf '%s\n' "${evidence_root}"
 }
 
+# Return the candidate-specific local gate evidence path. The candidate SHA
+# prevents a successful gate for one source revision authorizing another.
+stable_init_image_gate_evidence_path() {
+  local candidate_sha="$1" path evidence_root authority_root
+  if [[ ! "${candidate_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'stable init-image gate evidence requires an immutable candidate SHA: %s\n' \
+      "${candidate_sha:-missing}" >&2
+    return 2
+  fi
+  path="$(repo_path "${COMPOSE_REPO}")"
+  evidence_root="$(resolve_release_evidence_root "${path}" \
+    "${PARITY_EVIDENCE_DIR:-.build/release-evidence}")"
+  authority_root="${evidence_root}/stable-init-image-authority"
+  if [[ -L "${authority_root}" ]]; then
+    printf 'stable init-image authority directory must not be a symlink: %s\n' \
+      "${authority_root}" >&2
+    return 2
+  fi
+  mkdir -p "${authority_root}"
+  printf '%s/%s.sha256\n' "${authority_root}" "${candidate_sha}"
+}
+
+# Persist the exact guest snapshot digest only after its full local release
+# gate and host restoration complete. Existing evidence is immutable.
+record_stable_init_image_gate_evidence() {
+  local candidate_sha="$1" digest="$2" evidence_path tmp record existing
+  if [[ ! "${digest}" =~ ^[0-9a-f]{64}$ ]]; then
+    printf 'stable init-image gate evidence has an invalid digest: %s\n' \
+      "${digest:-missing}" >&2
+    return 2
+  fi
+  evidence_path="$(stable_init_image_gate_evidence_path "${candidate_sha}")"
+  record="${digest}  ${candidate_sha}"
+  if [[ -e "${evidence_path}" || -L "${evidence_path}" ]]; then
+    if [[ -f "${evidence_path}" && ! -L "${evidence_path}" ]]; then
+      existing="$(<"${evidence_path}")"
+      if [[ "${existing}" == "${record}" ]]; then
+        return 0
+      fi
+    fi
+    printf 'refusing to replace immutable stable init-image gate evidence: %s\n' \
+      "${evidence_path}" >&2
+    return 1
+  fi
+  tmp="$(mktemp "${evidence_path}.XXXXXX")"
+  if ! printf '%s\n' "${record}" >"${tmp}"; then
+    find "${tmp}" -delete >/dev/null 2>&1 || true
+    return 1
+  fi
+  chmod a-w "${tmp}"
+  if mv -n "${tmp}" "${evidence_path}" && \
+    [[ -f "${evidence_path}" && ! -L "${evidence_path}" ]]; then
+    existing="$(<"${evidence_path}")"
+    find "${tmp}" -delete >/dev/null 2>&1 || true
+    if [[ "${existing}" == "${record}" ]]; then
+      return 0
+    fi
+  fi
+  find "${tmp}" -delete >/dev/null 2>&1 || true
+  printf 'failed to publish immutable stable init-image gate evidence: %s\n' \
+    "${evidence_path}" >&2
+  return 1
+}
+
+# Bind a locally gated source snapshot to an equivalent promoted commit. GitHub
+# merge commits have a different identity even when they preserve the exact
+# reviewed tree, so the promoted source needs its own immutable evidence record
+# before it can be tagged.
+rebind_stable_init_image_gate_evidence() {
+  local source_sha="$1" promoted_sha="$2" path source_tree promoted_tree
+  local source_evidence record digest recorded_sha
+  if [[ "${source_sha}" == "${promoted_sha}" ]]; then
+    return 0
+  fi
+  path="$(repo_path "${COMPOSE_REPO}")"
+  source_tree="$(git -C "${path}" rev-parse "${source_sha}^{tree}")"
+  promoted_tree="$(git -C "${path}" rev-parse "${promoted_sha}^{tree}")"
+  if [[ "${source_tree}" != "${promoted_tree}" ]]; then
+    printf 'refusing to bind local gate evidence to a different promoted tree\n' >&2
+    return 1
+  fi
+  source_evidence="$(stable_init_image_gate_evidence_path "${source_sha}")"
+  if [[ ! -f "${source_evidence}" || -L "${source_evidence}" ]]; then
+    printf 'locally gated source %s has no immutable init-image evidence\n' \
+      "${source_sha}" >&2
+    return 1
+  fi
+  record="$(<"${source_evidence}")"
+  if [[ "${record}" =~ ^([0-9a-f]{64})\ \ ([0-9a-f]{40})$ ]]; then
+    digest="${BASH_REMATCH[1]}"
+    recorded_sha="${BASH_REMATCH[2]}"
+  else
+    printf 'stable init-image gate evidence is malformed: %s\n' \
+      "${source_evidence}" >&2
+    return 1
+  fi
+  if [[ "${recorded_sha}" != "${source_sha}" ]]; then
+    printf 'stable init-image gate evidence names %s instead of gated source %s\n' \
+      "${recorded_sha}" "${source_sha}" >&2
+    return 1
+  fi
+  record_stable_init_image_gate_evidence "${promoted_sha}" "${digest}"
+}
+
+# Read the digest produced by the local gate and prove the retained archive is
+# still that exact snapshot before sending its identity to hosted authority.
+retained_stable_init_image_gate_digest() {
+  local version="$1" path tag_sha evidence_path record digest recorded_sha archive archive_digest
+  path="$(repo_path "${COMPOSE_REPO}")"
+  tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
+  evidence_path="$(stable_init_image_gate_evidence_path "${tag_sha}")"
+  if [[ ! -f "${evidence_path}" || -L "${evidence_path}" ]]; then
+    printf 'stable tag %s has no immutable local init-image gate evidence\n' \
+      "${version}" >&2
+    return 1
+  fi
+  record="$(<"${evidence_path}")"
+  if [[ "${record}" =~ ^([0-9a-f]{64})\ \ ([0-9a-f]{40})$ ]]; then
+    digest="${BASH_REMATCH[1]}"
+    recorded_sha="${BASH_REMATCH[2]}"
+  else
+    printf 'stable init-image gate evidence is malformed: %s\n' \
+      "${evidence_path}" >&2
+    return 1
+  fi
+  if [[ "${recorded_sha}" != "${tag_sha}" ]]; then
+    printf 'stable init-image gate evidence names %s instead of tag source %s\n' \
+      "${recorded_sha}" "${tag_sha}" >&2
+    return 1
+  fi
+  archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
+  if [[ "${archive}" != /* || ! -f "${archive}" ]]; then
+    printf 'stable init-image gate evidence requires the absolute retained archive: %s\n' \
+      "${archive:-unset}" >&2
+    return 2
+  fi
+  archive_digest="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+  if [[ "${archive_digest}" != "${digest}" ]]; then
+    printf 'retained guest archive no longer matches the locally gated snapshot: expected %s, got %s\n' \
+      "${digest}" "${archive_digest:-missing}" >&2
+    return 1
+  fi
+  printf '%s\n' "${digest}"
+}
+
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
   (
   local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive
-  local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest
+  local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest candidate_sha init_image_digest_before init_image_digest_after
   local -a RELEASE_QUIESCED_LABELS=()
   local -a RELEASE_QUIESCED_PLISTS=()
   local -a RELEASE_QUIESCED_ACTION_STARTED=()
@@ -1903,6 +2049,7 @@ run_local_release_gate() {
   local -a RELEASE_QUIESCED_RESTARTED_UNREADY=()
   local -a RELEASE_SUSPENDED_RUNNER_PGIDS=()
   path="$(repo_path "${COMPOSE_REPO}")"
+  candidate_sha="$(git -C "${path}" rev-parse HEAD)"
   container_path="$(repo_path "${CONTAINER_REPO}")"
   containerization_path="$(repo_path "containerization")"
   if [[ ! -f "${HOMEBREW_TAP_REPO}/Formula/container-compose.rb" ]]; then
@@ -1915,7 +2062,7 @@ run_local_release_gate() {
   # identity, and source templates are all knowable before any product build.
   # Keep this ahead of virtualization, signing, and candidate packaging so a
   # broken tap cannot waste the expensive release gate.
-  run python3 "${path}/Tools/release/homebrew-preflight.py" \
+  run python3 "${HOMEBREW_PREFLIGHT_TOOL}" \
     --tap "${HOMEBREW_TAP_REPO}" \
     --compose-repository "${path}" \
     --container-repository "${container_path}"
@@ -2015,6 +2162,7 @@ PY
   fi
   chmod a-w "${staged_init_image_archive}"
   init_image_archive="${staged_init_image_archive}"
+  init_image_digest_before="$(shasum -a 256 "${init_image_archive}" | awk '{print $1}')"
   runtime_app_root="${runtime_parent}/app"
   runtime_run_id="release-$(id -u)-$$-${RANDOM}-${SECONDS}"
   runtime_namespace_digest="$(LC_ALL=C printf '%s' \
@@ -2050,6 +2198,15 @@ PY
     "CONTAINER_STACK_REPO=${container_path}" \
     "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}" || status=$?
 
+  if (( status == 0 )); then
+    init_image_digest_after="$(shasum -a 256 "${init_image_archive}" | awk '{print $1}')"
+    if [[ "${init_image_digest_after}" != "${init_image_digest_before}" ]]; then
+      printf 'local release gate guest snapshot changed while it was exercised: expected %s, got %s\n' \
+        "${init_image_digest_before}" "${init_image_digest_after:-missing}" >&2
+      status=1
+    fi
+  fi
+
   if ! cleanup_local_release_gate_resources "${container_binary}" \
     "${runtime_parent}" "${runtime_app_root}" "${runtime_service_namespace}"; then
     status=1
@@ -2062,6 +2219,12 @@ PY
     trap - EXIT
   else
     status=1
+  fi
+  if (( status == 0 )); then
+    if ! record_stable_init_image_gate_evidence \
+      "${candidate_sha}" "${init_image_digest_before}"; then
+      status=1
+    fi
   fi
   return "${status}"
   )
@@ -2308,10 +2471,30 @@ stable_version_promotes_default_lane() {
   python3 "${STABLE_RELEASE_LANE_CLASSIFIER}" "${version}" "${latest}"
 }
 
-# Resolve the immutable tap main identity used to prove that a maintenance
-# backfill did not move either stable formula.
-homebrew_tap_main_sha() {
-  github_cli api repos/stephenlclarke/homebrew-tap/commits/main --jq '.sha'
+# Resolve the two stable formula blob identities used to prove that a
+# maintenance backfill did not move either stable consumer. Unrelated Current
+# formula commits may advance tap main without invalidating this evidence.
+homebrew_stable_formula_identities() {
+  local formula sha tap_sha
+  tap_sha="$(
+    github_cli api repos/stephenlclarke/homebrew-tap/commits/main --jq '.sha'
+  )"
+  if [[ -z "${tap_sha}" ]]; then
+    printf 'Homebrew tap main has no immutable commit identity\n' >&2
+    return 1
+  fi
+  for formula in container-compose container; do
+    sha="$(
+      github_cli api \
+        "repos/stephenlclarke/homebrew-tap/contents/Formula/${formula}.rb?ref=${tap_sha}" \
+        --jq '.sha'
+    )"
+    if [[ -z "${sha}" ]]; then
+      printf 'Homebrew stable formula has no blob identity: %s.rb\n' "${formula}" >&2
+      return 1
+    fi
+    printf '%s.rb=%s\n' "${formula}" "${sha}"
+  done
 }
 
 # Reject a stale published tag so formula-only recovery cannot downgrade the
@@ -2326,9 +2509,8 @@ ensure_latest_stable_retry() {
   fi
 }
 
-# Permit a maintenance retry only when its signed tag is the newest patch in
-# that series and still names the exact release-line head. This is the source
-# authority for both unpublished publication and published asset recovery.
+# Permit an unpublished maintenance retry only when its signed tag is the
+# newest patch in that series and still names the exact release-line head.
 # Formula repairs remain restricted to the global latest tag by
 # ensure_latest_stable_retry so an older line can never downgrade the tap.
 ensure_stable_retry_source_authority() {
@@ -2359,6 +2541,71 @@ ensure_stable_retry_source_authority() {
       "${version}" "${series}" "${release_branch_sha:-missing}" "${tag_sha:-missing}" >&2
     exit 1
   fi
+}
+
+# Authenticate recovery of an already-published stable release against the
+# immutable signed tag and its successful candidate-bound hosted gate. A
+# movable release branch must not make later recovery of immutable assets
+# time-dependent.
+ensure_published_stable_recovery_authority() {
+  local version="$1" path repo tag_sha authority_name authority_filter authority_record
+  local authority_run_id authority_summary authority_conclusion authority_init_digest
+  local signed_authority_record signed_authority_object signed_authority_init_digest
+  path="$(repo_path "${COMPOSE_REPO}")"
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
+  if [[ -z "${tag_sha}" ]]; then
+    printf 'published stable recovery tag is missing locally: %s\n' "${version}" >&2
+    return 1
+  fi
+
+  signed_authority_record="$(
+    verified_stable_init_image_authority_record "${version}"
+  )"
+  IFS=$'\t' read -r signed_authority_object signed_authority_init_digest \
+    <<<"${signed_authority_record}"
+
+  authority_name="Stable Release Authority (${version})"
+  authority_filter=".check_runs[] | select(.name == \"${authority_name}\""
+  authority_filter+=' and .status == "completed"'
+  authority_filter+=' and .conclusion == "success"'
+  authority_filter+=' and .app.slug == "github-actions")'
+  authority_filter+=' | select((.external_id // "") | test("^[0-9]+$"))'
+  authority_filter+=' | select((.output.summary // "") | test("Guest init image SHA-256: [0-9a-f]{64}[.]"))'
+  authority_filter+=' | [.external_id, .output.summary] | @tsv'
+  authority_record="$(
+    github_cli api --paginate \
+      "repos/${repo}/commits/${tag_sha}/check-runs?per_page=100" \
+      --jq "${authority_filter}" |
+      tail -n 1
+  )"
+  IFS=$'\t' read -r authority_run_id authority_summary <<<"${authority_record}"
+  if [[ ! "${authority_run_id}" =~ ^[0-9]+$ ]]; then
+    printf 'refusing published recovery without candidate-bound Stable Release Authority %s\n' \
+      "${authority_name}" >&2
+    return 1
+  fi
+  if [[ "${authority_summary}" =~ Guest\ init\ image\ SHA-256:\ ([0-9a-f]{64})[.] ]]; then
+    authority_init_digest="${BASH_REMATCH[1]}"
+  else
+    printf 'refusing published recovery without a candidate-bound guest init-image digest\n' >&2
+    return 1
+  fi
+  if [[ "${authority_init_digest}" != "${signed_authority_init_digest}" ]]; then
+    printf 'refusing published recovery because hosted authority records %s instead of signed init-image digest %s\n' \
+      "${authority_init_digest}" "${signed_authority_init_digest}" >&2
+    return 1
+  fi
+  authority_conclusion="$(
+    github_cli run view "${authority_run_id}" --repo "${repo}" \
+      --json workflowName,event,status,conclusion \
+      --jq 'select(.workflowName == "Stable Release Gate" and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success") | .conclusion'
+  )"
+  if [[ "${authority_conclusion}" != "success" ]]; then
+    printf 'refusing published recovery without a successful Stable Release Gate authority\n' >&2
+    return 1
+  fi
+  printf '%s\t%s\n' "${signed_authority_object}" "${authority_init_digest}"
 }
 
 # Refuse to retry a semantic tag once GitHub has made it a published release.
@@ -2451,6 +2698,141 @@ verify_github_stable_tag_signature() {
       "${version}" "${reason:-missing}" >&2
     exit 1
   fi
+}
+
+# Return the immutable companion tag that binds a stable source tag to the
+# locally gated guest snapshot without trusting workflow-dispatch input.
+stable_init_image_authority_tag() {
+  local version="$1"
+  printf 'stable-init-image-authority/%s\n' "${version}"
+}
+
+# Verify the current GitHub companion authority tag and return its object and
+# guest digest.
+# Published recovery uses this read-only path so deletion or replacement of the
+# signed trust root cannot be papered over by a historical hosted check.
+verified_stable_init_image_authority_record() {
+  local version="$1" path repo tag_sha authority_tag authority_object
+  local authority_record authority_verified authority_source authority_message digest_lines
+  path="$(repo_path "${COMPOSE_REPO}")"
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
+  authority_tag="$(stable_init_image_authority_tag "${version}")"
+  authority_object="$(
+    github_cli api "repos/${repo}/git/ref/tags/${authority_tag}" --jq '.object.sha'
+  )"
+  if [[ ! "${authority_object}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'stable init-image authority tag is missing or malformed: %s\n' \
+      "${authority_tag}" >&2
+    return 1
+  fi
+  authority_record="$(github_cli api "repos/${repo}/git/tags/${authority_object}")"
+  authority_verified="$(jq -r '.verification.verified // false' <<<"${authority_record}")"
+  authority_source="$(jq -r '.object.sha // empty' <<<"${authority_record}")"
+  authority_message="$(jq -r '.message // empty' <<<"${authority_record}")"
+  if [[ "${authority_verified}" != "true" ]]; then
+    printf 'stable init-image authority tag is not GitHub-verified: %s\n' \
+      "${authority_tag}" >&2
+    return 1
+  fi
+  if [[ "${authority_source}" != "${tag_sha}" ]]; then
+    printf 'stable init-image authority tag names %s instead of source %s\n' \
+      "${authority_source:-missing}" "${tag_sha}" >&2
+    return 1
+  fi
+  digest_lines="$(
+    sed -nE 's/^Guest init image SHA-256: ([0-9a-f]{64})[.]$/\1/p' \
+      <<<"${authority_message}"
+  )"
+  if [[ ! "${digest_lines}" =~ ^[0-9a-f]{64}$ ]]; then
+    printf 'stable init-image authority tag has no unique candidate-bound digest: %s\n' \
+      "${authority_tag}" >&2
+    return 1
+  fi
+  printf '%s\t%s\n' "${authority_object}" "${digest_lines}"
+}
+
+# Require the signed recovery trust root to remain unchanged through asset and
+# package verification so a concurrent ref replacement cannot authorize stale
+# bytes immediately before success is reported.
+require_stable_init_image_authority_unchanged() {
+  local version="$1" expected_object="$2" expected_digest="$3"
+  local current_record current_object current_digest
+  current_record="$(verified_stable_init_image_authority_record "${version}")"
+  IFS=$'\t' read -r current_object current_digest <<<"${current_record}"
+  if [[ "${current_object}" != "${expected_object}" || \
+    "${current_digest}" != "${expected_digest}" ]]; then
+    printf 'stable init-image authority moved during recovery: expected %s at %s, got %s at %s\n' \
+      "${expected_digest}" "${expected_object}" \
+      "${current_digest:-missing}" "${current_object:-missing}" >&2
+    return 1
+  fi
+}
+
+# Create or validate the GitHub-verified signed companion authority tag for a
+# locally gated guest snapshot. Existing matching tags are reusable so an
+# interrupted unpublished release can resume without rewriting source tags.
+ensure_stable_init_image_authority_tag() {
+  local version="$1" digest="$2" path remote tag_sha authority_tag
+  local local_object remote_object authority_source authority_message authority_digest
+  path="$(repo_path "${COMPOSE_REPO}")"
+  remote="$(push_remote "${COMPOSE_REPO}")"
+  tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
+  authority_tag="$(stable_init_image_authority_tag "${version}")"
+  remote_object="$(
+    git -C "${path}" ls-remote --tags --refs "${remote}" \
+      "refs/tags/${authority_tag}" | awk '{ print $1 }' | tail -n 1
+  )"
+  local_object="$(
+    git -C "${path}" rev-parse -q --verify "refs/tags/${authority_tag}" 2>/dev/null || true
+  )"
+
+  if [[ -n "${remote_object}" && -n "${local_object}" && "${remote_object}" != "${local_object}" ]]; then
+    printf 'stable init-image authority tag differs between local and remote: %s\n' \
+      "${authority_tag}" >&2
+    return 1
+  fi
+  if [[ -n "${remote_object}" && -z "${local_object}" ]]; then
+    run git -C "${path}" fetch "${remote}" \
+      "+refs/tags/${authority_tag}:refs/tags/${authority_tag}"
+    local_object="$(git -C "${path}" rev-parse "refs/tags/${authority_tag}")"
+  fi
+  if [[ -z "${local_object}" ]]; then
+    run env GIT_EDITOR=: git -C "${path}" tag -s "${authority_tag}" "${tag_sha}" \
+      -m "$(github_repo "${COMPOSE_REPO}") ${version} stable init-image authority" \
+      -m "Guest init image SHA-256: ${digest}."
+    local_object="$(git -C "${path}" rev-parse "refs/tags/${authority_tag}")"
+  fi
+
+  if [[ "$(git -C "${path}" cat-file -t "${local_object}")" != "tag" ]]; then
+    printf 'stable init-image authority ref is not an annotated tag: %s\n' \
+      "${authority_tag}" >&2
+    return 1
+  fi
+  authority_source="$(git -C "${path}" rev-list -n 1 "refs/tags/${authority_tag}")"
+  if [[ "${authority_source}" != "${tag_sha}" ]]; then
+    printf 'stable init-image authority tag names %s instead of source %s\n' \
+      "${authority_source}" "${tag_sha}" >&2
+    return 1
+  fi
+  authority_message="$(git -C "${path}" for-each-ref \
+    --format='%(contents)' "refs/tags/${authority_tag}")"
+  if [[ "${authority_message}" =~ Guest\ init\ image\ SHA-256:\ ([0-9a-f]{64})[.] ]]; then
+    authority_digest="${BASH_REMATCH[1]}"
+  else
+    printf 'stable init-image authority tag has no candidate-bound digest: %s\n' \
+      "${authority_tag}" >&2
+    return 1
+  fi
+  if [[ "${authority_digest}" != "${digest}" ]]; then
+    printf 'stable init-image authority tag records %s instead of retained digest %s\n' \
+      "${authority_digest}" "${digest}" >&2
+    return 1
+  fi
+  if [[ -z "${remote_object}" ]]; then
+    run git -C "${path}" push "${remote}" "refs/tags/${authority_tag}"
+  fi
+  verify_github_stable_tag_signature "${authority_tag}"
 }
 
 # Create a new signed stable tag at the validated current container-compose
@@ -3523,7 +3905,7 @@ promote_compose_main() {
 }
 
 push_all_main() {
-  local version="$1" repo path local_head remote_head body
+  local version="$1" repo path local_head remote_head body gated_sha promoted_sha
   print_header "verify reviewed sibling mains and promote container-compose"
   for repo in "${REPOS[@]}"; do
     if [[ "${repo}" == "${COMPOSE_REPO}" ]]; then
@@ -3539,11 +3921,19 @@ push_all_main() {
   done
 
   body="$(compose_source_promotion_body "${version}")"
+  path="$(repo_path "${COMPOSE_REPO}")"
+  gated_sha="$(git -C "${path}" rev-parse main)"
   promote_compose_main \
     "${version}" \
     "source" \
     "chore(release): promote ${version} source" \
     "${body}"
+  if [[ "${EXECUTE}" == "1" ]]; then
+    promoted_sha="$(git -C "${path}" rev-parse main)"
+    rebind_stable_init_image_gate_evidence "${gated_sha}" "${promoted_sha}"
+  else
+    printf 'would bind the locally gated source evidence to the equivalent promoted commit\n'
+  fi
 }
 
 # Require an executable command when an executed workflow depends on it.
@@ -3648,16 +4038,109 @@ print(component["ref"])
 PY
 }
 
+# Publish or recover one immutable asset/checksum pair. Existing members must
+# match the retained candidate; missing members are uploaded independently so
+# a partially successful GitHub upload remains resumable.
+publish_stable_asset_pair() {
+  local version="$1" repo="$2" asset_path="$3" checksum_path="$4" asset="$5" digest="$6"
+  local mode="${7:-recover}" remote_tmp asset_names local_digest upload_status cleanup_status
+  local missing_assets=() status=0
+  if [[ ! -f "${asset_path}" || ! -f "${checksum_path}" ]]; then
+    printf 'stable asset pair is incomplete locally: %s + %s\n' \
+      "${asset_path}" "${checksum_path}" >&2
+    return 2
+  fi
+  local_digest="$(shasum -a 256 "${asset_path}" | awk '{print $1}')"
+  if [[ "${local_digest}" != "${digest}" ]] || ! awk \
+    -v expected_digest="${digest}" -v expected_asset="${asset}" \
+    'NR == 1 && NF == 2 && $1 == expected_digest && $2 == expected_asset { valid = 1 }
+     END { exit !(valid && NR == 1) }' \
+    "${checksum_path}"; then
+    printf 'stable asset pair does not match its retained candidate digest: %s\n' \
+      "${digest}" >&2
+    return 2
+  fi
+  asset_names="$(
+    github_cli release view "${version}" --repo "${repo}" --json assets \
+      --jq '.assets[].name'
+  )"
+  remote_tmp="$(mktemp -d)"
+  if grep -Fxq "${asset}" <<<"${asset_names}"; then
+    github_cli release download "${version}" --repo "${repo}" \
+      --pattern "${asset}" --dir "${remote_tmp}"
+    remote_digest="$(shasum -a 256 "${remote_tmp}/${asset}" | awk '{print $1}')"
+    if [[ "${remote_digest}" != "${digest}" ]]; then
+      printf 'stable release %s guest asset differs from the retained release-gate archive\n' \
+        "${version}" >&2
+      status=1
+    fi
+  else
+    missing_assets+=("${asset_path}")
+  fi
+  if grep -Fxq "${asset}.sha256" <<<"${asset_names}"; then
+    github_cli release download "${version}" --repo "${repo}" \
+      --pattern "${asset}.sha256" --dir "${remote_tmp}"
+    if ! cmp -s "${remote_tmp}/${asset}.sha256" "${checksum_path}"; then
+      printf 'stable release %s guest checksum differs from the retained release-gate archive\n' \
+        "${version}" >&2
+      status=1
+    fi
+  else
+    missing_assets+=("${checksum_path}")
+  fi
+  if (( status == 0 && ${#missing_assets[@]} > 0 )); then
+    if [[ "${mode}" == "verify-only" ]]; then
+      printf 'stable release %s guest asset pair is still incomplete after upload collision\n' \
+        "${version}" >&2
+      status=1
+    elif github_cli release upload "${version}" --repo "${repo}" "${missing_assets[@]}"; then
+      printf 'published stable guest asset: %s at %s\n' "${asset}" "${digest}"
+    else
+      upload_status=$?
+      printf 'stable guest upload raced another recovery; revalidating immutable closure\n'
+      if find "${remote_tmp}" -depth -delete; then
+        cleanup_status=0
+      else
+        cleanup_status=$?
+      fi
+      if (( cleanup_status != 0 )); then
+        return "${cleanup_status}"
+      fi
+      if publish_stable_asset_pair \
+        "${version}" "${repo}" "${asset_path}" "${checksum_path}" \
+        "${asset}" "${digest}" verify-only; then
+        return 0
+      fi
+      return "${upload_status}"
+    fi
+  elif (( status == 0 )); then
+    printf 'stable guest asset already published: %s at %s\n' "${asset}" "${digest}"
+  fi
+  if find "${remote_tmp}" -depth -delete; then
+    cleanup_status=0
+  else
+    cleanup_status=$?
+  fi
+  if (( status == 0 && cleanup_status != 0 )); then
+    status="${cleanup_status}"
+  fi
+  return "${status}"
+}
+
 # Publish the exact guest archive that passed the local stable release gate.
 publish_stable_init_image_asset() {
-  local version="$1" repo archive asset tmp digest asset_names remote_digest
-  local authority=() containerization_repository containerization_reference status=0
+  local version="$1" expected_digest="$2" repo archive asset tmp digest status cleanup_status
+  local authority=() containerization_repository containerization_reference
   repo="$(github_repo "${COMPOSE_REPO}")"
   archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
   asset="container-vminit-arm64.oci.tar"
   if [[ "${archive}" != /* || ! -f "${archive}" ]]; then
     printf 'stable guest publication requires the absolute retained release-gate archive via CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE: %s\n' \
       "${archive:-unset}" >&2
+    return 2
+  fi
+  if [[ ! "${expected_digest}" =~ ^[0-9a-f]{64}$ ]]; then
+    printf 'stable guest publication requires a candidate-bound release-gate digest\n' >&2
     return 2
   fi
   while IFS= read -r value; do
@@ -3669,53 +4152,54 @@ publish_stable_init_image_asset() {
   fi
   containerization_repository="${authority[0]}"
   containerization_reference="${authority[1]}"
-  "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${archive}" \
-    vminit:container-compose \
-    "ghcr.io/${containerization_repository}/vminit:${containerization_reference}"
-
   tmp="$(mktemp -d)"
-  cp "${archive}" "${tmp}/${asset}"
-  digest="$(shasum -a 256 "${tmp}/${asset}" | awk '{print $1}')"
-  printf '%s  %s\n' "${digest}" "${asset}" >"${tmp}/${asset}.sha256"
-  asset_names="$(
-    github_cli release view "${version}" --repo "${repo}" --json assets \
-      --jq '.assets[].name'
-  )"
-  if grep -Fxq "${asset}" <<<"${asset_names}" || \
-    grep -Fxq "${asset}.sha256" <<<"${asset_names}"; then
-    if ! grep -Fxq "${asset}" <<<"${asset_names}" || \
-      ! grep -Fxq "${asset}.sha256" <<<"${asset_names}"; then
-      printf 'stable release %s has an incomplete guest asset pair\n' "${version}" >&2
-      find "${tmp}" -depth -delete
-      return 1
-    fi
-    install -d -m 0700 "${tmp}/remote"
-    github_cli release download "${version}" --repo "${repo}" \
-      --pattern "${asset}" --pattern "${asset}.sha256" --dir "${tmp}/remote"
-    remote_digest="$(shasum -a 256 "${tmp}/remote/${asset}" | awk '{print $1}')"
-    if [[ "${remote_digest}" != "${digest}" ]] || \
-      [[ "$(awk '{print $1}' "${tmp}/remote/${asset}.sha256")" != "${digest}" ]]; then
-      printf 'stable release %s guest asset differs from the retained release-gate archive\n' \
-        "${version}" >&2
-      status=1
-    else
-      printf 'stable guest asset already published: %s at %s\n' "${asset}" "${digest}"
-    fi
+  if cp "${archive}" "${tmp}/${asset}"; then
+    status=0
   else
-    if github_cli release upload "${version}" --repo "${repo}" \
-      "${tmp}/${asset}" "${tmp}/${asset}.sha256"; then
-      printf 'published stable guest asset: %s at %s\n' "${asset}" "${digest}"
+    status=$?
+  fi
+  if (( status == 0 )); then
+    if "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${tmp}/${asset}" \
+      vminit:container-compose \
+      "ghcr.io/${containerization_repository}/vminit:${containerization_reference}"; then
+      status=0
     else
       status=$?
     fi
   fi
-  find "${tmp}" -depth -delete
+  if (( status == 0 )); then
+    digest="$(shasum -a 256 "${tmp}/${asset}" | awk '{print $1}')"
+    if [[ "${digest}" != "${expected_digest}" ]]; then
+      printf 'stable guest archive differs from the candidate-bound release-gate digest: expected %s, got %s\n' \
+        "${expected_digest}" "${digest:-missing}" >&2
+      status=2
+    fi
+  fi
+  if (( status == 0 )); then
+    printf '%s  %s\n' "${digest}" "${asset}" >"${tmp}/${asset}.sha256"
+    if publish_stable_asset_pair \
+      "${version}" "${repo}" "${tmp}/${asset}" "${tmp}/${asset}.sha256" \
+      "${asset}" "${digest}"; then
+      status=0
+    else
+      status=$?
+    fi
+  fi
+  if find "${tmp}" -depth -delete; then
+    cleanup_status=0
+  else
+    cleanup_status=$?
+  fi
+  if (( status == 0 && cleanup_status != 0 )); then
+    status="${cleanup_status}"
+  fi
   return "${status}"
 }
 
 # Verify the stable release assets and Homebrew formula agree.
 verify_compose_stable_package() {
-  local version="$1" promote_default_lane="${2:-true}" tap_sha_before="${3:-}" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha signature_verifier init_asset init_asset_sha init_checksum_sha tap_sha_after
+  local version="$1" promote_default_lane="${2:-true}" stable_formula_identities_before="${3:-}" expected_init_digest="$4"
+  local repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha signature_verifier init_asset init_asset_sha init_checksum_sha stable_formula_identities_after
   local authority=() containerization_repository containerization_reference
   repo="$(github_repo "${COMPOSE_REPO}")"
   asset="container-compose-plugin-release-arm64.tar.gz"
@@ -3793,6 +4277,15 @@ verify_compose_stable_package() {
       "${version}" "${init_asset_sha}" "${init_checksum_sha}" >&2
     exit 1
   fi
+  if [[ ! "${expected_init_digest}" =~ ^[0-9a-f]{64}$ || \
+    "${init_asset_sha}" != "${expected_init_digest}" ]]; then
+    printf 'release %s guest archive is not authorized by the signed release gate: expected %s, got %s\n' \
+      "${version}" "${expected_init_digest:-missing}" "${init_asset_sha:-missing}" >&2
+    if ! find "${tmp}" -depth -delete; then
+      printf 'failed to clean rejected stable package download: %s\n' "${tmp}" >&2
+    fi
+    exit 1
+  fi
   while IFS= read -r value; do
     authority+=("${value}")
   done < <(stable_containerization_authority "${version}")
@@ -3818,18 +4311,18 @@ verify_compose_stable_package() {
   rm -rf "${tmp}"
 
   if [[ "${promote_default_lane}" != "true" ]]; then
-    if [[ -z "${tap_sha_before}" ]]; then
-      printf 'maintenance backfill verification requires the original Homebrew tap identity\n' >&2
+    if [[ -z "${stable_formula_identities_before}" ]]; then
+      printf 'maintenance backfill verification requires the original stable formula identities\n' >&2
       exit 1
     fi
-    tap_sha_after="$(homebrew_tap_main_sha)"
-    if [[ "${tap_sha_after}" != "${tap_sha_before}" ]]; then
-      printf 'maintenance backfill moved Homebrew tap main: expected %s, got %s\n' \
-        "${tap_sha_before}" "${tap_sha_after}" >&2
+    stable_formula_identities_after="$(homebrew_stable_formula_identities)"
+    if [[ "${stable_formula_identities_after}" != "${stable_formula_identities_before}" ]]; then
+      printf 'maintenance backfill moved stable Homebrew formulae: expected %s, got %s\n' \
+        "${stable_formula_identities_before}" "${stable_formula_identities_after}" >&2
       exit 1
     fi
-    printf 'stable stack %s maintenance backfill verified without moving Homebrew tap %s: %s + %s + %s\n' \
-      "${version}" "${tap_sha_after}" "${asset_sha}" "${runtime_asset_sha}" "${init_asset_sha}"
+    printf 'stable stack %s maintenance backfill verified without moving stable Homebrew formulae %s: %s + %s + %s\n' \
+      "${version}" "${stable_formula_identities_after}" "${asset_sha}" "${runtime_asset_sha}" "${init_asset_sha}"
     return 0
   fi
 
@@ -3890,7 +4383,7 @@ verify_compose_stable_package() {
 
 # Dispatch and verify one stable package workflow mode for a semantic tag.
 dispatch_compose_stable_workflow() {
-  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label promote_default_lane tap_sha_before
+  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label promote_default_lane authority_record authority_object authority_init_digest stable_formula_identities_before=""
   print_header "dispatch container-compose ${version} ${mode}"
 
   if [[ "${repair_tap}" == "true" ]]; then
@@ -3913,7 +4406,9 @@ dispatch_compose_stable_workflow() {
 
   need_command gh
   promote_default_lane="$(stable_version_promotes_default_lane "${version}")"
-  tap_sha_before="$(homebrew_tap_main_sha)"
+  if [[ "${promote_default_lane}" != "true" ]]; then
+    stable_formula_identities_before="$(homebrew_stable_formula_identities)"
+  fi
   if [[ "${repair_tap}" == "true" && "${promote_default_lane}" != "true" ]]; then
     printf 'Homebrew tap repair cannot promote maintenance backfill %s over the latest stable release\n' \
       "${version}" >&2
@@ -3939,9 +4434,14 @@ dispatch_compose_stable_workflow() {
     if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
       printf '%s started: %s\n' "${label}" "${run_id}"
       wait_for_github_run_success "${run_id}" "${label}"
-      publish_stable_init_image_asset "${version}"
+      authority_record="$(ensure_published_stable_recovery_authority "${version}")"
+      IFS=$'\t' read -r authority_object authority_init_digest <<<"${authority_record}"
+      publish_stable_init_image_asset "${version}" "${authority_init_digest}"
       verify_compose_stable_package \
-        "${version}" "${promote_default_lane}" "${tap_sha_before}"
+        "${version}" "${promote_default_lane}" \
+        "${stable_formula_identities_before}" "${authority_init_digest}"
+      require_stable_init_image_authority_unchanged \
+        "${version}" "${authority_object}" "${authority_init_digest}"
       return 0
     fi
 
@@ -3970,10 +4470,11 @@ dispatch_compose_stable_tap_repair() {
 }
 
 dispatch_stable_release_gate() {
-  local version="$1" previous_run run_id deadline now
+  local version="$1" previous_run run_id deadline now init_image_digest
   print_header "dispatch hosted stable release gate for ${version}"
 
   if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would create or verify the signed stable init-image authority tag\n'
     printf 'would run: gh workflow run stable-release-gate.yml --repo %s --ref main -f ref=%s\n' \
       "$(github_repo "${COMPOSE_REPO}")" "${version}"
     printf 'would wait for the hosted gate to confirm green main CI, SonarQube, and immutable static stack validation.\n'
@@ -3982,6 +4483,8 @@ dispatch_stable_release_gate() {
   fi
 
   need_command gh
+  init_image_digest="$(retained_stable_init_image_gate_digest "${version}")"
+  ensure_stable_init_image_authority_tag "${version}" "${init_image_digest}"
   previous_run="$(latest_stable_release_gate_dispatch_run || true)"
   run github_cli workflow run stable-release-gate.yml \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
@@ -4055,7 +4558,8 @@ tag_stable_version() {
 
 # Resume the latest signed tag without mutating its stable source identity.
 resume_stable_release() {
-  local version="$1" promote_default_lane tap_sha_before
+  local version="$1" promote_default_lane stable_formula_identities_before
+  local authority_record authority_object authority_init_digest
   print_header "resume stable release ${version}"
   verify_github_stable_tag_signature "${version}"
   if stable_release_is_published "${version}"; then
@@ -4065,10 +4569,15 @@ resume_stable_release() {
       dispatch_compose_stable_tap_repair "${version}"
       print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
     else
-      ensure_stable_retry_source_authority "${version}"
-      tap_sha_before="$(homebrew_tap_main_sha)"
-      publish_stable_init_image_asset "${version}"
-      verify_compose_stable_package "${version}" "false" "${tap_sha_before}"
+      authority_record="$(ensure_published_stable_recovery_authority "${version}")"
+      IFS=$'\t' read -r authority_object authority_init_digest <<<"${authority_record}"
+      stable_formula_identities_before="$(homebrew_stable_formula_identities)"
+      publish_stable_init_image_asset "${version}" "${authority_init_digest}"
+      verify_compose_stable_package \
+        "${version}" "false" \
+        "${stable_formula_identities_before}" "${authority_init_digest}"
+      require_stable_init_image_authority_unchanged \
+        "${version}" "${authority_object}" "${authority_init_digest}"
       print_stable_release_point "${version}" "maintenance backfill asset recovery"
     fi
     return 0

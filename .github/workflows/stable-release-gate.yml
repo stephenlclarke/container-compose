@@ -42,6 +42,8 @@ jobs:
       sha: ${{ steps.candidate.outputs.sha }}
       authority_ref: ${{ steps.candidate.outputs.authority_ref }}
       homebrew_tap_ref: ${{ steps.candidate.outputs.homebrew_tap_ref }}
+      init_image_sha256: ${{ steps.candidate.outputs.init_image_sha256 }}
+      init_image_authority_object: ${{ steps.candidate.outputs.init_image_authority_object }}
     steps:
       - name: Require an immutable main tag and green main CI
         id: candidate
@@ -55,7 +57,6 @@ jobs:
             printf 'stable release ref must be a bare semantic tag: %s\n' "${RELEASE_TAG}" >&2
             exit 1
           fi
-
           remote="https://github.com/${GITHUB_REPOSITORY}.git"
           tag_sha="$(
             git ls-remote --tags "${remote}" "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" \
@@ -90,6 +91,44 @@ jobs:
             printf 'stable tag %s is not GitHub-verified\n' "${RELEASE_TAG}" >&2
             exit 1
           fi
+
+          init_image_authority_tag="stable-init-image-authority/${RELEASE_TAG}"
+          init_image_authority_object="$(
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/tags/${init_image_authority_tag}" \
+              --jq '.object.sha'
+          )"
+          init_image_authority="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/tags/${init_image_authority_object}"
+          )"
+          init_image_authority_verified="$(
+            jq -r '.verification.verified' <<<"${init_image_authority}"
+          )"
+          init_image_authority_source="$(
+            jq -r '.object.sha' <<<"${init_image_authority}"
+          )"
+          init_image_authority_message="$(
+            jq -r '.message' <<<"${init_image_authority}"
+          )"
+          init_image_digest_lines="$(
+            sed -nE 's/^Guest init image SHA-256: ([0-9a-f]{64})[.]$/\1/p' \
+              <<<"${init_image_authority_message}"
+          )"
+          if [[ "${init_image_authority_verified}" != "true" ]]; then
+            printf 'stable init-image authority tag %s is not GitHub-verified\n' \
+              "${init_image_authority_tag}" >&2
+            exit 1
+          fi
+          if [[ "${init_image_authority_source}" != "${tag_sha}" ]]; then
+            printf 'stable init-image authority tag names %s instead of candidate %s\n' \
+              "${init_image_authority_source:-missing}" "${tag_sha}" >&2
+            exit 1
+          fi
+          if [[ ! "${init_image_digest_lines}" =~ ^[0-9a-f]{64}$ ]]; then
+            printf 'stable init-image authority tag has no unique candidate-bound digest\n' >&2
+            exit 1
+          fi
+          INIT_IMAGE_SHA256="${init_image_digest_lines}"
 
           release_output=""
           set +e
@@ -230,6 +269,8 @@ jobs:
             printf 'sha=%s\n' "${tag_sha}"
             printf 'authority_ref=%s\n' "${authority_ref}"
             printf 'homebrew_tap_ref=%s\n' "${homebrew_tap_ref}"
+            printf 'init_image_sha256=%s\n' "${INIT_IMAGE_SHA256}"
+            printf 'init_image_authority_object=%s\n' "${init_image_authority_object}"
           } >> "$GITHUB_OUTPUT"
 
   release-gate:
@@ -410,6 +451,8 @@ jobs:
           RELEASE_TAG: ${{ inputs.ref }}
           CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.sha }}
           AUTHORITY_REF: ${{ needs.resolve-candidate.outputs.authority_ref }}
+          INIT_IMAGE_SHA256: ${{ needs.resolve-candidate.outputs.init_image_sha256 }}
+          INIT_IMAGE_AUTHORITY_OBJECT: ${{ needs.resolve-candidate.outputs.init_image_authority_object }}
         shell: bash
         run: |
           set -euo pipefail
@@ -434,10 +477,39 @@ jobs:
               "${RELEASE_TAG}" "${CANDIDATE_SHA}" "${tag_sha:-missing}" >&2
             exit 75
           fi
+          init_image_authority_tag="stable-init-image-authority/${RELEASE_TAG}"
+          current_init_image_authority_object="$(
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/tags/${init_image_authority_tag}" \
+              --jq '.object.sha'
+          )"
+          if [[ "${current_init_image_authority_object}" != "${INIT_IMAGE_AUTHORITY_OBJECT}" ]]; then
+            printf 'stable init-image authority tag moved after validation: expected %s, got %s\n' \
+              "${INIT_IMAGE_AUTHORITY_OBJECT}" \
+              "${current_init_image_authority_object:-missing}" >&2
+            exit 75
+          fi
+          init_image_authority="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/tags/${current_init_image_authority_object}"
+          )"
+          if [[ "$(jq -r '.verification.verified' <<<"${init_image_authority}")" != "true" ]] ||
+            [[ "$(jq -r '.object.sha' <<<"${init_image_authority}")" != "${CANDIDATE_SHA}" ]]; then
+            printf 'stable init-image authority no longer verifies the candidate source\n' >&2
+            exit 75
+          fi
+          current_init_image_digest_lines="$(
+            jq -r '.message' <<<"${init_image_authority}" |
+              sed -nE 's/^Guest init image SHA-256: ([0-9a-f]{64})[.]$/\1/p'
+          )"
+          if [[ "${current_init_image_digest_lines}" != "${INIT_IMAGE_SHA256}" ]]; then
+            printf 'stable init-image authority digest changed after validation\n' >&2
+            exit 75
+          fi
           authority_name="Stable Release Authority (${RELEASE_TAG})"
           details_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           summary="Hosted Stable Release Gate passed for immutable source"
           summary+=" ${CANDIDATE_SHA}."
+          summary+=" Guest init image SHA-256: ${INIT_IMAGE_SHA256}."
           gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" \
             -f "name=${authority_name}" \
             -f "head_sha=${CANDIDATE_SHA}" \
