@@ -788,7 +788,8 @@ struct ComposeRuntimeSmokeTests {
         #expect(exitControl.stdout.contains(containerDryRun("start \(project)-api-1")))
         #expect(exitControl.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
         #expect(exitControl.stdout.contains("+ compose-runtime wait \(project)-api-1"))
-        #expect(exitControl.stdout.contains(containerDryRun("delete \(project)-api-1")))
+        #expect(exitControl.stdout.contains(containerDryRun("stop \(project)-api-1")))
+        #expect(!exitControl.stdout.contains(containerDryRun("delete \(project)-api-1")))
 
         let watch = try runProcess(
             composeBinary,
@@ -820,7 +821,8 @@ struct ComposeRuntimeSmokeTests {
         #expect(environmentMenu.stdout.contains(containerDryRun("start \(project)-api-1")))
         #expect(environmentMenu.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
         #expect(environmentMenu.stdout.contains("+ compose-runtime wait \(project)-api-1"))
-        #expect(environmentMenu.stdout.contains(containerDryRun("delete \(project)-api-1")))
+        #expect(environmentMenu.stdout.contains(containerDryRun("stop \(project)-api-1")))
+        #expect(!environmentMenu.stdout.contains(containerDryRun("delete \(project)-api-1")))
     }
 
     @Test("runtime dry run up renders service privileged command")
@@ -1223,7 +1225,8 @@ struct ComposeRuntimeSmokeTests {
         #expect(dryRun.stdout.contains(containerDryRun("start \(project)-api-1")))
         #expect(dryRun.stdout.contains("+ compose-runtime attach --no-stdin \(project)-api-1"))
         #expect(dryRun.stdout.contains("+ compose-runtime wait \(project)-api-1"))
-        #expect(dryRun.stdout.contains(containerDryRun("delete \(project)-api-1")))
+        #expect(dryRun.stdout.contains(containerDryRun("stop \(project)-api-1")))
+        #expect(!dryRun.stdout.contains(containerDryRun("delete \(project)-api-1")))
 
         let result = try runProcess(
             composeBinary,
