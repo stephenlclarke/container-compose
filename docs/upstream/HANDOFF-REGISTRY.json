@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-08-31",
+  "generatedAt": "2026-09-01",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -7273,6 +7273,27 @@
         }
       ],
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/363"
+    },
+    {
+      "id": "container-compose-380",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Skip packaging immediately for documentation-only CI",
+      "state": "submitted",
+      "lastVerified": "2026-09-01",
+      "commits": [
+        "502aae5a649e9f6f6451eb30a3e9e2f0bb085c8a"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-379.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-380.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/380"
     },
     {
       "id": "container-compose-333",
