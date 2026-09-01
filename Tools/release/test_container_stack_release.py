@@ -47,6 +47,9 @@ SONAR_RESTORE_WORKFLOW = ROOT / ".github" / "workflows" / "sonar-main-restore.ym
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 STACK_RELEASE_VALIDATION = ROOT / "Tools" / "ci" / "run-stack-release-validation.sh"
 FORMULA_RENDERER = ROOT / "Tools" / "release" / "render-homebrew-stack-formulae.sh"
+STABLE_RELEASE_LANE_CLASSIFIER = (
+    ROOT / "Tools" / "release" / "stable-release-default-lane.py"
+)
 RUNNER_INSTALLER = ROOT / "scripts" / "install-scheduled-release-runner.sh"
 HAWKEYE_INSTALLER = ROOT / "scripts" / "install-hawkeye.sh"
 PIPELINE_MAIN = ROOT / "main.nf"
@@ -64,6 +67,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('if stable_tag_exists "${version}"', release)
         self.assertIn('resume_stable_release "${version}"', release)
         self.assertIn('ensure_latest_stable_retry "${version}"', self.script)
+        self.assertIn('ensure_unpublished_stable_retry "${version}"', self.script)
         self.assertIn("ensure_new_stable_release \"${version}\"", release)
         self.assertLess(
             release.index('resume_stable_release "${version}"'),
@@ -617,6 +621,69 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("stable Homebrew formula must derive version", verifier)
         self.assertNotIn('if [[ "${formula_version}" != "${version}" ]]', verifier)
 
+    def test_stable_release_lane_classifier_preserves_newer_consumer_pointers(
+        self,
+    ) -> None:
+        def classify(candidate: str, latest: str = "") -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [
+                    "python3",
+                    str(STABLE_RELEASE_LANE_CLASSIFIER),
+                    candidate,
+                    latest,
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(classify("0.13.1", "0.14.0").stdout.strip(), "false")
+        self.assertEqual(classify("0.14.0", "0.14.0").stdout.strip(), "true")
+        self.assertEqual(classify("0.14.1", "0.14.0").stdout.strip(), "true")
+        self.assertEqual(classify("0.13.1").stdout.strip(), "true")
+        invalid = classify("current", "0.14.0")
+        self.assertNotEqual(invalid.returncode, 0)
+        self.assertIn("invalid stable release version", invalid.stderr)
+
+    def test_maintenance_backfill_does_not_move_latest_or_homebrew(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        lane = workflow[
+            workflow.index("- name: Select release lane") : workflow.index(
+                "- name: Resolve stack refs"
+            )
+        ]
+        verifier = self.script[
+            self.script.index("verify_compose_stable_package() {") : self.script.index(
+                "# Dispatch and verify one stable package workflow mode"
+            )
+        ]
+        dispatcher = self.script[
+            self.script.index("dispatch_compose_stable_workflow() {") : self.script.index(
+                "# Dispatch and wait for a new stable package publication."
+            )
+        ]
+
+        self.assertIn('"repos/${GITHUB_REPOSITORY}/releases/latest"', lane)
+        self.assertIn('candidate_key >= latest_key else "false"', lane)
+        self.assertIn('release_label="maintenance backfill"', lane)
+        self.assertIn('release_latest="${promote_default_lane}"', lane)
+        self.assertIn('update_tap="${promote_default_lane}"', lane)
+        self.assertIn('tap_sha_after="$(homebrew_tap_main_sha)"', verifier)
+        self.assertIn("maintenance backfill moved Homebrew tap main", verifier)
+        self.assertLess(
+            verifier.index('if [[ "${promote_default_lane}" != "true" ]]'),
+            verifier.index('formula_text="$('),
+        )
+        self.assertIn(
+            'promote_default_lane="$(stable_version_promotes_default_lane "${version}")"',
+            dispatcher,
+        )
+        self.assertIn('tap_sha_before="$(homebrew_tap_main_sha)"', dispatcher)
+        self.assertIn(
+            '"${version}" "${promote_default_lane}" "${tap_sha_before}"',
+            dispatcher,
+        )
+
     def test_stable_release_publishes_and_verifies_guest_closure(self) -> None:
         publisher = self.script[
             self.script.index("publish_stable_init_image_asset() {") : self.script.index(
@@ -641,7 +708,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('github_cli release upload "${version}"', publisher)
         self.assertLess(
             dispatcher.index('publish_stable_init_image_asset "${version}"'),
-            dispatcher.index('verify_compose_stable_package "${version}"'),
+            dispatcher.index("verify_compose_stable_package"),
         )
         self.assertIn('init_asset="container-vminit-arm64.oci.tar"', verifier)
         self.assertIn('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${tmp}/${init_asset}"', verifier)
@@ -2394,6 +2461,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("stable tag %s is not the latest semantic source tag", workflow)
+        self.assertIn(
+            "maintenance tag %s is not the latest semantic tag in series %s",
+            workflow,
+        )
+        self.assertIn('if [[ "${authority_ref}" == "main" ]]', workflow)
         self.assertIn("stable release %s already exists and is immutable", workflow)
         self.assertIn(
             "accepting its GitHub-verified unpublished source for a release retry",
@@ -5231,6 +5303,7 @@ esac
                 shell_setup="\n".join(
                     [
                         "ensure_latest_stable_retry() { :; }",
+                        "ensure_unpublished_stable_retry() { exit 74; }",
                         "verify_github_stable_tag_signature() { :; }",
                         "stable_release_is_published() { return 0; }",
                         "ensure_stable_release_is_unpublished() { exit 71; }",
@@ -5249,7 +5322,8 @@ esac
                 "resume_stable_release 0.6.70",
                 shell_setup="\n".join(
                     [
-                        "ensure_latest_stable_retry() { :; }",
+                        "ensure_latest_stable_retry() { exit 75; }",
+                        "ensure_unpublished_stable_retry() { :; }",
                         "verify_github_stable_tag_signature() { :; }",
                         "stable_release_is_published() { return 1; }",
                         "ensure_stable_release_is_unpublished() { :; }",
@@ -5261,10 +5335,10 @@ esac
             self.assertEqual(unpublished.returncode, 0, unpublished.stderr)
             self.assertIn("publish 0.6.70", unpublished.stdout)
 
-    def test_retry_rejects_a_stale_semantic_tag(self) -> None:
+    def test_published_retry_rejects_a_non_latest_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            shell_setup = "latest_local_semver_tag() { printf '%s\\n' 0.6.71; }"
+            shell_setup = "latest_published_stable_release() { printf '%s\\n' 0.6.71; }"
 
             latest = self.run_release_function(
                 root,
@@ -5279,7 +5353,80 @@ esac
                 shell_setup=shell_setup,
             )
             self.assertNotEqual(stale.returncode, 0)
-            self.assertIn("stable tag 0.6.70 is not the latest semantic source tag (0.6.71)", stale.stderr)
+            self.assertIn(
+                "stable tag 0.6.70 is not the latest published stable release (0.6.71)",
+                stale.stderr,
+            )
+
+    def test_latest_published_release_treats_only_not_found_as_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            not_found = self.run_release_function(
+                root,
+                "latest_published_stable_release",
+                shell_setup="""github_cli() {
+  printf '%s\\n' 'gh: Not Found (HTTP 404)' >&2
+  return 1
+}""",
+            )
+            self.assertEqual(not_found.returncode, 0, not_found.stderr)
+            self.assertEqual(not_found.stdout, "")
+
+            unavailable = self.run_release_function(
+                root,
+                "latest_published_stable_release",
+                shell_setup="""github_cli() {
+  printf '%s\\n' 'network unavailable' >&2
+  return 1
+}""",
+            )
+            self.assertNotEqual(unavailable.returncode, 0)
+            self.assertIn("network unavailable", unavailable.stderr)
+
+    def test_unpublished_maintenance_retry_requires_latest_exact_series_head(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            matching_sha = "a" * 40
+            shell_setup = "\n".join(
+                [
+                    "latest_local_semver_tag() { printf '%s\\n' 0.14.0; }",
+                    "latest_local_semver_tag_for_series() { printf '%s\\n' \"${TEST_SERIES_LATEST:-0.13.1}\"; }",
+                    "repo_path() { printf '%s\\n' /tmp/container-compose-test; }",
+                    "push_remote() { printf '%s\\n' origin; }",
+                    "git() {",
+                    "  if [[ \"$*\" == *'rev-list -n 1 refs/tags/0.13.1'* ]]; then",
+                    f"    printf '%s\\n' {matching_sha}",
+                    "  elif [[ \"$*\" == *'ls-remote --heads origin refs/heads/release-0.13'* ]]; then",
+                    f"    printf '%s\\t%s\\n' \"${{TEST_RELEASE_HEAD:-{matching_sha}}}\" refs/heads/release-0.13",
+                    "  else",
+                    "    command git \"$@\"",
+                    "  fi",
+                    "}",
+                ]
+            )
+
+            accepted = self.run_release_function(
+                root,
+                "ensure_unpublished_stable_retry 0.13.1",
+                shell_setup=shell_setup,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+            stale = self.run_release_function(
+                root,
+                "ensure_unpublished_stable_retry 0.13.1",
+                shell_setup=f"export TEST_SERIES_LATEST=0.13.2\n{shell_setup}",
+            )
+            self.assertNotEqual(stale.returncode, 0)
+            self.assertIn("not the latest semantic tag in series 0.13", stale.stderr)
+
+            moved = self.run_release_function(
+                root,
+                "ensure_unpublished_stable_retry 0.13.1",
+                shell_setup=f"export TEST_RELEASE_HEAD={'b' * 40}\n{shell_setup}",
+            )
+            self.assertNotEqual(moved.returncode, 0)
+            self.assertIn("is not the exact release-0.13 head", moved.stderr)
 
     def create_promotion_review_fixture(
         self,

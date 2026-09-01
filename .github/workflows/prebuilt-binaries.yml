@@ -583,6 +583,7 @@ jobs:
         shell: bash
         working-directory: container-compose
         env:
+          GH_TOKEN: ${{ github.token }}
           PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
           PUBLISH_REF_NAME: ${{ needs.resolve-publish-context.outputs.ref_name }}
           PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
@@ -628,12 +629,45 @@ jobs:
                 printf 'COMPOSE_VERSION %s does not match stable tag %s\n' "${compose_version}" "${PUBLISH_REF_NAME}" >&2
                 exit 1
               fi
+              latest_response="$(mktemp)"
+              if gh api --include \
+                "repos/${GITHUB_REPOSITORY}/releases/latest" \
+                --jq '.tag_name' > "${latest_response}"; then
+                latest_stable="$(tail -n 1 "${latest_response}")"
+              elif grep -Eq '^HTTP/[0-9.]+ 404 ' "${latest_response}"; then
+                latest_stable=""
+              else
+                printf 'Could not resolve the latest published stable release.\n' >&2
+                cat "${latest_response}" >&2
+                exit 1
+              fi
+              rm "${latest_response}"
+              promote_default_lane="$(
+                python3 - "${PUBLISH_REF_NAME}" "${latest_stable}" <<'PY'
+          import re
+          import sys
+
+          pattern = re.compile(r"[0-9]+[.][0-9]+[.][0-9]+")
+          candidate, latest = sys.argv[1:]
+          if not pattern.fullmatch(candidate):
+              raise SystemExit(f"invalid stable release candidate: {candidate}")
+          if latest and not pattern.fullmatch(latest):
+              raise SystemExit(f"invalid latest published stable release: {latest}")
+          candidate_key = tuple(int(part) for part in candidate.split("."))
+          latest_key = tuple(int(part) for part in latest.split(".")) if latest else None
+          print("true" if latest_key is None or candidate_key >= latest_key else "false")
+          PY
+              )"
               release_tag="${PUBLISH_REF_NAME}"
               release_title="${compose_version}"
-              release_label="stable release"
-              release_latest="true"
+              if [[ "${promote_default_lane}" == "true" ]]; then
+                release_label="stable release"
+              else
+                release_label="maintenance backfill"
+              fi
+              release_latest="${promote_default_lane}"
               release_prerelease="false"
-              update_tap="true"
+              update_tap="${promote_default_lane}"
               asset="container-compose-plugin-release-arm64.tar.gz"
               highlights_asset="release-highlights.json"
               quality_snapshot_asset="quality-snapshot.svg"
