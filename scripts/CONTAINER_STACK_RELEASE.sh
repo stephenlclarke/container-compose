@@ -2550,6 +2550,7 @@ ensure_stable_retry_source_authority() {
 ensure_published_stable_recovery_authority() {
   local version="$1" path repo tag_sha authority_name authority_filter authority_record
   local authority_run_id authority_summary authority_conclusion authority_init_digest
+  local signed_authority_init_digest
   path="$(repo_path "${COMPOSE_REPO}")"
   repo="$(github_repo "${COMPOSE_REPO}")"
   tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
@@ -2557,6 +2558,10 @@ ensure_published_stable_recovery_authority() {
     printf 'published stable recovery tag is missing locally: %s\n' "${version}" >&2
     return 1
   fi
+
+  signed_authority_init_digest="$(
+    verified_stable_init_image_authority_digest "${version}"
+  )"
 
   authority_name="Stable Release Authority (${version})"
   authority_filter=".check_runs[] | select(.name == \"${authority_name}\""
@@ -2582,6 +2587,11 @@ ensure_published_stable_recovery_authority() {
     authority_init_digest="${BASH_REMATCH[1]}"
   else
     printf 'refusing published recovery without a candidate-bound guest init-image digest\n' >&2
+    return 1
+  fi
+  if [[ "${authority_init_digest}" != "${signed_authority_init_digest}" ]]; then
+    printf 'refusing published recovery because hosted authority records %s instead of signed init-image digest %s\n' \
+      "${authority_init_digest}" "${signed_authority_init_digest}" >&2
     return 1
   fi
   authority_conclusion="$(
@@ -2693,6 +2703,50 @@ verify_github_stable_tag_signature() {
 stable_init_image_authority_tag() {
   local version="$1"
   printf 'stable-init-image-authority/%s\n' "${version}"
+}
+
+# Verify the current GitHub companion authority tag and return its guest digest.
+# Published recovery uses this read-only path so deletion or replacement of the
+# signed trust root cannot be papered over by a historical hosted check.
+verified_stable_init_image_authority_digest() {
+  local version="$1" path repo tag_sha authority_tag authority_object
+  local authority_record authority_verified authority_source authority_message digest_lines
+  path="$(repo_path "${COMPOSE_REPO}")"
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
+  authority_tag="$(stable_init_image_authority_tag "${version}")"
+  authority_object="$(
+    github_cli api "repos/${repo}/git/ref/tags/${authority_tag}" --jq '.object.sha'
+  )"
+  if [[ ! "${authority_object}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'stable init-image authority tag is missing or malformed: %s\n' \
+      "${authority_tag}" >&2
+    return 1
+  fi
+  authority_record="$(github_cli api "repos/${repo}/git/tags/${authority_object}")"
+  authority_verified="$(jq -r '.verification.verified // false' <<<"${authority_record}")"
+  authority_source="$(jq -r '.object.sha // empty' <<<"${authority_record}")"
+  authority_message="$(jq -r '.message // empty' <<<"${authority_record}")"
+  if [[ "${authority_verified}" != "true" ]]; then
+    printf 'stable init-image authority tag is not GitHub-verified: %s\n' \
+      "${authority_tag}" >&2
+    return 1
+  fi
+  if [[ "${authority_source}" != "${tag_sha}" ]]; then
+    printf 'stable init-image authority tag names %s instead of source %s\n' \
+      "${authority_source:-missing}" "${tag_sha}" >&2
+    return 1
+  fi
+  digest_lines="$(
+    sed -nE 's/^Guest init image SHA-256: ([0-9a-f]{64})[.]$/\1/p' \
+      <<<"${authority_message}"
+  )"
+  if [[ ! "${digest_lines}" =~ ^[0-9a-f]{64}$ ]]; then
+    printf 'stable init-image authority tag has no unique candidate-bound digest: %s\n' \
+      "${authority_tag}" >&2
+    return 1
+  fi
+  printf '%s\n' "${digest_lines}"
 }
 
 # Create or validate the GitHub-verified signed companion authority tag for a

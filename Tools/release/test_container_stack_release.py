@@ -5900,6 +5900,7 @@ esac
             root = Path(directory)
             tag_sha = "a" * 40
             init_digest = "b" * 64
+            authority_object = "c" * 40
             shell_setup = "\n".join(
                 [
                     "repo_path() { printf '%s\\n' /tmp/container-compose-test; }",
@@ -5913,7 +5914,24 @@ esac
                     "  fi",
                     "}",
                     "github_cli() {",
-                    "  if [[ \"$1\" == api ]]; then",
+                    (
+                        '  if [[ "$1:$2" == '
+                        "api:repos/owner/repo/git/ref/tags/"
+                        "stable-init-image-authority/0.13.1 ]]; then"
+                    ),
+                    f"    printf '%s\\n' {authority_object}",
+                    (
+                        f'  elif [[ "$1:$2" == api:repos/owner/repo/git/tags/'
+                        f'{authority_object} ]]; then'
+                    ),
+                    (
+                        "    printf '{\"verification\":{\"verified\":true},"
+                        "\"object\":{\"sha\":\"%s\"},\"message\":"
+                        "\"Guest init image SHA-256: %s.\"}\\n' "
+                        f'"${{TEST_SIGNED_SOURCE:-{tag_sha}}}" '
+                        f'"${{TEST_SIGNED_DIGEST:-{init_digest}}}"'
+                    ),
+                    "  elif [[ \"$1\" == api ]]; then",
                     "    printf '%s\\t%s\\n' \"${TEST_AUTHORITY_RUN_ID:-29288195238}\" \"${TEST_AUTHORITY_SUMMARY:-Guest init image SHA-256: " + init_digest + ".}\"",
                     "  elif [[ \"$1:$2\" == run:view ]]; then",
                     "    printf '%s\\n' \"${TEST_GATE_CONCLUSION:-success}\"",
@@ -5955,6 +5973,22 @@ esac
             )
             self.assertNotEqual(failed_gate.returncode, 0)
             self.assertIn("successful Stable Release Gate authority", failed_gate.stderr)
+
+            replaced_authority = self.run_release_function(
+                root,
+                "ensure_published_stable_recovery_authority 0.13.1",
+                shell_setup=f"export TEST_SIGNED_DIGEST={'d' * 64}\n{shell_setup}",
+            )
+            self.assertNotEqual(replaced_authority.returncode, 0)
+            self.assertIn("instead of signed init-image digest", replaced_authority.stderr)
+
+            wrong_source = self.run_release_function(
+                root,
+                "ensure_published_stable_recovery_authority 0.13.1",
+                shell_setup=f"export TEST_SIGNED_SOURCE={'e' * 40}\n{shell_setup}",
+            )
+            self.assertNotEqual(wrong_source.returncode, 0)
+            self.assertIn("instead of source", wrong_source.stderr)
 
     def test_published_retry_rejects_a_non_latest_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
