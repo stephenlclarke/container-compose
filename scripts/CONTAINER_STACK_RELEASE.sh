@@ -1956,6 +1956,46 @@ record_stable_init_image_gate_evidence() {
   return 1
 }
 
+# Bind a locally gated source snapshot to an equivalent promoted commit. GitHub
+# merge commits have a different identity even when they preserve the exact
+# reviewed tree, so the promoted source needs its own immutable evidence record
+# before it can be tagged.
+rebind_stable_init_image_gate_evidence() {
+  local source_sha="$1" promoted_sha="$2" path source_tree promoted_tree
+  local source_evidence record digest recorded_sha
+  if [[ "${source_sha}" == "${promoted_sha}" ]]; then
+    return 0
+  fi
+  path="$(repo_path "${COMPOSE_REPO}")"
+  source_tree="$(git -C "${path}" rev-parse "${source_sha}^{tree}")"
+  promoted_tree="$(git -C "${path}" rev-parse "${promoted_sha}^{tree}")"
+  if [[ "${source_tree}" != "${promoted_tree}" ]]; then
+    printf 'refusing to bind local gate evidence to a different promoted tree\n' >&2
+    return 1
+  fi
+  source_evidence="$(stable_init_image_gate_evidence_path "${source_sha}")"
+  if [[ ! -f "${source_evidence}" || -L "${source_evidence}" ]]; then
+    printf 'locally gated source %s has no immutable init-image evidence\n' \
+      "${source_sha}" >&2
+    return 1
+  fi
+  record="$(<"${source_evidence}")"
+  if [[ "${record}" =~ ^([0-9a-f]{64})\ \ ([0-9a-f]{40})$ ]]; then
+    digest="${BASH_REMATCH[1]}"
+    recorded_sha="${BASH_REMATCH[2]}"
+  else
+    printf 'stable init-image gate evidence is malformed: %s\n' \
+      "${source_evidence}" >&2
+    return 1
+  fi
+  if [[ "${recorded_sha}" != "${source_sha}" ]]; then
+    printf 'stable init-image gate evidence names %s instead of gated source %s\n' \
+      "${recorded_sha}" "${source_sha}" >&2
+    return 1
+  fi
+  record_stable_init_image_gate_evidence "${promoted_sha}" "${digest}"
+}
+
 # Read the digest produced by the local gate and prove the retained archive is
 # still that exact snapshot before sending its identity to hosted authority.
 retained_stable_init_image_gate_digest() {
@@ -2523,6 +2563,8 @@ ensure_published_stable_recovery_authority() {
   authority_filter+=' and .status == "completed"'
   authority_filter+=' and .conclusion == "success"'
   authority_filter+=' and .app.slug == "github-actions")'
+  authority_filter+=' | select((.external_id // "") | test("^[0-9]+$"))'
+  authority_filter+=' | select((.output.summary // "") | test("Guest init image SHA-256: [0-9a-f]{64}[.]"))'
   authority_filter+=' | [.external_id, .output.summary] | @tsv'
   authority_record="$(
     github_cli api --paginate \
@@ -2644,6 +2686,79 @@ verify_github_stable_tag_signature() {
       "${version}" "${reason:-missing}" >&2
     exit 1
   fi
+}
+
+# Return the immutable companion tag that binds a stable source tag to the
+# locally gated guest snapshot without trusting workflow-dispatch input.
+stable_init_image_authority_tag() {
+  local version="$1"
+  printf 'stable-init-image-authority/%s\n' "${version}"
+}
+
+# Create or validate the GitHub-verified signed companion authority tag for a
+# locally gated guest snapshot. Existing matching tags are reusable so an
+# interrupted unpublished release can resume without rewriting source tags.
+ensure_stable_init_image_authority_tag() {
+  local version="$1" digest="$2" path remote tag_sha authority_tag
+  local local_object remote_object authority_source authority_message authority_digest
+  path="$(repo_path "${COMPOSE_REPO}")"
+  remote="$(push_remote "${COMPOSE_REPO}")"
+  tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
+  authority_tag="$(stable_init_image_authority_tag "${version}")"
+  remote_object="$(
+    git -C "${path}" ls-remote --tags --refs "${remote}" \
+      "refs/tags/${authority_tag}" | awk '{ print $1 }' | tail -n 1
+  )"
+  local_object="$(
+    git -C "${path}" rev-parse -q --verify "refs/tags/${authority_tag}" 2>/dev/null || true
+  )"
+
+  if [[ -n "${remote_object}" && -n "${local_object}" && "${remote_object}" != "${local_object}" ]]; then
+    printf 'stable init-image authority tag differs between local and remote: %s\n' \
+      "${authority_tag}" >&2
+    return 1
+  fi
+  if [[ -n "${remote_object}" && -z "${local_object}" ]]; then
+    run git -C "${path}" fetch "${remote}" \
+      "+refs/tags/${authority_tag}:refs/tags/${authority_tag}"
+    local_object="$(git -C "${path}" rev-parse "refs/tags/${authority_tag}")"
+  fi
+  if [[ -z "${local_object}" ]]; then
+    run env GIT_EDITOR=: git -C "${path}" tag -s "${authority_tag}" "${tag_sha}" \
+      -m "$(github_repo "${COMPOSE_REPO}") ${version} stable init-image authority" \
+      -m "Guest init image SHA-256: ${digest}."
+    local_object="$(git -C "${path}" rev-parse "refs/tags/${authority_tag}")"
+  fi
+
+  if [[ "$(git -C "${path}" cat-file -t "${local_object}")" != "tag" ]]; then
+    printf 'stable init-image authority ref is not an annotated tag: %s\n' \
+      "${authority_tag}" >&2
+    return 1
+  fi
+  authority_source="$(git -C "${path}" rev-list -n 1 "refs/tags/${authority_tag}")"
+  if [[ "${authority_source}" != "${tag_sha}" ]]; then
+    printf 'stable init-image authority tag names %s instead of source %s\n' \
+      "${authority_source}" "${tag_sha}" >&2
+    return 1
+  fi
+  authority_message="$(git -C "${path}" for-each-ref \
+    --format='%(contents)' "refs/tags/${authority_tag}")"
+  if [[ "${authority_message}" =~ Guest\ init\ image\ SHA-256:\ ([0-9a-f]{64})[.] ]]; then
+    authority_digest="${BASH_REMATCH[1]}"
+  else
+    printf 'stable init-image authority tag has no candidate-bound digest: %s\n' \
+      "${authority_tag}" >&2
+    return 1
+  fi
+  if [[ "${authority_digest}" != "${digest}" ]]; then
+    printf 'stable init-image authority tag records %s instead of retained digest %s\n' \
+      "${authority_digest}" "${digest}" >&2
+    return 1
+  fi
+  if [[ -z "${remote_object}" ]]; then
+    run git -C "${path}" push "${remote}" "refs/tags/${authority_tag}"
+  fi
+  verify_github_stable_tag_signature "${authority_tag}"
 }
 
 # Create a new signed stable tag at the validated current container-compose
@@ -3716,7 +3831,7 @@ promote_compose_main() {
 }
 
 push_all_main() {
-  local version="$1" repo path local_head remote_head body
+  local version="$1" repo path local_head remote_head body gated_sha promoted_sha
   print_header "verify reviewed sibling mains and promote container-compose"
   for repo in "${REPOS[@]}"; do
     if [[ "${repo}" == "${COMPOSE_REPO}" ]]; then
@@ -3732,11 +3847,19 @@ push_all_main() {
   done
 
   body="$(compose_source_promotion_body "${version}")"
+  path="$(repo_path "${COMPOSE_REPO}")"
+  gated_sha="$(git -C "${path}" rev-parse main)"
   promote_compose_main \
     "${version}" \
     "source" \
     "chore(release): promote ${version} source" \
     "${body}"
+  if [[ "${EXECUTE}" == "1" ]]; then
+    promoted_sha="$(git -C "${path}" rev-parse main)"
+    rebind_stable_init_image_gate_evidence "${gated_sha}" "${promoted_sha}"
+  else
+    printf 'would bind the locally gated source evidence to the equivalent promoted commit\n'
+  fi
 }
 
 # Require an executable command when an executed workflow depends on it.
@@ -4263,7 +4386,8 @@ dispatch_stable_release_gate() {
   print_header "dispatch hosted stable release gate for ${version}"
 
   if [[ "${EXECUTE}" != "1" ]]; then
-    printf 'would run: gh workflow run stable-release-gate.yml --repo %s --ref main -f ref=%s -f init_image_sha256=<retained-release-gate-digest>\n' \
+    printf 'would create or verify the signed stable init-image authority tag\n'
+    printf 'would run: gh workflow run stable-release-gate.yml --repo %s --ref main -f ref=%s\n' \
       "$(github_repo "${COMPOSE_REPO}")" "${version}"
     printf 'would wait for the hosted gate to confirm green main CI, SonarQube, and immutable static stack validation.\n'
     printf 'full runtime integration and Docker Compose parity run locally before the tag is created.\n'
@@ -4272,12 +4396,12 @@ dispatch_stable_release_gate() {
 
   need_command gh
   init_image_digest="$(retained_stable_init_image_gate_digest "${version}")"
+  ensure_stable_init_image_authority_tag "${version}" "${init_image_digest}"
   previous_run="$(latest_stable_release_gate_dispatch_run || true)"
   run github_cli workflow run stable-release-gate.yml \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --ref main \
-    -f "ref=${version}" \
-    -f "init_image_sha256=${init_image_digest}"
+    -f "ref=${version}"
 
   deadline=$((SECONDS + STABLE_RELEASE_GATE_WAIT_SECONDS))
   while true; do

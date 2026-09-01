@@ -1825,17 +1825,24 @@ github_cli() {{
 
     def test_stable_gate_records_the_candidate_bound_guest_digest(self) -> None:
         workflow = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
+        workflow_inputs = workflow[
+            workflow.index("  workflow_dispatch:") : workflow.index("permissions:")
+        ]
         dispatcher = self.script[
             self.script.index("dispatch_stable_release_gate() {") : self.script.index(
                 "# Print the verified boundary for a stable release"
             )
         ]
 
-        self.assertIn("init_image_sha256:", workflow)
-        self.assertIn("required: true", workflow)
-        self.assertIn('INIT_IMAGE_SHA256: ${{ inputs.init_image_sha256 }}', workflow)
+        self.assertNotIn("init_image_sha256:", workflow_inputs)
+        self.assertNotIn("inputs.init_image_sha256", workflow)
+        self.assertIn('init_image_authority_tag="stable-init-image-authority/${RELEASE_TAG}"', workflow)
+        self.assertIn("init_image_authority_verified", workflow)
+        self.assertIn("stable init-image authority tag %s is not GitHub-verified", workflow)
+        self.assertIn("stable init-image authority tag names %s instead of candidate %s", workflow)
         self.assertIn(
-            '[[ ! "${INIT_IMAGE_SHA256}" =~ ^[0-9a-f]{64}$ ]]', workflow
+            "stable init-image authority tag has no unique candidate-bound digest",
+            workflow,
         )
         self.assertIn(
             'summary+=" Guest init image SHA-256: ${INIT_IMAGE_SHA256}."',
@@ -1845,7 +1852,101 @@ github_cli() {{
             'init_image_digest="$(retained_stable_init_image_gate_digest "${version}")"',
             dispatcher,
         )
-        self.assertIn('-f "init_image_sha256=${init_image_digest}"', dispatcher)
+        self.assertIn(
+            'ensure_stable_init_image_authority_tag "${version}" "${init_image_digest}"',
+            dispatcher,
+        )
+        self.assertNotIn('-f "init_image_sha256=', dispatcher)
+
+    def test_promoted_equivalent_tree_receives_immutable_gate_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compose = root / "container-compose"
+            evidence = root / "evidence"
+            self.run_command("git", "init", "-b", "main", str(compose))
+            self.configure_repo(compose)
+            self.commit_file(compose, "candidate.txt", "candidate\n", "feat: candidate")
+            source_sha = self.git(compose, "rev-parse", "HEAD")
+            source_tree = self.git(compose, "rev-parse", "HEAD^{tree}")
+            self.run_command(
+                "git",
+                "-C",
+                str(compose),
+                "commit",
+                "--allow-empty",
+                "-m",
+                "chore: promotion merge identity",
+            )
+            promoted_sha = self.git(compose, "rev-parse", "HEAD")
+            self.assertEqual(self.git(compose, "rev-parse", "HEAD^{tree}"), source_tree)
+            digest = "b" * 64
+            shell_setup = f"export PARITY_EVIDENCE_DIR={shlex.quote(str(evidence))}"
+
+            rebound = self.run_release_function(
+                root,
+                (
+                    f"record_stable_init_image_gate_evidence {source_sha} {digest} && "
+                    f"rebind_stable_init_image_gate_evidence {source_sha} {promoted_sha}"
+                ),
+                shell_setup=shell_setup,
+            )
+
+            self.assertEqual(rebound.returncode, 0, rebound.stderr)
+            promoted_evidence = evidence / "stable-init-image-authority" / f"{promoted_sha}.sha256"
+            self.assertEqual(
+                promoted_evidence.read_text(encoding="utf-8").strip(),
+                f"{digest}  {promoted_sha}",
+            )
+
+    def test_signed_companion_tag_binds_the_guest_digest_to_the_stable_source(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote, compose = self.create_compose_checkout(root)
+            self.enable_ssh_signing(root, compose)
+            self.run_command(
+                "git",
+                "-C",
+                str(compose),
+                "tag",
+                "-s",
+                "0.13.1",
+                "main",
+                "-m",
+                "owner/repo 0.13.1",
+            )
+            self.run_command("git", "-C", str(compose), "push", "origin", "0.13.1")
+            digest = "c" * 64
+            result = self.run_release_function(
+                root / "github",
+                f"ensure_stable_init_image_authority_tag 0.13.1 {digest}",
+                shell_setup="\n".join(
+                    [
+                        f"push_remote() {{ printf '%s\\n' {shlex.quote(str(remote))}; }}",
+                        "github_repo() { printf '%s\\n' owner/repo; }",
+                        "verify_github_stable_tag_signature() { :; }",
+                    ]
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            authority_tag = "stable-init-image-authority/0.13.1"
+            self.assertEqual(
+                self.git(compose, "cat-file", "-t", f"refs/tags/{authority_tag}"),
+                "tag",
+            )
+            self.assertEqual(
+                self.git(compose, "rev-list", "-n", "1", f"refs/tags/{authority_tag}"),
+                self.git(compose, "rev-list", "-n", "1", "refs/tags/0.13.1"),
+            )
+            message = self.git(
+                compose,
+                "for-each-ref",
+                "--format=%(contents)",
+                f"refs/tags/{authority_tag}",
+            )
+            self.assertIn(f"Guest init image SHA-256: {digest}.", message)
 
     def test_stable_gate_digest_comes_from_immutable_local_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2892,6 +2993,11 @@ github_cli() {{
             "AUTHORITY_REF: ${{ needs.resolve-candidate.outputs.authority_ref }}",
             workflow,
         )
+        self.assertIn(
+            "INIT_IMAGE_AUTHORITY_OBJECT: ${{ needs.resolve-candidate.outputs.init_image_authority_object }}",
+            workflow,
+        )
+        self.assertIn("stable init-image authority tag moved after validation", workflow)
         self.assertIn("release authority %s moved after validation", workflow)
         self.assertIn("stable tag %s moved after validation", workflow)
         self.assertIn(
@@ -3065,6 +3171,16 @@ github_cli() {{
         self.assertLess(release.index("ensure_release_intent"), release.index("run_local_release_gate"))
         self.assertLess(release.index("require_release_upstream_alignment"), release.index("run_local_release_gate"))
         self.assertLess(release.index("run_local_release_gate"), release.index("push_all_main"))
+        promotion = self.script[
+            self.script.index("push_all_main() {") : self.script.index(
+                "# Require an executable command"
+            )
+        ]
+        self.assertIn("rebind_stable_init_image_gate_evidence", promotion)
+        self.assertLess(
+            promotion.index("promote_compose_main"),
+            promotion.index("rebind_stable_init_image_gate_evidence"),
+        )
         self.assertIn('HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"', self.script)
         self.assertIn('"$(repo_path "container-builder-shim")"', self.script)
         self.assertIn('containerization_path="$(repo_path "containerization")"', self.script)
@@ -5772,6 +5888,14 @@ esac
             self.assertIn("maintenance backfill asset recovery", recovered.stdout)
 
     def test_published_recovery_uses_immutable_candidate_gate_authority(self) -> None:
+        recovery = self.script[
+            self.script.index("ensure_published_stable_recovery_authority() {") :
+            self.script.index("# Refuse to retry a semantic tag")
+        ]
+        self.assertIn(
+            'test("Guest init image SHA-256: [0-9a-f]{64}[.]")',
+            recovery,
+        )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             tag_sha = "a" * 40
