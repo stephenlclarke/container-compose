@@ -191,7 +191,7 @@ DOCS_OUTPUT_DIR ?= _site
 DOCS_SERVER_DIR ?= _serve
 DOCS_HOSTING_BASE_PATH ?= container-compose
 DOCS_SCRATCH_PATH ?= .build/docc
-COMPOSE_VERSION ?= 0.14.0
+COMPOSE_VERSION ?= 0.14.1
 CONTAINER_COMPOSE_SOURCE ?= $(shell $(PYTHON) -c 'import subprocess; result = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True); url = result.stdout.strip() if result.returncode == 0 else ""; url = url[len("git@github.com:"):] if url.startswith("git@github.com:") else url; url = url[len("https://github.com/"):] if url.startswith("https://github.com/") else url; url = url[:-4] if url.endswith(".git") else url; print(url)')
 CONTAINER_COMPOSE_BRANCH ?= $(shell git branch --show-current 2>/dev/null || git rev-parse --short HEAD)
 CONTAINER_COMPOSE_LANE ?= $(shell $(PYTHON) -c 'branch = "$(CONTAINER_COMPOSE_BRANCH)"; print("main" if branch == "main" else "release" if branch == "release" or branch.startswith("release-") else "detached" if branch in ("", "HEAD") else "development")')

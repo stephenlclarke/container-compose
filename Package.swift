@@ -26,7 +26,7 @@ let containerDependency: Package.Dependency = {
     }
     return .package(
         url: "https://github.com/stephenlclarke/container.git",
-        revision: "f87481688f25bbc9d311ae09c4fcf33f121ba9ae",
+        revision: "d428123088728c6539c73ac48aa5ce65843f31aa",
     )
 }()
 
