@@ -18,9 +18,11 @@
 """Unit tests for deterministic release-asset retention."""
 
 import importlib.util
+import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 def load_module():
@@ -46,7 +48,9 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
             {"id": 4, "published_at": "2026-07-04T00:00:00Z", "prerelease": True, "draft": False},
             {"id": 5, "published_at": None, "prerelease": True, "draft": True},
         ]
-        self.assertEqual(module.retained_release_ids(releases), {2, 4})
+        self.assertEqual(
+            module.retained_release_ids(releases, latest_stable_id=2), {2, 4}
+        )
 
     def test_current_pointer_beats_newer_noncurrent_prerelease(self) -> None:
         module = load_module()
@@ -73,7 +77,46 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
                 "draft": False,
             },
         ]
-        self.assertEqual(module.retained_release_ids(releases), {1, 2})
+        self.assertEqual(
+            module.retained_release_ids(releases, latest_stable_id=1), {1, 2}
+        )
+
+    def test_github_latest_beats_a_newer_published_maintenance_backfill(self) -> None:
+        module = load_module()
+        releases = [
+            {
+                "id": 1,
+                "tag_name": "0.14.0",
+                "published_at": "2026-07-01T00:00:00Z",
+                "prerelease": False,
+                "draft": False,
+            },
+            {
+                "id": 2,
+                "tag_name": "0.13.1",
+                "published_at": "2026-07-02T00:00:00Z",
+                "prerelease": False,
+                "draft": False,
+            },
+            {
+                "id": 3,
+                "tag_name": "current",
+                "published_at": "2026-07-03T00:00:00Z",
+                "prerelease": True,
+                "draft": False,
+            },
+        ]
+        with mock.patch.object(
+            module, "run_gh", return_value=json.dumps({"id": 1})
+        ) as run_gh:
+            latest_id = module.latest_stable_release_id("owner/repo", releases)
+
+        self.assertEqual(latest_id, 1)
+        self.assertEqual(
+            module.retained_release_ids(releases, latest_stable_id=latest_id),
+            {1, 3},
+        )
+        run_gh.assert_called_once_with("api", "repos/owner/repo/releases/latest")
 
     def test_only_generated_current_releases_are_removed(self) -> None:
         module = load_module()

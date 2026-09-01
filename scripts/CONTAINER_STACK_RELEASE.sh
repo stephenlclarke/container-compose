@@ -23,6 +23,7 @@ readonly SELF_DIRECTORY
 readonly COMPOSE_PROMOTION_REVIEW_TOOL="${SELF_DIRECTORY}/../Tools/release/compose_promotion_review.py"
 readonly OCI_IMAGE_LAYOUT_VALIDATOR="${SELF_DIRECTORY}/../Tools/release/validate-oci-image-layout.py"
 readonly RELEASE_COMMAND_DEADLINE_RUNNER="${SELF_DIRECTORY}/../Tools/ci/run-command-with-deadline.py"
+readonly STABLE_RELEASE_LANE_CLASSIFIER="${SELF_DIRECTORY}/../Tools/release/stable-release-default-lane.py"
 # shellcheck disable=SC1091
 source "${SELF_DIRECTORY}/../Tools/ci/container-runtime-lock.sh"
 SCRIPT_NAME="$(basename "${SELF_PATH}")"
@@ -2219,6 +2220,19 @@ print(versions[-1] if versions else "")
 '
 }
 
+# Return the latest local semantic tag in one MAJOR.MINOR maintenance series.
+latest_local_semver_tag_for_series() {
+  local repo="$1" series="$2"
+  git -C "$(repo_path "${repo}")" tag --list "${series}.*" \
+    | python3 -c 'import re, sys
+series = sys.argv[1]
+pattern = re.compile(rf"{re.escape(series)}[.][0-9]+")
+versions = [line.strip() for line in sys.stdin if pattern.fullmatch(line.strip())]
+versions.sort(key=lambda version: tuple(int(part) for part in version.split(".")))
+print(versions[-1] if versions else "")
+' "${series}"
+}
+
 # Decide whether a repository changed since its latest local semver tag.
 repo_changed_since_latest_tag() {
   local repo="$1" latest main_commit tag_commit path
@@ -2264,13 +2278,85 @@ stable_tag_exists() {
   git -C "${path}" ls-remote --exit-code --tags "${remote}" "refs/tags/${version}" >/dev/null 2>&1
 }
 
-# Reject a stale unpublished tag so a retry cannot replace a newer stable lane.
+# Return the release GitHub currently presents as latest. Stable publication
+# uses --latest, so this is the tap-repair authority after assets exist.
+latest_published_stable_release() {
+  local output api_status
+  if output="$(
+    github_cli api "repos/$(github_repo "${COMPOSE_REPO}")/releases/latest" \
+      --jq '.tag_name' 2>&1
+  )"; then
+    printf '%s\n' "${output}"
+    return 0
+  else
+    api_status=$?
+  fi
+
+  if grep -Fq '(HTTP 404)' <<<"${output}"; then
+    return 0
+  fi
+  printf '%s\n' "${output}" >&2
+  return "${api_status}"
+}
+
+# Decide whether a stable publication may advance GitHub's latest release and
+# the Homebrew stable formula pair. Older maintenance lines publish immutable
+# backfill assets without changing either mutable consumer pointer.
+stable_version_promotes_default_lane() {
+  local version="$1" latest
+  latest="$(latest_published_stable_release)"
+  python3 "${STABLE_RELEASE_LANE_CLASSIFIER}" "${version}" "${latest}"
+}
+
+# Resolve the immutable tap main identity used to prove that a maintenance
+# backfill did not move either stable formula.
+homebrew_tap_main_sha() {
+  github_cli api repos/stephenlclarke/homebrew-tap/commits/main --jq '.sha'
+}
+
+# Reject a stale published tag so formula-only recovery cannot downgrade the
+# tap after a newer stable release has become GitHub's latest release.
 ensure_latest_stable_retry() {
   local version="$1" latest
-  latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
+  latest="$(latest_published_stable_release)"
   if [[ "${version}" != "${latest}" ]]; then
-    printf 'stable tag %s is not the latest semantic source tag (%s)\n' \
+    printf 'stable tag %s is not the latest published stable release (%s)\n' \
       "${version}" "${latest:-missing}" >&2
+    exit 1
+  fi
+}
+
+# Permit a maintenance retry only when its signed tag is the newest patch in
+# that series and still names the exact release-line head. This is the source
+# authority for both unpublished publication and published asset recovery.
+# Formula repairs remain restricted to the global latest tag by
+# ensure_latest_stable_retry so an older line can never downgrade the tap.
+ensure_stable_retry_source_authority() {
+  local version="$1" latest series latest_series path remote tag_sha release_branch_sha
+  latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
+  if [[ "${version}" == "${latest}" ]]; then
+    return 0
+  fi
+
+  series="${version%.*}"
+  latest_series="$(latest_local_semver_tag_for_series "${COMPOSE_REPO}" "${series}")"
+  if [[ "${version}" != "${latest_series}" ]]; then
+    printf 'maintenance tag %s is not the latest semantic tag in series %s (%s)\n' \
+      "${version}" "${series}" "${latest_series:-missing}" >&2
+    exit 1
+  fi
+
+  path="$(repo_path "${COMPOSE_REPO}")"
+  remote="$(push_remote "${COMPOSE_REPO}")"
+  tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
+  release_branch_sha="$(
+    git -C "${path}" ls-remote --heads "${remote}" "refs/heads/release-${series}" |
+      awk '{ print $1 }' |
+      tail -n 1
+  )"
+  if [[ -z "${release_branch_sha}" ]] || [[ "${tag_sha}" != "${release_branch_sha}" ]]; then
+    printf 'maintenance tag %s is not the exact release-%s head (%s, got %s)\n' \
+      "${version}" "${series}" "${release_branch_sha:-missing}" "${tag_sha:-missing}" >&2
     exit 1
   fi
 }
@@ -3629,7 +3715,7 @@ publish_stable_init_image_asset() {
 
 # Verify the stable release assets and Homebrew formula agree.
 verify_compose_stable_package() {
-  local version="$1" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha signature_verifier init_asset init_asset_sha init_checksum_sha
+  local version="$1" promote_default_lane="${2:-true}" tap_sha_before="${3:-}" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha signature_verifier init_asset init_asset_sha init_checksum_sha tap_sha_after
   local authority=() containerization_repository containerization_reference
   repo="$(github_repo "${COMPOSE_REPO}")"
   asset="container-compose-plugin-release-arm64.tar.gz"
@@ -3731,6 +3817,22 @@ verify_compose_stable_package() {
   "${signature_verifier}" "${tmp}/${runtime_asset}"
   rm -rf "${tmp}"
 
+  if [[ "${promote_default_lane}" != "true" ]]; then
+    if [[ -z "${tap_sha_before}" ]]; then
+      printf 'maintenance backfill verification requires the original Homebrew tap identity\n' >&2
+      exit 1
+    fi
+    tap_sha_after="$(homebrew_tap_main_sha)"
+    if [[ "${tap_sha_after}" != "${tap_sha_before}" ]]; then
+      printf 'maintenance backfill moved Homebrew tap main: expected %s, got %s\n' \
+        "${tap_sha_before}" "${tap_sha_after}" >&2
+      exit 1
+    fi
+    printf 'stable stack %s maintenance backfill verified without moving Homebrew tap %s: %s + %s + %s\n' \
+      "${version}" "${tap_sha_after}" "${asset_sha}" "${runtime_asset_sha}" "${init_asset_sha}"
+    return 0
+  fi
+
   formula_text="$(
     github_cli api \
       repos/stephenlclarke/homebrew-tap/contents/Formula/container-compose.rb \
@@ -3788,7 +3890,7 @@ verify_compose_stable_package() {
 
 # Dispatch and verify one stable package workflow mode for a semantic tag.
 dispatch_compose_stable_workflow() {
-  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label
+  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label promote_default_lane tap_sha_before
   print_header "dispatch container-compose ${version} ${mode}"
 
   if [[ "${repair_tap}" == "true" ]]; then
@@ -3810,6 +3912,13 @@ dispatch_compose_stable_workflow() {
   fi
 
   need_command gh
+  promote_default_lane="$(stable_version_promotes_default_lane "${version}")"
+  tap_sha_before="$(homebrew_tap_main_sha)"
+  if [[ "${repair_tap}" == "true" && "${promote_default_lane}" != "true" ]]; then
+    printf 'Homebrew tap repair cannot promote maintenance backfill %s over the latest stable release\n' \
+      "${version}" >&2
+    exit 1
+  fi
   previous_run="$(latest_compose_package_dispatch_run "${version}" || true)"
   if [[ "${repair_tap}" == "true" ]]; then
     run github_cli workflow run prebuilt-binaries.yml \
@@ -3831,7 +3940,8 @@ dispatch_compose_stable_workflow() {
       printf '%s started: %s\n' "${label}" "${run_id}"
       wait_for_github_run_success "${run_id}" "${label}"
       publish_stable_init_image_asset "${version}"
-      verify_compose_stable_package "${version}"
+      verify_compose_stable_package \
+        "${version}" "${promote_default_lane}" "${tap_sha_before}"
       return 0
     fi
 
@@ -3902,15 +4012,28 @@ dispatch_stable_release_gate() {
 
 # Print the verified boundary for a stable release or its formula-only recovery.
 print_stable_release_point() {
-  local version="$1" generation="$2"
+  local version="$1" generation="$2" latest label tap_update
+  if [[ "${EXECUTE}" == "1" ]]; then
+    latest="$(latest_published_stable_release)"
+    if [[ "${version}" == "${latest}" ]]; then
+      label="latest"
+      tap_update="stable container and container-compose formula pair verified"
+    else
+      label="maintenance backfill"
+      tap_update="stable formula pair left unchanged and exact tap identity verified"
+    fi
+  else
+    label="selected by the stable package workflow"
+    tap_update="verified after publication according to the selected release lane"
+  fi
   print_component_refs
   cat <<EOF
 
 Stable release point:
   version: ${version}
-  label: latest
+  label: ${label}
   release generation: ${generation}
-  tap update: stable container and container-compose formula pair verified
+  tap update: ${tap_update}
 EOF
 }
 
@@ -3932,16 +4055,26 @@ tag_stable_version() {
 
 # Resume the latest signed tag without mutating its stable source identity.
 resume_stable_release() {
-  local version="$1"
+  local version="$1" promote_default_lane tap_sha_before
   print_header "resume stable release ${version}"
-  ensure_latest_stable_retry "${version}"
   verify_github_stable_tag_signature "${version}"
   if stable_release_is_published "${version}"; then
-    dispatch_compose_stable_tap_repair "${version}"
-    print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
+    promote_default_lane="$(stable_version_promotes_default_lane "${version}")"
+    if [[ "${promote_default_lane}" == "true" ]]; then
+      ensure_latest_stable_retry "${version}"
+      dispatch_compose_stable_tap_repair "${version}"
+      print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
+    else
+      ensure_stable_retry_source_authority "${version}"
+      tap_sha_before="$(homebrew_tap_main_sha)"
+      publish_stable_init_image_asset "${version}"
+      verify_compose_stable_package "${version}" "false" "${tap_sha_before}"
+      print_stable_release_point "${version}" "maintenance backfill asset recovery"
+    fi
     return 0
   fi
   ensure_stable_release_is_unpublished "${version}"
+  ensure_stable_retry_source_authority "${version}"
   publish_stable_release "${version}"
 }
 
