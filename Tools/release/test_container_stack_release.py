@@ -1102,7 +1102,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("needs.analyze.result", codeql)
         self.assertIn("needs.analyze-skipped.result", codeql)
 
-    def test_release_sonar_step_runs_on_main_and_tags_with_complete_retry_budget(
+    def test_release_sonar_step_runs_on_main_and_tags_with_supported_branch_and_retry_budget(
         self,
     ) -> None:
         ci = CI_WORKFLOW.read_text(encoding="utf-8")
@@ -1116,27 +1116,106 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "- name: Enforce SonarQube failures when the service is available"
             )
         ]
+        obligation = ci[
+            ci.index("- name: Record canonical restoration obligation") : ci.index(
+                "- name: SonarQube scan"
+            )
+        ]
         sonar_install = ci[
             ci.index("- name: Install Sonar Scanner CLI") : ci.index(
                 "- name: SonarQube scan"
             )
         ]
-        self.assertIn("timeout-minutes: 105", runtime_job)
+        self.assertIn("timeout-minutes: 250", runtime_job)
+        self.assertIn("- resolve-canonical-main", runtime_job)
         self.assertIn("continue-on-error: true", sonar)
-        self.assertIn("timeout-minutes: 25", sonar)
+        self.assertIn("timeout-minutes: 180", sonar)
+        self.assertIn('GH_TOKEN: ${{ github.token }}', sonar)
         self.assertIn('SONAR_QUALITYGATE_WAIT: "true"', sonar)
         self.assertIn("make sonar-scan", sonar)
+        self.assertIn('if [[ "${GITHUB_REF_TYPE}" == "tag" ]]', sonar)
         self.assertIn('release_version="${GITHUB_REF_NAME#v}"', sonar)
         self.assertIn(
-            'export SONAR_BRANCH="release-${release_version%.*}"',
+            'if [[ ! "${release_version}" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]',
             sonar,
+        )
+        self.assertIn("RELEASE_AUTHORITY_REF", sonar)
+        self.assertIn('if [[ "${GITHUB_SHA}" != "${release_authority_sha}" ]]', sonar)
+        self.assertIn(
+            "Skipping SonarQube scan for published release tag",
+            sonar,
+        )
+        self.assertLess(
+            sonar.index("gh api --silent"),
+            sonar.index('release_authority_sha="$('),
+        )
+        self.assertIn('export SONAR_BRANCH="main"', sonar)
+        self.assertIn(
+            'CONTAINER_RUNTIME_LOCK_FILE="/tmp/container-compose-sonar-${UID}.lock"',
+            sonar,
+        )
+        self.assertIn("CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS=7200", sonar)
+        self.assertIn("source Tools/ci/container-runtime-lock.sh", sonar)
+        self.assertIn("acquire_container_runtime_lock", sonar)
+        self.assertIn("trap release_container_runtime_lock EXIT", sonar)
+        self.assertIn("EXPECTED_CANONICAL_MAIN_SHA", sonar)
+        self.assertIn("canonical main moved after recovery preflight", sonar)
+        self.assertIn("was published while waiting for authority", sonar)
+        self.assertIn("moved while tag", sonar)
+        self.assertIn("RESTORE_CANONICAL_MAIN", sonar)
+        self.assertIn("../sonar-main-recovery", sonar)
+        self.assertIn("atomic canonical main restoration failed", sonar)
+        self.assertIn("canonical main moved during atomic release restoration", sonar)
+        self.assertIn("canonical_restore_failed=true", sonar)
+        self.assertIn("canonical_restore_completed=true", sonar)
+        self.assertIn("command -v gtimeout", sonar)
+        self.assertIn('"${sonar_timeout}" --kill-after=30s 1500s make sonar-scan', sonar)
+        self.assertEqual(sonar.count("run_bounded_sonar_scan"), 3)
+        self.assertIn("- name: Record successful SonarQube analysis", sonar)
+        self.assertIn("steps.sonar_scan.outcome == 'success'", sonar)
+        self.assertIn("Record canonical restoration obligation", ci)
+        self.assertIn("steps.sonar_tcp.outputs.available == 'true'", obligation)
+        self.assertIn("steps.sonar_api.outputs.available == 'true'", obligation)
+        self.assertIn("steps.sonar_install.outcome == 'success'", obligation)
+        self.assertIn("steps.sonar_restore_obligation.outputs.required", ci)
+        self.assertIn("CANONICAL_RESTORE_COMPLETED", ci)
+        self.assertIn("Canonical Sonar restoration did not complete; failing closed.", ci)
+        self.assertIn("CANONICAL_RESTORE_FAILED", ci)
+        self.assertIn("preserving the release validation failure", ci)
+        self.assertIn("  resolve-canonical-main:", ci)
+        self.assertNotIn("  restore-canonical-sonar:", ci)
+        self.assertIn('if [[ "${GITHUB_REF_TYPE}" != "tag" ]]', ci)
+        self.assertIn('artifact_name="sonar-main-inputs-${main_sha}"', ci)
+        self.assertIn("release Sonar scan is unsafe", ci)
+        self.assertIn("needs.resolve-canonical-main.outputs.restore == 'true'", ci)
+        self.assertIn("Checkout canonical main recovery source", ci)
+        self.assertIn("fetch-depth: 0\n          path: sonar-main-recovery", ci)
+        self.assertIn("Download retained canonical main coverage", ci)
+        self.assertIn("artifact_run_id:", ci)
+        self.assertIn("authority_ref:", ci)
+        self.assertIn("authority_ref=main", ci)
+        self.assertIn("authority_ref=%s\\n", ci)
+        self.assertIn('"${release_branch}"', ci)
+        self.assertIn("test -s sonar-main-recovery/coverage.xml", ci)
+        self.assertIn(
+            "test -s sonar-main-recovery/Tools/compose-normalizer/coverage.out",
+            ci,
+        )
+        self.assertIn("name: sonar-main-inputs-${{ github.sha }}", ci)
+        self.assertIn("container-compose/coverage.xml", ci)
+        self.assertIn("container-compose/Tools/compose-normalizer/coverage.out", ci)
+        self.assertIn("overwrite: true", ci)
+        self.assertIn("cancel-in-progress: ${{ github.ref_type != 'tag' }}", ci)
+        self.assertIn('if [[ "${GITHUB_REF_TYPE}" == "tag" ]]', ci)
+        self.assertIn(
+            "Stable tags are immutable release candidates. Always run the full",
+            ci,
         )
         self.assertEqual(
             ci.count("github.ref == 'refs/heads/main' || github.ref_type == 'tag'"),
-            6,
+            8,
         )
         self.assertIn('GITHUB_REF_TYPE: ${{ github.ref_type }}', ci)
-        self.assertIn('if [[ "${GITHUB_REF_TYPE}" == "tag" ]]', ci)
         self.assertIn("printf 'heavy=true\\n' >> \"$GITHUB_OUTPUT\"", ci)
         self.assertIn(
             'gpg_home="$(mktemp -d /private/tmp/container-compose-sonar-gpg.XXXXXX)"',
