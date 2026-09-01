@@ -41,7 +41,7 @@ jobs:
       sha: ${{ steps.candidate.outputs.sha }}
       homebrew_tap_ref: ${{ steps.candidate.outputs.homebrew_tap_ref }}
     steps:
-      - name: Require an immutable main tag and green main CI
+      - name: Require an immutable release-line tag and green tag CI
         id: candidate
         env:
           GH_TOKEN: ${{ github.token }}
@@ -67,10 +67,37 @@ jobs:
                 | tail -n 1
             )"
           fi
-          main_sha="$(git ls-remote --heads "${remote}" refs/heads/main | awk '{ print $1 }' | tail -n 1)"
-          if [[ ! "${tag_sha}" =~ ^[0-9a-f]{40}$ ]] || [[ -z "${main_sha}" ]]; then
-            printf 'could not resolve stable tag %s or main\n' "${RELEASE_TAG}" >&2
+          release_line="${RELEASE_TAG%.*}"
+          release_branch="release-${release_line}"
+          release_branch_sha="$(
+            git ls-remote --heads "${remote}" "refs/heads/${release_branch}" \
+              | awk '{ print $1 }' \
+              | tail -n 1
+          )"
+          if [[ ! "${tag_sha}" =~ ^[0-9a-f]{40}$ ]] || \
+            [[ ! "${release_branch_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'could not resolve stable tag %s or release branch %s\n' \
+              "${RELEASE_TAG}" "${release_branch}" >&2
             exit 1
+          fi
+          if [[ "${GITHUB_REF}" != "refs/heads/${release_branch}" ]] || \
+            [[ "${GITHUB_SHA}" != "${release_branch_sha}" ]]; then
+            printf 'stable gate for %s must run from exact %s head %s\n' \
+              "${RELEASE_TAG}" "${release_branch}" "${release_branch_sha}" >&2
+            exit 1
+          fi
+          compare_status="$(
+            gh api "repos/${GITHUB_REPOSITORY}/compare/${tag_sha}...${release_branch_sha}" \
+              --jq '.status'
+          )"
+          if [[ "${compare_status}" != "identical" && "${compare_status}" != "ahead" ]]; then
+            printf 'stable tag %s is not on release branch %s (%s)\n' \
+              "${RELEASE_TAG}" "${release_branch}" "${compare_status:-missing}" >&2
+            exit 1
+          fi
+          if [[ "${compare_status}" == "ahead" ]]; then
+            printf 'stable tag %s is behind %s; accepting its GitHub-verified unpublished source for a release retry\n' \
+              "${RELEASE_TAG}" "${release_branch}"
           fi
           tag_object="$(
             gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha'
@@ -83,16 +110,18 @@ jobs:
             exit 1
           fi
 
-          latest_stable_tag="$(
+          release_line_regex="${release_line//./[.]}"
+          latest_release_line_tag="$(
             git ls-remote --tags --refs "${remote}" \
               | awk '{ sub("^refs/tags/", "", $2); print $2 }' \
               | awk '/^[0-9]+[.][0-9]+[.][0-9]+$/' \
+              | awk -v line="${release_line_regex}" '$0 ~ ("^" line "[.][0-9]+$")' \
               | sort -V \
               | tail -n 1
           )"
-          if [[ "${latest_stable_tag}" != "${RELEASE_TAG}" ]]; then
-            printf 'stable tag %s is not the latest semantic source tag (%s)\n' \
-              "${RELEASE_TAG}" "${latest_stable_tag:-missing}" >&2
+          if [[ "${latest_release_line_tag}" != "${RELEASE_TAG}" ]]; then
+            printf 'stable tag %s is not the latest %s source tag (%s)\n' \
+              "${RELEASE_TAG}" "${release_line}" "${latest_release_line_tag:-missing}" >&2
             exit 1
           fi
 
@@ -113,11 +142,6 @@ jobs:
             exit 1
           fi
 
-          if [[ "${tag_sha}" != "${main_sha}" ]]; then
-            printf 'stable tag %s no longer matches main; accepting its GitHub-verified unpublished source for a release retry\n' \
-              "${RELEASE_TAG}"
-          fi
-
           homebrew_tap_ref="$(
             git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git refs/heads/main \
               | awk '{ print $1 }' \
@@ -133,7 +157,8 @@ jobs:
             run="$(
               gh run list --repo "${GITHUB_REPOSITORY}" --workflow ci.yml --commit "${tag_sha}" \
                 --event push --limit 20 --json databaseId,status,conclusion,headBranch \
-                --jq 'map(select(.headBranch == "main") | select(.status == "completed" or .status == "in_progress" or .status == "queued")) | .[0] // empty'
+                | jq -c --arg tag "${RELEASE_TAG}" \
+                  'map(select(.headBranch == $tag) | select(.status == "completed" or .status == "in_progress" or .status == "queued")) | .[0] // empty'
             )"
             status="$(jq -r '.status // empty' <<<"${run}")"
             conclusion="$(jq -r '.conclusion // empty' <<<"${run}")"
@@ -141,14 +166,14 @@ jobs:
               break
             fi
             if [[ "${status}" == "completed" ]]; then
-              printf 'main CI for %s concluded %s\n' "${tag_sha}" "${conclusion:-missing}" >&2
+              printf 'tag CI for %s concluded %s\n' "${tag_sha}" "${conclusion:-missing}" >&2
               exit 1
             fi
             if (( SECONDS >= deadline )); then
-              printf 'timed out waiting for green main CI (including SonarQube) at %s\n' "${tag_sha}" >&2
+              printf 'timed out waiting for green tag CI (including SonarQube) at %s\n' "${tag_sha}" >&2
               exit 1
             fi
-            printf 'waiting for main CI (including SonarQube) at %s\n' "${tag_sha}"
+            printf 'waiting for tag CI (including SonarQube) at %s\n' "${tag_sha}"
             sleep 30
           done
 
@@ -309,7 +334,7 @@ jobs:
       # checkouts. Validate the Compose application against the candidate's
       # immutable remote pins before any such edit can hide the checked-in
       # release provenance. The resolver already requires the candidate's
-      # complete main CI, including the 390 tool-policy tests. Do not rerun its
+      # complete tag CI, including the 390 tool-policy tests. Do not rerun its
       # wall-clock deadline harnesses on a variably loaded macOS host; keep this
       # lane focused on the macOS application build, coverage, and CLI proof.
       - name: Run Compose application CI from immutable source lockfile
