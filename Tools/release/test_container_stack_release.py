@@ -1205,6 +1205,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             release_codeql,
         )
         self.assertIn("always()", package_job)
+        self.assertIn("!cancelled()", package_job)
         self.assertIn("needs.release-preflight.result == 'success'", package_job)
         self.assertIn(
             "needs.resolve-publish-context.outputs.ref_type != 'tag'",
