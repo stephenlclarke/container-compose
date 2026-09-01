@@ -15,6 +15,7 @@
 #===----------------------------------------------------------------------===#
 
 name: Stable Release Gate
+run-name: Stable Release Gate · ${{ inputs.ref }}
 
 on:
   workflow_dispatch:
