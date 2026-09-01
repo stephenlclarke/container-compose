@@ -17,6 +17,7 @@
 
 """Regression tests for stable release policy in the stack helper."""
 
+import hashlib
 import json
 import os
 import re
@@ -677,8 +678,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn(
             "needs.resolve-publish-context.outputs.ref_type == 'branch'", retention
         )
-        self.assertIn('tap_sha_after="$(homebrew_tap_main_sha)"', verifier)
-        self.assertIn("maintenance backfill moved Homebrew tap main", verifier)
+        self.assertIn(
+            'stable_formula_identities_after="$(homebrew_stable_formula_identities)"',
+            verifier,
+        )
+        self.assertIn("maintenance backfill moved stable Homebrew formulae", verifier)
         self.assertLess(
             verifier.index('if [[ "${promote_default_lane}" != "true" ]]'),
             verifier.index('formula_text="$('),
@@ -687,13 +691,21 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             'promote_default_lane="$(stable_version_promotes_default_lane "${version}")"',
             dispatcher,
         )
-        self.assertIn('tap_sha_before="$(homebrew_tap_main_sha)"', dispatcher)
         self.assertIn(
-            '"${version}" "${promote_default_lane}" "${tap_sha_before}"',
+            'stable_formula_identities_before="$(homebrew_stable_formula_identities)"',
+            dispatcher,
+        )
+        self.assertIn(
+            '"${version}" "${promote_default_lane}" "${stable_formula_identities_before}"',
             dispatcher,
         )
 
     def test_stable_release_publishes_and_verifies_guest_closure(self) -> None:
+        asset_pair = self.script[
+            self.script.index("publish_stable_asset_pair() {") : self.script.index(
+                "# Publish the exact guest archive"
+            )
+        ]
         publisher = self.script[
             self.script.index("publish_stable_init_image_asset() {") : self.script.index(
                 "# Verify the stable release assets and Homebrew formula agree."
@@ -714,13 +726,112 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE", publisher)
         self.assertIn("stable_containerization_authority", publisher)
         self.assertIn("OCI_IMAGE_LAYOUT_VALIDATOR", publisher)
-        self.assertIn('github_cli release upload "${version}"', publisher)
+        self.assertIn('github_cli release upload "${version}"', asset_pair)
+        self.assertIn("publish_stable_asset_pair", publisher)
         self.assertLess(
             dispatcher.index('publish_stable_init_image_asset "${version}"'),
             dispatcher.index("verify_compose_stable_package"),
         )
         self.assertIn('init_asset="container-vminit-arm64.oci.tar"', verifier)
         self.assertIn('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${tmp}/${init_asset}"', verifier)
+
+    def test_stable_guest_asset_pair_recovers_each_missing_member(self) -> None:
+        asset = "container-vminit-arm64.oci.tar"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            local = root / "local"
+            local.mkdir()
+            local_asset = local / asset
+            local_checksum = local / f"{asset}.sha256"
+            local_asset.write_bytes(b"immutable release-gate guest archive\n")
+            digest = hashlib.sha256(local_asset.read_bytes()).hexdigest()
+            local_checksum.write_text(f"{digest}  {asset}\n", encoding="utf-8")
+
+            for existing, missing in (
+                (asset, f"{asset}.sha256"),
+                (f"{asset}.sha256", asset),
+            ):
+                with self.subTest(existing=existing):
+                    fixture = root / existing.replace(".", "-")
+                    remote = fixture / "remote"
+                    remote.mkdir(parents=True)
+                    uploads = fixture / "uploads"
+                    if existing == asset:
+                        (remote / asset).write_bytes(local_asset.read_bytes())
+                    else:
+                        (remote / f"{asset}.sha256").write_text(
+                            f"{digest}  {asset}\n", encoding="utf-8"
+                        )
+
+                    shell_setup = f"""\
+export TEST_ASSET_NAMES={shlex.quote(existing)}
+export TEST_REMOTE={shlex.quote(str(remote))}
+export TEST_UPLOADS={shlex.quote(str(uploads))}
+github_cli() {{
+  case "$1:$2" in
+    release:view)
+      printf '%s\\n' "${{TEST_ASSET_NAMES}}"
+      ;;
+    release:download)
+      shift 3
+      local pattern='' destination=''
+      while (( $# > 0 )); do
+        case "$1" in
+          --pattern) pattern="$2"; shift 2 ;;
+          --dir) destination="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      cp "${{TEST_REMOTE}}/${{pattern}}" "${{destination}}/${{pattern}}"
+      ;;
+    release:upload)
+      shift 3
+      while (( $# > 0 )); do
+        if [[ "$1" == --repo ]]; then shift 2; continue; fi
+        basename "$1" >>"${{TEST_UPLOADS}}"
+        shift
+      done
+      ;;
+    *) return 2 ;;
+  esac
+}}
+"""
+                    recovered = self.run_release_function(
+                        root,
+                        "publish_stable_asset_pair "
+                        "0.13.1 owner/container-compose "
+                        f"{shlex.quote(str(local_asset))} "
+                        f"{shlex.quote(str(local_checksum))} "
+                        f"{asset} {digest}",
+                        shell_setup=shell_setup,
+                    )
+
+                    self.assertEqual(recovered.returncode, 0, recovered.stderr)
+                    self.assertEqual(uploads.read_text(encoding="utf-8").strip(), missing)
+
+    def test_homebrew_backfill_identity_uses_only_stable_formula_blobs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identity = self.run_release_function(
+                root,
+                "homebrew_stable_formula_identities",
+                shell_setup="""github_cli() {
+  case "$*" in
+    *Formula/container-compose.rb*) printf '%s\\n' compose-blob ;;
+    *Formula/container.rb*) printf '%s\\n' container-blob ;;
+    *) return 2 ;;
+  esac
+}""",
+            )
+
+            self.assertEqual(identity.returncode, 0, identity.stderr)
+            self.assertEqual(
+                identity.stdout.splitlines(),
+                [
+                    "container-compose.rb=compose-blob",
+                    "container.rb=container-blob",
+                ],
+            )
 
     def test_homebrew_tap_pushes_authenticate_with_the_tap_token(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
@@ -5356,7 +5467,9 @@ esac
             self.assertEqual(unpublished.returncode, 0, unpublished.stderr)
             self.assertIn("publish 0.6.70", unpublished.stdout)
 
-    def test_resume_recovers_published_maintenance_assets_without_moving_tap(self) -> None:
+    def test_resume_recovers_published_maintenance_assets_without_moving_stable_formulae(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             recovered = self.run_release_function(
@@ -5368,8 +5481,9 @@ esac
                         "stable_release_is_published() { return 0; }",
                         "stable_version_promotes_default_lane() { printf '%s\\n' false; }",
                         "ensure_latest_stable_retry() { exit 70; }",
-                        "ensure_stable_retry_source_authority() { printf 'authority %s\\n' \"$1\"; }",
-                        "homebrew_tap_main_sha() { printf '%s\\n' tap-before; }",
+                        "ensure_stable_retry_source_authority() { exit 72; }",
+                        "ensure_published_stable_recovery_authority() { printf 'immutable-authority %s\\n' \"$1\"; }",
+                        "homebrew_stable_formula_identities() { printf '%s\\n' formulae-before; }",
                         "dispatch_compose_stable_tap_repair() { exit 71; }",
                         "publish_stable_init_image_asset() { printf 'init %s\\n' \"$1\"; }",
                         "verify_compose_stable_package() { printf 'verify %s %s %s\\n' \"$1\" \"$2\" \"$3\"; }",
@@ -5379,10 +5493,61 @@ esac
             )
 
             self.assertEqual(recovered.returncode, 0, recovered.stderr)
-            self.assertIn("authority 0.13.1", recovered.stdout)
+            self.assertIn("immutable-authority 0.13.1", recovered.stdout)
             self.assertIn("init 0.13.1", recovered.stdout)
-            self.assertIn("verify 0.13.1 false tap-before", recovered.stdout)
+            self.assertIn("verify 0.13.1 false formulae-before", recovered.stdout)
             self.assertIn("maintenance backfill asset recovery", recovered.stdout)
+
+    def test_published_recovery_uses_immutable_candidate_gate_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tag_sha = "a" * 40
+            shell_setup = "\n".join(
+                [
+                    "repo_path() { printf '%s\\n' /tmp/container-compose-test; }",
+                    "github_repo() { printf '%s\\n' owner/repo; }",
+                    "git() {",
+                    "  if [[ \"$*\" == *'rev-list -n 1 refs/tags/0.13.1'* ]]; then",
+                    "    printf '%s\\n' \"${TEST_TAG_SHA:-" + tag_sha + "}\"",
+                    "  else",
+                    "    printf 'unexpected movable-source query: %s\\n' \"$*\" >&2",
+                    "    return 3",
+                    "  fi",
+                    "}",
+                    "github_cli() {",
+                    "  if [[ \"$1\" == api ]]; then",
+                    "    printf '%s\\n' \"${TEST_AUTHORITY_RUN_ID:-29288195238}\"",
+                    "  elif [[ \"$1:$2\" == run:view ]]; then",
+                    "    printf '%s\\n' \"${TEST_GATE_CONCLUSION:-success}\"",
+                    "  else",
+                    "    return 2",
+                    "  fi",
+                    "}",
+                ]
+            )
+
+            accepted = self.run_release_function(
+                root,
+                "ensure_published_stable_recovery_authority 0.13.1",
+                shell_setup=shell_setup,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+            missing_gate = self.run_release_function(
+                root,
+                "ensure_published_stable_recovery_authority 0.13.1",
+                shell_setup=f"export TEST_AUTHORITY_RUN_ID=missing\n{shell_setup}",
+            )
+            self.assertNotEqual(missing_gate.returncode, 0)
+            self.assertIn("candidate-bound Stable Release Authority", missing_gate.stderr)
+
+            failed_gate = self.run_release_function(
+                root,
+                "ensure_published_stable_recovery_authority 0.13.1",
+                shell_setup=f"export TEST_GATE_CONCLUSION=failure\n{shell_setup}",
+            )
+            self.assertNotEqual(failed_gate.returncode, 0)
+            self.assertIn("successful Stable Release Gate authority", failed_gate.stderr)
 
     def test_published_retry_rejects_a_non_latest_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

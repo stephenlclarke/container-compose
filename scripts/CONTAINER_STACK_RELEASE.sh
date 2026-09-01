@@ -2308,10 +2308,23 @@ stable_version_promotes_default_lane() {
   python3 "${STABLE_RELEASE_LANE_CLASSIFIER}" "${version}" "${latest}"
 }
 
-# Resolve the immutable tap main identity used to prove that a maintenance
-# backfill did not move either stable formula.
-homebrew_tap_main_sha() {
-  github_cli api repos/stephenlclarke/homebrew-tap/commits/main --jq '.sha'
+# Resolve the two stable formula blob identities used to prove that a
+# maintenance backfill did not move either stable consumer. Unrelated Current
+# formula commits may advance tap main without invalidating this evidence.
+homebrew_stable_formula_identities() {
+  local formula sha
+  for formula in container-compose container; do
+    sha="$(
+      github_cli api \
+        "repos/stephenlclarke/homebrew-tap/contents/Formula/${formula}.rb" \
+        --jq '.sha'
+    )"
+    if [[ -z "${sha}" ]]; then
+      printf 'Homebrew stable formula has no blob identity: %s.rb\n' "${formula}" >&2
+      return 1
+    fi
+    printf '%s.rb=%s\n' "${formula}" "${sha}"
+  done
 }
 
 # Reject a stale published tag so formula-only recovery cannot downgrade the
@@ -2326,9 +2339,8 @@ ensure_latest_stable_retry() {
   fi
 }
 
-# Permit a maintenance retry only when its signed tag is the newest patch in
-# that series and still names the exact release-line head. This is the source
-# authority for both unpublished publication and published asset recovery.
+# Permit an unpublished maintenance retry only when its signed tag is the
+# newest patch in that series and still names the exact release-line head.
 # Formula repairs remain restricted to the global latest tag by
 # ensure_latest_stable_retry so an older line can never downgrade the tap.
 ensure_stable_retry_source_authority() {
@@ -2358,6 +2370,48 @@ ensure_stable_retry_source_authority() {
     printf 'maintenance tag %s is not the exact release-%s head (%s, got %s)\n' \
       "${version}" "${series}" "${release_branch_sha:-missing}" "${tag_sha:-missing}" >&2
     exit 1
+  fi
+}
+
+# Authenticate recovery of an already-published stable release against the
+# immutable signed tag and its successful candidate-bound hosted gate. A
+# movable release branch must not make later recovery of immutable assets
+# time-dependent.
+ensure_published_stable_recovery_authority() {
+  local version="$1" path repo tag_sha authority_name authority_filter authority_run_id authority_conclusion
+  path="$(repo_path "${COMPOSE_REPO}")"
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
+  if [[ -z "${tag_sha}" ]]; then
+    printf 'published stable recovery tag is missing locally: %s\n' "${version}" >&2
+    return 1
+  fi
+
+  authority_name="Stable Release Authority (${version})"
+  authority_filter=".check_runs[] | select(.name == \"${authority_name}\""
+  authority_filter+=' and .status == "completed"'
+  authority_filter+=' and .conclusion == "success"'
+  authority_filter+=' and .app.slug == "github-actions")'
+  authority_filter+=' | .external_id'
+  authority_run_id="$(
+    github_cli api --paginate \
+      "repos/${repo}/commits/${tag_sha}/check-runs?per_page=100" \
+      --jq "${authority_filter}" |
+      tail -n 1
+  )"
+  if [[ ! "${authority_run_id}" =~ ^[0-9]+$ ]]; then
+    printf 'refusing published recovery without candidate-bound Stable Release Authority %s\n' \
+      "${authority_name}" >&2
+    return 1
+  fi
+  authority_conclusion="$(
+    github_cli run view "${authority_run_id}" --repo "${repo}" \
+      --json workflowName,event,status,conclusion \
+      --jq 'select(.workflowName == "Stable Release Gate" and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success") | .conclusion'
+  )"
+  if [[ "${authority_conclusion}" != "success" ]]; then
+    printf 'refusing published recovery without a successful Stable Release Gate authority\n' >&2
+    return 1
   fi
 }
 
@@ -3648,10 +3702,71 @@ print(component["ref"])
 PY
 }
 
+# Publish or recover one immutable asset/checksum pair. Existing members must
+# match the retained candidate; missing members are uploaded independently so
+# a partially successful GitHub upload remains resumable.
+publish_stable_asset_pair() {
+  local version="$1" repo="$2" asset_path="$3" checksum_path="$4" asset="$5" digest="$6"
+  local remote_tmp asset_names local_digest local_checksum remote_digest remote_checksum
+  local missing_assets=() status=0
+  if [[ ! -f "${asset_path}" || ! -f "${checksum_path}" ]]; then
+    printf 'stable asset pair is incomplete locally: %s + %s\n' \
+      "${asset_path}" "${checksum_path}" >&2
+    return 2
+  fi
+  local_digest="$(shasum -a 256 "${asset_path}" | awk '{print $1}')"
+  local_checksum="$(awk '{print $1}' "${checksum_path}")"
+  if [[ "${local_digest}" != "${digest}" || "${local_checksum}" != "${digest}" ]]; then
+    printf 'stable asset pair does not match its retained candidate digest: %s\n' \
+      "${digest}" >&2
+    return 2
+  fi
+  asset_names="$(
+    github_cli release view "${version}" --repo "${repo}" --json assets \
+      --jq '.assets[].name'
+  )"
+  remote_tmp="$(mktemp -d)"
+  if grep -Fxq "${asset}" <<<"${asset_names}"; then
+    github_cli release download "${version}" --repo "${repo}" \
+      --pattern "${asset}" --dir "${remote_tmp}"
+    remote_digest="$(shasum -a 256 "${remote_tmp}/${asset}" | awk '{print $1}')"
+    if [[ "${remote_digest}" != "${digest}" ]]; then
+      printf 'stable release %s guest asset differs from the retained release-gate archive\n' \
+        "${version}" >&2
+      status=1
+    fi
+  else
+    missing_assets+=("${asset_path}")
+  fi
+  if grep -Fxq "${asset}.sha256" <<<"${asset_names}"; then
+    github_cli release download "${version}" --repo "${repo}" \
+      --pattern "${asset}.sha256" --dir "${remote_tmp}"
+    remote_checksum="$(awk '{print $1}' "${remote_tmp}/${asset}.sha256")"
+    if [[ "${remote_checksum}" != "${digest}" ]]; then
+      printf 'stable release %s guest checksum differs from the retained release-gate archive\n' \
+        "${version}" >&2
+      status=1
+    fi
+  else
+    missing_assets+=("${checksum_path}")
+  fi
+  if (( status == 0 && ${#missing_assets[@]} > 0 )); then
+    if github_cli release upload "${version}" --repo "${repo}" "${missing_assets[@]}"; then
+      printf 'published stable guest asset: %s at %s\n' "${asset}" "${digest}"
+    else
+      status=$?
+    fi
+  elif (( status == 0 )); then
+    printf 'stable guest asset already published: %s at %s\n' "${asset}" "${digest}"
+  fi
+  find "${remote_tmp}" -depth -delete
+  return "${status}"
+}
+
 # Publish the exact guest archive that passed the local stable release gate.
 publish_stable_init_image_asset() {
-  local version="$1" repo archive asset tmp digest asset_names remote_digest
-  local authority=() containerization_repository containerization_reference status=0
+  local version="$1" repo archive asset tmp digest status
+  local authority=() containerization_repository containerization_reference
   repo="$(github_repo "${COMPOSE_REPO}")"
   archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
   asset="container-vminit-arm64.oci.tar"
@@ -3677,37 +3792,12 @@ publish_stable_init_image_asset() {
   cp "${archive}" "${tmp}/${asset}"
   digest="$(shasum -a 256 "${tmp}/${asset}" | awk '{print $1}')"
   printf '%s  %s\n' "${digest}" "${asset}" >"${tmp}/${asset}.sha256"
-  asset_names="$(
-    github_cli release view "${version}" --repo "${repo}" --json assets \
-      --jq '.assets[].name'
-  )"
-  if grep -Fxq "${asset}" <<<"${asset_names}" || \
-    grep -Fxq "${asset}.sha256" <<<"${asset_names}"; then
-    if ! grep -Fxq "${asset}" <<<"${asset_names}" || \
-      ! grep -Fxq "${asset}.sha256" <<<"${asset_names}"; then
-      printf 'stable release %s has an incomplete guest asset pair\n' "${version}" >&2
-      find "${tmp}" -depth -delete
-      return 1
-    fi
-    install -d -m 0700 "${tmp}/remote"
-    github_cli release download "${version}" --repo "${repo}" \
-      --pattern "${asset}" --pattern "${asset}.sha256" --dir "${tmp}/remote"
-    remote_digest="$(shasum -a 256 "${tmp}/remote/${asset}" | awk '{print $1}')"
-    if [[ "${remote_digest}" != "${digest}" ]] || \
-      [[ "$(awk '{print $1}' "${tmp}/remote/${asset}.sha256")" != "${digest}" ]]; then
-      printf 'stable release %s guest asset differs from the retained release-gate archive\n' \
-        "${version}" >&2
-      status=1
-    else
-      printf 'stable guest asset already published: %s at %s\n' "${asset}" "${digest}"
-    fi
+  if publish_stable_asset_pair \
+    "${version}" "${repo}" "${tmp}/${asset}" "${tmp}/${asset}.sha256" \
+    "${asset}" "${digest}"; then
+    status=0
   else
-    if github_cli release upload "${version}" --repo "${repo}" \
-      "${tmp}/${asset}" "${tmp}/${asset}.sha256"; then
-      printf 'published stable guest asset: %s at %s\n' "${asset}" "${digest}"
-    else
-      status=$?
-    fi
+    status=$?
   fi
   find "${tmp}" -depth -delete
   return "${status}"
@@ -3715,7 +3805,7 @@ publish_stable_init_image_asset() {
 
 # Verify the stable release assets and Homebrew formula agree.
 verify_compose_stable_package() {
-  local version="$1" promote_default_lane="${2:-true}" tap_sha_before="${3:-}" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha signature_verifier init_asset init_asset_sha init_checksum_sha tap_sha_after
+  local version="$1" promote_default_lane="${2:-true}" stable_formula_identities_before="${3:-}" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha signature_verifier init_asset init_asset_sha init_checksum_sha stable_formula_identities_after
   local authority=() containerization_repository containerization_reference
   repo="$(github_repo "${COMPOSE_REPO}")"
   asset="container-compose-plugin-release-arm64.tar.gz"
@@ -3818,18 +3908,18 @@ verify_compose_stable_package() {
   rm -rf "${tmp}"
 
   if [[ "${promote_default_lane}" != "true" ]]; then
-    if [[ -z "${tap_sha_before}" ]]; then
-      printf 'maintenance backfill verification requires the original Homebrew tap identity\n' >&2
+    if [[ -z "${stable_formula_identities_before}" ]]; then
+      printf 'maintenance backfill verification requires the original stable formula identities\n' >&2
       exit 1
     fi
-    tap_sha_after="$(homebrew_tap_main_sha)"
-    if [[ "${tap_sha_after}" != "${tap_sha_before}" ]]; then
-      printf 'maintenance backfill moved Homebrew tap main: expected %s, got %s\n' \
-        "${tap_sha_before}" "${tap_sha_after}" >&2
+    stable_formula_identities_after="$(homebrew_stable_formula_identities)"
+    if [[ "${stable_formula_identities_after}" != "${stable_formula_identities_before}" ]]; then
+      printf 'maintenance backfill moved stable Homebrew formulae: expected %s, got %s\n' \
+        "${stable_formula_identities_before}" "${stable_formula_identities_after}" >&2
       exit 1
     fi
-    printf 'stable stack %s maintenance backfill verified without moving Homebrew tap %s: %s + %s + %s\n' \
-      "${version}" "${tap_sha_after}" "${asset_sha}" "${runtime_asset_sha}" "${init_asset_sha}"
+    printf 'stable stack %s maintenance backfill verified without moving stable Homebrew formulae %s: %s + %s + %s\n' \
+      "${version}" "${stable_formula_identities_after}" "${asset_sha}" "${runtime_asset_sha}" "${init_asset_sha}"
     return 0
   fi
 
@@ -3890,7 +3980,7 @@ verify_compose_stable_package() {
 
 # Dispatch and verify one stable package workflow mode for a semantic tag.
 dispatch_compose_stable_workflow() {
-  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label promote_default_lane tap_sha_before
+  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label promote_default_lane stable_formula_identities_before=""
   print_header "dispatch container-compose ${version} ${mode}"
 
   if [[ "${repair_tap}" == "true" ]]; then
@@ -3913,7 +4003,9 @@ dispatch_compose_stable_workflow() {
 
   need_command gh
   promote_default_lane="$(stable_version_promotes_default_lane "${version}")"
-  tap_sha_before="$(homebrew_tap_main_sha)"
+  if [[ "${promote_default_lane}" != "true" ]]; then
+    stable_formula_identities_before="$(homebrew_stable_formula_identities)"
+  fi
   if [[ "${repair_tap}" == "true" && "${promote_default_lane}" != "true" ]]; then
     printf 'Homebrew tap repair cannot promote maintenance backfill %s over the latest stable release\n' \
       "${version}" >&2
@@ -3941,7 +4033,7 @@ dispatch_compose_stable_workflow() {
       wait_for_github_run_success "${run_id}" "${label}"
       publish_stable_init_image_asset "${version}"
       verify_compose_stable_package \
-        "${version}" "${promote_default_lane}" "${tap_sha_before}"
+        "${version}" "${promote_default_lane}" "${stable_formula_identities_before}"
       return 0
     fi
 
@@ -4055,7 +4147,7 @@ tag_stable_version() {
 
 # Resume the latest signed tag without mutating its stable source identity.
 resume_stable_release() {
-  local version="$1" promote_default_lane tap_sha_before
+  local version="$1" promote_default_lane stable_formula_identities_before
   print_header "resume stable release ${version}"
   verify_github_stable_tag_signature "${version}"
   if stable_release_is_published "${version}"; then
@@ -4065,10 +4157,11 @@ resume_stable_release() {
       dispatch_compose_stable_tap_repair "${version}"
       print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
     else
-      ensure_stable_retry_source_authority "${version}"
-      tap_sha_before="$(homebrew_tap_main_sha)"
+      ensure_published_stable_recovery_authority "${version}"
+      stable_formula_identities_before="$(homebrew_stable_formula_identities)"
       publish_stable_init_image_asset "${version}"
-      verify_compose_stable_package "${version}" "false" "${tap_sha_before}"
+      verify_compose_stable_package \
+        "${version}" "false" "${stable_formula_identities_before}"
       print_stable_release_point "${version}" "maintenance backfill asset recovery"
     fi
     return 0
