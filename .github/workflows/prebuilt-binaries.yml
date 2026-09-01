@@ -133,6 +133,14 @@ jobs:
             exit 1
           }
 
+          latest_semantic_source_tag() {
+            git ls-remote --tags --refs "${remote}" \
+              | awk '{ sub("^refs/tags/", "", $2); print $2 }' \
+              | awk '/^[0-9]+[.][0-9]+[.][0-9]+$/' \
+              | sort -V \
+              | tail -n 1
+          }
+
           # Query GitHub Actions authority with bounded retries. A transient API
           # outage must never be interpreted as missing quality evidence: that
           # would leave Current stale while reporting a successful skipped run.
@@ -384,6 +392,12 @@ jobs:
                   printf 'Homebrew tap repair requires a stable semantic tag, got: %s\n' "${DISPATCH_REF}" >&2
                   exit 1
                 fi
+                latest_stable_tag="$(latest_semantic_source_tag)"
+                if [[ "${DISPATCH_REF}" != "${latest_stable_tag}" ]]; then
+                  printf 'Homebrew tap repair is limited to the global latest stable tag %s, got: %s\n' \
+                    "${latest_stable_tag:-missing}" "${DISPATCH_REF}" >&2
+                  exit 1
+                fi
                 repair_tap="true"
                 ;;
               *)
@@ -481,24 +495,51 @@ jobs:
                 printf 'COMPOSE_VERSION %s does not match stable tag %s\n' "${compose_version}" "${PUBLISH_REF_NAME}" >&2
                 exit 1
               fi
+              latest_stable_tag="$(
+                git ls-remote --tags --refs "https://github.com/${GITHUB_REPOSITORY}.git" \
+                  | awk '{ sub("^refs/tags/", "", $2); print $2 }' \
+                  | awk '/^[0-9]+[.][0-9]+[.][0-9]+$/' \
+                  | sort -V \
+                  | tail -n 1
+              )"
+              if [[ -z "${latest_stable_tag}" ]]; then
+                printf 'could not resolve the global latest stable tag\n' >&2
+                exit 1
+              fi
               release_tag="${PUBLISH_REF_NAME}"
               release_title="${compose_version}"
-              release_label="stable release"
-              release_latest="true"
               release_prerelease="false"
-              update_tap="true"
               asset="container-compose-plugin-release-arm64.tar.gz"
               highlights_asset="release-highlights.json"
               demo_asset=""
               quality_snapshot_asset="quality-snapshot.svg"
-              formula="container-compose.rb"
-              formula_class="ContainerCompose"
-              runtime_formula="container"
-              container_formula="container.rb"
-              container_formula_class="Container"
-              container_compose_formula="container-compose"
               formula_version="${compose_version}"
-              package_lane="stable"
+              if [[ "${PUBLISH_REF_NAME}" == "${latest_stable_tag}" ]]; then
+                release_label="stable release"
+                release_latest="true"
+                update_tap="true"
+                formula="container-compose.rb"
+                formula_class="ContainerCompose"
+                runtime_formula="container"
+                container_formula="container.rb"
+                container_formula_class="Container"
+                container_compose_formula="container-compose"
+                package_lane="stable"
+              else
+                # Older supported lines remain immutable installable GitHub
+                # releases, but must never downgrade GitHub Latest or the
+                # unversioned Homebrew stable pair.
+                release_label="maintenance release"
+                release_latest="false"
+                update_tap="false"
+                formula=""
+                formula_class=""
+                runtime_formula=""
+                container_formula=""
+                container_formula_class=""
+                container_compose_formula=""
+                package_lane="maintenance"
+              fi
               ;;
             *)
               printf 'Unsupported release ref: %s %s\n' "${PUBLISH_REF_TYPE}" "${PUBLISH_REF_NAME}" >&2

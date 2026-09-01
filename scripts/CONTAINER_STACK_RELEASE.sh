@@ -91,7 +91,7 @@ Rules enforced:
   - Published stable releases are immutable; the latest GitHub-verified signed tag may repair only its matching formula pair from immutable assets.
   - container-compose main updates use only exact-head-reviewed pull-request promotion.
   - An equivalent tree already squash-merged on main is reconciled before tagging.
-  - Long-lived release branches are not used.
+  - Each semantic line uses release-MAJOR.MINOR as the immutable release-control branch.
   - Companion source repositories must already be merged to their fork mains
     through their own reviewable pull requests; this helper never pushes them.
 
@@ -1338,13 +1338,14 @@ stable_tag_exists() {
   git -C "${path}" ls-remote --exit-code --tags "${remote}" "refs/tags/${version}" >/dev/null 2>&1
 }
 
-# Reject a stale unpublished tag so a retry cannot replace a newer stable lane.
+# Reject a stale unpublished tag within its release line. A supported older
+# line may be resumed, but it cannot replace a later patch in that line.
 ensure_latest_stable_retry() {
   local version="$1" latest
-  latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
+  latest="$(latest_remote_release_line_tag "${version}")"
   if [[ "${version}" != "${latest}" ]]; then
-    printf 'stable tag %s is not the latest semantic source tag (%s)\n' \
-      "${version}" "${latest:-missing}" >&2
+    printf 'stable tag %s is not the latest source tag in release line %s (%s)\n' \
+      "${version}" "${version%.*}" "${latest:-missing}" >&2
     exit 1
   fi
 }
@@ -2549,6 +2550,84 @@ github_cli() {
   gh "$@"
 }
 
+# Return the release-control branch for one semantic version.
+release_branch_for_version() {
+  local version="$1"
+  if [[ ! "${version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+    printf 'release branch requires a semantic version: %s\n' "${version}" >&2
+    return 2
+  fi
+  printf 'release-%s\n' "${version%.*}"
+}
+
+# Return the newest semantic source tag visible on the writable Compose remote.
+latest_remote_semver_tag() {
+  local path remote
+  path="$(repo_path "${COMPOSE_REPO}")"
+  remote="$(push_remote "${COMPOSE_REPO}")"
+  git -C "${path}" ls-remote --tags --refs "${remote}" \
+    | awk '{ sub("^refs/tags/", "", $2); print $2 }' \
+    | awk '/^[0-9]+[.][0-9]+[.][0-9]+$/' \
+    | sort -V \
+    | tail -n 1
+}
+
+# Return the newest semantic source tag in one MAJOR.MINOR release line.
+latest_remote_release_line_tag() {
+  local version="$1" path remote release_line release_line_regex
+  path="$(repo_path "${COMPOSE_REPO}")"
+  remote="$(push_remote "${COMPOSE_REPO}")"
+  release_line="${version%.*}"
+  release_line_regex="${release_line//./[.]}"
+  git -C "${path}" ls-remote --tags --refs "${remote}" \
+    | awk '{ sub("^refs/tags/", "", $2); print $2 }' \
+    | awk '/^[0-9]+[.][0-9]+[.][0-9]+$/' \
+    | awk -v line="${release_line_regex}" '$0 ~ ("^" line "[.][0-9]+$")' \
+    | sort -V \
+    | tail -n 1
+}
+
+# Return success when a stable release owns the unversioned Homebrew lane.
+stable_release_updates_default_tap() {
+  local version="$1" latest
+  latest="$(latest_remote_semver_tag)"
+  [[ -n "${latest}" && "${version}" == "${latest}" ]]
+}
+
+# Publish the exact reviewed main head as the release-control branch. Existing
+# release lines may only move forward to a descendant of their current head.
+publish_release_line_branch() {
+  local version="$1" path remote branch main_sha remote_sha remote_ref
+  path="$(repo_path "${COMPOSE_REPO}")"
+  remote="$(push_remote "${COMPOSE_REPO}")"
+  branch="$(release_branch_for_version "${version}")"
+  main_sha="$(git -C "${path}" rev-parse main)"
+  remote_sha="$(
+    git -C "${path}" ls-remote --heads "${remote}" "refs/heads/${branch}" \
+      | awk '{ print $1 }' \
+      | tail -n 1
+  )"
+
+  if [[ -n "${remote_sha}" && "${remote_sha}" != "${main_sha}" ]]; then
+    remote_ref="refs/remotes/${remote}/${branch}"
+    run git -C "${path}" fetch "${remote}" \
+      "+refs/heads/${branch}:${remote_ref}"
+    if [[ "${EXECUTE}" == "1" ]] && \
+      ! git -C "${path}" merge-base --is-ancestor "${remote_ref}" "${main_sha}"; then
+      printf 'release branch %s is not an ancestor of reviewed main %s\n' \
+        "${branch}" "${main_sha}" >&2
+      exit 1
+    fi
+  fi
+
+  if [[ "${remote_sha}" == "${main_sha}" ]]; then
+    printf '%s already points at reviewed main %s\n' "${branch}" "${main_sha}"
+    return 0
+  fi
+  run git -C "${path}" push "${remote}" \
+    "${main_sha}:refs/heads/${branch}"
+}
+
 # Return the newest workflow-dispatch package run for one stable semantic tag.
 latest_compose_package_dispatch_run() {
   local version="$1" title
@@ -2563,13 +2642,15 @@ latest_compose_package_dispatch_run() {
 }
 
 latest_stable_release_gate_dispatch_run() {
+  local version="$1" title
+  title="Stable Release Gate · ${version}"
   github_cli run list \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --workflow stable-release-gate.yml \
     --event workflow_dispatch \
-    --limit 1 \
-    --json databaseId \
-    --jq '.[0].databaseId // ""'
+    --limit 100 \
+    --json databaseId,displayTitle \
+    --jq "map(select(.displayTitle == \"${title}\")) | .[0].databaseId // \"\""
 }
 
 # Wait for a GitHub Actions run to complete successfully.
@@ -2679,6 +2760,12 @@ verify_compose_stable_package() {
   "${signature_verifier}" "${tmp}/${runtime_asset}"
   rm -rf "${tmp}"
 
+  if ! stable_release_updates_default_tap "${version}"; then
+    printf 'maintenance release %s package pair verified without changing GitHub Latest or the unversioned Homebrew lane: %s + %s\n' \
+      "${version}" "${asset_sha}" "${runtime_asset_sha}"
+    return 0
+  fi
+
   formula_text="$(
     github_cli api \
       repos/stephenlclarke/homebrew-tap/contents/Formula/container-compose.rb \
@@ -2734,7 +2821,8 @@ verify_compose_stable_package() {
 
 # Dispatch and verify one stable package workflow mode for a semantic tag.
 dispatch_compose_stable_workflow() {
-  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label
+  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label workflow_ref
+  workflow_ref="$(release_branch_for_version "${version}")"
   print_header "dispatch container-compose ${version} ${mode}"
 
   if [[ "${repair_tap}" == "true" ]]; then
@@ -2744,8 +2832,8 @@ dispatch_compose_stable_workflow() {
   fi
 
   if [[ "${EXECUTE}" != "1" ]]; then
-    printf 'would run: gh workflow run prebuilt-binaries.yml --repo %s --ref main -f ref=%s' \
-      "$(github_repo "${COMPOSE_REPO}")" "${version}"
+    printf 'would run: gh workflow run prebuilt-binaries.yml --repo %s --ref %s -f ref=%s' \
+      "$(github_repo "${COMPOSE_REPO}")" "${workflow_ref}" "${version}"
     if [[ "${repair_tap}" == "true" ]]; then
       printf ' -f repair_tap=true'
     fi
@@ -2760,13 +2848,13 @@ dispatch_compose_stable_workflow() {
   if [[ "${repair_tap}" == "true" ]]; then
     run github_cli workflow run prebuilt-binaries.yml \
       --repo "$(github_repo "${COMPOSE_REPO}")" \
-      --ref main \
+      --ref "${workflow_ref}" \
       -f "ref=${version}" \
       -f "repair_tap=true"
   else
     run github_cli workflow run prebuilt-binaries.yml \
       --repo "$(github_repo "${COMPOSE_REPO}")" \
-      --ref main \
+      --ref "${workflow_ref}" \
       -f "ref=${version}"
   fi
 
@@ -2801,31 +2889,37 @@ dispatch_compose_stable_package() {
 # Repair a published stable formula pair without rebuilding or replacing release assets.
 dispatch_compose_stable_tap_repair() {
   local version="$1"
+  if ! stable_release_updates_default_tap "${version}"; then
+    printf 'maintenance release %s has no unversioned Homebrew tap state to repair\n' \
+      "${version}" >&2
+    exit 1
+  fi
   dispatch_compose_stable_workflow "${version}" "Homebrew tap repair" "true"
 }
 
 dispatch_stable_release_gate() {
-  local version="$1" previous_run run_id deadline now
+  local version="$1" previous_run run_id deadline now workflow_ref
+  workflow_ref="$(release_branch_for_version "${version}")"
   print_header "dispatch hosted stable release gate for ${version}"
 
   if [[ "${EXECUTE}" != "1" ]]; then
-    printf 'would run: gh workflow run stable-release-gate.yml --repo %s --ref main -f ref=%s\n' \
-      "$(github_repo "${COMPOSE_REPO}")" "${version}"
-    printf 'would wait for the hosted gate to confirm green main CI, SonarQube, and immutable static stack validation.\n'
+    printf 'would run: gh workflow run stable-release-gate.yml --repo %s --ref %s -f ref=%s\n' \
+      "$(github_repo "${COMPOSE_REPO}")" "${workflow_ref}" "${version}"
+    printf 'would wait for the hosted gate to confirm green tag CI, SonarQube, and immutable static stack validation.\n'
     printf 'full runtime integration and Docker Compose parity run locally before the tag is created.\n'
     return 0
   fi
 
   need_command gh
-  previous_run="$(latest_stable_release_gate_dispatch_run || true)"
+  previous_run="$(latest_stable_release_gate_dispatch_run "${version}" || true)"
   run github_cli workflow run stable-release-gate.yml \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
-    --ref main \
+    --ref "${workflow_ref}" \
     -f "ref=${version}"
 
   deadline=$((SECONDS + STABLE_RELEASE_GATE_WAIT_SECONDS))
   while true; do
-    run_id="$(latest_stable_release_gate_dispatch_run || true)"
+    run_id="$(latest_stable_release_gate_dispatch_run "${version}" || true)"
     if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
       printf 'stable release gate started: %s\n' "${run_id}"
       wait_for_github_run_success \
@@ -2847,15 +2941,22 @@ dispatch_stable_release_gate() {
 
 # Print the verified boundary for a stable release or its formula-only recovery.
 print_stable_release_point() {
-  local version="$1" generation="$2"
+  local version="$1" generation="$2" label tap_update
+  if stable_release_updates_default_tap "${version}"; then
+    label="latest"
+    tap_update="stable container and container-compose formula pair verified"
+  else
+    label="maintenance"
+    tap_update="unchanged; unversioned formulae remain on the global latest release"
+  fi
   print_component_refs
   cat <<EOF
 
 Stable release point:
   version: ${version}
-  label: latest
+  label: ${label}
   release generation: ${generation}
-  tap update: stable container and container-compose formula pair verified
+  tap update: ${tap_update}
 EOF
 }
 
@@ -2870,7 +2971,8 @@ publish_stable_release() {
 # Tag a compose state as the stable/latest release point.
 tag_stable_version() {
   local version="$1"
-  print_header "tag container-compose main as ${version} latest"
+  print_header "tag container-compose main as ${version}"
+  publish_release_line_branch "${version}"
   tag_new_stable_version "${version}"
   publish_stable_release "${version}"
 }
@@ -2882,8 +2984,13 @@ resume_stable_release() {
   ensure_latest_stable_retry "${version}"
   verify_github_stable_tag_signature "${version}"
   if stable_release_is_published "${version}"; then
-    dispatch_compose_stable_tap_repair "${version}"
-    print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
+    if stable_release_updates_default_tap "${version}"; then
+      dispatch_compose_stable_tap_repair "${version}"
+      print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
+    else
+      verify_compose_stable_package "${version}"
+      print_stable_release_point "${version}" "immutable maintenance release already published"
+    fi
     return 0
   fi
   ensure_stable_release_is_unpublished "${version}"

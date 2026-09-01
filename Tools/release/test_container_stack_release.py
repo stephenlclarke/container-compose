@@ -597,6 +597,28 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertNotIn("${CONTAINER_SOURCE_DIR}/scripts/update-homebrew-formula.py", renderer)
         self.assertIn("compose/bin/compose", renderer)
 
+    def test_older_release_lines_never_replace_latest_or_unversioned_homebrew(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        lane = workflow[
+            workflow.index("- name: Select release lane") : workflow.index(
+                "- name: Require Homebrew tap token for formula promotion"
+            )
+        ]
+
+        self.assertIn('latest_stable_tag="$(', lane)
+        self.assertIn('release_label="maintenance release"', lane)
+        self.assertIn('release_latest="false"', lane)
+        self.assertIn('update_tap="false"', lane)
+        self.assertIn('package_lane="maintenance"', lane)
+        self.assertIn(
+            "must never downgrade GitHub Latest or the",
+            lane,
+        )
+        self.assertIn(
+            "Homebrew tap repair is limited to the global latest stable tag",
+            workflow,
+        )
+
     def test_homebrew_tap_pushes_authenticate_with_the_tap_token(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         self.assertEqual(
@@ -1187,6 +1209,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             ci.count("github.ref == 'refs/heads/main' || github.ref_type == 'tag'"),
             6,
         )
+        self.assertIn('GITHUB_REF_TYPE: ${{ github.ref_type }}', ci)
+        self.assertIn('if [[ "${GITHUB_REF_TYPE}" == "tag" ]]', ci)
+        self.assertIn("printf 'heavy=true\\n' >> \"$GITHUB_OUTPUT\"", ci)
         self.assertIn(
             'gpg_home="$(mktemp -d /private/tmp/container-compose-sonar-gpg.XXXXXX)"',
             sonar_install,
@@ -2118,6 +2143,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn('release_branch="release-${release_line}"', workflow)
+        self.assertIn("run-name: Stable Release Gate · ${{ inputs.ref }}", workflow)
         self.assertIn('"${GITHUB_REF}" != "refs/heads/${release_branch}"', workflow)
         self.assertIn('"${GITHUB_SHA}" != "${release_branch_sha}"', workflow)
         self.assertIn(
@@ -2215,7 +2241,42 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             '"${run_id}" "hosted stable release gate" "${STABLE_RELEASE_GATE_WAIT_SECONDS}"',
             dispatch,
         )
+        self.assertIn(
+            'workflow_ref="$(release_branch_for_version "${version}")"',
+            dispatch,
+        )
+        self.assertIn('--ref "${workflow_ref}"', dispatch)
         self.assertIn("timeout-minutes: 120", STABLE_GATE_WORKFLOW.read_text(encoding="utf-8"))
+
+    def test_release_helper_publishes_and_uses_the_release_control_branch(self) -> None:
+        branch_publisher = self.script[
+            self.script.index("publish_release_line_branch() {") : self.script.index(
+                "# Return the newest workflow-dispatch package run"
+            )
+        ]
+        tag_release = self.script[
+            self.script.index("tag_stable_version() {") : self.script.index(
+                "# Resume the latest signed tag"
+            )
+        ]
+        package_dispatch = self.script[
+            self.script.index("dispatch_compose_stable_workflow() {") : self.script.index(
+                "# Dispatch and wait for a new stable package publication."
+            )
+        ]
+
+        self.assertIn('printf \'release-%s\\n\' "${version%.*}"', self.script)
+        self.assertIn("merge-base --is-ancestor", branch_publisher)
+        self.assertIn('"${main_sha}:refs/heads/${branch}"', branch_publisher)
+        self.assertLess(
+            tag_release.index('publish_release_line_branch "${version}"'),
+            tag_release.index('tag_new_stable_version "${version}"'),
+        )
+        self.assertIn(
+            'workflow_ref="$(release_branch_for_version "${version}")"',
+            package_dispatch,
+        )
+        self.assertIn('--ref "${workflow_ref}"', package_dispatch)
 
     def test_new_stable_release_runs_the_local_gate_before_promotion(self) -> None:
         release = self.script[self.script.index("release_current_stack() {") :]
@@ -3745,6 +3806,7 @@ esac
                         "ensure_latest_stable_retry() { :; }",
                         "verify_github_stable_tag_signature() { :; }",
                         "stable_release_is_published() { return 0; }",
+                        "stable_release_updates_default_tap() { return 0; }",
                         "ensure_stable_release_is_unpublished() { exit 71; }",
                         "dispatch_compose_stable_tap_repair() { printf 'repair %s\\n' \"$1\"; }",
                         "publish_stable_release() { exit 72; }",
@@ -3764,6 +3826,7 @@ esac
                         "ensure_latest_stable_retry() { :; }",
                         "verify_github_stable_tag_signature() { :; }",
                         "stable_release_is_published() { return 1; }",
+                        "stable_release_updates_default_tap() { return 0; }",
                         "ensure_stable_release_is_unpublished() { :; }",
                         "dispatch_compose_stable_tap_repair() { exit 73; }",
                         "publish_stable_release() { printf 'publish %s\\n' \"$1\"; }",
@@ -3773,10 +3836,32 @@ esac
             self.assertEqual(unpublished.returncode, 0, unpublished.stderr)
             self.assertIn("publish 0.6.70", unpublished.stdout)
 
+            maintenance = self.run_release_function(
+                root,
+                "resume_stable_release 0.6.70",
+                shell_setup="\n".join(
+                    [
+                        "ensure_latest_stable_retry() { :; }",
+                        "verify_github_stable_tag_signature() { :; }",
+                        "stable_release_is_published() { return 0; }",
+                        "stable_release_updates_default_tap() { return 1; }",
+                        "dispatch_compose_stable_tap_repair() { exit 73; }",
+                        "verify_compose_stable_package() { printf 'verify %s\\n' \"$1\"; }",
+                        "print_stable_release_point() { printf 'point %s %s\\n' \"$1\" \"$2\"; }",
+                    ]
+                ),
+            )
+            self.assertEqual(maintenance.returncode, 0, maintenance.stderr)
+            self.assertIn("verify 0.6.70", maintenance.stdout)
+            self.assertIn(
+                "immutable maintenance release already published",
+                maintenance.stdout,
+            )
+
     def test_retry_rejects_a_stale_semantic_tag(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            shell_setup = "latest_local_semver_tag() { printf '%s\\n' 0.6.71; }"
+            shell_setup = "latest_remote_release_line_tag() { printf '%s\\n' 0.6.71; }"
 
             latest = self.run_release_function(
                 root,
@@ -3791,7 +3876,10 @@ esac
                 shell_setup=shell_setup,
             )
             self.assertNotEqual(stale.returncode, 0)
-            self.assertIn("stable tag 0.6.70 is not the latest semantic source tag (0.6.71)", stale.stderr)
+            self.assertIn(
+                "stable tag 0.6.70 is not the latest source tag in release line 0.6 (0.6.71)",
+                stale.stderr,
+            )
 
     def create_promotion_review_fixture(
         self,
