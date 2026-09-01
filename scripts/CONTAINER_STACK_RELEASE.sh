@@ -4281,6 +4281,9 @@ verify_compose_stable_package() {
     "${init_asset_sha}" != "${expected_init_digest}" ]]; then
     printf 'release %s guest archive is not authorized by the signed release gate: expected %s, got %s\n' \
       "${version}" "${expected_init_digest:-missing}" "${init_asset_sha:-missing}" >&2
+    if ! find "${tmp}" -depth -delete; then
+      printf 'failed to clean rejected stable package download: %s\n' "${tmp}" >&2
+    fi
     exit 1
   fi
   while IFS= read -r value; do

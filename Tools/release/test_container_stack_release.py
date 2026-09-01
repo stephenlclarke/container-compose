@@ -762,6 +762,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('expected_init_digest="$4"', verifier)
         self.assertIn('"${init_asset_sha}" != "${expected_init_digest}"', verifier)
         self.assertIn("guest archive is not authorized by the signed release gate", verifier)
+        unauthorized = verifier[
+            verifier.index('if [[ ! "${expected_init_digest}"') : verifier.index(
+                "  while IFS= read -r value"
+            )
+        ]
+        self.assertIn('find "${tmp}" -depth -delete', unauthorized)
+        self.assertLess(unauthorized.index('find "${tmp}"'), unauthorized.index("exit 1"))
         self.assertIn('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${tmp}/${init_asset}"', verifier)
 
     def test_stable_guest_publisher_binds_the_validated_snapshot_to_gate_evidence(
