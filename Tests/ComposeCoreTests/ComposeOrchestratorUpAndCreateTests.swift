@@ -5254,8 +5254,8 @@ extension ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up exit-code-from returns selected service status and tears down project")
-    func upExitCodeFromReturnsSelectedServiceStatusAndTearsDownProject() async throws {
+    @Test("up exit-code-from returns selected status and retains stopped containers")
+    func upExitCodeFromReturnsSelectedStatusAndRetainsStoppedContainers() async throws {
         let runner = RecordingRunner(responses: [
             .success,
             .success,
@@ -5326,10 +5326,10 @@ extension ComposeOrchestratorTests {
         #expect(lifecycleRequests.contains(.wait(id: "demo-api-1")))
         #expect(lifecycleRequests.contains(.wait(id: "demo-db-1")))
         #expect(lifecycleRequests.contains(.stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9)))
-        #expect(lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
         #expect(lifecycleRequests.contains(.stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil)))
-        #expect(lifecycleRequests.contains(.delete(id: "demo-db-1", force: false)))
-        #expect(await discoveryManager.listRequests == [true, true, true, true])
+        #expect(!lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
+        #expect(!lifecycleRequests.contains(.delete(id: "demo-db-1", force: false)))
+        #expect(await discoveryManager.listRequests == [true, true, true])
         #expect(await attachManager.requests.sorted { $0.id < $1.id } == [
             ContainerAttachRequest(id: "demo-api-1", stdout: true, stderr: true, mode: .beforeStart),
             ContainerAttachRequest(id: "demo-db-1", stdout: true, stderr: true, mode: .beforeStart),
@@ -5405,9 +5405,9 @@ extension ComposeOrchestratorTests {
         #expect(lifecycleRequests.contains(.wait(id: "demo-db-1")))
         #expect(lifecycleRequests.contains(.wait(id: "demo-api-1")))
         #expect(lifecycleRequests.contains(.stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil)))
-        #expect(lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
         #expect(lifecycleRequests.contains(.stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil)))
-        #expect(lifecycleRequests.contains(.delete(id: "demo-db-1", force: false)))
+        #expect(!lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
+        #expect(!lifecycleRequests.contains(.delete(id: "demo-db-1", force: false)))
     }
 
     @Test("up exit-code-from preserves selected status when attached log follow ends")
@@ -5488,8 +5488,8 @@ extension ComposeOrchestratorTests {
         #expect(await logManager.requests.isEmpty)
     }
 
-    @Test("up abort-on-container-failure returns failing status and tears down project")
-    func upAbortOnContainerFailureReturnsFailingStatusAndTearsDownProject() async throws {
+    @Test("up abort-on-container-failure returns status and retains stopped containers")
+    func upAbortOnContainerFailureReturnsStatusAndRetainsStoppedContainers() async throws {
         let runner = RecordingRunner(responses: [
             .success,
             .success,
@@ -5553,13 +5553,13 @@ extension ComposeOrchestratorTests {
         #expect(lifecycleRequests.contains(.wait(id: "demo-api-1")))
         #expect(lifecycleRequests.contains(.wait(id: "demo-worker-1")))
         #expect(lifecycleRequests.contains(.stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil)))
-        #expect(lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
         #expect(lifecycleRequests.contains(.stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil)))
-        #expect(lifecycleRequests.contains(.delete(id: "demo-worker-1", force: false)))
+        #expect(!lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
+        #expect(!lifecycleRequests.contains(.delete(id: "demo-worker-1", force: false)))
     }
 
-    @Test("up abort-on-container-exit returns first status and tears down project")
-    func upAbortOnContainerExitReturnsFirstStatusAndTearsDownProject() async throws {
+    @Test("up abort-on-container-exit returns status and retains stopped containers")
+    func upAbortOnContainerExitReturnsStatusAndRetainsStoppedContainers() async throws {
         let runner = RecordingRunner(responses: [
             .success,
             .success,
@@ -5623,13 +5623,13 @@ extension ComposeOrchestratorTests {
         #expect(lifecycleRequests.contains(.wait(id: "demo-api-1")))
         #expect(lifecycleRequests.contains(.wait(id: "demo-worker-1")))
         #expect(lifecycleRequests.contains(.stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil)))
-        #expect(lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
         #expect(lifecycleRequests.contains(.stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil)))
-        #expect(lifecycleRequests.contains(.delete(id: "demo-worker-1", force: false)))
+        #expect(!lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
+        #expect(!lifecycleRequests.contains(.delete(id: "demo-worker-1", force: false)))
     }
 
-    @Test("up exit-control dry run renders wait then down plan")
-    func upExitControlDryRunRendersWaitThenDownPlan() async throws {
+    @Test("up exit-control dry run renders wait then stop plan")
+    func upExitControlDryRunRendersWaitThenStopPlan() async throws {
         let emitted = MessageRecorder()
         let project = ComposeProject(
             name: "demo",
@@ -5655,9 +5655,9 @@ extension ComposeOrchestratorTests {
         #expect(emitted.messages.contains("+ compose-runtime attach --no-stdin demo-db-1"))
         #expect(emitted.messages.contains("+ compose-runtime wait demo-api-1"))
         #expect(emitted.messages.contains("+ container stop --time 7 demo-api-1"))
-        #expect(emitted.messages.contains("+ container delete demo-api-1"))
         #expect(emitted.messages.contains("+ container stop demo-db-1"))
-        #expect(emitted.messages.contains("+ container delete demo-db-1"))
+        #expect(!emitted.messages.contains("+ container delete demo-api-1"))
+        #expect(!emitted.messages.contains("+ container delete demo-db-1"))
     }
 
     @Test("up exit-control rejects detached mode before side effects")
