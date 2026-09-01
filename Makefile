@@ -478,6 +478,8 @@ RELEASE_GATE_PARITY_INPUT_FINGERPRINT = $(shell { printf '%s\n' \
 	'container-host-address=$(PARITY_CONTAINER_HOST_ADDRESS)' \
 	'init-image-archive=$(shell if [[ -z "$(PARITY_INIT_IMAGE_ARCHIVE)" ]]; then printf unset; elif [[ -f "$(PARITY_INIT_IMAGE_ARCHIVE)" ]]; then shasum -a 256 "$(PARITY_INIT_IMAGE_ARCHIVE)" | awk '{print $$1}'; else printf missing; fi)' \
 	'init-image-references='$(call PIPELINE_SHELL_QUOTE,$(PARITY_INIT_IMAGE_REFERENCES)) \
+	'fixture-image-archive=$(shell if [[ -z "$(PARITY_FIXTURE_IMAGE_ARCHIVE)" ]]; then printf unset; elif [[ -f "$(PARITY_FIXTURE_IMAGE_ARCHIVE)" ]]; then shasum -a 256 "$(PARITY_FIXTURE_IMAGE_ARCHIVE)" | awk '{print $$1}'; else printf missing; fi)' \
+	'fixture-image-reference='$(call PIPELINE_SHELL_QUOTE,$(PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE)) \
 	'work-root='$(call PIPELINE_SHELL_QUOTE,$(PARITY_WORK_ROOT)); \
 	} | shasum -a 256 | awk '{print $$1}')
 override RELEASE_GATE_STATIC_FINGERPRINT = compose=$(shell /usr/bin/git rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):builder=$(shell /usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):containerization=$(shell /usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):container=$(shell /usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):homebrew=$(shell if [[ -f "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" ]]; then shasum -a 256 "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" | awk '{print $$1}'; else printf missing; fi):candidate=$(CONTAINER_RUNTIME_CANDIDATE_SHA256):init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT):compose-test=$(RELEASE_GATE_COMPOSE_TEST_BINARY_FINGERPRINT):tools=$(RELEASE_GATE_TOOL_FINGERPRINT):engine=$(PARITY_CONTAINER_ENGINE_API_REF):container-source=$(CONTAINER_SOURCE):container-ref=$(PARITY_CONTAINER_REF):containerization-source=$(CONTAINERIZATION_SOURCE):containerization-ref=$(PARITY_CONTAINERIZATION_REF):swift=$(shell $(SWIFT) --version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):swift-resolved-flags=$(SWIFT_RESOLVED_FLAGS):swift-test-flags=$(SWIFT_TEST_FLAGS):swift-test-run-flags=$(SWIFT_TEST_RUN_FLAGS):swift-test-attempts=$(SWIFT_TEST_ATTEMPTS):swift-coverage-attempts=$(SWIFT_COVERAGE_TEST_ATTEMPTS):swift-runtime-filter=$(SWIFT_RUNTIME_TEST_FILTER):go=$(shell $(GO) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):go-release-env=$(GO_RELEASE_ENV):go-release-build-flags=$(GO_RELEASE_BUILD_FLAGS):go-release-ldflags=$(GO_RELEASE_LDFLAGS):docker=$(shell $(DOCKER_COMPOSE_REFERENCE) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):reference=$(DOCKER_COMPOSE_REFERENCE_VERSION):fixtures=$(DOCKER_COMPOSE_E2E_REF):parity-inputs=$(RELEASE_GATE_PARITY_INPUT_FINGERPRINT):release-stack-timeout=$(RELEASE_GATE_STACK_TIMEOUT_SECONDS):release-parity-timeout=$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS):parity-stage-timeout=$(PARITY_STAGE_TIMEOUT_SECONDS):runtime-start-deadline=$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS):parity-live=1:build-check-live=1:swift-core-min=$(SWIFT_CORE_COVERAGE_MIN):swift-runtime-spi-min=$(SWIFT_RUNTIME_SPI_COVERAGE_MIN):swift-provider-min=$(SWIFT_PROVIDER_COVERAGE_MIN):swift-plugin-min=$(SWIFT_PLUGIN_COVERAGE_MIN):swift-aggregate-min=$(SWIFT_AGGREGATE_COVERAGE_MIN):go-min=$(GO_COVERAGE_MIN)
@@ -498,6 +500,8 @@ PARITY_ENV = \
 	DOCKER_COMPOSE="$(DOCKER_COMPOSE_REFERENCE)" \
 	DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)" \
 	PARITY_EVIDENCE_DIR="$(PARITY_EVIDENCE_DIR)" \
+	PARITY_FIXTURE_IMAGE_ARCHIVE="$(PARITY_FIXTURE_IMAGE_ARCHIVE)" \
+	PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE="$(PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE)" \
 	PARITY_REPETITIONS="$(PARITY_REPETITIONS)" \
 	PARITY_TIMEOUT_SECONDS="$(PARITY_TIMEOUT_SECONDS)" \
 	PARITY_SINK_BIND_ADDRESS="$${PARITY_SINK_BIND_ADDRESS}"
@@ -2529,9 +2533,11 @@ docker-compose-performance-matrix: build docker-compose-reference
 		CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" \
 		CONTAINER_RUNTIME_START_DEADLINE_SECONDS="$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
-		./scripts/run-with-container-runtime.sh "$$container_binary" \
-			env \
-			PARITY_SINK_BIND_ADDRESS="$${PARITY_SINK_BIND_ADDRESS}" \
+			./scripts/run-with-container-runtime.sh "$$container_binary" \
+				env \
+				PARITY_FIXTURE_IMAGE_ARCHIVE="$(PARITY_FIXTURE_IMAGE_ARCHIVE)" \
+				PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE="$(PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE)" \
+				PARITY_SINK_BIND_ADDRESS="$${PARITY_SINK_BIND_ADDRESS}" \
 			PARITY_REPETITIONS="$${PARITY_REPETITIONS:-5}" \
 			PARITY_TIMEOUT_SECONDS="$${PARITY_TIMEOUT_SECONDS:-300}" \
 			PARITY_TIMING_MAX_RATIO="$${PARITY_TIMING_MAX_RATIO:-10}" \

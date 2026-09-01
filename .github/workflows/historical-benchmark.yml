@@ -64,6 +64,9 @@ jobs:
       PIPELINE_STATE_ROOT: /Volumes/SSD/github/.container-compose-pipeline
       REPETITIONS: ${{ inputs.repetitions }}
       FIXTURE_GROUPS: ${{ inputs.fixture_groups }}
+      FIXTURE_IMAGE: alpine:3.20
+      FIXTURE_IMAGE_INDEX_DIGEST: sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+      FIXTURE_IMAGE_MANIFEST_DIGEST: sha256:3bc2f9693214618ce31d85a9379aa48097d55524d02d0a8c8b4ebd27842f3c94
       RUNTIME_ROOT_PREFIX: /private/tmp/cchr-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Select local benchmark root
@@ -166,7 +169,53 @@ jobs:
             "${BENCHMARK_ROOT}/downloads" \
             "${BENCHMARK_ROOT}/prepared" \
             "${BENCHMARK_ROOT}/evidence" \
+            "${BENCHMARK_ROOT}/fixtures" \
             "${BENCHMARK_ROOT}/work"
+
+      - name: Prepare pinned offline fixture image
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v /opt/homebrew/bin/skopeo >/dev/null
+          docker_metadata="${BENCHMARK_ROOT}/evidence/fixture-docker-image.json"
+          expected_reference="alpine@${FIXTURE_IMAGE_INDEX_DIGEST}"
+          recovery_command="docker pull ${expected_reference} && docker image tag ${expected_reference} ${FIXTURE_IMAGE}"
+          if ! docker image inspect "${FIXTURE_IMAGE}" > "${docker_metadata}"; then
+            printf 'the pinned local fixture is unavailable: expected %s, found []\n' \
+              "${expected_reference}" >&2
+            printf 'recover before retrying with: %s\n' \
+              "${recovery_command}" >&2
+            exit 1
+          fi
+          jq -e --arg expected "${expected_reference}" \
+            '.[0].RepoDigests | index($expected) != null' \
+            "${docker_metadata}" >/dev/null || {
+            printf 'the pinned local fixture is unavailable: expected %s, found %s\n' \
+              "${expected_reference}" \
+              "$(jq -c '.[0].RepoDigests // []' "${docker_metadata}")" >&2
+            printf 'recover before retrying with: %s\n' \
+              "${recovery_command}" >&2
+            exit 1
+          }
+          archive="${BENCHMARK_ROOT}/fixtures/alpine-3.20-arm64.oci.tar"
+          docker_host="$(docker context inspect --format \
+            '{{(index .Endpoints "docker").Host}}')"
+          [[ "${docker_host}" == unix:///* ]]
+          [[ -S "${docker_host#unix://}" ]]
+          /opt/homebrew/bin/skopeo copy --preserve-digests \
+            --src-daemon-host "${docker_host}" \
+            "docker-daemon:${FIXTURE_IMAGE}" "oci-archive:${archive}:3.20"
+          archive_digest="$(/opt/homebrew/bin/skopeo inspect \
+            "oci-archive:${archive}:3.20" | jq -r '.Digest')"
+          [[ "${archive_digest}" == "${FIXTURE_IMAGE_MANIFEST_DIGEST}" ]]
+          /usr/bin/python3 Tools/release/validate-oci-image-layout.py \
+            "${archive}" 3.20
+          shasum -a 256 "${archive}" \
+            > "${BENCHMARK_ROOT}/evidence/fixture-image.sha256"
+          printf 'PARITY_FIXTURE_IMAGE_ARCHIVE=%s\n' "${archive}" \
+            >> "${GITHUB_ENV}"
+          printf 'PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE=3.20\n' \
+            >> "${GITHUB_ENV}"
 
       - name: Recover host packages and exact historical guest closure
         env:
@@ -434,6 +483,8 @@ jobs:
                 CONTAINER_COMPOSE_CONTAINER="${runtime}" \
                 PARITY_INIT_IMAGE_ARCHIVE="${init_archive}" \
                 PARITY_INIT_IMAGE_REFERENCES="${init_references}" \
+                PARITY_FIXTURE_IMAGE_ARCHIVE="${PARITY_FIXTURE_IMAGE_ARCHIVE}" \
+                PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE="${PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE}" \
                 PARITY_WORK_ROOT="${run_root}/fixtures" \
                 PARITY_EVIDENCE_DIR="${BENCHMARK_ROOT}/evidence/${version}" \
                 PARITY_EVIDENCE_MODE="${evidence_mode}" \
