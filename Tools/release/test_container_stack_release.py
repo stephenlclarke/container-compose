@@ -716,7 +716,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             dispatcher,
         )
         self.assertIn(
-            '"${version}" "${promote_default_lane}" "${stable_formula_identities_before}"',
+            '"${stable_formula_identities_before}" "${authority_init_digest}"',
             dispatcher,
         )
 
@@ -759,6 +759,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             dispatcher.index("verify_compose_stable_package"),
         )
         self.assertIn('init_asset="container-vminit-arm64.oci.tar"', verifier)
+        self.assertIn('expected_init_digest="$4"', verifier)
+        self.assertIn('"${init_asset_sha}" != "${expected_init_digest}"', verifier)
+        self.assertIn("guest archive is not authorized by the signed release gate", verifier)
         self.assertIn('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${tmp}/${init_asset}"', verifier)
 
     def test_stable_guest_publisher_binds_the_validated_snapshot_to_gate_evidence(
@@ -5879,7 +5882,7 @@ esac
                         "homebrew_stable_formula_identities() { printf '%s\\n' formulae-before; }",
                         "dispatch_compose_stable_tap_repair() { exit 71; }",
                         "publish_stable_init_image_asset() { printf 'init %s %s\\n' \"$1\" \"$2\"; }",
-                        "verify_compose_stable_package() { printf 'verify %s %s %s\\n' \"$1\" \"$2\" \"$3\"; }",
+                        "verify_compose_stable_package() { printf 'verify %s %s %s %s\\n' \"$1\" \"$2\" \"$3\" \"$4\"; }",
                         "require_stable_init_image_authority_unchanged() { printf 'authority %s %s %s\\n' \"$1\" \"$2\" \"$3\"; }",
                         "print_stable_release_point() { printf 'point %s %s\\n' \"$1\" \"$2\"; }",
                     ]
@@ -5888,7 +5891,10 @@ esac
 
             self.assertEqual(recovered.returncode, 0, recovered.stderr)
             self.assertIn(f"init 0.13.1 {'a' * 64}", recovered.stdout)
-            self.assertIn("verify 0.13.1 false formulae-before", recovered.stdout)
+            self.assertIn(
+                f"verify 0.13.1 false formulae-before {'a' * 64}",
+                recovered.stdout,
+            )
             self.assertIn(f"authority 0.13.1 {'f' * 40} {'a' * 64}", recovered.stdout)
             self.assertIn("maintenance backfill asset recovery", recovered.stdout)
             self.assertLess(recovered.stdout.index("init 0.13.1"), recovered.stdout.index("verify 0.13.1"))

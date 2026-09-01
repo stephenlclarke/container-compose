@@ -4198,7 +4198,8 @@ publish_stable_init_image_asset() {
 
 # Verify the stable release assets and Homebrew formula agree.
 verify_compose_stable_package() {
-  local version="$1" promote_default_lane="${2:-true}" stable_formula_identities_before="${3:-}" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha signature_verifier init_asset init_asset_sha init_checksum_sha stable_formula_identities_after
+  local version="$1" promote_default_lane="${2:-true}" stable_formula_identities_before="${3:-}" expected_init_digest="$4"
+  local repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha signature_verifier init_asset init_asset_sha init_checksum_sha stable_formula_identities_after
   local authority=() containerization_repository containerization_reference
   repo="$(github_repo "${COMPOSE_REPO}")"
   asset="container-compose-plugin-release-arm64.tar.gz"
@@ -4274,6 +4275,12 @@ verify_compose_stable_package() {
   if [[ "${init_asset_sha}" != "${init_checksum_sha}" ]]; then
     printf 'release %s guest checksum mismatch: asset %s, checksum file %s\n' \
       "${version}" "${init_asset_sha}" "${init_checksum_sha}" >&2
+    exit 1
+  fi
+  if [[ ! "${expected_init_digest}" =~ ^[0-9a-f]{64}$ || \
+    "${init_asset_sha}" != "${expected_init_digest}" ]]; then
+    printf 'release %s guest archive is not authorized by the signed release gate: expected %s, got %s\n' \
+      "${version}" "${expected_init_digest:-missing}" "${init_asset_sha:-missing}" >&2
     exit 1
   fi
   while IFS= read -r value; do
@@ -4428,7 +4435,8 @@ dispatch_compose_stable_workflow() {
       IFS=$'\t' read -r authority_object authority_init_digest <<<"${authority_record}"
       publish_stable_init_image_asset "${version}" "${authority_init_digest}"
       verify_compose_stable_package \
-        "${version}" "${promote_default_lane}" "${stable_formula_identities_before}"
+        "${version}" "${promote_default_lane}" \
+        "${stable_formula_identities_before}" "${authority_init_digest}"
       require_stable_init_image_authority_unchanged \
         "${version}" "${authority_object}" "${authority_init_digest}"
       return 0
@@ -4563,7 +4571,8 @@ resume_stable_release() {
       stable_formula_identities_before="$(homebrew_stable_formula_identities)"
       publish_stable_init_image_asset "${version}" "${authority_init_digest}"
       verify_compose_stable_package \
-        "${version}" "false" "${stable_formula_identities_before}"
+        "${version}" "false" \
+        "${stable_formula_identities_before}" "${authority_init_digest}"
       require_stable_init_image_authority_unchanged \
         "${version}" "${authority_object}" "${authority_init_digest}"
       print_stable_release_point "${version}" "maintenance backfill asset recovery"
