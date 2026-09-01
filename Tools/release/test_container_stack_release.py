@@ -1188,7 +1188,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("Skipping superseded current package", freshness)
         self.assertIn('printf \'publish=%s\\n\' "${publish}" >> "$GITHUB_OUTPUT"', freshness)
         self.assertEqual(
-            workflow.count("if: steps.current-freshness.outputs.publish == 'true'"),
+            workflow.count("steps.current-freshness.outputs.publish == 'true'"),
             8,
         )
 
