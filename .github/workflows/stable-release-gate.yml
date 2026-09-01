@@ -23,6 +23,10 @@ on:
         description: "Bare semantic tag to validate and promote"
         required: true
         type: string
+      init_image_sha256:
+        description: "SHA-256 of the retained guest init image that passed the local release gate"
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -42,17 +46,24 @@ jobs:
       sha: ${{ steps.candidate.outputs.sha }}
       authority_ref: ${{ steps.candidate.outputs.authority_ref }}
       homebrew_tap_ref: ${{ steps.candidate.outputs.homebrew_tap_ref }}
+      init_image_sha256: ${{ steps.candidate.outputs.init_image_sha256 }}
     steps:
       - name: Require an immutable main tag and green main CI
         id: candidate
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.ref }}
+          INIT_IMAGE_SHA256: ${{ inputs.init_image_sha256 }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ ! "${RELEASE_TAG}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
             printf 'stable release ref must be a bare semantic tag: %s\n' "${RELEASE_TAG}" >&2
+            exit 1
+          fi
+          if [[ ! "${INIT_IMAGE_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+            printf 'stable release guest init-image digest is invalid: %s\n' \
+              "${INIT_IMAGE_SHA256:-missing}" >&2
             exit 1
           fi
 
@@ -230,6 +241,7 @@ jobs:
             printf 'sha=%s\n' "${tag_sha}"
             printf 'authority_ref=%s\n' "${authority_ref}"
             printf 'homebrew_tap_ref=%s\n' "${homebrew_tap_ref}"
+            printf 'init_image_sha256=%s\n' "${INIT_IMAGE_SHA256}"
           } >> "$GITHUB_OUTPUT"
 
   release-gate:
@@ -410,6 +422,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.ref }}
           CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.sha }}
           AUTHORITY_REF: ${{ needs.resolve-candidate.outputs.authority_ref }}
+          INIT_IMAGE_SHA256: ${{ needs.resolve-candidate.outputs.init_image_sha256 }}
         shell: bash
         run: |
           set -euo pipefail
@@ -438,6 +451,7 @@ jobs:
           details_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           summary="Hosted Stable Release Gate passed for immutable source"
           summary+=" ${CANDIDATE_SHA}."
+          summary+=" Guest init image SHA-256: ${INIT_IMAGE_SHA256}."
           gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" \
             -f "name=${authority_name}" \
             -f "head_sha=${CANDIDATE_SHA}" \

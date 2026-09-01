@@ -2385,7 +2385,8 @@ ensure_stable_retry_source_authority() {
 # movable release branch must not make later recovery of immutable assets
 # time-dependent.
 ensure_published_stable_recovery_authority() {
-  local version="$1" path repo tag_sha authority_name authority_filter authority_run_id authority_conclusion
+  local version="$1" path repo tag_sha authority_name authority_filter authority_record
+  local authority_run_id authority_summary authority_conclusion authority_init_digest
   path="$(repo_path "${COMPOSE_REPO}")"
   repo="$(github_repo "${COMPOSE_REPO}")"
   tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
@@ -2399,16 +2400,23 @@ ensure_published_stable_recovery_authority() {
   authority_filter+=' and .status == "completed"'
   authority_filter+=' and .conclusion == "success"'
   authority_filter+=' and .app.slug == "github-actions")'
-  authority_filter+=' | .external_id'
-  authority_run_id="$(
+  authority_filter+=' | [.external_id, .output.summary] | @tsv'
+  authority_record="$(
     github_cli api --paginate \
       "repos/${repo}/commits/${tag_sha}/check-runs?per_page=100" \
       --jq "${authority_filter}" |
       tail -n 1
   )"
+  IFS=$'\t' read -r authority_run_id authority_summary <<<"${authority_record}"
   if [[ ! "${authority_run_id}" =~ ^[0-9]+$ ]]; then
     printf 'refusing published recovery without candidate-bound Stable Release Authority %s\n' \
       "${authority_name}" >&2
+    return 1
+  fi
+  if [[ "${authority_summary}" =~ Guest\ init\ image\ SHA-256:\ ([0-9a-f]{64})[.] ]]; then
+    authority_init_digest="${BASH_REMATCH[1]}"
+  else
+    printf 'refusing published recovery without a candidate-bound guest init-image digest\n' >&2
     return 1
   fi
   authority_conclusion="$(
@@ -2420,6 +2428,7 @@ ensure_published_stable_recovery_authority() {
     printf 'refusing published recovery without a successful Stable Release Gate authority\n' >&2
     return 1
   fi
+  printf '%s\n' "${authority_init_digest}"
 }
 
 # Refuse to retry a semantic tag once GitHub has made it a published release.
@@ -3800,7 +3809,7 @@ publish_stable_asset_pair() {
 
 # Publish the exact guest archive that passed the local stable release gate.
 publish_stable_init_image_asset() {
-  local version="$1" repo archive asset tmp digest status
+  local version="$1" expected_digest="$2" repo archive asset tmp digest status cleanup_status
   local authority=() containerization_repository containerization_reference
   repo="$(github_repo "${COMPOSE_REPO}")"
   archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
@@ -3808,6 +3817,10 @@ publish_stable_init_image_asset() {
   if [[ "${archive}" != /* || ! -f "${archive}" ]]; then
     printf 'stable guest publication requires the absolute retained release-gate archive via CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE: %s\n' \
       "${archive:-unset}" >&2
+    return 2
+  fi
+  if [[ ! "${expected_digest}" =~ ^[0-9a-f]{64}$ ]]; then
+    printf 'stable guest publication requires a candidate-bound release-gate digest\n' >&2
     return 2
   fi
   while IFS= read -r value; do
@@ -3819,22 +3832,47 @@ publish_stable_init_image_asset() {
   fi
   containerization_repository="${authority[0]}"
   containerization_reference="${authority[1]}"
-  "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${archive}" \
-    vminit:container-compose \
-    "ghcr.io/${containerization_repository}/vminit:${containerization_reference}"
-
   tmp="$(mktemp -d)"
-  cp "${archive}" "${tmp}/${asset}"
-  digest="$(shasum -a 256 "${tmp}/${asset}" | awk '{print $1}')"
-  printf '%s  %s\n' "${digest}" "${asset}" >"${tmp}/${asset}.sha256"
-  if publish_stable_asset_pair \
-    "${version}" "${repo}" "${tmp}/${asset}" "${tmp}/${asset}.sha256" \
-    "${asset}" "${digest}"; then
+  if cp "${archive}" "${tmp}/${asset}"; then
     status=0
   else
     status=$?
   fi
-  find "${tmp}" -depth -delete
+  if (( status == 0 )); then
+    if "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${tmp}/${asset}" \
+      vminit:container-compose \
+      "ghcr.io/${containerization_repository}/vminit:${containerization_reference}"; then
+      status=0
+    else
+      status=$?
+    fi
+  fi
+  if (( status == 0 )); then
+    digest="$(shasum -a 256 "${tmp}/${asset}" | awk '{print $1}')"
+    if [[ "${digest}" != "${expected_digest}" ]]; then
+      printf 'stable guest archive differs from the candidate-bound release-gate digest: expected %s, got %s\n' \
+        "${expected_digest}" "${digest:-missing}" >&2
+      status=2
+    fi
+  fi
+  if (( status == 0 )); then
+    printf '%s  %s\n' "${digest}" "${asset}" >"${tmp}/${asset}.sha256"
+    if publish_stable_asset_pair \
+      "${version}" "${repo}" "${tmp}/${asset}" "${tmp}/${asset}.sha256" \
+      "${asset}" "${digest}"; then
+      status=0
+    else
+      status=$?
+    fi
+  fi
+  if find "${tmp}" -depth -delete; then
+    cleanup_status=0
+  else
+    cleanup_status=$?
+  fi
+  if (( status == 0 && cleanup_status != 0 )); then
+    status="${cleanup_status}"
+  fi
   return "${status}"
 }
 
@@ -4015,7 +4053,7 @@ verify_compose_stable_package() {
 
 # Dispatch and verify one stable package workflow mode for a semantic tag.
 dispatch_compose_stable_workflow() {
-  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label promote_default_lane stable_formula_identities_before=""
+  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label promote_default_lane authority_init_digest stable_formula_identities_before=""
   print_header "dispatch container-compose ${version} ${mode}"
 
   if [[ "${repair_tap}" == "true" ]]; then
@@ -4066,7 +4104,8 @@ dispatch_compose_stable_workflow() {
     if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
       printf '%s started: %s\n' "${label}" "${run_id}"
       wait_for_github_run_success "${run_id}" "${label}"
-      publish_stable_init_image_asset "${version}"
+      authority_init_digest="$(ensure_published_stable_recovery_authority "${version}")"
+      publish_stable_init_image_asset "${version}" "${authority_init_digest}"
       verify_compose_stable_package \
         "${version}" "${promote_default_lane}" "${stable_formula_identities_before}"
       return 0
@@ -4097,11 +4136,11 @@ dispatch_compose_stable_tap_repair() {
 }
 
 dispatch_stable_release_gate() {
-  local version="$1" previous_run run_id deadline now
+  local version="$1" previous_run run_id deadline now archive init_image_digest
   print_header "dispatch hosted stable release gate for ${version}"
 
   if [[ "${EXECUTE}" != "1" ]]; then
-    printf 'would run: gh workflow run stable-release-gate.yml --repo %s --ref main -f ref=%s\n' \
+    printf 'would run: gh workflow run stable-release-gate.yml --repo %s --ref main -f ref=%s -f init_image_sha256=<retained-release-gate-digest>\n' \
       "$(github_repo "${COMPOSE_REPO}")" "${version}"
     printf 'would wait for the hosted gate to confirm green main CI, SonarQube, and immutable static stack validation.\n'
     printf 'full runtime integration and Docker Compose parity run locally before the tag is created.\n'
@@ -4109,11 +4148,19 @@ dispatch_stable_release_gate() {
   fi
 
   need_command gh
+  archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
+  if [[ "${archive}" != /* || ! -f "${archive}" ]]; then
+    printf 'hosted stable release gate requires the absolute retained OCI init-image archive: %s\n' \
+      "${archive:-unset}" >&2
+    exit 2
+  fi
+  init_image_digest="$(shasum -a 256 "${archive}" | awk '{print $1}')"
   previous_run="$(latest_stable_release_gate_dispatch_run || true)"
   run github_cli workflow run stable-release-gate.yml \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --ref main \
-    -f "ref=${version}"
+    -f "ref=${version}" \
+    -f "init_image_sha256=${init_image_digest}"
 
   deadline=$((SECONDS + STABLE_RELEASE_GATE_WAIT_SECONDS))
   while true; do
@@ -4182,7 +4229,7 @@ tag_stable_version() {
 
 # Resume the latest signed tag without mutating its stable source identity.
 resume_stable_release() {
-  local version="$1" promote_default_lane stable_formula_identities_before
+  local version="$1" promote_default_lane stable_formula_identities_before authority_init_digest
   print_header "resume stable release ${version}"
   verify_github_stable_tag_signature "${version}"
   if stable_release_is_published "${version}"; then
@@ -4192,9 +4239,9 @@ resume_stable_release() {
       dispatch_compose_stable_tap_repair "${version}"
       print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
     else
-      ensure_published_stable_recovery_authority "${version}"
+      authority_init_digest="$(ensure_published_stable_recovery_authority "${version}")"
       stable_formula_identities_before="$(homebrew_stable_formula_identities)"
-      publish_stable_init_image_asset "${version}"
+      publish_stable_init_image_asset "${version}" "${authority_init_digest}"
       verify_compose_stable_package \
         "${version}" "false" "${stable_formula_identities_before}"
       print_stable_release_point "${version}" "maintenance backfill asset recovery"
