@@ -1125,7 +1125,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("continue-on-error: true", sonar)
         self.assertIn("timeout-minutes: 25", sonar)
         self.assertIn('SONAR_QUALITYGATE_WAIT: "true"', sonar)
-        self.assertIn("run: make sonar-scan", sonar)
+        self.assertIn("make sonar-scan", sonar)
+        self.assertIn('release_version="${GITHUB_REF_NAME#v}"', sonar)
+        self.assertIn(
+            'export SONAR_BRANCH="release-${release_version%.*}"',
+            sonar,
+        )
         self.assertEqual(
             ci.count("github.ref == 'refs/heads/main' || github.ref_type == 'tag'"),
             6,
