@@ -685,7 +685,7 @@ jobs:
       - name: Enforce SonarQube failures when the service is available
         if: >
           (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
-          (steps.sonar_restore_obligation.outputs.required == 'true' || steps.sonar_tcp.outputs.available != 'true' || steps.sonar_api.outputs.available != 'true' || steps.sonar_install.outcome == 'failure' || steps.sonar_scan.outcome == 'failure')
+          ((steps.sonar_restore_obligation.outputs.required == 'true' && steps.sonar_scan.outputs.canonical_restore_completed != 'true') || steps.sonar_tcp.outputs.available != 'true' || steps.sonar_api.outputs.available != 'true' || steps.sonar_install.outcome == 'failure' || steps.sonar_scan.outcome == 'failure')
         env:
           CANONICAL_RESTORE_COMPLETED: ${{ steps.sonar_scan.outputs.canonical_restore_completed }}
           CANONICAL_RESTORE_FAILED: ${{ steps.sonar_scan.outputs.canonical_restore_failed }}
