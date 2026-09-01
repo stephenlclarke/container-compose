@@ -41,9 +41,9 @@
 #   PARITY_TIMEOUT_SECONDS       Per-operation timeout (default: 300).
 #   PARITY_TIMING_MAX_RATIO      Candidate median/P95 limit (default: 10).
 #   PARITY_TIMING_POLICY         `enforce` fails the ratio guard; `record`
-#                                records regressions without making a
-#                                published-version comparison a release gate.
-#                                Default: enforce.
+#                                records timing and execution failures without
+#                                making a published-version comparison a
+#                                release gate. Default: enforce.
 #   PARITY_COMPARABLE_NOISE_PCT  Comparable-performance noise band (default: 5).
 #   PARITY_SINK_STALL_SECONDS    Host slow-sink pause (default: 2).
 #   PARITY_PRESSURE_RECORDS      Records in pressure workloads (default: 65536).
@@ -620,6 +620,7 @@ run_timed() {
     python3 - "$TIMING_TSV" "$fixture" "$lane" "$repetition" "$schedule_position" "$PARITY_TIMEOUT_SECONDS" "$@" <<'PY'
 import csv, os, shlex, signal, subprocess, sys, time
 timing, fixture, lane, repetition, schedule_position, timeout, *command = sys.argv[1:]
+def failed_outcome(returncode): return f"exit-{returncode if returncode > 0 else 128 - returncode if returncode < 0 else 1}"
 started = time.monotonic()
 process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, start_new_session=True)
 outcome = "success"
@@ -627,14 +628,78 @@ try: _, stderr = process.communicate(timeout=float(timeout))
 except subprocess.TimeoutExpired:
     os.killpg(process.pid, signal.SIGKILL); _, stderr = process.communicate(); outcome = "timeout"
 else:
-    if process.returncode: outcome = f"exit-{process.returncode}"
+    if process.returncode: outcome = failed_outcome(process.returncode)
 duration = time.monotonic() - started
 with open(timing, "a", encoding="utf-8", newline="") as handle:
     csv.writer(handle, delimiter="\t", lineterminator="\n").writerow([fixture, lane, repetition, schedule_position, "lower-is-better", f"{duration:.9f}", outcome, shlex.join(command)])
 print(f"{fixture} {lane} repetition {repetition}: {duration:.3f}s ({outcome})")
 if outcome != "success":
     if stderr: print(stderr, file=sys.stderr, end="" if stderr.endswith("\n") else "\n")
-    raise SystemExit(124 if outcome == "timeout" else process.returncode or 1)
+    raise SystemExit(124 if outcome == "timeout" else int(outcome.removeprefix("exit-")))
+PY
+}
+
+# Preserve timed failures in published comparisons while keeping strict runs fail-fast.
+run_recordable_timing() {
+    local fixture="$1" lane="$2" status=0
+    shift 2
+    RECORDED_TIMING_FAILED=0
+    "$@" || status=$?
+    if ((status == 0)); then
+        return 0
+    fi
+    if [[ "$PARITY_TIMING_POLICY" == record ]]; then
+        RECORDED_TIMING_FAILED=1
+        warning "recorded $fixture $lane execution failure (exit $status)"
+        return 0
+    fi
+    return "$status"
+}
+
+# Retain one required sample that could not run after a prerequisite failed.
+record_unexecuted_timing() {
+    local fixture="$1" lane="$2" repetition="$3" schedule_position="$4" reason="$5"
+    python3 - "$TIMING_TSV" "$fixture" "$lane" "$repetition" \
+        "$schedule_position" "$reason" <<'PY'
+import csv, sys
+timing, fixture, lane, repetition, schedule_position, reason = sys.argv[1:]
+with open(timing, "a", encoding="utf-8", newline="") as handle:
+    csv.writer(handle, delimiter="\t", lineterminator="\n").writerow([
+        fixture, lane, repetition, schedule_position, "lower-is-better", "0.000000000",
+        "skipped-dependency", f"not-run: {reason}",
+    ])
+PY
+}
+
+# Invalidate a successful paired sample when its required peer validation was skipped.
+invalidate_successful_timing() {
+    local fixture="$1" lane="$2" repetition="$3" reason="$4"
+    python3 - "$TIMING_TSV" "$fixture" "$lane" "$repetition" "$reason" <<'PY'
+import csv, os, pathlib, sys, tempfile
+path = pathlib.Path(sys.argv[1]); fixture, lane, repetition, reason = sys.argv[2:]
+with path.open(encoding="utf-8", newline="") as handle:
+    reader = csv.DictReader(handle, delimiter="\t")
+    fieldnames = reader.fieldnames
+    rows = list(reader)
+if not fieldnames:
+    raise SystemExit(f"timing evidence has no header: {path}")
+matches = [
+    row for row in rows
+    if row["fixture"] == fixture and row["lane"] == lane and row["repetition"] == repetition
+]
+if len(matches) != 1:
+    raise SystemExit(f"expected one timing sample for {fixture}/{lane}/{repetition}, found {len(matches)}")
+row = matches[0]
+if row["outcome"] == "success":
+    row["outcome"] = "invalidated-dependency"
+    row["command"] += f"; invalidated: {reason}"
+with tempfile.NamedTemporaryFile(
+    mode="w", encoding="utf-8", newline="", dir=path.parent, delete=False
+) as handle:
+    temporary = pathlib.Path(handle.name)
+    writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t", lineterminator="\n")
+    writer.writeheader(); writer.writerows(rows)
+os.replace(temporary, path)
 PY
 }
 
@@ -646,10 +711,11 @@ run_to_completion_marker() {
         "$schedule_position" "$PARITY_TIMEOUT_SECONDS" "$marker" "$@" <<'PY'
 import csv, pathlib, shlex, subprocess, sys, time
 timing, fixture, lane, repetition, schedule_position, timeout, marker, *command = sys.argv[1:]
+def failed_outcome(returncode): return f"exit-{returncode if returncode > 0 else 128 - returncode if returncode < 0 else 1}"
 marker_path = pathlib.Path(marker); marker_path.unlink(missing_ok=True); started = time.monotonic(); outcome = "success"; diagnostic = ""
 try:
     result = subprocess.run(command, capture_output=True, check=False, text=True, timeout=float(timeout))
-    if result.returncode: outcome = f"exit-{result.returncode}"; diagnostic = result.stderr
+    if result.returncode: outcome = failed_outcome(result.returncode); diagnostic = result.stderr
     else:
         deadline = started + float(timeout)
         while time.monotonic() < deadline:
@@ -873,6 +939,7 @@ run_attached_startup_to_first_output() {
         "$PARITY_TIMEOUT_SECONDS" "$project" "$file" "$@" <<'PY'
 import csv, os, selectors, shlex, signal, subprocess, sys, time
 timing, lane, repetition, schedule_position, timeout, project, file, *compose = sys.argv[1:]
+def failed_outcome(returncode): return f"exit-{returncode if returncode > 0 else 128 - returncode if returncode < 0 else 1}"
 environment = dict(os.environ); environment["LOG_WORKLOAD"] = "startup"; environment["LOG_MAX_SIZE"] = "64m"
 command = [*compose, "-p", project, "-f", file, "up", "--pull", "never", "--no-log-prefix"]
 started = time.monotonic(); outcome = "success"; diagnostic = bytearray(); process = None; duration = None
@@ -882,7 +949,7 @@ try:
     selector = selectors.DefaultSelector(); selector.register(process.stdout, selectors.EVENT_READ)
     deadline = started + float(timeout)
     while time.monotonic() < deadline:
-        if process.poll() is not None: outcome = f"exit-{process.returncode}"; break
+        if process.poll() is not None: outcome = failed_outcome(process.returncode); break
         events = selector.select(timeout=min(0.1, deadline - time.monotonic()))
         for key, _ in events:
             chunk = os.read(key.fileobj.fileno(), 65536)
@@ -914,6 +981,7 @@ run_startup_to_first_output() {
         "$PARITY_TIMEOUT_SECONDS" "$project" "$file" "$@" <<'PY'
 import csv, os, shlex, subprocess, sys, time
 timing, lane, repetition, schedule_position, timeout, project, file, *compose = sys.argv[1:]
+def failed_outcome(returncode): return f"exit-{returncode if returncode > 0 else 128 - returncode if returncode < 0 else 1}"
 environment = dict(os.environ)
 environment["LOG_WORKLOAD"] = "startup"
 environment["LOG_MAX_SIZE"] = "64m"
@@ -931,7 +999,7 @@ try:
         env=environment,
     )
     if up.returncode:
-        outcome = f"exit-{up.returncode}"
+        outcome = failed_outcome(up.returncode)
         diagnostic = up.stderr
     else:
         deadline = started + float(timeout)
@@ -945,7 +1013,7 @@ try:
                 env=environment,
             )
             if logs.returncode:
-                outcome = f"exit-{logs.returncode}"
+                outcome = failed_outcome(logs.returncode)
                 diagnostic = logs.stderr
                 break
             if "logging-ready" in logs.stdout:
@@ -1002,13 +1070,29 @@ down_project() {
 
 # Run one lifecycle startup/teardown pair for a lane.
 run_lifecycle_lane() {
-    local lane="$1" repetition="$2" schedule_position="$3" count="$4" file="$5" project
+    local lane="$1" repetition="$2" schedule_position="$3" count="$4" file="$5" project status=0
     select_lane "$lane"
     project="cc-perf-$LANE_PREFIX-$count"
-    run_timed "startup-$count-services" "$lane" "$repetition" "$schedule_position" \
-        "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" up -d --pull never
-    run_timed "teardown-$count-services" "$lane" "$repetition" "$schedule_position" \
-        "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" down --volumes --remove-orphans
+    run_recordable_timing "startup-$count-services" "$lane" run_timed \
+        "startup-$count-services" "$lane" "$repetition" "$schedule_position" \
+        "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" up -d --pull never || status=$?
+    if ((status != 0)); then
+        down_project "$lane" "$project" "$file"
+        return "$status"
+    fi
+    if ((RECORDED_TIMING_FAILED)); then
+        record_unexecuted_timing "teardown-$count-services" "$lane" \
+            "$repetition" "$schedule_position" "startup-$count-services failed"
+        down_project "$lane" "$project" "$file"
+        return 0
+    fi
+    run_recordable_timing "teardown-$count-services" "$lane" run_timed \
+        "teardown-$count-services" "$lane" "$repetition" "$schedule_position" \
+        "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" down --volumes --remove-orphans || status=$?
+    if ((status != 0 || RECORDED_TIMING_FAILED)); then
+        down_project "$lane" "$project" "$file"
+    fi
+    return "$status"
 }
 
 # Run startup-to-first-output for one logging lane.
@@ -1017,7 +1101,8 @@ run_logging_startup_lane() {
     select_lane "$lane"
     project="cc-perf-$LANE_PREFIX-logging"
     down_project "$lane" "$project" "$file"
-    run_startup_to_first_output "$lane" "$repetition" "$schedule_position" \
+    run_recordable_timing logging-startup-first-output "$lane" \
+        run_startup_to_first_output "$lane" "$repetition" "$schedule_position" \
         "$project" "$file" "${ACTIVE_COMPOSE[@]}"
     down_project "$lane" "$project" "$file"
 }
@@ -1028,7 +1113,8 @@ run_logging_attached_startup_lane() {
     select_lane "$lane"
     project="cc-perf-$LANE_PREFIX-logging"
     down_project "$lane" "$project" "$file"
-    run_attached_startup_to_first_output "$lane" "$repetition" "$schedule_position" \
+    run_recordable_timing logging-startup-first-output-attached "$lane" \
+        run_attached_startup_to_first_output "$lane" "$repetition" "$schedule_position" \
         "$project" "$file" "${ACTIVE_COMPOSE[@]}"
     down_project "$lane" "$project" "$file"
 }
@@ -1039,7 +1125,8 @@ run_logging_throughput_lane() {
     select_lane "$lane"
     project="cc-perf-$LANE_PREFIX-logging"
     down_project "$lane" "$project" "$file"
-    run_timed "$fixture" "$lane" "$repetition" "$schedule_position" \
+    run_recordable_timing "$fixture" "$lane" run_timed \
+        "$fixture" "$lane" "$repetition" "$schedule_position" \
         env LOG_WORKLOAD="$workload" LOG_MAX_SIZE=64m \
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" up \
         --abort-on-container-exit --exit-code-from logger --pull never
@@ -1065,12 +1152,18 @@ run_remote_sink_lane() {
     completion_file="$label.done"
     completion_path="$completion_dir/$completion_file"
     mkdir -p "$completion_dir"
-    run_to_completion_marker "$fixture" "$lane" "$repetition" \
+    run_recordable_timing "$fixture" "$lane" run_to_completion_marker \
+        "$fixture" "$lane" "$repetition" \
         "$schedule_position" "$completion_path" \
         env LOG_WORKLOAD=pressure LOG_RECORD_COUNT="$PARITY_PRESSURE_RECORDS" \
         LOG_COMPLETION_FILE="$completion_file" PERF_COMPLETION_DIR="$completion_dir" \
         LOG_BUFFER_SIZE="$buffer_size" PERF_SYSLOG_ADDRESS="$address" \
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" up -d --pull never
+    if ((RECORDED_TIMING_FAILED)); then
+        stop_sink
+        down_project "$lane" "$project" "$FIXTURE_DIR/logging.yml"
+        return 0
+    fi
     env LOG_WORKLOAD=pressure LOG_RECORD_COUNT="$PARITY_PRESSURE_RECORDS" \
         LOG_COMPLETION_FILE="$completion_file" PERF_COMPLETION_DIR="$completion_dir" \
         LOG_BUFFER_SIZE="$buffer_size" PERF_SYSLOG_ADDRESS="$address" \
@@ -1094,13 +1187,18 @@ run_file_logging_lane() {
     completion_path="$completion_dir/$completion_file"
     mkdir -p "$completion_dir"
     down_project "$lane" "$project" "$FIXTURE_DIR/logging.yml"
-    run_to_completion_marker "$fixture" "$lane" "$repetition" \
+    run_recordable_timing "$fixture" "$lane" run_to_completion_marker \
+        "$fixture" "$lane" "$repetition" \
         "$schedule_position" "$completion_path" \
         env LOG_WORKLOAD=pressure LOG_RECORD_COUNT="$PARITY_PRESSURE_RECORDS" \
         LOG_COMPLETION_FILE="$completion_file" \
         LOG_RETAIN_AFTER_COMPLETION=1 PERF_COMPLETION_DIR="$completion_dir" \
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" up \
         -d --pull never
+    if ((RECORDED_TIMING_FAILED)); then
+        down_project "$lane" "$project" "$FIXTURE_DIR/logging.yml"
+        return 0
+    fi
     LOG_RECORD_COUNT="$PARITY_PRESSURE_RECORDS" \
         LOG_COMPLETION_FILE="$completion_file" \
         LOG_RETAIN_AFTER_COMPLETION=1 PERF_COMPLETION_DIR="$completion_dir" \
@@ -1129,7 +1227,8 @@ run_logging_read_lane() {
     local lane="$1" repetition="$2" schedule_position="$3" fixture="$4" tail="$5" file="$6" project
     select_lane "$lane"
     project="cc-perf-$LANE_PREFIX-logging"
-    run_timed "$fixture" "$lane" "$repetition" "$schedule_position" \
+    run_recordable_timing "$fixture" "$lane" run_timed \
+        "$fixture" "$lane" "$repetition" "$schedule_position" \
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" logs \
         --no-color --no-log-prefix --tail "$tail" logger
 }
@@ -1155,10 +1254,15 @@ run_logging_since_until_lane() {
         history-after "$project" "$file" "${ACTIVE_COMPOSE[@]}")"
     since="$(midpoint_log_timestamp "$before" "$first")"
     until="$(midpoint_log_timestamp "$last" "$after")"
-    run_timed logging-read-since-until "$lane" "$repetition" "$schedule_position" \
+    run_recordable_timing logging-read-since-until "$lane" run_timed \
+        logging-read-since-until "$lane" "$repetition" "$schedule_position" \
         env LOG_WORKLOAD=history-window LOG_MAX_SIZE=64m \
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" logs \
         --no-color --no-log-prefix --since "$since" --until "$until" logger
+    if ((RECORDED_TIMING_FAILED)); then
+        down_project "$lane" "$project" "$file"
+        return 0
+    fi
     LOG_WORKLOAD=history-window LOG_MAX_SIZE=64m assert_since_until_window \
         "logging-read-since-until-$lane-$repetition" "$since" "$until" \
         "$project" "$file" "${ACTIVE_COMPOSE[@]}"
@@ -1173,7 +1277,8 @@ run_logging_follow_lane() {
     down_project "$lane" "$project" "$file"
     env LOG_WORKLOAD=follow-rotation LOG_MAX_SIZE=8k \
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" up -d --pull never >/dev/null
-    run_timed logging-follow-rotation "$lane" "$repetition" "$schedule_position" \
+    run_recordable_timing logging-follow-rotation "$lane" run_timed \
+        logging-follow-rotation "$lane" "$repetition" "$schedule_position" \
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" logs \
         --follow --no-color --no-log-prefix logger
     down_project "$lane" "$project" "$file"
@@ -1182,23 +1287,36 @@ run_logging_follow_lane() {
 # Time remote delivery and its canonical dual-cache read for one lane.
 run_dual_cache_lane() {
     local lane="$1" repetition="$2" schedule_position="$3" file="$4"
-    local project label address
+    local project label address timing_failed=0
     select_lane "$lane"
     project="cc-perf-$LANE_PREFIX-logging"
     label="logging-dual-cache-$lane-$repetition"
     down_project "$lane" "$project" "$FIXTURE_DIR/logging.yml"
     start_sink "$label" 0
     address="$(syslog_address "$lane")"
-    run_timed logging-dual-cache-delivery "$lane" "$repetition" "$schedule_position" \
+    run_recordable_timing logging-dual-cache-delivery "$lane" run_timed \
+        logging-dual-cache-delivery "$lane" "$repetition" "$schedule_position" \
         env LOG_WORKLOAD=pressure LOG_RECORD_COUNT="$PARITY_PRESSURE_RECORDS" \
         PERF_SYSLOG_ADDRESS="$address" \
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" up \
         --abort-on-container-exit --exit-code-from logger --pull never
-    run_timed logging-dual-cache-read "$lane" "$repetition" "$schedule_position" \
+    ((RECORDED_TIMING_FAILED == 0)) || timing_failed=1
+    run_recordable_timing logging-dual-cache-read "$lane" run_timed \
+        logging-dual-cache-read "$lane" "$repetition" "$schedule_position" \
         env LOG_WORKLOAD=pressure LOG_RECORD_COUNT="$PARITY_PRESSURE_RECORDS" \
         PERF_SYSLOG_ADDRESS="$address" \
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" logs \
         --no-color --no-log-prefix --tail all logger
+    ((RECORDED_TIMING_FAILED == 0)) || timing_failed=1
+    if ((timing_failed)); then
+        invalidate_successful_timing logging-dual-cache-delivery "$lane" \
+            "$repetition" "paired delivery/read validation was skipped"
+        invalidate_successful_timing logging-dual-cache-read "$lane" \
+            "$repetition" "paired delivery/read validation was skipped"
+        stop_sink
+        down_project "$lane" "$project" "$FIXTURE_DIR/logging.yml"
+        return 0
+    fi
     LOG_WORKLOAD=pressure LOG_RECORD_COUNT="$PARITY_PRESSURE_RECORDS" \
         PERF_SYSLOG_ADDRESS="$address" assert_logging_record_count \
         "logging-dual-cache-read-$lane-$repetition" "$PARITY_PRESSURE_RECORDS" \
@@ -1209,13 +1327,15 @@ run_dual_cache_lane() {
 
 # Time foreground aggregation for one service count.
 run_logging_aggregate_lane() {
-    local lane="$1" repetition="$2" schedule_position="$3" count="$4" file="$5" project
+    local lane="$1" repetition="$2" schedule_position="$3" count="$4" file="$5" project status=0
     select_lane "$lane"
     project="cc-perf-$LANE_PREFIX-aggregate-$count"
     down_project "$lane" "$project" "$file"
-    run_timed "logging-aggregate-$count-services" "$lane" "$repetition" "$schedule_position" \
-        "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" up --pull never
+    run_recordable_timing "logging-aggregate-$count-services" "$lane" run_timed \
+        "logging-aggregate-$count-services" "$lane" "$repetition" "$schedule_position" \
+        "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" up --pull never || status=$?
     down_project "$lane" "$project" "$file"
+    return "$status"
 }
 
 # Require finalization to use the render controls retained with raw evidence.
@@ -1314,8 +1434,21 @@ for fixture in expected:
         for repetition in range(1, repetitions + 1)
         for lane in ("docker", "container-compose")
     )
-    if not valid_counts or not valid_direction or not valid_schedule or any(r["outcome"] != "success" for r in docker + candidate):
-        reason = "fixture did not retain the required successful lower-is-better samples in both lanes"; ET.SubElement(testcase, "failure", message=reason).text = reason; failures.append(f"{fixture}: {reason}"); table.append((fixture, "n/a", "n/a", "n/a", "n/a", "n/a", "n/a", "NOT MET", "FAIL")); continue
+    if not valid_counts or not valid_direction or not valid_schedule:
+        reason = "fixture did not retain the required counterbalanced lower-is-better sample structure"
+        ET.SubElement(testcase, "failure", message=reason).text = reason
+        failures.append(f"{fixture}: {reason}")
+        table.append((fixture, "n/a", "n/a", "n/a", "n/a", "n/a", "n/a", "NOT MET", "FAIL")); continue
+    if any(r["outcome"] != "success" for r in docker + candidate):
+        reason = "fixture retained a timed execution failure"
+        if policy == "enforce":
+            ET.SubElement(testcase, "failure", message=reason).text = reason
+            failures.append(f"{fixture}: {reason}")
+            result = "FAIL"
+        else:
+            ET.SubElement(testcase, "system-err").text = reason
+            result = "RECORDED FAILURE"
+        table.append((fixture, "n/a", "n/a", "n/a", "n/a", "n/a", "n/a", "NOT MET", result)); continue
     d = [float(r["duration_seconds"]) for r in docker]; c = [float(r["duration_seconds"]) for r in candidate]
     dm = statistics.median(d); dp = p95(d); cm = statistics.median(c); cp = p95(c)
     median_ratio = cm / dm if dm else float("inf"); p95_ratio = cp / dp if dp else float("inf"); result = "PASS"
@@ -1331,7 +1464,7 @@ suite.set("failures", str(len(failures))); ET.ElementTree(suite).write(junit, en
 policy_text = (
     f"Timeout, incomplete execution, or a candidate median/P95 at least {threshold:g}x Docker fails the regression guard."
     if policy == "enforce"
-    else f"Timeout or incomplete execution fails; the {threshold:g}x timing threshold is recorded but not enforced for this published-version comparison."
+    else f"Execution failures and the {threshold:g}x timing threshold are recorded but not enforced for this published-version comparison."
 )
 lines = ["# Compose Performance Matrix", "", f"Warm-image same-host fixed-work samples. {policy_text} Comparable-or-better requires both candidate statistics to be within {(noise_ratio - 1) * 100:g}% of Docker.", "", "| Fixture | Docker median (s) | Docker P95 (s) | container-compose median (s) | container-compose P95 (s) | Median ratio | P95 ratio | Comparable or better | Guard |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |"]
 lines += [f"| {' | '.join(row)} |" for row in table]; lines += ["", "Raw repetitions are in `timings.tsv`; exact host and runtime fingerprints are in `fingerprints.json`.", ""]

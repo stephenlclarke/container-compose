@@ -465,25 +465,41 @@ def nearest_rank_p95(values: list[float]) -> float:
     return sorted(values)[math.ceil(len(values) * 0.95) - 1]
 
 
-def load_samples(evidence: Path) -> dict[str, dict[str, list[float]]]:
+def load_samples(
+    evidence: Path,
+) -> dict[str, dict[str, list[dict[str, float | str]]]]:
     path = evidence / "timings.tsv"
     with path.open(encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
     if not rows:
         raise BenchmarkInputError(f"benchmark has no samples: {path}")
-    grouped: dict[str, dict[str, list[float]]] = defaultdict(
+    grouped: dict[str, dict[str, list[dict[str, float | str]]]] = defaultdict(
         lambda: defaultdict(list)
     )
     for row in rows:
-        if row.get("outcome") != "success" or row.get("direction") != "lower-is-better":
+        if row.get("direction") != "lower-is-better":
             raise BenchmarkInputError(
-                f"benchmark contains an unsuccessful or unsupported sample: {path}"
+                f"benchmark contains an unsupported sample: {path}"
             )
         lane = row.get("lane")
         fixture = row.get("fixture")
         if lane not in {"docker", "container-compose"} or not fixture:
             raise BenchmarkInputError(f"benchmark contains an invalid lane: {path}")
-        grouped[fixture][lane].append(float(row["duration_seconds"]))
+        outcome = row.get("outcome")
+        if not isinstance(outcome, str) or (
+            outcome
+            not in {
+                "success",
+                "timeout",
+                "skipped-dependency",
+                "invalidated-dependency",
+            }
+            and re.fullmatch(r"exit-[1-9][0-9]*", outcome) is None
+        ):
+            raise BenchmarkInputError(f"benchmark contains an invalid outcome: {path}")
+        grouped[fixture][lane].append(
+            {"duration": float(row["duration_seconds"]), "outcome": outcome}
+        )
     result = {fixture: dict(lanes) for fixture, lanes in grouped.items()}
     for fixture, lanes in result.items():
         if set(lanes) != {"docker", "container-compose"}:
@@ -704,18 +720,79 @@ def render_report(
     rows: list[tuple[object, ...]] = []
     normalized_median_ratios: list[float] = []
     normalized_p95_ratios: list[float] = []
-    improved = unchanged = regressed = 0
+    improved = unchanged = regressed = unscored = 0
     for fixture in sorted(target_samples):
         target = target_samples[fixture]
         baseline = baseline_samples[fixture]
-        target_median = statistics.median(target["container-compose"])
-        baseline_median = statistics.median(baseline["container-compose"])
-        target_p95 = nearest_rank_p95(target["container-compose"])
-        baseline_p95 = nearest_rank_p95(baseline["container-compose"])
-        target_docker_median = statistics.median(target["docker"])
-        baseline_docker_median = statistics.median(baseline["docker"])
-        target_docker_p95 = nearest_rank_p95(target["docker"])
-        baseline_docker_p95 = nearest_rank_p95(baseline["docker"])
+        failed: list[str] = []
+        for label, samples in (("Comparison", baseline), ("Target", target)):
+            for lane in ("docker", "container-compose"):
+                outcomes = [
+                    str(sample["outcome"])
+                    for sample in samples[lane]
+                    if sample["outcome"] != "success"
+                ]
+                if outcomes:
+                    failed.append(f"{label} {lane} failed ({', '.join(outcomes)})")
+        baseline_candidate = [
+            float(sample["duration"])
+            for sample in baseline["container-compose"]
+            if sample["outcome"] == "success"
+        ]
+        target_candidate = [
+            float(sample["duration"])
+            for sample in target["container-compose"]
+            if sample["outcome"] == "success"
+        ]
+        if failed:
+            baseline_median = (
+                statistics.median(baseline_candidate)
+                if len(baseline_candidate) == repetitions
+                else None
+            )
+            baseline_p95 = (
+                nearest_rank_p95(baseline_candidate)
+                if len(baseline_candidate) == repetitions
+                else None
+            )
+            target_median = (
+                statistics.median(target_candidate)
+                if len(target_candidate) == repetitions
+                else None
+            )
+            target_p95 = (
+                nearest_rank_p95(target_candidate)
+                if len(target_candidate) == repetitions
+                else None
+            )
+            rows.append(
+                (
+                    fixture,
+                    baseline_median,
+                    target_median,
+                    None,
+                    baseline_p95,
+                    target_p95,
+                    None,
+                    None,
+                    None,
+                    "; ".join(failed),
+                )
+            )
+            unscored += 1
+            continue
+        target_values = target_candidate
+        baseline_values = baseline_candidate
+        target_docker = [float(sample["duration"]) for sample in target["docker"]]
+        baseline_docker = [float(sample["duration"]) for sample in baseline["docker"]]
+        target_median = statistics.median(target_values)
+        baseline_median = statistics.median(baseline_values)
+        target_p95 = nearest_rank_p95(target_values)
+        baseline_p95 = nearest_rank_p95(baseline_values)
+        target_docker_median = statistics.median(target_docker)
+        baseline_docker_median = statistics.median(baseline_docker)
+        target_docker_p95 = nearest_rank_p95(target_docker)
+        baseline_docker_p95 = nearest_rank_p95(baseline_docker)
         median_ratio = target_median / baseline_median
         p95_ratio = target_p95 / baseline_p95
         normalized_median_ratio = (
@@ -750,13 +827,21 @@ def render_report(
             )
         )
 
-    geometric_median = math.exp(
-        sum(math.log(value) for value in normalized_median_ratios)
-        / len(normalized_median_ratios)
+    geometric_median = (
+        math.exp(
+            sum(math.log(value) for value in normalized_median_ratios)
+            / len(normalized_median_ratios)
+        )
+        if normalized_median_ratios
+        else None
     )
-    geometric_p95 = math.exp(
-        sum(math.log(value) for value in normalized_p95_ratios)
-        / len(normalized_p95_ratios)
+    geometric_p95 = (
+        math.exp(
+            sum(math.log(value) for value in normalized_p95_ratios)
+            / len(normalized_p95_ratios)
+        )
+        if normalized_p95_ratios
+        else None
     )
     host = target_fingerprints["host"]
     docker = target_fingerprints["docker"]
@@ -785,6 +870,28 @@ def render_report(
             "change is included to expose host drift."
         )
         inputs_heading = "## Published inputs"
+    if geometric_median is None or geometric_p95 is None:
+        result_summary = (
+            f"No fixture retained complete successful samples in both releases; "
+            f"{unscored} fixture{' was' if unscored == 1 else 's were'} "
+            "unscored because of recorded execution failures."
+        )
+    else:
+        result_summary = (
+            f"Across {len(normalized_median_ratios)} scored fixed-work fixtures, "
+            f"the Docker-normalized geometric-mean median changed "
+            f"{percentage(geometric_median)} and the Docker-normalized "
+            f"geometric-mean P95 changed {percentage(geometric_p95)}. With a "
+            f"±{noise:g}% noise band applied to the normalized median, "
+            f"{improved} fixtures improved, {unchanged} stayed within noise, and "
+            f"{regressed} regressed."
+        )
+        if unscored:
+            result_summary += (
+                f" {unscored} additional fixture"
+                f"{' was' if unscored == 1 else 's were'} unscored because of "
+                "recorded execution failures."
+            )
     lines = [
         report_title,
         "",
@@ -792,7 +899,7 @@ def render_report(
         "",
         "## Result",
         "",
-        f"Across {len(rows)} fixed-work fixtures, the Docker-normalized geometric-mean median changed {percentage(geometric_median)} and the Docker-normalized geometric-mean P95 changed {percentage(geometric_p95)}. With a ±{noise:g}% noise band applied to the normalized median, {improved} fixtures improved, {unchanged} stayed within noise, and {regressed} regressed.",
+        result_summary,
         "",
         "Lower durations and negative changes are better.",
         "",
@@ -845,10 +952,16 @@ def render_report(
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
         ]
     )
+    def duration(value: object) -> str:
+        return f"{float(value):.3f}" if value is not None else "n/a"
+
+    def change(value: object) -> str:
+        return percentage(float(value)) if value is not None else "n/a"
+
     for row in rows:
         fixture, baseline_median, target_median, median_ratio, baseline_p95, target_p95, p95_ratio, normalized_median_ratio, normalized_p95_ratio, verdict = row
         lines.append(
-            f"| {fixture} | {baseline_median:.3f} | {target_median:.3f} | {percentage(median_ratio)} | {baseline_p95:.3f} | {target_p95:.3f} | {percentage(p95_ratio)} | {percentage(normalized_median_ratio)} | {percentage(normalized_p95_ratio)} | {verdict} |"
+            f"| {fixture} | {duration(baseline_median)} | {duration(target_median)} | {change(median_ratio)} | {duration(baseline_p95)} | {duration(target_p95)} | {change(p95_ratio)} | {change(normalized_median_ratio)} | {change(normalized_p95_ratio)} | {verdict} |"
         )
     lines.extend(
         [

@@ -325,6 +325,64 @@ class PublishedReportTests(unittest.TestCase):
         self.assertIn("excluded to keep the unattended run free", report)
         self.assertIn("Artifact source:", report)
 
+    def test_report_records_released_target_execution_failure(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
+            root = Path(directory)
+            baseline = root / "baseline"
+            target = root / "target"
+            baseline.mkdir()
+            target.mkdir()
+            self.write_evidence(baseline, 1.0, 1.0)
+            self.write_evidence(
+                target,
+                0.8,
+                1.0,
+                candidate_outcome="exit-1",
+            )
+            baseline_manifest = self.write_manifest(root, "0.13.0")
+            target_manifest = self.write_manifest(root, "0.14.0")
+            output = root / "report.md"
+
+            MODULE.render_report(
+                target,
+                baseline,
+                target_manifest,
+                baseline_manifest,
+                output,
+                "https://github.example/actions/runs/1",
+            )
+            report = output.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "1 fixture was unscored because of recorded execution failures",
+            report,
+        )
+        self.assertIn("Target container-compose failed (exit-1, exit-1)", report)
+        self.assertIn(
+            "| startup-1-services | 1.000 | n/a | n/a | 1.000 | n/a |",
+            report,
+        )
+
+    def test_loader_accepts_dependency_failure_outcomes(self) -> None:
+        for outcome in ("skipped-dependency", "invalidated-dependency"):
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory(
+                prefix="published-benchmark-"
+            ) as directory:
+                evidence = Path(directory)
+                self.write_evidence(
+                    evidence,
+                    0.8,
+                    1.0,
+                    candidate_outcome=outcome,
+                )
+
+                samples = MODULE.load_samples(evidence)
+
+            self.assertEqual(
+                samples["startup-1-services"]["container-compose"][0]["outcome"],
+                outcome,
+            )
+
     def test_report_labels_historical_guest_reconstruction(self) -> None:
         with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
             root = Path(directory)
@@ -607,6 +665,7 @@ class PublishedReportTests(unittest.TestCase):
         candidate: float,
         docker: float,
         version: str | None = None,
+        candidate_outcome: str = "success",
     ) -> None:
         with (root / "timings.tsv").open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
@@ -627,7 +686,16 @@ class PublishedReportTests(unittest.TestCase):
                     ["startup-1-services", "docker", repetition, 1, "lower-is-better", docker, "success", "docker"]
                 )
                 writer.writerow(
-                    ["startup-1-services", "container-compose", repetition, 2, "lower-is-better", candidate, "success", "compose"]
+                    [
+                        "startup-1-services",
+                        "container-compose",
+                        repetition,
+                        2,
+                        "lower-is-better",
+                        candidate,
+                        candidate_outcome,
+                        "compose",
+                    ]
                 )
         release_version = version or ("0.13.0" if "baseline" in root.name else "0.14.0")
         container_ref = ("1" if release_version == "0.13.0" else "2") * 40

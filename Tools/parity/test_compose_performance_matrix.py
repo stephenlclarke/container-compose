@@ -590,6 +590,178 @@ class PerformanceMatrixSinkSafetyTests(unittest.TestCase):
 
 
 class PerformanceMatrixCompletionMarkerTests(unittest.TestCase):
+    def test_timed_signal_exit_is_normalized_to_shell_status(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-signal-test-") as directory:
+            evidence = Path(directory)
+            timing = evidence / "timings.tsv"
+            self.write_timing_header(timing)
+            environment = dict(os.environ)
+            environment["PARITY_EVIDENCE_DIR"] = str(evidence)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    (
+                        'source "$1"; run_timed signal-test docker 1 1 '
+                        "python3 -c 'import os, signal; "
+                        "os.kill(os.getpid(), signal.SIGTERM)'"
+                    ),
+                    "_",
+                    HARNESS,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            with timing.open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+
+        self.assertEqual(result.returncode, 143)
+        self.assertEqual(rows[0]["outcome"], "exit-143")
+
+    def test_attached_early_clean_exit_is_recorded_as_failure(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-attached-test-") as directory:
+            evidence = Path(directory)
+            timing = evidence / "timings.tsv"
+            fake_compose = evidence / "compose"
+            fake_compose.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            fake_compose.chmod(0o755)
+            self.write_timing_header(timing)
+            environment = dict(os.environ)
+            environment.update(
+                {
+                    "PARITY_EVIDENCE_DIR": str(evidence),
+                    "PARITY_TIMEOUT_SECONDS": "2",
+                }
+            )
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    (
+                        'source "$1"; run_attached_startup_to_first_output '
+                        'docker 1 1 project fixture.yml "$2"'
+                    ),
+                    "_",
+                    HARNESS,
+                    fake_compose,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            with timing.open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(rows[0]["outcome"], "exit-1")
+
+    def test_recorded_startup_failure_skips_and_invalidates_teardown(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-lifecycle-test-") as directory:
+            evidence = Path(directory)
+            timing = evidence / "timings.tsv"
+            self.write_timing_header(timing)
+            environment = dict(os.environ)
+            environment.update(
+                {
+                    "PARITY_EVIDENCE_DIR": str(evidence),
+                    "PARITY_TIMING_POLICY": "record",
+                }
+            )
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    r'''
+source "$1"
+select_lane() { ACTIVE_COMPOSE=(/usr/bin/false); LANE_PREFIX=c; }
+down_project() { printf 'cleanup\n'; }
+run_lifecycle_lane container-compose 1 1 1 services.yml
+''',
+                    "_",
+                    HARNESS,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            with timing.open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            [row["fixture"] for row in rows],
+            ["startup-1-services", "teardown-1-services"],
+        )
+        self.assertEqual(rows[0]["outcome"], "exit-1")
+        self.assertEqual(rows[1]["outcome"], "skipped-dependency")
+        self.assertIn("startup-1-services failed", rows[1]["command"])
+        self.assertIn("cleanup", result.stdout)
+
+    def test_dual_cache_invalidation_preserves_failure_and_invalidates_peer(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-dual-cache-test-") as directory:
+            evidence = Path(directory)
+            timing = evidence / "timings.tsv"
+            self.write_timing_header(timing)
+            with timing.open("a", encoding="utf-8", newline="") as handle:
+                writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+                writer.writerow(
+                    [
+                        "logging-dual-cache-delivery",
+                        "docker",
+                        1,
+                        1,
+                        "lower-is-better",
+                        1,
+                        "exit-7",
+                        "delivery",
+                    ]
+                )
+                writer.writerow(
+                    [
+                        "logging-dual-cache-read",
+                        "docker",
+                        1,
+                        1,
+                        "lower-is-better",
+                        1,
+                        "success",
+                        "read",
+                    ]
+                )
+            environment = dict(os.environ)
+            environment["PARITY_EVIDENCE_DIR"] = str(evidence)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    (
+                        'source "$1"; invalidate_successful_timing '
+                        'logging-dual-cache-delivery docker 1 pair; '
+                        'invalidate_successful_timing logging-dual-cache-read docker 1 pair'
+                    ),
+                    "_",
+                    HARNESS,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            with timing.open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(rows[0]["outcome"], "exit-7")
+        self.assertEqual(rows[1]["outcome"], "invalidated-dependency")
+
     def test_completion_marker_times_workload_enqueue_not_process_teardown(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-marker-test-") as directory:
             evidence = Path(directory)
@@ -645,6 +817,22 @@ class PerformanceMatrixCompletionMarkerTests(unittest.TestCase):
         self.assertEqual(rows[0]["outcome"], "success")
         self.assertGreaterEqual(float(rows[0]["duration_seconds"]), 0.04)
         self.assertIn(f"until-file:{marker}", rows[0]["command"])
+
+    @staticmethod
+    def write_timing_header(path: Path) -> None:
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            csv.writer(handle, delimiter="\t", lineterminator="\n").writerow(
+                [
+                    "fixture",
+                    "lane",
+                    "repetition",
+                    "schedule_position",
+                    "direction",
+                    "duration_seconds",
+                    "outcome",
+                    "command",
+                ]
+            )
 
     def test_file_logging_keeps_container_available_for_log_assertion(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-file-logging-test-") as directory:
@@ -893,6 +1081,74 @@ class PerformanceMatrixEvidenceTests(unittest.TestCase):
         self.assertIn("recorded but not enforced", matrix)
         self.assertIn("| NOT MET | RECORDED |", matrix)
 
+    def test_finalizer_records_published_execution_failure_without_gating(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-test-") as directory:
+            evidence = Path(directory)
+            self.write_samples(
+                evidence,
+                outcome_override={
+                    (
+                        "logging-aggregate-50-services",
+                        "container-compose",
+                        1,
+                    ): "exit-1",
+                },
+            )
+
+            result = self.finalize(evidence, timing_policy="record")
+            matrix = (evidence / "timing-matrix.md").read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Execution failures", matrix)
+        self.assertIn(
+            "| logging-aggregate-50-services | n/a | n/a | n/a | n/a | "
+            "n/a | n/a | NOT MET | RECORDED FAILURE |",
+            matrix,
+        )
+
+    def test_finalizer_rejects_execution_failure_in_strict_mode(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-test-") as directory:
+            evidence = Path(directory)
+            self.write_samples(
+                evidence,
+                outcome_override={
+                    (
+                        "logging-aggregate-50-services",
+                        "container-compose",
+                        1,
+                    ): "exit-1",
+                },
+            )
+
+            result = self.finalize(evidence)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("logging-aggregate-50-services", result.stderr)
+
+    def test_aggregate_execution_failure_remains_strict_by_default(self) -> None:
+        result = self.run_failed_aggregate("enforce")
+
+        self.assertEqual(result.returncode, 42)
+        self.assertIn("down container-compose", result.stdout)
+
+    def test_aggregate_execution_failure_is_recorded_for_published_run(self) -> None:
+        result = self.run_failed_aggregate("record")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("down container-compose", result.stdout)
+        self.assertIn("recorded logging-aggregate-50-services", result.stderr)
+
+    def test_nonaggregate_execution_failure_is_recorded_for_published_run(self) -> None:
+        result = self.run_failed_read("record")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("recorded logging-read-tail-10", result.stderr)
+
+    def test_nonaggregate_execution_failure_remains_strict_by_default(self) -> None:
+        result = self.run_failed_read("enforce")
+
+        self.assertEqual(result.returncode, 42)
+
     def test_finalizer_rejects_missing_declared_fixture_samples(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-performance-test-") as directory:
             evidence = Path(directory)
@@ -918,16 +1174,33 @@ class PerformanceMatrixEvidenceTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("logging-startup-first-output", result.stderr)
 
+    def test_record_finalizer_rejects_non_counterbalanced_schedule(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-test-") as directory:
+            evidence = Path(directory)
+            self.write_samples(
+                evidence,
+                schedule_override={
+                    ("logging-startup-first-output", "container-compose", 2): 2,
+                },
+            )
+
+            result = self.finalize(evidence, timing_policy="record")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("logging-startup-first-output", result.stderr)
+
     def write_samples(
         self,
         evidence: Path,
         omitted_fixture: str | None = None,
         override: dict[tuple[str, str, int], float] | None = None,
         schedule_override: dict[tuple[str, str, int], int] | None = None,
+        outcome_override: dict[tuple[str, str, int], str] | None = None,
     ) -> None:
         evidence.mkdir(parents=True, exist_ok=True)
         override = override or {}
         schedule_override = schedule_override or {}
+        outcome_override = outcome_override or {}
         with (evidence / "timings.tsv").open(
             "w", encoding="utf-8", newline=""
         ) as handle:
@@ -968,10 +1241,61 @@ class PerformanceMatrixEvidenceTests(unittest.TestCase):
                                 position,
                                 "lower-is-better",
                                 f"{duration:.9f}",
-                                "success",
+                                outcome_override.get(
+                                    (fixture, lane, repetition), "success"
+                                ),
                                 "fixture-command",
                             ]
                         )
+
+    def run_failed_aggregate(
+        self, timing_policy: str
+    ) -> subprocess.CompletedProcess[str]:
+        environment = dict(os.environ)
+        environment["PARITY_TIMING_POLICY"] = timing_policy
+        return subprocess.run(
+            [
+                "bash",
+                "-c",
+                r'''
+source "$1"
+select_lane() { ACTIVE_COMPOSE=(compose); LANE_PREFIX=c; }
+down_project() { printf 'down %s\n' "$1"; }
+run_timed() { return 42; }
+run_logging_aggregate_lane container-compose 1 1 50 aggregate-50.yml
+''',
+                "_",
+                HARNESS,
+            ],
+            cwd=REPOSITORY,
+            env=environment,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+    def run_failed_read(self, timing_policy: str) -> subprocess.CompletedProcess[str]:
+        environment = dict(os.environ)
+        environment["PARITY_TIMING_POLICY"] = timing_policy
+        return subprocess.run(
+            [
+                "bash",
+                "-c",
+                r'''
+source "$1"
+select_lane() { ACTIVE_COMPOSE=(compose); LANE_PREFIX=c; }
+run_timed() { return 42; }
+run_logging_read_lane container-compose 1 1 logging-read-tail-10 10 logging.yml
+''',
+                "_",
+                HARNESS,
+            ],
+            cwd=REPOSITORY,
+            env=environment,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
 
     def finalize(
         self, evidence: Path, timing_policy: str = "enforce"
