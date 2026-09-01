@@ -824,7 +824,7 @@ extension ComposeOrchestrator {
         _ = try watchPlans(project: project, services: watchServices)
     }
 
-    /// Waits for `up` exit-control conditions, tears the project down, and returns the CLI exit code.
+    /// Waits for `up` exit-control conditions, stops the project, and returns the CLI exit code.
     func waitForUpExitControl(project: ComposeProject, services: [ComposeService], options up: ComposeUpOptions) async throws -> Int32 {
         let allTargets = try await serviceContainerTargets(project: project, services: services)
         let exitCodeTargets: [ServiceContainerTarget]
@@ -850,25 +850,43 @@ extension ComposeOrchestrator {
             for target in allTargets {
                 emitComposeRuntimeOperation(["wait", target.name])
             }
-            try await down(project: project, options: ComposeDownOptions())
+            try await stopUpExitControlServices(
+                project: project,
+                services: services,
+                targets: allTargets,
+                timeout: up.timeout,
+            )
             return 0
         }
 
         if up.exitCodeFrom != nil {
-            return try await waitForExitCodeFromAndDown(project: project, targets: allTargets, exitCodeTargets: exitCodeTargets)
+            return try await waitForExitCodeFromAndStop(
+                project: project,
+                services: services,
+                targets: allTargets,
+                exitCodeTargets: exitCodeTargets,
+                timeout: up.timeout,
+            )
         }
         let result = try await up.abortOnContainerFailure && !up.abortOnContainerExit
             ? waitForFirstServiceContainerFailureOrCompletion(allTargets)
             : waitForFirstServiceContainerExit(allTargets)
-        try await down(project: project, options: ComposeDownOptions())
+        try await stopUpExitControlServices(
+            project: project,
+            services: services,
+            targets: allTargets,
+            timeout: up.timeout,
+        )
         return result.exitCode
     }
 
     /// Waits for any started service to exit, then returns the selected service status.
-    func waitForExitCodeFromAndDown(
+    func waitForExitCodeFromAndStop(
         project: ComposeProject,
+        services: [ComposeService],
         targets: [ServiceContainerTarget],
         exitCodeTargets: [ServiceContainerTarget],
+        timeout: Int?,
     ) async throws -> Int32 {
         let exitCodeTargetNames = Set(exitCodeTargets.map(\.name))
         let lifecycleManager = lifecycleManager
@@ -894,7 +912,12 @@ extension ComposeOrchestrator {
             guard let firstResult = try await group.next() else {
                 throw ComposeError.invalidProject("up exit-control requires at least one service container")
             }
-            try await down(project: project, options: ComposeDownOptions())
+            try await stopUpExitControlServices(
+                project: project,
+                services: services,
+                targets: targets,
+                timeout: timeout,
+            )
             if exitCodeTargetNames.contains(firstResult.containerName) {
                 group.cancelAll()
                 return firstResult.exitCode
@@ -906,6 +929,45 @@ extension ComposeOrchestrator {
                 }
             }
             throw ComposeError.invalidProject("up --exit-code-from service did not report an exit status")
+        }
+    }
+
+    /// Stops exit-controlled services without deleting their containers or logs.
+    private func stopUpExitControlServices(
+        project: ComposeProject,
+        services: [ComposeService],
+        targets: [ServiceContainerTarget],
+        timeout: Int?,
+    ) async throws {
+        for serviceLayer in try serviceDependencyLayers(services: services).reversed() {
+            let serviceNames = Set(serviceLayer.map(\.name))
+            for service in serviceLayer.reversed() where service.provider != nil {
+                _ = try await runProvider(project: project, service: service, action: .stop)
+            }
+            let lifecycleTargets = targets.filter {
+                serviceNames.contains($0.service.name) && $0.service.provider == nil
+            }
+            guard let limit = try engineOperationParallelLimit(operationCount: lifecycleTargets.count) else {
+                for target in lifecycleTargets.reversed() {
+                    try await ignoringMissingContainer {
+                        try await stopContainer(
+                            service: target.service,
+                            containerName: target.name,
+                            timeout: timeout,
+                        )
+                    }
+                }
+                continue
+            }
+            try await runBoundedEngineOperations(lifecycleTargets, limit: limit) { [self] target in
+                try await ignoringMissingContainer {
+                    try await stopContainer(
+                        service: target.service,
+                        containerName: target.name,
+                        timeout: timeout,
+                    )
+                }
+            }
         }
     }
 
