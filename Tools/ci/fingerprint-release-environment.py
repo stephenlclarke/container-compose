@@ -26,6 +26,7 @@ import re
 import shlex
 import shutil
 import stat
+import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -101,6 +102,22 @@ CONTENT_FILE_VARIABLES = frozenset(
         "CONTAINER_RUNTIME_BUILDER_IMAGE_TAR",
         "CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE",
     }
+)
+
+# Release validation relocates the exact Containerization checkout beneath a
+# fresh system-volume runtime root on every attempt. Bind these selectors to the
+# tracked Git tree plus the ignored release inputs deliberately copied beside
+# it, rather than to the random absolute checkout path.
+CONTENT_GIT_CHECKOUT_VARIABLES = frozenset(
+    {
+        "CONTAINERIZATION_INIT_SOURCE_PATH",
+        "CONTAINERIZATION_STACK_REPO",
+    }
+)
+CONTENT_GIT_CHECKOUT_SUPPLEMENTS = (
+    ".local/bin/hawkeye",
+    "bin/vmlinux-*",
+    "bin/vmlinuz-*",
 )
 
 # The release helper extracts the same immutable Container candidate below a
@@ -263,6 +280,79 @@ def selected_file_entry(
     }
 
 
+def selected_git_checkout_entry(
+    value: str, environment: Mapping[str, str], working_directory: Path
+) -> dict[str, str] | None:
+    try:
+        checkout = Path(value)
+        if not checkout.is_absolute():
+            checkout = working_directory / checkout
+        checkout = checkout.resolve()
+    except (OSError, RuntimeError):
+        return None
+    if not checkout.is_dir():
+        return None
+
+    git = shutil.which("git", path=environment.get("PATH"))
+    if git is None:
+        return None
+    git_environment = {
+        "LC_ALL": "C",
+        "PATH": environment.get("PATH", ""),
+    }
+
+    def git_output(*arguments: str) -> str | None:
+        try:
+            result = subprocess.run(
+                [git, "-C", str(checkout), *arguments],
+                check=True,
+                capture_output=True,
+                env=git_environment,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            return None
+        return result.stdout.strip()
+
+    source_root = git_output("rev-parse", "--show-toplevel")
+    tree = git_output("rev-parse", "--verify", "HEAD^{tree}")
+    if source_root is None or tree is None:
+        return None
+    try:
+        if Path(source_root).resolve() != checkout:
+            return None
+    except (OSError, RuntimeError):
+        return None
+
+    supplements: list[dict[str, str]] = []
+    for pattern in CONTENT_GIT_CHECKOUT_SUPPLEMENTS:
+        for artifact in sorted(checkout.glob(pattern)):
+            try:
+                metadata = artifact.lstat()
+                if artifact.is_symlink() or not artifact.is_file():
+                    return None
+                supplements.append(
+                    {
+                        "mode": f"{stat.S_IMODE(metadata.st_mode):04o}",
+                        "name_sha256": sha256_bytes(
+                            artifact.relative_to(checkout).as_posix().encode("utf-8")
+                        ),
+                        "sha256": sha256_file(artifact),
+                    }
+                )
+            except (OSError, RuntimeError):
+                return None
+
+    return {
+        "selected_git_supplements_sha256": sha256_bytes(
+            json.dumps(supplements, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ),
+        "selected_git_tree_sha256": sha256_bytes(tree.encode("ascii")),
+    }
+
+
 def relocatable_path_directories(
     environment: Mapping[str, str], working_directory: Path
 ) -> dict[Path, str]:
@@ -340,6 +430,16 @@ def value_entry(
             "normalized_path_sha256": normalized_path_identity(
                 value, relocatable_directories
             )
+        }
+    if name in CONTENT_GIT_CHECKOUT_VARIABLES:
+        checkout_entry = selected_git_checkout_entry(
+            value, environment, working_directory
+        )
+        if checkout_entry is not None:
+            return checkout_entry
+        return {
+            "selected_git_checkout_state": "missing",
+            "value_sha256": sha256_bytes(value.encode("utf-8")),
         }
     if name in CONTENT_FILE_VARIABLES:
         try:
