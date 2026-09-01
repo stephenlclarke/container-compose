@@ -1,5 +1,5 @@
 {
-  "originHash" : "6936225c45e4f857a4dfef22a5400fb8af2fdfb7be5b7f004bfa338af4e8dbdc",
+  "originHash" : "442026fb7eef0304d3f538883f3bd21392586419cc9d67106c8edca3d3e893ef",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephenlclarke/container.git",
       "state" : {
-        "revision" : "94bb6c4bd1ad00deffb68fc40e931ee143c43c65"
+        "revision" : "d428123088728c6539c73ac48aa5ce65843f31aa"
       }
     },
     {
@@ -31,7 +31,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephenlclarke/containerization.git",
       "state" : {
-        "revision" : "fefced145304666076d646609f21397f32909fcf"
+        "revision" : "e5a92e86bf03eb2cc244b3b47b0413b3935abfe4"
       }
     },
     {
@@ -59,6 +59,15 @@
       "state" : {
         "revision" : "176c5a434fd76f6f479848d1a8f7d44967534168",
         "version" : "2.4.1"
+      }
+    },
+    {
+      "identity" : "punycodeswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/futamura/PunycodeSwift.git",
+      "state" : {
+        "revision" : "de703481cf48b859a04bac8ef1d98217b9c97aa9",
+        "version" : "4.0.3"
       }
     },
     {
@@ -246,7 +255,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephenlclarke/swift-nio-ssl.git",
       "state" : {
-        "revision" : "a9d648535c62e640d1df258a70c9117a8ddea43e"
+        "revision" : "09c5c9adcdd2a459187e45fe0143eb01063f244a"
       }
     },
     {
@@ -310,6 +319,15 @@
       "state" : {
         "revision" : "827506c90475e82d5a7f191f950fb3025cbdc0d6",
         "version" : "2.0.0"
+      }
+    },
+    {
+      "identity" : "tldextractswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/futamura/TLDExtractSwift.git",
+      "state" : {
+        "revision" : "5fb29b13f99b24401cd93c6c0c83faf7c23e9918",
+        "version" : "4.0.3"
       }
     },
     {
