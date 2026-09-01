@@ -21,6 +21,7 @@ readonly SELF_PATH="${BASH_SOURCE[0]:-$0}"
 SELF_DIRECTORY="$(cd "$(dirname "${SELF_PATH}")" && pwd -P)"
 readonly SELF_DIRECTORY
 readonly COMPOSE_PROMOTION_REVIEW_TOOL="${SELF_DIRECTORY}/../Tools/release/compose_promotion_review.py"
+readonly HOMEBREW_PREFLIGHT_TOOL="${SELF_DIRECTORY}/../Tools/release/homebrew-preflight.py"
 readonly OCI_IMAGE_LAYOUT_VALIDATOR="${SELF_DIRECTORY}/../Tools/release/validate-oci-image-layout.py"
 readonly RELEASE_COMMAND_DEADLINE_RUNNER="${SELF_DIRECTORY}/../Tools/ci/run-command-with-deadline.py"
 readonly STABLE_RELEASE_LANE_CLASSIFIER="${SELF_DIRECTORY}/../Tools/release/stable-release-default-lane.py"
@@ -2021,7 +2022,7 @@ run_local_release_gate() {
   # identity, and source templates are all knowable before any product build.
   # Keep this ahead of virtualization, signing, and candidate packaging so a
   # broken tap cannot waste the expensive release gate.
-  run python3 "${path}/Tools/release/homebrew-preflight.py" \
+  run python3 "${HOMEBREW_PREFLIGHT_TOOL}" \
     --tap "${HOMEBREW_TAP_REPO}" \
     --compose-repository "${path}" \
     --container-repository "${container_path}"

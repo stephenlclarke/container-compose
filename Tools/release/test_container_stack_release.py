@@ -115,6 +115,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
         ]
         self.assertIn('candidate_sha="$(git -C "${path}" rev-parse HEAD)"', local_gate)
+        self.assertIn('run python3 "${HOMEBREW_PREFLIGHT_TOOL}"', local_gate)
+        self.assertNotIn('${path}/Tools/release/homebrew-preflight.py', local_gate)
         self.assertIn('init_image_digest_before="$(shasum -a 256', local_gate)
         self.assertIn('init_image_digest_after="$(shasum -a 256', local_gate)
         self.assertIn("local release gate guest snapshot changed", local_gate)
@@ -1062,7 +1064,7 @@ github_cli() {{
             )
         ]
         self.assertLess(
-            local_gate.index("homebrew-preflight.py"),
+            local_gate.index('run python3 "${HOMEBREW_PREFLIGHT_TOOL}"'),
             local_gate.index("require_local_virtualization"),
         )
 
