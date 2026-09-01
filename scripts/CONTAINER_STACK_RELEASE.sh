@@ -2312,11 +2312,18 @@ stable_version_promotes_default_lane() {
 # maintenance backfill did not move either stable consumer. Unrelated Current
 # formula commits may advance tap main without invalidating this evidence.
 homebrew_stable_formula_identities() {
-  local formula sha
+  local formula sha tap_sha
+  tap_sha="$(
+    github_cli api repos/stephenlclarke/homebrew-tap/commits/main --jq '.sha'
+  )"
+  if [[ -z "${tap_sha}" ]]; then
+    printf 'Homebrew tap main has no immutable commit identity\n' >&2
+    return 1
+  fi
   for formula in container-compose container; do
     sha="$(
       github_cli api \
-        "repos/stephenlclarke/homebrew-tap/contents/Formula/${formula}.rb" \
+        "repos/stephenlclarke/homebrew-tap/contents/Formula/${formula}.rb?ref=${tap_sha}" \
         --jq '.sha'
     )"
     if [[ -z "${sha}" ]]; then
@@ -3707,7 +3714,7 @@ PY
 # a partially successful GitHub upload remains resumable.
 publish_stable_asset_pair() {
   local version="$1" repo="$2" asset_path="$3" checksum_path="$4" asset="$5" digest="$6"
-  local remote_tmp asset_names local_digest local_checksum remote_digest remote_checksum
+  local mode="${7:-recover}" remote_tmp asset_names local_digest upload_status cleanup_status
   local missing_assets=() status=0
   if [[ ! -f "${asset_path}" || ! -f "${checksum_path}" ]]; then
     printf 'stable asset pair is incomplete locally: %s + %s\n' \
@@ -3715,8 +3722,11 @@ publish_stable_asset_pair() {
     return 2
   fi
   local_digest="$(shasum -a 256 "${asset_path}" | awk '{print $1}')"
-  local_checksum="$(awk '{print $1}' "${checksum_path}")"
-  if [[ "${local_digest}" != "${digest}" || "${local_checksum}" != "${digest}" ]]; then
+  if [[ "${local_digest}" != "${digest}" ]] || ! awk \
+    -v expected_digest="${digest}" -v expected_asset="${asset}" \
+    'NR == 1 && NF == 2 && $1 == expected_digest && $2 == expected_asset { valid = 1 }
+     END { exit !(valid && NR == 1) }' \
+    "${checksum_path}"; then
     printf 'stable asset pair does not match its retained candidate digest: %s\n' \
       "${digest}" >&2
     return 2
@@ -3741,8 +3751,7 @@ publish_stable_asset_pair() {
   if grep -Fxq "${asset}.sha256" <<<"${asset_names}"; then
     github_cli release download "${version}" --repo "${repo}" \
       --pattern "${asset}.sha256" --dir "${remote_tmp}"
-    remote_checksum="$(awk '{print $1}' "${remote_tmp}/${asset}.sha256")"
-    if [[ "${remote_checksum}" != "${digest}" ]]; then
+    if ! cmp -s "${remote_tmp}/${asset}.sha256" "${checksum_path}"; then
       printf 'stable release %s guest checksum differs from the retained release-gate archive\n' \
         "${version}" >&2
       status=1
@@ -3751,15 +3760,41 @@ publish_stable_asset_pair() {
     missing_assets+=("${checksum_path}")
   fi
   if (( status == 0 && ${#missing_assets[@]} > 0 )); then
-    if github_cli release upload "${version}" --repo "${repo}" "${missing_assets[@]}"; then
+    if [[ "${mode}" == "verify-only" ]]; then
+      printf 'stable release %s guest asset pair is still incomplete after upload collision\n' \
+        "${version}" >&2
+      status=1
+    elif github_cli release upload "${version}" --repo "${repo}" "${missing_assets[@]}"; then
       printf 'published stable guest asset: %s at %s\n' "${asset}" "${digest}"
     else
-      status=$?
+      upload_status=$?
+      printf 'stable guest upload raced another recovery; revalidating immutable closure\n'
+      if find "${remote_tmp}" -depth -delete; then
+        cleanup_status=0
+      else
+        cleanup_status=$?
+      fi
+      if (( cleanup_status != 0 )); then
+        return "${cleanup_status}"
+      fi
+      if publish_stable_asset_pair \
+        "${version}" "${repo}" "${asset_path}" "${checksum_path}" \
+        "${asset}" "${digest}" verify-only; then
+        return 0
+      fi
+      return "${upload_status}"
     fi
   elif (( status == 0 )); then
     printf 'stable guest asset already published: %s at %s\n' "${asset}" "${digest}"
   fi
-  find "${remote_tmp}" -depth -delete
+  if find "${remote_tmp}" -depth -delete; then
+    cleanup_status=0
+  else
+    cleanup_status=$?
+  fi
+  if (( status == 0 && cleanup_status != 0 )); then
+    status="${cleanup_status}"
+  fi
   return "${status}"
 }
 

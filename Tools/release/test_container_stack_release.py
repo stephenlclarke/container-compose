@@ -809,6 +809,104 @@ github_cli() {{
                     self.assertEqual(recovered.returncode, 0, recovered.stderr)
                     self.assertEqual(uploads.read_text(encoding="utf-8").strip(), missing)
 
+    def test_stable_guest_asset_pair_handles_sidecar_race_and_cleanup_edges(self) -> None:
+        asset = "container-vminit-arm64.oci.tar"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            local_asset = root / asset
+            local_checksum = root / f"{asset}.sha256"
+            local_asset.write_bytes(b"immutable release-gate guest archive\n")
+            digest = hashlib.sha256(local_asset.read_bytes()).hexdigest()
+            local_checksum.write_text(f"{digest}  {asset}\n", encoding="utf-8")
+
+            for mode, expected_status in (
+                ("strict-sidecar", "failure"),
+                ("upload-race", "success"),
+                ("cleanup-failure", "cleanup-failure"),
+            ):
+                with self.subTest(mode=mode):
+                    fixture = root / mode
+                    remote = fixture / "remote"
+                    remote.mkdir(parents=True)
+                    names = fixture / "asset-names"
+                    upload_marker = fixture / "upload-called"
+                    cleanup_root = fixture / "cleanup"
+                    if mode == "strict-sidecar":
+                        names.write_text(f"{asset}.sha256\n", encoding="utf-8")
+                        (remote / f"{asset}.sha256").write_text(
+                            f"{digest}  wrong-name.tar\n", encoding="utf-8"
+                        )
+                    elif mode == "upload-race":
+                        names.write_text(f"{asset}\n", encoding="utf-8")
+                        (remote / asset).write_bytes(local_asset.read_bytes())
+                    else:
+                        names.write_text(f"{asset}\n{asset}.sha256\n", encoding="utf-8")
+                        (remote / asset).write_bytes(local_asset.read_bytes())
+                        (remote / f"{asset}.sha256").write_bytes(
+                            local_checksum.read_bytes()
+                        )
+
+                    shell_setup = f"""\
+export TEST_MODE={shlex.quote(mode)}
+export TEST_ASSET_NAMES_FILE={shlex.quote(str(names))}
+export TEST_REMOTE={shlex.quote(str(remote))}
+export TEST_LOCAL_CHECKSUM={shlex.quote(str(local_checksum))}
+export TEST_UPLOAD_MARKER={shlex.quote(str(upload_marker))}
+export TEST_CLEANUP_ROOT={shlex.quote(str(cleanup_root))}
+mktemp() {{
+  mkdir "${{TEST_CLEANUP_ROOT}}"
+  printf '%s\\n' "${{TEST_CLEANUP_ROOT}}"
+}}
+if [[ "${{TEST_MODE}}" == cleanup-failure ]]; then
+  find() {{ return 17; }}
+fi
+github_cli() {{
+  case "$1:$2" in
+    release:view)
+      command cat "${{TEST_ASSET_NAMES_FILE}}"
+      ;;
+    release:download)
+      shift 3
+      local pattern='' destination=''
+      while (( $# > 0 )); do
+        case "$1" in
+          --pattern) pattern="$2"; shift 2 ;;
+          --dir) destination="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      cp "${{TEST_REMOTE}}/${{pattern}}" "${{destination}}/${{pattern}}"
+      ;;
+    release:upload)
+      if [[ "${{TEST_MODE}}" == upload-race ]]; then
+        cp "${{TEST_LOCAL_CHECKSUM}}" "${{TEST_REMOTE}}/{asset}.sha256"
+        printf '%s\\n' {asset} {asset}.sha256 >"${{TEST_ASSET_NAMES_FILE}}"
+        return 1
+      fi
+      touch "${{TEST_UPLOAD_MARKER}}"
+      ;;
+    *) return 2 ;;
+  esac
+}}
+"""
+                    recovered = self.run_release_function(
+                        root,
+                        "publish_stable_asset_pair "
+                        "0.13.1 owner/container-compose "
+                        f"{shlex.quote(str(local_asset))} "
+                        f"{shlex.quote(str(local_checksum))} "
+                        f"{asset} {digest}",
+                        shell_setup=shell_setup,
+                    )
+
+                    if expected_status == "success":
+                        self.assertEqual(recovered.returncode, 0, recovered.stderr)
+                    elif expected_status == "cleanup-failure":
+                        self.assertEqual(recovered.returncode, 17, recovered.stderr)
+                    else:
+                        self.assertNotEqual(recovered.returncode, 0)
+                        self.assertFalse(upload_marker.exists())
+
     def test_homebrew_backfill_identity_uses_only_stable_formula_blobs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -817,8 +915,9 @@ github_cli() {{
                 "homebrew_stable_formula_identities",
                 shell_setup="""github_cli() {
   case "$*" in
-    *Formula/container-compose.rb*) printf '%s\\n' compose-blob ;;
-    *Formula/container.rb*) printf '%s\\n' container-blob ;;
+    *homebrew-tap/commits/main*) printf '%s\\n' tap-head ;;
+    *Formula/container-compose.rb?ref=tap-head*) printf '%s\\n' compose-blob ;;
+    *Formula/container.rb?ref=tap-head*) printf '%s\\n' container-blob ;;
     *) return 2 ;;
   esac
 }""",
