@@ -261,7 +261,16 @@ class HistoricalWorkflowTests(unittest.TestCase):
 
         self.assertLess(prepare, quiet_host)
         self.assertIn("FIXTURE_IMAGE_INDEX_DIGEST: sha256:", workflow)
-        self.assertIn("FIXTURE_IMAGE_MANIFEST_DIGEST: sha256:", workflow)
+        self.assertIn(
+            "FIXTURE_IMAGE_MANIFEST_DIGEST: "
+            "sha256:5c2987750228f21fa5e602dbc36c4535b34deed426b8f13806c0e2dfbf9b1fba",
+            workflow,
+        )
+        self.assertIn(
+            "FIXTURE_IMAGE_MANIFEST_MEDIA_TYPE: "
+            "application/vnd.oci.image.manifest.v1+json",
+            workflow,
+        )
         self.assertIn("docker-daemon:${FIXTURE_IMAGE}", workflow)
         self.assertIn(
             'if ! docker image inspect "${FIXTURE_IMAGE}" > "${docker_metadata}"; then',
@@ -274,9 +283,15 @@ class HistoricalWorkflowTests(unittest.TestCase):
         self.assertNotIn(
             "recover before retrying with: docker pull %s", workflow
         )
-        self.assertIn("--preserve-digests", workflow)
+        self.assertIn("skopeo copy --format oci", workflow)
+        self.assertNotIn("--preserve-digests", workflow)
         self.assertIn("--src-daemon-host", workflow)
         self.assertIn("docker context inspect", workflow)
+        self.assertIn("expected exactly one manifest", workflow)
+        self.assertIn(
+            '[[ "${archive_media_type}" == "${FIXTURE_IMAGE_MANIFEST_MEDIA_TYPE}" ]]',
+            workflow,
+        )
         self.assertIn("validate-oci-image-layout.py", workflow)
         self.assertIn("PARITY_FIXTURE_IMAGE_ARCHIVE=", workflow)
         self.assertIn("PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE=3.20", workflow)

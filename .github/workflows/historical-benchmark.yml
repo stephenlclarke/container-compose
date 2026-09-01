@@ -66,7 +66,8 @@ jobs:
       FIXTURE_GROUPS: ${{ inputs.fixture_groups }}
       FIXTURE_IMAGE: alpine:3.20
       FIXTURE_IMAGE_INDEX_DIGEST: sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
-      FIXTURE_IMAGE_MANIFEST_DIGEST: sha256:3bc2f9693214618ce31d85a9379aa48097d55524d02d0a8c8b4ebd27842f3c94
+      FIXTURE_IMAGE_MANIFEST_DIGEST: sha256:5c2987750228f21fa5e602dbc36c4535b34deed426b8f13806c0e2dfbf9b1fba
+      FIXTURE_IMAGE_MANIFEST_MEDIA_TYPE: application/vnd.oci.image.manifest.v1+json
       RUNTIME_ROOT_PREFIX: /private/tmp/cchr-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Select local benchmark root
@@ -202,12 +203,15 @@ jobs:
             '{{(index .Endpoints "docker").Host}}')"
           [[ "${docker_host}" == unix:///* ]]
           [[ -S "${docker_host#unix://}" ]]
-          /opt/homebrew/bin/skopeo copy --preserve-digests \
+          /opt/homebrew/bin/skopeo copy --format oci \
             --src-daemon-host "${docker_host}" \
             "docker-daemon:${FIXTURE_IMAGE}" "oci-archive:${archive}:3.20"
           archive_digest="$(/opt/homebrew/bin/skopeo inspect \
             "oci-archive:${archive}:3.20" | jq -r '.Digest')"
           [[ "${archive_digest}" == "${FIXTURE_IMAGE_MANIFEST_DIGEST}" ]]
+          archive_media_type="$(tar -xOf "${archive}" index.json | \
+            jq -er '.manifests | if length == 1 then .[0].mediaType else error("expected exactly one manifest") end')"
+          [[ "${archive_media_type}" == "${FIXTURE_IMAGE_MANIFEST_MEDIA_TYPE}" ]]
           /usr/bin/python3 Tools/release/validate-oci-image-layout.py \
             "${archive}" 3.20
           shasum -a 256 "${archive}" \
