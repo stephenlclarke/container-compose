@@ -109,6 +109,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertLess(
             self.script.index(use), self.script.index("run_local_release_gate_command env")
         )
+        local_gate = self.script[
+            self.script.index("run_local_release_gate() {") : self.script.index(
+                "# Verify that Apple remotes cannot be pushed"
+            )
+        ]
+        self.assertIn('candidate_sha="$(git -C "${path}" rev-parse HEAD)"', local_gate)
+        self.assertIn('init_image_digest_before="$(shasum -a 256', local_gate)
+        self.assertIn('init_image_digest_after="$(shasum -a 256', local_gate)
+        self.assertIn("local release gate guest snapshot changed", local_gate)
+        self.assertIn("record_stable_init_image_gate_evidence", local_gate)
+        self.assertLess(
+            local_gate.index("release_local_release_gate_host_state"),
+            local_gate.rindex("record_stable_init_image_gate_evidence"),
+        )
 
     def test_release_helper_retains_only_its_unpublished_candidate_before_readiness(self) -> None:
         recovery = self.script[
@@ -833,12 +847,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             digest = hashlib.sha256(local_asset.read_bytes()).hexdigest()
             local_checksum.write_text(f"{digest}  {asset}\n", encoding="utf-8")
 
-            for existing, missing in (
-                (asset, f"{asset}.sha256"),
-                (f"{asset}.sha256", asset),
+            for label, existing, missing in (
+                ("archive-only", asset, [f"{asset}.sha256"]),
+                ("sidecar-only", f"{asset}.sha256", [asset]),
+                ("both-missing", "", [asset, f"{asset}.sha256"]),
             ):
                 with self.subTest(existing=existing):
-                    fixture = root / existing.replace(".", "-")
+                    fixture = root / label
                     remote = fixture / "remote"
                     remote.mkdir(parents=True)
                     uploads = fixture / "uploads"
@@ -893,7 +908,9 @@ github_cli() {{
                     )
 
                     self.assertEqual(recovered.returncode, 0, recovered.stderr)
-                    self.assertEqual(uploads.read_text(encoding="utf-8").strip(), missing)
+                    self.assertEqual(
+                        uploads.read_text(encoding="utf-8").splitlines(), missing
+                    )
 
     def test_stable_guest_asset_pair_handles_sidecar_race_and_cleanup_edges(self) -> None:
         asset = "container-vminit-arm64.oci.tar"
@@ -1822,8 +1839,57 @@ github_cli() {{
             'summary+=" Guest init image SHA-256: ${INIT_IMAGE_SHA256}."',
             workflow,
         )
-        self.assertIn('init_image_digest="$(shasum -a 256 "${archive}"', dispatcher)
+        self.assertIn(
+            'init_image_digest="$(retained_stable_init_image_gate_digest "${version}")"',
+            dispatcher,
+        )
         self.assertIn('-f "init_image_sha256=${init_image_digest}"', dispatcher)
+
+    def test_stable_gate_digest_comes_from_immutable_local_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compose = root / "container-compose"
+            compose.mkdir()
+            evidence = root / "evidence"
+            archive = root / "retained.oci.tar"
+            archive.write_bytes(b"locally gated guest snapshot\n")
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            candidate_sha = "a" * 40
+            shell_setup = "\n".join(
+                [
+                    f"export TEST_COMPOSE={shlex.quote(str(compose))}",
+                    f"export PARITY_EVIDENCE_DIR={shlex.quote(str(evidence))}",
+                    f"export CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE={shlex.quote(str(archive))}",
+                    "repo_path() { printf '%s\\n' \"${TEST_COMPOSE}\"; }",
+                    f"git() {{ printf '%s\\n' {candidate_sha}; }}",
+                ]
+            )
+
+            recorded = self.run_release_function(
+                root,
+                f"record_stable_init_image_gate_evidence {candidate_sha} {digest} && "
+                "retained_stable_init_image_gate_digest 0.13.1",
+                shell_setup=shell_setup,
+            )
+            self.assertEqual(recorded.returncode, 0, recorded.stderr)
+            self.assertEqual(recorded.stdout.strip(), digest)
+
+            conflicting = self.run_release_function(
+                root,
+                f"record_stable_init_image_gate_evidence {candidate_sha} {'b' * 64}",
+                shell_setup=shell_setup,
+            )
+            self.assertNotEqual(conflicting.returncode, 0)
+            self.assertIn("refusing to replace immutable", conflicting.stderr)
+
+            archive.write_bytes(b"replaced after the local gate\n")
+            replaced = self.run_release_function(
+                root,
+                "retained_stable_init_image_gate_digest 0.13.1",
+                shell_setup=shell_setup,
+            )
+            self.assertNotEqual(replaced.returncode, 0)
+            self.assertIn("no longer matches the locally gated snapshot", replaced.stderr)
 
     def test_release_archives_require_developer_id_signatures(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")

@@ -1891,11 +1891,116 @@ resolve_release_evidence_root() {
   printf '%s\n' "${evidence_root}"
 }
 
+# Return the candidate-specific local gate evidence path. The candidate SHA
+# prevents a successful gate for one source revision authorizing another.
+stable_init_image_gate_evidence_path() {
+  local candidate_sha="$1" path evidence_root authority_root
+  if [[ ! "${candidate_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'stable init-image gate evidence requires an immutable candidate SHA: %s\n' \
+      "${candidate_sha:-missing}" >&2
+    return 2
+  fi
+  path="$(repo_path "${COMPOSE_REPO}")"
+  evidence_root="$(resolve_release_evidence_root "${path}" \
+    "${PARITY_EVIDENCE_DIR:-.build/release-evidence}")"
+  authority_root="${evidence_root}/stable-init-image-authority"
+  if [[ -L "${authority_root}" ]]; then
+    printf 'stable init-image authority directory must not be a symlink: %s\n' \
+      "${authority_root}" >&2
+    return 2
+  fi
+  mkdir -p "${authority_root}"
+  printf '%s/%s.sha256\n' "${authority_root}" "${candidate_sha}"
+}
+
+# Persist the exact guest snapshot digest only after its full local release
+# gate and host restoration complete. Existing evidence is immutable.
+record_stable_init_image_gate_evidence() {
+  local candidate_sha="$1" digest="$2" evidence_path tmp record existing
+  if [[ ! "${digest}" =~ ^[0-9a-f]{64}$ ]]; then
+    printf 'stable init-image gate evidence has an invalid digest: %s\n' \
+      "${digest:-missing}" >&2
+    return 2
+  fi
+  evidence_path="$(stable_init_image_gate_evidence_path "${candidate_sha}")"
+  record="${digest}  ${candidate_sha}"
+  if [[ -e "${evidence_path}" || -L "${evidence_path}" ]]; then
+    if [[ -f "${evidence_path}" && ! -L "${evidence_path}" ]]; then
+      existing="$(<"${evidence_path}")"
+      if [[ "${existing}" == "${record}" ]]; then
+        return 0
+      fi
+    fi
+    printf 'refusing to replace immutable stable init-image gate evidence: %s\n' \
+      "${evidence_path}" >&2
+    return 1
+  fi
+  tmp="$(mktemp "${evidence_path}.XXXXXX")"
+  if ! printf '%s\n' "${record}" >"${tmp}"; then
+    find "${tmp}" -delete >/dev/null 2>&1 || true
+    return 1
+  fi
+  chmod a-w "${tmp}"
+  if mv -n "${tmp}" "${evidence_path}" && \
+    [[ -f "${evidence_path}" && ! -L "${evidence_path}" ]]; then
+    existing="$(<"${evidence_path}")"
+    find "${tmp}" -delete >/dev/null 2>&1 || true
+    if [[ "${existing}" == "${record}" ]]; then
+      return 0
+    fi
+  fi
+  find "${tmp}" -delete >/dev/null 2>&1 || true
+  printf 'failed to publish immutable stable init-image gate evidence: %s\n' \
+    "${evidence_path}" >&2
+  return 1
+}
+
+# Read the digest produced by the local gate and prove the retained archive is
+# still that exact snapshot before sending its identity to hosted authority.
+retained_stable_init_image_gate_digest() {
+  local version="$1" path tag_sha evidence_path record digest recorded_sha archive archive_digest
+  path="$(repo_path "${COMPOSE_REPO}")"
+  tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
+  evidence_path="$(stable_init_image_gate_evidence_path "${tag_sha}")"
+  if [[ ! -f "${evidence_path}" || -L "${evidence_path}" ]]; then
+    printf 'stable tag %s has no immutable local init-image gate evidence\n' \
+      "${version}" >&2
+    return 1
+  fi
+  record="$(<"${evidence_path}")"
+  if [[ "${record}" =~ ^([0-9a-f]{64})\ \ ([0-9a-f]{40})$ ]]; then
+    digest="${BASH_REMATCH[1]}"
+    recorded_sha="${BASH_REMATCH[2]}"
+  else
+    printf 'stable init-image gate evidence is malformed: %s\n' \
+      "${evidence_path}" >&2
+    return 1
+  fi
+  if [[ "${recorded_sha}" != "${tag_sha}" ]]; then
+    printf 'stable init-image gate evidence names %s instead of tag source %s\n' \
+      "${recorded_sha}" "${tag_sha}" >&2
+    return 1
+  fi
+  archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
+  if [[ "${archive}" != /* || ! -f "${archive}" ]]; then
+    printf 'stable init-image gate evidence requires the absolute retained archive: %s\n' \
+      "${archive:-unset}" >&2
+    return 2
+  fi
+  archive_digest="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+  if [[ "${archive_digest}" != "${digest}" ]]; then
+    printf 'retained guest archive no longer matches the locally gated snapshot: expected %s, got %s\n' \
+      "${digest}" "${archive_digest:-missing}" >&2
+    return 1
+  fi
+  printf '%s\n' "${digest}"
+}
+
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
   (
   local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive
-  local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest
+  local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest candidate_sha init_image_digest_before init_image_digest_after
   local -a RELEASE_QUIESCED_LABELS=()
   local -a RELEASE_QUIESCED_PLISTS=()
   local -a RELEASE_QUIESCED_ACTION_STARTED=()
@@ -1903,6 +2008,7 @@ run_local_release_gate() {
   local -a RELEASE_QUIESCED_RESTARTED_UNREADY=()
   local -a RELEASE_SUSPENDED_RUNNER_PGIDS=()
   path="$(repo_path "${COMPOSE_REPO}")"
+  candidate_sha="$(git -C "${path}" rev-parse HEAD)"
   container_path="$(repo_path "${CONTAINER_REPO}")"
   containerization_path="$(repo_path "containerization")"
   if [[ ! -f "${HOMEBREW_TAP_REPO}/Formula/container-compose.rb" ]]; then
@@ -2015,6 +2121,7 @@ PY
   fi
   chmod a-w "${staged_init_image_archive}"
   init_image_archive="${staged_init_image_archive}"
+  init_image_digest_before="$(shasum -a 256 "${init_image_archive}" | awk '{print $1}')"
   runtime_app_root="${runtime_parent}/app"
   runtime_run_id="release-$(id -u)-$$-${RANDOM}-${SECONDS}"
   runtime_namespace_digest="$(LC_ALL=C printf '%s' \
@@ -2050,6 +2157,15 @@ PY
     "CONTAINER_STACK_REPO=${container_path}" \
     "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}" || status=$?
 
+  if (( status == 0 )); then
+    init_image_digest_after="$(shasum -a 256 "${init_image_archive}" | awk '{print $1}')"
+    if [[ "${init_image_digest_after}" != "${init_image_digest_before}" ]]; then
+      printf 'local release gate guest snapshot changed while it was exercised: expected %s, got %s\n' \
+        "${init_image_digest_before}" "${init_image_digest_after:-missing}" >&2
+      status=1
+    fi
+  fi
+
   if ! cleanup_local_release_gate_resources "${container_binary}" \
     "${runtime_parent}" "${runtime_app_root}" "${runtime_service_namespace}"; then
     status=1
@@ -2062,6 +2178,12 @@ PY
     trap - EXIT
   else
     status=1
+  fi
+  if (( status == 0 )); then
+    if ! record_stable_init_image_gate_evidence \
+      "${candidate_sha}" "${init_image_digest_before}"; then
+      status=1
+    fi
   fi
   return "${status}"
   )
@@ -4136,7 +4258,7 @@ dispatch_compose_stable_tap_repair() {
 }
 
 dispatch_stable_release_gate() {
-  local version="$1" previous_run run_id deadline now archive init_image_digest
+  local version="$1" previous_run run_id deadline now init_image_digest
   print_header "dispatch hosted stable release gate for ${version}"
 
   if [[ "${EXECUTE}" != "1" ]]; then
@@ -4148,13 +4270,7 @@ dispatch_stable_release_gate() {
   fi
 
   need_command gh
-  archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
-  if [[ "${archive}" != /* || ! -f "${archive}" ]]; then
-    printf 'hosted stable release gate requires the absolute retained OCI init-image archive: %s\n' \
-      "${archive:-unset}" >&2
-    exit 2
-  fi
-  init_image_digest="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+  init_image_digest="$(retained_stable_init_image_gate_digest "${version}")"
   previous_run="$(latest_stable_release_gate_dispatch_run || true)"
   run github_cli workflow run stable-release-gate.yml \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
