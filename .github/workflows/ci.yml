@@ -348,7 +348,7 @@ jobs:
           HAWKEYE_AUTO_INSTALL: "1"
 
       - name: Cache SonarQube packages
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.sonar/cache
@@ -357,7 +357,7 @@ jobs:
 
       - name: Check SonarQube TCP availability
         id: sonar_tcp
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
         env:
           SONAR_HOST: sonarcloud.io
           SONAR_PORT: "443"
@@ -371,7 +371,9 @@ jobs:
 
       - name: Check SonarQube API availability
         id: sonar_api
-        if: github.ref == 'refs/heads/main' && steps.sonar_tcp.outputs.available == 'true'
+        if: >
+          (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
+          steps.sonar_tcp.outputs.available == 'true'
         env:
           SONAR_STATUS_URL: https://sonarcloud.io/api/system/status
         run: |
@@ -390,7 +392,7 @@ jobs:
       - name: Install Sonar Scanner CLI
         id: sonar_install
         if: >
-          github.ref == 'refs/heads/main' &&
+          (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
           steps.sonar_tcp.outputs.available == 'true' &&
           steps.sonar_api.outputs.available == 'true'
         continue-on-error: true
@@ -453,7 +455,7 @@ jobs:
       - name: SonarQube scan
         id: sonar_scan
         if: >
-          github.ref == 'refs/heads/main' &&
+          (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
           steps.sonar_tcp.outputs.available == 'true' &&
           steps.sonar_api.outputs.available == 'true' &&
           steps.sonar_install.outcome == 'success'
@@ -469,7 +471,7 @@ jobs:
 
       - name: Enforce SonarQube failures when the service is available
         if: >
-          github.ref == 'refs/heads/main' &&
+          (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
           (steps.sonar_tcp.outputs.available != 'true' || steps.sonar_api.outputs.available != 'true' || steps.sonar_install.outcome == 'failure' || steps.sonar_scan.outcome == 'failure')
         env:
           SONAR_TCP_AVAILABLE: ${{ steps.sonar_tcp.outputs.available }}

@@ -1109,7 +1109,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("- name: Checkout container dependency", workflow)
         self.assertIn("- name: Checkout containerization dependency", workflow)
 
-    def test_stable_and_current_release_authority_select_main_ci(self) -> None:
+    def test_stable_release_selects_tag_ci_and_current_release_selects_main_ci(
+        self,
+    ) -> None:
         stable_gate = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
         package = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         package_authority = package[
@@ -1121,7 +1123,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             package_authority.index("branch)") : package_authority.index("tag)")
         ]
         self.assertIn("--json databaseId,status,conclusion,headBranch", stable_gate)
-        self.assertIn('select(.headBranch == "main")', stable_gate)
+        self.assertIn('select(.headBranch == $tag)', stable_gate)
+        self.assertIn('--arg tag "${RELEASE_TAG}"', stable_gate)
         self.assertIn("--json event,status,conclusion,headBranch", current_authority)
         self.assertIn('.headBranch == "main"', current_authority)
         self.assertIn('(.event == "push" or .event == "workflow_dispatch")', current_authority)
@@ -1156,7 +1159,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("needs.analyze.result", codeql)
         self.assertIn("needs.analyze-skipped.result", codeql)
 
-    def test_main_sonar_step_preserves_the_complete_retry_budget(self) -> None:
+    def test_release_sonar_step_runs_on_main_and_tags_with_complete_retry_budget(
+        self,
+    ) -> None:
         ci = CI_WORKFLOW.read_text(encoding="utf-8")
         runtime_job = ci[
             ci.index("  validate_runtime:") : ci.index(
@@ -1178,6 +1183,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("timeout-minutes: 25", sonar)
         self.assertIn('SONAR_QUALITYGATE_WAIT: "true"', sonar)
         self.assertIn("run: make sonar-scan", sonar)
+        self.assertEqual(
+            ci.count("github.ref == 'refs/heads/main' || github.ref_type == 'tag'"),
+            6,
+        )
         self.assertIn(
             'gpg_home="$(mktemp -d /private/tmp/container-compose-sonar-gpg.XXXXXX)"',
             sonar_install,
@@ -2097,12 +2106,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("stable tag %s is not GitHub-verified", workflow)
-        self.assertIn("stable tag %s is not the latest semantic source tag", workflow)
+        self.assertIn("stable tag %s is not the latest %s source tag", workflow)
         self.assertIn("stable release %s already exists and is immutable", workflow)
+        self.assertIn(
+            "stable tag %s is not on release branch %s",
+            workflow,
+        )
+        self.assertIn('"${compare_status}" == "ahead"', workflow)
         self.assertIn(
             "accepting its GitHub-verified unpublished source for a release retry",
             workflow,
         )
+        self.assertIn('release_branch="release-${release_line}"', workflow)
+        self.assertIn('"${GITHUB_REF}" != "refs/heads/${release_branch}"', workflow)
+        self.assertIn('"${GITHUB_SHA}" != "${release_branch_sha}"', workflow)
         self.assertIn(
             "homebrew_tap_ref: ${{ steps.candidate.outputs.homebrew_tap_ref }}",
             workflow,
@@ -2137,7 +2154,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("run-stack-release-validation.sh hosted", workflow)
         self.assertIn("Run Compose application CI from immutable source lockfile", workflow)
         self.assertIn("make -C container-compose", workflow)
-        self.assertIn("complete main CI, including the 390 tool-policy tests", workflow)
+        self.assertIn("complete tag CI, including the 390 tool-policy tests", workflow)
         for target in (
             "format",
             "core-runtime-neutrality",
