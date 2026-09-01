@@ -1181,7 +1181,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("needs.analyze.result", codeql)
         self.assertIn("needs.analyze-skipped.result", codeql)
 
-    def test_release_sonar_step_runs_on_main_and_tags_with_complete_retry_budget(
+    def test_release_sonar_step_runs_on_main_and_tags_with_supported_branch_and_retry_budget(
         self,
     ) -> None:
         ci = CI_WORKFLOW.read_text(encoding="utf-8")
@@ -1205,17 +1205,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("timeout-minutes: 25", sonar)
         self.assertIn('SONAR_QUALITYGATE_WAIT: "true"', sonar)
         self.assertIn("make sonar-scan", sonar)
+        self.assertIn('if [[ "${GITHUB_REF_TYPE}" == "tag" ]]', sonar)
         self.assertIn('release_version="${GITHUB_REF_NAME#v}"', sonar)
         self.assertIn(
-            'export SONAR_BRANCH="release-${release_version%.*}"',
+            'if [[ ! "${release_version}" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]',
             sonar,
         )
+        self.assertIn('export SONAR_BRANCH="main"', sonar)
         self.assertEqual(
             ci.count("github.ref == 'refs/heads/main' || github.ref_type == 'tag'"),
             6,
         )
         self.assertIn('GITHUB_REF_TYPE: ${{ github.ref_type }}', ci)
-        self.assertIn('if [[ "${GITHUB_REF_TYPE}" == "tag" ]]', ci)
         self.assertIn("printf 'heavy=true\\n' >> \"$GITHUB_OUTPUT\"", ci)
         self.assertIn(
             'gpg_home="$(mktemp -d /private/tmp/container-compose-sonar-gpg.XXXXXX)"',

@@ -479,7 +479,7 @@ jobs:
               printf 'release tag is not semantic: %s\n' "${GITHUB_REF_NAME}" >&2
               exit 2
             fi
-            export SONAR_BRANCH="release-${release_version%.*}"
+            export SONAR_BRANCH="main"
           fi
           make sonar-scan
         working-directory: container-compose
