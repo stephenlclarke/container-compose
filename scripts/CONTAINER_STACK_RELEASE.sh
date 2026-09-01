@@ -2550,7 +2550,7 @@ ensure_stable_retry_source_authority() {
 ensure_published_stable_recovery_authority() {
   local version="$1" path repo tag_sha authority_name authority_filter authority_record
   local authority_run_id authority_summary authority_conclusion authority_init_digest
-  local signed_authority_init_digest
+  local signed_authority_record signed_authority_object signed_authority_init_digest
   path="$(repo_path "${COMPOSE_REPO}")"
   repo="$(github_repo "${COMPOSE_REPO}")"
   tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
@@ -2559,9 +2559,11 @@ ensure_published_stable_recovery_authority() {
     return 1
   fi
 
-  signed_authority_init_digest="$(
-    verified_stable_init_image_authority_digest "${version}"
+  signed_authority_record="$(
+    verified_stable_init_image_authority_record "${version}"
   )"
+  IFS=$'\t' read -r signed_authority_object signed_authority_init_digest \
+    <<<"${signed_authority_record}"
 
   authority_name="Stable Release Authority (${version})"
   authority_filter=".check_runs[] | select(.name == \"${authority_name}\""
@@ -2603,7 +2605,7 @@ ensure_published_stable_recovery_authority() {
     printf 'refusing published recovery without a successful Stable Release Gate authority\n' >&2
     return 1
   fi
-  printf '%s\n' "${authority_init_digest}"
+  printf '%s\t%s\n' "${signed_authority_object}" "${authority_init_digest}"
 }
 
 # Refuse to retry a semantic tag once GitHub has made it a published release.
@@ -2705,10 +2707,11 @@ stable_init_image_authority_tag() {
   printf 'stable-init-image-authority/%s\n' "${version}"
 }
 
-# Verify the current GitHub companion authority tag and return its guest digest.
+# Verify the current GitHub companion authority tag and return its object and
+# guest digest.
 # Published recovery uses this read-only path so deletion or replacement of the
 # signed trust root cannot be papered over by a historical hosted check.
-verified_stable_init_image_authority_digest() {
+verified_stable_init_image_authority_record() {
   local version="$1" path repo tag_sha authority_tag authority_object
   local authority_record authority_verified authority_source authority_message digest_lines
   path="$(repo_path "${COMPOSE_REPO}")"
@@ -2746,7 +2749,24 @@ verified_stable_init_image_authority_digest() {
       "${authority_tag}" >&2
     return 1
   fi
-  printf '%s\n' "${digest_lines}"
+  printf '%s\t%s\n' "${authority_object}" "${digest_lines}"
+}
+
+# Require the signed recovery trust root to remain unchanged through asset and
+# package verification so a concurrent ref replacement cannot authorize stale
+# bytes immediately before success is reported.
+require_stable_init_image_authority_unchanged() {
+  local version="$1" expected_object="$2" expected_digest="$3"
+  local current_record current_object current_digest
+  current_record="$(verified_stable_init_image_authority_record "${version}")"
+  IFS=$'\t' read -r current_object current_digest <<<"${current_record}"
+  if [[ "${current_object}" != "${expected_object}" || \
+    "${current_digest}" != "${expected_digest}" ]]; then
+    printf 'stable init-image authority moved during recovery: expected %s at %s, got %s at %s\n' \
+      "${expected_digest}" "${expected_object}" \
+      "${current_digest:-missing}" "${current_object:-missing}" >&2
+    return 1
+  fi
 }
 
 # Create or validate the GitHub-verified signed companion authority tag for a
@@ -4353,7 +4373,7 @@ verify_compose_stable_package() {
 
 # Dispatch and verify one stable package workflow mode for a semantic tag.
 dispatch_compose_stable_workflow() {
-  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label promote_default_lane authority_init_digest stable_formula_identities_before=""
+  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label promote_default_lane authority_record authority_object authority_init_digest stable_formula_identities_before=""
   print_header "dispatch container-compose ${version} ${mode}"
 
   if [[ "${repair_tap}" == "true" ]]; then
@@ -4404,10 +4424,13 @@ dispatch_compose_stable_workflow() {
     if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
       printf '%s started: %s\n' "${label}" "${run_id}"
       wait_for_github_run_success "${run_id}" "${label}"
-      authority_init_digest="$(ensure_published_stable_recovery_authority "${version}")"
+      authority_record="$(ensure_published_stable_recovery_authority "${version}")"
+      IFS=$'\t' read -r authority_object authority_init_digest <<<"${authority_record}"
       publish_stable_init_image_asset "${version}" "${authority_init_digest}"
       verify_compose_stable_package \
         "${version}" "${promote_default_lane}" "${stable_formula_identities_before}"
+      require_stable_init_image_authority_unchanged \
+        "${version}" "${authority_object}" "${authority_init_digest}"
       return 0
     fi
 
@@ -4524,7 +4547,8 @@ tag_stable_version() {
 
 # Resume the latest signed tag without mutating its stable source identity.
 resume_stable_release() {
-  local version="$1" promote_default_lane stable_formula_identities_before authority_init_digest
+  local version="$1" promote_default_lane stable_formula_identities_before
+  local authority_record authority_object authority_init_digest
   print_header "resume stable release ${version}"
   verify_github_stable_tag_signature "${version}"
   if stable_release_is_published "${version}"; then
@@ -4534,11 +4558,14 @@ resume_stable_release() {
       dispatch_compose_stable_tap_repair "${version}"
       print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
     else
-      authority_init_digest="$(ensure_published_stable_recovery_authority "${version}")"
+      authority_record="$(ensure_published_stable_recovery_authority "${version}")"
+      IFS=$'\t' read -r authority_object authority_init_digest <<<"${authority_record}"
       stable_formula_identities_before="$(homebrew_stable_formula_identities)"
       publish_stable_init_image_asset "${version}" "${authority_init_digest}"
       verify_compose_stable_package \
         "${version}" "false" "${stable_formula_identities_before}"
+      require_stable_init_image_authority_unchanged \
+        "${version}" "${authority_object}" "${authority_init_digest}"
       print_stable_release_point "${version}" "maintenance backfill asset recovery"
     fi
     return 0

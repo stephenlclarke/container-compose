@@ -5872,11 +5872,15 @@ esac
                         "stable_version_promotes_default_lane() { printf '%s\\n' false; }",
                         "ensure_latest_stable_retry() { exit 70; }",
                         "ensure_stable_retry_source_authority() { exit 72; }",
-                        f"ensure_published_stable_recovery_authority() {{ printf '%s\\n' {'a' * 64}; }}",
+                        (
+                            "ensure_published_stable_recovery_authority() { "
+                            f"printf '%s\\t%s\\n' {'f' * 40} {'a' * 64}; }}"
+                        ),
                         "homebrew_stable_formula_identities() { printf '%s\\n' formulae-before; }",
                         "dispatch_compose_stable_tap_repair() { exit 71; }",
                         "publish_stable_init_image_asset() { printf 'init %s %s\\n' \"$1\" \"$2\"; }",
                         "verify_compose_stable_package() { printf 'verify %s %s %s\\n' \"$1\" \"$2\" \"$3\"; }",
+                        "require_stable_init_image_authority_unchanged() { printf 'authority %s %s %s\\n' \"$1\" \"$2\" \"$3\"; }",
                         "print_stable_release_point() { printf 'point %s %s\\n' \"$1\" \"$2\"; }",
                     ]
                 ),
@@ -5885,7 +5889,11 @@ esac
             self.assertEqual(recovered.returncode, 0, recovered.stderr)
             self.assertIn(f"init 0.13.1 {'a' * 64}", recovered.stdout)
             self.assertIn("verify 0.13.1 false formulae-before", recovered.stdout)
+            self.assertIn(f"authority 0.13.1 {'f' * 40} {'a' * 64}", recovered.stdout)
             self.assertIn("maintenance backfill asset recovery", recovered.stdout)
+            self.assertLess(recovered.stdout.index("init 0.13.1"), recovered.stdout.index("verify 0.13.1"))
+            self.assertLess(recovered.stdout.index("verify 0.13.1"), recovered.stdout.index("authority 0.13.1"))
+            self.assertLess(recovered.stdout.index("authority 0.13.1"), recovered.stdout.index("point 0.13.1"))
 
     def test_published_recovery_uses_immutable_candidate_gate_authority(self) -> None:
         recovery = self.script[
@@ -5919,10 +5927,10 @@ esac
                         "api:repos/owner/repo/git/ref/tags/"
                         "stable-init-image-authority/0.13.1 ]]; then"
                     ),
-                    f"    printf '%s\\n' {authority_object}",
+                    f"    printf '%s\\n' \"${{TEST_AUTHORITY_OBJECT:-{authority_object}}}\"",
                     (
                         f'  elif [[ "$1:$2" == api:repos/owner/repo/git/tags/'
-                        f'{authority_object} ]]; then'
+                        '* ]]; then'
                     ),
                     (
                         "    printf '{\"verification\":{\"verified\":true},"
@@ -5948,7 +5956,10 @@ esac
                 shell_setup=shell_setup,
             )
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
-            self.assertEqual(accepted.stdout.strip(), init_digest)
+            self.assertEqual(
+                accepted.stdout.strip(),
+                f"{authority_object}\t{init_digest}",
+            )
 
             missing_gate = self.run_release_function(
                 root,
@@ -5989,6 +6000,29 @@ esac
             )
             self.assertNotEqual(wrong_source.returncode, 0)
             self.assertIn("instead of source", wrong_source.stderr)
+
+            unchanged = self.run_release_function(
+                root,
+                (
+                    "require_stable_init_image_authority_unchanged "
+                    f"0.13.1 {authority_object} {init_digest}"
+                ),
+                shell_setup=shell_setup,
+            )
+            self.assertEqual(unchanged.returncode, 0, unchanged.stderr)
+
+            moved = self.run_release_function(
+                root,
+                (
+                    "require_stable_init_image_authority_unchanged "
+                    f"0.13.1 {authority_object} {init_digest}"
+                ),
+                shell_setup=(
+                    f"export TEST_AUTHORITY_OBJECT={'f' * 40}\n{shell_setup}"
+                ),
+            )
+            self.assertNotEqual(moved.returncode, 0)
+            self.assertIn("moved during recovery", moved.stderr)
 
     def test_published_retry_rejects_a_non_latest_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
