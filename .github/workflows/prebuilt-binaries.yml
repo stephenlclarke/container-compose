@@ -245,8 +245,14 @@ jobs:
                 jq -c '[.[] | .jobs[] | select(.name == "Validate" or .name == "Validate Runtime") | .conclusion]' \
                   <<<"${workflow_jobs}"
               )"
+              runtime_validate_conclusions="$(
+                jq -c '[.[] | .jobs[] | select(.name == "Validate Runtime") | .conclusion]' \
+                  <<<"${workflow_jobs}"
+              )"
               if jq -e 'length > 0 and all(.[]; . != null)' \
-                <<<"${validate_conclusions}" >/dev/null; then
+                <<<"${validate_conclusions}" >/dev/null && \
+                jq -e 'length > 0 and all(.[]; . != null)' \
+                  <<<"${runtime_validate_conclusions}" >/dev/null; then
                 return 0
               fi
               if (( attempt >= max_attempts )); then
@@ -284,6 +290,10 @@ jobs:
                 <<<"${validate_conclusions}" >/dev/null; then
                 printf 'Skipping package publish because CI Validate results were %s.\n' \
                   "$(jq -r 'if length == 0 then "missing" else join(",") end' <<<"${validate_conclusions}")"
+              elif jq -e \
+                'length > 0 and all(.[]; . == "skipped")' \
+                <<<"${runtime_validate_conclusions}" >/dev/null; then
+                printf 'Skipping package publish because CI Validate Runtime was intentionally skipped.\n'
               elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == "main" ]]; then
                 if wait_for_successful_main_sonarqube_scan "${WORKFLOW_RUN_HEAD_SHA}"; then
                   scan_authority_available=true
