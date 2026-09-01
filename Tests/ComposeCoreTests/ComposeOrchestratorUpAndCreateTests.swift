@@ -5038,7 +5038,7 @@ extension ComposeOrchestratorTests {
         #expect(emitted.messages.contains("+ compose-runtime attach --no-stdin demo-api-1"))
         #expect(emitted.messages.contains("+ compose-runtime wait demo-api-1"))
         #expect(emitted.messages.contains("+ container stop demo-api-1"))
-        #expect(emitted.messages.contains("+ container delete demo-api-1"))
+        #expect(!emitted.messages.contains("+ container delete demo-api-1"))
         #expect(await menuController.requests.isEmpty)
         #expect(await logManager.requests.isEmpty)
     }
@@ -5157,7 +5157,7 @@ extension ComposeOrchestratorTests {
         let lifecycleRequests = await lifecycleManager.requests
         #expect(lifecycleRequests.contains(.wait(id: "demo-api-1")))
         #expect(lifecycleRequests.contains(.stop(id: "demo-api-1", signal: nil, timeoutInSeconds: 3)))
-        #expect(lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
+        #expect(!lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
     }
 
     @Test("up menu watch toggle validates before reporting watch enabled")
