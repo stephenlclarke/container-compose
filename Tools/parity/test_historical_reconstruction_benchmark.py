@@ -253,6 +253,46 @@ class HistoricalWorkflowTests(unittest.TestCase):
         self.assertNotIn("security import", workflow)
         self.assertNotIn("crane auth", workflow)
 
+    def test_workflow_preloads_a_pinned_fixture_without_registry_access(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        makefile = MAKEFILE.read_text(encoding="utf-8")
+        prepare = workflow.index("Prepare pinned offline fixture image")
+        quiet_host = workflow.index("Require a quiet benchmark host")
+
+        self.assertLess(prepare, quiet_host)
+        self.assertIn("FIXTURE_IMAGE_INDEX_DIGEST: sha256:", workflow)
+        self.assertIn("FIXTURE_IMAGE_MANIFEST_DIGEST: sha256:", workflow)
+        self.assertIn("docker-daemon:${FIXTURE_IMAGE}", workflow)
+        self.assertIn(
+            'if ! docker image inspect "${FIXTURE_IMAGE}" > "${docker_metadata}"; then',
+            workflow,
+        )
+        self.assertIn("docker pull ${expected_reference}", workflow)
+        self.assertIn(
+            "docker image tag ${expected_reference} ${FIXTURE_IMAGE}", workflow
+        )
+        self.assertNotIn(
+            "recover before retrying with: docker pull %s", workflow
+        )
+        self.assertIn("--preserve-digests", workflow)
+        self.assertIn("--src-daemon-host", workflow)
+        self.assertIn("docker context inspect", workflow)
+        self.assertIn("validate-oci-image-layout.py", workflow)
+        self.assertIn("PARITY_FIXTURE_IMAGE_ARCHIVE=", workflow)
+        self.assertIn("PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE=3.20", workflow)
+        self.assertIn(
+            'PARITY_FIXTURE_IMAGE_ARCHIVE="${PARITY_FIXTURE_IMAGE_ARCHIVE}"',
+            workflow,
+        )
+        self.assertIn(
+            'PARITY_FIXTURE_IMAGE_ARCHIVE="$(PARITY_FIXTURE_IMAGE_ARCHIVE)"',
+            makefile,
+        )
+        self.assertIn(
+            "PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE=\"$(PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE)\"",
+            makefile,
+        )
+
     def test_workflow_checkpoints_fixture_groups_before_finalizing(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('"lifecycle,logging-stream"', workflow)

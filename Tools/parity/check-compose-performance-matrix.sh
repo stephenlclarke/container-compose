@@ -30,6 +30,10 @@
 #   PARITY_WORK_ROOT             Local fixture root (default: .build/parity).
 #   PARITY_INIT_IMAGE_ARCHIVE    Exact guest OCI archive used by the runtime.
 #   PARITY_INIT_IMAGE_REFERENCES Space-separated immutable guest references.
+#   PARITY_FIXTURE_IMAGE_ARCHIVE Offline OCI archive for the warm fixture.
+#   PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE
+#                                Source reference imported from that archive.
+#                                When both are set, registry pulls are disabled.
 #   PARITY_REPETITIONS           Timed repetitions per lane (default: 5).
 #   PARITY_FIXTURE_GROUPS        Comma-separated fixture groups or `all`.
 #                                Groups: lifecycle, logging-stream,
@@ -88,6 +92,8 @@ PARITY_EVIDENCE_DIR="${PARITY_EVIDENCE_DIR:-$REPO_ROOT/.build/parity/performance
 PARITY_WORK_ROOT="${PARITY_WORK_ROOT:-$REPO_ROOT/.build/parity}"
 PARITY_INIT_IMAGE_ARCHIVE="${PARITY_INIT_IMAGE_ARCHIVE:-}"
 PARITY_INIT_IMAGE_REFERENCES="${PARITY_INIT_IMAGE_REFERENCES:-}"
+PARITY_FIXTURE_IMAGE_ARCHIVE="${PARITY_FIXTURE_IMAGE_ARCHIVE:-}"
+PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE="${PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE:-}"
 PARITY_REPETITIONS="${PARITY_REPETITIONS:-5}"
 PARITY_FIXTURE_GROUPS="${PARITY_FIXTURE_GROUPS-all}"
 PARITY_EVIDENCE_MODE="${PARITY_EVIDENCE_MODE:-reset}"
@@ -280,8 +286,51 @@ check_tools() {
         error "PARITY_INIT_IMAGE_ARCHIVE does not exist: $PARITY_INIT_IMAGE_ARCHIVE"
         return 2
     fi
+    if { [[ -n "$PARITY_FIXTURE_IMAGE_ARCHIVE" ]] && [[ -z "$PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE" ]]; } || \
+        { [[ -z "$PARITY_FIXTURE_IMAGE_ARCHIVE" ]] && [[ -n "$PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE" ]]; }; then
+        error "PARITY_FIXTURE_IMAGE_ARCHIVE and PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE must be set together"
+        return 2
+    fi
+    if [[ -n "$PARITY_FIXTURE_IMAGE_ARCHIVE" && ! -f "$PARITY_FIXTURE_IMAGE_ARCHIVE" ]]; then
+        error "PARITY_FIXTURE_IMAGE_ARCHIVE does not exist: $PARITY_FIXTURE_IMAGE_ARCHIVE"
+        return 2
+    fi
     if [[ "$PARITY_INCLUDE_REMOTE_LOGGING" == 1 && "$PARITY_SINK_BIND_ADDRESS" == "127.0.0.1" && "$PARITY_DOCKER_HOST_ADDRESS" != "127.0.0.1" ]]; then
         skip_or_fail 'Docker remote-logging probes require an explicit host-reachable PARITY_SINK_BIND_ADDRESS (for example 0.0.0.0); refusing to request local-network access implicitly'
+    fi
+}
+
+# Warm the fixture outside timed work. Published comparisons import one pinned
+# local archive into every fresh runtime and never contact a registry.
+prepare_fixture_image() {
+    local count file
+    if [[ -n "$PARITY_FIXTURE_IMAGE_ARCHIVE" ]]; then
+        docker image inspect "$FIXTURE_IMAGE" >/dev/null 2>&1 || {
+            error "preloaded Docker fixture is unavailable: $FIXTURE_IMAGE"
+            return 1
+        }
+        "$CONTAINER_BINARY" image load --input "$PARITY_FIXTURE_IMAGE_ARCHIVE" >/dev/null
+        "$CONTAINER_BINARY" image tag \
+            "$PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE" "$FIXTURE_IMAGE"
+        "$CONTAINER_BINARY" image inspect "$FIXTURE_IMAGE" >/dev/null
+        return
+    fi
+
+    file="$FIXTURE_DIR/services-1.yml"
+    "$CONTAINER_COMPOSE" --ansi never -p cc-perf-c-1 -f "$file" pull --quiet >/dev/null
+    if group_enabled lifecycle; then
+        for count in 1 10 50; do
+            file="$FIXTURE_DIR/services-$count.yml"
+            "${DOCKER_COMPOSE_COMMAND[@]}" -p "cc-perf-d-$count" -f "$file" pull --quiet >/dev/null
+            if ((count != 1)); then
+                "$CONTAINER_COMPOSE" --ansi never -p "cc-perf-c-$count" -f "$file" pull --quiet >/dev/null
+            fi
+        done
+    fi
+    if group_enabled logging-stream || group_enabled logging-file ||
+        group_enabled logging-read || group_enabled logging-aggregate; then
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p cc-perf-d-logging -f "$FIXTURE_DIR/logging.yml" pull --quiet >/dev/null
+        "$CONTAINER_COMPOSE" --ansi never -p cc-perf-c-logging -f "$FIXTURE_DIR/logging.yml" pull --quiet >/dev/null
     fi
 }
 
@@ -507,9 +556,13 @@ create_fixtures() {
 
 # Initialize raw samples and exact run fingerprints.
 initialize_evidence() {
-    local init_image_sha=
+    local fixture_image_sha=""
+    local init_image_sha=""
     if [[ -n "$PARITY_INIT_IMAGE_ARCHIVE" ]]; then
         init_image_sha="$(shasum -a 256 "$PARITY_INIT_IMAGE_ARCHIVE" | awk '{print $1}')"
+    fi
+    if [[ -n "$PARITY_FIXTURE_IMAGE_ARCHIVE" ]]; then
+        fixture_image_sha="$(shasum -a 256 "$PARITY_FIXTURE_IMAGE_ARCHIVE" | awk '{print $1}')"
     fi
     mkdir -p "$PARITY_EVIDENCE_DIR"
     PARITY_REPETITIONS="$PARITY_REPETITIONS" python3 - \
@@ -526,10 +579,11 @@ initialize_evidence() {
         "$PARITY_SINK_STALL_SECONDS" "$PARITY_INCLUDE_REMOTE_LOGGING" \
         "$PARITY_SINK_BIND_ADDRESS" "$PARITY_DOCKER_HOST_ADDRESS" \
         "$PARITY_CONTAINER_HOST_ADDRESS" "$init_image_sha" \
-        "$PARITY_INIT_IMAGE_REFERENCES" <<'PY'
+        "$PARITY_INIT_IMAGE_REFERENCES" "$fixture_image_sha" \
+        "$PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE" <<'PY'
 import json, os, pathlib, sys
 from datetime import datetime, timezone
-(mode, timing, fingerprints, timing_junit, timing_matrix, docker_compose, docker_engine, compose_version, runtime_version, commit, model, memory, macos, architecture, compose_sha, runtime_sha, noise, timeout, maximum_ratio, timing_policy, pressure_records, sink_stall, include_remote_logging, sink_bind, docker_host, container_host, init_sha, init_references) = sys.argv[1:]
+(mode, timing, fingerprints, timing_junit, timing_matrix, docker_compose, docker_engine, compose_version, runtime_version, commit, model, memory, macos, architecture, compose_sha, runtime_sha, noise, timeout, maximum_ratio, timing_policy, pressure_records, sink_stall, include_remote_logging, sink_bind, docker_host, container_host, init_sha, init_references, fixture_sha, fixture_reference) = sys.argv[1:]
 def decode(value):
     try: return json.loads(value)
     except json.JSONDecodeError: return value
@@ -562,6 +616,11 @@ current = {
     "docker": {"composeVersion": docker_compose, "engine": decode(docker_engine)},
     "host": {"architecture": architecture, "hardwareMemoryBytes": int(memory), "hardwareModel": model, "macOSVersion": macos},
 }
+if fixture_sha:
+    current["conditions"]["fixtureImageArchive"] = {
+        "sha256": fixture_sha,
+        "sourceReference": fixture_reference,
+    }
 timing_path = pathlib.Path(timing)
 fingerprint_path = pathlib.Path(fingerprints)
 header = "fixture\tlane\trepetition\tschedule_position\tdirection\tduration_seconds\toutcome\tcommand\n"
@@ -1476,24 +1535,9 @@ PY
 # Warm each image and run counterbalanced lifecycle and logging samples.
 run_matrix() {
     local count repetition file lane position fixture workload tail buffer_size
-    file="$FIXTURE_DIR/services-1.yml"
-    "$CONTAINER_COMPOSE" --ansi never -p cc-perf-c-1 -f "$file" pull --quiet >/dev/null
+    prepare_fixture_image
     initialize_evidence
     preflight_candidate_lifecycle
-    if group_enabled lifecycle; then
-        for count in 1 10 50; do
-            file="$FIXTURE_DIR/services-$count.yml"
-            "${DOCKER_COMPOSE_COMMAND[@]}" -p "cc-perf-d-$count" -f "$file" pull --quiet >/dev/null
-            if ((count != 1)); then
-                "$CONTAINER_COMPOSE" --ansi never -p "cc-perf-c-$count" -f "$file" pull --quiet >/dev/null
-            fi
-        done
-    fi
-    if group_enabled logging-stream || group_enabled logging-file ||
-        group_enabled logging-read || group_enabled logging-aggregate; then
-        "${DOCKER_COMPOSE_COMMAND[@]}" -p cc-perf-d-logging -f "$FIXTURE_DIR/logging.yml" pull --quiet >/dev/null
-        "$CONTAINER_COMPOSE" --ansi never -p cc-perf-c-logging -f "$FIXTURE_DIR/logging.yml" pull --quiet >/dev/null
-    fi
     for ((repetition = 1; repetition <= PARITY_REPETITIONS; repetition++)); do
         select_lane_order "$repetition"
         if group_enabled lifecycle; then

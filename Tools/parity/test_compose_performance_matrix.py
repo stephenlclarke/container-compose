@@ -226,6 +226,102 @@ class PerformanceMatrixInventoryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("PARITY_FIXTURE_GROUPS must not be empty", result.stderr)
 
+    def test_offline_fixture_archive_suppresses_registry_pulls(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-fixture-") as directory:
+            root = Path(directory)
+            archive = root / "alpine.oci.tar"
+            archive.write_bytes(b"pinned fixture")
+            calls = root / "calls.log"
+            fixture_dir = root / "fixtures"
+            fixture_dir.mkdir()
+            runtime = root / "container"
+            runtime.write_text(
+                '#!/bin/sh\nprintf "container %s\\n" "$*" >>"$CALL_LOG"\n',
+                encoding="utf-8",
+            )
+            runtime.chmod(0o755)
+            compose = root / "compose"
+            compose.write_text(
+                '#!/bin/sh\nprintf "compose %s\\n" "$*" >>"$CALL_LOG"\n',
+                encoding="utf-8",
+            )
+            compose.chmod(0o755)
+            environment = dict(os.environ)
+            environment.update(
+                {
+                    "CALL_LOG": str(calls),
+                    "CONTAINER_COMPOSE_CONTAINER": str(runtime),
+                    "PARITY_FIXTURE_IMAGE_ARCHIVE": str(archive),
+                    "PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE": "3.20",
+                }
+            )
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    r'''
+source "$1"
+docker() { printf 'docker %s\n' "$*" >>"$CALL_LOG"; }
+FIXTURE_DIR="$2"
+CONTAINER_COMPOSE="$3"
+DOCKER_COMPOSE_COMMAND=("$3")
+prepare_fixture_image
+''',
+                    "_",
+                    HARNESS,
+                    fixture_dir,
+                    compose,
+                ],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            invocations = calls.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("docker image inspect alpine:3.20", invocations)
+        self.assertIn(f"container image load --input {archive}", invocations)
+        self.assertIn("container image tag 3.20 alpine:3.20", invocations)
+        self.assertIn("container image inspect alpine:3.20", invocations)
+        self.assertNotIn(" pull ", invocations)
+
+    def test_offline_fixture_archive_is_retained_in_fingerprint(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-fixture-") as directory:
+            root = Path(directory)
+            archive = root / "alpine.oci.tar"
+            archive.write_bytes(b"pinned fixture")
+            evidence = root / "evidence"
+            environment = dict(os.environ)
+            environment.update(
+                {
+                    "PARITY_EVIDENCE_DIR": str(evidence),
+                    "PARITY_FIXTURE_IMAGE_ARCHIVE": str(archive),
+                    "PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE": "3.20",
+                }
+            )
+            result = subprocess.run(
+                ["bash", "-c", INITIALIZE_EVIDENCE_SCRIPT, "_", HARNESS],
+                cwd=REPOSITORY,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            fingerprint = json.loads(
+                (evidence / "fingerprints.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            fingerprint["conditions"]["fixtureImageArchive"],
+            {
+                "sha256": "20899fac2e03608f209e7a72eb3fc133b543111a21b15a4bd98ceee8701cd8e5",
+                "sourceReference": "3.20",
+            },
+        )
+
     def test_append_mode_preserves_existing_samples(self) -> None:
         with tempfile.TemporaryDirectory(prefix="compose-performance-append-") as directory:
             evidence = Path(directory)
