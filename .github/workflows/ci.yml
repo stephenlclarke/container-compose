@@ -471,7 +471,17 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_QUALITYGATE_WAIT: "true"
-        run: make sonar-scan
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            release_version="${GITHUB_REF_NAME#v}"
+            if [[ ! "${release_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              printf 'release tag is not semantic: %s\n' "${GITHUB_REF_NAME}" >&2
+              exit 2
+            fi
+            export SONAR_BRANCH="release-${release_version%.*}"
+          fi
+          make sonar-scan
         working-directory: container-compose
 
       - name: Enforce SonarQube failures when the service is available
