@@ -157,6 +157,38 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
                 poll_timeout=1,
             )
 
+    def test_current_waits_for_exact_sonarqube_metrics_to_index(self) -> None:
+        module = load_module()
+        analysis = {"date": "2026-09-01T00:00:00+0000"}
+        measures = {
+            metric: "OK" if metric == "alert_status" else "0"
+            for metric in module.SONARQUBE_METRICS
+        }
+        module.find_sonarqube_analysis = lambda **_kwargs: analysis
+        module.sonar_measures_for_analysis = mock.Mock(
+            side_effect=(
+                module.MissingSonarMetricsError("metrics still indexing"),
+                measures,
+            )
+        )
+
+        with (
+            mock.patch.object(module.time, "monotonic", side_effect=(0, 0)),
+            mock.patch.object(module.time, "sleep") as sleep,
+        ):
+            result = module.wait_for_current_sonarqube_evidence(
+                host="https://example.invalid",
+                project="example",
+                branch="main",
+                commit="0123456789abcdef",
+                poll_interval=1,
+                poll_timeout=10,
+            )
+
+        self.assertEqual(result, (analysis, measures))
+        self.assertEqual(module.sonar_measures_for_analysis.call_count, 2)
+        sleep.assert_called_once_with(1)
+
     def test_retained_evidence_requires_exact_successful_check_and_main_ci_scan(
         self,
     ) -> None:
@@ -919,22 +951,22 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
 
     def test_cli_current_snapshot_does_not_query_codeql(self) -> None:
         module = load_module()
-        module.wait_for_sonarqube_analysis = lambda **_kwargs: {
-            "date": "2026-07-24T11:41:07+0000"
-        }
-        module.sonar_measures_for_analysis = lambda **_kwargs: {
-            "alert_status": "OK",
-            "bugs": "0",
-            "code_smells": "0",
-            "coverage": "100",
-            "duplicated_lines_density": "0",
-            "ncloc": "1",
-            "reliability_rating": "1.0",
-            "security_rating": "1.0",
-            "sqale_index": "0",
-            "sqale_rating": "1.0",
-            "vulnerabilities": "0",
-        }
+        module.wait_for_current_sonarqube_evidence = lambda **_kwargs: (
+            {"date": "2026-07-24T11:41:07+0000"},
+            {
+                "alert_status": "OK",
+                "bugs": "0",
+                "code_smells": "0",
+                "coverage": "100",
+                "duplicated_lines_density": "0",
+                "ncloc": "1",
+                "reliability_rating": "1.0",
+                "security_rating": "1.0",
+                "sqale_index": "0",
+                "sqale_rating": "1.0",
+                "vulnerabilities": "0",
+            },
+        )
         module.find_codeql_analysis = mock.Mock(
             side_effect=AssertionError("Current must not query CodeQL")
         )

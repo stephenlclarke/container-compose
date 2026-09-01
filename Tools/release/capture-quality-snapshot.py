@@ -42,9 +42,9 @@ SONARQUBE_PROJECT = "stephenlclarke_container-compose2"
 SONARQUBE_BRANCH = "main"
 CODEQL_REF = "refs/heads/main"
 POLL_INTERVAL_SECONDS = 10
-# A main CodeQL analysis is allowed to use its full workflow timeout. Package
-# publication may start before CodeQL completes, so a 30-minute window prevents
-# a valid slower analysis from producing a release without its quality snapshot.
+# Stable CodeQL and SonarQube metric indexing are allowed to use the full
+# workflow timeout. The bounded window prevents publication before exact quality
+# evidence is complete without making Current depend on release-only CodeQL.
 POLL_TIMEOUT_SECONDS = 1800
 SHIELDS_STATIC_BADGE_URL = "https://img.shields.io/static/v1"
 # Static snapshot URLs are unique to a release publication, so the longest
@@ -456,7 +456,7 @@ def wait_for_analyses(
     return sonar_analysis, codeql_analysis
 
 
-def wait_for_sonarqube_analysis(
+def wait_for_current_sonarqube_evidence(
     *,
     host: str,
     project: str,
@@ -464,21 +464,38 @@ def wait_for_sonarqube_analysis(
     commit: str,
     poll_interval: int,
     poll_timeout: int,
-) -> dict[str, Any]:
-    """Wait for the exact SonarQube analysis used by mutable Current builds."""
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Wait for exact Current analysis and measures without stable fallback."""
 
     if poll_interval <= 0 or poll_timeout <= 0:
         raise ValueError("poll interval and timeout must be positive")
 
     deadline = time.monotonic() + poll_timeout
+    sonar_analysis = None
     while True:
-        sonar_analysis = find_sonarqube_analysis(
-            host=host, project=project, branch=branch, commit=commit
-        )
+        if sonar_analysis is None:
+            sonar_analysis = find_sonarqube_analysis(
+                host=host, project=project, branch=branch, commit=commit
+            )
         if sonar_analysis is not None:
-            return sonar_analysis
+            try:
+                return sonar_analysis, sonar_measures_for_analysis(
+                    host=host,
+                    project=project,
+                    branch=branch,
+                    analysis=sonar_analysis,
+                )
+            except MissingSonarMetricsError as error:
+                missing_metrics = error
         if time.monotonic() >= deadline:
-            raise ValueError(f"timed out waiting for SonarQube analysis of {commit}")
+            if sonar_analysis is None:
+                raise ValueError(
+                    f"timed out waiting for SonarQube analysis of {commit}"
+                )
+            raise ValueError(
+                f"timed out waiting for SonarQube metric history of {commit}: "
+                f"{missing_metrics}"
+            ) from missing_metrics
         time.sleep(poll_interval)
 
 
@@ -1020,8 +1037,9 @@ def main() -> None:
                 "expired SonarQube metric evidence is allowed only for stable releases"
             )
         retained_sonar_evidence = None
+        sonar_measures = None
         if args.release_kind == "current":
-            sonar_analysis = wait_for_sonarqube_analysis(
+            sonar_analysis, sonar_measures = wait_for_current_sonarqube_evidence(
                 host=args.sonarqube_url,
                 project=args.sonarqube_project,
                 branch=args.sonarqube_branch,
@@ -1059,8 +1077,7 @@ def main() -> None:
                 poll_interval=args.poll_interval,
                 poll_timeout=args.poll_timeout,
             )
-        sonar_measures = None
-        if sonar_analysis is not None:
+        if sonar_analysis is not None and sonar_measures is None:
             if args.allow_expired_sonarqube_metrics:
                 (
                     sonar_measures,
