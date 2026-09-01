@@ -777,17 +777,31 @@ prepare_logging_history container-compose "$2"
         with tempfile.TemporaryDirectory(prefix="compose-read-window-test-") as directory:
             root = Path(directory)
             invocations = root / "invocations.txt"
+            fake_compose = root / "compose"
             fixture = root / "logging.yml"
             fixture.touch()
+            fake_compose.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf 'compose %s\n' "$*" >>"$INVOCATIONS"
+""",
+                encoding="utf-8",
+            )
+            fake_compose.chmod(0o755)
             environment = dict(os.environ)
-            environment["INVOCATIONS"] = str(invocations)
+            environment.update(
+                {
+                    "FAKE_COMPOSE": str(fake_compose),
+                    "INVOCATIONS": str(invocations),
+                }
+            )
             result = subprocess.run(
                 [
                     "bash",
                     "-c",
                     """
 source "$1"
-select_lane() { LANE_PREFIX=c; ACTIVE_COMPOSE=(/usr/bin/true); }
+select_lane() { LANE_PREFIX=c; ACTIVE_COMPOSE=("$FAKE_COMPOSE"); }
 down_project() { :; }
 wait_for_log_text() { :; }
 wait_for_log_timestamp() {
@@ -817,10 +831,15 @@ run_logging_since_until_lane container-compose 2 1 "$2"
             invocation_lines = invocations.read_text(encoding="utf-8").splitlines()
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("--since 2026-08-31T12:00:00.500000Z", invocation_lines[0])
-        self.assertIn("--until 2026-08-31T12:00:02.500000Z", invocation_lines[0])
+        self.assertIn(" up -d --pull never", invocation_lines[0])
+        self.assertFalse(
+            any(line.endswith(" wait logger") for line in invocation_lines),
+            invocation_lines,
+        )
+        self.assertIn("--since 2026-08-31T12:00:00.500000Z", invocation_lines[1])
+        self.assertIn("--until 2026-08-31T12:00:02.500000Z", invocation_lines[1])
         self.assertEqual(
-            invocation_lines[1],
+            invocation_lines[2],
             "asserted 2026-08-31T12:00:00.500000Z 2026-08-31T12:00:02.500000Z",
         )
 

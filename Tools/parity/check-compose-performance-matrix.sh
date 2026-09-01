@@ -1155,8 +1155,6 @@ run_logging_since_until_lane() {
         history-after "$project" "$file" "${ACTIVE_COMPOSE[@]}")"
     since="$(midpoint_log_timestamp "$before" "$first")"
     until="$(midpoint_log_timestamp "$last" "$after")"
-    env LOG_WORKLOAD=history-window LOG_MAX_SIZE=64m \
-        "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" wait logger >/dev/null
     run_timed logging-read-since-until "$lane" "$repetition" "$schedule_position" \
         env LOG_WORKLOAD=history-window LOG_MAX_SIZE=64m \
         "${ACTIVE_COMPOSE[@]}" -p "$project" -f "$file" logs \
