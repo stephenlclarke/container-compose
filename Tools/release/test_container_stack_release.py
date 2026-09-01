@@ -1182,6 +1182,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         benchmark = (ROOT / ".github" / "workflows" / "published-benchmark.yml").read_text(
             encoding="utf-8"
         )
+        release_codeql = package[
+            package.index("  codeql-release:") : package.index("  package:")
+        ]
+        package_job = package[
+            package.index("  package:") : package.index("  repair-stable-tap:")
+        ]
 
         self.assertIn("name: CodeQL Release Recovery", codeql)
         self.assertIn("workflow_dispatch:", codeql)
@@ -1194,6 +1200,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("needs.analyze.result", codeql)
         self.assertIn("codeql-release:", package)
         self.assertIn("needs:\n      - resolve-publish-context\n      - release-preflight", package)
+        self.assertIn(
+            "needs.resolve-publish-context.outputs.ref_type == 'tag'",
+            release_codeql,
+        )
+        self.assertIn("always()", package_job)
+        self.assertIn("!cancelled()", package_job)
+        self.assertIn("needs.release-preflight.result == 'success'", package_job)
+        self.assertIn(
+            "needs.resolve-publish-context.outputs.ref_type != 'tag'",
+            package_job,
+        )
+        self.assertIn("needs.codeql-release.result == 'success'", package_job)
         self.assertNotIn("workflow run codeql.yml", benchmark)
 
     def test_main_sonar_step_preserves_the_complete_retry_budget(self) -> None:

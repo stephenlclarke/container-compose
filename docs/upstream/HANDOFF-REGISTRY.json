@@ -7296,6 +7296,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/380"
     },
     {
+      "id": "container-compose-382",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Reserve CodeQL for stable releases",
+      "state": "submitted",
+      "lastVerified": "2026-09-01",
+      "commits": [
+        "caea6b4a9e328c8cc81d5690ab788b6e2640eed7"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-381.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-382.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/382"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",

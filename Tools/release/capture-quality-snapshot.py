@@ -42,9 +42,9 @@ SONARQUBE_PROJECT = "stephenlclarke_container-compose2"
 SONARQUBE_BRANCH = "main"
 CODEQL_REF = "refs/heads/main"
 POLL_INTERVAL_SECONDS = 10
-# A main CodeQL analysis is allowed to use its full workflow timeout. Package
-# publication may start before CodeQL completes, so a 30-minute window prevents
-# a valid slower analysis from producing a release without its quality snapshot.
+# Stable CodeQL and SonarQube metric indexing are allowed to use the full
+# workflow timeout. The bounded window prevents publication before exact quality
+# evidence is complete without making Current depend on release-only CodeQL.
 POLL_TIMEOUT_SECONDS = 1800
 SHIELDS_STATIC_BADGE_URL = "https://img.shields.io/static/v1"
 # Static snapshot URLs are unique to a release publication, so the longest
@@ -456,6 +456,49 @@ def wait_for_analyses(
     return sonar_analysis, codeql_analysis
 
 
+def wait_for_current_sonarqube_evidence(
+    *,
+    host: str,
+    project: str,
+    branch: str,
+    commit: str,
+    poll_interval: int,
+    poll_timeout: int,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Wait for exact Current analysis and measures without stable fallback."""
+
+    if poll_interval <= 0 or poll_timeout <= 0:
+        raise ValueError("poll interval and timeout must be positive")
+
+    deadline = time.monotonic() + poll_timeout
+    sonar_analysis = None
+    while True:
+        if sonar_analysis is None:
+            sonar_analysis = find_sonarqube_analysis(
+                host=host, project=project, branch=branch, commit=commit
+            )
+        if sonar_analysis is not None:
+            try:
+                return sonar_analysis, sonar_measures_for_analysis(
+                    host=host,
+                    project=project,
+                    branch=branch,
+                    analysis=sonar_analysis,
+                )
+            except MissingSonarMetricsError as error:
+                missing_metrics = error
+        if time.monotonic() >= deadline:
+            if sonar_analysis is None:
+                raise ValueError(
+                    f"timed out waiting for SonarQube analysis of {commit}"
+                )
+            raise ValueError(
+                f"timed out waiting for SonarQube metric history of {commit}: "
+                f"{missing_metrics}"
+            ) from missing_metrics
+        time.sleep(poll_interval)
+
+
 def wait_for_quality_evidence(
     *,
     host: str,
@@ -675,7 +718,7 @@ def retained_sonar_badges(
 
 
 def snapshot_badges(
-    *, sonar_measures: dict[str, str], codeql_analysis: dict[str, Any]
+    *, sonar_measures: dict[str, str], codeql_analysis: dict[str, Any] | None
 ) -> Iterable[SnapshotBadge]:
     quality_gate = sonar_measures["alert_status"]
     bugs = int(float(sonar_measures["bugs"]))
@@ -712,7 +755,8 @@ def snapshot_badges(
         "Maintainability Rating", rating(sonar_measures["sqale_rating"]), "brightgreen"
     )
     yield snapshot_badge("Vulnerabilities", str(vulnerabilities), zero_color(vulnerabilities))
-    yield from codeql_badges(analysis=codeql_analysis)
+    if codeql_analysis is not None:
+        yield from codeql_badges(analysis=codeql_analysis)
 
 
 def badge_text_width(value: str) -> int:
@@ -904,12 +948,14 @@ def validate_static_badge_delivery(
 def resolved_badges(
     *,
     sonar_measures: dict[str, str] | None,
-    codeql_analysis: dict[str, Any],
+    codeql_analysis: dict[str, Any] | None,
     retained_sonar_evidence: RetainedSonarEvidence | None = None,
 ) -> list[SnapshotBadge]:
     if sonar_measures is None:
         if retained_sonar_evidence is None:
             raise ValueError("SonarQube metrics or retained evidence are required")
+        if codeql_analysis is None:
+            raise ValueError("retained SonarQube evidence requires CodeQL analysis")
         return [
             *retained_sonar_badges(evidence=retained_sonar_evidence),
             *codeql_badges(analysis=codeql_analysis),
@@ -924,7 +970,7 @@ def render_snapshot(
     commit: str,
     sonar_analysis: dict[str, Any] | None,
     sonar_measures: dict[str, str] | None,
-    codeql_analysis: dict[str, Any],
+    codeql_analysis: dict[str, Any] | None,
     retained_sonar_evidence: RetainedSonarEvidence | None = None,
     release_kind: str = "stable",
     asset_url: str = "quality-snapshot.svg",
@@ -937,10 +983,16 @@ def render_snapshot(
     else:
         retention = "These static badges are retained as historical evidence; they do not update."
     if sonar_analysis is not None:
-        analysis_summary = (
-            f"- SonarQube `main` analysis `{sonar_analysis['date']}` and CodeQL "
-            f"analysis both cover `{commit}`."
-        )
+        if codeql_analysis is None:
+            analysis_summary = (
+                f"- SonarQube `main` analysis `{sonar_analysis['date']}` covers "
+                f"`{commit}`. CodeQL is reserved for stable releases."
+            )
+        else:
+            analysis_summary = (
+                f"- SonarQube `main` analysis `{sonar_analysis['date']}` and CodeQL "
+                f"analysis both cover `{commit}`."
+            )
     elif retained_sonar_evidence is not None:
         analysis_summary = (
             f"- The exact-commit [SonarQube quality-gate check]"
@@ -985,7 +1037,18 @@ def main() -> None:
                 "expired SonarQube metric evidence is allowed only for stable releases"
             )
         retained_sonar_evidence = None
-        if args.allow_expired_sonarqube_metrics:
+        sonar_measures = None
+        if args.release_kind == "current":
+            sonar_analysis, sonar_measures = wait_for_current_sonarqube_evidence(
+                host=args.sonarqube_url,
+                project=args.sonarqube_project,
+                branch=args.sonarqube_branch,
+                commit=args.commit,
+                poll_interval=args.poll_interval,
+                poll_timeout=args.poll_timeout,
+            )
+            codeql_analysis = None
+        elif args.allow_expired_sonarqube_metrics:
             (
                 sonar_analysis,
                 codeql_analysis,
@@ -1014,8 +1077,7 @@ def main() -> None:
                 poll_interval=args.poll_interval,
                 poll_timeout=args.poll_timeout,
             )
-        sonar_measures = None
-        if sonar_analysis is not None:
+        if sonar_analysis is not None and sonar_measures is None:
             if args.allow_expired_sonarqube_metrics:
                 (
                     sonar_measures,

@@ -495,7 +495,8 @@ jobs:
       - release-preflight
     if: >
       needs.resolve-publish-context.outputs.publish == 'true' &&
-      needs.resolve-publish-context.outputs.repair_tap != 'true'
+      needs.resolve-publish-context.outputs.repair_tap != 'true' &&
+      needs.resolve-publish-context.outputs.ref_type == 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -557,8 +558,13 @@ jobs:
       - release-preflight
       - codeql-release
     if: >
+      always() &&
+      !cancelled() &&
       needs.resolve-publish-context.outputs.publish == 'true' &&
-      needs.resolve-publish-context.outputs.repair_tap != 'true'
+      needs.resolve-publish-context.outputs.repair_tap != 'true' &&
+      needs.release-preflight.result == 'success' &&
+      (needs.resolve-publish-context.outputs.ref_type != 'tag' ||
+       needs.codeql-release.result == 'success')
     # Signing and packaging target the native macOS/ARM64 runtime. Live demo
     # recording is deliberately handled by its own recoverable workflow.
     runs-on: [self-hosted, macOS, ARM64, container-compose-release, container-compose-current]

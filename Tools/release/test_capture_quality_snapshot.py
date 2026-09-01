@@ -157,6 +157,38 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
                 poll_timeout=1,
             )
 
+    def test_current_waits_for_exact_sonarqube_metrics_to_index(self) -> None:
+        module = load_module()
+        analysis = {"date": "2026-09-01T00:00:00+0000"}
+        measures = {
+            metric: "OK" if metric == "alert_status" else "0"
+            for metric in module.SONARQUBE_METRICS
+        }
+        module.find_sonarqube_analysis = lambda **_kwargs: analysis
+        module.sonar_measures_for_analysis = mock.Mock(
+            side_effect=(
+                module.MissingSonarMetricsError("metrics still indexing"),
+                measures,
+            )
+        )
+
+        with (
+            mock.patch.object(module.time, "monotonic", side_effect=(0, 0)),
+            mock.patch.object(module.time, "sleep") as sleep,
+        ):
+            result = module.wait_for_current_sonarqube_evidence(
+                host="https://example.invalid",
+                project="example",
+                branch="main",
+                commit="0123456789abcdef",
+                poll_interval=1,
+                poll_timeout=10,
+            )
+
+        self.assertEqual(result, (analysis, measures))
+        self.assertEqual(module.sonar_measures_for_analysis.call_count, 2)
+        sleep.assert_called_once_with(1)
+
     def test_retained_evidence_requires_exact_successful_check_and_main_ci_scan(
         self,
     ) -> None:
@@ -705,20 +737,16 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             commit="0123456789abcdef",
             sonar_analysis={"date": "2026-07-14T00:00:00+0000"},
             sonar_measures=measures,
-            codeql_analysis={
-                "results_count": 0,
-                "rules_count": 34,
-                "error": "",
-                "warning": "",
-            },
+            codeql_analysis=None,
             release_kind="current",
         )
 
         self.assertIn("mutable Current build", snapshot)
         self.assertIn("replaced when `current` moves", snapshot)
+        self.assertIn("CodeQL is reserved for stable releases", snapshot)
         self.assertNotIn("retained as historical evidence", snapshot)
 
-    def test_stable_and_current_snapshots_keep_the_same_static_badges_and_evidence_link(self) -> None:
+    def test_current_snapshot_omits_stable_only_codeql_badges(self) -> None:
         module = load_module()
         measures = {
             "alert_status": "OK",
@@ -745,7 +773,7 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             commit="0123456789abcdef",
             sonar_analysis=analysis,
             sonar_measures=measures,
-            codeql_analysis=codeql,
+            codeql_analysis=None,
             release_kind="current",
         )
         stable = module.render_snapshot(
@@ -759,9 +787,12 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         def badge_rows(snapshot: str) -> list[str]:
             return [line for line in snapshot.splitlines() if line.startswith("![")]
 
-        self.assertEqual(badge_rows(current), badge_rows(stable))
+        self.assertNotEqual(badge_rows(current), badge_rows(stable))
         self.assertEqual(len(badge_rows(stable)), 1)
+        self.assertEqual(badge_rows(current)[0].count("!["), 11)
         self.assertEqual(badge_rows(stable)[0].count("!["), 14)
+        self.assertNotIn("CodeQL Analysis", current)
+        self.assertIn("CodeQL is reserved for stable releases", current)
         self.assertIn("img.shields.io/static/v1", current)
         self.assertIn("img.shields.io/static/v1", stable)
         self.assertIn("(quality-snapshot.svg)", stable)
@@ -917,6 +948,47 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(SystemExit, "only for stable releases"):
                 module.main()
+
+    def test_cli_current_snapshot_does_not_query_codeql(self) -> None:
+        module = load_module()
+        module.wait_for_current_sonarqube_evidence = lambda **_kwargs: (
+            {"date": "2026-07-24T11:41:07+0000"},
+            {
+                "alert_status": "OK",
+                "bugs": "0",
+                "code_smells": "0",
+                "coverage": "100",
+                "duplicated_lines_density": "0",
+                "ncloc": "1",
+                "reliability_rating": "1.0",
+                "security_rating": "1.0",
+                "sqale_index": "0",
+                "sqale_rating": "1.0",
+                "vulnerabilities": "0",
+            },
+        )
+        module.find_codeql_analysis = mock.Mock(
+            side_effect=AssertionError("Current must not query CodeQL")
+        )
+
+        output = io.StringIO()
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                "capture-quality-snapshot.py",
+                "--repo",
+                "example/repo",
+                "--commit",
+                "0123456789abcdef",
+                "--release-kind",
+                "current",
+            ],
+        ), redirect_stdout(output):
+            module.main()
+
+        module.find_codeql_analysis.assert_not_called()
+        self.assertIn("CodeQL is reserved for stable releases", output.getvalue())
 
     def test_cli_uses_retained_exact_sonar_evidence_for_stable(self) -> None:
         module = load_module()
