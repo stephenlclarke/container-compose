@@ -67,7 +67,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('if stable_tag_exists "${version}"', release)
         self.assertIn('resume_stable_release "${version}"', release)
         self.assertIn('ensure_latest_stable_retry "${version}"', self.script)
-        self.assertIn('ensure_unpublished_stable_retry "${version}"', self.script)
+        self.assertIn('ensure_stable_retry_source_authority "${version}"', self.script)
         self.assertIn("ensure_new_stable_release \"${version}\"", release)
         self.assertLess(
             release.index('resume_stable_release "${version}"'),
@@ -5322,8 +5322,9 @@ esac
                 "resume_stable_release 0.6.70",
                 shell_setup="\n".join(
                     [
+                        "stable_version_promotes_default_lane() { printf '%s\\n' true; }",
                         "ensure_latest_stable_retry() { :; }",
-                        "ensure_unpublished_stable_retry() { exit 74; }",
+                        "ensure_stable_retry_source_authority() { exit 74; }",
                         "verify_github_stable_tag_signature() { :; }",
                         "stable_release_is_published() { return 0; }",
                         "ensure_stable_release_is_unpublished() { exit 71; }",
@@ -5343,7 +5344,7 @@ esac
                 shell_setup="\n".join(
                     [
                         "ensure_latest_stable_retry() { exit 75; }",
-                        "ensure_unpublished_stable_retry() { :; }",
+                        "ensure_stable_retry_source_authority() { :; }",
                         "verify_github_stable_tag_signature() { :; }",
                         "stable_release_is_published() { return 1; }",
                         "ensure_stable_release_is_unpublished() { :; }",
@@ -5354,6 +5355,34 @@ esac
             )
             self.assertEqual(unpublished.returncode, 0, unpublished.stderr)
             self.assertIn("publish 0.6.70", unpublished.stdout)
+
+    def test_resume_recovers_published_maintenance_assets_without_moving_tap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            recovered = self.run_release_function(
+                root,
+                "resume_stable_release 0.13.1",
+                shell_setup="\n".join(
+                    [
+                        "verify_github_stable_tag_signature() { :; }",
+                        "stable_release_is_published() { return 0; }",
+                        "stable_version_promotes_default_lane() { printf '%s\\n' false; }",
+                        "ensure_latest_stable_retry() { exit 70; }",
+                        "ensure_stable_retry_source_authority() { printf 'authority %s\\n' \"$1\"; }",
+                        "homebrew_tap_main_sha() { printf '%s\\n' tap-before; }",
+                        "dispatch_compose_stable_tap_repair() { exit 71; }",
+                        "publish_stable_init_image_asset() { printf 'init %s\\n' \"$1\"; }",
+                        "verify_compose_stable_package() { printf 'verify %s %s %s\\n' \"$1\" \"$2\" \"$3\"; }",
+                        "print_stable_release_point() { printf 'point %s %s\\n' \"$1\" \"$2\"; }",
+                    ]
+                ),
+            )
+
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertIn("authority 0.13.1", recovered.stdout)
+            self.assertIn("init 0.13.1", recovered.stdout)
+            self.assertIn("verify 0.13.1 false tap-before", recovered.stdout)
+            self.assertIn("maintenance backfill asset recovery", recovered.stdout)
 
     def test_published_retry_rejects_a_non_latest_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -5427,14 +5456,14 @@ esac
 
             accepted = self.run_release_function(
                 root,
-                "ensure_unpublished_stable_retry 0.13.1",
+                "ensure_stable_retry_source_authority 0.13.1",
                 shell_setup=shell_setup,
             )
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
 
             stale = self.run_release_function(
                 root,
-                "ensure_unpublished_stable_retry 0.13.1",
+                "ensure_stable_retry_source_authority 0.13.1",
                 shell_setup=f"export TEST_SERIES_LATEST=0.13.2\n{shell_setup}",
             )
             self.assertNotEqual(stale.returncode, 0)
@@ -5442,7 +5471,7 @@ esac
 
             moved = self.run_release_function(
                 root,
-                "ensure_unpublished_stable_retry 0.13.1",
+                "ensure_stable_retry_source_authority 0.13.1",
                 shell_setup=f"export TEST_RELEASE_HEAD={'b' * 40}\n{shell_setup}",
             )
             self.assertNotEqual(moved.returncode, 0)

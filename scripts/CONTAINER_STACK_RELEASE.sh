@@ -2326,11 +2326,12 @@ ensure_latest_stable_retry() {
   fi
 }
 
-# Permit an unpublished maintenance retry only when its signed tag is the
-# newest patch in that series and still names the exact release-line head.
-# Published formula repairs remain restricted to the global latest tag by
+# Permit a maintenance retry only when its signed tag is the newest patch in
+# that series and still names the exact release-line head. This is the source
+# authority for both unpublished publication and published asset recovery.
+# Formula repairs remain restricted to the global latest tag by
 # ensure_latest_stable_retry so an older line can never downgrade the tap.
-ensure_unpublished_stable_retry() {
+ensure_stable_retry_source_authority() {
   local version="$1" latest series latest_series path remote tag_sha release_branch_sha
   latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
   if [[ "${version}" == "${latest}" ]]; then
@@ -4054,17 +4055,26 @@ tag_stable_version() {
 
 # Resume the latest signed tag without mutating its stable source identity.
 resume_stable_release() {
-  local version="$1"
+  local version="$1" promote_default_lane tap_sha_before
   print_header "resume stable release ${version}"
   verify_github_stable_tag_signature "${version}"
   if stable_release_is_published "${version}"; then
-    ensure_latest_stable_retry "${version}"
-    dispatch_compose_stable_tap_repair "${version}"
-    print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
+    promote_default_lane="$(stable_version_promotes_default_lane "${version}")"
+    if [[ "${promote_default_lane}" == "true" ]]; then
+      ensure_latest_stable_retry "${version}"
+      dispatch_compose_stable_tap_repair "${version}"
+      print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
+    else
+      ensure_stable_retry_source_authority "${version}"
+      tap_sha_before="$(homebrew_tap_main_sha)"
+      publish_stable_init_image_asset "${version}"
+      verify_compose_stable_package "${version}" "false" "${tap_sha_before}"
+      print_stable_release_point "${version}" "maintenance backfill asset recovery"
+    fi
     return 0
   fi
   ensure_stable_release_is_unpublished "${version}"
-  ensure_unpublished_stable_retry "${version}"
+  ensure_stable_retry_source_authority "${version}"
   publish_stable_release "${version}"
 }
 

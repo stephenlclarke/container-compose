@@ -15,7 +15,7 @@
 ## limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-"""Retain binary assets for only the newest stable and current releases."""
+"""Retain binary assets for only GitHub latest stable and current releases."""
 
 from __future__ import annotations
 
@@ -120,23 +120,47 @@ def obsolete_current_release(release: dict) -> bool:
     )
 
 
-def retained_release_ids(releases: Iterable[dict]) -> set[int]:
-    """Return newest stable and the sole mutable current prerelease ids."""
+def latest_stable_release_id(repo: str, releases: Iterable[dict]) -> int | None:
+    """Resolve GitHub's designated latest stable release against the full list."""
+    stable_ids = {
+        release["id"]
+        for release in published_releases(releases)
+        if not release.get("prerelease")
+    }
+    if not stable_ids:
+        return None
+    latest = json.loads(run_gh("api", f"repos/{repo}/releases/latest"))
+    latest_id = latest.get("id")
+    if latest_id not in stable_ids:
+        raise ValueError(
+            "GitHub latest release is not a published stable release in the release list"
+        )
+    return int(latest_id)
 
+
+def retained_release_ids(
+    releases: Iterable[dict], *, latest_stable_id: int | None
+) -> set[int]:
+    """Return GitHub latest stable and the sole mutable current prerelease ids."""
+
+    published = published_releases(releases)
     keep: set[int] = set()
     stable_candidates = [
         release
-        for release in published_releases(releases)
+        for release in published
         if not release.get("prerelease")
     ]
     if stable_candidates:
-        keep.add(max(stable_candidates, key=lambda release: release["published_at"])["id"])
+        stable_ids = {release["id"] for release in stable_candidates}
+        if latest_stable_id not in stable_ids:
+            raise ValueError("designated latest stable release is missing from the release list")
+        keep.add(latest_stable_id)
 
     current_candidates = current_release_candidates(releases)
     if not current_candidates:
         current_candidates = [
             release
-            for release in published_releases(releases)
+            for release in published
             if release.get("prerelease")
         ]
     if current_candidates:
@@ -276,7 +300,8 @@ def delete_release(repo: str, release: dict) -> None:
 def main() -> None:
     args = parse_args()
     releases = list_releases(args.repo)
-    retained = retained_release_ids(releases)
+    latest_stable_id = latest_stable_release_id(args.repo, releases)
+    retained = retained_release_ids(releases, latest_stable_id=latest_stable_id)
     stale = [release for release in published_releases(releases) if release["id"] not in retained]
 
     retained_tags = [
