@@ -242,6 +242,28 @@ class HistoricalWorkflowTests(unittest.TestCase):
         self.assertIn("actions: write", workflow)
         self.assertIn('-f documentation_pr="${pr_number}"', workflow)
 
+    def test_workflow_retries_artifact_transfers_atomically(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("download_run_artifact()", workflow)
+        self.assertIn("download_api_artifact()", workflow)
+        self.assertIn("for attempt in 1 2 3", workflow)
+        self.assertIn("run-artifact.XXXXXX", workflow)
+        self.assertIn('sidecar="${artifact}.sha256"', workflow)
+        self.assertIn('[[ -s "${attempt_root}/${sidecar}" ]]', workflow)
+        sidecar_publish = workflow.index(
+            'mv "${attempt_root}/${sidecar}" "${target_sidecar}"'
+        )
+        archive_publish = workflow.index(
+            'mv "${attempt_root}/${artifact}" "${target}"'
+        )
+        self.assertLess(sidecar_publish, archive_publish)
+        self.assertIn('mv "${attempt_root}/${artifact}" "${target}"', workflow)
+        self.assertIn('partial="${output}.partial.${attempt}"', workflow)
+        self.assertIn('mv "${partial}" "${output}"', workflow)
+        self.assertIn("extract-initfs --archive", workflow)
+        self.assertIn('--digest "${initfs_artifact_digest}"', workflow)
+
     def test_workflow_keeps_runtime_inputs_local_and_noninteractive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('"${RUNNER_TEMP}" "${GITHUB_RUN_ID}"', workflow)

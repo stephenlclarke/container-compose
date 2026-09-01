@@ -231,6 +231,61 @@ jobs:
         run: |
           set -euo pipefail
           [[ -n "${GH_TOKEN}" ]]
+          # Download a complete named workflow artifact before publishing it.
+          download_run_artifact() {
+            local run_id="$1" repository="$2" artifact="$3" output="$4"
+            local attempt attempt_root sidecar target target_sidecar
+            target="${output}/${artifact}"
+            sidecar="${artifact}.sha256"
+            target_sidecar="${output}/${sidecar}"
+            for attempt in 1 2 3; do
+              attempt_root="$(mktemp -d \
+                "${BENCHMARK_ROOT}/downloads/run-artifact.XXXXXX")"
+              if gh run download "${run_id}" --repo "${repository}" \
+                --dir "${attempt_root}" --name "${artifact}" && \
+                [[ -s "${attempt_root}/${artifact}" ]] && \
+                [[ -s "${attempt_root}/${sidecar}" ]]; then
+                install -d -m 0700 "${output}"
+                rm -f "${target}" "${target_sidecar}"
+                mv "${attempt_root}/${sidecar}" "${target_sidecar}"
+                mv "${attempt_root}/${artifact}" "${target}"
+                rmdir "${attempt_root}"
+                return 0
+              fi
+              rm -rf "${attempt_root}"
+              if ((attempt == 3)); then
+                printf 'failed to download artifact %s after %d attempts\n' \
+                  "${artifact}" "${attempt}" >&2
+                return 1
+              fi
+              printf 'artifact %s transfer attempt %d failed; retrying\n' \
+                "${artifact}" "${attempt}" >&2
+              sleep "$((attempt * 5))"
+            done
+          }
+          # Download an API artifact to a partial path before publishing it.
+          download_api_artifact() {
+            local endpoint="$1" output="$2"
+            local attempt partial
+            for attempt in 1 2 3; do
+              partial="${output}.partial.${attempt}"
+              rm -f "${partial}"
+              if gh api -H 'Accept: application/vnd.github+json' \
+                "${endpoint}" > "${partial}" && [[ -s "${partial}" ]]; then
+                mv "${partial}" "${output}"
+                return 0
+              fi
+              rm -f "${partial}"
+              if ((attempt == 3)); then
+                printf 'failed to download API artifact after %d attempts\n' \
+                  "${attempt}" >&2
+                return 1
+              fi
+              printf 'API artifact transfer attempt %d failed; retrying\n' \
+                "${attempt}" >&2
+              sleep "$((attempt * 5))"
+            done
+          }
           gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/prebuilt-binaries.yml/runs?event=workflow_dispatch&per_page=100" \
             > "${BENCHMARK_ROOT}/downloads/package-run-pages.json"
@@ -282,11 +337,13 @@ jobs:
                 "${version}" >&2
               exit 1
             fi
-            gh run download "${package_run_id}" --repo "${GITHUB_REPOSITORY}" \
-              --dir "${distribution}" --name 'container-release-arm64.tar.gz'
-            gh run download "${package_run_id}" --repo "${GITHUB_REPOSITORY}" \
-              --dir "${distribution}" \
-              --name 'container-compose-plugin-release-arm64.tar.gz'
+            download_run_artifact "${package_run_id}" \
+              "${GITHUB_REPOSITORY}" 'container-release-arm64.tar.gz' \
+              "${distribution}"
+            download_run_artifact "${package_run_id}" \
+              "${GITHUB_REPOSITORY}" \
+              'container-compose-plugin-release-arm64.tar.gz' \
+              "${distribution}"
             Tools/release/verify-developer-id-archive.sh \
               "${distribution}/container-release-arm64.tar.gz"
             Tools/release/verify-developer-id-archive.sh \
@@ -353,9 +410,9 @@ jobs:
               '.artifactId' "${version_root}/guest-provenance.json")"
             initfs_artifact_digest="$(jq -r \
               '.artifactDigest' "${version_root}/guest-provenance.json")"
-            gh api -H 'Accept: application/vnd.github+json' \
+            download_api_artifact \
               "repos/stephenlclarke/containerization/actions/artifacts/${initfs_artifact_id}/zip" \
-              > "${version_root}/initfs.zip"
+              "${version_root}/initfs.zip"
             /usr/bin/python3 Tools/parity/historical_reconstruction_benchmark.py \
               extract-initfs --archive "${version_root}/initfs.zip" \
               --digest "${initfs_artifact_digest}" --output "${initfs_root}"
