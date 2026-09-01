@@ -1051,6 +1051,49 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 msg=f"unexpected settled classification for {payload}: {result.stderr}",
             )
 
+    def test_current_package_skips_documentation_only_ci_before_sonar_polling(
+        self,
+    ) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        runtime_query = (
+            '[.[] | .jobs[] | select(.name == "Validate Runtime") | .conclusion]'
+        )
+        runtime_skip_filter = 'length > 0 and all(.[]; . == "skipped")'
+        skip_message = (
+            "Skipping package publish because CI Validate Runtime was "
+            "intentionally skipped."
+        )
+
+        self.assertIn(runtime_query, workflow)
+        self.assertIn(runtime_skip_filter, workflow)
+        self.assertIn(skip_message, workflow)
+        self.assertLess(
+            workflow.index(skip_message),
+            workflow.index(
+                'wait_for_successful_main_sonarqube_scan '
+                '"${WORKFLOW_RUN_HEAD_SHA}"'
+            ),
+        )
+        for payload, expected in (
+            ('["skipped"]', True),
+            ('["skipped", "skipped"]', True),
+            ('["success"]', False),
+            ('["skipped", "success"]', False),
+            ("[]", False),
+        ):
+            result = subprocess.run(
+                ["jq", "-e", runtime_skip_filter],
+                input=payload,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                result.returncode == 0,
+                expected,
+                msg=f"unexpected runtime classification for {payload}: {result.stderr}",
+            )
+
     def test_current_package_skips_only_when_the_pointer_already_matches_main(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("Skipping current package because current already points at", workflow)
