@@ -1329,6 +1329,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "- name: SonarQube scan"
             )
         ]
+        sonar_enforcement = ci[
+            ci.index("- name: Enforce SonarQube failures when the service is available") :
+        ]
         self.assertIn("timeout-minutes: 250", runtime_job)
         self.assertIn("- resolve-canonical-main", runtime_job)
         self.assertIn("continue-on-error: true", sonar)
@@ -1375,6 +1378,14 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("steps.sonar_api.outputs.available == 'true'", obligation)
         self.assertIn("steps.sonar_install.outcome == 'success'", obligation)
         self.assertIn("steps.sonar_restore_obligation.outputs.required", ci)
+        self.assertIn(
+            "steps.sonar_scan.outputs.canonical_restore_completed != 'true'",
+            sonar_enforcement,
+        )
+        self.assertNotIn(
+            "steps.sonar_restore_obligation.outputs.required == 'true' ||",
+            sonar_enforcement,
+        )
         self.assertIn("CANONICAL_RESTORE_COMPLETED", ci)
         self.assertIn("Canonical Sonar restoration did not complete; failing closed.", ci)
         self.assertIn("CANONICAL_RESTORE_FAILED", ci)
