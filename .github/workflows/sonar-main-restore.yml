@@ -1,0 +1,438 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Restore Canonical Sonar
+run-name: Restore Canonical Sonar · ${{ inputs.expected_sha || github.event.workflow_run.head_branch }}
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - "*.*.*"
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Exact main commit whose retained coverage must restore Sonar"
+        required: true
+        type: string
+      authority_sha:
+        description: "Current main authority for an internal restorable-source retry"
+        required: false
+        type: string
+      recovery_attempt:
+        description: "Internal bounded automatic-recovery attempt"
+        required: false
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  restore:
+    name: Restore Canonical Sonar
+    if: >
+      github.repository == 'stephenlclarke/container-compose' &&
+      (github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion != 'success')
+    runs-on: [self-hosted, macOS, ARM64, container-compose-current]
+    timeout-minutes: 190
+    steps:
+      - name: Resolve restoration authority
+        id: authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_ATTEMPT: ${{ inputs.recovery_attempt }}
+          REQUESTED_AUTHORITY_SHA: ${{ inputs.authority_sha }}
+          REQUESTED_SHA: ${{ inputs.expected_sha }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
+            scan_conclusions="$(
+              gh api --paginate --slurp \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${TRIGGER_RUN_ID}/jobs?per_page=100" |
+                jq -c '[.[] | .jobs[] | select(.name == "Validate Runtime") |
+                  .steps[]? | select(.name == "SonarQube scan") | .conclusion]'
+            )"
+            # GitHub exposes a continued step's conclusion as success even
+            # when its same-job outcome failed. A failed tag workflow is safe
+            # to ignore only when this state-changing step never ran.
+            if jq -e 'length == 0 or all(.[]; . == "skipped")' \
+              <<<"${scan_conclusions}" >/dev/null; then
+              {
+                printf 'authority_sha=\n'
+                printf 'restore=false\n'
+                printf 'sha=\n'
+              } >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+          fi
+
+          expected_sha="${REQUESTED_SHA}"
+          authority_sha="${REQUESTED_AUTHORITY_SHA}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
+            expected_sha="$(
+              git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main |
+                awk '{ print $1 }' |
+                tail -n 1
+            )"
+            authority_sha="${expected_sha}"
+          elif [[ -z "${authority_sha}" ]]; then
+            authority_sha="${expected_sha}"
+          fi
+          if [[ ! "${expected_sha}" =~ ^[0-9a-f]{40}$ || ! "${authority_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'recovery source or authority SHA is not immutable: %s / %s\n' \
+              "${expected_sha:-missing}" "${authority_sha:-missing}" >&2
+            exit 2
+          fi
+          main_sha="$(
+            git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main |
+              awk '{ print $1 }' |
+              tail -n 1
+          )"
+          if [[ "${main_sha}" != "${authority_sha}" ]]; then
+            printf 'canonical main moved before recovery: expected authority %s, got %s\n' \
+              "${authority_sha}" "${main_sha:-missing}" >&2
+            exit 75
+          fi
+          if [[ "${expected_sha}" != "${authority_sha}" ]]; then
+            if [[ -z "${RECOVERY_ATTEMPT:-}" ]]; then
+              printf 'a non-current recovery source is allowed only for automatic retry\n' >&2
+              exit 2
+            fi
+            comparison="$(
+              gh api "repos/${GITHUB_REPOSITORY}/compare/${expected_sha}...${authority_sha}"
+            )"
+            if ! jq -e '
+              .status == "ahead" and
+              (.files | length) < 300 and
+              all(.files[];
+                ((.filename | endswith(".md")) or
+                 (.filename | startswith("docs/")) or
+                 (.filename | startswith("Formula/"))) and
+                (.filename | startswith("docs/upstream/") | not) and
+                (.status != "renamed" or (
+                  ((.previous_filename | endswith(".md")) or
+                   (.previous_filename | startswith("docs/")) or
+                   (.previous_filename | startswith("Formula/"))) and
+                  (.previous_filename | startswith("docs/upstream/") | not)
+                ))
+              )
+            ' <<<"${comparison}" >/dev/null; then
+              printf 'recovery source %s is not a lightweight ancestor of current main %s\n' \
+                "${expected_sha}" "${authority_sha}" >&2
+              exit 75
+            fi
+          fi
+          {
+            printf 'authority_sha=%s\n' "${authority_sha}"
+            printf 'restore=true\n'
+            printf 'sha=%s\n' "${expected_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout exact main source
+        if: steps.authority.outputs.restore == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.authority.outputs.sha }}
+
+      - name: Verify exact canonical main source
+        if: steps.authority.outputs.restore == 'true'
+        env:
+          AUTHORITY_SHA: ${{ steps.authority.outputs.authority_sha }}
+          EXPECTED_SHA: ${{ steps.authority.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${EXPECTED_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'expected main SHA is not immutable: %s\n' "${EXPECTED_SHA}" >&2
+            exit 2
+          fi
+          checkout_sha="$(git rev-parse HEAD)"
+          main_sha="$(
+            git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main |
+              awk '{ print $1 }' |
+              tail -n 1
+          )"
+          if [[ "${checkout_sha}" != "${EXPECTED_SHA}" || "${main_sha}" != "${AUTHORITY_SHA}" ]]; then
+            printf 'canonical recovery authority moved: source %s, checkout %s, authority %s, remote %s\n' \
+              "${EXPECTED_SHA}" "${checkout_sha}" "${AUTHORITY_SHA}" "${main_sha:-missing}" >&2
+            exit 75
+          fi
+
+      - name: Download retained exact-main coverage
+        if: steps.authority.outputs.restore == 'true'
+        env:
+          EXPECTED_SHA: ${{ steps.authority.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_name="sonar-main-inputs-${EXPECTED_SHA}"
+          run_ids="$(
+            gh run list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --workflow ci.yml \
+              --commit "${EXPECTED_SHA}" \
+              --limit 100 \
+              --json databaseId,event,status,conclusion,headBranch,createdAt \
+              --jq 'map(select(
+                .headBranch == "main" and
+                .status == "completed" and
+                .conclusion == "success" and
+                (.event == "push" or .event == "workflow_dispatch")
+              )) | sort_by(.createdAt) | reverse | .[].databaseId'
+          )"
+          selected_run=""
+          while IFS= read -r run_id; do
+            if [[ -z "${run_id}" ]]; then
+              continue
+            fi
+            if gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.expired == false) | .name' |
+              grep -Fxq "${artifact_name}"; then
+              selected_run="${run_id}"
+              break
+            fi
+          done <<< "${run_ids}"
+          if [[ -z "${selected_run}" ]]; then
+            printf 'no retained %s artifact exists for exact-main CI at %s\n' \
+              "${artifact_name}" "${EXPECTED_SHA}" >&2
+            exit 1
+          fi
+          gh run download "${selected_run}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name "${artifact_name}" \
+            --dir .
+          test -s coverage.xml
+          test -s Tools/compose-normalizer/coverage.out
+
+      - name: Cache SonarQube packages
+        if: steps.authority.outputs.restore == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Install verified Sonar Scanner CLI
+        if: steps.authority.outputs.restore == 'true'
+        env:
+          SONAR_SCANNER_GPG_FINGERPRINT: 679F1EE92B19609DE816FDE81DB198F93525EC1A
+          SONAR_SCANNER_VERSION: 8.1.0.6389
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            arm64)
+              scanner_flavor="macosx-aarch64"
+              ;;
+            x86_64)
+              scanner_flavor="macosx-x64"
+              ;;
+            *)
+              printf 'Unsupported macOS architecture: %s\n' "$(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+
+          scanner_name="sonar-scanner-cli-${SONAR_SCANNER_VERSION}-${scanner_flavor}"
+          scanner_url="https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/${scanner_name}.zip"
+          scanner_zip="${RUNNER_TEMP}/${scanner_name}.zip"
+          scanner_signature="${scanner_zip}.asc"
+          scanner_root="${RUNNER_TEMP}/sonar-scanner-cli"
+          gpg_home="$(mktemp -d /private/tmp/container-compose-sonar-gpg.XXXXXX)"
+
+          rm -rf "${scanner_root}"
+          mkdir -p "${scanner_root}"
+          chmod 700 "${gpg_home}"
+          gpgconf --homedir "${gpg_home}" --launch gpg-agent
+          trap 'gpgconf --homedir "${gpg_home}" --kill gpg-agent 2>/dev/null || true; find "${gpg_home}" -depth -delete' EXIT
+
+          curl --fail --location --silent --show-error "${scanner_url}" --output "${scanner_zip}"
+          curl --fail --location --silent --show-error "${scanner_url}.asc" --output "${scanner_signature}"
+          gpg --homedir "${gpg_home}" --batch --keyserver hkps://keys.openpgp.org --recv-keys "${SONAR_SCANNER_GPG_FINGERPRINT}"
+          actual_fingerprint="$(
+            gpg --homedir "${gpg_home}" --batch --with-colons --fingerprint "${SONAR_SCANNER_GPG_FINGERPRINT}" |
+              awk -F: '$1 == "fpr" { print $10; exit }'
+          )"
+          if [[ "${actual_fingerprint}" != "${SONAR_SCANNER_GPG_FINGERPRINT}" ]]; then
+            printf 'Unexpected Sonar Scanner signing key fingerprint: %s\n' "${actual_fingerprint}" >&2
+            exit 1
+          fi
+          gpg --homedir "${gpg_home}" --batch --verify "${scanner_signature}" "${scanner_zip}"
+          gpgconf --homedir "${gpg_home}" --kill gpg-agent
+          find "${gpg_home}" -depth -delete
+          trap - EXIT
+          unzip -q "${scanner_zip}" -d "${scanner_root}"
+
+          scanner_bin="${scanner_root}/sonar-scanner-${SONAR_SCANNER_VERSION}-${scanner_flavor}/bin"
+          if [[ ! -x "${scanner_bin}/sonar-scanner" ]]; then
+            printf 'Sonar Scanner binary was not found at %s\n' "${scanner_bin}" >&2
+            exit 1
+          fi
+          printf '%s\n' "${scanner_bin}" >> "${GITHUB_PATH}"
+
+      - name: Restore exact canonical main analysis
+        if: steps.authority.outputs.restore == 'true'
+        env:
+          AUTHORITY_SHA: ${{ steps.authority.outputs.authority_sha }}
+          EXPECTED_SHA: ${{ steps.authority.outputs.sha }}
+          SONAR_BRANCH: main
+          SONAR_QUALITYGATE_WAIT: "true"
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        shell: bash
+        timeout-minutes: 160
+        run: |
+          set -euo pipefail
+          sonar_timeout="$(command -v gtimeout || true)"
+          if [[ -z "${sonar_timeout}" ]]; then
+            printf 'gtimeout is required to bound canonical Sonar recovery\n' >&2
+            exit 1
+          fi
+          export CONTAINER_RUNTIME_LOCK_FILE="/tmp/container-compose-sonar-${UID}.lock"
+          export CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS=7200
+          source Tools/ci/container-runtime-lock.sh
+          acquire_container_runtime_lock
+          trap release_container_runtime_lock EXIT
+
+          main_sha="$(
+            git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main |
+              awk '{ print $1 }' |
+              tail -n 1
+          )"
+          if [[ "${main_sha}" != "${AUTHORITY_SHA}" ]]; then
+            printf 'canonical main moved before Sonar restore: expected authority %s, got %s\n' \
+              "${AUTHORITY_SHA}" "${main_sha:-missing}" >&2
+            exit 75
+          fi
+          "${sonar_timeout}" --kill-after=30s 1500s make sonar-scan
+          main_sha="$(
+            git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main |
+              awk '{ print $1 }' |
+              tail -n 1
+          )"
+          if [[ "${main_sha}" != "${AUTHORITY_SHA}" ]]; then
+            printf 'canonical main moved during Sonar restore: expected authority %s, got %s\n' \
+              "${AUTHORITY_SHA}" "${main_sha:-missing}" >&2
+            exit 75
+          fi
+
+      - name: Retry automatic recovery against current main
+        if: >
+          failure() &&
+          (github.event_name == 'workflow_run' || inputs.recovery_attempt != '')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_ATTEMPT: ${{ inputs.recovery_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          attempt="${RECOVERY_ATTEMPT:-0}"
+          if [[ ! "${attempt}" =~ ^[0-9]+$ ]]; then
+            printf 'automatic recovery attempt is invalid: %s\n' "${attempt}" >&2
+            exit 2
+          fi
+          if (( attempt >= 3 )); then
+            printf 'automatic canonical-main recovery exhausted after %s retries\n' \
+              "${attempt}" >&2
+            exit 75
+          fi
+          main_sha="$(
+            git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main |
+              awk '{ print $1 }' |
+              tail -n 1
+          )"
+          if [[ ! "${main_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'current main SHA is unavailable for automatic recovery: %s\n' \
+              "${main_sha:-missing}" >&2
+            exit 75
+          fi
+          restorable_sha=""
+          artifact_records="$(
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" |
+              jq -r '[.[] | .artifacts[] | select(
+                .expired == false and
+                (.name | startswith("sonar-main-inputs-")) and
+                .workflow_run != null
+              )] | sort_by(.created_at) | reverse | .[] |
+                [.workflow_run.id, .workflow_run.head_sha, .name] | @tsv'
+          )"
+          while IFS=$'\t' read -r run_id candidate_sha artifact_name; do
+            if [[ -z "${run_id}" || ! "${candidate_sha}" =~ ^[0-9a-f]{40}$ || \
+              "${artifact_name}" != "sonar-main-inputs-${candidate_sha}" ]]; then
+              continue
+            fi
+            run_metadata="$(
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+            )"
+            if ! jq -e '
+              .path == ".github/workflows/ci.yml" and
+              .head_branch == "main" and
+              .status == "completed" and
+              .conclusion == "success" and
+              (.event == "push" or .event == "workflow_dispatch")
+            ' <<<"${run_metadata}" >/dev/null; then
+              continue
+            fi
+            if [[ "${candidate_sha}" == "${main_sha}" ]]; then
+              restorable_sha="${candidate_sha}"
+              break
+            fi
+            comparison="$(
+              gh api "repos/${GITHUB_REPOSITORY}/compare/${candidate_sha}...${main_sha}"
+            )"
+            if jq -e '
+              .status == "ahead" and
+              (.files | length) < 300 and
+              all(.files[];
+                ((.filename | endswith(".md")) or
+                 (.filename | startswith("docs/")) or
+                 (.filename | startswith("Formula/"))) and
+                (.filename | startswith("docs/upstream/") | not) and
+                (.status != "renamed" or (
+                  ((.previous_filename | endswith(".md")) or
+                   (.previous_filename | startswith("docs/")) or
+                   (.previous_filename | startswith("Formula/"))) and
+                  (.previous_filename | startswith("docs/upstream/") | not)
+                ))
+              )
+            ' <<<"${comparison}" >/dev/null; then
+              restorable_sha="${candidate_sha}"
+              break
+            fi
+          done <<< "${artifact_records}"
+          if [[ -z "${restorable_sha}" ]]; then
+            printf 'no retained current or lightweight-ancestor Sonar inputs exist for %s\n' \
+              "${main_sha}" >&2
+            exit 75
+          fi
+          next_attempt="$((attempt + 1))"
+          gh workflow run sonar-main-restore.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref main \
+            -f expected_sha="${restorable_sha}" \
+            -f authority_sha="${main_sha}" \
+            -f recovery_attempt="${next_attempt}"
+          printf 'dispatched canonical-main recovery attempt %s using source %s under authority %s\n' \
+            "${next_attempt}" "${restorable_sha}" "${main_sha}"

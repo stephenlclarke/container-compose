@@ -37,8 +37,10 @@ jobs:
     name: Resolve Stable Candidate
     if: github.repository == 'stephenlclarke/container-compose'
     runs-on: ubuntu-24.04
+    timeout-minutes: 270
     outputs:
       sha: ${{ steps.candidate.outputs.sha }}
+      authority_ref: ${{ steps.candidate.outputs.authority_ref }}
       homebrew_tap_ref: ${{ steps.candidate.outputs.homebrew_tap_ref }}
     steps:
       - name: Require an immutable main tag and green main CI
@@ -124,6 +126,28 @@ jobs:
               "${RELEASE_TAG}"
           fi
 
+          release_series="${RELEASE_TAG%.*}"
+          release_branch="release-${release_series}"
+          release_branch_sha="$(
+            git ls-remote --heads "${remote}" "refs/heads/${release_branch}" |
+              awk '{ print $1 }' |
+              tail -n 1
+          )"
+          if [[ "${tag_sha}" == "${main_sha}" ]]; then
+            authority_ref="main"
+            candidate_ci_branch="main"
+          elif [[ "${tag_sha}" == "${release_branch_sha}" ]]; then
+            # Maintenance tags run the exact release-branch workflow on their
+            # tag push, including the serialized Sonar candidate/restoration
+            # transaction. Their immutable CI authority is therefore the tag.
+            authority_ref="${release_branch}"
+            candidate_ci_branch="${RELEASE_TAG}"
+          else
+            printf 'stable tag %s is neither current main nor exact %s head\n' \
+              "${RELEASE_TAG}" "${release_branch}" >&2
+            exit 1
+          fi
+
           homebrew_tap_ref="$(
             git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git refs/heads/main \
               | awk '{ print $1 }' \
@@ -134,32 +158,67 @@ jobs:
             exit 1
           fi
 
-          deadline=$((SECONDS + 3600))
+          # Maintenance CI can legitimately consume its full 250-minute
+          # runtime budget while waiting for and holding Sonar authority.
+          deadline=$((SECONDS + 15600))
+          sonar_evidence_attempts=0
           while true; do
             run="$(
               gh run list --repo "${GITHUB_REPOSITORY}" --workflow ci.yml --commit "${tag_sha}" \
                 --event push --limit 20 --json databaseId,status,conclusion,headBranch \
-                --jq 'map(select(.headBranch == "main") | select(.status == "completed" or .status == "in_progress" or .status == "queued")) | .[0] // empty'
+                --jq "map(select(.headBranch == \"${candidate_ci_branch}\") | select(.status == \"completed\" or .status == \"in_progress\" or .status == \"queued\")) | .[0] // empty"
             )"
             status="$(jq -r '.status // empty' <<<"${run}")"
             conclusion="$(jq -r '.conclusion // empty' <<<"${run}")"
             if [[ "${status}" == "completed" && "${conclusion}" == "success" ]]; then
-              break
+              run_id="$(jq -r '.databaseId // empty' <<<"${run}")"
+              ci_jobs="$(
+                gh api --paginate --slurp \
+                  "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100"
+              )"
+              sonar_conclusions="$(
+                jq -c '[.[] | .jobs[] | select(.name == "Validate Runtime") |
+                  .steps[]? | select(.name == "Record successful SonarQube analysis") | .conclusion]' \
+                  <<<"${ci_jobs}"
+              )"
+              if jq -e 'length == 1 and .[0] == "success"' \
+                <<<"${sonar_conclusions}" >/dev/null; then
+                break
+              fi
+              if jq -e 'length == 0 or any(.[]; . == null)' \
+                <<<"${sonar_conclusions}" >/dev/null; then
+                ((sonar_evidence_attempts += 1))
+                if (( sonar_evidence_attempts < 12 )); then
+                  printf 'CI SonarQube evidence for run %s is not visible yet; retrying %s/12 in 5s\n' \
+                    "${run_id}" "$((sonar_evidence_attempts + 1))"
+                  sleep 5
+                  continue
+                fi
+              fi
+              printf '%s CI for %s did not complete the required SonarQube scan: %s\n' \
+                "${candidate_ci_branch}" "${tag_sha}" "${sonar_conclusions}" >&2
+              exit 1
             fi
             if [[ "${status}" == "completed" ]]; then
-              printf 'main CI for %s concluded %s\n' "${tag_sha}" "${conclusion:-missing}" >&2
+              printf '%s CI for %s concluded %s\n' \
+                "${candidate_ci_branch}" "${tag_sha}" "${conclusion:-missing}" >&2
               exit 1
             fi
             if (( SECONDS >= deadline )); then
-              printf 'timed out waiting for green main CI (including SonarQube) at %s\n' "${tag_sha}" >&2
+              printf 'timed out waiting for green %s CI (including SonarQube) at %s\n' \
+                "${candidate_ci_branch}" "${tag_sha}" >&2
               exit 1
             fi
-            printf 'waiting for main CI (including SonarQube) at %s\n' "${tag_sha}"
+            printf 'waiting for %s CI (including SonarQube) at %s\n' \
+              "${candidate_ci_branch}" "${tag_sha}"
             sleep 30
           done
 
-          printf 'sha=%s\n' "${tag_sha}" >> "$GITHUB_OUTPUT"
-          printf 'homebrew_tap_ref=%s\n' "${homebrew_tap_ref}" >> "$GITHUB_OUTPUT"
+          {
+            printf 'sha=%s\n' "${tag_sha}"
+            printf 'authority_ref=%s\n' "${authority_ref}"
+            printf 'homebrew_tap_ref=%s\n' "${homebrew_tap_ref}"
+          } >> "$GITHUB_OUTPUT"
 
   release-gate:
     name: Run Hosted Release Gate
@@ -338,9 +397,31 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.ref }}
           CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.sha }}
+          AUTHORITY_REF: ${{ needs.resolve-candidate.outputs.authority_ref }}
         shell: bash
         run: |
           set -euo pipefail
+          remote="https://github.com/${GITHUB_REPOSITORY}.git"
+          authority_sha="$(
+            git ls-remote --heads "${remote}" "refs/heads/${AUTHORITY_REF}" |
+              awk '{ print $1 }' |
+              tail -n 1
+          )"
+          tag_sha="$(
+            git ls-remote --tags "${remote}" "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" |
+              awk '$2 ~ /\^\{\}$/ { print $1 }' |
+              tail -n 1
+          )"
+          if [[ "${authority_sha}" != "${CANDIDATE_SHA}" ]]; then
+            printf 'release authority %s moved after validation: expected %s, got %s\n' \
+              "${AUTHORITY_REF}" "${CANDIDATE_SHA}" "${authority_sha:-missing}" >&2
+            exit 75
+          fi
+          if [[ "${tag_sha}" != "${CANDIDATE_SHA}" ]]; then
+            printf 'stable tag %s moved after validation: expected %s, got %s\n' \
+              "${RELEASE_TAG}" "${CANDIDATE_SHA}" "${tag_sha:-missing}" >&2
+            exit 75
+          fi
           authority_name="Stable Release Authority (${RELEASE_TAG})"
           details_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           summary="Hosted Stable Release Gate passed for immutable source"

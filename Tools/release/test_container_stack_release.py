@@ -43,6 +43,7 @@ SCHEDULED_STABLE_RELEASE_WORKFLOW = (
     ROOT / ".github" / "workflows" / "scheduled-stable-release.yml"
 )
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+SONAR_RESTORE_WORKFLOW = ROOT / ".github" / "workflows" / "sonar-main-restore.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 STACK_RELEASE_VALIDATION = ROOT / "Tools" / "ci" / "run-stack-release-validation.sh"
 FORMULA_RENDERER = ROOT / "Tools" / "release" / "render-homebrew-stack-formulae.sh"
@@ -1158,7 +1159,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("- name: Checkout container dependency", workflow)
         self.assertIn("- name: Checkout containerization dependency", workflow)
 
-    def test_stable_and_current_release_authority_select_main_ci(self) -> None:
+    def test_stable_and_current_release_authority_select_trusted_ci(self) -> None:
         stable_gate = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
         package = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         package_authority = package[
@@ -1170,7 +1171,31 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             package_authority.index("branch)") : package_authority.index("tag)")
         ]
         self.assertIn("--json databaseId,status,conclusion,headBranch", stable_gate)
-        self.assertIn('select(.headBranch == "main")', stable_gate)
+        self.assertIn('release_branch="release-${release_series}"', stable_gate)
+        self.assertIn('candidate_ci_branch="main"', stable_gate)
+        self.assertIn('candidate_ci_branch="${RELEASE_TAG}"', stable_gate)
+        self.assertIn('.headBranch == \\"${candidate_ci_branch}\\"', stable_gate)
+        self.assertIn("is neither current main nor exact %s head", stable_gate)
+        self.assertIn("timeout-minutes: 270", stable_gate)
+        self.assertIn("deadline=$((SECONDS + 15600))", stable_gate)
+        self.assertIn(
+            'select(.name == "Record successful SonarQube analysis")',
+            stable_gate,
+        )
+        self.assertIn('length == 1 and .[0] == "success"', stable_gate)
+        self.assertIn("did not complete the required SonarQube scan", stable_gate)
+        self.assertIn('authority_ref="main"', stable_gate)
+        self.assertIn('authority_ref="${release_branch}"', stable_gate)
+        self.assertIn(
+            "authority_ref: ${{ steps.candidate.outputs.authority_ref }}",
+            stable_gate,
+        )
+        self.assertIn(
+            "AUTHORITY_REF: ${{ needs.resolve-candidate.outputs.authority_ref }}",
+            stable_gate,
+        )
+        self.assertIn("release authority %s moved after validation", stable_gate)
+        self.assertIn("stable tag %s moved after validation", stable_gate)
         self.assertIn("--json event,status,conclusion,headBranch", current_authority)
         self.assertIn('.headBranch == "main"', current_authority)
         self.assertIn('(.event == "push" or .event == "workflow_dispatch")', current_authority)
@@ -1214,8 +1239,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("needs.codeql-release.result == 'success'", package_job)
         self.assertNotIn("workflow run codeql.yml", benchmark)
 
-    def test_main_sonar_step_preserves_the_complete_retry_budget(self) -> None:
+    def test_release_sonar_step_preserves_and_restores_canonical_main(self) -> None:
         ci = CI_WORKFLOW.read_text(encoding="utf-8")
+        restore = SONAR_RESTORE_WORKFLOW.read_text(encoding="utf-8")
         runtime_job = ci[
             ci.index("  validate_runtime:") : ci.index(
                 "    steps:", ci.index("  validate_runtime:")
@@ -1226,16 +1252,93 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "- name: Enforce SonarQube failures when the service is available"
             )
         ]
+        obligation = ci[
+            ci.index("- name: Record canonical restoration obligation") : ci.index(
+                "- name: SonarQube scan"
+            )
+        ]
         sonar_install = ci[
             ci.index("- name: Install Sonar Scanner CLI") : ci.index(
                 "- name: SonarQube scan"
             )
         ]
-        self.assertIn("timeout-minutes: 105", runtime_job)
+        self.assertIn("timeout-minutes: 250", runtime_job)
+        self.assertIn("- resolve-canonical-main", runtime_job)
         self.assertIn("continue-on-error: true", sonar)
-        self.assertIn("timeout-minutes: 25", sonar)
+        self.assertIn("timeout-minutes: 180", sonar)
+        self.assertIn('GH_TOKEN: ${{ github.token }}', sonar)
         self.assertIn('SONAR_QUALITYGATE_WAIT: "true"', sonar)
-        self.assertIn("run: make sonar-scan", sonar)
+        self.assertIn("make sonar-scan", sonar)
+        self.assertIn('if [[ "${GITHUB_REF_TYPE}" == "tag" ]]', sonar)
+        self.assertIn('release_version="${GITHUB_REF_NAME#v}"', sonar)
+        self.assertIn(
+            'if [[ ! "${release_version}" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]',
+            sonar,
+        )
+        self.assertIn("RELEASE_AUTHORITY_REF", sonar)
+        self.assertIn('if [[ "${GITHUB_SHA}" != "${release_authority_sha}" ]]', sonar)
+        self.assertIn("Skipping SonarQube scan for published release tag", sonar)
+        self.assertIn('export SONAR_BRANCH="main"', sonar)
+        self.assertIn(
+            'CONTAINER_RUNTIME_LOCK_FILE="/tmp/container-compose-sonar-${UID}.lock"',
+            sonar,
+        )
+        self.assertIn("CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS=7200", sonar)
+        self.assertIn("source Tools/ci/container-runtime-lock.sh", sonar)
+        self.assertIn("acquire_container_runtime_lock", sonar)
+        self.assertIn("trap release_container_runtime_lock EXIT", sonar)
+        self.assertIn("EXPECTED_CANONICAL_MAIN_SHA", sonar)
+        self.assertIn("canonical main moved after recovery preflight", sonar)
+        self.assertIn("was published while waiting for authority", sonar)
+        self.assertIn("moved while tag", sonar)
+        self.assertIn("RESTORE_CANONICAL_MAIN", sonar)
+        self.assertIn("../sonar-main-recovery", sonar)
+        self.assertIn("atomic canonical main restoration failed", sonar)
+        self.assertIn("canonical main moved during atomic release restoration", sonar)
+        self.assertIn("canonical_restore_failed=true", sonar)
+        self.assertIn("canonical_restore_completed=true", sonar)
+        self.assertIn("command -v gtimeout", sonar)
+        self.assertIn('"${sonar_timeout}" --kill-after=30s 1500s make sonar-scan', sonar)
+        self.assertEqual(sonar.count("run_bounded_sonar_scan"), 3)
+        self.assertIn("- name: Record successful SonarQube analysis", sonar)
+        self.assertIn("steps.sonar_scan.outcome == 'success'", sonar)
+        self.assertIn("Record canonical restoration obligation", ci)
+        self.assertIn("id: sonar_restore_obligation", ci)
+        self.assertIn("steps.sonar_tcp.outputs.available == 'true'", obligation)
+        self.assertIn("steps.sonar_api.outputs.available == 'true'", obligation)
+        self.assertIn("steps.sonar_install.outcome == 'success'", obligation)
+        self.assertIn("steps.sonar_restore_obligation.outputs.required", ci)
+        self.assertIn("CANONICAL_RESTORE_COMPLETED", ci)
+        self.assertIn("Canonical Sonar restoration did not complete; failing closed.", ci)
+        self.assertIn("CANONICAL_RESTORE_FAILED", ci)
+        self.assertIn("preserving the release validation failure", ci)
+        self.assertIn("  resolve-canonical-main:", ci)
+        self.assertNotIn("  restore-canonical-sonar:", ci)
+        self.assertIn('if [[ "${GITHUB_REF_TYPE}" != "tag" ]]', ci)
+        self.assertIn('artifact_name="sonar-main-inputs-${main_sha}"', ci)
+        self.assertIn("release Sonar scan is unsafe", ci)
+        self.assertIn("needs.resolve-canonical-main.outputs.restore == 'true'", ci)
+        self.assertIn("Checkout canonical main recovery source", ci)
+        self.assertIn("fetch-depth: 0\n          path: sonar-main-recovery", ci)
+        self.assertIn("Download retained canonical main coverage", ci)
+        self.assertIn("artifact_run_id:", ci)
+        self.assertIn("authority_ref:", ci)
+        self.assertIn("authority_ref=main", ci)
+        self.assertIn("authority_ref=%s\\n", ci)
+        self.assertIn('"${release_branch}"', ci)
+        self.assertIn("test -s sonar-main-recovery/coverage.xml", ci)
+        self.assertIn(
+            "test -s sonar-main-recovery/Tools/compose-normalizer/coverage.out",
+            ci,
+        )
+        self.assertIn("name: sonar-main-inputs-${{ github.sha }}", ci)
+        self.assertIn("container-compose/coverage.xml", ci)
+        self.assertIn("container-compose/Tools/compose-normalizer/coverage.out", ci)
+        self.assertIn("overwrite: true", ci)
+        self.assertEqual(
+            ci.count("github.ref == 'refs/heads/main' || github.ref_type == 'tag'"),
+            8,
+        )
         self.assertIn(
             'gpg_home="$(mktemp -d /private/tmp/container-compose-sonar-gpg.XXXXXX)"',
             sonar_install,
@@ -1243,6 +1346,58 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('gpgconf --homedir "$gpg_home" --launch gpg-agent', sonar_install)
         self.assertIn('gpgconf --homedir "$gpg_home" --kill gpg-agent', sonar_install)
         self.assertIn('find "$gpg_home" -depth -delete', sonar_install)
+        self.assertIn("cancel-in-progress: ${{ github.ref_type != 'tag' }}", ci)
+        self.assertIn('if [[ "${GITHUB_REF_TYPE}" == "tag" ]]', ci)
+        self.assertIn(
+            "Stable tags are immutable release candidates. Always run the full",
+            ci,
+        )
+        self.assertIn("workflow_run:", restore)
+        self.assertIn('- "*.*.*"', restore)
+        self.assertIn("Resolve restoration authority", restore)
+        self.assertIn("TRIGGER_RUN_ID", restore)
+        self.assertIn('length == 0 or all(.[]; . == "skipped")', restore)
+        self.assertNotIn('. == "success" or . == "skipped"', restore)
+        self.assertIn("timeout-minutes: 190", restore)
+        self.assertIn("actions: write", restore)
+        self.assertIn("authority_sha:", restore)
+        self.assertIn("recovery_attempt:", restore)
+        self.assertIn("Retry automatic recovery against current main", restore)
+        self.assertIn("inputs.recovery_attempt != ''", restore)
+        self.assertIn("if (( attempt >= 3 )); then", restore)
+        self.assertIn("gh workflow run sonar-main-restore.yml", restore)
+        self.assertIn("a non-current recovery source is allowed only for automatic retry", restore)
+        self.assertIn('(.files | length) < 300', restore)
+        self.assertIn('startswith("docs/upstream/")', restore)
+        self.assertIn('.status != "renamed"', restore)
+        self.assertEqual(restore.count("previous_filename"), 8)
+        self.assertIn('actions/artifacts?per_page=100', restore)
+        self.assertIn("gh api --paginate --slurp", restore)
+        self.assertIn('.path == ".github/workflows/ci.yml"', restore)
+        retry = restore[restore.index("Retry automatic recovery against current main") :]
+        self.assertNotIn("--limit 100", retry)
+        self.assertIn('-f expected_sha="${restorable_sha}"', restore)
+        self.assertIn('-f authority_sha="${main_sha}"', restore)
+        self.assertIn('-f recovery_attempt="${next_attempt}"', restore)
+        self.assertIn(
+            "run-name: Restore Canonical Sonar · "
+            "${{ inputs.expected_sha || github.event.workflow_run.head_branch }}",
+            restore,
+        )
+        self.assertIn("steps.authority.outputs.restore == 'true'", restore)
+        self.assertIn('ref: ${{ steps.authority.outputs.sha }}', restore)
+        self.assertIn('artifact_name="sonar-main-inputs-${EXPECTED_SHA}"', restore)
+        self.assertIn('gh run download "${selected_run}"', restore)
+        self.assertIn('test -s coverage.xml', restore)
+        self.assertIn('test -s Tools/compose-normalizer/coverage.out', restore)
+        self.assertIn('SONAR_BRANCH: main', restore)
+        self.assertIn("timeout-minutes: 160", restore)
+        self.assertIn("CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS=7200", restore)
+        self.assertIn("gtimeout is required to bound canonical Sonar recovery", restore)
+        self.assertIn('"${sonar_timeout}" --kill-after=30s 1500s make sonar-scan', restore)
+        self.assertEqual(restore.count('main_sha="$('), 5)
+        self.assertIn("canonical main moved before Sonar restore", restore)
+        self.assertIn("canonical main moved during Sonar restore", restore)
 
     def test_stable_package_requires_candidate_bound_release_authority(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
@@ -2244,6 +2399,24 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             "accepting its GitHub-verified unpublished source for a release retry",
             workflow,
         )
+        self.assertIn('release_branch="release-${release_series}"', workflow)
+        self.assertIn('candidate_ci_branch="${RELEASE_TAG}"', workflow)
+        self.assertIn("is neither current main nor exact %s head", workflow)
+        self.assertIn(
+            'select(.name == "Record successful SonarQube analysis")',
+            workflow,
+        )
+        self.assertIn('length == 1 and .[0] == "success"', workflow)
+        self.assertIn(
+            "authority_ref: ${{ steps.candidate.outputs.authority_ref }}",
+            workflow,
+        )
+        self.assertIn(
+            "AUTHORITY_REF: ${{ needs.resolve-candidate.outputs.authority_ref }}",
+            workflow,
+        )
+        self.assertIn("release authority %s moved after validation", workflow)
+        self.assertIn("stable tag %s moved after validation", workflow)
         self.assertIn(
             "homebrew_tap_ref: ${{ steps.candidate.outputs.homebrew_tap_ref }}",
             workflow,
@@ -2395,7 +2568,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
         ]
         self.assertIn(
-            'STABLE_RELEASE_GATE_WAIT_SECONDS="${CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS:-10800}"',
+            'STABLE_RELEASE_GATE_WAIT_SECONDS="${CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS:-24000}"',
             self.script,
         )
         self.assertIn("CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS", self.script)

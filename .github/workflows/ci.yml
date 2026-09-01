@@ -43,7 +43,9 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  # A replacement branch build can safely supersede stale work. A stable tag
+  # transaction must finish its candidate scan and canonical-main restoration.
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
   changes:
@@ -67,6 +69,14 @@ jobs:
         run: |
           set -euo pipefail
           changed_files="${RUNNER_TEMP}/changed-files.txt"
+
+          # Stable tags are immutable release candidates. Always run the full
+          # validation transaction instead of inferring their scope from a
+          # synthetic tag-push diff (whose before SHA is all zeroes).
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            printf 'heavy=true\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
@@ -210,18 +220,51 @@ jobs:
 
   validate_runtime:
     name: Validate Runtime
-    needs: changes
-    if: needs.changes.outputs.heavy == 'true'
+    needs:
+      - changes
+      - resolve-canonical-main
+    if: >
+      needs.changes.outputs.heavy == 'true' &&
+      needs.resolve-canonical-main.result == 'success'
     runs-on: [self-hosted, macOS, ARM64, container-compose-current]
-    # Cover the 45-minute validation/coverage budget, 10-minute CLI smoke,
-    # 25-minute Sonar retry budget, and dependency/setup overhead.
-    timeout-minutes: 105
+    # Cover validation/coverage, CLI smoke, up to two queued maintenance
+    # transactions, this transaction's two scans, and setup overhead.
+    timeout-minutes: 250
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: container-compose
           fetch-depth: 0
+
+      - name: Checkout canonical main recovery source
+        if: needs.resolve-canonical-main.outputs.restore == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          path: sonar-main-recovery
+          ref: ${{ needs.resolve-canonical-main.outputs.sha }}
+
+      - name: Download retained canonical main coverage
+        if: needs.resolve-canonical-main.outputs.restore == 'true'
+        env:
+          ARTIFACT_RUN_ID: ${{ needs.resolve-canonical-main.outputs.artifact_run_id }}
+          EXPECTED_CANONICAL_MAIN_SHA: ${{ needs.resolve-canonical-main.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_name="sonar-main-inputs-${EXPECTED_CANONICAL_MAIN_SHA}"
+          if [[ ! "${ARTIFACT_RUN_ID}" =~ ^[0-9]+$ ]]; then
+            printf 'canonical main artifact run is invalid: %s\n' "${ARTIFACT_RUN_ID:-missing}" >&2
+            exit 1
+          fi
+          gh run download "${ARTIFACT_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name "${artifact_name}" \
+            --dir sonar-main-recovery
+          test -s sonar-main-recovery/coverage.xml
+          test -s sonar-main-recovery/Tools/compose-normalizer/coverage.out
 
       - name: Resolve stack refs
         id: stack-refs
@@ -360,6 +403,18 @@ jobs:
         env:
           HAWKEYE_AUTO_INSTALL: "1"
 
+      - name: Retain canonical Sonar inputs
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sonar-main-inputs-${{ github.sha }}
+          path: |
+            container-compose/coverage.xml
+            container-compose/Tools/compose-normalizer/coverage.out
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 90
+
       - name: Run built CLI smoke
         if: >
           github.ref == 'refs/heads/main' ||
@@ -372,7 +427,7 @@ jobs:
           HAWKEYE_AUTO_INSTALL: "1"
 
       - name: Cache SonarQube packages
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.sonar/cache
@@ -381,7 +436,7 @@ jobs:
 
       - name: Check SonarQube TCP availability
         id: sonar_tcp
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
         env:
           SONAR_HOST: sonarcloud.io
           SONAR_PORT: "443"
@@ -395,7 +450,9 @@ jobs:
 
       - name: Check SonarQube API availability
         id: sonar_api
-        if: github.ref == 'refs/heads/main' && steps.sonar_tcp.outputs.available == 'true'
+        if: >
+          (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
+          steps.sonar_tcp.outputs.available == 'true'
         env:
           SONAR_STATUS_URL: https://sonarcloud.io/api/system/status
         run: |
@@ -414,7 +471,7 @@ jobs:
       - name: Install Sonar Scanner CLI
         id: sonar_install
         if: >
-          github.ref == 'refs/heads/main' &&
+          (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
           steps.sonar_tcp.outputs.available == 'true' &&
           steps.sonar_api.outputs.available == 'true'
         continue-on-error: true
@@ -474,33 +531,197 @@ jobs:
           fi
           printf '%s\n' "$scanner_bin" >> "$GITHUB_PATH"
 
+      - name: Record canonical restoration obligation
+        id: sonar_restore_obligation
+        if: >
+          needs.resolve-canonical-main.outputs.restore == 'true' &&
+          (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
+          steps.sonar_tcp.outputs.available == 'true' &&
+          steps.sonar_api.outputs.available == 'true' &&
+          steps.sonar_install.outcome == 'success'
+        run: printf 'required=true\n' >> "${GITHUB_OUTPUT}"
+
       - name: SonarQube scan
         id: sonar_scan
         if: >
-          github.ref == 'refs/heads/main' &&
+          (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
           steps.sonar_tcp.outputs.available == 'true' &&
           steps.sonar_api.outputs.available == 'true' &&
           steps.sonar_install.outcome == 'success'
         continue-on-error: true
-        # make sonar-scan permits three 300-second quality-gate waits plus
-        # scanner work and two 20-second retry delays.
-        timeout-minutes: 25
+        # Two predecessor maintenance transactions can each hold the authority
+        # for two 25-minute scan budgets. Leave 120 minutes for that queue and
+        # 60 minutes for this candidate/restoration pair plus overhead.
+        timeout-minutes: 180
         env:
+          EXPECTED_CANONICAL_MAIN_SHA: ${{ needs.resolve-canonical-main.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_AUTHORITY_REF: ${{ needs.resolve-canonical-main.outputs.authority_ref }}
+          RESTORE_CANONICAL_MAIN: ${{ needs.resolve-canonical-main.outputs.restore }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_QUALITYGATE_WAIT: "true"
-        run: make sonar-scan
+        run: |
+          set -euo pipefail
+          sonar_timeout="$(command -v gtimeout || true)"
+          if [[ -z "${sonar_timeout}" ]]; then
+            printf 'gtimeout is required to bound each SonarQube invocation\n' >&2
+            exit 1
+          fi
+          run_bounded_sonar_scan() {
+            "${sonar_timeout}" --kill-after=30s 1500s make sonar-scan
+          }
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            release_version="${GITHUB_REF_NAME#v}"
+            if [[ ! "${release_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              printf 'release tag is not semantic: %s\n' "${GITHUB_REF_NAME}" >&2
+              exit 2
+            fi
+            release_output=""
+            set +e
+            release_output="$(
+              gh api --silent "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" 2>&1
+            )"
+            release_status="$?"
+            set -e
+            if (( release_status == 0 )); then
+              if [[ "${RESTORE_CANONICAL_MAIN}" == "true" ]]; then
+                printf 'canonical_restore_completed=true\n' >> "${GITHUB_OUTPUT}"
+              fi
+              printf 'Skipping SonarQube scan for published release tag %s\n' "${GITHUB_REF_NAME}"
+              exit 0
+            fi
+            if [[ "${release_output}" != *"HTTP 404"* ]]; then
+              printf 'could not determine release state for tag %s:\n%s\n' "${GITHUB_REF_NAME}" "${release_output}" >&2
+              exit "${release_status}"
+            fi
+
+            release_authority_sha="$(
+              git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${RELEASE_AUTHORITY_REF}" |
+                awk '{ print $1 }' |
+                tail -n 1
+            )"
+            if [[ "${GITHUB_SHA}" != "${release_authority_sha}" ]]; then
+              printf 'release tag %s is not the exact %s head (%s, got %s)\n' \
+                "${GITHUB_REF_NAME}" "${RELEASE_AUTHORITY_REF}" "${release_authority_sha:-missing}" "${GITHUB_SHA}" >&2
+              exit 2
+            fi
+            export SONAR_BRANCH="main"
+          fi
+          export CONTAINER_RUNTIME_LOCK_FILE="/tmp/container-compose-sonar-${UID}.lock"
+          export CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS=7200
+          source Tools/ci/container-runtime-lock.sh
+          acquire_container_runtime_lock
+          trap release_container_runtime_lock EXIT
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            canonical_main_sha="$(
+              git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main |
+                awk '{ print $1 }' |
+                tail -n 1
+            )"
+            if [[ "${canonical_main_sha}" != "${EXPECTED_CANONICAL_MAIN_SHA}" ]]; then
+              printf 'canonical main moved after recovery preflight: expected %s, got %s\n' \
+                "${EXPECTED_CANONICAL_MAIN_SHA}" "${canonical_main_sha:-missing}" >&2
+              exit 75
+            fi
+            release_output=""
+            set +e
+            release_output="$(
+              gh api --silent "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" 2>&1
+            )"
+            release_status="$?"
+            set -e
+            if (( release_status == 0 )); then
+              if [[ "${RESTORE_CANONICAL_MAIN}" == "true" ]]; then
+                printf 'canonical_restore_completed=true\n' >> "${GITHUB_OUTPUT}"
+              fi
+              printf 'Skipping SonarQube scan because release %s was published while waiting for authority\n' \
+                "${GITHUB_REF_NAME}"
+              exit 0
+            fi
+            if [[ "${release_output}" != *"HTTP 404"* ]]; then
+              printf 'could not revalidate release state for tag %s:\n%s\n' \
+                "${GITHUB_REF_NAME}" "${release_output}" >&2
+              exit "${release_status}"
+            fi
+            release_authority_sha="$(
+              git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${RELEASE_AUTHORITY_REF}" |
+                awk '{ print $1 }' |
+                tail -n 1
+            )"
+            if [[ "${GITHUB_SHA}" != "${release_authority_sha}" ]]; then
+              printf 'release authority %s moved while tag %s waited (expected %s, got %s)\n' \
+                "${RELEASE_AUTHORITY_REF}" "${GITHUB_REF_NAME}" "${GITHUB_SHA}" "${release_authority_sha:-missing}" >&2
+              exit 75
+            fi
+          fi
+          candidate_status=0
+          set +e
+          run_bounded_sonar_scan
+          candidate_status="$?"
+          set -e
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${RESTORE_CANONICAL_MAIN}" == "true" ]]; then
+            restore_status=0
+            set +e
+            (
+              cd ../sonar-main-recovery
+              export SONAR_BRANCH=main
+              export SONAR_QUALITYGATE_WAIT=true
+              run_bounded_sonar_scan
+            )
+            restore_status="$?"
+            set -e
+            canonical_main_sha="$(
+              git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main |
+                awk '{ print $1 }' |
+                tail -n 1
+            )"
+            if [[ "${canonical_main_sha}" != "${EXPECTED_CANONICAL_MAIN_SHA}" ]]; then
+              printf 'canonical_restore_failed=true\n' >> "${GITHUB_OUTPUT}"
+              printf 'canonical main moved during atomic release restoration: expected %s, got %s\n' \
+                "${EXPECTED_CANONICAL_MAIN_SHA}" "${canonical_main_sha:-missing}" >&2
+              exit 75
+            fi
+            if (( restore_status != 0 )); then
+              printf 'canonical_restore_failed=true\n' >> "${GITHUB_OUTPUT}"
+              printf 'atomic canonical main restoration failed with status %s\n' "${restore_status}" >&2
+              exit "${restore_status}"
+            fi
+            printf 'canonical_restore_completed=true\n' >> "${GITHUB_OUTPUT}"
+          fi
+          exit "${candidate_status}"
         working-directory: container-compose
+
+      # `continue-on-error` normalizes the public step conclusion. This marker
+      # exists only when the scanner's raw outcome succeeded, so stable release
+      # control can require durable unmasked evidence from the jobs API.
+      - name: Record successful SonarQube analysis
+        if: >
+          (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
+          steps.sonar_scan.outcome == 'success'
+        run: printf 'SonarQube analysis completed successfully.\n'
 
       - name: Enforce SonarQube failures when the service is available
         if: >
-          github.ref == 'refs/heads/main' &&
-          (steps.sonar_tcp.outputs.available != 'true' || steps.sonar_api.outputs.available != 'true' || steps.sonar_install.outcome == 'failure' || steps.sonar_scan.outcome == 'failure')
+          (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
+          (steps.sonar_restore_obligation.outputs.required == 'true' || steps.sonar_tcp.outputs.available != 'true' || steps.sonar_api.outputs.available != 'true' || steps.sonar_install.outcome == 'failure' || steps.sonar_scan.outcome == 'failure')
         env:
+          CANONICAL_RESTORE_COMPLETED: ${{ steps.sonar_scan.outputs.canonical_restore_completed }}
+          CANONICAL_RESTORE_FAILED: ${{ steps.sonar_scan.outputs.canonical_restore_failed }}
+          CANONICAL_RESTORE_REQUIRED: ${{ steps.sonar_restore_obligation.outputs.required }}
           SONAR_TCP_AVAILABLE: ${{ steps.sonar_tcp.outputs.available }}
           SONAR_API_AVAILABLE: ${{ steps.sonar_api.outputs.available }}
           SONAR_STATUS_URL: https://sonarcloud.io/api/system/status
         run: |
           set -euo pipefail
+          if [[ "${CANONICAL_RESTORE_REQUIRED}" == "true" && "${CANONICAL_RESTORE_COMPLETED}" != "true" ]]; then
+            printf 'Canonical Sonar restoration did not complete; failing closed.\n' >&2
+            exit 1
+          fi
+          if [[ "${CANONICAL_RESTORE_FAILED}" == "true" ]]; then
+            printf 'Canonical Sonar restoration failed; preserving the release validation failure.\n' >&2
+            exit 1
+          fi
           if [[ "${SONAR_TCP_AVAILABLE}" != "true" || "${SONAR_API_AVAILABLE}" != "true" ]]; then
             printf '::warning title=SonarQube unavailable::SonarQube TCP or API preflight failed within five seconds; skipping scanner installation and analysis.\n'
             {
@@ -524,17 +745,142 @@ jobs:
             printf 'The SonarQube API was unavailable after retries, so this external quality scan did not fail CI. Local source checks, tests, and coverage gates remain required; CodeQL is enforced by release publication.\n'
           } >> "${GITHUB_STEP_SUMMARY}"
 
+  resolve-canonical-main:
+    name: Resolve Canonical Main
+    runs-on: ubuntu-24.04
+    outputs:
+      artifact_run_id: ${{ steps.main.outputs.artifact_run_id }}
+      authority_ref: ${{ steps.main.outputs.authority_ref }}
+      sha: ${{ steps.main.outputs.sha }}
+      restore: ${{ steps.main.outputs.restore }}
+    steps:
+      - name: Resolve canonical main and release state
+        id: main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            {
+              printf 'artifact_run_id=\n'
+              printf 'authority_ref=\n'
+              printf 'restore=false\n'
+              printf 'sha=\n'
+            } >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          release_output=""
+          set +e
+          release_output="$(
+            gh api --silent "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" 2>&1
+          )"
+          release_status="$?"
+          set -e
+          if (( release_status == 0 )); then
+            {
+              printf 'artifact_run_id=\n'
+              printf 'authority_ref=\n'
+              printf 'restore=false\n'
+              printf 'sha=\n'
+            } >> "${GITHUB_OUTPUT}"
+            exit 0
+          elif [[ "${release_output}" == *"HTTP 404"* ]]; then
+            :
+          else
+            printf 'could not determine release state for tag %s:\n%s\n' \
+              "${GITHUB_REF_NAME}" "${release_output}" >&2
+            exit "${release_status}"
+          fi
+
+          main_sha="$(
+            git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main |
+              awk '{ print $1 }' |
+              tail -n 1
+          )"
+          if [[ ! "${main_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'canonical main SHA is unavailable: %s\n' "${main_sha:-missing}" >&2
+            exit 1
+          fi
+          release_version="${GITHUB_REF_NAME#v}"
+          if [[ ! "${release_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf 'release tag is not semantic: %s\n' "${GITHUB_REF_NAME}" >&2
+            exit 2
+          fi
+          release_branch="release-${release_version%.*}"
+          release_branch_sha="$(
+            git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${release_branch}" |
+              awk '{ print $1 }' |
+              tail -n 1
+          )"
+          if [[ "${GITHUB_SHA}" == "${main_sha}" ]]; then
+            {
+              printf 'artifact_run_id=\n'
+              printf 'authority_ref=main\n'
+              printf 'restore=false\n'
+              printf 'sha=%s\n' "${main_sha}"
+            } >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          if [[ "${GITHUB_SHA}" != "${release_branch_sha}" ]]; then
+            printf 'release tag %s is not the exact main or %s head (main %s, maintenance %s, got %s)\n' \
+              "${GITHUB_REF_NAME}" "${release_branch}" "${main_sha}" "${release_branch_sha:-missing}" "${GITHUB_SHA}" >&2
+            exit 2
+          fi
+          artifact_name="sonar-main-inputs-${main_sha}"
+          run_ids="$(
+            gh run list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --workflow ci.yml \
+              --commit "${main_sha}" \
+              --limit 100 \
+              --json databaseId,event,status,conclusion,headBranch,createdAt \
+              --jq 'map(select(
+                .headBranch == "main" and
+                .status == "completed" and
+                .conclusion == "success" and
+                (.event == "push" or .event == "workflow_dispatch")
+              )) | sort_by(.createdAt) | reverse | .[].databaseId'
+          )"
+          retained_inputs_available=false
+          selected_run=""
+          while IFS= read -r run_id; do
+            if [[ -z "${run_id}" ]]; then
+              continue
+            fi
+            if gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.expired == false) | .name' |
+              grep -Fxq "${artifact_name}"; then
+              retained_inputs_available=true
+              selected_run="${run_id}"
+              break
+            fi
+          done <<< "${run_ids}"
+          if [[ "${retained_inputs_available}" != "true" ]]; then
+            printf 'release Sonar scan is unsafe: no retained %s artifact exists for canonical main %s\n' \
+              "${artifact_name}" "${main_sha}" >&2
+            exit 1
+          fi
+          {
+            printf 'artifact_run_id=%s\n' "${selected_run}"
+            printf 'authority_ref=%s\n' "${release_branch}"
+            printf 'restore=true\n'
+            printf 'sha=%s\n' "${main_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
   validate:
     name: Validate
     needs:
       - changes
       - source_checks
       - validate_runtime
+      - resolve-canonical-main
     if: always() && needs.changes.outputs.heavy == 'true'
     runs-on: ubuntu-24.04
     steps:
       - name: Check parallel validation jobs
         env:
+          RESOLVE_CANONICAL_MAIN_RESULT: ${{ needs.resolve-canonical-main.result }}
           SOURCE_CHECKS_RESULT: ${{ needs.source_checks.result }}
           VALIDATE_RUNTIME_RESULT: ${{ needs.validate_runtime.result }}
         run: |
@@ -547,7 +893,11 @@ jobs:
             printf 'Validate Runtime concluded %s\n' "${VALIDATE_RUNTIME_RESULT}" >&2
             exit 1
           fi
-          printf 'Source Checks and Validate Runtime passed.\n'
+          if [[ "${RESOLVE_CANONICAL_MAIN_RESULT}" != "success" && "${RESOLVE_CANONICAL_MAIN_RESULT}" != "skipped" ]]; then
+            printf 'Resolve Canonical Main concluded %s\n' "${RESOLVE_CANONICAL_MAIN_RESULT}" >&2
+            exit 1
+          fi
+          printf 'Source Checks and Validate Runtime passed, including any required atomic Sonar restoration.\n'
 
   validate-lightweight:
     # Branch protection requires one stable aggregate context for both the
