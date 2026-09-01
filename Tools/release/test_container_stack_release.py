@@ -64,6 +64,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('if stable_tag_exists "${version}"', release)
         self.assertIn('resume_stable_release "${version}"', release)
         self.assertIn('ensure_latest_stable_retry "${version}"', self.script)
+        self.assertIn('ensure_unpublished_stable_retry "${version}"', self.script)
         self.assertIn("ensure_new_stable_release \"${version}\"", release)
         self.assertLess(
             release.index('resume_stable_release "${version}"'),
@@ -2394,6 +2395,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("stable tag %s is not the latest semantic source tag", workflow)
+        self.assertIn(
+            "maintenance tag %s is not the latest semantic tag in series %s",
+            workflow,
+        )
+        self.assertIn('if [[ "${authority_ref}" == "main" ]]', workflow)
         self.assertIn("stable release %s already exists and is immutable", workflow)
         self.assertIn(
             "accepting its GitHub-verified unpublished source for a release retry",
@@ -5231,6 +5237,7 @@ esac
                 shell_setup="\n".join(
                     [
                         "ensure_latest_stable_retry() { :; }",
+                        "ensure_unpublished_stable_retry() { exit 74; }",
                         "verify_github_stable_tag_signature() { :; }",
                         "stable_release_is_published() { return 0; }",
                         "ensure_stable_release_is_unpublished() { exit 71; }",
@@ -5249,7 +5256,8 @@ esac
                 "resume_stable_release 0.6.70",
                 shell_setup="\n".join(
                     [
-                        "ensure_latest_stable_retry() { :; }",
+                        "ensure_latest_stable_retry() { exit 75; }",
+                        "ensure_unpublished_stable_retry() { :; }",
                         "verify_github_stable_tag_signature() { :; }",
                         "stable_release_is_published() { return 1; }",
                         "ensure_stable_release_is_unpublished() { :; }",
@@ -5261,10 +5269,10 @@ esac
             self.assertEqual(unpublished.returncode, 0, unpublished.stderr)
             self.assertIn("publish 0.6.70", unpublished.stdout)
 
-    def test_retry_rejects_a_stale_semantic_tag(self) -> None:
+    def test_published_retry_rejects_a_non_latest_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            shell_setup = "latest_local_semver_tag() { printf '%s\\n' 0.6.71; }"
+            shell_setup = "latest_published_stable_release() { printf '%s\\n' 0.6.71; }"
 
             latest = self.run_release_function(
                 root,
@@ -5279,7 +5287,55 @@ esac
                 shell_setup=shell_setup,
             )
             self.assertNotEqual(stale.returncode, 0)
-            self.assertIn("stable tag 0.6.70 is not the latest semantic source tag (0.6.71)", stale.stderr)
+            self.assertIn(
+                "stable tag 0.6.70 is not the latest published stable release (0.6.71)",
+                stale.stderr,
+            )
+
+    def test_unpublished_maintenance_retry_requires_latest_exact_series_head(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            matching_sha = "a" * 40
+            shell_setup = "\n".join(
+                [
+                    "latest_local_semver_tag() { printf '%s\\n' 0.14.0; }",
+                    "latest_local_semver_tag_for_series() { printf '%s\\n' \"${TEST_SERIES_LATEST:-0.13.1}\"; }",
+                    "repo_path() { printf '%s\\n' /tmp/container-compose-test; }",
+                    "push_remote() { printf '%s\\n' origin; }",
+                    "git() {",
+                    "  if [[ \"$*\" == *'rev-list -n 1 refs/tags/0.13.1'* ]]; then",
+                    f"    printf '%s\\n' {matching_sha}",
+                    "  elif [[ \"$*\" == *'ls-remote --heads origin refs/heads/release-0.13'* ]]; then",
+                    f"    printf '%s\\t%s\\n' \"${{TEST_RELEASE_HEAD:-{matching_sha}}}\" refs/heads/release-0.13",
+                    "  else",
+                    "    command git \"$@\"",
+                    "  fi",
+                    "}",
+                ]
+            )
+
+            accepted = self.run_release_function(
+                root,
+                "ensure_unpublished_stable_retry 0.13.1",
+                shell_setup=shell_setup,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+            stale = self.run_release_function(
+                root,
+                "ensure_unpublished_stable_retry 0.13.1",
+                shell_setup=f"export TEST_SERIES_LATEST=0.13.2\n{shell_setup}",
+            )
+            self.assertNotEqual(stale.returncode, 0)
+            self.assertIn("not the latest semantic tag in series 0.13", stale.stderr)
+
+            moved = self.run_release_function(
+                root,
+                "ensure_unpublished_stable_retry 0.13.1",
+                shell_setup=f"export TEST_RELEASE_HEAD={'b' * 40}\n{shell_setup}",
+            )
+            self.assertNotEqual(moved.returncode, 0)
+            self.assertIn("is not the exact release-0.13 head", moved.stderr)
 
     def create_promotion_review_fixture(
         self,

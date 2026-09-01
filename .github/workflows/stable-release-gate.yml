@@ -91,19 +91,6 @@ jobs:
             exit 1
           fi
 
-          latest_stable_tag="$(
-            git ls-remote --tags --refs "${remote}" \
-              | awk '{ sub("^refs/tags/", "", $2); print $2 }' \
-              | awk '/^[0-9]+[.][0-9]+[.][0-9]+$/' \
-              | sort -V \
-              | tail -n 1
-          )"
-          if [[ "${latest_stable_tag}" != "${RELEASE_TAG}" ]]; then
-            printf 'stable tag %s is not the latest semantic source tag (%s)\n' \
-              "${RELEASE_TAG}" "${latest_stable_tag:-missing}" >&2
-            exit 1
-          fi
-
           release_output=""
           set +e
           release_output="$(
@@ -146,6 +133,31 @@ jobs:
             printf 'stable tag %s is neither current main nor exact %s head\n' \
               "${RELEASE_TAG}" "${release_branch}" >&2
             exit 1
+          fi
+
+          semantic_tags="$(
+            git ls-remote --tags --refs "${remote}" \
+              | awk '{ sub("^refs/tags/", "", $2); print $2 }' \
+              | awk '/^[0-9]+[.][0-9]+[.][0-9]+$/'
+          )"
+          latest_stable_tag="$(sort -V <<<"${semantic_tags}" | tail -n 1)"
+          if [[ "${authority_ref}" == "main" ]]; then
+            if [[ "${latest_stable_tag}" != "${RELEASE_TAG}" ]]; then
+              printf 'stable tag %s is not the latest semantic source tag (%s)\n' \
+                "${RELEASE_TAG}" "${latest_stable_tag:-missing}" >&2
+              exit 1
+            fi
+          else
+            latest_series_tag="$(
+              awk -v prefix="${release_series}." 'index($0, prefix) == 1' <<<"${semantic_tags}" |
+                sort -V |
+                tail -n 1
+            )"
+            if [[ "${latest_series_tag}" != "${RELEASE_TAG}" ]]; then
+              printf 'maintenance tag %s is not the latest semantic tag in series %s (%s)\n' \
+                "${RELEASE_TAG}" "${release_series}" "${latest_series_tag:-missing}" >&2
+              exit 1
+            fi
           fi
 
           homebrew_tap_ref="$(

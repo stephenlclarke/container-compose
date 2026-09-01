@@ -2219,6 +2219,19 @@ print(versions[-1] if versions else "")
 '
 }
 
+# Return the latest local semantic tag in one MAJOR.MINOR maintenance series.
+latest_local_semver_tag_for_series() {
+  local repo="$1" series="$2"
+  git -C "$(repo_path "${repo}")" tag --list "${series}.*" \
+    | python3 -c 'import re, sys
+series = sys.argv[1]
+pattern = re.compile(rf"{re.escape(series)}[.][0-9]+")
+versions = [line.strip() for line in sys.stdin if pattern.fullmatch(line.strip())]
+versions.sort(key=lambda version: tuple(int(part) for part in version.split(".")))
+print(versions[-1] if versions else "")
+' "${series}"
+}
+
 # Decide whether a repository changed since its latest local semver tag.
 repo_changed_since_latest_tag() {
   local repo="$1" latest main_commit tag_commit path
@@ -2264,13 +2277,54 @@ stable_tag_exists() {
   git -C "${path}" ls-remote --exit-code --tags "${remote}" "refs/tags/${version}" >/dev/null 2>&1
 }
 
-# Reject a stale unpublished tag so a retry cannot replace a newer stable lane.
+# Return the release GitHub currently presents as latest. Stable publication
+# uses --latest, so this is the tap-repair authority after assets exist.
+latest_published_stable_release() {
+  github_cli api "repos/$(github_repo "${COMPOSE_REPO}")/releases/latest" --jq '.tag_name'
+}
+
+# Reject a stale published tag so formula-only recovery cannot downgrade the
+# tap after a newer stable release has become GitHub's latest release.
 ensure_latest_stable_retry() {
   local version="$1" latest
-  latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
+  latest="$(latest_published_stable_release)"
   if [[ "${version}" != "${latest}" ]]; then
-    printf 'stable tag %s is not the latest semantic source tag (%s)\n' \
+    printf 'stable tag %s is not the latest published stable release (%s)\n' \
       "${version}" "${latest:-missing}" >&2
+    exit 1
+  fi
+}
+
+# Permit an unpublished maintenance retry only when its signed tag is the
+# newest patch in that series and still names the exact release-line head.
+# Published formula repairs remain restricted to the global latest tag by
+# ensure_latest_stable_retry so an older line can never downgrade the tap.
+ensure_unpublished_stable_retry() {
+  local version="$1" latest series latest_series path remote tag_sha release_branch_sha
+  latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
+  if [[ "${version}" == "${latest}" ]]; then
+    return 0
+  fi
+
+  series="${version%.*}"
+  latest_series="$(latest_local_semver_tag_for_series "${COMPOSE_REPO}" "${series}")"
+  if [[ "${version}" != "${latest_series}" ]]; then
+    printf 'maintenance tag %s is not the latest semantic tag in series %s (%s)\n' \
+      "${version}" "${series}" "${latest_series:-missing}" >&2
+    exit 1
+  fi
+
+  path="$(repo_path "${COMPOSE_REPO}")"
+  remote="$(push_remote "${COMPOSE_REPO}")"
+  tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
+  release_branch_sha="$(
+    git -C "${path}" ls-remote --heads "${remote}" "refs/heads/release-${series}" |
+      awk '{ print $1 }' |
+      tail -n 1
+  )"
+  if [[ -z "${release_branch_sha}" ]] || [[ "${tag_sha}" != "${release_branch_sha}" ]]; then
+    printf 'maintenance tag %s is not the exact release-%s head (%s, got %s)\n' \
+      "${version}" "${series}" "${release_branch_sha:-missing}" "${tag_sha:-missing}" >&2
     exit 1
   fi
 }
@@ -3934,14 +3988,15 @@ tag_stable_version() {
 resume_stable_release() {
   local version="$1"
   print_header "resume stable release ${version}"
-  ensure_latest_stable_retry "${version}"
   verify_github_stable_tag_signature "${version}"
   if stable_release_is_published "${version}"; then
+    ensure_latest_stable_retry "${version}"
     dispatch_compose_stable_tap_repair "${version}"
     print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
     return 0
   fi
   ensure_stable_release_is_unpublished "${version}"
+  ensure_unpublished_stable_retry "${version}"
   publish_stable_release "${version}"
 }
 
