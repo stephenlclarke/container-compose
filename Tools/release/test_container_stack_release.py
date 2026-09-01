@@ -668,6 +668,15 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('release_label="maintenance backfill"', lane)
         self.assertIn('release_latest="${promote_default_lane}"', lane)
         self.assertIn('update_tap="${promote_default_lane}"', lane)
+        retention = workflow[
+            workflow.index("- name: Retain only current release assets") : workflow.index(
+                "  repair-stable-tap:"
+            )
+        ]
+        self.assertIn("steps.lane.outputs.update_tap == 'true'", retention)
+        self.assertIn(
+            "needs.resolve-publish-context.outputs.ref_type == 'branch'", retention
+        )
         self.assertIn('tap_sha_after="$(homebrew_tap_main_sha)"', verifier)
         self.assertIn("maintenance backfill moved Homebrew tap main", verifier)
         self.assertLess(

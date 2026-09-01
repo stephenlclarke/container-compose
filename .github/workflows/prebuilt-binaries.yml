@@ -1424,7 +1424,10 @@ jobs:
             ../release-tools/Tools/release/publish-github-release.sh
 
       - name: Retain only current release assets
-        if: steps.current-freshness.outputs.publish == 'true'
+        if: >
+          steps.current-freshness.outputs.publish == 'true' &&
+          (needs.resolve-publish-context.outputs.ref_type == 'branch' ||
+           steps.lane.outputs.update_tap == 'true')
         env:
           GH_TOKEN: ${{ github.token }}
           PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
