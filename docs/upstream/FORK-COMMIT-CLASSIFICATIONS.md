@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `b8ffd38c734448af49cab87c537075f0a803222b` | `3d7ae8612b483dda5f814951ff6aab88e4da5290` | 0 | 746 | 632 |
-| `containerization` | `a6328c45de9f302d76620771c480ac1d7f9d62ba` | `ddcfe35457c4af7b18452c3de1ea64bd171fc5f2` | 0 | 276 | 223 |
+| `container` | `b8ffd38c734448af49cab87c537075f0a803222b` | `69b21f14d725a920b0dd5ff379eb8075ecee6deb` | 0 | 749 | 634 |
+| `containerization` | `a6328c45de9f302d76620771c480ac1d7f9d62ba` | `7d325176c08d45ca88be2761726bb2e07ed9dc94` | 0 | 279 | 225 |
 | `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `4aff0ea2e7ff293544a4efac28b508da53aac3d6` | 0 | 48 | 40 |
-| **Total** | | | **0** | **1070** | **895** |
+| **Total** | | | **0** | **1076** | **899** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,7 +32,7 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 640 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `support-maintenance` | 642 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
 | `generic-runtime-primitive` | 230 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
@@ -243,7 +243,7 @@ refresh.
 
 The 2 September 2026 maintenance refresh advances Apple Container through
 `b8ffd38c7344`, Container through `3d7ae8612b48`, Apple Containerization
-through `a6328c45de9f`, Containerization through `ddcfe35457c4`, and the
+through `a6328c45de9f`, Containerization through `7d325176c08d`, and the
 builder shim through `4aff0ea2e7ff`. Known-immediate prewarm avoidance is a
 generic runtime optimization. Interrupted prepared cleanup, short-lived exit
 preservation, managed clean routing, synchronized dependency pins, workflow
