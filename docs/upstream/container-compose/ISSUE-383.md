@@ -27,4 +27,3 @@ published-artifact comparison is complete, every previously regressed case is
 reported, and applicable Apple-shaped handoffs carry the isolated evidence.
 CodeQL and documentation publication are release gates rather than development
 loop work.
-
