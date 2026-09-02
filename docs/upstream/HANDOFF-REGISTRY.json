@@ -7555,12 +7555,14 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/431"
     },
     {
-      "id": "container-compose-up-menu-retention-parity",
+      "id": "container-compose-433",
       "owner": "stephenlclarke/container-compose",
       "title": "Align up-menu parity with retained exit-control containers",
       "state": "active-draft",
       "lastVerified": "2026-09-02",
-      "commits": [],
+      "commits": [
+        "a35631764d5fd03d10619d1b43dd137d9f358866"
+      ],
       "documents": [
         {
           "kind": "issue",
@@ -7568,9 +7570,10 @@
         },
         {
           "kind": "pull-request",
-          "path": "docs/upstream/container-compose/PR-up-menu-retention-parity.md"
+          "path": "docs/upstream/container-compose/PR-433.md"
         }
-      ]
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/433"
     },
     {
       "id": "container-compose-333",
