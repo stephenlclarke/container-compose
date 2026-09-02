@@ -180,9 +180,10 @@ Environment:
       devcontainer and gh on PATH plus /usr/bin/curl.
 
   CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE
-      Absolute path to the retained OCI init-image archive used by the local
-      release gate. Execute mode requires this hermetic bootstrap input so
-      runtime startup cannot fall back to a mutable registry or host login.
+      Optional absolute path to a retained OCI init-image archive. When unset,
+      the stable controller downloads the attested, source-matched archive from
+      the exact Current release. Runtime startup never falls back to a mutable
+      registry or host login.
 
   CONTAINER_STACK_RELEASE_ROOT
       Override the parent directory containing the four source checkouts and
@@ -270,6 +271,9 @@ SECURITY_REASON="${CONTAINER_STACK_SECURITY_REASON:-}"
 MAINTENANCE_REASON="${CONTAINER_STACK_MAINTENANCE_REASON:-}"
 MILESTONE_SOAK_OVERRIDE_REASON="${CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON:-}"
 RECOVERED_UNPUBLISHED_RELEASE_BASE=""
+CURRENT_INIT_IMAGE_AUTHORITY_ROOT=""
+CURRENT_INIT_IMAGE_AUTHORITY_RELEASED=0
+RELEASE_INIT_AUTHORITY_CACHE_ROOT="${CONTAINER_STACK_RELEASE_INIT_AUTHORITY_CACHE_ROOT:-$({ getconf DARWIN_USER_CACHE_DIR 2>/dev/null || printf '/private/tmp/'; })container-compose-release-authorities}"
 readonly STABLE_CURRENT_SOAK_SECONDS=604800
 HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"
 REPOS=(
@@ -441,6 +445,190 @@ PY
   elif [[ "${RELEASE_INTENT}" == "milestone" ]]; then
     printf 'milestone Current soak override accepted: %s\n' "${MILESTONE_SOAK_OVERRIDE_REASON}"
   fi
+}
+
+# A stable candidate must be the exact stack already published as Current.
+# Refuse a sibling-main advance before the release helper mutates dependency
+# pins or creates commits; the normal main/Current lane must integrate it first.
+require_current_stack_matches_sibling_mains() {
+  local path current_commit component published_ref local_ref
+  path="$(repo_path "${COMPOSE_REPO}")"
+  current_commit="$(git -C "${path}" rev-parse 'refs/tags/current^{}')"
+  for component in container-builder-shim containerization container; do
+    published_ref="$(git -C "${path}" show \
+      "${current_commit}:Tools/release/stack-refs.json" | python3 -c \
+      'import json, sys; print(json.load(sys.stdin)["components"][sys.argv[1]]["ref"])' \
+      "${component}")"
+    local_ref="$(git -C "$(repo_path "${component}")" rev-parse main)"
+    if [[ "${published_ref}" != "${local_ref}" ]]; then
+      printf 'Current stack uses %s %s, but sibling main is %s; integrate and publish exact Current before stable release\n' \
+        "${component}" "${published_ref:-missing}" "${local_ref}" >&2
+      return 1
+    fi
+  done
+}
+
+# Remove only the marker-protected authority after stable publication succeeds.
+# A failed or interrupted release intentionally retains the content-addressed
+# input so an unpublished tag can resume even after mutable Current advances.
+cleanup_current_init_image_authority() {
+  local root="${CURRENT_INIT_IMAGE_AUTHORITY_ROOT:-}" parent expected_parent
+  if [[ -z "${root}" || "${CURRENT_INIT_IMAGE_AUTHORITY_RELEASED}" != "1" ]]; then
+    return 0
+  fi
+  parent="$(cd "$(dirname "${root}")" && pwd -P)"
+  expected_parent="$(cd "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}" && pwd -P)"
+  if [[
+    "${parent}" != "${expected_parent}"
+    || ! "$(basename "${root}")" =~ ^[0-9a-f]{40}$
+    || ! -d "${root}"
+    || -L "${root}"
+    || ! -f "${root}/.container-compose-init-authority"
+    || -L "${root}/.container-compose-init-authority"
+    || "$(sed -n '1p' "${root}/.container-compose-init-authority")" != "schema=1"
+  ]]; then
+    printf 'refusing to clean unsafe Current VM-init authority root: %s\n' \
+      "${root}" >&2
+    return 1
+  fi
+  find "${root}" -depth -delete
+  CURRENT_INIT_IMAGE_AUTHORITY_ROOT=""
+}
+
+# Resolve the exact Current guest authority before any release preparation or
+# expensive validation. A caller-supplied archive remains supported for
+# offline/recovery use, but it must carry both exact required references. The
+# normal path downloads a checksum-paired, attested asset whose name and
+# Current tag are bound to the validated source.
+prepare_stable_init_image_authority() {
+  local path repo current_commit remote_current_before remote_current_after
+  local source_ref="${1:-}" containerization_reference archive asset root
+  local cache_root cache_asset cache_sidecar stage downloaded_asset digest
+  path="$(repo_path "${COMPOSE_REPO}")"
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  if [[ -n "${source_ref}" ]]; then
+    containerization_reference="$(git -C "${path}" show \
+      "${source_ref}:Tools/release/stack-refs.json" | python3 -c \
+      'import json, sys; print(json.load(sys.stdin)["components"]["containerization"]["ref"])')"
+  else
+    containerization_reference="$(python3 - "${path}/Tools/release/stack-refs.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(manifest["components"]["containerization"]["ref"])
+PY
+)"
+  fi
+  if [[ ! "${containerization_reference}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'stable VM-init authority requires an exact Containerization ref: %s\n' \
+      "${containerization_reference:-missing}" >&2
+    return 2
+  fi
+
+  archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
+  if [[ -n "${archive}" ]]; then
+    if [[ "${archive}" != /* || ! -f "${archive}" || -L "${archive}" ]]; then
+      printf 'explicit stable VM-init archive must be an absolute, regular file: %s\n' \
+        "${archive}" >&2
+      return 2
+    fi
+    archive="$(cd "$(dirname "${archive}")" && pwd -P)/$(basename "${archive}")"
+  elif [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would download and attest the exact Current VM-init authority\n'
+    return 0
+  else
+    need_command gh
+    mkdir -p "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}"
+    chmod 700 "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}"
+    cache_root="${RELEASE_INIT_AUTHORITY_CACHE_ROOT}/${containerization_reference}"
+    cache_asset="container-vminit-${containerization_reference}-arm64.oci.tar"
+    cache_sidecar="${cache_asset}.sha256"
+    if [[ -e "${cache_root}" ]]; then
+      if [[
+        ! -d "${cache_root}"
+        || -L "${cache_root}"
+        || ! -f "${cache_root}/.container-compose-init-authority"
+        || -L "${cache_root}/.container-compose-init-authority"
+        || ! -f "${cache_root}/${cache_asset}"
+        || -L "${cache_root}/${cache_asset}"
+        || ! -f "${cache_root}/${cache_sidecar}"
+        || -L "${cache_root}/${cache_sidecar}"
+        || "$(sed -n '1p' "${cache_root}/.container-compose-init-authority")" != "schema=1"
+        || "$(sed -n '2p' "${cache_root}/.container-compose-init-authority")" != "containerization=${containerization_reference}"
+        || ! "$(sed -n '3p' "${cache_root}/.container-compose-init-authority")" =~ ^current=[0-9a-f]{40}$
+        || "$(sed -n '4p' "${cache_root}/.container-compose-init-authority")" != "sha256=$(awk '{print $1}' "${cache_root}/${cache_sidecar}")"
+      ]]; then
+        printf 'retained VM-init authority cache is incomplete or malformed; preserving evidence: %s\n' \
+          "${cache_root}" >&2
+        return 1
+      fi
+      (
+        cd "${cache_root}"
+        shasum -a 256 -c "${cache_sidecar}"
+      )
+      github_cli attestation verify "${cache_root}/${cache_asset}" --repo "${repo}"
+    else
+      if find "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}" -mindepth 1 -maxdepth 1 \
+        -type d -name ".${containerization_reference}.*" -print -quit \
+        | grep -q .; then
+        printf 'an incomplete VM-init authority attempt is retained for diagnosis; resolve it before retrying: %s/.%s.*\n' \
+          "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}" "${containerization_reference}" >&2
+        return 1
+      fi
+      current_commit="$(git -C "${path}" rev-parse 'refs/tags/current^{}')"
+      remote_current_before="$(git -C "${path}" ls-remote --tags origin \
+        'refs/tags/current' 'refs/tags/current^{}' | awk '{print $1}' | tail -n 1)"
+      if [[ "${remote_current_before}" != "${current_commit}" ]]; then
+        printf 'remote Current moved before VM-init authority download: local %s, remote %s\n' \
+          "${current_commit}" "${remote_current_before:-missing}" >&2
+        return 1
+      fi
+      asset="container-vminit-current-${current_commit:0:12}-arm64.oci.tar"
+      stage="$(mktemp -d \
+        "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}/.${containerization_reference}.XXXXXX")"
+      github_cli release download current \
+        --repo "${repo}" \
+        --dir "${stage}" \
+        --pattern "${asset}" \
+        --pattern "${asset}.sha256"
+      (
+        cd "${stage}"
+        shasum -a 256 -c "${asset}.sha256"
+      )
+      github_cli attestation verify "${stage}/${asset}" --repo "${repo}"
+      remote_current_after="$(git -C "${path}" ls-remote --tags origin \
+        'refs/tags/current' 'refs/tags/current^{}' | awk '{print $1}' | tail -n 1)"
+      if [[ "${remote_current_after}" != "${current_commit}" ]]; then
+        printf 'remote Current moved during VM-init authority download: expected %s, got %s\n' \
+          "${current_commit}" "${remote_current_after:-missing}" >&2
+        return 1
+      fi
+      downloaded_asset="${stage}/${asset}"
+      mv "${downloaded_asset}" "${stage}/${cache_asset}"
+      rm "${stage}/${asset}.sha256"
+      python3 "${path}/Tools/release/write-sha256-sidecar.py" \
+        "${stage}/${cache_asset}"
+      digest="$(awk '{print $1}' "${stage}/${cache_sidecar}")"
+      printf 'schema=1\ncontainerization=%s\ncurrent=%s\nsha256=%s\n' \
+        "${containerization_reference}" "${current_commit}" "${digest}" \
+        > "${stage}/.container-compose-init-authority"
+      chmod a-w "${stage}/${cache_asset}" "${stage}/${cache_sidecar}" \
+        "${stage}/.container-compose-init-authority"
+      mv "${stage}" "${cache_root}"
+    fi
+    root="${cache_root}"
+    CURRENT_INIT_IMAGE_AUTHORITY_ROOT="${root}"
+    archive="${root}/${cache_asset}"
+  fi
+
+  "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${archive}" \
+    vminit:container-compose \
+    "ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
+  CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="${archive}"
+  export CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE
+  printf 'stable VM-init authority verified: %s\n' "${archive}"
 }
 
 # Retain a helper-created candidate after a local release gate fails before
@@ -4891,6 +5079,7 @@ resume_stable_release() {
   fi
   ensure_stable_release_is_unpublished "${version}"
   ensure_stable_retry_source_authority "${version}"
+  prepare_stable_init_image_authority "${version}"
   publish_stable_release "${version}"
 }
 
@@ -4921,6 +5110,7 @@ release_current_stack() {
   ensure_release_intent
   recover_unpublished_release_candidate "${version}"
   ensure_current_build_release_readiness
+  require_current_stack_matches_sibling_mains
   require_release_upstream_alignment
   path="$(repo_path "${COMPOSE_REPO}")"
 
@@ -4942,6 +5132,7 @@ release_current_stack() {
   sync_containerization_package_pins
   sync_container_package_pin
   write_release_stack_manifest
+  prepare_stable_init_image_authority
 
   if [[ "${EXECUTE}" == "1" ]]; then
     git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json
@@ -5044,9 +5235,11 @@ main() {
       plan
       ;;
     release)
+      trap cleanup_current_init_image_authority EXIT
       ensure_compose_promotion_mode
       prepare_all_main
       release_current_stack
+      CURRENT_INIT_IMAGE_AUTHORITY_RELEASED=1
       ;;
   esac
 }

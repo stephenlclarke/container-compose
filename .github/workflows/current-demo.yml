@@ -135,6 +135,7 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, container-compose-release, container-compose-current]
     timeout-minutes: 50
     permissions:
+      attestations: read
       contents: write
     steps:
       - name: Checkout exact Current source
@@ -176,6 +177,7 @@ jobs:
           short_sha="${PUBLISH_SHA:0:12}"
           plugin_asset="container-compose-plugin-current-${short_sha}-arm64.tar.gz"
           runtime_asset="container-current-${short_sha}-arm64.tar.gz"
+          init_asset="container-vminit-current-${short_sha}-arm64.oci.tar"
           download_root="${RUNNER_TEMP}/container-compose-current-demo-downloads"
           rm -rf -- "${download_root}"
           mkdir -p "${download_root}"
@@ -185,24 +187,30 @@ jobs:
             --pattern "${plugin_asset}" \
             --pattern "${plugin_asset}.sha256" \
             --pattern "${runtime_asset}" \
-            --pattern "${runtime_asset}.sha256"
+            --pattern "${runtime_asset}.sha256" \
+            --pattern "${init_asset}" \
+            --pattern "${init_asset}.sha256"
           (
             cd "${download_root}"
             shasum -a 256 -c "${plugin_asset}.sha256"
             shasum -a 256 -c "${runtime_asset}.sha256"
+            shasum -a 256 -c "${init_asset}.sha256"
           )
           Tools/release/verify-developer-id-archive.sh "${download_root}/${plugin_asset}"
           Tools/release/verify-developer-id-archive.sh "${download_root}/${runtime_asset}"
+          gh attestation verify "${download_root}/${init_asset}" \
+            --repo "${GITHUB_REPOSITORY}"
           {
             printf 'PLUGIN_ARCHIVE=%s\n' "${download_root}/${plugin_asset}"
             printf 'RUNTIME_ARCHIVE=%s\n' "${download_root}/${runtime_asset}"
+            printf 'DEMO_INIT_IMAGE_ARCHIVE=%s\n' "${download_root}/${init_asset}"
+            printf 'DEMO_INIT_IMAGE_ARCHIVE_SHA256=%s\n' \
+              "$(awk '{print $1}' "${download_root}/${init_asset}.sha256")"
           } >> "${GITHUB_ENV}"
 
       - name: Validate Current demo init-image authority
         env:
           CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
-          DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
-          DEMO_INIT_IMAGE_ARCHIVE_SHA256: fe3354c60bf0f1eb509bcee36956fda2ce14bf5d40aa001003567067b55ac82f
         shell: bash
         run: |
           set -euo pipefail
@@ -235,8 +243,6 @@ jobs:
       - name: Record bounded Current demo
         env:
           DEMO_ASSET: container-compose-demo-current.gif
-          DEMO_INIT_IMAGE_ARCHIVE: ${{ vars.CURRENT_DEMO_INIT_IMAGE_ARCHIVE }}
-          DEMO_INIT_IMAGE_ARCHIVE_SHA256: fe3354c60bf0f1eb509bcee36956fda2ce14bf5d40aa001003567067b55ac82f
         shell: bash
         run: |
           set -euo pipefail
