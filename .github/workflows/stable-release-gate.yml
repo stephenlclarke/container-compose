@@ -279,7 +279,10 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, container-compose-release]
     timeout-minutes: 120
     env:
-      RELEASE_PIPELINE_STATE_ROOT: /Volumes/SSD/github/.container-compose-release-pipeline
+      # Keep recoverable state on the runner's persistent internal tool cache.
+      # A service-launched job can block indefinitely when mkdir crosses the
+      # removable-volume privacy boundary before the pipeline even starts.
+      RELEASE_PIPELINE_STATE_ROOT: ${{ github.workspace }}/.container-compose-release-pipeline
     steps:
       - name: Checkout the stable candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

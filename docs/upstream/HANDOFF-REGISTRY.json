@@ -7336,6 +7336,25 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/406"
     },
     {
+      "id": "container-compose-413",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Keep release state on internal storage",
+      "state": "active-draft",
+      "lastVerified": "2026-09-02",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-412.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-413.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/413"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",
