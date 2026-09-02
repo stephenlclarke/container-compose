@@ -11,14 +11,14 @@ guidance remains in [INSTALL.md](../guides/INSTALL.md).
 
 ## Current Stable Release
 
-[`0.14.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.0)
-was published for macOS arm64 on 31 August 2026.
+[`0.14.1`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.1)
+was published for macOS arm64 on 2 September 2026.
 
 The immutable release manifest selects:
 
-- Container `f87481688f25bbc9d311ae09c4fcf33f121ba9ae`.
-- Containerization `e5a92e86bf03eb2cc244b3b47b0413b3935abfe4`.
-- Container builder shim `db3e99cc3d19b9a328eb51be3a023a178f80ee81`.
+- Container `3d7ae8612b483dda5f814951ff6aab88e4da5290`.
+- Containerization `ddcfe35457c4af7b18452c3de1ea64bd171fc5f2`.
+- Container builder shim `4aff0ea2e7ff293544a4efac28b508da53aac3d6`.
 - Builder image digest
   `sha256:d81d12e1dca1133ede535483a809803e6b256555a73d17f207003279539454a4`.
 - SwiftNIO SSL `09c5c9adcdd2a459187e45fe0143eb01063f244a`.
@@ -36,6 +36,11 @@ long option, and 0 unsupported long options.
 The six partial commands are `attach`, `events`, `exec`, `logs`, `run`, and
 `up`. These commands already provide substantial working behavior. Their orange
 markers identify deeper runtime or release-proof boundaries described below.
+
+Foreground `up` exit control stops rather than deletes project containers.
+After `--abort-on-container-exit`, `--abort-on-container-failure`, or
+`--exit-code-from` completes, stopped containers and their durable log histories
+remain available for inspection, logging, restart, or an explicit later `down`.
 
 The only partial long option is `exec --privileged`. It grants Linux
 capabilities, but the runtime does not yet provide Docker-complete privileged
@@ -361,7 +366,7 @@ Normal repository validation uses `make ci`, targeted tests while iterating,
 the complete Docker Compose parity target when Compose or runtime behavior
 changes, and `make release-gate` before stable publication.
 
-The 0.14.0 immutable package passed the hosted Stable Release Gate, including
+The 0.14.1 immutable package passed the hosted Stable Release Gate, including
 the supported parity suite. Its exact release commit also completed CI,
 Quality, CodeQL, Documentation, and Prebuilt Binaries successfully.
 

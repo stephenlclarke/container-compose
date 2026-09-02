@@ -29,15 +29,21 @@ images and publish Compose YAML, env-file layers, and optional image digest
 override layers or application image indexes as OCI project artifacts. Swift owns
 orchestration and maps supported Compose behavior to the matched runtime stack.
 
-## 0.14.0 Stable
+## 0.14.1 Stable
 
-[`0.14.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.0)
-is the current stable macOS arm64 release, published on 31 August 2026. It ships
+[`0.14.1`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.1)
+is the current stable macOS arm64 release, published on 2 September 2026. It ships
 the plugin with an immutable matched Container stack and passed the hosted
 Stable Release Gate, including the supported Docker Compose parity suite.
 
-This release adds explicit isolation and a faster, more memory-responsive
-runtime:
+The 0.14.1 maintenance release retains stopped containers and their log
+histories after foreground `up --abort-on-container-exit`,
+`--abort-on-container-failure`, and `--exit-code-from` completion. Its matched
+runtime also recovers interrupted prepared cleanup, preserves short-lived VM
+exits, and keeps known-immediate starts off the speculative prewarm path.
+
+The 0.14 release line adds explicit isolation and a faster, more
+memory-responsive runtime:
 
 - `container run --isolation dedicated-vm` retains the private-VM default,
   while explicit `shared-vm` runs eligible host, none, or built-in bridge
@@ -63,14 +69,15 @@ XPC setup without allowing session teardown to interrupt unrelated work.
 
 ### Optimization pull-request provenance
 
-The 0.14.0 runtime and benchmark claims are backed by these merged support-fork
+The 0.14 release-line runtime and benchmark claims are backed by these merged support-fork
 pull requests:
 
 - the initial matched optimization stack: [Containerization #37](https://github.com/stephenlclarke/containerization/pull/37), [builder-shim #12](https://github.com/stephenlclarke/container-builder-shim/pull/12), and [Container #142](https://github.com/stephenlclarke/container/pull/142);
 - concurrent and bounded dedicated-VM bootstrap: [Container #143](https://github.com/stephenlclarke/container/pull/143) and [Container #145](https://github.com/stephenlclarke/container/pull/145);
 - dedicated prewarming and live memory control: [Containerization #41](https://github.com/stephenlclarke/containerization/pull/41), [Container #150](https://github.com/stephenlclarke/container/pull/150), [Container #154](https://github.com/stephenlclarke/container/pull/154), and [Container #158](https://github.com/stephenlclarke/container/pull/158);
 - shared-VM execution and bounded workload starts: [Containerization #42](https://github.com/stephenlclarke/containerization/pull/42), [Containerization #46](https://github.com/stephenlclarke/containerization/pull/46), [Container #146](https://github.com/stephenlclarke/container/pull/146), [Container #159](https://github.com/stephenlclarke/container/pull/159), and [Container #165](https://github.com/stephenlclarke/container/pull/165); and
-- Compose integration, client reuse, isolation projection, the isolation performance matrix, and invocation-scoped launch context reuse: [container-compose #325](https://github.com/stephenlclarke/container-compose/pull/325), [#327](https://github.com/stephenlclarke/container-compose/pull/327), [#330](https://github.com/stephenlclarke/container-compose/pull/330), [#331](https://github.com/stephenlclarke/container-compose/pull/331), and [#342](https://github.com/stephenlclarke/container-compose/pull/342), backed by [Container #177](https://github.com/stephenlclarke/container/pull/177).
+- Compose integration, client reuse, isolation projection, the isolation performance matrix, and invocation-scoped launch context reuse: [container-compose #325](https://github.com/stephenlclarke/container-compose/pull/325), [#327](https://github.com/stephenlclarke/container-compose/pull/327), [#330](https://github.com/stephenlclarke/container-compose/pull/330), [#331](https://github.com/stephenlclarke/container-compose/pull/331), and [#342](https://github.com/stephenlclarke/container-compose/pull/342), backed by [Container #177](https://github.com/stephenlclarke/container/pull/177); and
+- 0.14.1 runtime recovery and immediate-start corrections: [Container #187](https://github.com/stephenlclarke/container/pull/187), [#188](https://github.com/stephenlclarke/container/pull/188), and [#190](https://github.com/stephenlclarke/container/pull/190).
 
 As of 28 August 2026, **none of the benchmarked Container, Containerization,
 builder-shim, or Compose optimization commits has a live pull request in an
@@ -96,7 +103,7 @@ The supported release line includes:
   redaction, cancellation, and bounded-resource controls.
 
 The complete release notes and immutable dependency revisions are on the
-[0.14.0 release page](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.0).
+[0.14.1 release page](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.1).
 [STATUS.md](docs/project/STATUS.md) describes the functionality and explicit limitations
 in this stable baseline. Planned compatibility work is kept separately in
 [BACKLOG.md](docs/project/BACKLOG.md) and its linked GitHub issues.
@@ -105,11 +112,11 @@ in this stable baseline. Planned compatibility work is kept separately in
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
 > <!-- upstream-metrics:start -->
-> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 31 August 2026 snapshot, the three support forks are **1047 commits ahead of Apple upstream**:
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 2 September 2026 snapshot, the three support forks are **1070 commits ahead of Apple upstream**:
 >
-> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 269 ahead** at [`e5a92e86bf03`](https://github.com/stephenlclarke/containerization/commit/e5a92e86bf03eb2cc244b3b47b0413b3935abfe4).
-> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 732 ahead** at [`f87481688f25`](https://github.com/stephenlclarke/container/commit/f87481688f25bbc9d311ae09c4fcf33f121ba9ae).
-> - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 46 ahead** at [`db3e99cc3d19`](https://github.com/stephenlclarke/container-builder-shim/commit/db3e99cc3d19b9a328eb51be3a023a178f80ee81).
+> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 276 ahead** at [`ddcfe35457c4`](https://github.com/stephenlclarke/containerization/commit/ddcfe35457c4af7b18452c3de1ea64bd171fc5f2).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 746 ahead** at [`3d7ae8612b48`](https://github.com/stephenlclarke/container/commit/3d7ae8612b483dda5f814951ff6aab88e4da5290).
+> - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 48 ahead** at [`4aff0ea2e7ff`](https://github.com/stephenlclarke/container-builder-shim/commit/4aff0ea2e7ff293544a4efac28b508da53aac3d6).
 > - [`container-compose`](https://github.com/stephenlclarke/container-compose): the integration repository's current `main` branch, with no Apple repository to compare against.
 >
 > What looks like a local Compose change can therefore require coordinated conflict resolution, pin updates, builds, tests, packaging, and release validation across the entire stack. The pinned revisions must move together.
@@ -139,7 +146,7 @@ supported commands include a `Limitations` line that names the remaining gap.
 Use `--ansi never` for plain output. Unsupported runtime behavior fails before
 side effects with an explicit `unsupported compose feature` message.
 
-For 0.14.0, the generated help classifies 40 commands as green and six as
+For 0.14.1, the generated help classifies 40 commands as green and six as
 orange (`attach`, `events`, `exec`, `logs`, `run`, and `up`); no command is
 red. It classifies 262 documented long options as green and only
 `exec --privileged` as orange; no documented long option is red. Orange command
@@ -164,7 +171,7 @@ become implicit exceptions.
 >
 > The complete maintained 62-target Docker Compose comparison suite passed in one uninterrupted 1,152.03-second run against Docker Compose 5.3.1 and Docker Engine 29.2.1 on a Mac17,9 running macOS 26.5.2. Its three-sample warm-image bridge comparator measured `up` at 0.153s for Docker Compose and 1.228s for container-compose (8.01×), while `down` measured 10.178s and 5.916s respectively (0.58×). Named-network service discovery, aliases, one-off aliases, recreate behavior, and source-scoped links all passed their live Docker oracles. Exact revisions, timing tables, fingerprints, and interpretation are retained in the [macOS Compose parity and performance review](docs/reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md).
 >
-> This retained run predates the current 0.14.0 stable release and is not a claim that the project goal is complete. Its lifecycle matrix covers warm-image 1/10/50-service detached startup and teardown, but its 31 July one-repetition debug diagnostic was slower than Docker at 10 and 50 services and is not release-grade evidence. That run did not include the later logging performance lanes; cold-resource collection, `develop.watch` sync, and build-context transfer remain open, and every partial surface in the current ledger remains open.
+> This retained run predates the current 0.14.1 stable release and is not a claim that the project goal is complete. Its lifecycle matrix covers warm-image 1/10/50-service detached startup and teardown, but its 31 July one-repetition debug diagnostic was slower than Docker at 10 and 50 services and is not release-grade evidence. That run did not include the later logging performance lanes; cold-resource collection, `develop.watch` sync, and build-context transfer remain open, and every partial surface in the current ledger remains open.
 
 <!-- Separate GitHub callouts. -->
 
@@ -207,7 +214,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [DESIGN.md](docs/project/DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](docs/project/STATUS.md): understand the functionality and explicit limitations in the current stable release.
 - [BACKLOG.md](docs/project/BACKLOG.md): understand the remaining parity contracts and follow their live GitHub issues.
-- [Runtime capability contract](docs/architecture/runtime-capabilities.md): see the versioned matched-runtime requirements negotiated by 0.14.0 before side effects.
+- [Runtime capability contract](docs/architecture/runtime-capabilities.md): see the versioned matched-runtime requirements negotiated by 0.14.1 before side effects.
 - [Docker logging-driver design](docs/architecture/docker-logging-driver-semantics-design.md): review the released logging architecture, retained evidence, and remaining provider and certification gaps.
 - [Container-family parity architecture](docs/architecture/coherent-container-family-parity-design.md): understand the integrated authority, runtime topology, dependency order, and devcontainer/shared Engine design.
 - [Container-family parity development cycle](docs/architecture/container-family-development-cycle.md): deliver vertical slices with local-first validation, review-to-clean convergence, MBP runners, clean GitHub state, upstream monitoring, and comparable-or-better performance.

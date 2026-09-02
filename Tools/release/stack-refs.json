@@ -1,7 +1,7 @@
 {
   "components": {
     "container": {
-      "ref": "d428123088728c6539c73ac48aa5ce65843f31aa",
+      "ref": "3d7ae8612b483dda5f814951ff6aab88e4da5290",
       "repository": "stephenlclarke/container"
     },
     "container-builder-shim": {
@@ -10,11 +10,11 @@
         "repository": "ghcr.io/stephenlclarke/container-builder-shim/builder",
         "tag": "current-32967604909-2df7b287e530"
       },
-      "ref": "db3e99cc3d19b9a328eb51be3a023a178f80ee81",
+      "ref": "4aff0ea2e7ff293544a4efac28b508da53aac3d6",
       "repository": "stephenlclarke/container-builder-shim"
     },
     "containerization": {
-      "ref": "e5a92e86bf03eb2cc244b3b47b0413b3935abfe4",
+      "ref": "ddcfe35457c4af7b18452c3de1ea64bd171fc5f2",
       "repository": "stephenlclarke/containerization"
     }
   },
