@@ -196,6 +196,18 @@ assert_file_contains() {
     fi
 }
 
+# Assert a captured file excludes unexpected text.
+assert_file_not_contains() {
+    local path="$1"
+    local unexpected="$2"
+
+    if grep -F "$unexpected" "$path" >/dev/null; then
+        error "expected $path not to contain: $unexpected"
+        sed -n '1,80p' "$path" >&2
+        return 1
+    fi
+}
+
 # Assert Docker Compose and container-compose both accept supported menu forms.
 check_supported_menu_forms() {
     expect_status 'Docker Compose accepts --menu=false --no-start' 0 \
@@ -231,7 +243,8 @@ assert_container_menu_exit_control_plan() {
     assert_file_contains "$LAST_STDOUT_FILE" "container create --name $PROJECT_NAME-api-1"
     assert_file_contains "$LAST_STDOUT_FILE" "container start $PROJECT_NAME-api-1"
     assert_file_contains "$LAST_STDOUT_FILE" "compose-runtime wait $PROJECT_NAME-api-1"
-    assert_file_contains "$LAST_STDOUT_FILE" "container delete $PROJECT_NAME-api-1"
+    assert_file_contains "$LAST_STDOUT_FILE" "container stop $PROJECT_NAME-api-1"
+    assert_file_not_contains "$LAST_STDOUT_FILE" "container delete $PROJECT_NAME-api-1"
 }
 
 # Assert Docker Compose and container-compose both accept menu exit-control.
