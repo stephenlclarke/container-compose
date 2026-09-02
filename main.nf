@@ -361,6 +361,29 @@ def validateConfiguration(selection) {
         error "Unsupported pipeline action '${params.pipelineAction}'. " +
             'Choose one of: run, plan, preflight'
     }
+    if (params.pipelineProfile == 'release-hosted' &&
+        params.pipelineAction == 'run') {
+        def selectedFunctionalNames = selection.functionalStages.collect { stage ->
+            stage[1]
+        }
+        def documentationSelected = selectedFunctionalNames.any { stageName ->
+            stageName.endsWith('-release-documentation')
+        }
+        if (documentationSelected) {
+            def requiredValidationNames = releaseHostedFunctionalStageSpecs()
+                .collect { stage -> stage[1] }
+                .findAll { stageName ->
+                    !stageName.endsWith('-release-documentation')
+                }
+            def missingValidationNames = requiredValidationNames.findAll { stageName ->
+                !selectedFunctionalNames.contains(stageName)
+            }
+            if (missingValidationNames) {
+                error 'Release documentation requires every functional validation ' +
+                    "stage; missing: ${missingValidationNames.join(', ')}"
+            }
+        }
+    }
     if (!(params.expectedNextflowVersion.toString() ==~ /^[0-9]+[.][0-9]+[.][0-9]+$/)) {
         error 'The expected Nextflow version must be an exact semantic version'
     }
@@ -453,15 +476,6 @@ process PREFLIGHT_HOST {
     fi
     developer_directory="$(cd "$developer_directory" && pwd -P)"
     export DEVELOPER_DIR="$developer_directory"
-    if [[ "$pipeline_profile" == release-hosted ]]; then
-        docc_path="$(/usr/bin/xcrun --find docc 2>/dev/null || true)"
-        if [[ "$docc_path" != /* ]] || [[ ! -x "$docc_path" ]] ||
-            [[ ! -f "$docc_path" ]]; then
-            printf 'stable release gate requires full Xcode with DocC: %s\n' \
-                "$developer_directory" >&2
-            exit 2
-        fi
-    fi
 
     case "$state_root" in
         /*) ;;
@@ -549,26 +563,39 @@ process PREFLIGHT_HOST {
     done
 
     : >host-ready.tsv.pending
-    for shim_name in git python3; do
+    xcrun_shims=(git python3)
+    if [[ "$pipeline_profile" == release-hosted ]]; then
+        xcrun_shims+=(docc)
+    fi
+    for shim_name in "${xcrun_shims[@]}"; do
         resolved_tool="$(/usr/bin/python3 "$deadline_runner" --seconds 30 -- \
             /usr/bin/xcrun --find "$shim_name")"
         if [[ "$resolved_tool" != /* ]] || [[ ! -x "$resolved_tool" ]] ||
             [[ ! -f "$resolved_tool" ]]; then
-            printf 'xcrun resolved an invalid %s tool: %s\n' \
-                "$shim_name" "$resolved_tool" >&2
+            if [[ "$shim_name" == docc ]]; then
+                printf 'stable release gate requires full Xcode with DocC: %s\n' \
+                    "$developer_directory" >&2
+            else
+                printf 'xcrun resolved an invalid %s tool: %s\n' \
+                    "$shim_name" "$resolved_tool" >&2
+            fi
             exit 2
         fi
         resolved_sha256="$(/usr/bin/shasum -a 256 "$resolved_tool" | \
             /usr/bin/awk '{ print $1 }')"
-        /usr/bin/python3 "$deadline_runner" --seconds 30 -- \
-            "$resolved_tool" --version >resolved-tool-version.output 2>&1
-        resolved_version="$(/usr/bin/head -n 1 resolved-tool-version.output)"
-        resolved_version="${resolved_version//$'\t'/ }"
-        [[ -n "$resolved_version" ]] || {
-            printf 'resolved %s tool produced no version identity\n' \
-                "$shim_name" >&2
-            exit 2
-        }
+        if [[ "$shim_name" == docc ]]; then
+            resolved_version=binary-sha256-only
+        else
+            /usr/bin/python3 "$deadline_runner" --seconds 30 -- \
+                "$resolved_tool" --version >resolved-tool-version.output 2>&1
+            resolved_version="$(/usr/bin/head -n 1 resolved-tool-version.output)"
+            resolved_version="${resolved_version//$'\t'/ }"
+            [[ -n "$resolved_version" ]] || {
+                printf 'resolved %s tool produced no version identity\n' \
+                    "$shim_name" >&2
+                exit 2
+            }
+        fi
         printf 'xcrun-tool\t%s\t%s\t%s\t%s\n' \
             "$shim_name" "$resolved_tool" "$resolved_sha256" \
             "$resolved_version" >>host-tools.tsv
@@ -1398,8 +1425,13 @@ workflow PREPARE_STAGE_GRAPH {
         channel.value(encodeParameter(params.executionPath)),
         deadlineRunner,
     )
+    toolPreflightGate = PREFLIGHT_STAGE_TOOLS.out.manifest
+        .collect()
+        .map { true }
     preparedInputs = CAPTURE_STAGE_SOURCE.out.prepared
         .join(PREFLIGHT_STAGE_TOOLS.out.manifest)
+        .combine(toolPreflightGate)
+        .map { item -> item[0..-2] }
 
     emit:
     prepared = preparedInputs

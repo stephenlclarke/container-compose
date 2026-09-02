@@ -33,6 +33,9 @@ REPOSITORY_STAGE = (
 STABLE_RELEASE_WORKFLOW = (
     REPOSITORY_ROOT / ".github/workflows/stable-release-gate.yml"
 ).read_text(encoding="utf-8")
+CI_WORKFLOW = (REPOSITORY_ROOT / ".github/workflows/ci.yml").read_text(
+    encoding="utf-8"
+)
 
 
 class ReleaseStageGitHistoryTests(unittest.TestCase):
@@ -89,6 +92,8 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
         self.assertIn("stable release gate requires full Xcode with DocC", PIPELINE_SOURCE)
         self.assertIn("DEVELOPER_DIR=\"$developer_directory\"", PIPELINE_SOURCE)
         self.assertIn("/usr/bin/xcrun --find docc", PIPELINE_SOURCE)
+        self.assertIn("xcrun_shims+=(docc)", PIPELINE_SOURCE)
+        self.assertIn("resolved_version=binary-sha256-only", PIPELINE_SOURCE)
         self.assertIn(
             'DEVELOPER_DIR="$recorded_developer_directory" \\\n'
             '                            /usr/bin/xcrun --find docc',
@@ -109,6 +114,27 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
         self.assertLess(validation_gate, documentation_run)
         self.assertIn("item[10] && item[11]", PIPELINE_SOURCE)
         self.assertIn("withName: RUN_DOCUMENTATION_STAGE", PIPELINE_CONFIG)
+        self.assertIn("toolPreflightGate =", PIPELINE_SOURCE)
+        self.assertIn(".combine(toolPreflightGate)", PIPELINE_SOURCE)
+        self.assertIn(
+            "Release documentation requires every functional validation",
+            PIPELINE_SOURCE,
+        )
+
+    def test_ci_parallelizes_independent_tool_suites(self) -> None:
+        self.assertIn("run: make source-checks", CI_WORKFLOW)
+        self.assertIn("tool_tests:", CI_WORKFLOW)
+        self.assertIn("fail-fast: true", CI_WORKFLOW)
+        self.assertIn("target: release-tools-test", CI_WORKFLOW)
+        self.assertIn("target: ci-tools-test", CI_WORKFLOW)
+        self.assertIn('run: make "${TOOL_TEST_TARGET}"', CI_WORKFLOW)
+        self.assertIn("      - tool_tests", CI_WORKFLOW)
+        self.assertIn("TOOL_TESTS_RESULT", CI_WORKFLOW)
+        self.assertIn(
+            "coverage-tools-test: coverage-python-tools-test "
+            "release-tools-test ci-tools-test",
+            PIPELINE_MAKEFILE,
+        )
 
     def test_release_state_is_persistent_and_candidate_keyed(self) -> None:
         self.assertNotIn(
