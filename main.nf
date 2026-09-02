@@ -201,11 +201,11 @@ def releaseHostedFunctionalStageSpecs() {
         ['container-builder-shim', 'builder-release-validation', 'test',
             params.functionalTimeoutSeconds as Integer,
             'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && GOTOOLCHAIN=local GIT_TAG="$PIPELINE_ORIGINAL_DESCRIBE" make --no-print-directory GO=go check-licenses vet lint coverage build',
-            'make,go,hawkeye', '.', 'describe'],
+            'make,go,hawkeye', '.', 'commit,describe'],
         ['containerization', 'containerization-release-validation', 'test',
             params.functionalTimeoutSeconds as Integer,
             'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && CI=1 HAWKEYE_AUTO_INSTALL=0 make --no-print-directory ROOT_DIR="$PWD" SWIFT=/usr/bin/swift check containerization examples docs coverage',
-            'make,apple-swift,hawkeye,codesign', '.', 'none'],
+            'make,apple-swift,hawkeye,codesign', '.', 'commit'],
         ['container', 'container-release-validation', 'test',
             params.functionalTimeoutSeconds as Integer,
             'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE CI=1 HAWKEYE_AUTO_INSTALL=0 CONTAINER_SEMANTIC_HELPER_TOOLCHAIN_CACHE="$PIPELINE_INTERNAL_CACHE_ROOT/container-semantic-helper" make --no-print-directory ROOT_DIR="$PWD" PYTHON3=python3 GIT_COMMIT="$PIPELINE_ORIGINAL_COMMIT" RELEASE_VERSION="$PIPELINE_ORIGINAL_DESCRIBE" check build dsym docs coverage-unit',
@@ -884,9 +884,18 @@ process CAPTURE_STAGE_SOURCE {
         /usr/bin/git -C "$source_directory" -c core.fsmonitor=false \
         cat-file -e "${tree}^{tree}"
 
+    preserve_git_history=0
     if [[ "$failure_class" == source ]]; then
+        preserve_git_history=1
+    elif [[ "$source_paths" == . ]]; then
+        case ",$metadata_requirements," in
+            *,commit,*) preserve_git_history=1 ;;
+        esac
+    fi
+
+    if ((preserve_git_history == 1)); then
         [[ "$source_paths" == . ]] || {
-            printf 'source validation stages require the complete repository: %s\n' \
+            printf 'Git-bundle stages require the complete repository: %s\n' \
                 "$stage_name" >&2
             exit 2
         }
