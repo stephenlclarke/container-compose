@@ -1330,9 +1330,21 @@ github_cli() {{
 
     def test_homebrew_configuration_fails_before_codeql_and_product_builds(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        fail_fast = workflow[
+            workflow.index("  release-preflight:") : workflow.index(
+                "  codeql-release:"
+            )
+        ]
 
         self.assertIn("name: Fail-Fast Release Configuration", workflow)
-        self.assertIn("homebrew-preflight.py", workflow)
+        self.assertIn("name: Checkout immutable release control tools", fail_fast)
+        self.assertIn("ref: ${{ github.sha }}", fail_fast)
+        self.assertIn(
+            "python3 release-tools/Tools/release/homebrew-preflight.py", fail_fast
+        )
+        self.assertNotIn(
+            "python3 container-compose/Tools/release/homebrew-preflight.py", fail_fast
+        )
         self.assertIn(".permissions.push", workflow)
         self.assertIn("name: Checkout pinned Container formula source", workflow)
         self.assertIn("--container-repository container", workflow)
