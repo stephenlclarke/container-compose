@@ -26,6 +26,7 @@ import shutil
 import signal
 import shlex
 import subprocess
+import sys
 import tarfile
 import tempfile
 import textwrap
@@ -1412,6 +1413,258 @@ github_cli() {{
         self.assertIn("--delete-superseded-current-releases", workflow)
         self.assertIn("release_notes_args=(", workflow)
 
+    def test_current_publishes_an_exact_attested_vm_init_authority(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        materialize_start = workflow.index(
+            "- name: Materialize exact Current VM-init authority"
+        )
+        materialize_end = workflow.index(
+            "# The Makefile passes these sibling checkouts"
+        )
+        materialize = workflow[materialize_start:materialize_end]
+        self.assertIn("run-candidates", materialize)
+        self.assertIn("validate-initfs", materialize)
+        self.assertIn("extract-initfs", materialize)
+        self.assertIn("create-vminit-oci-archive.py", materialize)
+        self.assertIn("validate-oci-image-layout.py", materialize)
+        self.assertIn("vminit:container-compose", materialize)
+        self.assertIn(
+            "ghcr.io/stephenlclarke/containerization/vminit:${CONTAINERIZATION_REF}",
+            materialize,
+        )
+        self.assertIn(
+            'asset="container-vminit-current-${PUBLISH_SHA:0:12}-arm64.oci.tar"',
+            materialize,
+        )
+        self.assertIn("Attest exact Current VM-init authority", workflow)
+        self.assertIn("Upload exact Current VM-init workflow artifact", workflow)
+        self.assertIn(
+            '"${{ steps.current-init-image.outputs.local_asset }}"', workflow
+        )
+        self.assertIn('--current-asset "${CURRENT_INIT_ASSET}"', workflow)
+        self.assertIn('--current-asset "${CURRENT_INIT_ASSET}.sha256"', workflow)
+
+    def test_stable_controller_resolves_current_vm_init_before_release_work(
+        self,
+    ) -> None:
+        release = self.script[self.script.index("release_current_stack() {") :]
+        authority_start = self.script.index(
+            "prepare_stable_init_image_authority() {"
+        )
+        authority_end = self.script.index("# Retain a helper-created candidate")
+        authority = self.script[authority_start:authority_end]
+        self.assertIn("github_cli release download current", authority)
+        self.assertIn("github_cli attestation verify", authority)
+        self.assertIn('shasum -a 256 -c "${asset}.sha256"', authority)
+        self.assertIn('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${archive}"', authority)
+        self.assertIn("vminit:container-compose", authority)
+        self.assertIn("CURRENT_INIT_IMAGE_AUTHORITY_ROOT", authority)
+        self.assertLess(
+            release.index("write_release_stack_manifest"),
+            release.index("prepare_stable_init_image_authority"),
+        )
+        self.assertIn("require_current_stack_matches_sibling_mains() {", self.script)
+        self.assertLess(
+            release.index("require_current_stack_matches_sibling_mains"),
+            release.index("sync_containerization_package_pins"),
+        )
+        self.assertLess(
+            release.index("prepare_stable_init_image_authority"),
+            release.index("run_local_release_gate"),
+        )
+        self.assertIn("trap cleanup_current_init_image_authority EXIT", self.script)
+
+    def test_stable_controller_accepts_only_the_exact_explicit_vm_init(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compose = root / "container-compose"
+            manifest = compose / "Tools" / "release" / "stack-refs.json"
+            manifest.parent.mkdir(parents=True)
+            reference = "a" * 40
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "components": {
+                            "containerization": {"ref": reference},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            archive = root / "vminit.oci.tar"
+            self.create_release_guest_archive(
+                archive,
+                qualified_reference=(
+                    "ghcr.io/stephenlclarke/containerization/vminit:" + reference
+                ),
+            )
+            setup = (
+                "export CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="
+                f"{shlex.quote(str(archive))}"
+            )
+            accepted = self.run_release_function(
+                root,
+                "prepare_stable_init_image_authority",
+                shell_setup=setup,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            self.assertIn("stable VM-init authority verified", accepted.stdout)
+
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "components": {
+                            "containerization": {"ref": "b" * 40},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            rejected = self.run_release_function(
+                root,
+                "prepare_stable_init_image_authority",
+                shell_setup=setup,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("missing required reference", rejected.stderr)
+
+    def test_unpublished_retry_resolves_vm_init_against_the_tagged_stack(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compose = root / "container-compose"
+            manifest = compose / "Tools" / "release" / "stack-refs.json"
+            manifest.parent.mkdir(parents=True)
+            tagged_reference = "a" * 40
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "components": {
+                            "containerization": {"ref": tagged_reference},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.run_command("git", "-C", str(compose), "init")
+            self.run_command("git", "-C", str(compose), "add", ".")
+            self.run_command(
+                "git",
+                "-C",
+                str(compose),
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-m",
+                "tagged stack",
+            )
+            self.run_command("git", "-C", str(compose), "tag", "0.14.1")
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "components": {
+                            "containerization": {"ref": "b" * 40},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            archive = root / "vminit.oci.tar"
+            self.create_release_guest_archive(
+                archive,
+                qualified_reference=(
+                    "ghcr.io/stephenlclarke/containerization/vminit:"
+                    + tagged_reference
+                ),
+            )
+            accepted = self.run_release_function(
+                root,
+                "prepare_stable_init_image_authority 0.14.1",
+                shell_setup=(
+                    "export CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE="
+                    f"{shlex.quote(str(archive))}"
+                ),
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+            cache = root / "authority-cache"
+            cached = cache / tagged_reference
+            cached.mkdir(parents=True)
+            cached_name = f"container-vminit-{tagged_reference}-arm64.oci.tar"
+            shutil.copy2(archive, cached / cached_name)
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "Tools" / "release" / "write-sha256-sidecar.py"),
+                    str(cached / cached_name),
+                ],
+                check=True,
+            )
+            cached_digest = hashlib.sha256(
+                (cached / cached_name).read_bytes()
+            ).hexdigest()
+            (cached / ".container-compose-init-authority").write_text(
+                "schema=1\n"
+                f"containerization={tagged_reference}\n"
+                f"current={'c' * 40}\n"
+                f"sha256={cached_digest}\n",
+                encoding="utf-8",
+            )
+            recovered = self.run_release_function(
+                root,
+                "prepare_stable_init_image_authority 0.14.1",
+                shell_setup="\n".join(
+                    [
+                        "unset CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE",
+                        f"RELEASE_INIT_AUTHORITY_CACHE_ROOT={shlex.quote(str(cache))}",
+                        "need_command() { :; }",
+                        (
+                            "github_cli() { [[ \"$1:$2\" == "
+                            "\"attestation:verify\" ]]; }"
+                        ),
+                    ]
+                ),
+            )
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertIn(str(cached / cached_name), recovered.stdout)
+
+    def test_vm_init_authority_cache_is_retained_until_release_succeeds(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "authority-cache"
+            authority = cache / ("a" * 40)
+            authority.mkdir(parents=True)
+            (authority / ".container-compose-init-authority").write_text(
+                "schema=1\n",
+                encoding="utf-8",
+            )
+            setup = "\n".join(
+                [
+                    f"RELEASE_INIT_AUTHORITY_CACHE_ROOT={shlex.quote(str(cache))}",
+                    f"CURRENT_INIT_IMAGE_AUTHORITY_ROOT={shlex.quote(str(authority))}",
+                ]
+            )
+
+            retained = self.run_release_function(
+                root,
+                "CURRENT_INIT_IMAGE_AUTHORITY_RELEASED=0; "
+                "cleanup_current_init_image_authority",
+                shell_setup=setup,
+            )
+            self.assertEqual(retained.returncode, 0, retained.stderr)
+            self.assertTrue(authority.exists())
+
+            removed = self.run_release_function(
+                root,
+                "CURRENT_INIT_IMAGE_AUTHORITY_RELEASED=1; "
+                "cleanup_current_init_image_authority",
+                shell_setup=setup,
+            )
+            self.assertEqual(removed.returncode, 0, removed.stderr)
+            self.assertFalse(authority.exists())
+
     def test_current_demo_is_recoverable_and_not_release_critical(self) -> None:
         package = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         release_critical = package[
@@ -1476,6 +1729,13 @@ github_cli() {{
         )
         self.assertIn("bash Tools/release/record-vhs-live-demo.sh", workflow)
         self.assertIn("Validate Current demo init-image authority", workflow)
+        self.assertIn(
+            'init_asset="container-vminit-current-${short_sha}-arm64.oci.tar"',
+            workflow,
+        )
+        self.assertIn('gh attestation verify "${download_root}/${init_asset}"', workflow)
+        self.assertIn("attestations: read", workflow)
+        self.assertNotIn("CURRENT_DEMO_INIT_IMAGE_ARCHIVE", workflow)
         self.assertIn('"${DEMO_INIT_IMAGE_ARCHIVE}" == /Volumes/*', workflow)
         self.assertIn('-L "${DEMO_INIT_IMAGE_ARCHIVE}"', workflow)
         self.assertIn("Tools/release/validate-oci-image-layout.py", workflow)
@@ -6154,6 +6414,7 @@ esac
                         "verify_github_stable_tag_signature() { :; }",
                         "stable_release_is_published() { return 1; }",
                         "ensure_stable_release_is_unpublished() { :; }",
+                        "prepare_stable_init_image_authority() { :; }",
                         "dispatch_compose_stable_tap_repair() { exit 73; }",
                         "publish_stable_release() { printf 'publish %s\\n' \"$1\"; }",
                     ]
@@ -6182,6 +6443,7 @@ esac
                             f"printf '%s\\t%s\\n' {'f' * 40} {'a' * 64}; }}"
                         ),
                         "homebrew_stable_formula_identities() { printf '%s\\n' formulae-before; }",
+                        "prepare_stable_init_image_authority() { exit 76; }",
                         "dispatch_compose_stable_tap_repair() { exit 71; }",
                         "publish_stable_init_image_asset() { printf 'init %s %s\\n' \"$1\" \"$2\"; }",
                         "verify_compose_stable_package() { printf 'verify %s %s %s %s\\n' \"$1\" \"$2\" \"$3\" \"$4\"; }",
@@ -6744,7 +7006,9 @@ gh() {
 
     @staticmethod
     def create_release_guest_archive(
-        path: Path, config_variant: str | None = None
+        path: Path,
+        config_variant: str | None = None,
+        qualified_reference: str = "ghcr.io/owner/containerization/vminit:ref",
     ) -> None:
         RunWithContainerRuntimeTest.create_oci_archive(
             path,
@@ -6763,9 +7027,7 @@ gh() {
         index = json.loads(payloads["index.json"])
         qualified = json.loads(json.dumps(index["manifests"][0]))
         qualified["annotations"] = {
-            "org.opencontainers.image.ref.name": (
-                "ghcr.io/owner/containerization/vminit:ref"
-            )
+            "org.opencontainers.image.ref.name": qualified_reference
         }
         index["manifests"].append(qualified)
         payloads["index.json"] = json.dumps(index).encode("utf-8")

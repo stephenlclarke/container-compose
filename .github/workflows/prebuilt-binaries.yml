@@ -1062,6 +1062,106 @@ jobs:
             printf 'local_asset=%s\n' "${runtime_local_asset}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Materialize exact Current VM-init authority
+        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
+        id: current-init-image
+        env:
+          # The workflow token cannot read Actions artifacts from a sibling
+          # repository. This existing cross-repository token is read-only here.
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          if [[ ! "${CONTAINERIZATION_REF}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'Current VM-init authority requires an exact Containerization ref: %s\n' \
+              "${CONTAINERIZATION_REF:-<unset>}" >&2
+            exit 1
+          fi
+          authority_root="${RUNNER_TEMP}/current-vminit-authority"
+          rm -rf -- "${authority_root}"
+          mkdir -p "${authority_root}"
+
+          gh api --paginate --slurp \
+            "repos/stephenlclarke/containerization/actions/workflows/containerization-build.yml/runs?head_sha=${CONTAINERIZATION_REF}&per_page=100" \
+            > "${authority_root}/run-pages.json"
+          jq '[.[].workflow_runs[] | {
+              databaseId: .id,
+              workflowName: .name,
+              headSha: .head_sha,
+              status,
+              conclusion,
+              event,
+              createdAt: .created_at,
+              url: .html_url
+            }]' "${authority_root}/run-pages.json" > "${authority_root}/runs.json"
+          python3 Tools/parity/historical_reconstruction_benchmark.py \
+            run-candidates \
+            --runs "${authority_root}/runs.json" \
+            --revision "${CONTAINERIZATION_REF}" \
+            > "${authority_root}/run-candidates.json"
+
+          run_id=""
+          while IFS= read -r candidate_id; do
+            candidate_run="${authority_root}/run-${candidate_id}.json"
+            candidate_artifacts="${authority_root}/artifacts-${candidate_id}.json"
+            candidate_provenance="${authority_root}/provenance-${candidate_id}.json"
+            jq --argjson id "${candidate_id}" \
+              '.[] | select(.runId == $id)' \
+              "${authority_root}/run-candidates.json" > "${candidate_run}"
+            gh api \
+              "repos/stephenlclarke/containerization/actions/runs/${candidate_id}/artifacts" \
+              > "${candidate_artifacts}"
+            if python3 Tools/parity/historical_reconstruction_benchmark.py \
+              validate-initfs \
+              --run "${candidate_run}" \
+              --artifacts "${candidate_artifacts}" \
+              > "${candidate_provenance}"; then
+              run_id="${candidate_id}"
+              cp "${candidate_provenance}" "${authority_root}/provenance.json"
+              break
+            fi
+          done < <(jq -r '.[].runId' "${authority_root}/run-candidates.json")
+          if [[ -z "${run_id}" ]]; then
+            printf 'no exact, retained initfs artifact exists for Containerization %s\n' \
+              "${CONTAINERIZATION_REF}" >&2
+            exit 1
+          fi
+
+          artifact_id="$(jq -r '.artifactId' "${authority_root}/provenance.json")"
+          artifact_digest="$(jq -r '.artifactDigest' "${authority_root}/provenance.json")"
+          gh api \
+            "repos/stephenlclarke/containerization/actions/artifacts/${artifact_id}/zip" \
+            > "${authority_root}/initfs.zip"
+          python3 Tools/parity/historical_reconstruction_benchmark.py \
+            extract-initfs \
+            --archive "${authority_root}/initfs.zip" \
+            --digest "${artifact_digest}" \
+            --output "${authority_root}/initfs"
+
+          asset="container-vminit-current-${PUBLISH_SHA:0:12}-arm64.oci.tar"
+          local_asset="${RUNNER_TEMP}/${asset}"
+          python3 Tools/release/create-vminit-oci-archive.py \
+            --rootfs "${authority_root}/initfs/init.rootfs.tar.gz" \
+            --output "${local_asset}" \
+            --source-url "https://github.com/stephenlclarke/containerization" \
+            --reference vminit:container-compose \
+            --reference "ghcr.io/stephenlclarke/containerization/vminit:${CONTAINERIZATION_REF}"
+          Tools/release/validate-oci-image-layout.py \
+            "${local_asset}" \
+            vminit:container-compose \
+            "ghcr.io/stephenlclarke/containerization/vminit:${CONTAINERIZATION_REF}"
+          python3 Tools/release/write-sha256-sidecar.py "${local_asset}"
+          sha256="$(awk '{print $1}' "${local_asset}.sha256")"
+          {
+            printf 'asset=%s\n' "${asset}"
+            printf 'local_asset=%s\n' "${local_asset}"
+            printf 'sha256=%s\n' "${sha256}"
+            printf 'containerization_run_id=%s\n' "${run_id}"
+          } >> "$GITHUB_OUTPUT"
+
       # The Makefile passes these sibling checkouts to Package.swift as local
       # path dependencies. Do not also `swift package edit` them: mixing edit
       # state with manifest paths makes SwiftPM exhaust graph resolution.
@@ -1129,6 +1229,12 @@ jobs:
         with:
           subject-path: ${{ steps.runtime-package.outputs.local_asset }}
 
+      - name: Attest exact Current VM-init authority
+        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ steps.current-init-image.outputs.local_asset }}
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1144,6 +1250,15 @@ jobs:
           path: |
             ${{ steps.runtime-package.outputs.local_asset }}
             ${{ steps.runtime-package.outputs.local_asset }}.sha256
+
+      - name: Upload exact Current VM-init workflow artifact
+        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.current-init-image.outputs.asset }}
+          path: |
+            ${{ steps.current-init-image.outputs.local_asset }}
+            ${{ steps.current-init-image.outputs.local_asset }}.sha256
 
       - name: Verify current source is still latest
         id: current-freshness
@@ -1215,6 +1330,12 @@ jobs:
           printf '%s\n%s\n' \
             "${{ steps.runtime-package.outputs.local_asset }}" \
             "${{ steps.runtime-package.outputs.local_asset }}.sha256" > "${extra_assets}"
+          if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
+            printf '%s\n%s\n' \
+              "${{ steps.current-init-image.outputs.local_asset }}" \
+              "${{ steps.current-init-image.outputs.local_asset }}.sha256" \
+              >> "${extra_assets}"
+          fi
           notes="${RUNNER_TEMP}/release-notes.md"
           highlights="${RUNNER_TEMP}/${HIGHLIGHTS_ASSET}"
           git fetch --force --tags origin
@@ -1440,6 +1561,7 @@ jobs:
           PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
           ASSET: ${{ steps.lane.outputs.asset }}
           RUNTIME_ASSET: ${{ steps.runtime-package.outputs.asset }}
+          CURRENT_INIT_ASSET: ${{ steps.current-init-image.outputs.asset }}
           HIGHLIGHTS_ASSET: ${{ steps.lane.outputs.highlights_asset }}
           QUALITY_SNAPSHOT_ASSET: ${{ steps.lane.outputs.quality_snapshot_asset }}
         shell: bash
@@ -1463,6 +1585,8 @@ jobs:
               --current-asset "${ASSET}.sha256" \
               --current-asset "${RUNTIME_ASSET}" \
               --current-asset "${RUNTIME_ASSET}.sha256" \
+              --current-asset "${CURRENT_INIT_ASSET}" \
+              --current-asset "${CURRENT_INIT_ASSET}.sha256" \
               --current-asset "${HIGHLIGHTS_ASSET}" \
               --current-asset "${QUALITY_SNAPSHOT_ASSET}"
               # The separately generated demo is non-authoritative, but retain
