@@ -321,6 +321,11 @@ process RUN_REPOSITORY_STAGE {
                     system-*) resolved_tool="$tool_path" ;;
                     apple-swift) resolved_tool=/usr/bin/swift ;;
                     codesign) resolved_tool=/usr/bin/codesign ;;
+                    docc)
+                        resolved_tool="$( \
+                            DEVELOPER_DIR="$recorded_developer_directory" \
+                            /usr/bin/xcrun --find docc)"
+                        ;;
                     otool) resolved_tool=/usr/bin/otool ;;
                     *) resolved_tool="$(PATH="$recorded_path" command -v \
                         "$tool_name" 2>/dev/null || true)" ;;

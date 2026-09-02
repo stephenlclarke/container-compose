@@ -212,11 +212,39 @@ jobs:
 
       - name: Run source checks
         timeout-minutes: 15
-        run: make check
+        run: make source-checks
         working-directory: container-compose
         env:
           GH_TOKEN: ${{ github.token }}
           HAWKEYE_AUTO_INSTALL: "1"
+
+  tool_tests:
+    name: Tool Tests (${{ matrix.suite }})
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - suite: release
+            target: release-tools-test
+          - suite: ci
+            target: ci-tools-test
+    steps:
+      - name: Checkout container-compose
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: container-compose
+          fetch-depth: 0
+
+      - name: Run tool tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOOL_TEST_TARGET: ${{ matrix.target }}
+        run: make "${TOOL_TEST_TARGET}"
+        working-directory: container-compose
 
   validate_runtime:
     name: Validate Runtime
@@ -873,6 +901,7 @@ jobs:
     needs:
       - changes
       - source_checks
+      - tool_tests
       - validate_runtime
       - resolve-canonical-main
     if: always() && needs.changes.outputs.heavy == 'true'
@@ -882,11 +911,16 @@ jobs:
         env:
           RESOLVE_CANONICAL_MAIN_RESULT: ${{ needs.resolve-canonical-main.result }}
           SOURCE_CHECKS_RESULT: ${{ needs.source_checks.result }}
+          TOOL_TESTS_RESULT: ${{ needs.tool_tests.result }}
           VALIDATE_RUNTIME_RESULT: ${{ needs.validate_runtime.result }}
         run: |
           set -euo pipefail
           if [[ "${SOURCE_CHECKS_RESULT}" != "success" ]]; then
             printf 'Source Checks concluded %s\n' "${SOURCE_CHECKS_RESULT}" >&2
+            exit 1
+          fi
+          if [[ "${TOOL_TESTS_RESULT}" != "success" ]]; then
+            printf 'Tool Tests concluded %s\n' "${TOOL_TESTS_RESULT}" >&2
             exit 1
           fi
           if [[ "${VALIDATE_RUNTIME_RESULT}" != "success" ]]; then
@@ -897,7 +931,7 @@ jobs:
             printf 'Resolve Canonical Main concluded %s\n' "${RESOLVE_CANONICAL_MAIN_RESULT}" >&2
             exit 1
           fi
-          printf 'Source Checks and Validate Runtime passed, including any required atomic Sonar restoration.\n'
+          printf 'Source Checks, Tool Tests, and Validate Runtime passed, including any required atomic Sonar restoration.\n'
 
   validate-lightweight:
     # Branch protection requires one stable aggregate context for both the

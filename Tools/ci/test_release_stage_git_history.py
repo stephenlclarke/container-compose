@@ -26,12 +26,16 @@ PIPELINE_SOURCE = (REPOSITORY_ROOT / "main.nf").read_text(encoding="utf-8")
 PIPELINE_CONFIG = (REPOSITORY_ROOT / "nextflow.config").read_text(
     encoding="utf-8"
 )
+PIPELINE_MAKEFILE = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
 REPOSITORY_STAGE = (
     REPOSITORY_ROOT / "build-pipeline/modules/repository-stage.nf"
 ).read_text(encoding="utf-8")
 STABLE_RELEASE_WORKFLOW = (
     REPOSITORY_ROOT / ".github/workflows/stable-release-gate.yml"
 ).read_text(encoding="utf-8")
+CI_WORKFLOW = (REPOSITORY_ROOT / ".github/workflows/ci.yml").read_text(
+    encoding="utf-8"
+)
 
 
 class ReleaseStageGitHistoryTests(unittest.TestCase):
@@ -74,6 +78,67 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
         self.assertIn("errorStrategy 'terminate'", REPOSITORY_STAGE)
         self.assertNotIn("errorStrategy = 'finish'", PIPELINE_CONFIG)
         self.assertNotIn("errorStrategy 'finish'", REPOSITORY_STAGE)
+
+    def test_release_graph_pins_full_xcode_and_preflights_docc(self) -> None:
+        self.assertIn(
+            "DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer",
+            STABLE_RELEASE_WORKFLOW,
+        )
+        self.assertIn('developer_directory="${DEVELOPER_DIR:-}"', PIPELINE_SOURCE)
+        self.assertIn(
+            'DEVELOPER_DIR="$${DEVELOPER_DIR:-}"',
+            PIPELINE_MAKEFILE,
+        )
+        self.assertIn("stable release gate requires full Xcode with DocC", PIPELINE_SOURCE)
+        self.assertIn("DEVELOPER_DIR=\"$developer_directory\"", PIPELINE_SOURCE)
+        self.assertIn("/usr/bin/xcrun --find docc", PIPELINE_SOURCE)
+        self.assertIn("xcrun_shims+=(docc)", PIPELINE_SOURCE)
+        self.assertIn("resolved_version=binary-sha256-only", PIPELINE_SOURCE)
+        self.assertIn(
+            'DEVELOPER_DIR="$recorded_developer_directory" \\\n'
+            '                            /usr/bin/xcrun --find docc',
+            REPOSITORY_STAGE,
+        )
+
+    def test_release_documentation_runs_after_functional_validation(self) -> None:
+        self.assertIn("containerization-release-documentation", PIPELINE_SOURCE)
+        self.assertIn("container-release-documentation", PIPELINE_SOURCE)
+        self.assertIn("'make,apple-swift,docc'", PIPELINE_SOURCE)
+        self.assertNotIn(
+            "check containerization examples docs coverage",
+            PIPELINE_SOURCE,
+        )
+        self.assertNotIn("check build dsym docs coverage-unit", PIPELINE_SOURCE)
+        validation_gate = PIPELINE_SOURCE.index("validationCompletionGate =")
+        documentation_run = PIPELINE_SOURCE.index("RUN_DOCUMENTATION_STAGE(")
+        self.assertLess(validation_gate, documentation_run)
+        self.assertIn("item[10] && item[11]", PIPELINE_SOURCE)
+        self.assertIn("withName: RUN_DOCUMENTATION_STAGE", PIPELINE_CONFIG)
+        self.assertIn("toolPreflightGate =", PIPELINE_SOURCE)
+        self.assertIn(".combine(toolPreflightGate)", PIPELINE_SOURCE)
+        self.assertIn(
+            "Release documentation requires every functional validation",
+            PIPELINE_SOURCE,
+        )
+
+    def test_ci_parallelizes_independent_tool_suites(self) -> None:
+        tool_tests_section = CI_WORKFLOW.split("  tool_tests:", 1)[1].split(
+            "  validate_runtime:", 1
+        )[0]
+        self.assertIn("run: make source-checks", CI_WORKFLOW)
+        self.assertIn("tool_tests:", CI_WORKFLOW)
+        self.assertIn("fail-fast: true", CI_WORKFLOW)
+        self.assertIn("target: release-tools-test", CI_WORKFLOW)
+        self.assertIn("target: ci-tools-test", CI_WORKFLOW)
+        self.assertIn("path: container-compose", tool_tests_section)
+        self.assertIn('run: make "${TOOL_TEST_TARGET}"', tool_tests_section)
+        self.assertIn("      - tool_tests", CI_WORKFLOW)
+        self.assertIn("TOOL_TESTS_RESULT", CI_WORKFLOW)
+        self.assertIn(
+            "coverage-tools-test: coverage-python-tools-test "
+            "release-tools-test ci-tools-test",
+            PIPELINE_MAKEFILE,
+        )
 
     def test_release_state_is_persistent_and_candidate_keyed(self) -> None:
         self.assertNotIn(
