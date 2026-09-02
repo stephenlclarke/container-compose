@@ -7355,6 +7355,25 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/413"
     },
     {
+      "id": "container-compose-415",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Fingerprint staged Container checkout content",
+      "state": "active-draft",
+      "lastVerified": "2026-09-02",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-414.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-415.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/415"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",

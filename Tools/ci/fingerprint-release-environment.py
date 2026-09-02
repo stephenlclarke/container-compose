@@ -104,14 +104,17 @@ CONTENT_FILE_VARIABLES = frozenset(
     }
 )
 
-# Release validation relocates the exact Containerization checkout beneath a
-# fresh system-volume runtime root on every attempt. Bind these selectors to the
-# tracked Git tree plus the ignored release inputs deliberately copied beside
-# it, rather than to the random absolute checkout path.
+# Release validation relocates the exact Container and Containerization
+# checkouts beneath a fresh system-volume runtime root on every attempt. Bind
+# these selectors to the tracked Git tree plus the ignored release inputs
+# deliberately copied beside it, rather than to the random absolute checkout
+# path.
 CONTENT_GIT_CHECKOUT_VARIABLES = frozenset(
     {
         "CONTAINERIZATION_INIT_SOURCE_PATH",
         "CONTAINERIZATION_STACK_REPO",
+        "CONTAINER_RUNTIME_INIT_BLOCK_REPO",
+        "CONTAINER_STACK_REPO",
     }
 )
 CONTENT_GIT_CHECKOUT_SUPPLEMENTS = (
