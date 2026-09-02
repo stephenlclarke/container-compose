@@ -432,6 +432,13 @@ jobs:
           fetch-depth: 1
           ref: ${{ needs.resolve-publish-context.outputs.checkout_ref }}
 
+      - name: Checkout immutable release control tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: release-tools
+          fetch-depth: 1
+          ref: ${{ github.sha }}
+
       - name: Require a writable Homebrew promotion token
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -483,7 +490,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 container-compose/Tools/release/homebrew-preflight.py \
+          python3 release-tools/Tools/release/homebrew-preflight.py \
             --tap homebrew-tap \
             --compose-repository container-compose \
             --container-repository container
