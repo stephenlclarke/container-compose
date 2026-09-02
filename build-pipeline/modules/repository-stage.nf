@@ -2,7 +2,7 @@ process RUN_REPOSITORY_STAGE {
     tag "${stageName}@${repositoryName}"
     label 'repository_stage'
     cache 'deep'
-    errorStrategy 'finish'
+    errorStrategy 'terminate'
     maxRetries 0
     publishDir "${params.evidenceDir}/receipts", mode: 'copy', overwrite: true
 
