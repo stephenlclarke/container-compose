@@ -21,7 +21,7 @@ and library users must likewise supply runtime collaborators. Unconfigured
 defaults report an explicit unsupported-runtime error instead of constructing
 an Apple client.
 
-The current 0.14.0 matched stack publishes a schema-versioned capability manifest.
+The current 0.14.1 matched stack publishes a schema-versioned capability manifest.
 Runtime-backed commands negotiate the required version-1 contracts before
 side effects, including lifecycle, observation, networking, archive, build,
 image-filesystem, create-configuration, and logging-driver behavior. Unknown
