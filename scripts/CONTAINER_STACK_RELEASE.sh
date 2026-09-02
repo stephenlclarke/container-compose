@@ -585,6 +585,158 @@ repo_path() {
   printf '%s/%s' "${ROOT}" "$1"
 }
 
+# Stage one exact checkout on the system volume for Virtualization directory sharing.
+stage_local_validation_checkout() {
+  local source_path="$1"
+  local staged_path="$2"
+  local checkout_kind="${3:-containerization}"
+  local source_commit source_tree staged_tree kernel kernel_count hawkeye_path
+  local source_hawkeye_digest staged_hawkeye_digest
+  local -a isolated_git=(
+    env
+    -u GIT_ALTERNATE_OBJECT_DIRECTORIES
+    -u GIT_OBJECT_DIRECTORY
+    -u GIT_COMMON_DIR
+    -u GIT_DIR
+    -u GIT_WORK_TREE
+    git
+  )
+
+  case "${checkout_kind}" in
+    container | containerization) ;;
+    *)
+      printf 'unsupported release validation checkout kind: %s\n' \
+        "${checkout_kind:-unset}" >&2
+      return 2
+      ;;
+  esac
+
+  if [[ "${source_path}" != /* || ! -d "${source_path}" ]]; then
+    printf 'release validation source checkout is invalid: %s\n' \
+      "${source_path:-unset}" >&2
+    return 2
+  fi
+  if [[ "${staged_path}" != /* || "${staged_path}" == / || -e "${staged_path}" ]]; then
+    printf 'release validation staging path must be a new absolute path other than /: %s\n' \
+      "${staged_path:-unset}" >&2
+    return 2
+  fi
+  if ! "${isolated_git[@]}" -C "${source_path}" diff --quiet HEAD --; then
+    printf 'tracked changes block release validation checkout staging: %s\n' \
+      "${source_path}" >&2
+    return 1
+  fi
+
+  if ! source_commit="$("${isolated_git[@]}" -C "${source_path}" \
+    rev-parse --verify HEAD)" || \
+    ! source_tree="$("${isolated_git[@]}" -C "${source_path}" \
+      rev-parse --verify 'HEAD^{tree}')"; then
+    printf 'failed to resolve release validation source identity: %s\n' \
+      "${source_path}" >&2
+    return 1
+  fi
+  if ! "${isolated_git[@]}" clone --no-local --no-checkout --quiet \
+    "${source_path}" "${staged_path}"; then
+    printf 'failed to stage release validation checkout locally: %s\n' \
+      "${source_path}" >&2
+    return 1
+  fi
+  if ! "${isolated_git[@]}" -C "${staged_path}" cat-file -e \
+    "${source_commit}^{commit}" 2>/dev/null; then
+    if ! "${isolated_git[@]}" -C "${staged_path}" fetch --quiet --no-tags \
+      origin "${source_commit}"; then
+      printf 'failed to fetch exact release validation commit %s: %s\n' \
+        "${source_commit}" "${source_path}" >&2
+      return 1
+    fi
+  fi
+  if ! "${isolated_git[@]}" -C "${staged_path}" checkout --quiet \
+    --detach "${source_commit}"; then
+    printf 'failed to check out exact release validation commit %s: %s\n' \
+      "${source_commit}" "${staged_path}" >&2
+    return 1
+  fi
+  if ! "${isolated_git[@]}" -C "${staged_path}" fsck --full --strict \
+    --no-dangling "${source_commit}"; then
+    printf 'staged release validation checkout has an incomplete object closure: %s\n' \
+      "${staged_path}" >&2
+    return 1
+  fi
+  if ! "${isolated_git[@]}" -C "${staged_path}" remote remove origin; then
+    printf 'failed to remove release validation source remote: %s\n' \
+      "${staged_path}" >&2
+    return 1
+  fi
+  if ! staged_tree="$("${isolated_git[@]}" -C "${staged_path}" \
+    rev-parse --verify 'HEAD^{tree}')"; then
+    printf 'failed to resolve staged release validation tree: %s\n' \
+      "${staged_path}" >&2
+    return 1
+  fi
+  if [[ "${staged_tree}" != "${source_tree}" ]] || \
+    ! "${isolated_git[@]}" -C "${staged_path}" diff --quiet HEAD --; then
+    printf 'staged release validation checkout does not match source tree %s: %s\n' \
+      "${source_tree}" "${staged_path}" >&2
+    return 1
+  fi
+  if [[ -f "${staged_path}/.git/objects/info/alternates" ]]; then
+    printf 'staged release validation checkout is not self-contained: %s\n' \
+      "${staged_path}" >&2
+    return 1
+  fi
+
+  hawkeye_path="${source_path}/.local/bin/hawkeye"
+  if [[ ! -x "${hawkeye_path}" || -L "${hawkeye_path}" ]]; then
+    printf 'release validation source checkout has no installed regular Hawkeye executable: %s\n' \
+      "${hawkeye_path}" >&2
+    return 1
+  fi
+  if ! mkdir -p "${staged_path}/.local/bin" || \
+    ! cp -p "${hawkeye_path}" "${staged_path}/.local/bin/hawkeye"; then
+    printf 'failed to copy installed Hawkeye into release validation checkout: %s\n' \
+      "${staged_path}" >&2
+    return 1
+  fi
+  if ! staged_hawkeye_digest="$(shasum -a 256 \
+    "${staged_path}/.local/bin/hawkeye" | awk '{print $1}')" || \
+    ! source_hawkeye_digest="$(shasum -a 256 "${hawkeye_path}" | \
+      awk '{print $1}')"; then
+    printf 'failed to digest staged release validation Hawkeye: %s\n' \
+      "${staged_path}/.local/bin/hawkeye" >&2
+    return 1
+  fi
+  if [[ "${staged_hawkeye_digest}" != "${source_hawkeye_digest}" ]]; then
+    printf 'staged release validation Hawkeye does not match its installed source: %s\n' \
+      "${staged_path}/.local/bin/hawkeye" >&2
+    return 1
+  fi
+
+  if [[ "${checkout_kind}" == "containerization" ]]; then
+    if ! mkdir -p "${staged_path}/bin"; then
+      printf 'failed to create staged release validation kernel directory: %s\n' \
+        "${staged_path}/bin" >&2
+      return 1
+    fi
+    kernel_count=0
+    for kernel in "${source_path}"/bin/vmlinux-* "${source_path}"/bin/vmlinuz-*; do
+      [[ -f "${kernel}" ]] || continue
+      if ! cp -p "${kernel}" "${staged_path}/bin/"; then
+        printf 'failed to copy release validation kernel locally: %s\n' \
+          "${kernel}" >&2
+        return 1
+      fi
+      ((kernel_count += 1))
+    done
+    if ((kernel_count == 0)); then
+      printf 'release validation source checkout has no fetched kernel: %s\n' \
+        "${source_path}/bin" >&2
+      return 1
+    fi
+  fi
+
+  printf '%s\n' "${staged_path}"
+}
+
 # Print the builder image repository, tag, and digest compiled by container.
 container_builder_image_metadata() {
   local package
@@ -867,16 +1019,130 @@ stop_release_runtime_candidate() {
   return 1
 }
 
-# Stop the exact runtime and then remove its marker-protected runtime and
-# candidate roots in dependency order.
+# Publish one stable system-volume alias for the randomly allocated validation
+# checkout. Historical release sources hash literal checkout paths in their
+# checkpoint environment fingerprint; the stable alias lets those releases
+# recover while its target remains inside this gate's marker-protected root.
+publish_local_validation_checkout_alias() {
+  local staged_path="$1"
+  local alias_path="$2"
+  local checkout_kind="${3:-containerization}"
+  local staged_pattern alias_pattern
+  local stale_target=""
+
+  case "${checkout_kind}" in
+    container | containerization) ;;
+    *)
+      printf 'unsupported release validation alias kind: %s\n' \
+        "${checkout_kind:-unset}" >&2
+      return 2
+      ;;
+  esac
+  staged_pattern="^(/private)?/tmp/c\\.[^/]+/${checkout_kind}$"
+  alias_pattern="^(/private)?/tmp/container-compose-release-${checkout_kind}-[0-9]+(-[A-Za-z0-9.-]+)?$"
+
+  if [[ ! "${staged_path}" =~ ${staged_pattern} ]] || \
+    [[ ! -d "${staged_path}" || -L "${staged_path}" ]]; then
+    printf 'release validation alias target is invalid: %s\n' \
+      "${staged_path:-unset}" >&2
+    return 2
+  fi
+  if [[ ! "${alias_path}" =~ ${alias_pattern} ]]; then
+    printf 'release validation alias path is invalid: %s\n' \
+      "${alias_path:-unset}" >&2
+    return 2
+  fi
+
+  if [[ -L "${alias_path}" ]]; then
+    if ! stale_target="$(readlink "${alias_path}")" || \
+      [[ ! "${stale_target}" =~ ${staged_pattern} ]]; then
+      printf 'refusing to replace an unexpected release validation alias: %s\n' \
+        "${alias_path}" >&2
+      return 1
+    fi
+    if ! rm -f -- "${alias_path}"; then
+      printf 'failed to remove stale release validation alias: %s\n' \
+        "${alias_path}" >&2
+      return 1
+    fi
+  elif [[ -e "${alias_path}" ]]; then
+    printf 'release validation alias path already exists and is not a symlink: %s\n' \
+      "${alias_path}" >&2
+    return 1
+  fi
+
+  if ! ln -s "${staged_path}" "${alias_path}"; then
+    printf 'failed to publish release validation alias: %s\n' \
+      "${alias_path}" >&2
+    return 1
+  fi
+  printf '%s\n' "${alias_path}"
+}
+
+# Remove only the exact alias that still points at this gate's checkout.
+cleanup_local_validation_checkout_alias() {
+  local alias_path="$1"
+  local staged_path="$2"
+  local checkout_kind="${3:-containerization}"
+  local staged_pattern alias_pattern
+  local current_target=""
+
+  [[ -n "${alias_path}" ]] || return 0
+  case "${checkout_kind}" in
+    container | containerization) ;;
+    *)
+      printf 'unsupported release validation alias kind: %s\n' \
+        "${checkout_kind:-unset}" >&2
+      return 2
+      ;;
+  esac
+  staged_pattern="^(/private)?/tmp/c\\.[^/]+/${checkout_kind}$"
+  alias_pattern="^(/private)?/tmp/container-compose-release-${checkout_kind}-[0-9]+(-[A-Za-z0-9.-]+)?$"
+  if [[ ! "${alias_path}" =~ ${alias_pattern} ]] || \
+    [[ ! "${staged_path}" =~ ${staged_pattern} ]]; then
+    printf 'refusing to remove an unexpected release validation alias: %s\n' \
+      "${alias_path}" >&2
+    return 1
+  fi
+  if [[ ! -L "${alias_path}" ]]; then
+    if [[ -e "${alias_path}" ]]; then
+      printf 'release validation alias was replaced by a non-symlink: %s\n' \
+        "${alias_path}" >&2
+      return 1
+    fi
+    return 0
+  fi
+  if ! current_target="$(readlink "${alias_path}")" || \
+    [[ "${current_target}" != "${staged_path}" ]]; then
+    printf 'release validation alias no longer names this gate checkout: %s\n' \
+      "${alias_path}" >&2
+    return 1
+  fi
+  if ! rm -f -- "${alias_path}"; then
+    printf 'failed to remove release validation alias: %s\n' \
+      "${alias_path}" >&2
+    return 1
+  fi
+}
+
+# Stop the exact runtime and then remove its stable alias, marker-protected
+# runtime root, and candidate root in dependency order.
 cleanup_local_release_gate_resources() {
   local container_binary="$1"
   local runtime_parent="$2"
   local runtime_app_root="$3"
   local runtime_service_namespace="$4"
+  local staged_containerization_alias="${5:-}"
+  local staged_containerization_path="${6:-}"
+  local staged_container_alias="${7:-}"
+  local staged_container_path="${8:-}"
 
   stop_release_runtime_candidate "${container_binary}" "${runtime_app_root}" \
     "${runtime_service_namespace}" || return 1
+  cleanup_local_validation_checkout_alias "${staged_containerization_alias}" \
+    "${staged_containerization_path}" || return 1
+  cleanup_local_validation_checkout_alias "${staged_container_alias}" \
+    "${staged_container_path}" container || return 1
   cleanup_release_runtime_parent "${runtime_parent}" || return 1
   cleanup_container_runtime_candidate
 }
@@ -1844,7 +2110,7 @@ resolve_release_evidence_root() {
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
   (
-  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive
+  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive staged_container_path staged_container_alias staged_containerization_path staged_containerization_alias
   local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest
   local -a RELEASE_QUIESCED_LABELS=()
   local -a RELEASE_QUIESCED_PLISTS=()
@@ -1929,7 +2195,11 @@ PY
     local cleanup_status="${trapped_status}"
     if ! cleanup_local_release_gate_resources "${container_binary:-}" \
       "${runtime_parent:-}" "${runtime_app_root:-}" \
-      "${runtime_service_namespace:-}"; then
+      "${runtime_service_namespace:-}" \
+      "${staged_containerization_alias:-}" \
+      "${staged_containerization_path:-}" \
+      "${staged_container_alias:-}" \
+      "${staged_container_path:-}"; then
       cleanup_status=1
     fi
     if ! release_local_release_gate_host_state; then
@@ -1946,6 +2216,37 @@ PY
   # Keep both this candidate's provider socket and Container integration's
   # nested provider socket below Darwin's 103-byte sockaddr_un limit.
   runtime_parent="$(create_release_runtime_parent "${runtime_parent_base}")"
+  # Virtualization opens bind-mounted source directories from a launchd helper.
+  # On removable build volumes macOS can block that open behind a TCC prompt,
+  # which makes an unattended release gate wait forever. Clone the exact tracked
+  # Containerization tree into the marker-protected system-volume lifecycle and
+  # copy only its installed release-policy tool and already-provisioned kernel;
+  # build outputs remain fresh.
+  staged_containerization_path="${runtime_parent}/containerization"
+  if ! staged_containerization_path="$(stage_local_validation_checkout \
+    "${containerization_path}" "${staged_containerization_path}")"; then
+    return 1
+  fi
+  staged_containerization_alias="${runtime_parent_base}/container-compose-release-containerization-$(id -u)"
+  if ! containerization_path="$(publish_local_validation_checkout_alias \
+    "${staged_containerization_path}" \
+    "${staged_containerization_alias}")"; then
+    return 1
+  fi
+  # Container's integration target launches freshly built XPC services. Keep
+  # that exact source/build checkout on the system volume as well; otherwise
+  # launchd can leave an ad-hoc coverage binary suspended in xpcproxy while a
+  # background TCC request waits for removable-volume approval.
+  staged_container_path="${runtime_parent}/container"
+  if ! staged_container_path="$(stage_local_validation_checkout \
+    "${container_path}" "${staged_container_path}" container)"; then
+    return 1
+  fi
+  staged_container_alias="${runtime_parent_base}/container-compose-release-container-$(id -u)"
+  if ! container_path="$(publish_local_validation_checkout_alias \
+    "${staged_container_path}" "${staged_container_alias}" container)"; then
+    return 1
+  fi
   # Stage the retained init archive on the local system volume. launchd-managed
   # services can be denied access to archives on removable volumes even after
   # the release helper has validated them successfully.
@@ -1993,9 +2294,15 @@ PY
     "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}" || status=$?
 
   if ! cleanup_local_release_gate_resources "${container_binary}" \
-    "${runtime_parent}" "${runtime_app_root}" "${runtime_service_namespace}"; then
+    "${runtime_parent}" "${runtime_app_root}" "${runtime_service_namespace}" \
+    "${staged_containerization_alias}" "${staged_containerization_path}" \
+    "${staged_container_alias}" "${staged_container_path}"; then
     status=1
   fi
+  staged_containerization_alias=""
+  staged_containerization_path=""
+  staged_container_alias=""
+  staged_container_path=""
   runtime_parent=""
   runtime_app_root=""
   runtime_service_namespace=""

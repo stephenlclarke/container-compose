@@ -7169,6 +7169,25 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/348"
     },
     {
+      "id": "container-compose-406",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Stage release VM source mounts locally",
+      "state": "active-draft",
+      "lastVerified": "2026-09-01",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-405.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-406.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/406"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",

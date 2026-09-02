@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -154,6 +155,170 @@ class FingerprintReleaseEnvironmentTest(unittest.TestCase):
 
             self.assertEqual(first_fingerprint, relocated_fingerprint)
             self.assertNotEqual(relocated_fingerprint, changed_fingerprint)
+
+    def test_relocated_containerization_checkout_uses_content_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "first"
+            second = root / "second"
+            first.mkdir()
+            subprocess.run(
+                ["git", "-C", str(first), "init", "--quiet"], check=True
+            )
+            (first / ".gitignore").write_text(".local\nbin\n", encoding="utf-8")
+            (first / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(first), "add", ".gitignore", "tracked.txt"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(first),
+                    "-c",
+                    "user.name=Release Test",
+                    "-c",
+                    "user.email=release-test@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    "fixture",
+                ],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "clone", "--quiet", "--no-local", str(first), str(second)],
+                check=True,
+            )
+            for checkout in (first, second):
+                hawkeye = checkout / ".local" / "bin" / "hawkeye"
+                hawkeye.parent.mkdir(parents=True)
+                hawkeye.write_bytes(b"same hawkeye")
+                hawkeye.chmod(0o755)
+                kernel = checkout / "bin" / "vmlinux-arm64"
+                kernel.parent.mkdir()
+                kernel.write_bytes(b"same kernel")
+
+            def environment(checkout: Path) -> dict[str, str]:
+                return {
+                    "CONTAINERIZATION_INIT_SOURCE_PATH": str(checkout),
+                    "MAKEFLAGS": (
+                        "s -- CONTAINERIZATION_STACK_REPO=" + str(checkout)
+                    ),
+                    "MAKEOVERRIDES": "${-*-command-variables-*-}",
+                    "PATH": "/usr/bin:/bin",
+                }
+
+            first_fingerprint = self.module.fingerprint_environment(
+                environment(first), root
+            )
+            relocated_fingerprint = self.module.fingerprint_environment(
+                environment(second), root
+            )
+            (second / "bin" / "vmlinux-arm64").write_bytes(b"changed kernel")
+            changed_kernel_fingerprint = self.module.fingerprint_environment(
+                environment(second), root
+            )
+            (second / "bin" / "vmlinux-arm64").write_bytes(b"same kernel")
+            (second / "tracked.txt").write_text("changed tracked tree\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(second), "add", "tracked.txt"], check=True
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(second),
+                    "-c",
+                    "user.name=Release Test",
+                    "-c",
+                    "user.email=release-test@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    "changed fixture",
+                ],
+                check=True,
+            )
+            changed_tree_fingerprint = self.module.fingerprint_environment(
+                environment(second), root
+            )
+
+            self.assertEqual(first_fingerprint, relocated_fingerprint)
+            self.assertNotEqual(relocated_fingerprint, changed_kernel_fingerprint)
+            self.assertNotEqual(relocated_fingerprint, changed_tree_fingerprint)
+
+    def test_relocated_container_checkout_uses_content_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "first"
+            second = root / "second"
+            first.mkdir()
+            subprocess.run(["git", "-C", str(first), "init", "--quiet"], check=True)
+            (first / ".gitignore").write_text(".local\n", encoding="utf-8")
+            (first / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(first), "add", ".gitignore", "tracked.txt"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(first),
+                    "-c",
+                    "user.name=Release Test",
+                    "-c",
+                    "user.email=release-test@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    "fixture",
+                ],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "clone", "--quiet", "--no-local", str(first), str(second)],
+                check=True,
+            )
+            for checkout in (first, second):
+                hawkeye = checkout / ".local" / "bin" / "hawkeye"
+                hawkeye.parent.mkdir(parents=True)
+                hawkeye.write_bytes(b"same hawkeye")
+                hawkeye.chmod(0o755)
+
+            def environment(checkout: Path) -> dict[str, str]:
+                return {
+                    "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(checkout),
+                    "MAKEFLAGS": "s -- CONTAINER_STACK_REPO=" + str(checkout),
+                    "MAKEOVERRIDES": "${-*-command-variables-*-}",
+                    "PATH": "/usr/bin:/bin",
+                }
+
+            first_fingerprint = self.module.fingerprint_environment(
+                environment(first), root
+            )
+            relocated_fingerprint = self.module.fingerprint_environment(
+                environment(second), root
+            )
+            (second / ".local" / "bin" / "hawkeye").write_bytes(
+                b"changed hawkeye"
+            )
+            changed_hawkeye_fingerprint = self.module.fingerprint_environment(
+                environment(second), root
+            )
+
+            self.assertEqual(first_fingerprint, relocated_fingerprint)
+            self.assertNotEqual(
+                relocated_fingerprint, changed_hawkeye_fingerprint
+            )
 
     def test_staged_init_archive_preserves_literal_path_semantics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
