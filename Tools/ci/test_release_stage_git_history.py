@@ -122,12 +122,16 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
         )
 
     def test_ci_parallelizes_independent_tool_suites(self) -> None:
+        tool_tests_section = CI_WORKFLOW.split("  tool_tests:", 1)[1].split(
+            "  validate_runtime:", 1
+        )[0]
         self.assertIn("run: make source-checks", CI_WORKFLOW)
         self.assertIn("tool_tests:", CI_WORKFLOW)
         self.assertIn("fail-fast: true", CI_WORKFLOW)
         self.assertIn("target: release-tools-test", CI_WORKFLOW)
         self.assertIn("target: ci-tools-test", CI_WORKFLOW)
-        self.assertIn('run: make "${TOOL_TEST_TARGET}"', CI_WORKFLOW)
+        self.assertIn("path: container-compose", tool_tests_section)
+        self.assertIn('run: make "${TOOL_TEST_TARGET}"', tool_tests_section)
         self.assertIn("      - tool_tests", CI_WORKFLOW)
         self.assertIn("TOOL_TESTS_RESULT", CI_WORKFLOW)
         self.assertIn(
