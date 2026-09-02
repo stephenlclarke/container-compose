@@ -794,7 +794,8 @@ pipeline-lint: pipeline-runtime-check pipeline-state-init
 		SSH_ASKPASS_REQUIRE=never JAVA_HOME="$${NEXTFLOW_JAVA_HOME}" \
 		JAVA_CMD="$${NEXTFLOW_JAVA_BIN}" NXF_JAVA_HOME="$${NEXTFLOW_JAVA_HOME}" \
 		NXF_HOME="$$state_root/nextflow-home" NXF_TEMP="$$state_root/tmp" \
-		NXF_ANSI_LOG=false NXF_DISABLE_CHECK_LATEST=true); \
+		NXF_ANSI_LOG=false NXF_DISABLE_CHECK_LATEST=true \
+		DEVELOPER_DIR="$${DEVELOPER_DIR:-}"); \
 	cd "$$state_root"; \
 	"$${clean_environment[@]}" \
 		/usr/bin/python3 "$${PIPELINE_DEADLINE_RUNNER}" --seconds 120 -- \
@@ -925,7 +926,8 @@ pipeline-execute: pipeline-runtime-check
 		SSH_ASKPASS_REQUIRE=never JAVA_HOME="$${NEXTFLOW_JAVA_HOME}" \
 		JAVA_CMD="$${NEXTFLOW_JAVA_BIN}" NXF_JAVA_HOME="$${NEXTFLOW_JAVA_HOME}" \
 		NXF_HOME="$$state_root/nextflow-home" NXF_TEMP="$$state_root/tmp" \
-		NXF_ANSI_LOG=false NXF_DISABLE_CHECK_LATEST=true); \
+		NXF_ANSI_LOG=false NXF_DISABLE_CHECK_LATEST=true \
+		DEVELOPER_DIR="$${DEVELOPER_DIR:-}"); \
 	attempt_id="$${PIPELINE_ATTEMPT_ID:-$$(/bin/date -u +%Y%m%dT%H%M%SZ)-$$$$}"; \
 	if ! [[ "$$attempt_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$$ ]]; then \
 		printf 'PIPELINE_ATTEMPT_ID is unsafe: %s\n' "$$attempt_id" >&2; \

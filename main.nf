@@ -9,6 +9,9 @@ include {
 include {
     RUN_REPOSITORY_STAGE as RUN_LIGHTWEIGHT_STAGE
 } from './build-pipeline/modules/repository-stage'
+include {
+    RUN_REPOSITORY_STAGE as RUN_DOCUMENTATION_STAGE
+} from './build-pipeline/modules/repository-stage'
 
 params.pipelineProfile = 'repository'
 params.pipelineAction = 'run'
@@ -204,16 +207,24 @@ def releaseHostedFunctionalStageSpecs() {
             'make,go,hawkeye', '.', 'commit,describe'],
         ['containerization', 'containerization-release-validation', 'test',
             params.functionalTimeoutSeconds as Integer,
-            'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && CI=1 HAWKEYE_AUTO_INSTALL=0 make --no-print-directory ROOT_DIR="$PWD" SWIFT=/usr/bin/swift check containerization examples docs coverage',
+            'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && CI=1 HAWKEYE_AUTO_INSTALL=0 make --no-print-directory ROOT_DIR="$PWD" SWIFT=/usr/bin/swift check containerization examples coverage',
             'make,apple-swift,hawkeye,codesign', '.', 'commit'],
         ['container', 'container-release-validation', 'test',
             params.functionalTimeoutSeconds as Integer,
-            'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE CI=1 HAWKEYE_AUTO_INSTALL=0 CONTAINER_SEMANTIC_HELPER_TOOLCHAIN_CACHE="$PIPELINE_INTERNAL_CACHE_ROOT/container-semantic-helper" make --no-print-directory ROOT_DIR="$PWD" PYTHON3=python3 GIT_COMMIT="$PIPELINE_ORIGINAL_COMMIT" RELEASE_VERSION="$PIPELINE_ORIGINAL_DESCRIBE" check build dsym docs coverage-unit',
+            'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE CI=1 HAWKEYE_AUTO_INSTALL=0 CONTAINER_SEMANTIC_HELPER_TOOLCHAIN_CACHE="$PIPELINE_INTERNAL_CACHE_ROOT/container-semantic-helper" make --no-print-directory ROOT_DIR="$PWD" PYTHON3=python3 GIT_COMMIT="$PIPELINE_ORIGINAL_COMMIT" RELEASE_VERSION="$PIPELINE_ORIGINAL_DESCRIBE" check build dsym coverage-unit',
             'make,apple-swift,python3,hawkeye,codesign', '.', 'commit,describe'],
         ['homebrew-tap', 'homebrew-release-validation', 'test',
             params.functionalTimeoutSeconds as Integer,
             'ruby -c Formula/container-compose.rb',
             'ruby', 'Formula/container-compose.rb', 'none'],
+        ['containerization', 'containerization-release-documentation', 'build',
+            params.functionalTimeoutSeconds as Integer,
+            'CI=1 make --no-print-directory ROOT_DIR="$PWD" SWIFT=/usr/bin/swift docs',
+            'make,apple-swift,docc', '.', 'commit'],
+        ['container', 'container-release-documentation', 'build',
+            params.functionalTimeoutSeconds as Integer,
+            'CI=1 make --no-print-directory ROOT_DIR="$PWD" SWIFT=/usr/bin/swift docs',
+            'make,apple-swift,docc', '.', 'commit,describe'],
     ]
 }
 
@@ -430,14 +441,27 @@ process PREFLIGHT_HOST {
     deadline_runner="$PWD/!{deadlineRunner}"
     export PATH="$execution_path"
 
-    developer_directory="$(/usr/bin/xcode-select -p)"
+    developer_directory="${DEVELOPER_DIR:-}"
+    if [[ -z "$developer_directory" ]]; then
+        developer_directory="$(/usr/bin/xcode-select -p)"
+    fi
     if [[ "$developer_directory" != /* ]] ||
-        [[ ! -d "$developer_directory" ]]; then
+        [[ -L "$developer_directory" ]] || [[ ! -d "$developer_directory" ]]; then
         printf 'active Apple developer directory is invalid: %s\n' \
             "$developer_directory" >&2
         exit 2
     fi
+    developer_directory="$(cd "$developer_directory" && pwd -P)"
     export DEVELOPER_DIR="$developer_directory"
+    if [[ "$pipeline_profile" == release-hosted ]]; then
+        docc_path="$(/usr/bin/xcrun --find docc 2>/dev/null || true)"
+        if [[ "$docc_path" != /* ]] || [[ ! -x "$docc_path" ]] ||
+            [[ ! -f "$docc_path" ]]; then
+            printf 'stable release gate requires full Xcode with DocC: %s\n' \
+                "$developer_directory" >&2
+            exit 2
+        fi
+    fi
 
     case "$state_root" in
         /*) ;;
@@ -1093,6 +1117,12 @@ process PREFLIGHT_STAGE_TOOLS {
         case "$tool_selector" in
             apple-swift) tool_selector=/usr/bin/swift ;;
             codesign) tool_selector=/usr/bin/codesign ;;
+            docc)
+                tool_selector="$(/usr/bin/python3 "$deadline_runner" \
+                    --seconds 30 -- /usr/bin/env \
+                    DEVELOPER_DIR="$developer_directory" \
+                    /usr/bin/xcrun --find docc)"
+                ;;
             otool) tool_selector=/usr/bin/otool ;;
         esac
         if [[ "$tool_selector" == /* ]]; then
@@ -1109,7 +1139,7 @@ process PREFLIGHT_STAGE_TOOLS {
         tool_sha256="$(/usr/bin/shasum -a 256 "$tool_path" | \
             /usr/bin/awk '{ print $1 }')"
         case "$tool_name" in
-            system-*|otool|codesign|gofmt)
+            system-*|otool|codesign|docc|gofmt)
                 tool_version=binary-sha256-only
                 ;;
             go)
@@ -1253,6 +1283,9 @@ process PREFLIGHT_STAGE_TOOLS {
     case ",$required_tools," in
         *,otool,*) xcrun_tools+=(otool) ;;
     esac
+    case ",$required_tools," in
+        *,docc,*) xcrun_tools+=(docc) ;;
+    esac
     xcrun_seen=,
     for xcrun_name in "${xcrun_tools[@]}"; do
         case "$xcrun_seen" in
@@ -1270,7 +1303,7 @@ process PREFLIGHT_STAGE_TOOLS {
         resolved_sha256="$(/usr/bin/shasum -a 256 "$resolved_tool" | \
             /usr/bin/awk '{ print $1 }')"
         case "$xcrun_name" in
-            ld|otool)
+            docc|ld|otool)
                 resolved_version=binary-sha256-only
                 ;;
             *)
@@ -1599,6 +1632,12 @@ workflow PIPELINE {
         tuple(item[0], true)
     }
     functionalStageNames = selection.functionalStages.collect { stage -> stage[1] }
+    documentationStageNames = functionalStageNames.findAll { stageName ->
+        stageName.endsWith('-release-documentation')
+    }
+    validationStageNames = functionalStageNames.findAll { stageName ->
+        !documentationStageNames.contains(stageName)
+    }
     functionalInputs = PREPARE_STAGE_GRAPH.out.prepared
         .filter { item -> functionalStageNames.contains(item[0]) }
         .map { item -> tuple(item[1], item[0], item[2], item[3], item[4],
@@ -1611,10 +1650,12 @@ workflow PIPELINE {
         'container-engine-api', 'devcontainer', 'container-k8s',
     ]
     swiftFunctionalInputs = functionalInputs.filter { item ->
-        swiftRepositoryNames.contains(item[1])
+        validationStageNames.contains(item[0]) &&
+            swiftRepositoryNames.contains(item[1])
     }
     lightweightFunctionalInputs = functionalInputs.filter { item ->
-        !swiftRepositoryNames.contains(item[1])
+        validationStageNames.contains(item[0]) &&
+            !swiftRepositoryNames.contains(item[1])
     }
     RUN_SWIFT_STAGE(
         swiftFunctionalInputs,
@@ -1628,12 +1669,35 @@ workflow PIPELINE {
         stateRootBase64,
         sessionIdentifier,
     )
+    validationCompletionGate = RUN_SWIFT_STAGE.out.receipt
+        .concat(RUN_LIGHTWEIGHT_STAGE.out.receipt)
+        .collect()
+        .map { receipts ->
+            if (receipts.size() != validationStageNames.size()) {
+                error 'release validation did not produce every expected receipt'
+            }
+            true
+        }
+    documentationInputs = functionalInputs
+        .filter { item -> documentationStageNames.contains(item[0]) }
+        .combine(validationCompletionGate)
+        .map { item -> tuple(item[0], item[1], item[2], item[3], item[4],
+            item[5], item[6], item[7], item[8], item[9],
+            item[10] && item[11]) }
+    RUN_DOCUMENTATION_STAGE(
+        documentationInputs,
+        deadlineRunner,
+        stateRootBase64,
+        sessionIdentifier,
+    )
 
     allStageEvidence = RUN_SOURCE_STAGE.out.receipt
         .flatMap { item -> [item[2], item[3], item[4], item[5], item[6]] }
         .concat(RUN_SWIFT_STAGE.out.receipt
             .flatMap { item -> [item[2], item[3], item[4], item[5], item[6]] })
         .concat(RUN_LIGHTWEIGHT_STAGE.out.receipt
+            .flatMap { item -> [item[2], item[3], item[4], item[5], item[6]] })
+        .concat(RUN_DOCUMENTATION_STAGE.out.receipt
             .flatMap { item -> [item[2], item[3], item[4], item[5], item[6]] })
         .collect()
     allRepositoryReceipts = repositoryReceipts
