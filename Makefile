@@ -918,6 +918,13 @@ pipeline-execute: pipeline-runtime-check
 	k8s_repo="$${PIPELINE_K8S_REPO:-$$source_root/container-k8s}"; \
 	homebrew_repo="$${PIPELINE_HOMEBREW_REPO:-$$source_root/homebrew-tap}"; \
 	operator_name="$$(/usr/bin/id -un)"; \
+	operator_home="$$(/usr/bin/python3 -I -c 'import os, pwd; print(pwd.getpwuid(os.getuid()).pw_dir)')"; \
+	case "$$operator_home" in /*) ;; *) printf 'Operator home must be absolute: %s\n' "$$operator_home" >&2; exit 2 ;; esac; \
+	if [[ -L "$$operator_home" ]] || [[ ! -d "$$operator_home" ]] \
+		|| [[ "$$(cd "$$operator_home" && pwd -P)" != "$$operator_home" ]]; then \
+		printf 'Operator home must be a canonical directory: %s\n' "$$operator_home" >&2; \
+		exit 2; \
+	fi; \
 	clean_environment=(/usr/bin/env -i \
 		CI=1 HOME="$$state_root/nextflow-home" USER="$$operator_name" \
 		LOGNAME="$$operator_name" SHELL=/bin/bash \
@@ -968,6 +975,7 @@ pipeline-execute: pipeline-runtime-check
 				--evidenceDir "$$attempt_dir" \
 				--stateMarkerValue "$${PIPELINE_MARKER_VALUE}" \
 				--executionPath "$${PIPELINE_EXECUTION_PATH}" \
+				--operatorHome "$$operator_home" \
 				--launcherPath "$${NEXTFLOW_BIN}" \
 				--expectedNextflowVersion "$${NEXTFLOW_VERSION}" \
 				--expectedLauncherSha256 "$${NEXTFLOW_SHA256}" \

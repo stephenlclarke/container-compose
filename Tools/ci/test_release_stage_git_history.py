@@ -121,6 +121,65 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
             PIPELINE_SOURCE,
         )
 
+    def test_container_validation_preflights_the_operator_keychain(self) -> None:
+        self.assertIn(
+            "params.operatorHome = ''",
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            "--operatorHome \"$$operator_home\"",
+            PIPELINE_MAKEFILE,
+        )
+        self.assertIn(
+            "system-security:/usr/bin/security",
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            '/usr/bin/security show-keychain-info "$operator_login_keychain"',
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            "operator login Keychain preflight exceeded its deadline",
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            "operator login Keychain must be unlocked before release validation",
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            "stage[1] == 'container-release-validation'",
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            "printf 'operator-home\\t%s\\n' \"$operator_home\"",
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            '[[ "$stage_name" == container-release-validation ]]',
+            REPOSITORY_STAGE,
+        )
+        self.assertIn(
+            'metadata_environment+=("PIPELINE_OPERATOR_HOME=$operator_home")',
+            REPOSITORY_STAGE,
+        )
+        self.assertIn(
+            'HOME="$PIPELINE_OPERATOR_HOME" make --no-print-directory',
+            PIPELINE_SOURCE,
+        )
+        self.assertNotIn(
+            "configure_ephemeral_test_keychain",
+            REPOSITORY_STAGE,
+        )
+        self.assertNotIn(
+            "/usr/bin/security create-keychain",
+            REPOSITORY_STAGE,
+        )
+        preflight = PIPELINE_SOURCE.index(
+            '/usr/bin/security show-keychain-info "$operator_login_keychain"'
+        )
+        stage_preparation = PIPELINE_SOURCE.index("process PREFLIGHT_STAGE_TOOLS")
+        self.assertLess(preflight, stage_preparation)
+
     def test_ci_parallelizes_independent_tool_suites(self) -> None:
         tool_tests_section = CI_WORKFLOW.split("  tool_tests:", 1)[1].split(
             "  validate_runtime:", 1

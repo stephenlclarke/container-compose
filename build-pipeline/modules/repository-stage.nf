@@ -276,6 +276,10 @@ process RUN_REPOSITORY_STAGE {
         "$stage_tools")"
     recorded_developer_directory="$(/usr/bin/awk -F '\t' \
         '$1 == "xcode-developer-dir" { print $2 }' "$stage_tools")"
+    operator_home="$(/usr/bin/awk -F '\t' \
+        '$1 == "operator-home" { print $2 }' "$stage_tools")"
+    operator_login_keychain="$(/usr/bin/awk -F '\t' \
+        '$1 == "operator-login-keychain" { print $2 }' "$stage_tools")"
     if [[ -z "$recorded_path" ]] || [[ "$recorded_path" == *$'\n'* ]] ||
         [[ "$recorded_path" == *$'\t'* ]]; then
         printf 'stage tool manifest has no valid PATH: %s\n' "$stage_name" >&2
@@ -292,6 +296,23 @@ process RUN_REPOSITORY_STAGE {
     if [[ "$recorded_developer_directory" != /* ]] ||
         [[ ! -d "$recorded_developer_directory" ]]; then
         printf 'stage tool manifest has no valid Apple developer directory: %s\n' \
+            "$stage_name" >&2
+        exit 2
+    fi
+    if [[ "$stage_name" == container-release-validation ]]; then
+        if [[ "$operator_home" != /* ]] || [[ -L "$operator_home" ]] ||
+            [[ ! -d "$operator_home" ]] ||
+            [[ "$(cd "$operator_home" && pwd -P)" != "$operator_home" ]] ||
+            [[ "$operator_login_keychain" != \
+                "$operator_home/Library/Keychains/login.keychain-db" ]] ||
+            [[ -L "$operator_login_keychain" ]] ||
+            [[ ! -f "$operator_login_keychain" ]]; then
+            printf 'stage tool manifest has no valid operator Keychain authority: %s\n' \
+                "$stage_name" >&2
+            exit 2
+        fi
+    elif [[ -n "$operator_home" ]] || [[ -n "$operator_login_keychain" ]]; then
+        printf 'operator Keychain authority escaped its exact stage: %s\n' \
             "$stage_name" >&2
         exit 2
     fi
@@ -536,6 +557,9 @@ process RUN_REPOSITORY_STAGE {
         "PIPELINE_ORIGINAL_DESCRIBE=$expected_describe"
         "PIPELINE_INTERNAL_CACHE_ROOT=$execution_root/cache"
     )
+    if [[ "$stage_name" == container-release-validation ]]; then
+        metadata_environment+=("PIPELINE_OPERATOR_HOME=$operator_home")
+    fi
     if [[ -n "$expected_commit" ]]; then
         metadata_environment+=("GIT_COMMIT=$expected_commit")
     fi
