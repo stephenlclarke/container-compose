@@ -7487,6 +7487,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/426"
     },
     {
+      "id": "container-compose-428",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Use immutable release controls for stable preflight",
+      "state": "active-draft",
+      "lastVerified": "2026-09-02",
+      "commits": [
+        "695be0ce4ff59658d1d7a943f171425ff1f238f5"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-427.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-428.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/428"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",
