@@ -212,8 +212,8 @@ def releaseHostedFunctionalStageSpecs() {
             'make,apple-swift,hawkeye,codesign', '.', 'commit'],
         ['container', 'container-release-validation', 'test',
             params.functionalTimeoutSeconds as Integer,
-            'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && unset CONTAINER_APP_ROOT CONTAINER_SERVICE_NAMESPACE && export CI=1 HAWKEYE_AUTO_INSTALL=0 CONTAINER_SEMANTIC_HELPER_TOOLCHAIN_CACHE="$PIPELINE_INTERNAL_CACHE_ROOT/container-semantic-helper" && make --no-print-directory ROOT_DIR="$PWD" PYTHON3=python3 GIT_COMMIT="$PIPELINE_ORIGINAL_COMMIT" RELEASE_VERSION="$PIPELINE_ORIGINAL_DESCRIBE" check build dsym && HOME="$PIPELINE_OPERATOR_HOME" make --no-print-directory ROOT_DIR="$PWD" PYTHON3=python3 GIT_COMMIT="$PIPELINE_ORIGINAL_COMMIT" RELEASE_VERSION="$PIPELINE_ORIGINAL_DESCRIBE" coverage-unit',
-            'make,apple-swift,python3,hawkeye,codesign', '.', 'commit,describe'],
+            'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && unset CONTAINER_APP_ROOT CONTAINER_SERVICE_NAMESPACE && export CI=1 HAWKEYE_AUTO_INSTALL=0 CONTAINER_SEMANTIC_HELPER_TOOLCHAIN_CACHE="$PIPELINE_INTERNAL_CACHE_ROOT/container-semantic-helper" && make --no-print-directory ROOT_DIR="$PWD" PYTHON3=python3 GIT_COMMIT="$PIPELINE_ORIGINAL_COMMIT" RELEASE_VERSION="$PIPELINE_ORIGINAL_DESCRIBE" check build dsym && { keychain_status=0; /usr/bin/python3 "$PIPELINE_DEADLINE_RUNNER" --seconds 5 -- /usr/bin/security show-keychain-info "$PIPELINE_OPERATOR_LOGIN_KEYCHAIN" >/dev/null 2>&1 || keychain_status=$?; if ((keychain_status == 124)); then printf "operator login Keychain readiness check exceeded its deadline\n" >&2; exit 124; fi; if ((keychain_status != 0)); then printf "operator login Keychain must be unlocked before Container release coverage: %s\n" "$PIPELINE_OPERATOR_LOGIN_KEYCHAIN" >&2; exit 2; fi; HOME="$PIPELINE_OPERATOR_HOME" make --no-print-directory ROOT_DIR="$PWD" PYTHON3=python3 GIT_COMMIT="$PIPELINE_ORIGINAL_COMMIT" RELEASE_VERSION="$PIPELINE_ORIGINAL_DESCRIBE" coverage-unit; }',
+            'make,apple-swift,python3,hawkeye,codesign,security', '.', 'commit,describe'],
         ['homebrew-tap', 'homebrew-release-validation', 'test',
             params.functionalTimeoutSeconds as Integer,
             'ruby -c Formula/container-compose.rb',
@@ -434,7 +434,6 @@ process PREFLIGHT_HOST {
     val evidenceDirectoryBase64
     val expectedStateMarkerBase64
     val executionPathBase64
-    val requiresOperatorKeychain
     val operatorHomeBase64
     path launcher
     path deadlineRunner
@@ -463,58 +462,21 @@ process PREFLIGHT_HOST {
     evidence_directory="$(decode_parameter '!{evidenceDirectoryBase64}')"
     expected_state_marker="$(decode_parameter '!{expectedStateMarkerBase64}')"
     execution_path="$(decode_parameter '!{executionPathBase64}')"
-    requires_operator_keychain="!{requiresOperatorKeychain}"
     operator_home="$(decode_parameter '!{operatorHomeBase64}')"
     launcher="$PWD/!{launcher}"
     deadline_runner="$PWD/!{deadlineRunner}"
     export PATH="$execution_path"
 
-    if ! [[ "$requires_operator_keychain" =~ ^(true|false)$ ]]; then
-        printf 'operator Keychain requirement is invalid: %s\n' \
-            "$requires_operator_keychain" >&2
-        exit 2
-    fi
-    operator_login_keychain=
-    if [[ "$requires_operator_keychain" == true ]]; then
+    if [[ -n "$operator_home" ]]; then
         case "$operator_home" in
             /*) ;;
             *) printf 'operator home must be absolute: %s\n' "$operator_home" >&2; exit 2 ;;
         esac
         if [[ "$operator_home" == *$'\t'* ]] ||
-            [[ "$operator_home" == *$'\n'* ]] || [[ -L "$operator_home" ]] ||
-            [[ ! -d "$operator_home" ]]; then
-            printf 'operator home is indirect or invalid: %s\n' "$operator_home" >&2
+            [[ "$operator_home" == *$'\n'* ]]; then
+            printf 'operator home contains a control character\n' >&2
             exit 2
         fi
-        canonical_operator_home="$(cd "$operator_home" && pwd -P)"
-        if [[ "$canonical_operator_home" != "$operator_home" ]]; then
-            printf 'operator home must be canonical: %s\n' "$operator_home" >&2
-            exit 2
-        fi
-        operator_login_keychain="$operator_home/Library/Keychains/login.keychain-db"
-        if [[ -L "$operator_login_keychain" ]] ||
-            [[ ! -f "$operator_login_keychain" ]]; then
-            printf 'operator login Keychain is indirect or missing: %s\n' \
-                "$operator_login_keychain" >&2
-            exit 2
-        fi
-        set +e
-        /usr/bin/python3 "$deadline_runner" --seconds 5 -- \
-            /usr/bin/security show-keychain-info "$operator_login_keychain" \
-            >login-keychain-preflight.output 2>&1
-        keychain_status="$?"
-        set -e
-        if [[ "$keychain_status" == 124 ]]; then
-            printf 'operator login Keychain preflight exceeded its deadline\n' >&2
-            exit 124
-        fi
-        if ((keychain_status != 0)); then
-            printf 'operator login Keychain must be unlocked before release validation: %s\n' \
-                "$operator_login_keychain" >&2
-            exit 2
-        fi
-    else
-        operator_home=
     fi
 
     developer_directory="${DEVELOPER_DIR:-}"
@@ -581,9 +543,6 @@ process PREFLIGHT_HOST {
     tool_specs=(system-git:/usr/bin/git system-shasum:/usr/bin/shasum \
         system-bash:/bin/bash system-python:/usr/bin/python3 \
         system-xcode-select:/usr/bin/xcode-select system-xcrun:/usr/bin/xcrun)
-    if [[ "$requires_operator_keychain" == true ]]; then
-        tool_specs+=(system-security:/usr/bin/security)
-    fi
     for tool_spec in "${tool_specs[@]}"; do
         tool_name="${tool_spec%%:*}"
         tool_selector="${tool_spec#*:}"
@@ -602,21 +561,17 @@ process PREFLIGHT_HOST {
         else
             tool_sha256=not-a-regular-file
         fi
-        if [[ "$tool_name" == system-security ]]; then
-            tool_version=binary-sha256-only
-        else
-            set +e
-            /usr/bin/python3 "$deadline_runner" --seconds 30 -- \
-                "$tool_path" --version >tool-version.output 2>&1
-            probe_status="$?"
-            set -e
-            if [[ "$probe_status" == 124 ]]; then
-                printf 'tool version probe exceeded its deadline: %s\n' \
-                    "$tool_name" >&2
-                exit 124
-            fi
-            tool_version="$(/usr/bin/head -n 1 tool-version.output)"
+        set +e
+        /usr/bin/python3 "$deadline_runner" --seconds 30 -- \
+            "$tool_path" --version >tool-version.output 2>&1
+        probe_status="$?"
+        set -e
+        if [[ "$probe_status" == 124 ]]; then
+            printf 'tool version probe exceeded its deadline: %s\n' \
+                "$tool_name" >&2
+            exit 124
         fi
+        tool_version="$(/usr/bin/head -n 1 tool-version.output)"
         tool_version="${tool_version//$'\t'/ }"
         printf 'tool\t%s\t%s\t%s\t%s\n' \
             "$tool_name" "$tool_path" "$tool_sha256" "$tool_version" \
@@ -674,8 +629,9 @@ process PREFLIGHT_HOST {
         printf 'state-root\t%s\n' "$canonical_state"
         printf 'evidence-directory\t%s\n' "$canonical_evidence"
         printf 'xcode-developer-dir\t%s\n' "$developer_directory"
-        printf 'operator-home\t%s\n' "$operator_home"
-        printf 'operator-login-keychain\t%s\n' "$operator_login_keychain"
+        if [[ -n "$operator_home" ]]; then
+            printf 'operator-home\t%s\n' "$operator_home"
+        fi
         /bin/cat host-ready.tsv.pending
     } >host-ready.tsv
     /bin/rm host-ready.tsv.pending
@@ -1152,8 +1108,6 @@ process PREFLIGHT_STAGE_TOOLS {
         '$1 == "xcode-developer-dir" { print $2 }' "$host_ready")"
     operator_home="$(/usr/bin/awk -F '\t' \
         '$1 == "operator-home" { print $2 }' "$host_ready")"
-    operator_login_keychain="$(/usr/bin/awk -F '\t' \
-        '$1 == "operator-login-keychain" { print $2 }' "$host_ready")"
     if [[ "$developer_directory" != /* ]] ||
         [[ ! -d "$developer_directory" ]]; then
         printf 'host Apple developer directory is invalid: %s\n' \
@@ -1184,15 +1138,13 @@ process PREFLIGHT_STAGE_TOOLS {
         "$stage_name" "$execution_path" "$(/usr/bin/sw_vers -productVersion)" \
         "$(/usr/bin/uname -mrs)" >"$manifest"
     if [[ "$stage_name" == container-release-validation ]]; then
-        if [[ "$operator_home" != /* ]] || [[ -L "$operator_home" ]] ||
-            [[ ! -d "$operator_home" ]] ||
-            [[ "$operator_login_keychain" != \
-                "$operator_home/Library/Keychains/login.keychain-db" ]] ||
-            [[ -L "$operator_login_keychain" ]] ||
-            [[ ! -f "$operator_login_keychain" ]]; then
+        if [[ "$operator_home" != /* ]] ||
+            [[ "$operator_home" == *$'\t'* ]] ||
+            [[ "$operator_home" == *$'\n'* ]]; then
             printf 'operator Keychain authority is invalid: %s\n' "$stage_name" >&2
             exit 2
         fi
+        operator_login_keychain="$operator_home/Library/Keychains/login.keychain-db"
         printf 'operator-home\t%s\n' "$operator_home" >>"$manifest"
         printf 'operator-login-keychain\t%s\n' \
             "$operator_login_keychain" >>"$manifest"
@@ -1225,6 +1177,7 @@ process PREFLIGHT_STAGE_TOOLS {
         case "$tool_selector" in
             apple-swift) tool_selector=/usr/bin/swift ;;
             codesign) tool_selector=/usr/bin/codesign ;;
+            security) tool_selector=/usr/bin/security ;;
             docc)
                 tool_selector="$(/usr/bin/python3 "$deadline_runner" \
                     --seconds 30 -- /usr/bin/env \
@@ -1247,7 +1200,7 @@ process PREFLIGHT_STAGE_TOOLS {
         tool_sha256="$(/usr/bin/shasum -a 256 "$tool_path" | \
             /usr/bin/awk '{ print $1 }')"
         case "$tool_name" in
-            system-*|otool|codesign|docc|gofmt)
+            system-*|otool|codesign|docc|gofmt|security)
                 tool_version=binary-sha256-only
                 ;;
             go)
@@ -1468,7 +1421,6 @@ workflow PREFLIGHT_GRAPH {
     repositorySpecs
     launcher
     deadlineRunner
-    requiresOperatorKeychain
 
     main:
     PREFLIGHT_HOST(
@@ -1479,7 +1431,6 @@ workflow PREFLIGHT_GRAPH {
         channel.value(encodeParameter(params.evidenceDir)),
         channel.value(encodeParameter(params.stateMarkerValue)),
         channel.value(encodeParameter(params.executionPath)),
-        requiresOperatorKeychain,
         channel.value(encodeParameter(params.operatorHome)),
         launcher,
         deadlineRunner,
@@ -1699,14 +1650,10 @@ workflow PREFLIGHT_ONLY {
     deadlineRunner = channel.value(file(params.deadlineRunner, checkIfExists: true))
     repositories = channel.fromList(repositoryInputSpecs(selection))
     stages = channel.fromList(encodedStageInputSpecs(selection))
-    requiresOperatorKeychain = channel.value(selection.functionalStages.any { stage ->
-        stage[1] == 'container-release-validation'
-    })
     PREFLIGHT_GRAPH(
         repositories,
         launcher,
         deadlineRunner,
-        requiresOperatorKeychain,
     )
     PREPARE_STAGE_GRAPH(
         stages,
@@ -1730,14 +1677,10 @@ workflow PIPELINE {
     deadlineRunner = channel.value(file(params.deadlineRunner, checkIfExists: true))
     repositories = channel.fromList(repositoryInputSpecs(selection))
     stages = channel.fromList(encodedStageInputSpecs(selection))
-    requiresOperatorKeychain = channel.value(selection.functionalStages.any { stage ->
-        stage[1] == 'container-release-validation'
-    })
     PREFLIGHT_GRAPH(
         repositories,
         launcher,
         deadlineRunner,
-        requiresOperatorKeychain,
     )
     PREPARE_STAGE_GRAPH(
         stages,

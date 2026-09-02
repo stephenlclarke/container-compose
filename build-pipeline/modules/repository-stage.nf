@@ -559,6 +559,10 @@ process RUN_REPOSITORY_STAGE {
     )
     if [[ "$stage_name" == container-release-validation ]]; then
         metadata_environment+=("PIPELINE_OPERATOR_HOME=$operator_home")
+        metadata_environment+=(
+            "PIPELINE_OPERATOR_LOGIN_KEYCHAIN=$operator_login_keychain"
+            "PIPELINE_DEADLINE_RUNNER=$deadline_runner"
+        )
     fi
     if [[ -n "$expected_commit" ]]; then
         metadata_environment+=("GIT_COMMIT=$expected_commit")
