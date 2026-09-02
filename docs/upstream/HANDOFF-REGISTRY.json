@@ -7396,6 +7396,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/417"
     },
     {
+      "id": "container-compose-419",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Isolate persistent release state from the job workspace",
+      "state": "active-draft",
+      "lastVerified": "2026-09-02",
+      "commits": [
+        "50031ee49a6570f36181587d773d21af79bfc5cb"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-418.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-419.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/419"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",
