@@ -36,6 +36,9 @@ STABLE_RELEASE_WORKFLOW = (
 CI_WORKFLOW = (REPOSITORY_ROOT / ".github/workflows/ci.yml").read_text(
     encoding="utf-8"
 )
+RECOVERY_PROOF = (
+    REPOSITORY_ROOT / "Tests/BuildPipeline/recovery-proof.nf"
+).read_text(encoding="utf-8")
 
 
 class ReleaseStageGitHistoryTests(unittest.TestCase):
@@ -120,6 +123,15 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
             "Release documentation requires every functional validation",
             PIPELINE_SOURCE,
         )
+
+    def test_release_validation_barrier_preserves_receipt_tuples(self) -> None:
+        self.assertIn(
+            ".concat(RUN_LIGHTWEIGHT_STAGE.out.receipt)\n"
+            "        .collect(flat: false)",
+            PIPELINE_SOURCE,
+        )
+        self.assertIn("receiptGate = channel.of(", RECOVERY_PROOF)
+        self.assertIn(".collect(flat: false)", RECOVERY_PROOF)
 
     def test_container_validation_checks_the_operator_keychain_just_in_time(
         self,

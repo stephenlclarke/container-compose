@@ -1746,7 +1746,7 @@ workflow PIPELINE {
     )
     validationCompletionGate = RUN_SWIFT_STAGE.out.receipt
         .concat(RUN_LIGHTWEIGHT_STAGE.out.receipt)
-        .collect()
+        .collect(flat: false)
         .map { receipts ->
             if (receipts.size() != validationStageNames.size()) {
                 error 'release validation did not produce every expected receipt'

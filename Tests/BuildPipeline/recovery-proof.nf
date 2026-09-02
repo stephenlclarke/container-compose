@@ -37,6 +37,7 @@ process RUN_DOWNSTREAM {
     input:
     path upstream_marker
     val downstream_fingerprint
+    val receipt_gate
 
     output:
     path 'downstream.txt'
@@ -45,11 +46,13 @@ process RUN_DOWNSTREAM {
     if (downstream_fingerprint == 'corrected-v1') {
         """
         grep -qx 'upstream complete' '${upstream_marker}'
+        test '${receipt_gate}' = true
         printf '%s\\n' 'downstream complete' > downstream.txt
         """
     } else {
         """
         grep -qx 'upstream complete' '${upstream_marker}'
+        test '${receipt_gate}' = true
         printf '%s\\n' 'planned downstream failure' >&2
         exit 42
         """
@@ -57,8 +60,26 @@ process RUN_DOWNSTREAM {
 }
 
 workflow {
+    receiptGate = channel.of(
+        tuple('repository-a', 'validation-a'),
+        tuple('repository-b', 'validation-b'),
+        tuple('repository-c', 'validation-c'),
+        tuple('repository-d', 'validation-d'),
+    )
+        .collect(flat: false)
+        .map { receipts ->
+            if (receipts.size() != 4 ||
+                receipts.any { receipt -> receipt.size() != 2 }) {
+                error 'receipt collection did not preserve four tuples'
+            }
+            true
+        }
     VERIFY_STDIN_CLOSED()
     BUILD_UPSTREAM(VERIFY_STDIN_CLOSED.out, params.upstream_fingerprint)
-    RUN_DOWNSTREAM(BUILD_UPSTREAM.out, params.downstream_fingerprint)
+    RUN_DOWNSTREAM(
+        BUILD_UPSTREAM.out,
+        params.downstream_fingerprint,
+        receiptGate,
+    )
     RUN_DOWNSTREAM.out.view { marker -> "RECOVERY_PROOF_RESULT=${marker.text.trim()}" }
 }
