@@ -5,7 +5,9 @@
 Stable 0.14.1 preflight correctly stopped before artifact production when Apple
 Containerization advanced. The support forks now contain the reviewed upstream
 sync, reusable-vsock lifecycle repairs, and the grpc-go security update, but
-Compose still points at the preceding immutable stack.
+Compose still points at the preceding immutable stack. Compose's normalizer
+also resolves the same vulnerable grpc-go release reported by Dependabot alert
+[#25](https://github.com/stephenlclarke/container-compose/security/dependabot/25).
 
 ## Resolution
 
@@ -20,6 +22,7 @@ signed merge commits in Compose before stable validation resumes.
 - `Package.swift`, `Package.resolved`, and the release stack manifest agree.
 - Status, architecture references, README fork metrics, commit classifications,
   and handoff evidence describe the same immutable support-fork heads.
+- The normalizer resolves grpc-go 1.83.1 or newer and its focused Go tests pass.
 - Focused stack-consistency and documentation checks pass.
 - Exact-head hosted review and CI pass before the branch merges.
 - The published `current` package proves the merged Compose and support-fork
