@@ -23,6 +23,12 @@ import unittest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 PIPELINE_SOURCE = (REPOSITORY_ROOT / "main.nf").read_text(encoding="utf-8")
+PIPELINE_CONFIG = (REPOSITORY_ROOT / "nextflow.config").read_text(
+    encoding="utf-8"
+)
+REPOSITORY_STAGE = (
+    REPOSITORY_ROOT / "build-pipeline/modules/repository-stage.nf"
+).read_text(encoding="utf-8")
 
 
 class ReleaseStageGitHistoryTests(unittest.TestCase):
@@ -59,6 +65,12 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
             PIPELINE_SOURCE,
         )
         self.assertIn("source_format=git-tree-archive", PIPELINE_SOURCE)
+
+    def test_release_graph_terminates_after_first_failed_stage(self) -> None:
+        self.assertIn("errorStrategy = 'terminate'", PIPELINE_CONFIG)
+        self.assertIn("errorStrategy 'terminate'", REPOSITORY_STAGE)
+        self.assertNotIn("errorStrategy = 'finish'", PIPELINE_CONFIG)
+        self.assertNotIn("errorStrategy 'finish'", REPOSITORY_STAGE)
 
 
 if __name__ == "__main__":
