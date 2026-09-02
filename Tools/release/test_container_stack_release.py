@@ -3317,9 +3317,10 @@ github_cli() {{
         self.assertIn("make -C release-tools pipeline", workflow)
         self.assertIn("make -C ../release-tools pipeline-bootstrap", workflow)
         self.assertIn(
-            "RELEASE_PIPELINE_STATE_ROOT: /Volumes/SSD/github/.container-compose-release-pipeline",
+            "RELEASE_PIPELINE_STATE_ROOT: ${{ github.workspace }}/.container-compose-release-pipeline",
             workflow,
         )
+        self.assertNotIn("RELEASE_PIPELINE_STATE_ROOT: /Volumes/", workflow)
         self.assertIn("make -C release-tools pipeline-resume", workflow)
         self.assertIn('PIPELINE_SESSION="${resume_session}"', workflow)
         self.assertNotIn("make -C container-compose ci", workflow)
