@@ -242,10 +242,11 @@ primitive, temporary port, or rejected-policy disposition changed in this
 refresh.
 
 The 2 September 2026 maintenance refresh advances Apple Container through
-`b8ffd38c7344`, Container through `3d7ae8612b48`, Apple Containerization
+`b8ffd38c7344`, Container through `69b21f14d725`, Apple Containerization
 through `a6328c45de9f`, Containerization through `7d325176c08d`, and the
 builder shim through `4aff0ea2e7ff`. Known-immediate prewarm avoidance is a
 generic runtime optimization. Interrupted prepared cleanup, short-lived exit
 preservation, managed clean routing, synchronized dependency pins, workflow
-pinning, and their review handoffs are support maintenance. No temporary port
-or rejected-policy disposition changed in this refresh.
+pinning, NBD integration-test serialization, and their review handoffs are
+support maintenance. No temporary port or rejected-policy disposition changed
+in this refresh.
