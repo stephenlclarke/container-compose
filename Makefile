@@ -918,6 +918,30 @@ pipeline-execute: pipeline-runtime-check
 	k8s_repo="$${PIPELINE_K8S_REPO:-$$source_root/container-k8s}"; \
 	homebrew_repo="$${PIPELINE_HOMEBREW_REPO:-$$source_root/homebrew-tap}"; \
 	operator_name="$$(/usr/bin/id -un)"; \
+	operator_home=; \
+	requires_operator_keychain=false; \
+	if [[ "$$action" != plan ]] && [[ "$${PIPELINE_PROFILE}" == release-hosted ]]; then \
+		if [[ -z "$${PIPELINE_STAGE_SELECTOR//[[:space:]]/}" ]]; then \
+			requires_operator_keychain=true; \
+		else \
+			IFS=',' read -r -a selected_stages <<<"$${PIPELINE_STAGE_SELECTOR}"; \
+			for selected_stage in "$${selected_stages[@]}"; do \
+				selected_stage="$${selected_stage//[[:space:]]/}"; \
+				if [[ "$$selected_stage" == container-release-validation ]]; then \
+					requires_operator_keychain=true; \
+					break; \
+				fi; \
+			done; \
+		fi; \
+	fi; \
+	if [[ "$$requires_operator_keychain" == true ]]; then \
+		operator_home="$$(/usr/bin/python3 -I -c 'import os, pwd; print(pwd.getpwuid(os.getuid()).pw_dir)')"; \
+		case "$$operator_home" in /*) ;; *) printf 'Operator home must be absolute: %s\n' "$$operator_home" >&2; exit 2 ;; esac; \
+		if [[ "$$operator_home" == *$$'\t'* ]] || [[ "$$operator_home" == *$$'\n'* ]]; then \
+			printf 'Operator home contains a control character.\n' >&2; \
+			exit 2; \
+		fi; \
+	fi; \
 	clean_environment=(/usr/bin/env -i \
 		CI=1 HOME="$$state_root/nextflow-home" USER="$$operator_name" \
 		LOGNAME="$$operator_name" SHELL=/bin/bash \
@@ -968,6 +992,7 @@ pipeline-execute: pipeline-runtime-check
 				--evidenceDir "$$attempt_dir" \
 				--stateMarkerValue "$${PIPELINE_MARKER_VALUE}" \
 				--executionPath "$${PIPELINE_EXECUTION_PATH}" \
+				"--operatorHome=$$operator_home" \
 				--launcherPath "$${NEXTFLOW_BIN}" \
 				--expectedNextflowVersion "$${NEXTFLOW_VERSION}" \
 				--expectedLauncherSha256 "$${NEXTFLOW_SHA256}" \

@@ -45,7 +45,7 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
         expected_declarations = (
             "'make,go,hawkeye', '.', 'commit,describe'",
             "'make,apple-swift,hawkeye,codesign', '.', 'commit'",
-            "'make,apple-swift,python3,hawkeye,codesign', '.', "
+            "'make,apple-swift,python3,hawkeye,codesign,security', '.', "
             "'commit,describe'",
         )
 
@@ -120,6 +120,115 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
             "Release documentation requires every functional validation",
             PIPELINE_SOURCE,
         )
+
+    def test_container_validation_checks_the_operator_keychain_just_in_time(
+        self,
+    ) -> None:
+        self.assertIn(
+            "params.operatorHome = ''",
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            '"--operatorHome=$$operator_home"',
+            PIPELINE_MAKEFILE,
+        )
+        self.assertIn(
+            "'make,apple-swift,python3,hawkeye,codesign,security'",
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            "security) tool_selector=/usr/bin/security",
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            "system-*|otool|codesign|docc|gofmt|security",
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            '/usr/bin/security show-keychain-info '
+            '"$PIPELINE_OPERATOR_LOGIN_KEYCHAIN"',
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            "operator login Keychain readiness check exceeded its deadline",
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            "operator login Keychain must be unlocked before Container "
+            "release coverage",
+            PIPELINE_SOURCE,
+        )
+        self.assertIn(
+            '[[ "$stage_name" == container-release-validation ]]',
+            REPOSITORY_STAGE,
+        )
+        self.assertIn(
+            'metadata_environment+=("PIPELINE_OPERATOR_HOME=$operator_home")',
+            REPOSITORY_STAGE,
+        )
+        self.assertIn(
+            '"PIPELINE_OPERATOR_LOGIN_KEYCHAIN=$operator_login_keychain"',
+            REPOSITORY_STAGE,
+        )
+        self.assertIn(
+            '"PIPELINE_DEADLINE_RUNNER=$deadline_runner"',
+            REPOSITORY_STAGE,
+        )
+        self.assertIn(
+            'HOME="$PIPELINE_OPERATOR_HOME" make --no-print-directory',
+            PIPELINE_SOURCE,
+        )
+        self.assertNotIn(
+            "configure_ephemeral_test_keychain",
+            REPOSITORY_STAGE,
+        )
+        self.assertNotIn(
+            "/usr/bin/security create-keychain",
+            REPOSITORY_STAGE,
+        )
+        container_stage = PIPELINE_SOURCE.split(
+            "['container', 'container-release-validation'", 1
+        )[1].split("['homebrew-tap'", 1)[0]
+        build = container_stage.index("check build dsym")
+        readiness = container_stage.index(
+            '/usr/bin/security show-keychain-info '
+            '"$PIPELINE_OPERATOR_LOGIN_KEYCHAIN"'
+        )
+        coverage = container_stage.index("coverage-unit")
+        self.assertLess(build, readiness)
+        self.assertLess(readiness, coverage)
+
+        host_preflight = PIPELINE_SOURCE.split("process PREFLIGHT_HOST", 1)[1].split(
+            "process PREFLIGHT_REPOSITORY", 1
+        )[0]
+        self.assertNotIn("show-keychain-info", host_preflight)
+        self.assertNotIn("system-security", host_preflight)
+
+        stage_preflight = PIPELINE_SOURCE.split(
+            "process PREFLIGHT_STAGE_TOOLS", 1
+        )[1].split("workflow PREFLIGHT_GRAPH", 1)[0]
+        self.assertNotIn('[[ ! -d "$operator_home" ]]', stage_preflight)
+        self.assertNotIn('[[ ! -f "$operator_login_keychain" ]]', stage_preflight)
+
+    def test_operator_home_is_scoped_to_selected_container_validation(self) -> None:
+        self.assertIn(
+            'operator_home=; \\\n\trequires_operator_keychain=false;',
+            PIPELINE_MAKEFILE,
+        )
+        self.assertIn(
+            'if [[ "$$action" != plan ]] && '
+            '[[ "$${PIPELINE_PROFILE}" == release-hosted ]]; then',
+            PIPELINE_MAKEFILE,
+        )
+        self.assertIn(
+            '[[ "$$selected_stage" == container-release-validation ]]',
+            PIPELINE_MAKEFILE,
+        )
+        self.assertIn(
+            'if [[ "$$requires_operator_keychain" == true ]]; then',
+            PIPELINE_MAKEFILE,
+        )
+        self.assertNotIn("requiresOperatorKeychain", PIPELINE_SOURCE)
 
     def test_ci_parallelizes_independent_tool_suites(self) -> None:
         tool_tests_section = CI_WORKFLOW.split("  tool_tests:", 1)[1].split(
