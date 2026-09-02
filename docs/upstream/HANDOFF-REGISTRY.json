@@ -7466,6 +7466,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/424"
     },
     {
+      "id": "container-compose-426",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Preserve release receipt tuples",
+      "state": "active-draft",
+      "lastVerified": "2026-09-02",
+      "commits": [
+        "71635b830dded1133f8a2a180301574fd6e735cc"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-425.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-426.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/426"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",
