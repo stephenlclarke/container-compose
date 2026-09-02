@@ -7533,6 +7533,28 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/429"
     },
     {
+      "id": "container-compose-431",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Retain exit-controlled services in runtime smoke checks",
+      "state": "active-draft",
+      "lastVerified": "2026-09-02",
+      "commits": [
+        "be25d540957fcc97a2ce167c957bc800ee7d9297",
+        "702e75e231586def2a723b325440d297bd420df6"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-430.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-431.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/431"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",
