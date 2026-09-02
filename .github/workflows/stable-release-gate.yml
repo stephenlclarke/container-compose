@@ -278,11 +278,6 @@ jobs:
     needs: resolve-candidate
     runs-on: [self-hosted, macOS, ARM64, container-compose-release]
     timeout-minutes: 120
-    env:
-      # Keep recoverable state on the runner's persistent internal tool cache.
-      # A service-launched job can block indefinitely when mkdir crosses the
-      # removable-volume privacy boundary before the pipeline even starts.
-      RELEASE_PIPELINE_STATE_ROOT: ${{ github.workspace }}/.container-compose-release-pipeline
     steps:
       - name: Checkout the stable candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -365,6 +360,25 @@ jobs:
           [[ "$(git -C container rev-parse HEAD)" == "${CONTAINER_REF}" ]]
           [[ "$(git -C homebrew-tap rev-parse HEAD)" == "${HOMEBREW_TAP_REF}" ]]
           [[ "$(git -C release-tools rev-parse HEAD)" == "${CONTROL_SHA}" ]]
+
+      - name: Resolve persistent release state root
+        env:
+          CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE_SHA}" =~ ^[[:xdigit:]]{40}$ ]]
+          runner_work_root="$(cd "${RUNNER_TEMP}/.." && pwd -P)"
+          state_root="${runner_work_root}/.container-compose-release-pipeline/${CANDIDATE_SHA}"
+          case "${state_root}" in
+            "${GITHUB_WORKSPACE}"|"${GITHUB_WORKSPACE}"/*)
+              printf 'Release state root must be outside the disposable job workspace: %s\n' \
+                "${state_root}" >&2
+              exit 2
+              ;;
+          esac
+          printf 'RELEASE_PIPELINE_STATE_ROOT=%s\n' "${state_root}" >> "${GITHUB_ENV}"
+          printf 'Candidate-keyed release state: %s\n' "${state_root}" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
