@@ -11,14 +11,14 @@ guidance remains in [INSTALL.md](../guides/INSTALL.md).
 
 ## Current Stable Release
 
-[`0.14.1`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.1)
-was published for macOS arm64 on 2 September 2026.
+[`0.14.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.0)
+was published for macOS arm64 on 31 August 2026.
 
 The immutable release manifest selects:
 
-- Container `87ca355e42184a60ea9ed3c7a64f8b91c97109c9`.
-- Containerization `f77f8d2833b54498546c081a0a5d15b4751b62bd`.
-- Container builder shim `4aff0ea2e7ff293544a4efac28b508da53aac3d6`.
+- Container `f87481688f25bbc9d311ae09c4fcf33f121ba9ae`.
+- Containerization `e5a92e86bf03eb2cc244b3b47b0413b3935abfe4`.
+- Container builder shim `db3e99cc3d19b9a328eb51be3a023a178f80ee81`.
 - Builder image digest
   `sha256:d81d12e1dca1133ede535483a809803e6b256555a73d17f207003279539454a4`.
 - SwiftNIO SSL `09c5c9adcdd2a459187e45fe0143eb01063f244a`.
@@ -26,6 +26,13 @@ The immutable release manifest selects:
 The hosted stable-release gate passed for that immutable package. Current and
 Homebrew release artifacts are Developer ID signed, checksummed, attested, and
 bound to the matched runtime stack.
+
+The 0.14.1 Current candidate selects Container
+`ecf6da9fd029a52717a574c4aab3ed5257bbeea2`, Containerization
+`818f5917819a32dac1bc233605c253b4a105e0e0`, and Container builder shim
+`4aff0ea2e7ff293544a4efac28b508da53aac3d6`. These candidate revisions do not
+describe immutable 0.14.1 artifacts until the stable release gate succeeds and
+publishes that version.
 
 ## At a Glance
 
