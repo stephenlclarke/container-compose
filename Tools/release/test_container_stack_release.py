@@ -20,6 +20,7 @@
 import json
 import os
 import re
+import shutil
 import signal
 import shlex
 import subprocess
@@ -97,6 +98,278 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertLess(
             self.script.index(use), self.script.index("run_local_release_gate_command env")
         )
+
+    def test_local_release_gate_stages_vm_mounted_source_on_the_system_volume(
+        self,
+    ) -> None:
+        local_gate = self.script[
+            self.script.index("run_local_release_gate() {") : self.script.index(
+                "# Verify that Apple remotes cannot be pushed"
+            )
+        ]
+        staging = 'staged_containerization_path="${runtime_parent}/containerization"'
+        container_staging = 'staged_container_path="${runtime_parent}/container"'
+        stage_call = "stage_local_validation_checkout"
+        init_source = 'CONTAINERIZATION_INIT_SOURCE_PATH="${containerization_path}"'
+        stack_source = '"CONTAINERIZATION_STACK_REPO=${containerization_path}"'
+
+        self.assertIn("stage_local_validation_checkout() {", self.script)
+        self.assertIn("clone --no-local --no-checkout --quiet", self.script)
+        self.assertIn("remote remove origin", self.script)
+        self.assertIn("objects/info/alternates", self.script)
+        self.assertIn(staging, local_gate)
+        self.assertIn(container_staging, local_gate)
+        self.assertIn(stage_call, local_gate)
+        self.assertIn("publish_local_validation_checkout_alias", local_gate)
+        self.assertIn(
+            "container-compose-release-containerization-$(id -u)", local_gate
+        )
+        self.assertIn("container-compose-release-container-$(id -u)", local_gate)
+        self.assertIn(
+            '"${container_path}" "${staged_container_path}" container', local_gate
+        )
+        self.assertIn(init_source, local_gate)
+        self.assertIn(stack_source, local_gate)
+        self.assertLess(local_gate.index(staging), local_gate.index(stage_call))
+        self.assertLess(local_gate.index(stage_call), local_gate.index(init_source))
+
+    def test_local_validation_checkout_alias_is_stable_and_exactly_cleaned(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="c.") as directory:
+            staged = Path(directory) / "containerization"
+            staged.mkdir()
+            alias = Path("/tmp") / (
+                f"container-compose-release-containerization-{os.getuid()}-"
+                f"test-{os.getpid()}"
+            )
+            try:
+                result = self.run_release_function(
+                    Path(directory),
+                    (
+                        "published=$(publish_local_validation_checkout_alias "
+                        f"{shlex.quote(str(staged))} {shlex.quote(str(alias))}); "
+                        f"test \"$published\" = {shlex.quote(str(alias))}; "
+                        "cleanup_local_validation_checkout_alias "
+                        f"{shlex.quote(str(alias))} {shlex.quote(str(staged))}"
+                    ),
+                )
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(alias.exists())
+                self.assertFalse(alias.is_symlink())
+
+                alias.symlink_to("/tmp/c.stale/containerization")
+                retry = self.run_release_function(
+                    Path(directory),
+                    (
+                        "published=$(publish_local_validation_checkout_alias "
+                        f"{shlex.quote(str(staged))} {shlex.quote(str(alias))}); "
+                        f"test \"$published\" = {shlex.quote(str(alias))}; "
+                        "cleanup_local_validation_checkout_alias "
+                        f"{shlex.quote(str(alias))} {shlex.quote(str(staged))}"
+                    ),
+                )
+                self.assertEqual(retry.returncode, 0, retry.stdout + retry.stderr)
+                self.assertFalse(alias.is_symlink())
+            finally:
+                if alias.is_symlink():
+                    alias.unlink()
+
+    def test_local_container_validation_alias_is_stable_and_exactly_cleaned(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="c.") as directory:
+            staged = Path(directory) / "container"
+            staged.mkdir()
+            alias = Path("/tmp") / (
+                f"container-compose-release-container-{os.getuid()}-"
+                f"test-{os.getpid()}"
+            )
+            try:
+                result = self.run_release_function(
+                    Path(directory),
+                    (
+                        "published=$(publish_local_validation_checkout_alias "
+                        f"{shlex.quote(str(staged))} {shlex.quote(str(alias))} "
+                        "container); "
+                        f"test \"$published\" = {shlex.quote(str(alias))}; "
+                        "cleanup_local_validation_checkout_alias "
+                        f"{shlex.quote(str(alias))} {shlex.quote(str(staged))} "
+                        "container"
+                    ),
+                )
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(alias.exists())
+                self.assertFalse(alias.is_symlink())
+            finally:
+                if alias.is_symlink():
+                    alias.unlink()
+
+    def test_local_validation_checkout_is_exact_self_contained_and_keeps_tools(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            staged = root / "staged"
+            source.mkdir()
+            self.run_command("git", "-C", str(source), "init", "--quiet")
+            (source / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            self.run_command("git", "-C", str(source), "add", "tracked.txt")
+            self.run_command(
+                "git",
+                "-C",
+                str(source),
+                "-c",
+                "user.name=Release Test",
+                "-c",
+                "user.email=release-test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "fixture",
+            )
+            (source / "bin").mkdir()
+            (source / "bin" / "vmlinux-arm64").write_bytes(b"kernel")
+            (source / ".local" / "bin").mkdir(parents=True)
+            source_hawkeye = source / ".local" / "bin" / "hawkeye"
+            source_hawkeye.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            source_hawkeye.chmod(0o755)
+            source_tree = self.git(source, "rev-parse", "HEAD^{tree}")
+
+            result = self.run_release_function(
+                root,
+                (
+                    "stage_local_validation_checkout "
+                    f"{shlex.quote(str(source))} {shlex.quote(str(staged))}"
+                ),
+                shell_setup=(
+                    "export GIT_ALTERNATE_OBJECT_DIRECTORIES="
+                    f"{shlex.quote(str(source / '.git' / 'objects'))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.strip(), str(staged))
+            self.assertEqual(source_tree, self.git(staged, "rev-parse", "HEAD^{tree}"))
+            self.assertEqual((staged / "bin" / "vmlinux-arm64").read_bytes(), b"kernel")
+            staged_hawkeye = staged / ".local" / "bin" / "hawkeye"
+            self.assertEqual(staged_hawkeye.read_bytes(), source_hawkeye.read_bytes())
+            self.assertTrue(os.access(staged_hawkeye, os.X_OK))
+            self.assertFalse((staged / ".git" / "objects" / "info" / "alternates").exists())
+            self.assertEqual(self.git(staged, "remote"), "")
+            shutil.rmtree(source)
+            self.run_command(
+                "git",
+                "-C",
+                str(staged),
+                "fsck",
+                "--full",
+                "--strict",
+                "--no-dangling",
+            )
+
+    def test_local_validation_checkout_propagates_copy_failure_in_condition(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            staged = root / "staged"
+            source.mkdir()
+            self.run_command("git", "-C", str(source), "init", "--quiet")
+            (source / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            self.run_command("git", "-C", str(source), "add", "tracked.txt")
+            self.run_command(
+                "git",
+                "-C",
+                str(source),
+                "-c",
+                "user.name=Release Test",
+                "-c",
+                "user.email=release-test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "fixture",
+            )
+            (source / "bin").mkdir()
+            (source / "bin" / "vmlinux-arm64").write_bytes(b"kernel")
+            (source / ".local" / "bin").mkdir(parents=True)
+            source_hawkeye = source / ".local" / "bin" / "hawkeye"
+            source_hawkeye.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            source_hawkeye.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                (
+                    "if staged_output=$(stage_local_validation_checkout "
+                    f"{shlex.quote(str(source))} {shlex.quote(str(staged))}); "
+                    "then exit 91; fi"
+                ),
+                shell_setup="cp() { return 73; }",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(
+                "failed to copy installed Hawkeye into release validation checkout",
+                result.stderr,
+            )
+            self.assertFalse((staged / ".local" / "bin" / "hawkeye").exists())
+
+    def test_local_container_validation_checkout_does_not_require_a_kernel(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            staged = root / "staged"
+            source.mkdir()
+            self.run_command("git", "-C", str(source), "init", "--quiet")
+            (source / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            self.run_command("git", "-C", str(source), "add", "tracked.txt")
+            self.run_command(
+                "git",
+                "-C",
+                str(source),
+                "-c",
+                "user.name=Release Test",
+                "-c",
+                "user.email=release-test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "fixture",
+            )
+            (source / ".local" / "bin").mkdir(parents=True)
+            source_hawkeye = source / ".local" / "bin" / "hawkeye"
+            source_hawkeye.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            source_hawkeye.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                (
+                    "stage_local_validation_checkout "
+                    f"{shlex.quote(str(source))} {shlex.quote(str(staged))} container"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.strip(), str(staged))
+            self.assertFalse((staged / "bin").exists())
+            self.assertEqual(
+                (staged / ".local" / "bin" / "hawkeye").read_bytes(),
+                source_hawkeye.read_bytes(),
+            )
+            self.assertEqual(self.git(staged, "remote"), "")
 
     def test_release_helper_retains_only_its_unpublished_candidate_before_readiness(self) -> None:
         recovery = self.script[
