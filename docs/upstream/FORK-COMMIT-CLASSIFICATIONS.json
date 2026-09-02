@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-08-31",
+  "reviewedAt": "2026-09-02",
   "repositories": {
     "container": {
-      "upstreamHead": "d925dab865cf69fa497ad38720f03f309546ce6a",
-      "forkHead": "f87481688f25bbc9d311ae09c4fcf33f121ba9ae",
+      "upstreamHead": "b8ffd38c734448af49cab87c537075f0a803222b",
+      "forkHead": "3d7ae8612b483dda5f814951ff6aab88e4da5290",
       "slices": [
         {
           "id": "container-support-maintenance",
@@ -461,7 +461,14 @@
             "214bb081d760f2ea8d0272733824e12330ba0ead",
             "49ad81182d915fdc130362b2a9af6736b81bc3f0",
             "577155cf0df933e5bee1c3b8d310f9b43405828d",
-            "a5b286534cc5f80daaef0942784782144646dab9"
+            "a5b286534cc5f80daaef0942784782144646dab9",
+            "7d5525a2da8f1080f5674b0cb5b6de778f6683c7",
+            "9c1f8a9bbdd0bd2eea4fac4e8857a39247bc4369",
+            "2af78c5d70c20441ded47217009a1f6ba57428b7",
+            "2b24bf669b55ec760e8c1e0a5cd4c1d2b420b0a8",
+            "173dad5c4b4769a180a6185f03534336dadc50e5",
+            "26c5bf8c69a0120de38967cd612acb285175b538",
+            "9e8713950645471a3365edcae1b090e5bd75b2b1"
           ]
         },
         {
@@ -635,7 +642,8 @@
             "23cf93c4d74e862a37992afcfec2b306a7fb4f7a",
             "f31dc1a14f8f76baac87509ec4c3f6c27262998c",
             "1f830f601deb1ebfebab70a4b448b5156ce62a07",
-            "727f872cc87fc75e9272d9de9269807b948d8e44"
+            "727f872cc87fc75e9272d9de9269807b948d8e44",
+            "f10d44fc7ed5de5e00a00a3f2b7a3fd29ecc3dd7"
           ]
         },
         {
@@ -705,8 +713,8 @@
       ]
     },
     "containerization": {
-      "upstreamHead": "2faaf9b4aff48a4745ef3d26c3f1450c1228fdf0",
-      "forkHead": "e5a92e86bf03eb2cc244b3b47b0413b3935abfe4",
+      "upstreamHead": "a6328c45de9f302d76620771c480ac1d7f9d62ba",
+      "forkHead": "ddcfe35457c4af7b18452c3de1ea64bd171fc5f2",
       "slices": [
         {
           "id": "containerization-support-maintenance",
@@ -865,7 +873,10 @@
             "d5e8813c11cbc3321ad8b1af6a863852d38b9949",
             "8f01ca8003ec84d9417b5ee2c2730f7bd94e115f",
             "0691a4dd4701227ddd6c42c062495cade4c858b3",
-            "5c70fb4a5301e11ea8d6fb1d19797258165fe512"
+            "5c70fb4a5301e11ea8d6fb1d19797258165fe512",
+            "9772d08a7a6d56d8ff2fe369a8ebe43f338f0330",
+            "cc03552e73a80458b07f170d3098a2c60e240a63",
+            "f3a7aa0028cc5eebd981279a1c731dcfa0121535"
           ]
         },
         {
@@ -1040,7 +1051,7 @@
     },
     "container-builder-shim": {
       "upstreamHead": "e18d2182fd060dbf1c68113a74e7564d563dde27",
-      "forkHead": "db3e99cc3d19b9a328eb51be3a023a178f80ee81",
+      "forkHead": "4aff0ea2e7ff293544a4efac28b508da53aac3d6",
       "slices": [
         {
           "id": "container-builder-shim-support-maintenance",
@@ -1077,7 +1088,8 @@
             "bc26468b7a6a06e677484100a4fb59a16a89aaca",
             "88332c96705b024bbc5cd210642118ee82f8793d",
             "4c037e46248b5b215d35a417b31af915f8c25be5",
-            "e4829be2203b7baa33cae75ca58be967e4b81280"
+            "e4829be2203b7baa33cae75ca58be967e4b81280",
+            "ce5dbefc8f411cbff0a3ff12d35696494ac89146"
           ]
         },
         {

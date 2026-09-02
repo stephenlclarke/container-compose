@@ -2,14 +2,14 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Implementation underway. The current 0.14.0 stable stack ships lossless IPAM modelling, network-scoped DNS/aliases, bridge mapping, IPv6-only networking, allocation ranges, gateway and auxiliary reservations, runtime DNS, persisted endpoint behavior for the supported vmnet lane, and an explicit shared-VM built-in bridge lane. Custom network/IPAM providers, IPv6 range/auxiliary behavior, durable multiple-pool/provider reconciliation, namespace joins, shared-VM custom Compose networks, and comparable-performance evidence remain. |
+| Status | Implementation underway. The current 0.14.1 stable stack ships lossless IPAM modelling, network-scoped DNS/aliases, bridge mapping, IPv6-only networking, allocation ranges, gateway and auxiliary reservations, runtime DNS, persisted endpoint behavior for the supported vmnet lane, and an explicit shared-VM built-in bridge lane. Custom network/IPAM providers, IPv6 range/auxiliary behavior, durable multiple-pool/provider reconciliation, namespace joins, shared-VM custom Compose networks, and comparable-performance evidence remain. |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, the shared Engine API, devcontainer, and the common Engine Linux sandbox |
 | Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
-| Stable 0.14.0 Container revision | `f87481688f25bbc9d311ae09c4fcf33f121ba9ae` |
-| Stable 0.14.0 Containerization revision | `e5a92e86bf03eb2cc244b3b47b0413b3935abfe4` |
+| Stable 0.14.1 Container revision | `3d7ae8612b483dda5f814951ff6aab88e4da5290` |
+| Stable 0.14.1 Containerization revision | `ddcfe35457c4af7b18452c3de1ea64bd171fc5f2` |
 | Design date | 31 July 2026 |
-| Last documentation review | 31 August 2026 against the 0.14.0 release and current STATUS evidence |
+| Last documentation review | 2 September 2026 against the 0.14.1 release and current STATUS evidence |
 
 ## Goal
 

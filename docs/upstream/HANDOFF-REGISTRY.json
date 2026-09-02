@@ -7508,6 +7508,31 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/428"
     },
     {
+      "id": "container-compose-429",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Publish the 0.14.1 regression-fix stack",
+      "state": "active-draft",
+      "lastVerified": "2026-09-02",
+      "commits": [
+        "9a3f9c1427b449ae3e89bd1721339f44a60f5013",
+        "65eb0f862e78fcfb1c204eeafe6615a15acb09ff",
+        "1d62032a2493c6ffd07bed30dafa14f703530896",
+        "204a09392d70cdaba6c3495218f5cf3793b32fe8",
+        "d8a90f5cc270aa2263cc90d012c57e7987b6d686"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-383.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-429.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/429"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",
