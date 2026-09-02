@@ -7576,6 +7576,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/433"
     },
     {
+      "id": "container-compose-435",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Pin the deterministic Containerization stack",
+      "state": "active-draft",
+      "lastVerified": "2026-09-02",
+      "commits": [
+        "3a94dab3cdcaf4942832028304ea96051a341491"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-434.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-435.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/435"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",

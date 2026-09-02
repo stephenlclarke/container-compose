@@ -16,8 +16,8 @@ was published for macOS arm64 on 2 September 2026.
 
 The immutable release manifest selects:
 
-- Container `3d7ae8612b483dda5f814951ff6aab88e4da5290`.
-- Containerization `ddcfe35457c4af7b18452c3de1ea64bd171fc5f2`.
+- Container `69b21f14d725a920b0dd5ff379eb8075ecee6deb`.
+- Containerization `7d325176c08d45ca88be2761726bb2e07ed9dc94`.
 - Container builder shim `4aff0ea2e7ff293544a4efac28b508da53aac3d6`.
 - Builder image digest
   `sha256:d81d12e1dca1133ede535483a809803e6b256555a73d17f207003279539454a4`.
