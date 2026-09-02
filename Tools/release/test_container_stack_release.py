@@ -3316,8 +3316,17 @@ github_cli() {{
         self.assertIn("PIPELINE_PROFILE=release-hosted", workflow)
         self.assertIn("make -C release-tools pipeline", workflow)
         self.assertIn("make -C ../release-tools pipeline-bootstrap", workflow)
+        self.assertIn("Resolve persistent release state root", workflow)
         self.assertIn(
-            "RELEASE_PIPELINE_STATE_ROOT: ${{ github.workspace }}/.container-compose-release-pipeline",
+            'state_root="${state_parent}/${CANDIDATE_SHA}"',
+            workflow,
+        )
+        self.assertIn(
+            '"${workspace_root}"|"${workspace_root}"/*)',
+            workflow,
+        )
+        self.assertNotIn(
+            "RELEASE_PIPELINE_STATE_ROOT: ${{ github.workspace }}",
             workflow,
         )
         self.assertNotIn("RELEASE_PIPELINE_STATE_ROOT: /Volumes/", workflow)

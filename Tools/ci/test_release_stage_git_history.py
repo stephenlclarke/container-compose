@@ -15,7 +15,7 @@
 ## limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-"""Regression tests for history-sensitive release-stage source capture."""
+"""Regression tests for recoverable release-stage policy."""
 
 from pathlib import Path
 import unittest
@@ -28,6 +28,9 @@ PIPELINE_CONFIG = (REPOSITORY_ROOT / "nextflow.config").read_text(
 )
 REPOSITORY_STAGE = (
     REPOSITORY_ROOT / "build-pipeline/modules/repository-stage.nf"
+).read_text(encoding="utf-8")
+STABLE_RELEASE_WORKFLOW = (
+    REPOSITORY_ROOT / ".github/workflows/stable-release-gate.yml"
 ).read_text(encoding="utf-8")
 
 
@@ -71,6 +74,43 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
         self.assertIn("errorStrategy 'terminate'", REPOSITORY_STAGE)
         self.assertNotIn("errorStrategy = 'finish'", PIPELINE_CONFIG)
         self.assertNotIn("errorStrategy 'finish'", REPOSITORY_STAGE)
+
+    def test_release_state_is_persistent_and_candidate_keyed(self) -> None:
+        self.assertNotIn(
+            "RELEASE_PIPELINE_STATE_ROOT: ${{ github.workspace }}",
+            STABLE_RELEASE_WORKFLOW,
+        )
+        self.assertIn(
+            'runner_work_root="$(cd "${RUNNER_TEMP}/.." && pwd -P)"',
+            STABLE_RELEASE_WORKFLOW,
+        )
+        self.assertIn(
+            'workspace_root="$(cd "${GITHUB_WORKSPACE}" && pwd -P)"',
+            STABLE_RELEASE_WORKFLOW,
+        )
+        self.assertIn(
+            'state_parent="${runner_work_root}/.container-compose-release-pipeline"',
+            STABLE_RELEASE_WORKFLOW,
+        )
+        self.assertIn(
+            'state_root="${state_parent}/${CANDIDATE_SHA}"',
+            STABLE_RELEASE_WORKFLOW,
+        )
+        self.assertIn(
+            'state_root="$(cd "${state_root}" && pwd -P)"',
+            STABLE_RELEASE_WORKFLOW,
+        )
+        self.assertIn(
+            '"${workspace_root}"|"${workspace_root}"/*)',
+            STABLE_RELEASE_WORKFLOW,
+        )
+        self.assertIn('[[ -L "${state_parent}" ]]', STABLE_RELEASE_WORKFLOW)
+        self.assertIn('[[ -L "${state_root}" ]]', STABLE_RELEASE_WORKFLOW)
+        self.assertIn(
+            "printf 'RELEASE_PIPELINE_STATE_ROOT=%s\\n' \"${state_root}\" "
+            '>> "${GITHUB_ENV}"',
+            STABLE_RELEASE_WORKFLOW,
+        )
 
 
 if __name__ == "__main__":
