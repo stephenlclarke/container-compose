@@ -85,14 +85,27 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
             STABLE_RELEASE_WORKFLOW,
         )
         self.assertIn(
-            'state_root="${runner_work_root}/.container-compose-release-pipeline/'
-            '${CANDIDATE_SHA}"',
+            'workspace_root="$(cd "${GITHUB_WORKSPACE}" && pwd -P)"',
             STABLE_RELEASE_WORKFLOW,
         )
         self.assertIn(
-            '"${GITHUB_WORKSPACE}"|"${GITHUB_WORKSPACE}"/*)',
+            'state_parent="${runner_work_root}/.container-compose-release-pipeline"',
             STABLE_RELEASE_WORKFLOW,
         )
+        self.assertIn(
+            'state_root="${state_parent}/${CANDIDATE_SHA}"',
+            STABLE_RELEASE_WORKFLOW,
+        )
+        self.assertIn(
+            'state_root="$(cd "${state_root}" && pwd -P)"',
+            STABLE_RELEASE_WORKFLOW,
+        )
+        self.assertIn(
+            '"${workspace_root}"|"${workspace_root}"/*)',
+            STABLE_RELEASE_WORKFLOW,
+        )
+        self.assertIn('[[ -L "${state_parent}" ]]', STABLE_RELEASE_WORKFLOW)
+        self.assertIn('[[ -L "${state_root}" ]]', STABLE_RELEASE_WORKFLOW)
         self.assertIn(
             "printf 'RELEASE_PIPELINE_STATE_ROOT=%s\\n' \"${state_root}\" "
             '>> "${GITHUB_ENV}"',

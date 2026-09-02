@@ -369,9 +369,25 @@ jobs:
           set -euo pipefail
           [[ "${CANDIDATE_SHA}" =~ ^[[:xdigit:]]{40}$ ]]
           runner_work_root="$(cd "${RUNNER_TEMP}/.." && pwd -P)"
-          state_root="${runner_work_root}/.container-compose-release-pipeline/${CANDIDATE_SHA}"
+          workspace_root="$(cd "${GITHUB_WORKSPACE}" && pwd -P)"
+          state_parent="${runner_work_root}/.container-compose-release-pipeline"
+          if [[ -L "${state_parent}" ]]; then
+            printf 'Release state parent must not be a symbolic link: %s\n' \
+              "${state_parent}" >&2
+            exit 2
+          fi
+          mkdir -p "${state_parent}"
+          state_parent="$(cd "${state_parent}" && pwd -P)"
+          state_root="${state_parent}/${CANDIDATE_SHA}"
+          if [[ -L "${state_root}" ]]; then
+            printf 'Candidate release state must not be a symbolic link: %s\n' \
+              "${state_root}" >&2
+            exit 2
+          fi
+          mkdir -p "${state_root}"
+          state_root="$(cd "${state_root}" && pwd -P)"
           case "${state_root}" in
-            "${GITHUB_WORKSPACE}"|"${GITHUB_WORKSPACE}"/*)
+            "${workspace_root}"|"${workspace_root}"/*)
               printf 'Release state root must be outside the disposable job workspace: %s\n' \
                 "${state_root}" >&2
               exit 2
