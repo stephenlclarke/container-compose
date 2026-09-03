@@ -521,7 +521,7 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             workflow.index("- name: Stage release assets and notes"),
         )
         retention_step = workflow.split(
-            "- name: Retain only current release assets", 1
+            "- name: Retain active and stable benchmark assets", 1
         )[1].split("\n\n  repair-stable-tap:", 1)[0]
         self.assertIn(
             "QUALITY_SNAPSHOT_ASSET: ${{ steps.lane.outputs.quality_snapshot_asset }}",
