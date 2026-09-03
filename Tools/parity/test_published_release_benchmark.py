@@ -975,6 +975,31 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
         self.assertIn("if: always()", retain)
         self.assertIn("if-no-files-found: warn", retain)
 
+    def test_workflow_keeps_bind_mounted_fixtures_on_docker_shared_storage(
+        self,
+    ) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        root_selection = workflow[
+            workflow.index("Select Docker-shared local benchmark root") :
+            workflow.index("Checkout documentation and benchmark controls")
+        ]
+
+        self.assertIn('case "${RUNNER_TEMP}"', root_selection)
+        self.assertIn('"${HOME}"/*', root_selection)
+        self.assertIn(
+            '"${RUNNER_TEMP}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"',
+            root_selection,
+        )
+        self.assertNotIn("/private/tmp", root_selection)
+        self.assertIn(
+            "${{ runner.temp }}/container-compose-published-benchmark-",
+            workflow,
+        )
+        self.assertNotIn(
+            "BENCHMARK_ROOT: /private/tmp/container-compose-published-benchmark",
+            workflow,
+        )
+
     def test_workflow_rejects_interactive_documentation_signing(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         preflight = workflow.index("Verify unattended documentation signing")

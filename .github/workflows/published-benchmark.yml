@@ -110,13 +110,28 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, container-compose-release]
     timeout-minutes: 240
     env:
-      BENCHMARK_ROOT: /private/tmp/container-compose-published-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
       TARGET_VERSION: ${{ needs.resolve.outputs.target }}
       BASELINE_VERSION: ${{ needs.resolve.outputs.baseline }}
       LATEST_STABLE_VERSION: ${{ needs.resolve.outputs.latest }}
       REPETITIONS: ${{ inputs.repetitions }}
       RUNTIME_ROOT_PREFIX: /private/tmp/ccpb-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Select Docker-shared local benchmark root
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${RUNNER_TEMP}" in
+            "${HOME}"/*) ;;
+            *)
+              printf 'RUNNER_TEMP must be on local storage under HOME so Docker can bind-mount benchmark fixtures: %s\n' \
+                "${RUNNER_TEMP}" >&2
+              exit 1
+              ;;
+          esac
+          printf 'BENCHMARK_ROOT=%s/container-compose-published-benchmark-%s-%s\n' \
+            "${RUNNER_TEMP}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
+            >> "${GITHUB_ENV}"
+
       - name: Checkout documentation and benchmark controls
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -358,9 +373,9 @@ jobs:
         with:
           name: published-benchmark-${{ needs.resolve.outputs.target }}-vs-${{ needs.resolve.outputs.baseline }}
           path: |
-            ${{ env.BENCHMARK_ROOT }}/evidence
-            ${{ env.BENCHMARK_ROOT }}/prepared/*/published-distribution.json
-            ${{ env.BENCHMARK_ROOT }}/downloads/*/*/*.sha256
+            ${{ runner.temp }}/container-compose-published-benchmark-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+            ${{ runner.temp }}/container-compose-published-benchmark-${{ github.run_id }}-${{ github.run_attempt }}/prepared/*/published-distribution.json
+            ${{ runner.temp }}/container-compose-published-benchmark-${{ github.run_id }}-${{ github.run_attempt }}/downloads/*/*/*.sha256
           if-no-files-found: warn
           retention-days: 90
 
