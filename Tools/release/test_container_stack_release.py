@@ -990,9 +990,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('release_latest="${promote_default_lane}"', lane)
         self.assertIn('update_tap="${promote_default_lane}"', lane)
         retention = workflow[
-            workflow.index("- name: Retain only current release assets") : workflow.index(
-                "  repair-stable-tap:"
-            )
+            workflow.index(
+                "- name: Retain active and stable benchmark assets"
+            ) : workflow.index("  repair-stable-tap:")
         ]
         self.assertIn("steps.lane.outputs.update_tap == 'true'", retention)
         self.assertIn(
@@ -1694,7 +1694,7 @@ github_cli() {{
     def test_current_demo_is_recoverable_and_not_release_critical(self) -> None:
         package = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         release_critical = package[
-            : package.index("- name: Retain only current release assets")
+            : package.index("- name: Retain active and stable benchmark assets")
         ]
         workflow = CURRENT_DEMO_WORKFLOW.read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

@@ -37,7 +37,7 @@ def load_module():
 
 
 class ReleaseAssetRetentionTests(unittest.TestCase):
-    """Only the newest stable and newest prerelease retain packages."""
+    """Active lanes retain installs and stable history retains benchmark closure."""
 
     def test_retains_one_published_release_per_lane(self) -> None:
         module = load_module()
@@ -143,8 +143,47 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
         self.assertIn("brew install go node python", note)
         self.assertIn("make package", note)
         self.assertIn("sudo tar -xzf", note)
+        self.assertIn("reproducible published-version benchmark", note)
         self.assertIn(module.RETENTION_START, note)
         self.assertIn(module.RETENTION_END, note)
+
+    def test_historical_stable_retains_only_benchmark_closure(self) -> None:
+        module = load_module()
+        release = {
+            "prerelease": False,
+            "assets": [
+                {"id": index, "name": name}
+                for index, name in enumerate(
+                    [
+                        *sorted(module.STABLE_BENCHMARK_ASSETS),
+                        "release-highlights.md",
+                        "quality-snapshot.svg",
+                    ],
+                    start=1,
+                )
+            ],
+        }
+
+        retired = module.historical_assets_to_retire(release)
+
+        self.assertEqual(
+            [asset["name"] for asset in retired],
+            ["release-highlights.md", "quality-snapshot.svg"],
+        )
+
+    def test_historical_prerelease_retires_every_asset(self) -> None:
+        module = load_module()
+        release = {
+            "prerelease": True,
+            "assets": [
+                {"id": 1, "name": "container-release-arm64.tar.gz"},
+                {"id": 2, "name": "release-highlights.md"},
+            ],
+        }
+
+        self.assertEqual(
+            module.historical_assets_to_retire(release), release["assets"]
+        )
 
     def test_replacing_a_note_is_idempotent(self) -> None:
         module = load_module()

@@ -1551,7 +1551,7 @@ jobs:
             RELEASE_CHECKSUM_PATH="${RUNNER_TEMP}/${ASSET}.sha256" \
             ../release-tools/Tools/release/publish-github-release.sh
 
-      - name: Retain only current release assets
+      - name: Retain active and stable benchmark assets
         if: >
           steps.current-freshness.outputs.publish == 'true' &&
           (needs.resolve-publish-context.outputs.ref_type == 'branch' ||

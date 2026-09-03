@@ -15,7 +15,7 @@
 ## limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-"""Retain binary assets for only GitHub latest stable and current releases."""
+"""Retain install assets for active lanes and benchmark assets for stable releases."""
 
 from __future__ import annotations
 
@@ -32,6 +32,16 @@ RETENTION_START = "<!-- container-release-retention:start -->"
 RETENTION_END = "<!-- container-release-retention:end -->"
 LEGACY_PIN_HIGHLIGHT = re.compile(
     r"(?m)^- Release automation pins .+ by exact SwiftPM revision [0-9a-f]{12}\.\n?"
+)
+STABLE_BENCHMARK_ASSETS = frozenset(
+    {
+        "container-release-arm64.tar.gz",
+        "container-release-arm64.tar.gz.sha256",
+        "container-compose-plugin-release-arm64.tar.gz",
+        "container-compose-plugin-release-arm64.tar.gz.sha256",
+        "container-vminit-arm64.oci.tar",
+        "container-vminit-arm64.oci.tar.sha256",
+    }
 )
 
 
@@ -192,7 +202,12 @@ def historical_source_note(
             RETENTION_START,
             "## Historical source installation",
             "",
-            "This release is retained as source history, but its prebuilt assets and tap-backed package have been retired.",
+            (
+                "This release is retained as source history. Its tap-backed package "
+                "and non-benchmark release assets have been retired; any immutable "
+                "runtime, plugin, and guest assets required for a reproducible "
+                "published-version benchmark remain attached."
+            ),
             "The public Homebrew formula intentionally follows only the newest release in each lane, so it cannot select this historical tag.",
             "Use Homebrew to bootstrap the build tools, then build this exact source tag:",
             "",
@@ -254,9 +269,17 @@ def list_releases(repo: str) -> list[dict]:
     return [release for page in pages for release in page]
 
 
-def delete_assets(repo: str, release: dict) -> None:
-    for asset in release.get("assets", []):
-        run_gh("api", "--method", "DELETE", f"repos/{repo}/releases/assets/{asset['id']}")
+def historical_assets_to_retire(release: dict) -> list[dict]:
+    """Return assets not needed to benchmark a historical stable release."""
+
+    assets = list(release.get("assets", []))
+    if release.get("prerelease"):
+        return assets
+    return [
+        asset
+        for asset in assets
+        if asset.get("name") not in STABLE_BENCHMARK_ASSETS
+    ]
 
 
 def stale_current_assets(release: dict, retained_names: set[str]) -> list[dict]:
@@ -364,13 +387,14 @@ def main() -> None:
             install_command=args.install_command,
         )
         body = replace_retention_note(remove_legacy_pin_highlights(current_body), note)
-        asset_count = len(release.get("assets", []))
+        retired_assets = historical_assets_to_retire(release)
+        asset_count = len(retired_assets)
         if not asset_count and body == current_body:
             continue
         print(f"retiring {release['tag_name']}: {asset_count} asset(s)")
         if args.apply:
             if asset_count:
-                delete_assets(args.repo, release)
+                delete_named_assets(args.repo, retired_assets)
             if body != current_body:
                 update_release_notes(args.repo, release, body)
 
