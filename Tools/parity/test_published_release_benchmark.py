@@ -54,13 +54,13 @@ class ResolvePublishedVersionsTests(unittest.TestCase):
     def test_default_comparison_is_immediately_preceding_stable_release(self) -> None:
         self.assertEqual(
             MODULE.resolve_versions(self.releases, "0.14.0", None),
-            {"target": "0.14.0", "baseline": "0.13.0"},
+            {"target": "0.14.0", "baseline": "0.13.0", "latest": "0.14.0"},
         )
 
     def test_explicit_comparison_can_select_any_other_stable_release(self) -> None:
         self.assertEqual(
             MODULE.resolve_versions(self.releases, "0.14.0", "0.12.0"),
-            {"target": "0.14.0", "baseline": "0.12.0"},
+            {"target": "0.14.0", "baseline": "0.12.0", "latest": "0.14.0"},
         )
 
     def test_draft_target_is_rejected(self) -> None:
@@ -284,6 +284,29 @@ class HomebrewAuthorityTests(unittest.TestCase):
             )
             self.assertRegex(authority, r"^[0-9a-f]{40}$")
 
+    def test_retained_package_run_can_authorize_maintenance_backfill(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="published-tap-") as directory:
+            repository = Path(directory)
+            self.git(repository, "init", "-b", "main")
+            self.git(repository, "config", "user.email", "test@example.com")
+            self.git(repository, "config", "user.name", "Test")
+            formula = repository / "Formula" / "container.rb"
+            formula.parent.mkdir()
+            formula.write_text("class Container\nend\n", encoding="utf-8")
+            self.git(repository, "add", str(formula))
+            self.git(repository, "commit", "-m", "chore: initialize formula")
+
+            self.assertIsNone(
+                MODULE.formula_authority(
+                    repository,
+                    "Formula/container.rb",
+                    "0.13.1",
+                    "container-release-arm64.tar.gz",
+                    "a" * 64,
+                    allow_package_run_backfill=True,
+                )
+            )
+
     @staticmethod
     def git(repository: Path, *arguments: str) -> None:
         subprocess.run(
@@ -435,6 +458,43 @@ class PublishedReportTests(unittest.TestCase):
         self.assertIn("exact retained Containerization CI initfs artifact", report)
         self.assertIn("Guest initfs authority:", report)
         self.assertNotIn("No source product was built", report)
+
+    def test_report_labels_unpromoted_maintenance_backfill(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
+            root = Path(directory)
+            baseline = root / "baseline"
+            target = root / "target"
+            baseline.mkdir()
+            target.mkdir()
+            self.write_evidence(baseline, 1.0, 1.0, "0.13.0")
+            self.write_evidence(target, 0.8, 1.0, "0.14.0")
+            baseline_manifest = self.write_manifest(root, "0.13.0")
+            target_manifest = self.write_manifest(root, "0.14.0")
+            manifest = json.loads(baseline_manifest.read_text(encoding="utf-8"))
+            package_run = (
+                "https://github.com/stephenlclarke/container-compose/"
+                "actions/runs/123"
+            )
+            manifest["artifactSource"] = package_run
+            manifest["distributionAuthority"] = "maintenance-package-run"
+            for component in ("runtime", "compose"):
+                del manifest["assets"][component]["homebrewCommit"]
+                manifest["assets"][component]["packageRun"] = package_run
+            baseline_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+            output = root / "report.md"
+
+            MODULE.render_report(
+                target,
+                baseline,
+                target_manifest,
+                baseline_manifest,
+                output,
+                "https://github.example/actions/runs/1",
+            )
+            report = output.read_text(encoding="utf-8")
+
+        self.assertIn("signed maintenance package run", report)
+        self.assertIn("not promoted through Homebrew", report)
 
     def test_report_rejects_mismatched_benchmark_conditions(self) -> None:
         with tempfile.TemporaryDirectory(prefix="published-benchmark-") as directory:
@@ -841,6 +901,8 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
         self.assertIn("resolve-package-run", workflow)
         self.assertIn("validate-package-artifacts", workflow)
         self.assertIn("gh run download", workflow)
+        self.assertIn("gh attestation verify", workflow)
+        self.assertIn("--allow-package-run-backfill", workflow)
         self.assertIn("--artifact-source", workflow)
         self.assertIn("--init-distribution", workflow)
         self.assertIn("container-vminit-arm64.oci.tar", workflow)

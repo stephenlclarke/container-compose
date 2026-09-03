@@ -102,7 +102,8 @@ def resolve_versions(
         baseline = max(earlier, key=version_tuple)
     if baseline == target:
         raise BenchmarkInputError("target and comparison versions must differ")
-    return {"target": target, "baseline": baseline}
+    latest = max(available, key=version_tuple)
+    return {"target": target, "baseline": baseline, "latest": latest}
 
 
 def canonical_artifact_source(version: str, source: str) -> str:
@@ -229,7 +230,8 @@ def formula_authority(
     version: str,
     asset_name: str,
     digest: str,
-) -> str:
+    allow_package_run_backfill: bool = False,
+) -> str | None:
     expected_url = (
         f"https://github.com/{REPOSITORY}/releases/download/"
         f"{version}/{asset_name}"
@@ -273,6 +275,8 @@ def formula_authority(
             continue
         if f'url "{expected_url}"' in show.stdout and f'sha256 "{digest}"' in show.stdout:
             return commit
+    if allow_package_run_backfill:
+        return None
     raise BenchmarkInputError(
         f"Homebrew main history never distributed {asset_name} for {version} at {digest}"
     )
@@ -372,12 +376,25 @@ def prepare_distribution(
     source_repository: Path,
     artifact_source: str,
     output: Path,
+    allow_package_run_backfill: bool = False,
+    latest_stable_version: str | None = None,
 ) -> dict[str, object]:
     version_tuple(version)
     artifact_source = canonical_artifact_source(version, artifact_source)
     source_commit = release_tag_commit(source_repository, version)
     source_stack = release_tag_stack(source_repository, source_commit)
     release = f"https://github.com/{REPOSITORY}/releases/tag/{version}"
+    if allow_package_run_backfill and artifact_source == release:
+        raise BenchmarkInputError(
+            "maintenance backfill authority requires a retained package run"
+        )
+    if allow_package_run_backfill and (
+        latest_stable_version is None
+        or version_tuple(version) >= version_tuple(latest_stable_version)
+    ):
+        raise BenchmarkInputError(
+            "package-run backfill authority is restricted to an older stable release"
+        )
     init_asset = init_distribution / INIT_ASSET
     init_sidecar = init_distribution / f"{INIT_ASSET}.sha256"
     if not init_asset.is_file() or not init_sidecar.is_file():
@@ -401,6 +418,7 @@ def prepare_distribution(
     output.mkdir(parents=True, exist_ok=False)
     output.chmod(0o700)
     asset_manifest: dict[str, object] = {}
+    homebrew_commits: list[str | None] = []
     for component, (asset_name, formula_path) in ASSETS.items():
         asset = distribution / asset_name
         sidecar = distribution / f"{asset_name}.sha256"
@@ -420,7 +438,9 @@ def prepare_distribution(
             version,
             asset_name,
             actual_digest,
+            allow_package_run_backfill,
         )
+        homebrew_commits.append(tap_commit)
         component_output = output / component
         component_output.mkdir(mode=0o700)
         with tarfile.open(asset, "r:gz") as archive:
@@ -429,12 +449,22 @@ def prepare_distribution(
             if "filter" in inspect.signature(archive.extractall).parameters:
                 extraction_options["filter"] = "fully_trusted"
             archive.extractall(component_output, **extraction_options)
-        asset_manifest[component] = {
+        component_manifest: dict[str, object] = {
             "asset": asset_name,
             "sha256": actual_digest,
             "homebrewFormula": formula_path,
-            "homebrewCommit": tap_commit,
         }
+        if tap_commit is not None:
+            component_manifest["homebrewCommit"] = tap_commit
+        else:
+            component_manifest["packageRun"] = artifact_source
+        asset_manifest[component] = component_manifest
+    if any(commit is None for commit in homebrew_commits) and not all(
+        commit is None for commit in homebrew_commits
+    ):
+        raise BenchmarkInputError(
+            "release assets have mixed Homebrew and maintenance-backfill authority"
+        )
     init_output = output / "init"
     init_output.mkdir(mode=0o700)
     staged_init_asset = init_output / INIT_ASSET
@@ -452,6 +482,11 @@ def prepare_distribution(
         "stack": source_stack,
         "release": release,
         "artifactSource": artifact_source,
+        "distributionAuthority": (
+            "maintenance-package-run"
+            if all(commit is None for commit in homebrew_commits)
+            else "homebrew-history"
+        ),
         "assets": asset_manifest,
     }
     (output / "published-distribution.json").write_text(
@@ -931,8 +966,17 @@ def render_report(
             )
         for component in ("runtime", "compose"):
             asset = manifest["assets"][component]
+            homebrew_commit = asset.get("homebrewCommit")
+            if homebrew_commit:
+                authority = f"Homebrew formula history `{homebrew_commit}`"
+            else:
+                authority = (
+                    "signed maintenance package run "
+                    f"[{manifest['artifactSource']}]({manifest['artifactSource']}); "
+                    "not promoted through Homebrew"
+                )
             lines.append(
-                f"- `{asset['asset']}`: SHA-256 `{asset['sha256']}`; Homebrew formula history `{asset['homebrewCommit']}`."
+                f"- `{asset['asset']}`: SHA-256 `{asset['sha256']}`; {authority}."
             )
         lines.append("")
     lines.extend(
@@ -1007,6 +1051,8 @@ def main() -> None:
     prepare.add_argument("--tap-repository", type=Path, required=True)
     prepare.add_argument("--source-repository", type=Path, required=True)
     prepare.add_argument("--artifact-source", required=True)
+    prepare.add_argument("--allow-package-run-backfill", action="store_true")
+    prepare.add_argument("--latest-stable-version")
     prepare.add_argument("--output", type=Path, required=True)
 
     render = subparsers.add_parser("render")
@@ -1054,6 +1100,8 @@ def main() -> None:
                 arguments.source_repository,
                 arguments.artifact_source,
                 arguments.output,
+                arguments.allow_package_run_backfill,
+                arguments.latest_stable_version,
             )
             print(json.dumps(result, sort_keys=True))
         else:
