@@ -65,12 +65,12 @@ The compatibility contract is observable Docker Compose and Engine behaviour. It
 ## Published Logging Boundary
 
 The current 0.14.1 candidate requires
-`io.github.stephenlclarke.container.logging-drivers.v1` and ships the Compose,
+`io.github.stephenlclarke.container.logging-drivers.v1` and includes the Compose,
 Container, Engine API, Containerization, SwiftNIO SSL, and builder inputs named
 in [Runtime Capability Contract](runtime-capabilities.md#logging-capability). It
-retains the functional subset first published in 0.11.0, and its Stable Release
-Gate passed. The remaining blockers are certification and parity gaps beyond
-that released functional subset: the complete
+retains the functional subset first published by the gate-passing 0.11.0
+package; the 0.14.1 Stable Release Gate remains pending. The remaining blockers
+are certification and parity gaps beyond that released functional subset: the complete
 external-client/provider/failure/migration/security matrix, the focused GELF
 retry and Unix-socket validation paths, cold-resource collection, and
 comparable release-artifact performance.
