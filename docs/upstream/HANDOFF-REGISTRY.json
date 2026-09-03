@@ -7659,9 +7659,13 @@
         {
           "kind": "pull-request",
           "path": "docs/upstream/container-compose/PR-444.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-445.md"
         }
       ],
-      "upstream": "https://github.com/stephenlclarke/container-compose/pull/444"
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/445"
     },
     {
       "id": "container-compose-333",

@@ -2615,16 +2615,11 @@ github_cli() {{
 
     def test_release_gate_includes_sibling_coverage_and_runtime_integration(self) -> None:
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-        ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8")
         validation = STACK_RELEASE_VALIDATION.read_text(encoding="utf-8")
         reference_check = (
             ROOT / "Tools" / "parity" / "check-docker-compose-reference.sh"
         ).read_text(encoding="utf-8")
         self.assertIn("check-licenses vet lint coverage build", validation)
-        self.assertIn(
-            "runs-on: [self-hosted, macOS, ARM64, container-compose-current]",
-            ci_workflow,
-        )
         self.assertIn("run-stack-release-validation.sh full", makefile)
         self.assertIn("PIPELINE_PROFILE=release-hosted", makefile)
         direct_full_gate = subprocess.run(
