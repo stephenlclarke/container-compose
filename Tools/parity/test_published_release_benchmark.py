@@ -80,6 +80,8 @@ class ResolvePublishedArtifactsTests(unittest.TestCase):
                 "conclusion": "success",
                 "createdAt": "2026-08-23T10:00:00Z",
                 "url": f"{repository}/actions/runs/10",
+                "headBranch": "main",
+                "headSha": "a" * 40,
             },
             {
                 "databaseId": 11,
@@ -89,6 +91,8 @@ class ResolvePublishedArtifactsTests(unittest.TestCase):
                 "conclusion": "failure",
                 "createdAt": "2026-08-24T10:00:00Z",
                 "url": f"{repository}/actions/runs/11",
+                "headBranch": "main",
+                "headSha": "b" * 40,
             },
             {
                 "databaseId": 12,
@@ -98,6 +102,8 @@ class ResolvePublishedArtifactsTests(unittest.TestCase):
                 "conclusion": "success",
                 "createdAt": "2026-08-24T11:00:00Z",
                 "url": f"{repository}/actions/runs/12",
+                "headBranch": "main",
+                "headSha": "c" * 40,
             },
             {
                 "databaseId": 13,
@@ -107,6 +113,8 @@ class ResolvePublishedArtifactsTests(unittest.TestCase):
                 "conclusion": "success",
                 "createdAt": "2026-08-25T10:00:00Z",
                 "url": f"{repository}/actions/runs/13",
+                "headBranch": "main",
+                "headSha": "d" * 40,
             },
         ]
 
@@ -116,14 +124,37 @@ class ResolvePublishedArtifactsTests(unittest.TestCase):
                 "runId": 12,
                 "url": f"{repository}/actions/runs/12",
                 "createdAt": "2026-08-24T11:00:00Z",
+                "headSha": "c" * 40,
             },
         )
         self.assertEqual(
-            [candidate["runId"] for candidate in MODULE.packaging_run_candidates(
-                runs, "0.13.0"
-            )],
+            [
+                candidate["runId"]
+                for candidate in MODULE.packaging_run_candidates(runs, "0.13.0")
+            ],
             [12, 10],
         )
+
+    def test_package_run_from_side_branch_is_rejected(self) -> None:
+        run = {
+            "databaseId": 12,
+            "displayTitle": "Prebuilt Binaries · 0.13.0",
+            "event": "workflow_dispatch",
+            "status": "completed",
+            "conclusion": "success",
+            "createdAt": "2026-08-24T11:00:00Z",
+            "url": (
+                "https://github.com/stephenlclarke/container-compose/"
+                "actions/runs/12"
+            ),
+            "headBranch": "feature/untrusted",
+            "headSha": "c" * 40,
+        }
+
+        with self.assertRaisesRegex(
+            MODULE.BenchmarkInputError, "no successful immutable package run"
+        ):
+            MODULE.resolve_packaging_run([run], "0.13.0")
 
     def test_missing_successful_package_run_is_rejected(self) -> None:
         with self.assertRaisesRegex(
@@ -903,6 +934,9 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
         self.assertIn("gh run download", workflow)
         self.assertIn("gh attestation verify", workflow)
         self.assertIn("  attestations: read", workflow)
+        self.assertIn("--signer-digest", workflow)
+        self.assertIn("--source-ref refs/heads/main", workflow)
+        self.assertIn("--source-digest", workflow)
         self.assertIn("--allow-package-run-backfill", workflow)
         self.assertIn("--artifact-source", workflow)
         self.assertIn("--init-distribution", workflow)

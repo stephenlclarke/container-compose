@@ -124,7 +124,7 @@ def packaging_run_candidates(
 ) -> list[dict[str, object]]:
     version_tuple(version)
     title = f"Prebuilt Binaries · {version}"
-    candidates: list[tuple[str, int, str]] = []
+    candidates: list[tuple[str, int, str, str]] = []
     for run in runs:
         if (
             run.get("displayTitle") != title
@@ -136,6 +136,8 @@ def packaging_run_candidates(
         run_id = run.get("databaseId")
         created_at = run.get("createdAt")
         url = run.get("url")
+        head_branch = run.get("headBranch")
+        head_sha = run.get("headSha")
         if (
             not isinstance(run_id, int)
             or run_id <= 0
@@ -144,16 +146,24 @@ def packaging_run_candidates(
             or not isinstance(url, str)
             or url
             != f"https://github.com/{REPOSITORY}/actions/runs/{run_id}"
+            or head_branch != "main"
+            or not isinstance(head_sha, str)
+            or re.fullmatch(r"[0-9a-f]{40}", head_sha) is None
         ):
             continue
-        candidates.append((created_at, run_id, url))
+        candidates.append((created_at, run_id, url, head_sha))
     if not candidates:
         raise BenchmarkInputError(
             f"no successful immutable package run retained for {version}"
         )
     return [
-        {"runId": run_id, "url": url, "createdAt": created_at}
-        for created_at, run_id, url in sorted(candidates, reverse=True)
+        {
+            "runId": run_id,
+            "url": url,
+            "createdAt": created_at,
+            "headSha": head_sha,
+        }
+        for created_at, run_id, url, head_sha in sorted(candidates, reverse=True)
     ]
 
 

@@ -231,7 +231,7 @@ jobs:
                 --repo "${GITHUB_REPOSITORY}" \
                 --workflow prebuilt-binaries.yml \
                 --limit 500 \
-                --json databaseId,displayTitle,status,conclusion,event,createdAt,url \
+                --json databaseId,displayTitle,status,conclusion,event,createdAt,url,headBranch,headSha \
                 > "${runs}"
               python3 Tools/parity/published_release_benchmark.py \
                 resolve-package-run \
@@ -239,6 +239,7 @@ jobs:
                 --version "${version}" \
                 > "${resolved}"
               package_run_id="$(jq -r '.runId' "${resolved}")"
+              package_run_head_sha="$(jq -r '.headSha' "${resolved}")"
               artifact_source="$(jq -r '.url' "${resolved}")"
               gh api \
                 "repos/${GITHUB_REPOSITORY}/actions/runs/${package_run_id}/artifacts" \
@@ -263,7 +264,10 @@ jobs:
                 gh attestation verify "${distribution}/${asset}" \
                   --repo "${GITHUB_REPOSITORY}" \
                   --signer-workflow \
-                    "${GITHUB_REPOSITORY}/.github/workflows/prebuilt-binaries.yml"
+                    "${GITHUB_REPOSITORY}/.github/workflows/prebuilt-binaries.yml" \
+                  --signer-digest "${package_run_head_sha}" \
+                  --source-ref refs/heads/main \
+                  --source-digest "${package_run_head_sha}"
               done
             fi
             Tools/release/verify-developer-id-archive.sh \
