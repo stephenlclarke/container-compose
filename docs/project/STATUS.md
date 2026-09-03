@@ -28,7 +28,7 @@ Homebrew release artifacts are Developer ID signed, checksummed, attested, and
 bound to the matched runtime stack.
 
 The 0.14.1 Current candidate selects Container
-`ecf6da9fd029a52717a574c4aab3ed5257bbeea2`, Containerization
+`2647090a8af74cf18fae2472342cdb55bab60e45`, Containerization
 `818f5917819a32dac1bc233605c253b4a105e0e0`, and Container builder shim
 `4aff0ea2e7ff293544a4efac28b508da53aac3d6`. These candidate revisions do not
 describe immutable 0.14.1 artifacts until the stable release gate succeeds and

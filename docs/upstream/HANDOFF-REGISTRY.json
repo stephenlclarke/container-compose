@@ -7687,6 +7687,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/447"
     },
     {
+      "id": "container-compose-448",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Pin synchronized Container fork for 0.14.1",
+      "state": "active-draft",
+      "lastVerified": "2026-09-03",
+      "commits": [
+        "2647090a8af74cf18fae2472342cdb55bab60e45"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-448.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-449.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/449"
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",

@@ -1,6 +1,6 @@
 # Fork Commit Classifications
 
-Updated: 2 September 2026
+Updated: 3 September 2026
 
 This review classifies every patch-unique non-merge commit in the three
 Stephen-supported Apple forks. The machine-readable source is
@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `b8ffd38c734448af49cab87c537075f0a803222b` | `ecf6da9fd029a52717a574c4aab3ed5257bbeea2` | 0 | 755 | 638 |
+| `container` | `025f57c6c0fed55bc155af0ddc13b11fff6f22e6` | `2647090a8af74cf18fae2472342cdb55bab60e45` | 0 | 758 | 639 |
 | `containerization` | `fc9e63846f365151aa6d3bf39d65e662abf431fc` | `818f5917819a32dac1bc233605c253b4a105e0e0` | 0 | 287 | 230 |
 | `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `4aff0ea2e7ff293544a4efac28b508da53aac3d6` | 0 | 48 | 40 |
-| **Total** | | | **0** | **1090** | **908** |
+| **Total** | | | **0** | **1093** | **909** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,7 +32,7 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 653 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `support-maintenance` | 654 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
 | `generic-runtime-primitive` | 230 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
@@ -251,3 +251,9 @@ pinning, deterministic `cctl` NBD integration-test scheduling, upstream
 stdio/logging sync, reusable-vsock lifecycle corrections, the grpc-go security
 update, and their review handoffs are support maintenance. No temporary port
 or rejected-policy disposition changed in this refresh.
+
+The 3 September 2026 release refresh advances Apple Container through
+`025f57c6c0fe` and Container through `2647090a8af7`. Apple's read-only
+`container clean` correction and release-action update are upstream history.
+The signed fork handoff is support maintenance. No generic runtime primitive,
+temporary port, or rejected-policy disposition changed in this refresh.
