@@ -27,7 +27,7 @@ release_container_runtime_lock() {
         return
     fi
 
-    kill "$keeper_pid" >/dev/null 2>&1 || true
+    kill -USR1 "$keeper_pid" >/dev/null 2>&1 || true
     wait "$keeper_pid" >/dev/null 2>&1 || true
     unset CONTAINER_RUNTIME_LOCK_KEEPER_PID
     unset CONTAINER_RUNTIME_LOCK_HELD
@@ -82,13 +82,41 @@ acquire_container_runtime_lock() {
     # (for example Chrome during VHS capture); those descendants must not keep
     # the host-wide lock after the owner exits.
     local lock_owner_pid=$$
+    local keeper_ready
+    if ! keeper_ready="$(mktemp "${TMPDIR:-/tmp}/container-runtime-lock-keeper.XXXXXX")"; then
+        printf 'failed to create runtime lock-keeper readiness file\n' >&2
+        exec 9>&-
+        return 1
+    fi
+    local keeper_ready_status=0
     (
-        trap 'exit 0' HUP INT QUIT TERM
+        trap '' HUP INT QUIT TERM
+        trap 'exit 0' USR1
+        printf 'ready\n' >"$keeper_ready"
         while kill -0 "$lock_owner_pid" >/dev/null 2>&1; do
             sleep 0.1
         done
     ) </dev/null >/dev/null 2>&1 &
     CONTAINER_RUNTIME_LOCK_KEEPER_PID=$!
+    for _ in {1..100}; do
+        if [[ "$(cat "$keeper_ready" 2>/dev/null || true)" == "ready" ]]; then
+            keeper_ready_status=1
+            break
+        fi
+        if ! kill -0 "$CONTAINER_RUNTIME_LOCK_KEEPER_PID" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.01
+    done
+    rm -f -- "$keeper_ready"
+    if [[ "$keeper_ready_status" != "1" ]]; then
+        printf 'runtime lock keeper did not become ready\n' >&2
+        kill -USR1 "$CONTAINER_RUNTIME_LOCK_KEEPER_PID" >/dev/null 2>&1 || true
+        wait "$CONTAINER_RUNTIME_LOCK_KEEPER_PID" >/dev/null 2>&1 || true
+        unset CONTAINER_RUNTIME_LOCK_KEEPER_PID
+        exec 9>&-
+        return 1
+    fi
     exec 9>&-
 
     export CONTAINER_RUNTIME_LOCK_HELD=1

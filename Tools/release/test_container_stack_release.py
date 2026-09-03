@@ -1708,6 +1708,15 @@ github_cli() {{
         self.assertIn('demo_session_root="/private/tmp/container-compose-current-demo"', workflow)
         self.assertIn(".container-compose-current-demo-root", workflow)
         self.assertIn("container-compose-current-demo-v1", workflow)
+        self.assertIn("stop-current-demo-runtime.sh", workflow)
+        self.assertIn("trap 'exit 143' TERM", workflow)
+        self.assertIn("trap '' HUP INT QUIT TERM", workflow)
+        self.assertLess(
+            workflow.index("trap 'exit 143' TERM"),
+            workflow.index(
+                '"${demo_session_root}" "${prior_container}"'
+            ),
+        )
         self.assertIn(
             '"$(/usr/bin/stat -f %u "${demo_session_root}")" != "$(id -u)"',
             workflow,
@@ -1720,11 +1729,6 @@ github_cli() {{
         self.assertIn(
             "python3 Tools/ci/run-command-with-deadline.py \\\n"
             "              --seconds 2400 --grace-seconds 15 --",
-            workflow,
-        )
-        self.assertIn(
-            "python3 Tools/ci/run-command-with-deadline.py \\\n"
-            "              --seconds 30 --grace-seconds 5 --",
             workflow,
         )
         self.assertIn("bash Tools/release/record-vhs-live-demo.sh", workflow)
@@ -1747,15 +1751,8 @@ github_cli() {{
             workflow.index("Publish exact Current demo"),
         )
         self.assertNotIn('gh release upload current "${DEMO_OUTPUT}"', workflow)
-        self.assertIn(
-            'CONTAINER_APP_ROOT="${demo_app_root}" \\\n'
-            "              python3 Tools/ci/run-command-with-deadline.py",
-            workflow,
-        )
-        self.assertIn(
-            'CONTAINER_APP_ROOT="${demo_app_root}" \\\n'
-            "            bash Tools/release/wait-for-container-system-stop.sh",
-            workflow,
+        self.assertGreaterEqual(
+            workflow.count("bash Tools/release/stop-current-demo-runtime.sh"), 2
         )
         publish_step = workflow[
             workflow.index("- name: Publish exact Current demo") : workflow.index(

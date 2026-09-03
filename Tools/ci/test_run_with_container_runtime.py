@@ -4245,6 +4245,78 @@ class ContainerRuntimeLockTest(unittest.TestCase):
             )
             self.assertTrue(contender_acquired.exists())
 
+    def test_keeper_retains_lock_after_group_termination_signal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            lock_file = temporary_root / "runtime.lock"
+            holder_ready = temporary_root / "holder-ready"
+            holder_release = temporary_root / "holder-release"
+            contender_acquired = temporary_root / "contender-acquired"
+            environment = self.independent_runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(lock_file),
+                    "CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS": "5",
+                }
+            )
+            holder_script = (
+                f'source "{LOCK_SCRIPT}"; '
+                "acquire_container_runtime_lock; "
+                'kill -TERM "$CONTAINER_RUNTIME_LOCK_KEEPER_PID"; '
+                f'touch "{holder_ready}"; '
+                f'while [[ ! -e "{holder_release}" ]]; do sleep 0.02; done; '
+                "release_container_runtime_lock"
+            )
+            contender_script = (
+                f'source "{LOCK_SCRIPT}"; '
+                "acquire_container_runtime_lock; "
+                f'touch "{contender_acquired}"; '
+                "release_container_runtime_lock"
+            )
+
+            holder = subprocess.Popen(
+                ["/bin/bash", "-c", holder_script],
+                cwd=ROOT,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            deadline = time.monotonic() + 5
+            while not holder_ready.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            if not holder_ready.exists():
+                holder_stdout, holder_stderr = holder.communicate(timeout=5)
+                self.fail(
+                    "signalled lock holder did not become ready\n"
+                    + holder_stdout
+                    + holder_stderr
+                )
+
+            contender = subprocess.Popen(
+                ["/bin/bash", "-c", contender_script],
+                cwd=ROOT,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            time.sleep(0.2)
+            acquired_before_release = contender_acquired.exists()
+
+            holder_release.touch()
+            holder_stdout, holder_stderr = holder.communicate(timeout=5)
+            contender_stdout, contender_stderr = contender.communicate(timeout=5)
+            self.assertEqual(holder.returncode, 0, holder_stdout + holder_stderr)
+            self.assertEqual(
+                contender.returncode, 0, contender_stdout + contender_stderr
+            )
+            self.assertFalse(
+                acquired_before_release,
+                "contender acquired the runtime lock after its keeper was signalled",
+            )
+            self.assertTrue(contender_acquired.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
